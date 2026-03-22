@@ -1,0 +1,17 @@
+.DS_Store
+.idea/
+.vscode/*.code-workspace
+
+node_modules/
+dist/
+.turbo/
+
+.gradle/
+build/
+out/
+
+.env
+.env.local
+
+coverage/
+

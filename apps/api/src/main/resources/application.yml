@@ -1,0 +1,34 @@
+spring:
+  application:
+    name: lynxus-api
+  docker:
+    compose:
+      enabled: false
+  jackson:
+    default-property-inclusion: non_null
+  datasource:
+    url: jdbc:postgresql://localhost:5432/lynxus
+    username: lynxus
+    password: lynxus
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+server:
+  port: 8080
+
+lynxus:
+  minio:
+    endpoint: http://localhost:9000
+    access-key: minioadmin
+    secret-key: minioadmin
+  temporal:
+    target: localhost:7233
+    namespace: default

@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: lynxus-worker
+
+server:
+  port: 8081
+
+lynxus:
+  temporal:
+    target: localhost:7233
+    namespace: default
+    task-queue: lynxus-knowledge-escalation

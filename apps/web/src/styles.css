@@ -1,0 +1,240 @@
+body {
+  margin: 0;
+  font-family: 'IBM Plex Sans', 'PingFang SC', sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(24, 144, 255, 0.12), transparent 28%),
+    radial-gradient(circle at top right, rgba(82, 196, 26, 0.12), transparent 24%),
+    #f5f7fb;
+}
+
+.brand-block {
+  padding: 24px 20px;
+}
+
+.app-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 88px;
+  height: auto;
+  line-height: 1.4;
+  padding: 18px 24px;
+  background: rgba(255, 255, 255, 0.96) !important;
+  color: #0f172a !important;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
+  backdrop-filter: blur(10px);
+}
+
+.app-header__title-group {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.app-header__title {
+  margin: 0 !important;
+  color: #0f172a !important;
+}
+
+.app-header__subtitle {
+  color: #475569 !important;
+  line-height: 1.5;
+}
+
+.app-header__role-select {
+  width: 220px;
+  min-width: 220px;
+}
+
+.app-header.ant-layout-header {
+  background: rgba(255, 255, 255, 0.96) !important;
+}
+
+.app-header .ant-typography,
+.app-header .ant-typography strong,
+.app-header .ant-select-selection-item,
+.app-header .ant-select-arrow {
+  color: #0f172a !important;
+}
+
+.app-header .ant-select-selector {
+  background: #ffffff !important;
+  border-color: rgba(15, 23, 42, 0.14) !important;
+}
+
+.app-content {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.loading-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+}
+
+.clickable-item {
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.clickable-item:hover {
+  background: rgba(24, 144, 255, 0.06);
+}
+
+.graph-list-item--active {
+  background: rgba(24, 144, 255, 0.08);
+}
+
+.graph-editor {
+  overflow: hidden;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at top left, rgba(24, 144, 255, 0.12), transparent 35%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.98));
+}
+
+.graph-editor--panning {
+  cursor: grabbing;
+}
+
+.graph-editor__viewport {
+  position: relative;
+  height: 420px;
+  overflow: hidden;
+  cursor: grab;
+}
+
+.graph-editor__scene {
+  position: relative;
+  transform-origin: top left;
+  will-change: transform;
+}
+
+.graph-editor__svg {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+
+.graph-node {
+  position: absolute;
+  width: 240px;
+  min-height: 188px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.graph-node:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 22px 44px rgba(15, 23, 42, 0.12);
+}
+
+.graph-node--pending {
+  border-color: rgba(250, 173, 20, 0.7);
+  box-shadow: 0 0 0 4px rgba(250, 173, 20, 0.12);
+}
+
+.graph-node--active {
+  border-color: rgba(24, 144, 255, 0.55);
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.12);
+}
+
+.graph-node__eyebrow {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #1677ff;
+}
+
+.graph-node__title {
+  color: #0f172a;
+  font-size: 16px;
+}
+
+.graph-node__description {
+  color: #334155;
+  line-height: 1.5;
+}
+
+.graph-node__resources {
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.graph-node__actions {
+  margin-top: auto;
+  display: flex;
+  gap: 8px;
+}
+
+.graph-editor__path-hit {
+  stroke: transparent;
+  stroke-width: 24;
+  cursor: pointer;
+}
+
+.graph-editor__path {
+  stroke: rgba(24, 144, 255, 0.55);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 10 6;
+  transition: stroke 0.2s ease;
+}
+
+.graph-editor__path--active {
+  stroke: rgba(82, 196, 26, 0.9);
+}
+
+.graph-edge-chip {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  color: #334155;
+  font-size: 12px;
+  text-align: center;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+}
+
+.graph-edge-chip--active {
+  border-color: rgba(24, 144, 255, 0.55);
+  color: #1677ff;
+  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.12);
+}
+
+@media (max-width: 900px) {
+  .app-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .app-header__role-select {
+    width: 100%;
+    min-width: 0;
+  }
+}

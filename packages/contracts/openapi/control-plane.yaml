@@ -1,0 +1,154 @@
+openapi: 3.1.0
+info:
+  title: Lynxus Control Plane API
+  version: 0.1.0
+servers:
+  - url: http://localhost:8080/api
+paths:
+  /auth/session:
+    get:
+      summary: Get current mock session
+      responses:
+        '200':
+          description: Current session
+  /auth/switch-role:
+    patch:
+      summary: Switch current mock role
+      responses:
+        '200':
+          description: Updated session
+  /catalog/summary:
+    get:
+      summary: Get aggregate catalog summary
+      responses:
+        '200':
+          description: Aggregate catalog state
+  /domains:
+    get:
+      summary: List business domains
+    post:
+      summary: Create business domain
+  /scenarios:
+    get:
+      summary: List scenarios
+    post:
+      summary: Create scenario
+  /scenarios/{scenarioId}:
+    get:
+      summary: Get scenario detail
+      parameters:
+        - in: path
+          name: scenarioId
+          required: true
+          schema:
+            type: string
+    put:
+      summary: Update scenario
+      parameters:
+        - in: path
+          name: scenarioId
+          required: true
+          schema:
+            type: string
+  /agent-groups:
+    get:
+      summary: List agent groups
+    post:
+      summary: Create agent group
+  /agent-groups/{agentGroupId}:
+    put:
+      summary: Update agent group
+      parameters:
+        - in: path
+          name: agentGroupId
+          required: true
+          schema:
+            type: string
+  /agents:
+    get:
+      summary: List agents
+    post:
+      summary: Create agent
+  /agents/{agentId}:
+    get:
+      summary: Get agent detail
+      parameters:
+        - in: path
+          name: agentId
+          required: true
+          schema:
+            type: string
+    put:
+      summary: Update agent
+      parameters:
+        - in: path
+          name: agentId
+          required: true
+          schema:
+            type: string
+  /agents/{agentId}/bindings:
+    put:
+      summary: Replace agent resource bindings
+      parameters:
+        - in: path
+          name: agentId
+          required: true
+          schema:
+            type: string
+  /resources:
+    get:
+      summary: List resources
+    post:
+      summary: Create resource
+  /resource-center:
+    get:
+      summary: Get resource ownership and binding overview
+  /orchestrations:
+    get:
+      summary: List orchestration designs for agent groups
+  /orchestrations/{agentGroupId}:
+    get:
+      summary: Get orchestration detail
+      parameters:
+        - in: path
+          name: agentGroupId
+          required: true
+          schema:
+            type: string
+    put:
+      summary: Save orchestration design
+      parameters:
+        - in: path
+          name: agentGroupId
+          required: true
+          schema:
+            type: string
+  /resource-bindings:
+    post:
+      summary: Bind resource to agent
+  /tasks:
+    get:
+      summary: List task instances
+    post:
+      summary: Launch task
+  /workflows:
+    get:
+      summary: List workflow instances
+  /workflows/{workflowId}:
+    get:
+      summary: Get workflow detail
+      parameters:
+        - in: path
+          name: workflowId
+          required: true
+          schema:
+            type: string
+  /workflows/{workflowId}/human-action:
+    patch:
+      summary: Handle human action
+      parameters:
+        - in: path
+          name: workflowId
+          required: true
+          schema:
+            type: string

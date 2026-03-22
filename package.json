@@ -1,0 +1,12 @@
+{
+  "name": "lynxus",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@9.12.0",
+  "scripts": {
+    "dev:web": "pnpm --filter @lynxus/web dev",
+    "build:web": "pnpm --filter @lynxus/web build",
+    "test:web": "pnpm --filter @lynxus/web test",
+    "lint:web": "pnpm --filter @lynxus/web lint"
+  }
+}
