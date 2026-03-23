@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import PageHeaderCard from '../components/PageHeaderCard.vue';
 import type { WorkflowInstance } from '../types';
 
 const props = defineProps<{
@@ -28,14 +27,20 @@ function actionStatus(status: string) {
 </script>
 
 <template>
-  <PageHeaderCard title="流程实例详情页" subtitle="查看节点流转、资源调用和人工接管入口。" />
-
   <a-card v-if="current">
     <a-descriptions :column="2" :title="`流程 ${current.id}`">
+      <a-descriptions-item label="助手">{{ current.assistantName }}</a-descriptions-item>
+      <a-descriptions-item label="助手版本">{{ current.assistantReleaseVersion }}</a-descriptions-item>
       <a-descriptions-item label="状态">{{ current.status }}</a-descriptions-item>
       <a-descriptions-item label="摘要">{{ current.summary }}</a-descriptions-item>
       <a-descriptions-item label="是否待人工">{{ current.escalationRequired ? '是' : '否' }}</a-descriptions-item>
       <a-descriptions-item label="人工记录">{{ current.interventions.length }}</a-descriptions-item>
+      <a-descriptions-item label="MCP 工单">{{ current.mcpSummary?.externalTicketId ?? '无' }}</a-descriptions-item>
+      <a-descriptions-item label="MCP 结果">
+        {{ current.mcpSummary ? `${current.mcpSummary.status} / ${current.mcpSummary.recommendedAction}` : '无' }}
+      </a-descriptions-item>
+      <a-descriptions-item label="MCP 说明">{{ current.mcpSummary?.detail ?? '无' }}</a-descriptions-item>
+      <a-descriptions-item label="资源锚点">{{ current.resourceAnchors.join(' / ') }}</a-descriptions-item>
     </a-descriptions>
 
     <a-steps

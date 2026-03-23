@@ -50,17 +50,17 @@ paths:
           required: true
           schema:
             type: string
-  /agent-groups:
+  /assistants:
     get:
-      summary: List agent groups
+      summary: List assistants
     post:
-      summary: Create agent group
-  /agent-groups/{agentGroupId}:
+      summary: Create assistant
+  /assistants/{assistantId}:
     put:
-      summary: Update agent group
+      summary: Update assistant
       parameters:
         - in: path
-          name: agentGroupId
+          name: assistantId
           required: true
           schema:
             type: string
@@ -100,18 +100,52 @@ paths:
       summary: List resources
     post:
       summary: Create resource
+  /resources/{resourceId}/versions:
+    get:
+      summary: List resource versions
+      parameters:
+        - in: path
+          name: resourceId
+          required: true
+          schema:
+            type: string
+    post:
+      summary: Create resource version
+      parameters:
+        - in: path
+          name: resourceId
+          required: true
+          schema:
+            type: string
+  /resources/{resourceId}/versions/{versionId}/publish:
+    patch:
+      summary: Publish a resource version
+      parameters:
+        - in: path
+          name: resourceId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: versionId
+          required: true
+          schema:
+            type: string
   /resource-center:
     get:
-      summary: Get resource ownership and binding overview
+      summary: Get resource versioning, ownership, and binding overview
+  /resource-blueprints:
+    get:
+      summary: Get resource type blueprints for knowledge bases, skills, and MCPs
   /orchestrations:
     get:
-      summary: List orchestration designs for agent groups
-  /orchestrations/{agentGroupId}:
+      summary: List orchestration designs for assistants
+  /orchestrations/{assistantId}:
     get:
       summary: Get orchestration detail
       parameters:
         - in: path
-          name: agentGroupId
+          name: assistantId
           required: true
           schema:
             type: string
@@ -119,7 +153,7 @@ paths:
       summary: Save orchestration design
       parameters:
         - in: path
-          name: agentGroupId
+          name: assistantId
           required: true
           schema:
             type: string
@@ -131,12 +165,39 @@ paths:
       summary: List task instances
     post:
       summary: Launch task
+  /runtime/sessions:
+    get:
+      summary: List conversation runtime sessions
+      description: Returns sessions with latest task, workflow, and MCP invocation summary.
+    post:
+      summary: Create a conversation runtime session
+  /runtime/sessions/{sessionId}:
+    get:
+      summary: Get conversation session detail
+      description: Returns session messages plus the latest MCP invocation summary for the active conversation.
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema:
+            type: string
+  /runtime/sessions/{sessionId}/messages:
+    post:
+      summary: Send a message to a conversation session
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema:
+            type: string
   /workflows:
     get:
       summary: List workflow instances
+      description: Returns workflow state, node executions, resource anchors, and MCP invocation summary.
   /workflows/{workflowId}:
     get:
       summary: Get workflow detail
+      description: Returns workflow state, node executions, human interventions, and MCP invocation summary.
       parameters:
         - in: path
           name: workflowId
@@ -152,3 +213,48 @@ paths:
           required: true
           schema:
             type: string
+components:
+  schemas:
+    McpInvocationSummary:
+      type: object
+      properties:
+        capabilityName:
+          type: string
+        externalTicketId:
+          type: string
+        status:
+          type: string
+        recommendedAction:
+          type: string
+        detail:
+          type: string
+    WorkflowInstance:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        summary:
+          type: string
+        escalationRequired:
+          type: boolean
+        mcpSummary:
+          $ref: '#/components/schemas/McpInvocationSummary'
+    ConversationSession:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        latestTaskId:
+          type: string
+          nullable: true
+        latestWorkflowInstanceId:
+          type: string
+          nullable: true
+        latestMcpSummary:
+          allOf:
+            - $ref: '#/components/schemas/McpInvocationSummary'
+          nullable: true

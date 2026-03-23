@@ -8,6 +8,10 @@ java {
     }
 }
 
+dependencies {
+    compileOnly("io.temporal:temporal-sdk:1.32.1")
+}
+
 tasks.withType<Test> {
     useJUnitPlatform()
 }

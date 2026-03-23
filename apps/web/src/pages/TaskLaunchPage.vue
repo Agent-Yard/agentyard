@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { reactive } from 'vue';
-import PageHeaderCard from '../components/PageHeaderCard.vue';
 import type { Scenario, TaskInstance } from '../types';
 
 const props = defineProps<{
@@ -33,8 +32,6 @@ function submit() {
 </script>
 
 <template>
-  <PageHeaderCard title="任务发起页" subtitle="输入问题、选择场景并发起任务。" />
-
   <a-card>
     <a-form layout="vertical" :model="formState" @finish="submit">
       <a-form-item label="业务场景" name="scenarioId">

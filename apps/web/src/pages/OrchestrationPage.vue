@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import PageHeaderCard from '../components/PageHeaderCard.vue';
 import type {
-  AgentGroup,
-  AgentOrchestration,
+  Assistant,
+  AssistantOrchestration,
   OrchestrationEdge,
   OrchestrationNode,
   Resource,
@@ -18,16 +17,16 @@ const CANVAS_PADDING_Y = 88;
 const CANVAS_HEIGHT = 380;
 
 const props = defineProps<{
-  agentGroups: AgentGroup[];
-  orchestrations: AgentOrchestration[];
+  assistants: Assistant[];
+  orchestrations: AssistantOrchestration[];
   resources: Resource[];
 }>();
 
 const emit = defineEmits<{
-  saveOrchestration: [payload: { agentGroupId: string; data: UpdateOrchestrationPayload }];
+  saveOrchestration: [payload: { assistantId: string; data: UpdateOrchestrationPayload }];
 }>();
 
-const selectedGroupId = ref('');
+const selectedAssistantId = ref('');
 const executionMode = ref('SEQUENTIAL_GRAPH');
 const workingNodes = ref<OrchestrationNode[]>([]);
 const workingEdges = ref<OrchestrationEdge[]>([]);
@@ -42,7 +41,7 @@ const panY = ref(0);
 const isPanning = ref(false);
 
 const current = computed(() =>
-  props.orchestrations.find((item) => item.agentGroupId === selectedGroupId.value) ?? props.orchestrations[0],
+  props.orchestrations.find((item) => item.assistantId === selectedAssistantId.value) ?? props.orchestrations[0],
 );
 
 const selectedNode = computed(() =>
@@ -112,12 +111,12 @@ watch(
   () => props.orchestrations,
   (items) => {
     if (!items.length) {
-      selectedGroupId.value = '';
+      selectedAssistantId.value = '';
       return;
     }
 
-    if (!items.some((item) => item.agentGroupId === selectedGroupId.value)) {
-      selectedGroupId.value = items[0].agentGroupId;
+    if (!items.some((item) => item.assistantId === selectedAssistantId.value)) {
+      selectedAssistantId.value = items[0].assistantId;
     }
   },
   { immediate: true },
@@ -340,7 +339,7 @@ function submitSave() {
   }
 
   emit('saveOrchestration', {
-    agentGroupId: current.value.agentGroupId,
+    assistantId: current.value.assistantId,
     data: {
       executionMode: executionMode.value,
       nodes: workingNodes.value,
@@ -361,18 +360,13 @@ function nodeById(nodeId: string) {
 </script>
 
 <template>
-  <PageHeaderCard
-    title="智能体编排页"
-    subtitle="以图形化方式编辑主链、分支连线，并支持拖拽、缩放与平移。"
-  />
-
   <a-row :gutter="[16, 16]">
     <a-col :span="7">
       <a-card title="编排上下文">
         <a-space direction="vertical" style="width: 100%">
           <a-select
-            v-model:value="selectedGroupId"
-            :options="agentGroups.map((item) => ({ label: item.name, value: item.id }))"
+            v-model:value="selectedAssistantId"
+            :options="assistants.map((item) => ({ label: item.name, value: item.id }))"
           />
 
           <a-form layout="vertical">
@@ -446,7 +440,7 @@ function nodeById(nodeId: string) {
 
     <a-col :span="17">
       <a-space direction="vertical" style="width: 100%" size="large">
-        <a-card v-if="current" :title="current.agentGroupName">
+        <a-card v-if="current" :title="current.assistantName">
           <template #extra>
             <a-space>
               <a-tag color="blue">{{ executionMode }}</a-tag>

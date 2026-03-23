@@ -25,27 +25,54 @@ public final class CatalogDtos {
         String name,
         String goal,
         VersionDto version,
-        List<AgentGroupDto> agentGroups
+        List<AssistantDto> assistants
     ) {
     }
 
-    public record AgentGroupDto(
+    public record AssistantDto(
         String id,
         String scenarioId,
         String name,
         String description,
         VersionDto version,
-        List<AgentDto> agents
+        List<AgentDto> agents,
+        AssistantReleaseDto currentRelease,
+        List<AssistantReleaseDto> releases,
+        AssistantModelPolicyDto modelPolicy,
+        RagPolicyDto ragPolicy,
+        MemoryPolicyDto memoryPolicy
+    ) {
+    }
+
+    public record AssistantReleaseDto(
+        String id,
+        String assistantId,
+        String releaseVersion,
+        VersionStatus status,
+        Instant createdAt,
+        Instant publishedAt,
+        List<AssistantReleaseResourceDto> resources
+    ) {
+    }
+
+    public record AssistantReleaseResourceDto(
+        String resourceId,
+        String resourceName,
+        String resourceType,
+        String resourceVersionId,
+        String resourceVersion,
+        List<String> boundAgents
     ) {
     }
 
     public record AgentDto(
         String id,
-        String agentGroupId,
+        String assistantId,
         String name,
         String role,
         String instructions,
-        List<ResourceBindingDto> bindings
+        List<ResourceBindingDto> bindings,
+        AgentExecutionPolicyDto executionPolicy
     ) {
     }
 
@@ -57,16 +84,144 @@ public final class CatalogDtos {
         ShareScope shareScope,
         String ownerType,
         String ownerId,
-        String summary
+        String summary,
+        String steward,
+        List<String> tags,
+        ResourceVersionDto latestVersion,
+        ResourceVersionDto effectiveVersion,
+        List<ResourceVersionDto> versions
     ) {
     }
 
     public record ResourceBindingDto(
         String id,
         String resourceId,
+        String resourceVersionId,
+        String resourceVersion,
         String consumerType,
         String consumerId,
         Instant createdAt
+    ) {
+    }
+
+    public record ResourceVersionDto(
+        String id,
+        String resourceId,
+        String version,
+        VersionStatus status,
+        String summary,
+        String configDigest,
+        Instant createdAt,
+        Instant publishedAt,
+        ResourceVersionConfigurationDto configuration
+    ) {
+    }
+
+    public record ResourceVersionConfigurationDto(
+        ResourceType type,
+        KnowledgeBaseConfigDto knowledgeBase,
+        SkillConfigDto skill,
+        McpConfigDto mcp,
+        LlmModelConfigDto llmModel,
+        PromptTemplateConfigDto promptTemplate
+    ) {
+    }
+
+    public record KnowledgeBaseConfigDto(
+        String sourceType,
+        String sourceLocation,
+        String syncMode,
+        String retrievalMode,
+        String embeddingModel,
+        String chunkStrategy,
+        int defaultTopK,
+        int documentCount
+    ) {
+    }
+
+    public record SkillConfigDto(
+        String runtime,
+        String endpoint,
+        String method,
+        String authType,
+        int timeoutSeconds,
+        String retryPolicy,
+        String inputSchema,
+        String outputSchema
+    ) {
+    }
+
+    public record McpConfigDto(
+        String serverName,
+        String transport,
+        String connectionUri,
+        String namespace,
+        String authType,
+        int heartbeatSeconds,
+        List<String> exposedTools
+    ) {
+    }
+
+    public record LlmModelConfigDto(
+        String providerType,
+        String modelId,
+        String baseUrl,
+        String apiKeyEnvVar,
+        String organization,
+        String project,
+        String region,
+        double temperature,
+        int maxTokens
+    ) {
+    }
+
+    public record PromptTemplateConfigDto(
+        String templateType,
+        String systemPrompt,
+        String userPromptTemplate,
+        String responseFormat
+    ) {
+    }
+
+    public record AssistantModelPolicyDto(
+        String providerResourceId,
+        String promptTemplateResourceId,
+        double temperature,
+        int maxTokens
+    ) {
+    }
+
+    public record RagPolicyDto(
+        boolean enabled,
+        String knowledgeBaseResourceId,
+        int topK
+    ) {
+    }
+
+    public record MemoryPolicyDto(
+        boolean enabled,
+        int windowSize
+    ) {
+    }
+
+    public record AgentExecutionPolicyDto(
+        boolean inheritAssistantDefaults,
+        String modelResourceId,
+        String promptTemplateResourceId,
+        String inlinePrompt,
+        boolean ragEnabled,
+        String knowledgeBaseResourceId,
+        int memoryWindowSize,
+        List<String> toolResourceIds
+    ) {
+    }
+
+    public record ResourceBlueprintDto(
+        ResourceType type,
+        String label,
+        String description,
+        List<String> maintainedFields,
+        ResourceVersionConfigurationDto defaultConfiguration
     ) {
     }
 
@@ -77,9 +232,9 @@ public final class CatalogDtos {
     ) {
     }
 
-    public record AgentOrchestrationDto(
-        String agentGroupId,
-        String agentGroupName,
+    public record AssistantOrchestrationDto(
+        String assistantId,
+        String assistantName,
         String scenarioId,
         String executionMode,
         List<OrchestrationNodeDto> nodes,
@@ -112,8 +267,11 @@ public final class CatalogDtos {
         ResourceType type,
         ShareScope shareScope,
         String ownerLabel,
+        String latestVersion,
+        String effectiveVersion,
         List<String> boundAgents,
-        List<String> boundAgentGroups
+        List<String> boundAssistants,
+        List<String> bindingAnchors
     ) {
     }
 
@@ -134,19 +292,47 @@ public final class CatalogDtos {
     public record UpdateScenarioRequest(String name, String goal) {
     }
 
-    public record CreateAgentGroupRequest(String scenarioId, String name, String description) {
+    public record CreateAssistantRequest(
+        String scenarioId,
+        String name,
+        String description,
+        AssistantModelPolicyDto modelPolicy,
+        RagPolicyDto ragPolicy,
+        MemoryPolicyDto memoryPolicy
+    ) {
     }
 
-    public record UpdateAgentGroupRequest(String name, String description, VersionStatus status) {
+    public record UpdateAssistantRequest(
+        String name,
+        String description,
+        VersionStatus status,
+        AssistantModelPolicyDto modelPolicy,
+        RagPolicyDto ragPolicy,
+        MemoryPolicyDto memoryPolicy
+    ) {
     }
 
-    public record CreateAgentRequest(String agentGroupId, String name, String role, String instructions) {
+    public record CreateAgentRequest(
+        String assistantId,
+        String name,
+        String role,
+        String instructions,
+        AgentExecutionPolicyDto executionPolicy
+    ) {
     }
 
-    public record UpdateAgentRequest(String name, String role, String instructions) {
+    public record UpdateAgentRequest(
+        String name,
+        String role,
+        String instructions,
+        AgentExecutionPolicyDto executionPolicy
+    ) {
     }
 
-    public record UpdateAgentBindingsRequest(List<String> resourceIds) {
+    public record ResourceBindingTarget(String resourceId, String resourceVersionId) {
+    }
+
+    public record UpdateAgentBindingsRequest(List<ResourceBindingTarget> bindings) {
     }
 
     public record CreateResourceRequest(
@@ -156,7 +342,18 @@ public final class CatalogDtos {
         ShareScope shareScope,
         String ownerType,
         String ownerId,
-        String summary
+        String summary,
+        String steward,
+        List<String> tags,
+        CreateResourceVersionRequest initialVersion
+    ) {
+    }
+
+    public record CreateResourceVersionRequest(
+        String summary,
+        String configDigest,
+        VersionStatus status,
+        ResourceVersionConfigurationDto configuration
     ) {
     }
 
@@ -173,11 +370,12 @@ public final class CatalogDtos {
     public record CatalogSummaryDto(
         List<BusinessDomainDto> domains,
         List<ScenarioDto> scenarios,
-        List<AgentGroupDto> agentGroups,
+        List<AssistantDto> assistants,
         List<AgentDto> agents,
         List<ResourceDto> resources,
-        List<AgentOrchestrationDto> orchestrations,
-        ResourceCenterDto resourceCenter
+        List<AssistantOrchestrationDto> orchestrations,
+        ResourceCenterDto resourceCenter,
+        List<ResourceBlueprintDto> resourceBlueprints
     ) {
     }
 }

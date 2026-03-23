@@ -56,19 +56,19 @@ public class CatalogController {
         return ApiResponse.ok(catalogService.updateScenario(scenarioId, request));
     }
 
-    @GetMapping("/agent-groups")
-    public ApiResponse<?> agentGroups() {
-        return ApiResponse.ok(catalogService.listAgentGroups());
+    @GetMapping("/assistants")
+    public ApiResponse<?> assistants() {
+        return ApiResponse.ok(catalogService.listAssistants());
     }
 
-    @PostMapping("/agent-groups")
-    public ApiResponse<?> createAgentGroup(@RequestBody CreateAgentGroupRequest request) {
-        return ApiResponse.ok(catalogService.createAgentGroup(request));
+    @PostMapping("/assistants")
+    public ApiResponse<?> createAssistant(@RequestBody CreateAssistantRequest request) {
+        return ApiResponse.ok(catalogService.createAssistant(request));
     }
 
-    @PutMapping("/agent-groups/{agentGroupId}")
-    public ApiResponse<?> updateAgentGroup(@PathVariable String agentGroupId, @RequestBody UpdateAgentGroupRequest request) {
-        return ApiResponse.ok(catalogService.updateAgentGroup(agentGroupId, request));
+    @PutMapping("/assistants/{assistantId}")
+    public ApiResponse<?> updateAssistant(@PathVariable String assistantId, @RequestBody UpdateAssistantRequest request) {
+        return ApiResponse.ok(catalogService.updateAssistant(assistantId, request));
     }
 
     @GetMapping("/agents")
@@ -101,9 +101,29 @@ public class CatalogController {
         return ApiResponse.ok(catalogService.listResources());
     }
 
+    @GetMapping("/resources/{resourceId}/versions")
+    public ApiResponse<?> resourceVersions(@PathVariable String resourceId) {
+        return ApiResponse.ok(catalogService.listResourceVersions(resourceId));
+    }
+
+    @PostMapping("/resources/{resourceId}/versions")
+    public ApiResponse<?> createResourceVersion(@PathVariable String resourceId, @RequestBody CreateResourceVersionRequest request) {
+        return ApiResponse.ok(catalogService.createResourceVersion(resourceId, request));
+    }
+
+    @PatchMapping("/resources/{resourceId}/versions/{versionId}/publish")
+    public ApiResponse<?> publishResourceVersion(@PathVariable String resourceId, @PathVariable String versionId) {
+        return ApiResponse.ok(catalogService.publishResourceVersion(resourceId, versionId));
+    }
+
     @GetMapping("/resource-center")
     public ApiResponse<?> resourceCenter() {
         return ApiResponse.ok(catalogService.resourceCenter());
+    }
+
+    @GetMapping("/resource-blueprints")
+    public ApiResponse<?> resourceBlueprints() {
+        return ApiResponse.ok(catalogService.resourceBlueprints());
     }
 
     @GetMapping("/orchestrations")
@@ -111,14 +131,14 @@ public class CatalogController {
         return ApiResponse.ok(catalogService.listOrchestrations());
     }
 
-    @GetMapping("/orchestrations/{agentGroupId}")
-    public ApiResponse<?> orchestration(@PathVariable String agentGroupId) {
-        return ApiResponse.ok(catalogService.getOrchestration(agentGroupId));
+    @GetMapping("/orchestrations/{assistantId}")
+    public ApiResponse<?> orchestration(@PathVariable String assistantId) {
+        return ApiResponse.ok(catalogService.getOrchestration(assistantId));
     }
 
-    @PutMapping("/orchestrations/{agentGroupId}")
-    public ApiResponse<?> saveOrchestration(@PathVariable String agentGroupId, @RequestBody UpdateOrchestrationRequest request) {
-        return ApiResponse.ok(catalogService.saveOrchestration(agentGroupId, request));
+    @PutMapping("/orchestrations/{assistantId}")
+    public ApiResponse<?> saveOrchestration(@PathVariable String assistantId, @RequestBody UpdateOrchestrationRequest request) {
+        return ApiResponse.ok(catalogService.saveOrchestration(assistantId, request));
     }
 
     @PostMapping("/resources")

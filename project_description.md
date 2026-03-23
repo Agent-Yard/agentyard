@@ -56,8 +56,8 @@
 erDiagram
   TENANT ||--o{ BUSINESS_DOMAIN : contains
   BUSINESS_DOMAIN ||--o{ AGENT : owns
-  BUSINESS_DOMAIN ||--o{ AGENT_GROUP : defines
-  AGENT_GROUP }o--o{ AGENT : membership
+  BUSINESS_DOMAIN ||--o{ ASSISTANT : defines
+  ASSISTANT }o--o{ AGENT : membership
 
   AGENT ||--o{ SKILL : owns
   AGENT ||--o{ MCP_SERVER : owns

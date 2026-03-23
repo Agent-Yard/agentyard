@@ -1,13 +1,10 @@
 package com.lynxus.worker.workflow;
 
+import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowResult;
+import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowStartRequest;
 import io.temporal.activity.ActivityInterface;
-import java.util.List;
 
 @ActivityInterface
 public interface KnowledgeQaActivities {
-    List<String> retrieveKnowledge(String scenarioId, String question);
-
-    String generateAnswer(String question, List<String> contexts);
-
-    boolean shouldEscalate(String question, String answer);
+    WorkflowResult executeAgentRuntime(WorkflowStartRequest request);
 }

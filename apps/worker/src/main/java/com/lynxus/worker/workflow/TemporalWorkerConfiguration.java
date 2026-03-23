@@ -1,5 +1,6 @@
 package com.lynxus.worker.workflow;
 
+import com.lynxus.contracts.runtime.KnowledgeQaEscalationWorkflow;
 import io.temporal.client.WorkflowClient;
 import io.temporal.serviceclient.WorkflowServiceStubsOptions;
 import io.temporal.serviceclient.WorkflowServiceStubs;

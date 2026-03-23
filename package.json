@@ -4,7 +4,12 @@
   "version": "0.1.0",
   "packageManager": "pnpm@9.12.0",
   "scripts": {
-    "dev:web": "pnpm --filter @lynxus/web dev",
+    "dev": "./scripts/dev-all.sh",
+    "dev:all": "./scripts/dev-all.sh",
+    "dev:api": "./scripts/dev-api.sh",
+    "dev:worker": "./scripts/dev-worker.sh",
+    "dev:agent-runtime": "./scripts/dev-agent-runtime.sh",
+    "dev:web": "./scripts/dev-web.sh",
     "build:web": "pnpm --filter @lynxus/web build",
     "test:web": "pnpm --filter @lynxus/web test",
     "lint:web": "pnpm --filter @lynxus/web lint"

@@ -25,6 +25,26 @@ public class RuntimeController {
         return ApiResponse.ok(runtimeService.listTasks());
     }
 
+    @GetMapping("/runtime/sessions")
+    public ApiResponse<?> sessions() {
+        return ApiResponse.ok(runtimeService.listSessions());
+    }
+
+    @PostMapping("/runtime/sessions")
+    public ApiResponse<?> createSession(@RequestBody CreateConversationSessionRequest request) {
+        return ApiResponse.ok(runtimeService.createSession(request));
+    }
+
+    @GetMapping("/runtime/sessions/{sessionId}")
+    public ApiResponse<?> session(@PathVariable String sessionId) {
+        return ApiResponse.ok(runtimeService.getSession(sessionId));
+    }
+
+    @PostMapping("/runtime/sessions/{sessionId}/messages")
+    public ApiResponse<?> sendMessage(@PathVariable String sessionId, @RequestBody ConversationMessageRequest request) {
+        return ApiResponse.ok(runtimeService.sendMessage(sessionId, request));
+    }
+
     @PostMapping("/tasks")
     public ApiResponse<?> launchTask(@RequestBody TaskLaunchRequest request) {
         return ApiResponse.ok(runtimeService.launchTask(request));

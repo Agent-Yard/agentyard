@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import PageHeaderCard from '../components/PageHeaderCard.vue';
 import type { BusinessDomain, Scenario } from '../types';
 
 defineProps<{
@@ -9,8 +8,6 @@ defineProps<{
 </script>
 
 <template>
-  <PageHeaderCard title="业务域页" subtitle="查看业务域概览、域内场景与资源入口。" />
-
   <a-row :gutter="[16, 16]">
     <a-col :span="8">
       <a-card><a-statistic title="业务域数" :value="domains.length" /></a-card>

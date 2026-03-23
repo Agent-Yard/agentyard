@@ -10,7 +10,9 @@ public final class WorkflowContracts {
     public enum ResourceType {
         SKILL,
         MCP,
-        KNOWLEDGE_BASE
+        KNOWLEDGE_BASE,
+        LLM_MODEL,
+        PROMPT_TEMPLATE
     }
 
     public enum ShareScope {
@@ -53,8 +55,25 @@ public final class WorkflowContracts {
         String taskId,
         String workflowInstanceId,
         String scenarioId,
+        String assistantId,
+        String assistantName,
+        String assistantReleaseVersion,
+        List<String> resourceAnchors,
         String question,
-        String operatorId
+        String requester,
+        String operatorId,
+        String assistantConfigJson,
+        String graphSpecJson,
+        String sessionContextJson
+    ) {
+    }
+
+    public record McpInvocationSummary(
+        String capabilityName,
+        String externalTicketId,
+        String status,
+        String recommendedAction,
+        String detail
     ) {
     }
 
@@ -63,7 +82,8 @@ public final class WorkflowContracts {
         WorkflowStatus status,
         String summary,
         List<NodeSnapshot> nodes,
-        boolean escalationRequired
+        boolean escalationRequired,
+        McpInvocationSummary mcpSummary
     ) {
     }
 

@@ -17,6 +17,7 @@ dependencies {
     implementation("io.temporal:temporal-sdk:1.32.1")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
+    testImplementation("io.temporal:temporal-testing:1.32.1")
 }
 
 tasks.withType<Test> {

@@ -1,4 +1,4 @@
-package com.lynxus.worker.workflow;
+package com.lynxus.contracts.runtime;
 
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowResult;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowStartRequest;
