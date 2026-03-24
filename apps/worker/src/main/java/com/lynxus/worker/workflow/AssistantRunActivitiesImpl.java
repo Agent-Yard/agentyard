@@ -7,10 +7,10 @@ import com.lynxus.worker.runtime.AgentRuntimeGateway;
 import org.springframework.stereotype.Component;
 
 @Component
-public class KnowledgeQaActivitiesImpl implements KnowledgeQaActivities {
+public class AssistantRunActivitiesImpl implements AssistantRunActivities {
     private final AgentRuntimeGateway agentRuntimeGateway;
 
-    public KnowledgeQaActivitiesImpl(AgentRuntimeGateway agentRuntimeGateway) {
+    public AssistantRunActivitiesImpl(AgentRuntimeGateway agentRuntimeGateway) {
         this.agentRuntimeGateway = agentRuntimeGateway;
     }
 

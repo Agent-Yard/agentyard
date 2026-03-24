@@ -1,6 +1,7 @@
 # agent-runtime
 
 Python execution runtime for Lynxus assistants.
+It is responsible for executing the published assistant graph, invoking model / knowledge / skill / MCP resources, and resuming from human checkpoints.
 
 ## Start
 

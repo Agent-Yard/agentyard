@@ -6,7 +6,7 @@ import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowStartRequest;
 import io.temporal.activity.ActivityInterface;
 
 @ActivityInterface
-public interface KnowledgeQaActivities {
+public interface AssistantRunActivities {
     WorkflowResult startExecution(WorkflowStartRequest request);
 
     WorkflowResult resumeExecution(WorkflowResumeRequest request);

@@ -9,7 +9,7 @@ import io.temporal.workflow.WorkflowInterface;
 import io.temporal.workflow.WorkflowMethod;
 
 @WorkflowInterface
-public interface KnowledgeQaEscalationWorkflow {
+public interface AssistantRunWorkflow {
     @WorkflowMethod
     WorkflowResult run(WorkflowStartRequest request);
 

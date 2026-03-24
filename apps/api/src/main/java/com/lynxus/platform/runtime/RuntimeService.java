@@ -60,13 +60,13 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class RuntimeService {
-    private final KnowledgeQaWorkflowGateway workflowGateway;
+    private final AssistantRunWorkflowGateway workflowGateway;
     private final CatalogService catalogService;
     private final List<TaskInstanceDto> tasks = new ArrayList<>();
     private final List<WorkflowInstanceDto> workflows = new ArrayList<>();
     private final List<ConversationSessionDto> sessions = new ArrayList<>();
 
-    public RuntimeService(KnowledgeQaWorkflowGateway workflowGateway, CatalogService catalogService) {
+    public RuntimeService(AssistantRunWorkflowGateway workflowGateway, CatalogService catalogService) {
         this.workflowGateway = workflowGateway;
         this.catalogService = catalogService;
     }

@@ -1,5 +1,7 @@
 # 企业级智能体中台总体方案
 
+> 说明：本文件描述的是 Lynxus 的目标态总体方案和长期架构方向，不等同于当前仓库已经全部落地的实现范围。当前代码仓库阶段定位请优先参考 `README.md`、`docs/lynxus_mvp.md` 和 `docs/architecture/code-framework.md`。
+
 **执行摘要**：本方案面向“企业级智能体中台（Agent Platform / AgentOps 平台）”建设目标，提出一套可落地、可扩展、可治理的总体架构与实施路线，用于按业务域管理多智能体群（多智能体拓扑/协作）、统一管理 Skill（工具/技能）与 MCP 服务（Model Context Protocol Server），并支持“技能与 MCP 默认归属于单个智能体、也可在业务域内共享、以及按租户维度共享/隔离”的资源治理模型。方案强调：以元数据/控制面统一编排与权限治理，以事件驱动/消息总线连接运行面，以标准化接口契约（OpenAPI/AsyncAPI/MCP）实现可演进集成，并以可观测性（OpenTelemetry）与 SLO/错误预算驱动运维治理，最终达到“可控上线、可回滚、可审计、可成本度量”的企业级交付标准。MCP 作为连接外部系统与工具的开放协议，其基于 JSON-RPC 2.0 的 Host/Client/Server 架构及 Tools/Resources/Prompts 能力为本中台的“工具生态与安全连接”提供了标准化接口基础。citeturn4view0turn4view1turn5search0turn0search5turn0search2turn0search7turn10search4
 
 ## 目标与范围

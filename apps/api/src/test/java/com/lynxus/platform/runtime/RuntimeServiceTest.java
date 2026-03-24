@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
 
 class RuntimeServiceTest {
     private final CatalogService catalogService = new CatalogService();
-    private final RuntimeService service = new RuntimeService(new KnowledgeQaWorkflowGateway() {
+    private final RuntimeService service = new RuntimeService(new AssistantRunWorkflowGateway() {
         @Override
         public WorkflowContracts.WorkflowResult startAndAwaitFirstResult(WorkflowContracts.WorkflowStartRequest request) {
             boolean waitingHuman = request.question().contains("投诉");
@@ -86,7 +86,7 @@ class RuntimeServiceTest {
 
     @Test
     void shouldSeedSessionsWithoutLaunchingWorkflowsByDefault() {
-        RuntimeService seededService = new RuntimeService(new KnowledgeQaWorkflowGateway() {
+        RuntimeService seededService = new RuntimeService(new AssistantRunWorkflowGateway() {
             @Override
             public WorkflowContracts.WorkflowResult startAndAwaitFirstResult(WorkflowContracts.WorkflowStartRequest request) {
                 throw new AssertionError("seed should not launch workflow executions");
@@ -107,7 +107,7 @@ class RuntimeServiceTest {
 
     @Test
     void shouldExposeNestedFailureReasonInWorkflowSummary() {
-        RuntimeService failingService = new RuntimeService(new KnowledgeQaWorkflowGateway() {
+        RuntimeService failingService = new RuntimeService(new AssistantRunWorkflowGateway() {
             @Override
             public WorkflowContracts.WorkflowResult startAndAwaitFirstResult(WorkflowContracts.WorkflowStartRequest request) {
                 throw new RuntimeException(

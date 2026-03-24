@@ -9,30 +9,40 @@ Orchestrate Enterprise Agents
 ```text
 apps/
   api/         Spring Boot control plane API
-  worker/      Temporal workflow worker skeleton
+  worker/      Temporal workflow worker
   web/         Vue + Ant Design Vue console
+  agent-runtime/ Python execution runtime
 packages/
   contracts/   OpenAPI and shared frontend contract artifacts
+  contracts-jvm/ Shared JVM runtime contracts
 infra/
   local/       Docker Compose for local development
 docs/
-  architecture/ framework and startup notes
+  architecture/ current architecture and startup notes
+  progress_record/ archived decisions and stage records
 ```
 
-## MVP Focus
+## Current Stage
 
-当前首版代码框架围绕单租户、单业务域、单业务场景的 MVP 建设，覆盖：
+当前仓库更适合定义为“单租户默认、可本地联调的多智能体平台原型”，已经超过单点 MVP 验证阶段，核心能力包括：
 
 - 业务域、场景、助手、智能体、资源和绑定的配置态
-- 资源版本管理与智能体绑定时的版本锚定，资源在控制台中统一表达为“最新版本 / 生效版本”
-- 助手发布时冻结资源版本快照、agent 执行配置和可执行图快照，形成可追溯的发布记录
+- 资源头与版本化配置建模，支持“最新版本 / 生效版本”视图
+- 助手发布时冻结资源锚点、agent 执行配置和可执行图快照
 - 调用方选择助手后的单助手会话运行态，以及任务、流程、节点状态、人工介入
 - 资源区拆分为“资源目录”和“资源新建”两页，分别承接版本治理与按类型建模的资源创建
-- 知识库、Skill、MCP 三类资源都采用“资源头 + 版本化配置”建模
-- 单助手内真实多智能体图编排，支持 `START / AGENT / HUMAN / END`
+- 资源类型覆盖知识库、Skill、MCP、LLM 模型和 Prompt 模板
+- 单助手内真实多智能体图编排，支持 `START / AGENT / HUMAN / END` 节点
 - 基于 Temporal 的 `start / wait / signal / resume` 长流程运行，支持人工节点暂停与恢复
 - Python agent-runtime 基于发布图动态执行，并提供 KB / Skill / MCP / LLM 轻量适配
 - 本地 mock 认证、角色切换和未来 OIDC 适配边界
+
+当前仍然保留一些原型阶段边界：
+
+- 认证仍以 mock 为主
+- 部分运行态数据仍在内存中维护
+- seed 数据和 `demo.local` provider 仍承担本地演示闭环
+- API 入口仍同步等待首个 workflow 结果，后续会演进为异步观测链路
 
 ## Console IA
 
@@ -42,6 +52,13 @@ docs/
 - 助手构建：助手配置、智能体、编排设计
 - 资源与发布：资源目录、资源新建
 - 运行与观测：会话运行、流程观测
+
+## Documentation Notes
+
+- 当前阶段与范围说明：`docs/lynxus_mvp.md`
+- 当前对象模型说明：`docs/mvp_brief_models.md`
+- MVP 阶段留档：`docs/progress_record/2026-03-mvp_scope_baseline.md`
+- MVP 对象模型留档：`docs/progress_record/2026-03-mvp_object_model_baseline.md`
 
 ## Quick Start
 
@@ -135,7 +152,7 @@ LYNXUS_TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT=PT2M
 
 ## Runtime Model
 
-当前运行链路已经从固定问答骨架升级为真实图编排：
+当前运行链路已经是发布快照驱动的真实图编排：
 
 - Spring API 负责控制面、发布快照、会话和运行实例
 - Temporal workflow 负责长流程托管与人工 signal 恢复
@@ -147,7 +164,5 @@ LYNXUS_TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT=PT2M
 - `packages/contracts-jvm/src/main/java/com/lynxus/contracts/runtime/WorkflowContracts.java`
 - `apps/api/src/main/java/com/lynxus/platform/catalog/CatalogService.java`
 - `apps/api/src/main/java/com/lynxus/platform/runtime/RuntimeService.java`
-- `apps/worker/src/main/java/com/lynxus/worker/workflow/KnowledgeQaEscalationWorkflowImpl.java`
+- `apps/worker/src/main/java/com/lynxus/worker/workflow/AssistantRunWorkflowImpl.java`
 - `apps/agent-runtime/app/main.py`
-
-> 说明：当前环境未包含 `node`、`pnpm`、`docker`、`gradle` 等工具链运行验证，本仓库已补齐项目骨架、配置和启动说明，后续在具备对应工具链的机器上可继续安装依赖并联调。

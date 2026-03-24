@@ -9,8 +9,8 @@ import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-class KnowledgeQaActivitiesImplTest {
-    private final KnowledgeQaActivitiesImpl activities = new KnowledgeQaActivitiesImpl(new AgentRuntimeGateway() {
+class AssistantRunActivitiesImplTest {
+    private final AssistantRunActivitiesImpl activities = new AssistantRunActivitiesImpl(new AgentRuntimeGateway() {
         @Override
         public WorkflowContracts.WorkflowResult start(WorkflowContracts.WorkflowStartRequest request) {
             boolean waitingHuman = request.question().contains("投诉");

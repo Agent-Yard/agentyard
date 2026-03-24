@@ -1,10 +1,17 @@
-# Lynxus 首版代码框架
+# Lynxus 当前代码框架
 
-## 目标
+## 阶段定位
 
-首版框架服务于 MVP，而不是一次性铺满企业级中台全貌。重点是搭出一套可本地运行、边界清晰、后续可扩展的代码底座。
+当前代码库已经不是“只验证概念能否成立”的最小 MVP，而是一个可本地联调、具备真实运行编排能力的平台原型。
+更贴切的描述是：
 
-当前优先级放在配置态与运行态两条主线：
+- 单租户默认的企业智能体平台原型
+- 发布快照驱动的单助手多智能体运行系统
+- 面向后续持久化、权限、可观测和生产化治理扩展的代码底座
+
+## 当前重心
+
+当前实现主要围绕配置态、发布态与运行态三条主线：
 
 - 智能体编排：表达助手内部节点、交接顺序和资源依赖
 - 资源管理：表达资源归属、共享范围、版本体系、最新版本/生效版本语义和绑定锚点
@@ -15,7 +22,9 @@
 
 - `apps/web`：控制台前端，承接控制台页面与 mock 角色切换
 - `apps/api`：控制面 API，负责配置态与运行态主接口
-- `apps/worker`：工作流执行骨架，承接 Temporal workflow/activity
+- `apps/worker`：Temporal workflow worker，承接长流程托管与人工恢复
+- `apps/agent-runtime`：Python 执行运行时，负责图编排、资源调用和节点推进
+- `packages/contracts-jvm`：JVM 侧共享运行契约
 - `packages/contracts`：OpenAPI 与前端共享 contract
 - `infra/local`：本地依赖启动
 
@@ -31,16 +40,16 @@
 ## 后端模块
 
 - `auth-domain`：当前用户、角色策略、mock 登录
-- `tenant-domain`：保留租户概念，首版默认单租户
+- `tenant-domain`：保留租户边界，当前实现默认单租户
 - `scenario-domain`：业务域、业务场景、助手、智能体
-- `resource-domain`：Skill、MCP、知识库、资源版本配置及绑定关系
+- `resource-domain`：知识库、Skill、MCP、LLM、Prompt 模板及资源版本配置
 - `runtime-domain`：任务、流程、节点、人工介入
-- `release-domain`：草稿/发布态占位
+- `release-domain`：草稿、发布、快照冻结与运行锚点
 - `shared-kernel`：公共枚举、错误码、审计字段、上下文
 
 ## 运行链路
 
-当前运行链路已经升级为“发布快照驱动的单助手多智能体图编排”：
+当前运行链路已经是“发布快照驱动的单助手多智能体图编排”：
 
 1. API 基于助手发布快照构建运行时 `AssistantRunSnapshot`
 2. Temporal workflow 调用 Python runtime `start`
@@ -63,14 +72,23 @@
 - 前端在保留运行态页面的同时，强化了“智能体编排页”“资源目录页”“资源新建页”作为当前主入口
 - 当前系统层不做跨助手自动切换；一次会话只绑定一个助手，由调用方显式选择
 
+## 当前边界
+
+- 认证仍以 mock 方案为主，真实 OIDC 尚未接入
+- 部分运行态对象仍在 API 内存中维护，未完全持久化
+- workflow 启动链路仍同步等待首个结果，尚未改为异步订阅式观测
+- 资源执行层优先保证本地联调和演示闭环，生产级安全治理仍需补齐
+
 ## 版本基线
 
-首版代码按最新稳定版本线配置，而不是受当前本地安装版本限制：
+当前代码按仓库内已落地的版本线组织：
 
 - Java toolchain：25
 - Spring Boot：4.0.1
 - Vue：3.5
 - Vite：8
 - TypeScript：5.9
-- PostgreSQL：17
-- Redis：8
+- Temporal SDK：1.32.1
+- FastAPI：0.115.12
+- LangGraph：0.2.53
+- PostgreSQL / Redis / MinIO / Temporal：通过本地 Docker 依赖接入

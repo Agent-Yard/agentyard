@@ -1,6 +1,6 @@
 package com.lynxus.worker.workflow;
 
-import com.lynxus.contracts.runtime.KnowledgeQaEscalationWorkflow;
+import com.lynxus.contracts.runtime.AssistantRunWorkflow;
 import com.lynxus.contracts.runtime.WorkflowContracts.HumanAction;
 import com.lynxus.contracts.runtime.WorkflowContracts.NodeSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.NodeStatus;
@@ -15,20 +15,20 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 
-public class KnowledgeQaEscalationWorkflowImpl implements KnowledgeQaEscalationWorkflow {
+public class AssistantRunWorkflowImpl implements AssistantRunWorkflow {
     private static final Duration DEFAULT_ACTIVITY_START_TO_CLOSE_TIMEOUT = Duration.ofMinutes(2);
-    private final KnowledgeQaActivities activities;
+    private final AssistantRunActivities activities;
     private WorkflowStartRequest startRequest;
     private WorkflowResult currentResult;
     private HumanAction pendingHumanAction;
 
-    public KnowledgeQaEscalationWorkflowImpl() {
+    public AssistantRunWorkflowImpl() {
         this(DEFAULT_ACTIVITY_START_TO_CLOSE_TIMEOUT);
     }
 
-    public KnowledgeQaEscalationWorkflowImpl(Duration activityStartToCloseTimeout) {
+    public AssistantRunWorkflowImpl(Duration activityStartToCloseTimeout) {
         this.activities = Workflow.newActivityStub(
-            KnowledgeQaActivities.class,
+            AssistantRunActivities.class,
             ActivityOptions.newBuilder()
                 .setStartToCloseTimeout(activityStartToCloseTimeout)
                 .setRetryOptions(RetryOptions.newBuilder().setMaximumAttempts(1).build())

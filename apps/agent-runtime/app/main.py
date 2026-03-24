@@ -295,7 +295,7 @@ class AgentState(TypedDict):
 
 
 app = FastAPI(title="lynxus-agent-runtime", version="1.0.0")
-LLM_REQUEST_TIMEOUT_SECONDS = 15
+LLM_REQUEST_TIMEOUT_SECONDS = 30
 
 
 SEED_KB: Dict[str, List[str]] = {

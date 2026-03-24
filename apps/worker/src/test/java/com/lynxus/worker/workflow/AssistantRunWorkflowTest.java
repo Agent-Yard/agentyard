@@ -3,7 +3,7 @@ package com.lynxus.worker.workflow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-import com.lynxus.contracts.runtime.KnowledgeQaEscalationWorkflow;
+import com.lynxus.contracts.runtime.AssistantRunWorkflow;
 import com.lynxus.contracts.runtime.WorkflowContracts;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowStartRequest;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowStatus;
@@ -17,15 +17,15 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-class KnowledgeQaEscalationWorkflowTest {
+class AssistantRunWorkflowTest {
     private TestWorkflowEnvironment environment;
 
     @BeforeEach
     void setUp() {
         environment = TestWorkflowEnvironment.newInstance();
-        var worker = environment.newWorker("test-knowledge-escalation");
-        worker.registerWorkflowImplementationTypes(KnowledgeQaEscalationWorkflowImpl.class);
-        worker.registerActivitiesImplementations(new KnowledgeQaActivitiesImpl(new AgentRuntimeGateway() {
+        var worker = environment.newWorker("test-assistant-run");
+        worker.registerWorkflowImplementationTypes(AssistantRunWorkflowImpl.class);
+        worker.registerActivitiesImplementations(new AssistantRunActivitiesImpl(new AgentRuntimeGateway() {
             @Override
             public WorkflowContracts.WorkflowResult start(WorkflowContracts.WorkflowStartRequest request) {
                 if (request.question().contains("失败")) {
@@ -88,9 +88,9 @@ class KnowledgeQaEscalationWorkflowTest {
 
     @Test
     void shouldCompleteSimpleFaq() {
-        KnowledgeQaEscalationWorkflow workflow = environment.getWorkflowClient().newWorkflowStub(
-            KnowledgeQaEscalationWorkflow.class,
-            io.temporal.client.WorkflowOptions.newBuilder().setTaskQueue("test-knowledge-escalation").build()
+        AssistantRunWorkflow workflow = environment.getWorkflowClient().newWorkflowStub(
+            AssistantRunWorkflow.class,
+            io.temporal.client.WorkflowOptions.newBuilder().setTaskQueue("test-assistant-run").build()
         );
 
         var result = workflow.run(sampleRequest("怎么重置密码", "wf-1"));
@@ -101,9 +101,9 @@ class KnowledgeQaEscalationWorkflowTest {
 
     @Test
     void shouldWaitAndResumeForHumanAction() throws Exception {
-        KnowledgeQaEscalationWorkflow workflow = environment.getWorkflowClient().newWorkflowStub(
-            KnowledgeQaEscalationWorkflow.class,
-            io.temporal.client.WorkflowOptions.newBuilder().setTaskQueue("test-knowledge-escalation").setWorkflowId("wf-2").build()
+        AssistantRunWorkflow workflow = environment.getWorkflowClient().newWorkflowStub(
+            AssistantRunWorkflow.class,
+            io.temporal.client.WorkflowOptions.newBuilder().setTaskQueue("test-assistant-run").setWorkflowId("wf-2").build()
         );
 
         WorkflowClient.start(workflow::run, sampleRequest("这是一个客户投诉，需要人工处理", "wf-2"));
@@ -119,9 +119,9 @@ class KnowledgeQaEscalationWorkflowTest {
 
     @Test
     void shouldExposeFailedResultWhenActivityThrows() throws Exception {
-        KnowledgeQaEscalationWorkflow workflow = environment.getWorkflowClient().newWorkflowStub(
-            KnowledgeQaEscalationWorkflow.class,
-            io.temporal.client.WorkflowOptions.newBuilder().setTaskQueue("test-knowledge-escalation").setWorkflowId("wf-failed").build()
+        AssistantRunWorkflow workflow = environment.getWorkflowClient().newWorkflowStub(
+            AssistantRunWorkflow.class,
+            io.temporal.client.WorkflowOptions.newBuilder().setTaskQueue("test-assistant-run").setWorkflowId("wf-failed").build()
         );
 
         WorkflowClient.start(workflow::run, sampleRequest("触发失败", "wf-failed"));
@@ -131,7 +131,7 @@ class KnowledgeQaEscalationWorkflowTest {
         assertNotNull(failed.summary());
     }
 
-    private WorkflowContracts.WorkflowResult waitForResult(KnowledgeQaEscalationWorkflow workflow) throws InterruptedException {
+    private WorkflowContracts.WorkflowResult waitForResult(AssistantRunWorkflow workflow) throws InterruptedException {
         WorkflowContracts.WorkflowResult result = null;
         long deadline = System.currentTimeMillis() + 5_000;
         while (System.currentTimeMillis() < deadline) {

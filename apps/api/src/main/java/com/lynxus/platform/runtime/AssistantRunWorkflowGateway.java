@@ -1,6 +1,6 @@
 package com.lynxus.platform.runtime;
 
-import com.lynxus.contracts.runtime.KnowledgeQaEscalationWorkflow;
+import com.lynxus.contracts.runtime.AssistantRunWorkflow;
 import com.lynxus.contracts.runtime.WorkflowContracts.HumanAction;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowResult;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowStartRequest;
@@ -9,13 +9,13 @@ import io.temporal.client.WorkflowOptions;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-public interface KnowledgeQaWorkflowGateway {
+public interface AssistantRunWorkflowGateway {
     WorkflowResult startAndAwaitFirstResult(WorkflowStartRequest request);
 
     WorkflowResult submitHumanActionAndAwaitResult(String workflowId, HumanAction action);
 
     @Component
-    class TemporalKnowledgeQaWorkflowGateway implements KnowledgeQaWorkflowGateway {
+    class TemporalAssistantRunWorkflowGateway implements AssistantRunWorkflowGateway {
         private static final long INITIAL_RESULT_TIMEOUT_MILLIS = 30_000;
         private static final long RESUME_RESULT_TIMEOUT_MILLIS = 30_000;
         private static final long POLL_INTERVAL_MILLIS = 100;
@@ -23,7 +23,7 @@ public interface KnowledgeQaWorkflowGateway {
         private final WorkflowClient workflowClient;
         private final String taskQueue;
 
-        public TemporalKnowledgeQaWorkflowGateway(
+        public TemporalAssistantRunWorkflowGateway(
             WorkflowClient workflowClient,
             @Value("${lynxus.temporal.task-queue}") String taskQueue
         ) {
@@ -33,21 +33,21 @@ public interface KnowledgeQaWorkflowGateway {
 
         @Override
         public WorkflowResult startAndAwaitFirstResult(WorkflowStartRequest request) {
-            KnowledgeQaEscalationWorkflow workflow = workflowStub(request.workflowInstanceId());
+            AssistantRunWorkflow workflow = newStartWorkflowStub(request.workflowInstanceId());
             WorkflowClient.start(workflow::run, request);
             return pollForResult(workflow, INITIAL_RESULT_TIMEOUT_MILLIS, true);
         }
 
         @Override
         public WorkflowResult submitHumanActionAndAwaitResult(String workflowId, HumanAction action) {
-            KnowledgeQaEscalationWorkflow workflow = workflowStub(workflowId);
+            AssistantRunWorkflow workflow = existingWorkflowStub(workflowId);
             workflow.submitHumanAction(action);
             return pollForResult(workflow, RESUME_RESULT_TIMEOUT_MILLIS, false);
         }
 
-        private KnowledgeQaEscalationWorkflow workflowStub(String workflowId) {
+        private AssistantRunWorkflow newStartWorkflowStub(String workflowId) {
             return workflowClient.newWorkflowStub(
-                KnowledgeQaEscalationWorkflow.class,
+                AssistantRunWorkflow.class,
                 WorkflowOptions.newBuilder()
                     .setTaskQueue(taskQueue)
                     .setWorkflowId(workflowId)
@@ -55,7 +55,11 @@ public interface KnowledgeQaWorkflowGateway {
             );
         }
 
-        private WorkflowResult pollForResult(KnowledgeQaEscalationWorkflow workflow, long timeoutMillis, boolean allowWaitingHuman) {
+        private AssistantRunWorkflow existingWorkflowStub(String workflowId) {
+            return workflowClient.newWorkflowStub(AssistantRunWorkflow.class, workflowId);
+        }
+
+        private WorkflowResult pollForResult(AssistantRunWorkflow workflow, long timeoutMillis, boolean allowWaitingHuman) {
             long deadline = System.currentTimeMillis() + timeoutMillis;
             WorkflowResult latest = null;
             while (System.currentTimeMillis() < deadline) {
