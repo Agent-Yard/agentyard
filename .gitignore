@@ -2,18 +2,23 @@
 .idea/
 .vscode/*.code-workspace
 
+# node
 node_modules/
 dist/
 .turbo/
 
+# java
 .gradle/
 build/
 out/
 
+# python
+.venv/
+__pycache__/
+
 .env
 .env.local
 
-.venv
 
 coverage/
 
