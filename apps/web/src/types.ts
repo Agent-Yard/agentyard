@@ -6,6 +6,7 @@ export type VersionStatus = 'DRAFT' | 'PUBLISHED';
 export type TaskStatus = 'PENDING' | 'RUNNING' | 'WAITING_HUMAN' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 export type WorkflowStatus = 'DRAFT' | 'RUNNING' | 'WAITING_HUMAN' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 export type NodeStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'WAITING_HUMAN';
+export type OrchestrationNodeType = 'START' | 'AGENT' | 'HUMAN' | 'END';
 
 export interface UserSession {
   userId: string;
@@ -28,18 +29,6 @@ export interface ResourceBinding {
   consumerType: string;
   consumerId: string;
   createdAt: string;
-}
-
-export interface ResourceVersion {
-  id: string;
-  resourceId: string;
-  version: string;
-  status: VersionStatus;
-  summary: string;
-  configDigest: string;
-  createdAt: string;
-  publishedAt: string | null;
-  configuration: ResourceVersionConfiguration;
 }
 
 export interface KnowledgeBaseConfig {
@@ -95,11 +84,23 @@ export interface PromptTemplateConfig {
 
 export interface ResourceVersionConfiguration {
   type: ResourceType;
-  knowledgeBase?: KnowledgeBaseConfig;
-  skill?: SkillConfig;
-  mcp?: McpConfig;
-  llmModel?: LlmModelConfig;
-  promptTemplate?: PromptTemplateConfig;
+  knowledgeBase?: KnowledgeBaseConfig | null;
+  skill?: SkillConfig | null;
+  mcp?: McpConfig | null;
+  llmModel?: LlmModelConfig | null;
+  promptTemplate?: PromptTemplateConfig | null;
+}
+
+export interface ResourceVersion {
+  id: string;
+  resourceId: string;
+  version: string;
+  status: VersionStatus;
+  summary: string;
+  configDigest: string;
+  createdAt: string;
+  publishedAt: string | null;
+  configuration: ResourceVersionConfiguration;
 }
 
 export interface ResourceBlueprint {
@@ -108,30 +109,6 @@ export interface ResourceBlueprint {
   description: string;
   maintainedFields: string[];
   defaultConfiguration: ResourceVersionConfiguration;
-}
-
-export interface Agent {
-  id: string;
-  assistantId: string;
-  name: string;
-  role: string;
-  instructions: string;
-  bindings: ResourceBinding[];
-  executionPolicy: AgentExecutionPolicy;
-}
-
-export interface Assistant {
-  id: string;
-  scenarioId: string;
-  name: string;
-  description: string;
-  version: Version;
-  agents: Agent[];
-  currentRelease: AssistantRelease | null;
-  releases: AssistantRelease[];
-  modelPolicy: AssistantModelPolicy;
-  ragPolicy: RagPolicy;
-  memoryPolicy: MemoryPolicy;
 }
 
 export interface AssistantModelPolicy {
@@ -163,13 +140,67 @@ export interface AgentExecutionPolicy {
   toolResourceIds: string[];
 }
 
+export interface Agent {
+  id: string;
+  assistantId: string;
+  name: string;
+  role: string;
+  instructions: string;
+  bindings: ResourceBinding[];
+  executionPolicy: AgentExecutionPolicy;
+}
+
+export interface HumanNodeConfig {
+  title: string;
+  instruction: string;
+  expectedAction: string;
+  resumeRouteKey: string;
+}
+
+export interface OrchestrationNode {
+  nodeKey: string;
+  nodeName: string;
+  nodeType: OrchestrationNodeType;
+  description: string;
+  agentId: string | null;
+  humanNode: HumanNodeConfig | null;
+}
+
+export interface OrchestrationEdge {
+  edgeKey: string;
+  sourceNodeKey: string;
+  targetNodeKey: string;
+  routeKey: string | null;
+  label: string;
+  defaultEdge: boolean;
+}
+
+export interface AssistantOrchestration {
+  assistantId: string;
+  assistantName: string;
+  scenarioId: string;
+  executionMode: string;
+  nodes: OrchestrationNode[];
+  edges: OrchestrationEdge[];
+}
+
 export interface AssistantReleaseResource {
   resourceId: string;
   resourceName: string;
-  resourceType: string;
+  resourceType: ResourceType;
   resourceVersionId: string;
   resourceVersion: string;
   boundAgents: string[];
+  configuration: ResourceVersionConfiguration;
+}
+
+export interface AssistantReleaseAgent {
+  agentId: string;
+  name: string;
+  role: string;
+  instructions: string;
+  executionPolicy: AgentExecutionPolicy;
+  bindingResourceVersionIds: string[];
 }
 
 export interface AssistantRelease {
@@ -180,6 +211,25 @@ export interface AssistantRelease {
   createdAt: string;
   publishedAt: string | null;
   resources: AssistantReleaseResource[];
+  agents: AssistantReleaseAgent[];
+  orchestration: AssistantOrchestration;
+  modelPolicy: AssistantModelPolicy;
+  ragPolicy: RagPolicy;
+  memoryPolicy: MemoryPolicy;
+}
+
+export interface Assistant {
+  id: string;
+  scenarioId: string;
+  name: string;
+  description: string;
+  version: Version;
+  agents: Agent[];
+  currentRelease: AssistantRelease | null;
+  releases: AssistantRelease[];
+  modelPolicy: AssistantModelPolicy;
+  ragPolicy: RagPolicy;
+  memoryPolicy: MemoryPolicy;
 }
 
 export interface Resource {
@@ -215,43 +265,6 @@ export interface BusinessDomain {
   resources: Resource[];
 }
 
-export interface CatalogSummary {
-  domains: BusinessDomain[];
-  scenarios: Scenario[];
-  assistants: Assistant[];
-  agents: Agent[];
-  resources: Resource[];
-  orchestrations: AssistantOrchestration[];
-  resourceCenter: ResourceCenter;
-  resourceBlueprints: ResourceBlueprint[];
-}
-
-export interface AssistantOrchestration {
-  assistantId: string;
-  assistantName: string;
-  scenarioId: string;
-  executionMode: string;
-  nodes: OrchestrationNode[];
-  edges: OrchestrationEdge[];
-}
-
-export interface OrchestrationNode {
-  nodeId: string;
-  nodeName: string;
-  nodeType: string;
-  agentId: string;
-  description: string;
-  resourceIds: string[];
-}
-
-export interface OrchestrationEdge {
-  edgeId: string;
-  fromNodeId: string;
-  toNodeId: string;
-  condition: string;
-  handoffPolicy: string;
-}
-
 export interface ResourceUsage {
   resourceId: string;
   resourceName: string;
@@ -270,6 +283,17 @@ export interface ResourceCenter {
   domainSharedResources: number;
   privateResources: number;
   usages: ResourceUsage[];
+}
+
+export interface CatalogSummary {
+  domains: BusinessDomain[];
+  scenarios: Scenario[];
+  assistants: Assistant[];
+  agents: Agent[];
+  resources: Resource[];
+  orchestrations: AssistantOrchestration[];
+  resourceCenter: ResourceCenter;
+  resourceBlueprints: ResourceBlueprint[];
 }
 
 export interface TaskInstance {
@@ -291,6 +315,32 @@ export interface McpInvocationSummary {
   status: string;
   recommendedAction: string;
   detail: string;
+}
+
+export interface ToolInvocationSnapshot {
+  id: string;
+  toolType: string;
+  resourceId: string;
+  resourceName: string;
+  operation: string;
+  status: string;
+  detail: string;
+  createdAt: string;
+}
+
+export interface ExecutionCheckpoint {
+  checkpointId: string;
+  currentNodeKey: string;
+  waitingNodeKey: string;
+  statePayload: string;
+  resumeCount: number;
+}
+
+export interface HumanTaskSnapshot {
+  nodeKey: string;
+  title: string;
+  instruction: string;
+  expectedAction: string;
 }
 
 export interface NodeExecution {
@@ -320,10 +370,15 @@ export interface WorkflowInstance {
   assistantReleaseVersion: string;
   status: WorkflowStatus;
   summary: string;
+  finalReply: string | null;
+  currentNodeKey: string | null;
   escalationRequired: boolean;
+  checkpoint: ExecutionCheckpoint | null;
+  humanTask: HumanTaskSnapshot | null;
   mcpSummary: McpInvocationSummary | null;
   resourceAnchors: string[];
   nodes: NodeExecution[];
+  toolCalls: ToolInvocationSnapshot[];
   interventions: HumanIntervention[];
 }
 
@@ -354,6 +409,7 @@ export interface ConversationSession {
   latestTaskId: string | null;
   latestWorkflowInstanceId: string | null;
   latestMcpSummary: McpInvocationSummary | null;
+  latestHumanTask: HumanTaskSnapshot | null;
 }
 
 export interface CreateAssistantPayload {

@@ -1,20 +1,24 @@
 package com.lynxus.platform.runtime;
 
+import com.lynxus.contracts.runtime.WorkflowContracts.ExecutionCheckpoint;
+import com.lynxus.contracts.runtime.WorkflowContracts.HumanTaskSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.McpInvocationSummary;
 import com.lynxus.contracts.runtime.WorkflowContracts.NodeStatus;
 import com.lynxus.contracts.runtime.WorkflowContracts.TaskStatus;
+import com.lynxus.contracts.runtime.WorkflowContracts.ToolInvocationSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowStatus;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 public final class RuntimeDtos {
     private RuntimeDtos() {
     }
 
-    public record TaskLaunchRequest(String scenarioId, String question, String requester) {
+    public record TaskLaunchRequest(String scenarioId, String assistantId, String question, String requester) {
     }
 
-    public record HumanActionRequest(String action, String comment) {
+    public record HumanActionRequest(String action, String comment, String operatorId, Map<String, String> attributes) {
     }
 
     public record CreateConversationSessionRequest(String scenarioId, String assistantId, String requester, String openingMessage) {
@@ -45,10 +49,15 @@ public final class RuntimeDtos {
         String assistantReleaseVersion,
         WorkflowStatus status,
         String summary,
+        String finalReply,
+        String currentNodeKey,
         boolean escalationRequired,
+        ExecutionCheckpoint checkpoint,
+        HumanTaskSnapshot humanTask,
         McpInvocationSummary mcpSummary,
         List<String> resourceAnchors,
         List<NodeExecutionDto> nodes,
+        List<ToolInvocationSnapshot> toolCalls,
         List<HumanInterventionDto> interventions
     ) {
     }
@@ -101,7 +110,8 @@ public final class RuntimeDtos {
         List<ConversationMessageDto> messages,
         String latestTaskId,
         String latestWorkflowInstanceId,
-        McpInvocationSummary latestMcpSummary
+        McpInvocationSummary latestMcpSummary,
+        HumanTaskSnapshot latestHumanTask
     ) {
     }
 }

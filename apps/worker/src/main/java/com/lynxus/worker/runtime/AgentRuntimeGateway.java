@@ -1,6 +1,8 @@
 package com.lynxus.worker.runtime;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowResumeRequest;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowResult;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowStartRequest;
 import java.io.IOException;
@@ -12,29 +14,42 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 public interface AgentRuntimeGateway {
-    WorkflowResult run(WorkflowStartRequest request);
+    WorkflowResult start(WorkflowStartRequest request);
+
+    WorkflowResult resume(WorkflowResumeRequest request);
 
     @Component
     class HttpAgentRuntimeGateway implements AgentRuntimeGateway {
         private final HttpClient httpClient = HttpClient.newHttpClient();
-        private final ObjectMapper objectMapper;
+        private final ObjectMapper objectMapper = createObjectMapper();
         private final String agentRuntimeBaseUrl;
 
-        public HttpAgentRuntimeGateway(
-            ObjectMapper objectMapper,
-            @Value("${lynxus.agent-runtime.base-url}") String agentRuntimeBaseUrl
-        ) {
-            this.objectMapper = objectMapper;
+        public HttpAgentRuntimeGateway(@Value("${lynxus.agent-runtime.base-url}") String agentRuntimeBaseUrl) {
             this.agentRuntimeBaseUrl = agentRuntimeBaseUrl;
         }
 
+        static ObjectMapper createObjectMapper() {
+            return new ObjectMapper()
+                .findAndRegisterModules()
+                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        }
+
         @Override
-        public WorkflowResult run(WorkflowStartRequest request) {
+        public WorkflowResult start(WorkflowStartRequest request) {
+            return post("/agent-runs/start", request);
+        }
+
+        @Override
+        public WorkflowResult resume(WorkflowResumeRequest request) {
+            return post("/agent-runs/resume", request);
+        }
+
+        private WorkflowResult post(String path, Object payload) {
             try {
                 HttpRequest httpRequest = HttpRequest.newBuilder()
-                    .uri(URI.create(agentRuntimeBaseUrl + "/agent-runs"))
+                    .uri(URI.create(agentRuntimeBaseUrl + path))
                     .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(request)))
+                    .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload)))
                     .build();
                 HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
                 if (response.statusCode() >= 400) {

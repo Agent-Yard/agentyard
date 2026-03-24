@@ -11,4 +11,5 @@ lynxus:
   temporal:
     target: ${LYNXUS_TEMPORAL_TARGET:localhost:7233}
     namespace: ${LYNXUS_TEMPORAL_NAMESPACE:default}
-    task-queue: ${LYNXUS_TEMPORAL_TASK_QUEUE:lynxus-knowledge-escalation}
+    task-queue: ${LYNXUS_TEMPORAL_TASK_QUEUE:lynxus-customer-ops}
+    activity-start-to-close-timeout: ${LYNXUS_TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT:PT2M}

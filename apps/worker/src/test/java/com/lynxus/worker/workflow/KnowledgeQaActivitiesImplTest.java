@@ -1,76 +1,149 @@
 package com.lynxus.worker.workflow;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lynxus.contracts.runtime.WorkflowContracts;
 import com.lynxus.worker.runtime.AgentRuntimeGateway;
+import java.time.Instant;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class KnowledgeQaActivitiesImplTest {
     private final KnowledgeQaActivitiesImpl activities = new KnowledgeQaActivitiesImpl(new AgentRuntimeGateway() {
         @Override
-        public WorkflowContracts.WorkflowResult run(WorkflowContracts.WorkflowStartRequest request) {
+        public WorkflowContracts.WorkflowResult start(WorkflowContracts.WorkflowStartRequest request) {
             boolean waitingHuman = request.question().contains("投诉");
+            return waitingHuman ? waitingHumanResult(request.workflowInstanceId(), request.question()) : completedResult(request.workflowInstanceId(), request.question());
+        }
+
+        @Override
+        public WorkflowContracts.WorkflowResult resume(WorkflowContracts.WorkflowResumeRequest request) {
             return new WorkflowContracts.WorkflowResult(
                 request.workflowInstanceId(),
-                waitingHuman ? WorkflowContracts.WorkflowStatus.WAITING_HUMAN : WorkflowContracts.WorkflowStatus.COMPLETED,
-                waitingHuman ? "需要人工处理" : "已自动处理",
-                java.util.List.of(
-                    new WorkflowContracts.NodeSnapshot("question-received", "问题接收", WorkflowContracts.NodeStatus.COMPLETED, request.question(), java.time.Instant.now()),
-                    new WorkflowContracts.NodeSnapshot("knowledge-retrieval", "知识检索", WorkflowContracts.NodeStatus.COMPLETED, "命中 FAQ", java.time.Instant.now()),
-                    new WorkflowContracts.NodeSnapshot("answer-generation", "回答生成", WorkflowContracts.NodeStatus.COMPLETED, "已生成回答", java.time.Instant.now()),
-                    new WorkflowContracts.NodeSnapshot("mcp-ticketing", "MCP 协同调用", WorkflowContracts.NodeStatus.COMPLETED, "创建工单", java.time.Instant.now()),
-                    new WorkflowContracts.NodeSnapshot("escalation-decision", "升级判定", waitingHuman ? WorkflowContracts.NodeStatus.WAITING_HUMAN : WorkflowContracts.NodeStatus.COMPLETED, waitingHuman ? "等待人工接管" : "流程结束", java.time.Instant.now())
+                WorkflowContracts.WorkflowStatus.COMPLETED,
+                "人工处理已完成",
+                "人工处理已完成，已同步客户。",
+                "end",
+                null,
+                null,
+                List.of(
+                    new WorkflowContracts.NodeSnapshot("human-review", "人工介入", WorkflowContracts.NodeStatus.COMPLETED, request.action().comment(), Instant.now()),
+                    new WorkflowContracts.NodeSnapshot("end", "结束", WorkflowContracts.NodeStatus.COMPLETED, "流程结束", Instant.now())
                 ),
-                waitingHuman,
-                new WorkflowContracts.McpInvocationSummary("创建协同工单", "TICKET-1", waitingHuman ? "ACCEPTED" : "RECORDED", waitingHuman ? "HUMAN_HANDOFF" : "AUTO_CLOSE", "test")
+                List.of(),
+                false,
+                new WorkflowContracts.McpInvocationSummary("创建协同工单", "TICKET-1", "ACCEPTED", "HUMAN_HANDOFF", "test")
             );
         }
     });
 
     @Test
-    void shouldCreateHumanHandoffTicketForComplaint() {
-        var result = activities.executeAgentRuntime(new WorkflowContracts.WorkflowStartRequest(
-            "task-1",
-            "wf-1",
-            "scenario-knowledge-escalation",
-            "assistant-knowledge-escalation",
-            "问答升级助手",
-            "0.1.0",
-            java.util.List.of("客服知识库@1.0.0"),
-            "这是投诉，需要人工处理",
-            "tester",
-            "tester",
-            "{}",
-            "{}",
-            "{}"
-        ));
+    void shouldCreateHumanCheckpointForComplaint() {
+        var result = activities.startExecution(sampleRequest("这是投诉，需要人工处理"));
 
-        assertEquals("HUMAN_HANDOFF", result.mcpSummary().recommendedAction());
-        assertTrue(result.mcpSummary().externalTicketId().startsWith("TICKET-"));
+        assertEquals(WorkflowContracts.WorkflowStatus.WAITING_HUMAN, result.status());
+        assertTrue(result.checkpoint() != null);
+        assertEquals("人工介入待办", result.humanTask().title());
     }
 
     @Test
-    void shouldAutoCloseForSimpleFaq() {
-        var result = activities.executeAgentRuntime(new WorkflowContracts.WorkflowStartRequest(
+    void shouldResumeExecutionAfterHumanAction() {
+        var result = activities.resumeExecution(new WorkflowContracts.WorkflowResumeRequest(
             "task-2",
             "wf-2",
-            "scenario-knowledge-escalation",
-            "assistant-knowledge-escalation",
-            "问答升级助手",
-            "0.1.0",
-            java.util.List.of("客服知识库@1.0.0"),
-            "怎么重置密码",
-            "tester",
-            "tester",
-            "{}",
-            "{}",
-            "{}"
+            "scenario-customer-ops",
+            new WorkflowContracts.HumanAction("CONFIRM", "人工已处理", "operator-1", java.util.Map.of()),
+            sampleSessionContext("客户投诉"),
+            sampleAssistantSnapshot(),
+            new WorkflowContracts.ExecutionCheckpoint("cp-1", "handoff-close", "human-review", "{}", 0)
         ));
 
-        assertEquals("AUTO_CLOSE", result.mcpSummary().recommendedAction());
-        assertFalse(result.mcpSummary().detail().isBlank());
+        assertEquals(WorkflowContracts.WorkflowStatus.COMPLETED, result.status());
+        assertEquals("end", result.currentNodeKey());
+    }
+
+    private WorkflowContracts.WorkflowStartRequest sampleRequest(String question) {
+        return new WorkflowContracts.WorkflowStartRequest(
+            "task-1",
+            "wf-1",
+            "scenario-customer-ops",
+            question,
+            "tester",
+            sampleSessionContext(question),
+            sampleAssistantSnapshot()
+        );
+    }
+
+    private static WorkflowContracts.WorkflowResult waitingHumanResult(String workflowId, String question) {
+        return new WorkflowContracts.WorkflowResult(
+            workflowId,
+            WorkflowContracts.WorkflowStatus.WAITING_HUMAN,
+            "等待人工处理",
+            "已进入人工协同流程。",
+            "human-review",
+            new WorkflowContracts.ExecutionCheckpoint("cp-1", "handoff-close", "human-review", "{\"question\":\"" + question + "\"}", 0),
+            new WorkflowContracts.HumanTaskSnapshot("human-review", "人工介入待办", "请人工确认并补充处理意见。", "CONFIRM"),
+            List.of(
+                new WorkflowContracts.NodeSnapshot("start", "开始", WorkflowContracts.NodeStatus.COMPLETED, question, Instant.now()),
+                new WorkflowContracts.NodeSnapshot("human-review", "人工介入", WorkflowContracts.NodeStatus.WAITING_HUMAN, "等待人工处理", Instant.now())
+            ),
+            List.of(),
+            true,
+            new WorkflowContracts.McpInvocationSummary("创建协同工单", "TICKET-1", "ACCEPTED", "HUMAN_HANDOFF", "test")
+        );
+    }
+
+    private static WorkflowContracts.WorkflowResult completedResult(String workflowId, String question) {
+        return new WorkflowContracts.WorkflowResult(
+            workflowId,
+            WorkflowContracts.WorkflowStatus.COMPLETED,
+            "问题已自动处理完成。",
+            "请通过登录页的忘记密码完成密码重置。",
+            "end",
+            null,
+            null,
+            List.of(
+                new WorkflowContracts.NodeSnapshot("start", "开始", WorkflowContracts.NodeStatus.COMPLETED, question, Instant.now()),
+                new WorkflowContracts.NodeSnapshot("end", "结束", WorkflowContracts.NodeStatus.COMPLETED, "流程结束", Instant.now())
+            ),
+            List.of(),
+            false,
+            null
+        );
+    }
+
+    private WorkflowContracts.SessionContext sampleSessionContext(String latestMessage) {
+        return new WorkflowContracts.SessionContext(
+            "session-1",
+            "tester",
+            latestMessage,
+            List.of(new WorkflowContracts.SessionMessageSnapshot("USER", "tester", latestMessage, Instant.now()))
+        );
+    }
+
+    private WorkflowContracts.AssistantRunSnapshot sampleAssistantSnapshot() {
+        return new WorkflowContracts.AssistantRunSnapshot(
+            "assistant-customer-ops",
+            "客服协同助手",
+            "1.0.0",
+            new WorkflowContracts.AssistantPolicySnapshot("resource-llm-openai", "resource-prompt-router", 0.2, 1200, true, "resource-kb-support", 5, true, 8),
+            List.of(
+                new WorkflowContracts.AgentSnapshot(
+                    "agent-router",
+                    "问题分诊智能体",
+                    "router",
+                    "决定分支",
+                    new WorkflowContracts.AgentExecutionPolicySnapshot(true, null, "resource-prompt-router", "", true, "resource-kb-support", 8, List.of()),
+                    List.of()
+                )
+            ),
+            List.of(),
+            new WorkflowContracts.GraphSnapshot(
+                "GRAPH",
+                List.of(new WorkflowContracts.GraphNodeSnapshot("start", "开始", WorkflowContracts.OrchestrationNodeType.START, "开始", null, null)),
+                List.of()
+            )
+        );
     }
 }

@@ -154,6 +154,10 @@ const menuItems = [
 ];
 
 const loading = ref(true);
+const creatingSession = ref(false);
+const sendingSessionId = ref<string | null>(null);
+const runtimePreferredSessionId = ref<string | null>(null);
+const runtimeSelectedSessionId = ref<string | null>(null);
 const activeKey = ref<PageKey>('domain');
 const openKeys = ref<SectionKey[]>(['design', 'build', 'asset', 'runtime-observe']);
 const session = ref<UserSession | null>(null);
@@ -172,40 +176,87 @@ const currentWorkflow = computed(
   () => workflows.value.find((item) => item.status === 'WAITING_HUMAN') ?? workflows.value[0],
 );
 
-async function refresh() {
-  loading.value = true;
-  const [sessionData, catalogData, sessionList, tasksData, workflowData] = await Promise.all([
-    api.getSession(),
-    api.getCatalogSummary(),
-    api.getConversationSessions(),
-    api.getTasks(),
-    api.getWorkflows(),
-  ]);
-  session.value = sessionData;
-  catalog.value = catalogData;
-  conversationSessions.value = sessionList;
-  tasks.value = tasksData;
-  workflows.value = workflowData;
-  loading.value = false;
+function errorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return fallback;
+}
+
+async function refresh(showLoading = false) {
+  if (showLoading) {
+    loading.value = true;
+  }
+  try {
+    const [sessionData, catalogData, sessionList, tasksData, workflowData] = await Promise.all([
+      api.getSession(),
+      api.getCatalogSummary(),
+      api.getConversationSessions(),
+      api.getTasks(),
+      api.getWorkflows(),
+    ]);
+    session.value = sessionData;
+    catalog.value = catalogData;
+    conversationSessions.value = sessionList;
+    tasks.value = tasksData;
+    workflows.value = workflowData;
+    if (!sessionList.length) {
+      runtimeSelectedSessionId.value = null;
+    } else if (runtimePreferredSessionId.value && sessionList.some((item) => item.id === runtimePreferredSessionId.value)) {
+      runtimeSelectedSessionId.value = runtimePreferredSessionId.value;
+    } else if (!runtimeSelectedSessionId.value || !sessionList.some((item) => item.id === runtimeSelectedSessionId.value)) {
+      runtimeSelectedSessionId.value = sessionList[0].id;
+    }
+  } finally {
+    if (showLoading) {
+      loading.value = false;
+    }
+  }
 }
 
 async function handleCreateSession(payload: { scenarioId: string; assistantId: string; requester: string; openingMessage: string }) {
-  await api.createConversationSession(payload);
-  await refresh();
-  activeKey.value = 'runtime';
-  void message.success('会话已创建');
+  creatingSession.value = true;
+  try {
+    const created = await api.createConversationSession(payload);
+    runtimePreferredSessionId.value = created.id;
+    await refresh();
+    activeKey.value = 'runtime';
+    void message.success('会话已创建');
+  } catch (error) {
+    void message.error(errorMessage(error, '创建会话失败'));
+  } finally {
+    creatingSession.value = false;
+  }
 }
 
 async function handleSendMessage(payload: { sessionId: string; requester: string; message: string }) {
-  await api.sendConversationMessage(payload.sessionId, {
-    requester: payload.requester,
-    message: payload.message,
-  });
-  await refresh();
+  sendingSessionId.value = payload.sessionId;
+  runtimePreferredSessionId.value = payload.sessionId;
+  runtimeSelectedSessionId.value = payload.sessionId;
+  try {
+    await api.sendConversationMessage(payload.sessionId, {
+      requester: payload.requester,
+      message: payload.message,
+    });
+    await refresh();
+  } catch (error) {
+    void message.error(errorMessage(error, '发送消息失败'));
+  } finally {
+    sendingSessionId.value = null;
+  }
 }
 
-async function handleHumanAction(payload: { workflowId: string; action: string; comment: string }) {
-  await api.completeHumanAction(payload.workflowId, payload.action, payload.comment);
+function handleSelectRuntimeSession(sessionId: string) {
+  runtimeSelectedSessionId.value = sessionId;
+}
+
+async function handleHumanAction(payload: { workflowId: string; action: string; comment: string; operatorId: string; attributes: Record<string, string> }) {
+  await api.completeHumanAction(payload.workflowId, {
+    action: payload.action,
+    comment: payload.comment,
+    operatorId: payload.operatorId,
+    attributes: payload.attributes,
+  });
   await refresh();
 }
 
@@ -280,7 +331,7 @@ function handleRoleSelect(value: string | number) {
 }
 
 onMounted(() => {
-  void refresh();
+  void refresh(true);
 });
 </script>
 
@@ -309,7 +360,7 @@ onMounted(() => {
       <a-layout>
         <a-layout-header class="app-header">
           <div class="app-header__title-group">
-            <a-typography-title :level="4" class="app-header__title">企业级智能体中台 MVP</a-typography-title>
+            <a-typography-title :level="4" class="app-header__title">企业级智能体中台</a-typography-title>
             <a-typography-text class="app-header__eyebrow">
               {{ currentSectionMeta.label }} / {{ currentPageMeta.label }}
             </a-typography-text>
@@ -377,6 +428,11 @@ onMounted(() => {
             :sessions="conversationSessions"
             :tasks="tasks"
             :workflows="workflows"
+            :creating-session="creatingSession"
+            :sending-session-id="sendingSessionId"
+            :preferred-session-id="runtimePreferredSessionId"
+            :selected-session-id="runtimeSelectedSessionId"
+            @select-session="handleSelectRuntimeSession"
             @create-session="handleCreateSession"
             @send-message="handleSendMessage"
           />

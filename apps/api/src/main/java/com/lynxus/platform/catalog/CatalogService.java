@@ -2,21 +2,27 @@ package com.lynxus.platform.catalog;
 
 import static com.lynxus.platform.catalog.CatalogDtos.*;
 
+import com.lynxus.contracts.runtime.WorkflowContracts.OrchestrationNodeType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ResourceType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
 import com.lynxus.contracts.runtime.WorkflowContracts.VersionStatus;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
 public class CatalogService {
+    private final CatalogRepository repository;
+    private boolean initialized;
     private final List<BusinessDomainDto> domains = new ArrayList<>();
     private final List<ScenarioDto> scenarios = new ArrayList<>();
     private final List<AssistantDto> assistants = new ArrayList<>();
@@ -27,10 +33,24 @@ public class CatalogService {
     private final Map<String, AssistantOrchestrationDto> orchestrations = new LinkedHashMap<>();
 
     public CatalogService() {
-        seed();
+        this(new InMemoryCatalogRepository(), true);
+    }
+
+    @Autowired
+    public CatalogService(CatalogRepository repository) {
+        this(repository, false);
+    }
+
+    CatalogService(CatalogRepository repository, boolean seedIfEmpty) {
+        this.repository = repository;
+        if (seedIfEmpty) {
+            ensureLoaded();
+            initializeDemoDataIfEmpty();
+        }
     }
 
     public CatalogSummaryDto summary() {
+        ensureLoaded();
         return new CatalogSummaryDto(
             listDomains(),
             listScenarios(),
@@ -44,6 +64,7 @@ public class CatalogService {
     }
 
     public List<BusinessDomainDto> listDomains() {
+        ensureLoaded();
         return domains.stream()
             .sorted(Comparator.comparing(BusinessDomainDto::name))
             .map(this::toDomainView)
@@ -51,18 +72,15 @@ public class CatalogService {
     }
 
     public BusinessDomainDto createDomain(CreateDomainRequest request) {
-        BusinessDomainDto domain = new BusinessDomainDto(
-            nextId("domain"),
-            request.name(),
-            request.description(),
-            List.of(),
-            List.of()
-        );
+        ensureLoaded();
+        BusinessDomainDto domain = new BusinessDomainDto(nextId("domain"), request.name(), request.description(), List.of(), List.of());
         domains.add(domain);
+        persistState();
         return toDomainView(domain);
     }
 
     public List<ScenarioDto> listScenarios() {
+        ensureLoaded();
         return scenarios.stream()
             .sorted(Comparator.comparing(ScenarioDto::name))
             .map(this::toScenarioView)
@@ -70,10 +88,12 @@ public class CatalogService {
     }
 
     public ScenarioDto getScenario(String scenarioId) {
+        ensureLoaded();
         return toScenarioView(findScenario(scenarioId));
     }
 
     public ScenarioDto createScenario(CreateScenarioRequest request) {
+        ensureLoaded();
         ScenarioDto scenario = new ScenarioDto(
             nextId("scenario"),
             request.domainId(),
@@ -83,10 +103,12 @@ public class CatalogService {
             List.of()
         );
         scenarios.add(scenario);
+        persistState();
         return toScenarioView(scenario);
     }
 
     public ScenarioDto updateScenario(String scenarioId, UpdateScenarioRequest request) {
+        ensureLoaded();
         ScenarioDto existing = findScenario(scenarioId);
         ScenarioDto updated = new ScenarioDto(
             existing.id(),
@@ -97,10 +119,12 @@ public class CatalogService {
             existing.assistants()
         );
         replace(scenarios, ScenarioDto::id, updated);
+        persistState();
         return toScenarioView(updated);
     }
 
     public AssistantDto createAssistant(CreateAssistantRequest request) {
+        ensureLoaded();
         AssistantDto assistant = new AssistantDto(
             nextId("assistant"),
             request.scenarioId(),
@@ -115,10 +139,12 @@ public class CatalogService {
             normalizeMemoryPolicy(request.memoryPolicy())
         );
         assistants.add(assistant);
+        persistState();
         return toAssistantView(assistant);
     }
 
     public AssistantDto updateAssistant(String assistantId, UpdateAssistantRequest request) {
+        ensureLoaded();
         AssistantDto existing = findAssistant(assistantId);
         VersionDto version = new VersionDto(
             request.status() == VersionStatus.PUBLISHED ? nextAssistantReleaseVersion(existing.id()) : existing.version().version(),
@@ -142,10 +168,12 @@ public class CatalogService {
         if (request.status() == VersionStatus.PUBLISHED) {
             createAssistantRelease(updated.id(), version.version(), VersionStatus.PUBLISHED);
         }
+        persistState();
         return toAssistantView(updated);
     }
 
     public List<AssistantDto> listAssistants() {
+        ensureLoaded();
         return assistants.stream()
             .sorted(Comparator.comparing(AssistantDto::name))
             .map(this::toAssistantView)
@@ -153,6 +181,7 @@ public class CatalogService {
     }
 
     public AgentDto createAgent(CreateAgentRequest request) {
+        ensureLoaded();
         AgentDto agent = new AgentDto(
             nextId("agent"),
             request.assistantId(),
@@ -163,10 +192,12 @@ public class CatalogService {
             normalizeAgentExecutionPolicy(request.executionPolicy())
         );
         agents.add(agent);
+        persistState();
         return agent;
     }
 
     public AgentDto updateAgent(String agentId, UpdateAgentRequest request) {
+        ensureLoaded();
         AgentDto existing = findAgent(agentId);
         AgentDto updated = new AgentDto(
             existing.id(),
@@ -178,10 +209,12 @@ public class CatalogService {
             normalizeAgentExecutionPolicy(request.executionPolicy())
         );
         replace(agents, AgentDto::id, updated);
+        persistState();
         return updated;
     }
 
     public AgentDto updateAgentBindings(String agentId, UpdateAgentBindingsRequest request) {
+        ensureLoaded();
         AgentDto agent = findAgent(agentId);
         Map<String, ResourceBindingDto> existingBindings = agent.bindings().stream()
             .collect(LinkedHashMap::new, (map, item) -> map.put(item.resourceVersionId(), item), Map::putAll);
@@ -201,20 +234,22 @@ public class CatalogService {
             agent.executionPolicy()
         );
         replace(agents, AgentDto::id, updated);
+        persistState();
         return updated;
     }
 
     public List<AgentDto> listAgents() {
-        return agents.stream()
-            .sorted(Comparator.comparing(AgentDto::name))
-            .toList();
+        ensureLoaded();
+        return agents.stream().sorted(Comparator.comparing(AgentDto::name)).toList();
     }
 
     public AgentDto getAgent(String agentId) {
+        ensureLoaded();
         return findAgent(agentId);
     }
 
     public ResourceDto createResource(CreateResourceRequest request) {
+        ensureLoaded();
         String resourceId = nextId("resource");
         ResourceDto resource = new ResourceDto(
             resourceId,
@@ -232,29 +267,28 @@ public class CatalogService {
             List.of()
         );
         resources.add(resource);
-        CreateResourceVersionRequest initialVersion = request.initialVersion() == null
-            ? new CreateResourceVersionRequest(
-                "初始版本",
-                "digest-" + resourceId,
-                VersionStatus.DRAFT,
-                defaultConfiguration(resource.type())
-            )
-            : new CreateResourceVersionRequest(
-                request.initialVersion().summary(),
-                request.initialVersion().configDigest(),
-                request.initialVersion().status(),
-                normalizeConfiguration(resource.type(), request.initialVersion().configuration())
-            );
-        createResourceVersion(resourceId, initialVersion);
+        createResourceVersion(
+            resourceId,
+            request.initialVersion() == null
+                ? new CreateResourceVersionRequest("初始版本", "digest-" + resourceId, VersionStatus.DRAFT, defaultConfiguration(resource.type()))
+                : new CreateResourceVersionRequest(
+                    request.initialVersion().summary(),
+                    request.initialVersion().configDigest(),
+                    request.initialVersion().status(),
+                    normalizeConfiguration(resource.type(), request.initialVersion().configuration())
+                )
+        );
         return toResourceView(resource);
     }
 
     public List<ResourceVersionDto> listResourceVersions(String resourceId) {
+        ensureLoaded();
         findResource(resourceId);
         return versionsFor(resourceId);
     }
 
     public ResourceVersionDto createResourceVersion(String resourceId, CreateResourceVersionRequest request) {
+        ensureLoaded();
         ResourceDto resource = findResource(resourceId);
         VersionStatus status = request.status() == null ? VersionStatus.DRAFT : request.status();
         List<ResourceVersionDto> existingVersions = versionsFor(resourceId).stream()
@@ -285,10 +319,12 @@ public class CatalogService {
         );
         existingVersions.add(created);
         resourceVersions.put(resourceId, existingVersions);
+        persistState();
         return created;
     }
 
     public ResourceVersionDto publishResourceVersion(String resourceId, String versionId) {
+        ensureLoaded();
         findResource(resourceId);
         List<ResourceVersionDto> updatedVersions = versionsFor(resourceId).stream()
             .map(version -> new ResourceVersionDto(
@@ -304,10 +340,12 @@ public class CatalogService {
             ))
             .toList();
         resourceVersions.put(resourceId, updatedVersions);
+        persistState();
         return updatedVersions.stream().filter(item -> item.id().equals(versionId)).findFirst().orElseThrow();
     }
 
     public List<ResourceDto> listResources() {
+        ensureLoaded();
         return resources.stream()
             .sorted(Comparator.comparing(ResourceDto::name))
             .map(this::toResourceView)
@@ -315,6 +353,7 @@ public class CatalogService {
     }
 
     public List<AssistantOrchestrationDto> listOrchestrations() {
+        ensureLoaded();
         return assistants.stream()
             .sorted(Comparator.comparing(AssistantDto::name))
             .map(assistant -> getOrCreateOrchestration(assistant.id()))
@@ -322,25 +361,30 @@ public class CatalogService {
     }
 
     public AssistantOrchestrationDto getOrchestration(String assistantId) {
+        ensureLoaded();
         findAssistant(assistantId);
         return getOrCreateOrchestration(assistantId);
     }
 
     public AssistantOrchestrationDto saveOrchestration(String assistantId, UpdateOrchestrationRequest request) {
+        ensureLoaded();
         AssistantDto assistant = findAssistant(assistantId);
-        AssistantOrchestrationDto saved = new AssistantOrchestrationDto(
+        AssistantOrchestrationDto saved = synchronizeOrchestration(new AssistantOrchestrationDto(
             assistant.id(),
             assistant.name(),
             assistant.scenarioId(),
             request.executionMode(),
             request.nodes(),
             request.edges()
-        );
-        orchestrations.put(assistantId, synchronizeOrchestration(saved));
-        return orchestrations.get(assistantId);
+        ));
+        validateOrchestration(saved);
+        orchestrations.put(assistantId, saved);
+        persistState();
+        return saved;
     }
 
     public ResourceCenterDto resourceCenter() {
+        ensureLoaded();
         List<ResourceUsageDto> usages = resources.stream()
             .sorted(Comparator.comparing(ResourceDto::name))
             .map(this::toResourceView)
@@ -392,6 +436,7 @@ public class CatalogService {
     }
 
     public ResourceBindingDto bindResource(BindResourceRequest request) {
+        ensureLoaded();
         AgentDto agent = findAgent(request.consumerId());
         ResourceVersionDto version = effectiveVersion(findResource(request.resourceId()));
         ResourceBindingDto binding = new ResourceBindingDto(
@@ -413,71 +458,63 @@ public class CatalogService {
             agent.executionPolicy()
         );
         replace(agents, AgentDto::id, updated);
+        persistState();
         return binding;
+    }
+
+    public synchronized boolean initializeDemoDataIfEmpty() {
+        ensureLoaded();
+        if (!isCatalogEmpty()) {
+            return false;
+        }
+        seed();
+        persistState();
+        return true;
+    }
+
+    private synchronized void ensureLoaded() {
+        if (initialized) {
+            return;
+        }
+        restore(repository.load());
+        initialized = true;
     }
 
     private void seed() {
         BusinessDomainDto domain = new BusinessDomainDto(
             "domain-support",
             "智能客服域",
-            "用于知识问答与升级处理的 MVP 业务域",
+            "用于多智能体客服编排的演示业务域",
             List.of(),
             List.of()
         );
         domains.add(domain);
 
         ScenarioDto scenario = new ScenarioDto(
-            "scenario-knowledge-escalation",
+            "scenario-customer-ops",
             domain.id(),
-            "知识问答升级处理",
-            "回答常见问题，复杂问题自动升级给人工坐席",
-            new VersionDto("0.1.0", VersionStatus.PUBLISHED, Instant.now()),
+            "智能客服协同处理",
+            "在单助手内完成 FAQ、售后策略和人工协同闭环",
+            new VersionDto("1.0.0", VersionStatus.PUBLISHED, Instant.now()),
             List.of()
         );
         scenarios.add(scenario);
 
-        AssistantDto knowledgeAssistant = new AssistantDto(
-            "assistant-knowledge-escalation",
+        String defaultLlmResourceId = defaultLlmResourceId();
+        AssistantDto assistant = new AssistantDto(
+            "assistant-customer-ops",
             scenario.id(),
-            "问答升级助手",
-            "负责知识检索、答案生成和升级判定",
-            new VersionDto("0.1.0", VersionStatus.PUBLISHED, Instant.now()),
+            "客服协同助手",
+            "负责问题分诊、知识回答、售后策略和人工协同闭环。",
+            new VersionDto("1.0.0", VersionStatus.PUBLISHED, Instant.now()),
             List.of(),
             null,
             List.of(),
-            new AssistantModelPolicyDto("resource-llm-openai", "resource-prompt-support", 0.2, 1200),
+            new AssistantModelPolicyDto(defaultLlmResourceId, "resource-prompt-router", 0.2, 1200),
             new RagPolicyDto(true, "resource-kb-support", 5),
-            new MemoryPolicyDto(true, 8)
+            new MemoryPolicyDto(true, 10)
         );
-        AssistantDto aftersalesAssistant = new AssistantDto(
-            "assistant-after-sales",
-            scenario.id(),
-            "售后策略助手",
-            "负责退款、补偿和售后政策解释",
-            new VersionDto("0.1.0", VersionStatus.PUBLISHED, Instant.now()),
-            List.of(),
-            null,
-            List.of(),
-            new AssistantModelPolicyDto("resource-llm-openai", "resource-prompt-after-sales", 0.2, 1200),
-            new RagPolicyDto(true, "resource-kb-support", 4),
-            new MemoryPolicyDto(true, 8)
-        );
-        AssistantDto coordinationAssistant = new AssistantDto(
-            "assistant-human-coordination",
-            scenario.id(),
-            "人工协同助手",
-            "负责人工接管、工单协同和升级闭环",
-            new VersionDto("0.1.0", VersionStatus.PUBLISHED, Instant.now()),
-            List.of(),
-            null,
-            List.of(),
-            new AssistantModelPolicyDto("resource-llm-openai", "resource-prompt-coordination", 0.1, 1000),
-            new RagPolicyDto(false, "resource-kb-support", 3),
-            new MemoryPolicyDto(true, 12)
-        );
-        assistants.add(knowledgeAssistant);
-        assistants.add(aftersalesAssistant);
-        assistants.add(coordinationAssistant);
+        assistants.add(assistant);
 
         ResourceDto kb = new ResourceDto(
             "resource-kb-support",
@@ -487,54 +524,9 @@ public class CatalogService {
             ShareScope.DOMAIN_SHARED,
             "DOMAIN",
             domain.id(),
-            "用于常见问题检索的知识库",
+            "包含 FAQ、售后规则和人工协同说明的演示知识库",
             "客服知识运营",
-            List.of("客服", "FAQ", "知识检索"),
-            null,
-            null,
-            List.of()
-        );
-        ResourceDto skill = new ResourceDto(
-            "resource-skill-answer",
-            domain.id(),
-            "答案生成 Skill",
-            ResourceType.SKILL,
-            ShareScope.PRIVATE,
-            "ASSISTANT",
-            knowledgeAssistant.id(),
-            "根据检索结果生成可发送答案",
-            "问答升级助手团队",
-            List.of("回答生成", "文本输出"),
-            null,
-            null,
-            List.of()
-        );
-        ResourceDto refundSkill = new ResourceDto(
-            "resource-skill-refund",
-            domain.id(),
-            "退款策略 Skill",
-            ResourceType.SKILL,
-            ShareScope.PRIVATE,
-            "ASSISTANT",
-            aftersalesAssistant.id(),
-            "用于判断退款资格与补偿策略",
-            "售后策略团队",
-            List.of("退款", "售后策略"),
-            null,
-            null,
-            List.of()
-        );
-        ResourceDto ticketMcp = new ResourceDto(
-            "resource-mcp-ticket",
-            domain.id(),
-            "工单系统 MCP",
-            ResourceType.MCP,
-            ShareScope.DOMAIN_SHARED,
-            "DOMAIN",
-            domain.id(),
-            "用于创建工单和同步人工处理结果",
-            "客服平台集成",
-            List.of("MCP", "工单", "协同"),
+            List.of("FAQ", "售后", "协同"),
             null,
             null,
             List.of()
@@ -542,14 +534,14 @@ public class CatalogService {
         ResourceDto llmModel = new ResourceDto(
             "resource-llm-openai",
             domain.id(),
-            "OpenAI 客服主模型",
+            "OpenAI 主模型",
             ResourceType.LLM_MODEL,
             ShareScope.DOMAIN_SHARED,
             "DOMAIN",
             domain.id(),
-            "用于问答、售后和协同场景的默认 LLM 模型资源",
-            "平台 AI 工程团队",
-            List.of("LLM", "OpenAI", "客服"),
+            "多智能体执行默认模型",
+            "平台 AI 团队",
+            List.of("LLM", "OpenAI"),
             null,
             null,
             List.of()
@@ -557,82 +549,119 @@ public class CatalogService {
         ResourceDto compatibleLlmModel = new ResourceDto(
             "resource-llm-compatible",
             domain.id(),
-            "自定义 OpenAI Compatible 模型",
+            "自定义兼容模型",
             ResourceType.LLM_MODEL,
             ShareScope.DOMAIN_SHARED,
             "DOMAIN",
             domain.id(),
-            "用于接入兼容 OpenAI API 的自定义模型网关或私有化模型服务",
-            "平台 AI 工程团队",
-            List.of("LLM", "OpenAI-Compatible", "自定义"),
+            "支持 OpenAI Compatible 网关",
+            "平台 AI 团队",
+            List.of("LLM", "兼容网关"),
             null,
             null,
             List.of()
         );
-        ResourceDto supportPrompt = new ResourceDto(
-            "resource-prompt-support",
+        ResourceDto routerPrompt = new ResourceDto(
+            "resource-prompt-router",
             domain.id(),
-            "问答升级 Prompt",
+            "路由 Prompt",
             ResourceType.PROMPT_TEMPLATE,
             ShareScope.PRIVATE,
             "ASSISTANT",
-            knowledgeAssistant.id(),
-            "问答升级助手默认 Prompt 模板",
-            "问答升级助手团队",
-            List.of("Prompt", "问答"),
+            assistant.id(),
+            "用于问题分诊和路由决策",
+            "客服协同助手团队",
+            List.of("Prompt", "Router"),
             null,
             null,
             List.of()
         );
-        ResourceDto afterSalesPrompt = new ResourceDto(
-            "resource-prompt-after-sales",
+        ResourceDto faqPrompt = new ResourceDto(
+            "resource-prompt-faq",
+            domain.id(),
+            "FAQ Prompt",
+            ResourceType.PROMPT_TEMPLATE,
+            ShareScope.PRIVATE,
+            "ASSISTANT",
+            assistant.id(),
+            "用于知识问答回复",
+            "客服协同助手团队",
+            List.of("Prompt", "FAQ"),
+            null,
+            null,
+            List.of()
+        );
+        ResourceDto policyPrompt = new ResourceDto(
+            "resource-prompt-policy",
             domain.id(),
             "售后策略 Prompt",
             ResourceType.PROMPT_TEMPLATE,
             ShareScope.PRIVATE,
             "ASSISTANT",
-            aftersalesAssistant.id(),
-            "售后策略助手默认 Prompt 模板",
-            "售后策略团队",
+            assistant.id(),
+            "用于售后策略判定",
+            "客服协同助手团队",
             List.of("Prompt", "售后"),
             null,
             null,
             List.of()
         );
-        ResourceDto coordinationPrompt = new ResourceDto(
-            "resource-prompt-coordination",
+        ResourceDto handoffPrompt = new ResourceDto(
+            "resource-prompt-handoff",
             domain.id(),
             "人工协同 Prompt",
             ResourceType.PROMPT_TEMPLATE,
             ShareScope.PRIVATE,
             "ASSISTANT",
-            coordinationAssistant.id(),
-            "人工协同助手默认 Prompt 模板",
-            "客服平台集成",
-            List.of("Prompt", "协同"),
+            assistant.id(),
+            "用于人工交接后的总结与闭环",
+            "客服协同助手团队",
+            List.of("Prompt", "人工协同"),
             null,
             null,
             List.of()
         );
-        resources.add(kb);
-        resources.add(skill);
-        resources.add(refundSkill);
-        resources.add(ticketMcp);
-        resources.add(llmModel);
-        resources.add(compatibleLlmModel);
-        resources.add(supportPrompt);
-        resources.add(afterSalesPrompt);
-        resources.add(coordinationPrompt);
+        ResourceDto refundSkill = new ResourceDto(
+            "resource-skill-refund",
+            domain.id(),
+            "售后策略 Skill",
+            ResourceType.SKILL,
+            ShareScope.PRIVATE,
+            "ASSISTANT",
+            assistant.id(),
+            "通过 HTTP 协议返回退款与补偿策略",
+            "售后策略团队",
+            List.of("Skill", "退款"),
+            null,
+            null,
+            List.of()
+        );
+        ResourceDto ticketMcp = new ResourceDto(
+            "resource-mcp-ticket",
+            domain.id(),
+            "工单协同 MCP",
+            ResourceType.MCP,
+            ShareScope.DOMAIN_SHARED,
+            "DOMAIN",
+            domain.id(),
+            "用于创建和同步人工协同工单",
+            "客服平台集成",
+            List.of("MCP", "工单"),
+            null,
+            null,
+            List.of()
+        );
+        resources.addAll(List.of(kb, llmModel, compatibleLlmModel, routerPrompt, faqPrompt, policyPrompt, handoffPrompt, refundSkill, ticketMcp));
 
         ResourceVersionDto kbPublished = seedResourceVersion(
             kb.id(),
             "1.0.0",
             VersionStatus.PUBLISHED,
-            "客服 FAQ 稳定版",
+            "客服知识库演示版",
             "digest-kb-v1",
             new ResourceVersionConfigurationDto(
                 ResourceType.KNOWLEDGE_BASE,
-                new KnowledgeBaseConfigDto("OBJECT_STORAGE", "minio://knowledge/support-faq", "SCHEDULED", "HYBRID", "text-embedding-3-large", "markdown-512-overlap-80", 5, 1280),
+                new KnowledgeBaseConfigDto("SEED_DATA", "seed://support-faq", "MANUAL", "HYBRID", "text-embedding-3-large", "markdown-512-overlap-80", 5, 12),
                 null,
                 null,
                 null,
@@ -640,77 +669,17 @@ public class CatalogService {
             )
         );
         seedResourceVersion(
-            kb.id(),
-            "1.1.0",
-            VersionStatus.DRAFT,
-            "补充密码重置与账号安全条目",
-            "digest-kb-v1-1",
-            new ResourceVersionConfigurationDto(
-                ResourceType.KNOWLEDGE_BASE,
-                new KnowledgeBaseConfigDto("OBJECT_STORAGE", "minio://knowledge/support-faq", "SCHEDULED", "HYBRID", "text-embedding-3-large", "markdown-512-overlap-80", 6, 1460),
-                null,
-                null,
-                null,
-                null
-            )
-        );
-        ResourceVersionDto skillPublished = seedResourceVersion(
-            skill.id(),
-            "1.0.0",
-            VersionStatus.PUBLISHED,
-            "答案生成稳定版",
-            "digest-answer-v1",
-            new ResourceVersionConfigurationDto(
-                ResourceType.SKILL,
-                null,
-                new SkillConfigDto("HTTP", "https://skill-gateway.internal/answer", "POST", "SERVICE_ACCOUNT", 15, "EXPONENTIAL_BACKOFF", "{question, passages[]}", "{answer, confidence}"),
-                null,
-                null,
-                null
-            )
-        );
-        ResourceVersionDto refundPublished = seedResourceVersion(
-            refundSkill.id(),
-            "1.0.0",
-            VersionStatus.PUBLISHED,
-            "退款策略基线版",
-            "digest-refund-v1",
-            new ResourceVersionConfigurationDto(
-                ResourceType.SKILL,
-                null,
-                new SkillConfigDto("WORKFLOW_ACTIVITY", "activity://refund-policy", "RPC", "SERVICE_ACCOUNT", 20, "FIXED_3_RETRIES", "{orderId, complaintType}", "{eligibility, actionPlan}"),
-                null,
-                null,
-                null
-            )
-        );
-        ResourceVersionDto ticketPublished = seedResourceVersion(
-            ticketMcp.id(),
-            "1.0.0",
-            VersionStatus.PUBLISHED,
-            "工单系统集成版",
-            "digest-ticket-v1",
-            new ResourceVersionConfigurationDto(
-                ResourceType.MCP,
-                null,
-                null,
-                new McpConfigDto("ticketing-server", "STREAMABLE_HTTP", "https://mcp-gateway.internal/ticketing", "support.ticket", "API_KEY", 30, List.of("create_ticket", "sync_ticket", "append_comment")),
-                null,
-                null
-            )
-        );
-        ResourceVersionDto llmPublished = seedResourceVersion(
             llmModel.id(),
             "1.0.0",
             VersionStatus.PUBLISHED,
-            "OpenAI 主模型基线版",
+            "OpenAI 模型基线版",
             "digest-llm-openai-v1",
             new ResourceVersionConfigurationDto(
                 ResourceType.LLM_MODEL,
                 null,
                 null,
                 null,
-                new LlmModelConfigDto("OPENAI", "gpt-4.1-mini", "https://api.openai.com/v1", "OPENAI_API_KEY", "lynxus-demo", "support-project", "global", 0.2, 1200),
+                new LlmModelConfigDto("OPENAI", "gpt-4.1-mini", "https://api.openai.com/v1", "OPENAI_API_KEY", "lynxus-demo", "customer-ops", "global", 0.2, 1200),
                 null
             )
         );
@@ -718,7 +687,7 @@ public class CatalogService {
             compatibleLlmModel.id(),
             "1.0.0",
             VersionStatus.PUBLISHED,
-            "自定义兼容模型基线版",
+            "兼容网关模型基线版",
             "digest-llm-compatible-v1",
             new ResourceVersionConfigurationDto(
                 ResourceType.LLM_MODEL,
@@ -727,11 +696,11 @@ public class CatalogService {
                 null,
                 new LlmModelConfigDto(
                     "OPENAI_COMPATIBLE",
-                    envOrDefault("LYNXUS_OPENAI_COMPATIBLE_MODEL_ID", "custom-compatible-model"),
+                    envOrDefault("LYNXUS_OPENAI_COMPATIBLE_MODEL_ID", "demo-compatible-model"),
                     envOrDefault("LYNXUS_OPENAI_COMPATIBLE_BASE_URL", "http://localhost:11434/v1"),
                     envOrDefault("LYNXUS_OPENAI_COMPATIBLE_API_KEY_ENV_VAR", "OPENAI_COMPATIBLE_API_KEY"),
                     envOrDefault("LYNXUS_OPENAI_COMPATIBLE_ORGANIZATION", "compatible-lab"),
-                    envOrDefault("LYNXUS_OPENAI_COMPATIBLE_PROJECT", "self-hosted"),
+                    envOrDefault("LYNXUS_OPENAI_COMPATIBLE_PROJECT", "customer-ops"),
                     envOrDefault("LYNXUS_OPENAI_COMPATIBLE_REGION", "local"),
                     0.2,
                     1200
@@ -739,127 +708,191 @@ public class CatalogService {
                 null
             )
         );
-        ResourceVersionDto supportPromptPublished = seedResourceVersion(
-            supportPrompt.id(),
+        seedResourceVersion(
+            routerPrompt.id(),
             "1.0.0",
             VersionStatus.PUBLISHED,
-            "问答升级默认 Prompt",
-            "digest-prompt-support-v1",
+            "路由 Prompt",
+            "digest-prompt-router-v1",
             new ResourceVersionConfigurationDto(
                 ResourceType.PROMPT_TEMPLATE,
                 null,
                 null,
                 null,
                 null,
-                new PromptTemplateConfigDto("CHAT", "你是企业客服问答与升级助手。", "用户问题：{{question}}\n召回知识：{{knowledge_context}}\n请输出回答、信心和是否建议升级。", "markdown")
+                new PromptTemplateConfigDto(
+                    "STRUCTURED_OUTPUT",
+                    "你是客服协同编排里的路由智能体，请判断问题应该进入 FAQ、售后策略还是人工协同。",
+                    "用户问题：{{question}}\n知识上下文：{{knowledge_context}}\n请输出路由决策。",
+                    "json"
+                )
             )
         );
         seedResourceVersion(
-            afterSalesPrompt.id(),
+            faqPrompt.id(),
             "1.0.0",
             VersionStatus.PUBLISHED,
-            "售后策略默认 Prompt",
-            "digest-prompt-after-sales-v1",
+            "FAQ Prompt",
+            "digest-prompt-faq-v1",
             new ResourceVersionConfigurationDto(
                 ResourceType.PROMPT_TEMPLATE,
                 null,
                 null,
                 null,
                 null,
-                new PromptTemplateConfigDto("CHAT", "你是售后策略智能体。", "用户问题：{{question}}\n请结合规则和工具给出处理建议。", "markdown")
+                new PromptTemplateConfigDto(
+                    "CHAT",
+                    "你是 FAQ 回答智能体，请结合知识检索结果输出简洁、准确的回复。",
+                    "用户问题：{{question}}\n知识上下文：{{knowledge_context}}",
+                    "markdown"
+                )
             )
         );
         seedResourceVersion(
-            coordinationPrompt.id(),
+            policyPrompt.id(),
             "1.0.0",
             VersionStatus.PUBLISHED,
-            "人工协同默认 Prompt",
-            "digest-prompt-coordination-v1",
+            "售后 Prompt",
+            "digest-prompt-policy-v1",
             new ResourceVersionConfigurationDto(
                 ResourceType.PROMPT_TEMPLATE,
                 null,
                 null,
                 null,
                 null,
-                new PromptTemplateConfigDto("CHAT", "你是人工协同智能体。", "用户问题：{{question}}\n历史上下文：{{conversation_summary}}\n请输出工单摘要和人工接管建议。", "markdown")
+                new PromptTemplateConfigDto(
+                    "STRUCTURED_OUTPUT",
+                    "你是售后策略智能体，请结合知识和工具结果给出结构化判断。",
+                    "用户问题：{{question}}\n知识上下文：{{knowledge_context}}\n工具结果：{{tool_results}}",
+                    "json"
+                )
             )
         );
-
-        ResourceBindingDto kbBinding = new ResourceBindingDto("binding-kb-router", kb.id(), kbPublished.id(), kbPublished.version(), "AGENT", "agent-router", Instant.now());
-        ResourceBindingDto skillBinding = new ResourceBindingDto("binding-skill-responder", skill.id(), skillPublished.id(), skillPublished.version(), "AGENT", "agent-responder", Instant.now());
-        ResourceBindingDto refundBinding = new ResourceBindingDto("binding-skill-refund", refundSkill.id(), refundPublished.id(), refundPublished.version(), "AGENT", "agent-refund-policy", Instant.now());
-        ResourceBindingDto ticketBinding = new ResourceBindingDto("binding-mcp-ticket", ticketMcp.id(), ticketPublished.id(), ticketPublished.version(), "AGENT", "agent-human-coordinator", Instant.now());
+        seedResourceVersion(
+            handoffPrompt.id(),
+            "1.0.0",
+            VersionStatus.PUBLISHED,
+            "人工协同 Prompt",
+            "digest-prompt-handoff-v1",
+            new ResourceVersionConfigurationDto(
+                ResourceType.PROMPT_TEMPLATE,
+                null,
+                null,
+                null,
+                null,
+                new PromptTemplateConfigDto(
+                    "CHAT",
+                    "你是人工协同闭环智能体，请根据人工动作补充后续说明和最终回复。",
+                    "用户问题：{{question}}\n人工处理说明：{{human_input}}\n工具结果：{{tool_results}}",
+                    "markdown"
+                )
+            )
+        );
+        ResourceVersionDto refundSkillVersion = seedResourceVersion(
+            refundSkill.id(),
+            "1.0.0",
+            VersionStatus.PUBLISHED,
+            "售后策略 Skill",
+            "digest-skill-refund-v1",
+            new ResourceVersionConfigurationDto(
+                ResourceType.SKILL,
+                null,
+                new SkillConfigDto("HTTP", "http://demo.local/skills/refund-policy", "POST", "SERVICE_ACCOUNT", 15, "NONE", "{question}", "{eligibility, routeKey, actionPlan}"),
+                null,
+                null,
+                null
+            )
+        );
+        ResourceVersionDto ticketMcpVersion = seedResourceVersion(
+            ticketMcp.id(),
+            "1.0.0",
+            VersionStatus.PUBLISHED,
+            "工单协同 MCP",
+            "digest-mcp-ticket-v1",
+            new ResourceVersionConfigurationDto(
+                ResourceType.MCP,
+                null,
+                null,
+                new McpConfigDto("ticketing-server", "STREAMABLE_HTTP", "http://demo.local/mcp/ticketing", "support.ticket", "NONE", 30, List.of("create_ticket", "append_comment")),
+                null,
+                null
+            )
+        );
 
         agents.add(new AgentDto(
             "agent-router",
-            knowledgeAssistant.id(),
-            "问题路由智能体",
+            assistant.id(),
+            "问题分诊智能体",
             "router",
-            "识别问题类型，决定直接回答还是进入升级流程",
-            List.of(kbBinding),
-            new AgentExecutionPolicyDto(true, null, supportPrompt.id(), "判断问题类型，决定走 FAQ、售后或人工升级链路。", true, kb.id(), 8, List.of())
+            "识别问题类型，决定 FAQ、售后策略或人工协同分支。",
+            List.of(new ResourceBindingDto("binding-router-kb", kb.id(), kbPublished.id(), kbPublished.version(), "AGENT", "agent-router", Instant.now())),
+            new AgentExecutionPolicyDto(true, null, routerPrompt.id(), "输出 route_key 和摘要。", true, kb.id(), 8, List.of())
         ));
         agents.add(new AgentDto(
-            "agent-responder",
-            knowledgeAssistant.id(),
-            "回答生成智能体",
-            "responder",
-            "根据知识库结果生成结构化答案",
-            List.of(skillBinding),
-            new AgentExecutionPolicyDto(true, llmModel.id(), supportPrompt.id(), "基于检索结果输出专业、简洁、可执行的回答。", true, kb.id(), 8, List.of(skill.id()))
-        ));
-        agents.add(new AgentDto(
-            "agent-escalation",
-            knowledgeAssistant.id(),
-            "升级判定智能体",
-            "escalation",
-            "识别是否需要转人工",
+            "agent-faq",
+            assistant.id(),
+            "FAQ 回答智能体",
+            "faq",
+            "基于知识检索结果输出最终 FAQ 回复。",
             List.of(),
-            new AgentExecutionPolicyDto(true, llmModel.id(), supportPrompt.id(), "判断是否需要升级到人工协同，并说明原因。", true, kb.id(), 6, List.of(ticketMcp.id()))
+            new AgentExecutionPolicyDto(true, defaultLlmResourceId, faqPrompt.id(), "回答简单 FAQ 并完成会话。", true, kb.id(), 8, List.of())
         ));
         agents.add(new AgentDto(
-            "agent-refund-policy",
-            aftersalesAssistant.id(),
-            "退款策略智能体",
+            "agent-policy",
+            assistant.id(),
+            "售后策略智能体",
             "policy",
-            "根据售后规则判断退款、补偿和处理路径",
-            List.of(refundBinding),
-            new AgentExecutionPolicyDto(true, llmModel.id(), afterSalesPrompt.id(), "根据售后规则和上下文判断退款资格。", true, kb.id(), 8, List.of(refundSkill.id()))
+            "调用售后策略 Skill，给出退款或补偿结论。",
+            List.of(new ResourceBindingDto("binding-policy-skill", refundSkill.id(), refundSkillVersion.id(), refundSkillVersion.version(), "AGENT", "agent-policy", Instant.now())),
+            new AgentExecutionPolicyDto(true, defaultLlmResourceId, policyPrompt.id(), "结合工具输出结构化 route_key。", true, kb.id(), 8, List.of(refundSkill.id()))
         ));
         agents.add(new AgentDto(
-            "agent-after-sales-response",
-            aftersalesAssistant.id(),
-            "售后答复智能体",
-            "responder",
-            "生成售后解释、退款反馈和后续动作建议",
-            List.of(),
-            new AgentExecutionPolicyDto(true, llmModel.id(), afterSalesPrompt.id(), "生成最终售后答复和后续行动说明。", true, kb.id(), 8, List.of())
-        ));
-        agents.add(new AgentDto(
-            "agent-human-coordinator",
-            coordinationAssistant.id(),
-            "人工协同智能体",
+            "agent-coordinator",
+            assistant.id(),
+            "人工协同闭环智能体",
             "handoff",
-            "为人工坐席整理上下文并创建协同工单",
-            List.of(ticketBinding),
-            new AgentExecutionPolicyDto(true, llmModel.id(), coordinationPrompt.id(), "总结上下文并触发人工协同。", false, null, 12, List.of(ticketMcp.id()))
-        ));
-        agents.add(new AgentDto(
-            "agent-resolution-tracker",
-            coordinationAssistant.id(),
-            "闭环跟踪智能体",
-            "tracker",
-            "跟踪人工处理结果并生成闭环摘要",
-            List.of(),
-            new AgentExecutionPolicyDto(true, llmModel.id(), coordinationPrompt.id(), "根据人工处理结果生成闭环摘要。", false, null, 12, List.of(ticketMcp.id()))
+            "在人工处理后整理摘要、调用工单 MCP，并生成闭环答复。",
+            List.of(new ResourceBindingDto("binding-handoff-mcp", ticketMcp.id(), ticketMcpVersion.id(), ticketMcpVersion.version(), "AGENT", "agent-coordinator", Instant.now())),
+            new AgentExecutionPolicyDto(true, defaultLlmResourceId, handoffPrompt.id(), "根据人工动作补充最终回复。", false, null, 12, List.of(ticketMcp.id()))
         ));
 
-        orchestrations.put(knowledgeAssistant.id(), buildDefaultOrchestration(knowledgeAssistant.id()));
-        orchestrations.put(aftersalesAssistant.id(), buildDefaultOrchestration(aftersalesAssistant.id()));
-        orchestrations.put(coordinationAssistant.id(), buildDefaultOrchestration(coordinationAssistant.id()));
-        createAssistantRelease(knowledgeAssistant.id(), "0.1.0", VersionStatus.PUBLISHED);
-        createAssistantRelease(aftersalesAssistant.id(), "0.1.0", VersionStatus.PUBLISHED);
-        createAssistantRelease(coordinationAssistant.id(), "0.1.0", VersionStatus.PUBLISHED);
+        orchestrations.put(assistant.id(), new AssistantOrchestrationDto(
+            assistant.id(),
+            assistant.name(),
+            assistant.scenarioId(),
+            "GRAPH",
+            List.of(
+                new OrchestrationNodeDto("start", "开始", OrchestrationNodeType.START, "接收用户消息。", null, null),
+                new OrchestrationNodeDto("route", "问题分诊", OrchestrationNodeType.AGENT, "判断路由分支。", "agent-router", null),
+                new OrchestrationNodeDto("faq", "FAQ 回答", OrchestrationNodeType.AGENT, "处理常规 FAQ。", "agent-faq", null),
+                new OrchestrationNodeDto("policy", "售后策略", OrchestrationNodeType.AGENT, "处理退款与补偿策略。", "agent-policy", null),
+                new OrchestrationNodeDto(
+                    "human-review",
+                    "人工介入",
+                    OrchestrationNodeType.HUMAN,
+                    "等待人工确认或补充处理意见。",
+                    null,
+                    new HumanNodeConfigDto("人工介入待办", "请确认是否接管，并补充处理说明。", "CONFIRM", "human-confirmed")
+                ),
+                new OrchestrationNodeDto("handoff-close", "闭环总结", OrchestrationNodeType.AGENT, "人工处理后生成闭环答复。", "agent-coordinator", null),
+                new OrchestrationNodeDto("end", "结束", OrchestrationNodeType.END, "流程结束。", null, null)
+            ),
+            List.of(
+                new OrchestrationEdgeDto("edge-start-route", "start", "route", "default", "开始处理", true),
+                new OrchestrationEdgeDto("edge-route-faq", "route", "faq", "faq", "进入 FAQ 分支", false),
+                new OrchestrationEdgeDto("edge-route-policy", "route", "policy", "after_sales", "进入售后分支", false),
+                new OrchestrationEdgeDto("edge-route-human", "route", "human-review", "human_handoff", "直接人工介入", false),
+                new OrchestrationEdgeDto("edge-route-fallback", "route", "faq", "default", "默认走 FAQ", true),
+                new OrchestrationEdgeDto("edge-faq-end", "faq", "end", "default", "FAQ 结束", true),
+                new OrchestrationEdgeDto("edge-policy-end", "policy", "end", "resolved", "售后自动完成", false),
+                new OrchestrationEdgeDto("edge-policy-human", "policy", "human-review", "manual_review", "售后转人工", false),
+                new OrchestrationEdgeDto("edge-policy-default", "policy", "end", "default", "默认完成", true),
+                new OrchestrationEdgeDto("edge-human-handoff", "human-review", "handoff-close", "human-confirmed", "人工确认后闭环", true),
+                new OrchestrationEdgeDto("edge-close-end", "handoff-close", "end", "default", "闭环完成", true)
+            )
+        ));
+
+        createAssistantRelease(assistant.id(), "1.0.0", VersionStatus.PUBLISHED);
     }
 
     private BusinessDomainDto toDomainView(BusinessDomainDto domain) {
@@ -882,14 +915,7 @@ public class CatalogService {
             .sorted(Comparator.comparing(AssistantDto::name))
             .map(this::toAssistantView)
             .toList();
-        return new ScenarioDto(
-            scenario.id(),
-            scenario.domainId(),
-            scenario.name(),
-            scenario.goal(),
-            scenario.version(),
-            scenarioAssistants
-        );
+        return new ScenarioDto(scenario.id(), scenario.domainId(), scenario.name(), scenario.goal(), scenario.version(), scenarioAssistants);
     }
 
     private AssistantDto toAssistantView(AssistantDto assistant) {
@@ -904,7 +930,7 @@ public class CatalogService {
             assistant.description(),
             assistant.version(),
             assistantAgents,
-            releases.isEmpty() ? null : releases.get(0),
+            releases.isEmpty() ? null : releases.getFirst(),
             releases,
             normalizeAssistantModelPolicy(assistant.modelPolicy()),
             normalizeRagPolicy(assistant.ragPolicy()),
@@ -925,7 +951,7 @@ public class CatalogService {
             resource.summary(),
             resource.steward(),
             resource.tags(),
-            versions.isEmpty() ? null : versions.get(versions.size() - 1),
+            versions.isEmpty() ? null : versions.getLast(),
             versions.stream().filter(item -> item.status() == VersionStatus.PUBLISHED).reduce((__, item) -> item).orElse(null),
             versions
         );
@@ -935,16 +961,16 @@ public class CatalogService {
         AssistantOrchestrationDto orchestration = orchestrations.get(assistantId);
         Map<String, Integer> orderIndex = new LinkedHashMap<>();
         if (orchestration != null) {
-            for (int i = 0; i < orchestration.nodes().size(); i++) {
-                orderIndex.put(orchestration.nodes().get(i).agentId(), i);
+            int index = 0;
+            for (OrchestrationNodeDto node : orchestration.nodes()) {
+                if (node.agentId() != null && !node.agentId().isBlank()) {
+                    orderIndex.putIfAbsent(node.agentId(), index++);
+                }
             }
         }
-
         return agents.stream()
             .filter(item -> item.assistantId().equals(assistantId))
-            .sorted(Comparator
-                .comparingInt((AgentDto item) -> orderIndex.getOrDefault(item.id(), Integer.MAX_VALUE))
-                .thenComparing(AgentDto::name))
+            .sorted(Comparator.comparingInt((AgentDto item) -> orderIndex.getOrDefault(item.id(), Integer.MAX_VALUE)).thenComparing(AgentDto::name))
             .toList();
     }
 
@@ -962,15 +988,16 @@ public class CatalogService {
             .sorted(Comparator.comparing(AgentDto::name))
             .toList();
 
-        List<OrchestrationNodeDto> nodes = assistantAgents.stream()
-            .map(this::toNode)
-            .toList();
+        List<OrchestrationNodeDto> nodes = new ArrayList<>();
+        nodes.add(new OrchestrationNodeDto("start", "开始", OrchestrationNodeType.START, "接收用户消息。", null, null));
+        assistantAgents.forEach(agent -> nodes.add(toNode(agent)));
+        nodes.add(new OrchestrationNodeDto("end", "结束", OrchestrationNodeType.END, "流程结束。", null, null));
 
         return new AssistantOrchestrationDto(
             assistant.id(),
             assistant.name(),
             assistant.scenarioId(),
-            "SEQUENTIAL_GRAPH",
+            "GRAPH",
             nodes,
             buildSequentialEdges(nodes)
         );
@@ -978,36 +1005,55 @@ public class CatalogService {
 
     private AssistantOrchestrationDto synchronizeOrchestration(AssistantOrchestrationDto source) {
         AssistantDto assistant = findAssistant(source.assistantId());
-        Map<String, OrchestrationNodeDto> existingNodes = source.nodes().stream()
-            .collect(LinkedHashMap::new, (map, item) -> map.put(item.agentId(), item), Map::putAll);
+        Map<String, OrchestrationNodeDto> existingAgentNodes = new LinkedHashMap<>();
+        List<OrchestrationNodeDto> syncedNodes = new ArrayList<>();
 
-        List<AgentDto> assistantAgents = orderAgentsForSavedNodes(assistant.id(), existingNodes);
-        List<OrchestrationNodeDto> nodes = assistantAgents.stream()
+        for (OrchestrationNodeDto node : source.nodes()) {
+            if (node.nodeType() == OrchestrationNodeType.AGENT && node.agentId() != null && !node.agentId().isBlank()) {
+                existingAgentNodes.put(node.agentId(), node);
+                continue;
+            }
+            syncedNodes.add(node);
+        }
+
+        List<AgentDto> assistantAgents = orderAgentsForSavedNodes(assistant.id(), existingAgentNodes);
+        List<OrchestrationNodeDto> rebuiltAgentNodes = assistantAgents.stream()
             .map(agent -> {
-                OrchestrationNodeDto existing = existingNodes.get(agent.id());
+                OrchestrationNodeDto existing = existingAgentNodes.get(agent.id());
                 if (existing == null) {
                     return toNode(agent);
                 }
                 return new OrchestrationNodeDto(
-                    existing.nodeId(),
-                    existing.nodeName(),
-                    existing.nodeType(),
+                    existing.nodeKey(),
+                    agent.name(),
+                    OrchestrationNodeType.AGENT,
+                    existing.description() == null || existing.description().isBlank() ? agent.instructions() : existing.description(),
                     agent.id(),
-                    existing.description(),
-                    agent.bindings().stream().map(ResourceBindingDto::resourceId).toList()
+                    null
                 );
             })
             .toList();
 
-        Map<String, OrchestrationNodeDto> nodesById = nodes.stream()
-            .collect(LinkedHashMap::new, (map, item) -> map.put(item.nodeId(), item), Map::putAll);
+        List<OrchestrationNodeDto> finalNodes = new ArrayList<>();
+        boolean insertedAgents = false;
+        for (OrchestrationNodeDto node : syncedNodes) {
+            if (!insertedAgents && node.nodeType() == OrchestrationNodeType.END) {
+                finalNodes.addAll(rebuiltAgentNodes);
+                insertedAgents = true;
+            }
+            finalNodes.add(node);
+        }
+        if (!insertedAgents) {
+            finalNodes.addAll(rebuiltAgentNodes);
+        }
 
+        Map<String, OrchestrationNodeDto> nodesByKey = finalNodes.stream()
+            .collect(LinkedHashMap::new, (map, item) -> map.put(item.nodeKey(), item), Map::putAll);
         List<OrchestrationEdgeDto> edges = source.edges().stream()
-            .filter(edge -> nodesById.containsKey(edge.fromNodeId()) && nodesById.containsKey(edge.toNodeId()))
+            .filter(edge -> nodesByKey.containsKey(edge.sourceNodeKey()) && nodesByKey.containsKey(edge.targetNodeKey()))
             .toList();
-
-        if (edges.isEmpty() && nodes.size() > 1) {
-            edges = buildSequentialEdges(nodes);
+        if (edges.isEmpty() && finalNodes.size() > 1) {
+            edges = buildSequentialEdges(finalNodes);
         }
 
         return new AssistantOrchestrationDto(
@@ -1015,7 +1061,7 @@ public class CatalogService {
             assistant.name(),
             assistant.scenarioId(),
             source.executionMode(),
-            nodes,
+            finalNodes,
             edges
         );
     }
@@ -1026,13 +1072,82 @@ public class CatalogService {
         for (String agentId : existingNodes.keySet()) {
             orderIndex.put(agentId, index++);
         }
-
         return agents.stream()
             .filter(item -> item.assistantId().equals(assistantId))
-            .sorted(Comparator
-                .comparingInt((AgentDto item) -> orderIndex.getOrDefault(item.id(), Integer.MAX_VALUE))
-                .thenComparing(AgentDto::name))
+            .sorted(Comparator.comparingInt((AgentDto item) -> orderIndex.getOrDefault(item.id(), Integer.MAX_VALUE)).thenComparing(AgentDto::name))
             .toList();
+    }
+
+    private void validateOrchestration(AssistantOrchestrationDto orchestration) {
+        List<OrchestrationNodeDto> nodes = orchestration.nodes();
+        List<OrchestrationEdgeDto> edges = orchestration.edges();
+        if (nodes.isEmpty()) {
+            throw new IllegalArgumentException("orchestration must define nodes");
+        }
+
+        Map<String, OrchestrationNodeDto> nodesByKey = nodes.stream()
+            .collect(LinkedHashMap::new, (map, item) -> {
+                if (map.put(item.nodeKey(), item) != null) {
+                    throw new IllegalArgumentException("duplicate nodeKey: " + item.nodeKey());
+                }
+            }, Map::putAll);
+        long startCount = nodes.stream().filter(node -> node.nodeType() == OrchestrationNodeType.START).count();
+        long endCount = nodes.stream().filter(node -> node.nodeType() == OrchestrationNodeType.END).count();
+        if (startCount != 1 || endCount < 1) {
+            throw new IllegalArgumentException("orchestration must contain exactly one START node and at least one END node");
+        }
+
+        Set<String> assistantAgentIds = agents.stream()
+            .filter(agent -> agent.assistantId().equals(orchestration.assistantId()))
+            .map(AgentDto::id)
+            .collect(HashSet::new, Set::add, Set::addAll);
+        for (OrchestrationNodeDto node : nodes) {
+            if (node.nodeType() == OrchestrationNodeType.AGENT && (node.agentId() == null || !assistantAgentIds.contains(node.agentId()))) {
+                throw new IllegalArgumentException("agent node references unknown agent: " + node.agentId());
+            }
+            if (node.nodeType() == OrchestrationNodeType.HUMAN && node.humanNode() == null) {
+                throw new IllegalArgumentException("human node requires humanNode config: " + node.nodeKey());
+            }
+        }
+
+        Map<String, List<OrchestrationEdgeDto>> outgoing = new LinkedHashMap<>();
+        Set<String> edgeKeys = new HashSet<>();
+        for (OrchestrationEdgeDto edge : edges) {
+            if (!edgeKeys.add(edge.edgeKey())) {
+                throw new IllegalArgumentException("duplicate edgeKey: " + edge.edgeKey());
+            }
+            if (!nodesByKey.containsKey(edge.sourceNodeKey()) || !nodesByKey.containsKey(edge.targetNodeKey())) {
+                throw new IllegalArgumentException("edge references missing nodes: " + edge.edgeKey());
+            }
+            outgoing.computeIfAbsent(edge.sourceNodeKey(), __ -> new ArrayList<>()).add(edge);
+        }
+
+        for (OrchestrationNodeDto node : nodes) {
+            List<OrchestrationEdgeDto> nodeEdges = outgoing.getOrDefault(node.nodeKey(), List.of());
+            if (node.nodeType() != OrchestrationNodeType.END && nodeEdges.isEmpty()) {
+                throw new IllegalArgumentException("node has no outgoing edges: " + node.nodeKey());
+            }
+            long defaultCount = nodeEdges.stream().filter(OrchestrationEdgeDto::defaultEdge).count();
+            if (nodeEdges.size() > 1 && defaultCount == 0) {
+                throw new IllegalArgumentException("branching node requires a default edge: " + node.nodeKey());
+            }
+        }
+
+        Set<String> visited = new HashSet<>();
+        OrchestrationNodeDto startNode = nodes.stream().filter(node -> node.nodeType() == OrchestrationNodeType.START).findFirst().orElseThrow();
+        traverse(startNode.nodeKey(), outgoing, visited);
+        if (visited.size() != nodes.size()) {
+            throw new IllegalArgumentException("orchestration contains unreachable nodes");
+        }
+    }
+
+    private void traverse(String nodeKey, Map<String, List<OrchestrationEdgeDto>> outgoing, Set<String> visited) {
+        if (!visited.add(nodeKey)) {
+            return;
+        }
+        for (OrchestrationEdgeDto edge : outgoing.getOrDefault(nodeKey, List.of())) {
+            traverse(edge.targetNodeKey(), outgoing, visited);
+        }
     }
 
     private ResourceBindingDto toVersionAnchoredBinding(
@@ -1043,15 +1158,7 @@ public class CatalogService {
         ResourceVersionDto version = findResourceVersion(target.resourceId(), target.resourceVersionId());
         return existingBindings.getOrDefault(
             version.id(),
-            new ResourceBindingDto(
-                nextId("binding"),
-                target.resourceId(),
-                version.id(),
-                version.version(),
-                "AGENT",
-                agentId,
-                Instant.now()
-            )
+            new ResourceBindingDto(nextId("binding"), target.resourceId(), version.id(), version.version(), "AGENT", agentId, Instant.now())
         );
     }
 
@@ -1061,12 +1168,17 @@ public class CatalogService {
         capturePolicyResource(snapshotMap, assistant.modelPolicy().providerResourceId(), "ASSISTANT_DEFAULT_MODEL");
         capturePolicyResource(snapshotMap, assistant.modelPolicy().promptTemplateResourceId(), "ASSISTANT_DEFAULT_PROMPT");
         capturePolicyResource(snapshotMap, assistant.ragPolicy().knowledgeBaseResourceId(), "ASSISTANT_DEFAULT_RAG");
+
+        List<AssistantReleaseAgentDto> releaseAgents = new ArrayList<>();
         for (AgentDto agent : orderAgentsForAssistant(assistantId)) {
             capturePolicyResource(snapshotMap, agent.executionPolicy().modelResourceId(), agent.name());
             capturePolicyResource(snapshotMap, agent.executionPolicy().promptTemplateResourceId(), agent.name());
             capturePolicyResource(snapshotMap, agent.executionPolicy().knowledgeBaseResourceId(), agent.name());
+            List<String> bindingResourceVersionIds = new ArrayList<>();
             for (ResourceBindingDto binding : agent.bindings()) {
-                ResourceDto resource = toResourceView(findResource(binding.resourceId()));
+                bindingResourceVersionIds.add(binding.resourceVersionId());
+                ResourceVersionDto version = findResourceVersion(binding.resourceId(), binding.resourceVersionId());
+                ResourceDto resource = findResource(binding.resourceId());
                 AssistantReleaseResourceDto existing = snapshotMap.get(binding.resourceVersionId());
                 if (existing == null) {
                     snapshotMap.put(
@@ -1074,15 +1186,15 @@ public class CatalogService {
                         new AssistantReleaseResourceDto(
                             resource.id(),
                             resource.name(),
-                            resource.type().name(),
-                            binding.resourceVersionId(),
-                            binding.resourceVersion(),
-                            List.of(agent.name())
+                            resource.type(),
+                            version.id(),
+                            version.version(),
+                            List.of(agent.name()),
+                            version.configuration()
                         )
                     );
                     continue;
                 }
-
                 snapshotMap.put(
                     binding.resourceVersionId(),
                     new AssistantReleaseResourceDto(
@@ -1091,12 +1203,20 @@ public class CatalogService {
                         existing.resourceType(),
                         existing.resourceVersionId(),
                         existing.resourceVersion(),
-                        append(existing.boundAgents(), agent.name())
+                        append(existing.boundAgents(), agent.name()),
+                        existing.configuration()
                     )
                 );
             }
+            releaseAgents.add(new AssistantReleaseAgentDto(
+                agent.id(),
+                agent.name(),
+                agent.role(),
+                agent.instructions(),
+                agent.executionPolicy(),
+                List.copyOf(bindingResourceVersionIds)
+            ));
         }
-        List<AssistantReleaseResourceDto> snapshotResources = snapshotMap.values().stream().toList();
 
         AssistantReleaseDto release = new AssistantReleaseDto(
             nextId("assistant-release"),
@@ -1105,7 +1225,12 @@ public class CatalogService {
             status,
             Instant.now(),
             status == VersionStatus.PUBLISHED ? Instant.now() : null,
-            snapshotResources
+            List.copyOf(snapshotMap.values()),
+            List.copyOf(releaseAgents),
+            getOrCreateOrchestration(assistantId),
+            assistant.modelPolicy(),
+            assistant.ragPolicy(),
+            assistant.memoryPolicy()
         );
         List<AssistantReleaseDto> releases = new ArrayList<>(assistantReleases.getOrDefault(assistantId, List.of()));
         releases.add(release);
@@ -1126,10 +1251,11 @@ public class CatalogService {
                 new AssistantReleaseResourceDto(
                     resource.id(),
                     resource.name(),
-                    resource.type().name(),
+                    resource.type(),
                     version.id(),
                     version.version(),
-                    List.of(boundAgent)
+                    List.of(boundAgent),
+                    version.configuration()
                 )
             );
             return;
@@ -1142,7 +1268,8 @@ public class CatalogService {
                 existing.resourceType(),
                 existing.resourceVersionId(),
                 existing.resourceVersion(),
-                append(existing.boundAgents(), boundAgent)
+                append(existing.boundAgents(), boundAgent),
+                existing.configuration()
             )
         );
     }
@@ -1153,7 +1280,6 @@ public class CatalogService {
             .map(AgentDto::name)
             .sorted()
             .toList();
-
         List<String> boundAssistants = assistants.stream()
             .filter(assistant -> agents.stream()
                 .filter(agent -> agent.assistantId().equals(assistant.id()))
@@ -1161,21 +1287,18 @@ public class CatalogService {
             .map(AssistantDto::name)
             .sorted()
             .toList();
-
         List<String> bindingAnchors = agents.stream()
             .flatMap(agent -> agent.bindings().stream()
                 .filter(binding -> binding.resourceId().equals(resource.id()))
                 .map(binding -> agent.name() + " -> " + binding.resourceVersion()))
             .sorted()
             .toList();
-
-        String ownerLabel = resource.ownerType() + ":" + resource.ownerId();
         return new ResourceUsageDto(
             resource.id(),
             resource.name(),
             resource.type(),
             resource.shareScope(),
-            ownerLabel,
+            resource.ownerType() + ":" + resource.ownerId(),
             resource.latestVersion() == null ? null : resource.latestVersion().version(),
             resource.effectiveVersion() == null ? null : resource.effectiveVersion().version(),
             boundAgents,
@@ -1188,12 +1311,12 @@ public class CatalogService {
         return new OrchestrationNodeDto(
             "node-" + agent.id(),
             agent.name(),
-            "AGENT",
-            agent.id(),
+            OrchestrationNodeType.AGENT,
             agent.executionPolicy().inlinePrompt() == null || agent.executionPolicy().inlinePrompt().isBlank()
                 ? agent.instructions()
                 : agent.executionPolicy().inlinePrompt(),
-            agent.bindings().stream().map(ResourceBindingDto::resourceId).toList()
+            agent.id(),
+            null
         );
     }
 
@@ -1203,14 +1326,58 @@ public class CatalogService {
             OrchestrationNodeDto current = nodes.get(i);
             OrchestrationNodeDto next = nodes.get(i + 1);
             edges.add(new OrchestrationEdgeDto(
-                "edge-" + current.nodeId() + "-" + next.nodeId(),
-                current.nodeId(),
-                next.nodeId(),
-                i == nodes.size() - 2 ? "升级判定或结束" : "标准编排流转",
-                i == nodes.size() - 2 ? "conditional-handoff" : "direct-handoff"
+                "edge-" + current.nodeKey() + "-" + next.nodeKey(),
+                current.nodeKey(),
+                next.nodeKey(),
+                "default",
+                current.nodeType() == OrchestrationNodeType.START ? "开始处理" : "默认流转",
+                true
             ));
         }
         return edges;
+    }
+
+    private boolean isCatalogEmpty() {
+        return domains.isEmpty()
+            && scenarios.isEmpty()
+            && assistants.isEmpty()
+            && agents.isEmpty()
+            && resources.isEmpty()
+            && resourceVersions.isEmpty()
+            && assistantReleases.isEmpty()
+            && orchestrations.isEmpty();
+    }
+
+    private void restore(CatalogRepository.CatalogSnapshot snapshot) {
+        domains.clear();
+        domains.addAll(snapshot.domains());
+        scenarios.clear();
+        scenarios.addAll(snapshot.scenarios());
+        assistants.clear();
+        assistants.addAll(snapshot.assistants());
+        agents.clear();
+        agents.addAll(snapshot.agents());
+        resources.clear();
+        resources.addAll(snapshot.resources());
+        resourceVersions.clear();
+        resourceVersions.putAll(snapshot.resourceVersions());
+        assistantReleases.clear();
+        assistantReleases.putAll(snapshot.assistantReleases());
+        orchestrations.clear();
+        orchestrations.putAll(snapshot.orchestrations());
+    }
+
+    private void persistState() {
+        repository.save(new CatalogRepository.CatalogSnapshot(
+            List.copyOf(domains),
+            List.copyOf(scenarios),
+            List.copyOf(assistants),
+            List.copyOf(agents),
+            List.copyOf(resources),
+            Map.copyOf(resourceVersions),
+            Map.copyOf(assistantReleases),
+            Map.copyOf(orchestrations)
+        ));
     }
 
     private BusinessDomainDto findDomain(String domainId) {
@@ -1246,7 +1413,7 @@ public class CatalogService {
     private ResourceVersionDto effectiveVersion(ResourceDto resource) {
         return versionsFor(resource.id()).stream()
             .filter(item -> item.status() == VersionStatus.PUBLISHED)
-            .findFirst()
+            .reduce((__, item) -> item)
             .orElseGet(() -> versionsFor(resource.id()).stream().findFirst().orElseThrow());
     }
 
@@ -1257,7 +1424,7 @@ public class CatalogService {
         if (releases.isEmpty()) {
             return "0.1.0";
         }
-        String[] segments = releases.get(releases.size() - 1).releaseVersion().split("\\.");
+        String[] segments = releases.getLast().releaseVersion().split("\\.");
         int patch = Integer.parseInt(segments[2]) + 1;
         return segments[0] + "." + segments[1] + "." + patch;
     }
@@ -1292,46 +1459,11 @@ public class CatalogService {
             return defaultConfiguration(type);
         }
         return switch (type) {
-            case KNOWLEDGE_BASE -> new ResourceVersionConfigurationDto(
-                type,
-                configuration.knowledgeBase() == null ? defaultConfiguration(type).knowledgeBase() : configuration.knowledgeBase(),
-                null,
-                null,
-                null,
-                null
-            );
-            case SKILL -> new ResourceVersionConfigurationDto(
-                type,
-                null,
-                configuration.skill() == null ? defaultConfiguration(type).skill() : configuration.skill(),
-                null,
-                null,
-                null
-            );
-            case MCP -> new ResourceVersionConfigurationDto(
-                type,
-                null,
-                null,
-                configuration.mcp() == null ? defaultConfiguration(type).mcp() : configuration.mcp(),
-                null,
-                null
-            );
-            case LLM_MODEL -> new ResourceVersionConfigurationDto(
-                type,
-                null,
-                null,
-                null,
-                configuration.llmModel() == null ? defaultConfiguration(type).llmModel() : configuration.llmModel(),
-                null
-            );
-            case PROMPT_TEMPLATE -> new ResourceVersionConfigurationDto(
-                type,
-                null,
-                null,
-                null,
-                null,
-                configuration.promptTemplate() == null ? defaultConfiguration(type).promptTemplate() : configuration.promptTemplate()
-            );
+            case KNOWLEDGE_BASE -> new ResourceVersionConfigurationDto(type, configuration.knowledgeBase() == null ? defaultConfiguration(type).knowledgeBase() : configuration.knowledgeBase(), null, null, null, null);
+            case SKILL -> new ResourceVersionConfigurationDto(type, null, configuration.skill() == null ? defaultConfiguration(type).skill() : configuration.skill(), null, null, null);
+            case MCP -> new ResourceVersionConfigurationDto(type, null, null, configuration.mcp() == null ? defaultConfiguration(type).mcp() : configuration.mcp(), null, null);
+            case LLM_MODEL -> new ResourceVersionConfigurationDto(type, null, null, null, configuration.llmModel() == null ? defaultConfiguration(type).llmModel() : configuration.llmModel(), null);
+            case PROMPT_TEMPLATE -> new ResourceVersionConfigurationDto(type, null, null, null, null, configuration.promptTemplate() == null ? defaultConfiguration(type).promptTemplate() : configuration.promptTemplate());
         };
     }
 
@@ -1339,16 +1471,7 @@ public class CatalogService {
         return switch (type) {
             case KNOWLEDGE_BASE -> new ResourceVersionConfigurationDto(
                 type,
-                new KnowledgeBaseConfigDto(
-                    "OBJECT_STORAGE",
-                    "minio://knowledge/new-resource",
-                    "MANUAL",
-                    "HYBRID",
-                    "text-embedding-3-large",
-                    "markdown-512-overlap-80",
-                    5,
-                    0
-                ),
+                new KnowledgeBaseConfigDto("SEED_DATA", "seed://default", "MANUAL", "HYBRID", "text-embedding-3-large", "markdown-512-overlap-80", 5, 0),
                 null,
                 null,
                 null,
@@ -1357,16 +1480,7 @@ public class CatalogService {
             case SKILL -> new ResourceVersionConfigurationDto(
                 type,
                 null,
-                new SkillConfigDto(
-                    "HTTP",
-                    "https://skill-gateway.internal/new-skill",
-                    "POST",
-                    "SERVICE_ACCOUNT",
-                    15,
-                    "EXPONENTIAL_BACKOFF",
-                    "{input}",
-                    "{output}"
-                ),
+                new SkillConfigDto("HTTP", "http://demo.local/skills/new-skill", "POST", "SERVICE_ACCOUNT", 15, "NONE", "{input}", "{output}"),
                 null,
                 null,
                 null
@@ -1375,15 +1489,7 @@ public class CatalogService {
                 type,
                 null,
                 null,
-                new McpConfigDto(
-                    "new-mcp-server",
-                    "STREAMABLE_HTTP",
-                    "https://mcp-gateway.internal/new-server",
-                    "default.namespace",
-                    "API_KEY",
-                    30,
-                    List.of("tool_a", "tool_b")
-                ),
+                new McpConfigDto("demo-mcp-server", "STREAMABLE_HTTP", "http://demo.local/mcp/default", "default.namespace", "NONE", 30, List.of("tool_a")),
                 null,
                 null
             );
@@ -1393,13 +1499,13 @@ public class CatalogService {
                 null,
                 null,
                 new LlmModelConfigDto(
-                    "OPENAI",
-                    "gpt-4.1-mini",
-                    "https://api.openai.com/v1",
-                    "OPENAI_API_KEY",
-                    "lynxus-demo",
-                    "default-project",
-                    "global",
+                    "OPENAI_COMPATIBLE",
+                    envOrDefault("LYNXUS_OPENAI_COMPATIBLE_MODEL_ID", "custom-compatible-model"),
+                    envOrDefault("LYNXUS_OPENAI_COMPATIBLE_BASE_URL", "http://localhost:11434/v1"),
+                    envOrDefault("LYNXUS_OPENAI_COMPATIBLE_API_KEY_ENV_VAR", "OPENAI_COMPATIBLE_API_KEY"),
+                    envOrDefault("LYNXUS_OPENAI_COMPATIBLE_ORGANIZATION", "compatible-lab"),
+                    envOrDefault("LYNXUS_OPENAI_COMPATIBLE_PROJECT", "default-project"),
+                    envOrDefault("LYNXUS_OPENAI_COMPATIBLE_REGION", "local"),
                     0.2,
                     1200
                 ),
@@ -1411,26 +1517,16 @@ public class CatalogService {
                 null,
                 null,
                 null,
-                new PromptTemplateConfigDto(
-                    "CHAT",
-                    "你是企业级智能体平台中的执行智能体，请基于知识和工具输出结构化且可执行的结果。",
-                    "用户问题：{{question}}\n\n召回知识：{{knowledge_context}}\n\n请给出回答和下一步动作建议。",
-                    "markdown"
-                )
+                new PromptTemplateConfigDto("CHAT", "你是执行智能体。", "用户问题：{{question}}\n知识上下文：{{knowledge_context}}", "markdown")
             );
         };
     }
 
     private AssistantModelPolicyDto normalizeAssistantModelPolicy(AssistantModelPolicyDto policy) {
         if (policy == null) {
-            return new AssistantModelPolicyDto("resource-llm-openai", "resource-prompt-support", 0.2, 1200);
+            return new AssistantModelPolicyDto(defaultLlmResourceId(), "resource-prompt-router", 0.2, 1200);
         }
-        return new AssistantModelPolicyDto(
-            policy.providerResourceId(),
-            policy.promptTemplateResourceId(),
-            policy.temperature(),
-            policy.maxTokens()
-        );
+        return new AssistantModelPolicyDto(policy.providerResourceId(), policy.promptTemplateResourceId(), policy.temperature(), policy.maxTokens());
     }
 
     private RagPolicyDto normalizeRagPolicy(RagPolicyDto policy) {
@@ -1467,7 +1563,7 @@ public class CatalogService {
         if (versions.isEmpty()) {
             return "0.1.0";
         }
-        String[] segments = versions.get(versions.size() - 1).version().split("\\.");
+        String[] segments = versions.getLast().version().split("\\.");
         int patch = Integer.parseInt(segments[2]) + 1;
         return segments[0] + "." + segments[1] + "." + patch;
     }
@@ -1490,10 +1586,22 @@ public class CatalogService {
 
     private static String envOrDefault(String key, String fallback) {
         String value = System.getenv(key);
-        if (value == null || value.isBlank()) {
-            return fallback;
+        return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private static String defaultLlmResourceId() {
+        if (hasEnv("LYNXUS_OPENAI_COMPATIBLE_BASE_URL") || hasEnv("OPENAI_COMPATIBLE_API_KEY")) {
+            return "resource-llm-compatible";
         }
-        return value;
+        if (hasEnv("OPENAI_API_KEY")) {
+            return "resource-llm-openai";
+        }
+        return "resource-llm-compatible";
+    }
+
+    private static boolean hasEnv(String key) {
+        String value = System.getenv(key);
+        return value != null && !value.isBlank();
     }
 
     private static <T, K> void replace(List<T> items, Function<T, K> keyExtractor, T replacement) {

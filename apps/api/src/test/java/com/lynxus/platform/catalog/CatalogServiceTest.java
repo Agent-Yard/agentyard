@@ -17,7 +17,21 @@ class CatalogServiceTest {
         assertFalse(summary.scenarios().isEmpty());
         assertFalse(summary.resources().isEmpty());
         assertFalse(summary.orchestrations().isEmpty());
-        assertEquals("知识问答升级处理", summary.scenarios().getFirst().name());
+        assertEquals("智能客服协同处理", summary.scenarios().getFirst().name());
         assertTrue(summary.resourceCenter().totalResources() >= 2);
+        assertTrue(summary.orchestrations().getFirst().nodes().stream().anyMatch(node -> node.nodeType().name().equals("HUMAN")));
+    }
+
+    @Test
+    void shouldSeedCatalogOnlyOnceForEmptyRepository() {
+        InMemoryCatalogRepository repository = new InMemoryCatalogRepository();
+        CatalogService seededService = new CatalogService(repository, false);
+
+        assertTrue(seededService.initializeDemoDataIfEmpty());
+        int assistantCount = seededService.listAssistants().size();
+
+        assertFalse(seededService.initializeDemoDataIfEmpty());
+        assertEquals(assistantCount, seededService.listAssistants().size());
+        assertEquals(assistantCount, repository.load().assistants().size());
     }
 }

@@ -40,24 +40,25 @@
 
 ## 运行链路
 
-知识问答升级流程固定为：
+当前运行链路已经升级为“发布快照驱动的单助手多智能体图编排”：
 
-1. 问题接收
-2. 知识检索
-3. 回答生成
-4. 升级判定
-5. 结束或等待人工处理
+1. API 基于助手发布快照构建运行时 `AssistantRunSnapshot`
+2. Temporal workflow 调用 Python runtime `start`
+3. Python runtime 按 graph snapshot 动态执行 `START / AGENT / HUMAN / END`
+4. 若命中 `HUMAN` 节点，则返回 checkpoint 与 human task，workflow 等待 signal
+5. 收到人工动作后，workflow 调用 runtime `resume`
+6. 编排继续向后执行直到 `END` 或失败
 
 ## 当前实现策略
 
-- 资源、知识库、MCP、Skill 采用 mock adapter
+- LLM、知识库、MCP、Skill 采用轻量 adapter，并保留 `demo.local` 演示闭环
 - 资源按“资源头 + 版本”建模，智能体绑定时必须显式锚定资源版本
-- 助手切换到 `PUBLISHED` 时会生成一份资源版本快照，作为后续运行和审计的稳定锚点
+- 助手切换到 `PUBLISHED` 时会冻结资源版本、agent 执行配置和编排图快照，作为后续运行和审计的稳定锚点
 - 前端资源区拆分为“资源目录”和“资源新建”两页
 - `资源目录`：聚焦资源清单、详情、版本流转、生效版本切换和绑定影响
 - `资源新建`：按知识库、Skill、MCP 三种蓝图维护结构化初始版本配置
 - 认证采用本地 mock 用户，不接真实 OIDC
-- 持久化和工作流先给出结构、配置和接口层
+- 持久化采用 JSONB catalog store，工作流支持人工节点暂停恢复
 - 控制面 API 优先提供演示闭环与前端真实接口消费
 - 前端在保留运行态页面的同时，强化了“智能体编排页”“资源目录页”“资源新建页”作为当前主入口
 - 当前系统层不做跨助手自动切换；一次会话只绑定一个助手，由调用方显式选择

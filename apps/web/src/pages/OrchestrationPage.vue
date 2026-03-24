@@ -1,20 +1,15 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
+import { validateOrchestrationGraph } from '../orchestration/graph';
 import type {
   Assistant,
   AssistantOrchestration,
   OrchestrationEdge,
   OrchestrationNode,
+  OrchestrationNodeType,
   Resource,
   UpdateOrchestrationPayload,
 } from '../types';
-
-const NODE_WIDTH = 240;
-const NODE_HEIGHT = 188;
-const NODE_GAP = 120;
-const CANVAS_PADDING_X = 40;
-const CANVAS_PADDING_Y = 88;
-const CANVAS_HEIGHT = 380;
 
 const props = defineProps<{
   assistants: Assistant[];
@@ -27,84 +22,38 @@ const emit = defineEmits<{
 }>();
 
 const selectedAssistantId = ref('');
-const executionMode = ref('SEQUENTIAL_GRAPH');
+const executionMode = ref('GRAPH');
 const workingNodes = ref<OrchestrationNode[]>([]);
 const workingEdges = ref<OrchestrationEdge[]>([]);
-const selectedNodeId = ref('');
-const selectedEdgeId = ref('');
-const draggedNodeId = ref('');
-const connectMode = ref(false);
-const pendingSourceNodeId = ref('');
-const zoom = ref(1);
-const panX = ref(0);
-const panY = ref(0);
-const isPanning = ref(false);
+const selectedNodeKey = ref('');
+const selectedEdgeKey = ref('');
+const validationError = ref('');
+
+const nodeTypeOptions: Array<{ label: string; value: OrchestrationNodeType }> = [
+  { label: '开始节点', value: 'START' },
+  { label: '智能体节点', value: 'AGENT' },
+  { label: '人工节点', value: 'HUMAN' },
+  { label: '结束节点', value: 'END' },
+];
 
 const current = computed(() =>
   props.orchestrations.find((item) => item.assistantId === selectedAssistantId.value) ?? props.orchestrations[0],
 );
 
-const selectedNode = computed(() =>
-  workingNodes.value.find((item) => item.nodeId === selectedNodeId.value) ?? workingNodes.value[0],
+const currentAssistant = computed(() =>
+  props.assistants.find((item) => item.id === selectedAssistantId.value) ?? props.assistants[0],
 );
 
-const selectedEdge = computed(() =>
-  workingEdges.value.find((item) => item.edgeId === selectedEdgeId.value) ?? workingEdges.value[0],
-);
+const assistantAgents = computed(() => currentAssistant.value?.agents ?? []);
+const selectedNode = computed(() => workingNodes.value.find((item) => item.nodeKey === selectedNodeKey.value) ?? null);
+const selectedEdge = computed(() => workingEdges.value.find((item) => item.edgeKey === selectedEdgeKey.value) ?? null);
 
-const canvasWidth = computed(() =>
-  Math.max(
-    960,
-    CANVAS_PADDING_X * 2 + workingNodes.value.length * NODE_WIDTH + Math.max(0, workingNodes.value.length - 1) * NODE_GAP,
-  ),
-);
-
-const canvasStyle = computed(() => ({
-  transform: `translate(${panX.value}px, ${panY.value}px) scale(${zoom.value})`,
-}));
-
-const nodePositions = computed(() =>
-  workingNodes.value.map((node, index) => ({
-    nodeId: node.nodeId,
-    left: CANVAS_PADDING_X + index * (NODE_WIDTH + NODE_GAP),
-    top: CANVAS_PADDING_Y,
+const graphRows = computed(() =>
+  workingNodes.value.map((node) => ({
+    ...node,
+    outgoing: workingEdges.value.filter((edge) => edge.sourceNodeKey === node.nodeKey),
+    incoming: workingEdges.value.filter((edge) => edge.targetNodeKey === node.nodeKey),
   })),
-);
-
-const connectorModels = computed(() =>
-  workingEdges.value.flatMap((edge, index) => {
-    const fromIndex = workingNodes.value.findIndex((item) => item.nodeId === edge.fromNodeId);
-    const toIndex = workingNodes.value.findIndex((item) => item.nodeId === edge.toNodeId);
-    if (fromIndex < 0 || toIndex < 0) {
-      return [];
-    }
-
-    const fromLeft = CANVAS_PADDING_X + fromIndex * (NODE_WIDTH + NODE_GAP);
-    const toLeft = CANVAS_PADDING_X + toIndex * (NODE_WIDTH + NODE_GAP);
-    const startX = fromLeft + NODE_WIDTH;
-    const endX = toLeft;
-    const centerY = CANVAS_PADDING_Y + NODE_HEIGHT / 2;
-
-    if (toIndex > fromIndex) {
-      const bend = Math.max(80, (endX - startX) / 2);
-      return [{
-        edgeId: edge.edgeId,
-        d: `M ${startX} ${centerY} C ${startX + bend} ${centerY} ${endX - bend} ${centerY} ${endX} ${centerY}`,
-        labelX: (startX + endX) / 2,
-        labelY: centerY - 22 - (index % 2) * 10,
-      }];
-    }
-
-    const arcHeight = 90 + Math.abs(toIndex - fromIndex) * 26;
-    const topY = centerY - arcHeight;
-    const midX = (startX + endX) / 2;
-    return [{
-      edgeId: edge.edgeId,
-      d: `M ${startX} ${centerY} C ${startX + 90} ${centerY} ${midX + 40} ${topY} ${midX} ${topY} C ${midX - 40} ${topY} ${endX - 90} ${centerY} ${endX} ${centerY}`,
-      labelX: midX,
-      labelY: topY - 14,
-    }];
-  }),
 );
 
 watch(
@@ -114,7 +63,6 @@ watch(
       selectedAssistantId.value = '';
       return;
     }
-
     if (!items.some((item) => item.assistantId === selectedAssistantId.value)) {
       selectedAssistantId.value = items[0].assistantId;
     }
@@ -128,22 +76,20 @@ watch(
     if (!value) {
       workingNodes.value = [];
       workingEdges.value = [];
-      selectedNodeId.value = '';
-      selectedEdgeId.value = '';
-      pendingSourceNodeId.value = '';
+      selectedNodeKey.value = '';
+      selectedEdgeKey.value = '';
       return;
     }
-
     executionMode.value = value.executionMode;
-    workingNodes.value = value.nodes.map((node) => ({ ...node, resourceIds: [...node.resourceIds] }));
+    workingNodes.value = value.nodes.map((node) => ({
+      ...node,
+      agentId: node.agentId ?? null,
+      humanNode: node.humanNode ? { ...node.humanNode } : null,
+    }));
     workingEdges.value = value.edges.map((edge) => ({ ...edge }));
-    selectedNodeId.value = value.nodes[0]?.nodeId ?? '';
-    selectedEdgeId.value = value.edges[0]?.edgeId ?? '';
-    connectMode.value = false;
-    pendingSourceNodeId.value = '';
-    zoom.value = 1;
-    panX.value = 0;
-    panY.value = 0;
+    selectedNodeKey.value = value.nodes[0]?.nodeKey ?? '';
+    selectedEdgeKey.value = value.edges[0]?.edgeKey ?? '';
+    validationError.value = '';
   },
   { immediate: true },
 );
@@ -151,8 +97,8 @@ watch(
 watch(
   workingNodes,
   (nodes) => {
-    if (!nodes.some((item) => item.nodeId === selectedNodeId.value)) {
-      selectedNodeId.value = nodes[0]?.nodeId ?? '';
+    if (selectedNodeKey.value && !nodes.some((item) => item.nodeKey === selectedNodeKey.value)) {
+      selectedNodeKey.value = nodes[0]?.nodeKey ?? '';
     }
   },
   { deep: true },
@@ -161,183 +107,98 @@ watch(
 watch(
   workingEdges,
   (edges) => {
-    if (!edges.some((item) => item.edgeId === selectedEdgeId.value)) {
-      selectedEdgeId.value = edges[0]?.edgeId ?? '';
+    if (selectedEdgeKey.value && !edges.some((item) => item.edgeKey === selectedEdgeKey.value)) {
+      selectedEdgeKey.value = edges[0]?.edgeKey ?? '';
     }
   },
   { deep: true },
 );
 
-function resetToLinearFlow() {
-  workingEdges.value = workingNodes.value.slice(0, -1).map((node, index) => {
-    const nextNode = workingNodes.value[index + 1];
-    return {
-      edgeId: `edge-${node.nodeId}-${nextNode.nodeId}`,
-      fromNodeId: node.nodeId,
-      toNodeId: nextNode.nodeId,
-      condition: index === workingNodes.value.length - 2 ? '升级判定或结束' : '标准编排流转',
-      handoffPolicy: index === workingNodes.value.length - 2 ? 'conditional-handoff' : 'direct-handoff',
-    };
-  });
-  selectedEdgeId.value = workingEdges.value[0]?.edgeId ?? '';
+function nodeLabel(nodeKey: string) {
+  const node = workingNodes.value.find((item) => item.nodeKey === nodeKey);
+  return node?.nodeName ?? nodeKey;
 }
 
-function moveNode(nodeId: string, direction: -1 | 1) {
-  const index = workingNodes.value.findIndex((item) => item.nodeId === nodeId);
-  const targetIndex = index + direction;
-  if (index < 0 || targetIndex < 0 || targetIndex >= workingNodes.value.length) {
-    return;
+function resourceNamesForAgent(agentId: string | null) {
+  if (!agentId) {
+    return '无';
   }
-
-  const nodes = [...workingNodes.value];
-  const [node] = nodes.splice(index, 1);
-  nodes.splice(targetIndex, 0, node);
-  workingNodes.value = nodes;
+  const agent = assistantAgents.value.find((item) => item.id === agentId);
+  if (!agent) {
+    return '无';
+  }
+  const names = agent.bindings.map((binding) => props.resources.find((item) => item.id === binding.resourceId)?.name ?? binding.resourceId);
+  return names.length ? names.join(' / ') : '无';
 }
 
-function reorderNode(dragNodeId: string, targetNodeId: string) {
-  if (!dragNodeId || dragNodeId === targetNodeId) {
-    return;
-  }
-
-  const sourceIndex = workingNodes.value.findIndex((item) => item.nodeId === dragNodeId);
-  const targetIndex = workingNodes.value.findIndex((item) => item.nodeId === targetNodeId);
-  if (sourceIndex < 0 || targetIndex < 0) {
-    return;
-  }
-
-  const nodes = [...workingNodes.value];
-  const [node] = nodes.splice(sourceIndex, 1);
-  nodes.splice(targetIndex, 0, node);
-  workingNodes.value = nodes;
-}
-
-function handleNodeClick(nodeId: string) {
-  if (connectMode.value) {
-    if (!pendingSourceNodeId.value) {
-      pendingSourceNodeId.value = nodeId;
-      selectedNodeId.value = nodeId;
-      return;
-    }
-
-    if (pendingSourceNodeId.value === nodeId) {
-      pendingSourceNodeId.value = '';
-      return;
-    }
-
-    addEdge(pendingSourceNodeId.value, nodeId);
-    pendingSourceNodeId.value = '';
-    connectMode.value = false;
-    return;
-  }
-
-  selectedNodeId.value = nodeId;
-}
-
-function addEdge(fromNodeId: string, toNodeId: string) {
-  const exists = workingEdges.value.some((item) => item.fromNodeId === fromNodeId && item.toNodeId === toNodeId);
-  if (exists) {
-    return;
-  }
-
-  const created: OrchestrationEdge = {
-    edgeId: `edge-${fromNodeId}-${toNodeId}-${Math.random().toString(16).slice(2, 6)}`,
-    fromNodeId,
-    toNodeId,
-    condition: '新增分支条件',
-    handoffPolicy: 'conditional-handoff',
+function addNode(nodeType: OrchestrationNodeType) {
+  const key = `node-${Math.random().toString(16).slice(2, 8)}`;
+  const fallbackAgentId = nodeType === 'AGENT' ? assistantAgents.value[0]?.id ?? null : null;
+  const created: OrchestrationNode = {
+    nodeKey: key,
+    nodeName: nodeType === 'AGENT'
+      ? '新智能体节点'
+      : nodeType === 'HUMAN'
+        ? '新人工节点'
+        : nodeType === 'START'
+          ? '新开始节点'
+          : '新结束节点',
+    nodeType,
+    description: '请补充节点说明。',
+    agentId: fallbackAgentId,
+    humanNode: nodeType === 'HUMAN'
+      ? {
+          title: '人工待办',
+          instruction: '请人工处理这个节点。',
+          expectedAction: 'CONFIRM',
+          resumeRouteKey: 'confirmed',
+        }
+      : null,
   };
+  workingNodes.value = [...workingNodes.value, created];
+  selectedNodeKey.value = created.nodeKey;
+}
 
+function addEdge() {
+  if (workingNodes.value.length < 2) {
+    return;
+  }
+  const created: OrchestrationEdge = {
+    edgeKey: `edge-${Math.random().toString(16).slice(2, 8)}`,
+    sourceNodeKey: workingNodes.value[0]?.nodeKey ?? '',
+    targetNodeKey: workingNodes.value[1]?.nodeKey ?? '',
+    routeKey: null,
+    label: '新分支',
+    defaultEdge: false,
+  };
   workingEdges.value = [...workingEdges.value, created];
-  selectedEdgeId.value = created.edgeId;
+  selectedEdgeKey.value = created.edgeKey;
+}
+
+function deleteSelectedNode() {
+  if (!selectedNode.value) {
+    return;
+  }
+  const removingKey = selectedNode.value.nodeKey;
+  workingNodes.value = workingNodes.value.filter((item) => item.nodeKey !== removingKey);
+  workingEdges.value = workingEdges.value.filter((item) => item.sourceNodeKey !== removingKey && item.targetNodeKey !== removingKey);
 }
 
 function deleteSelectedEdge() {
   if (!selectedEdge.value) {
     return;
   }
-
-  workingEdges.value = workingEdges.value.filter((item) => item.edgeId !== selectedEdge.value?.edgeId);
+  workingEdges.value = workingEdges.value.filter((item) => item.edgeKey !== selectedEdge.value?.edgeKey);
 }
-
-function selectEdge(edgeId: string) {
-  selectedEdgeId.value = edgeId;
-}
-
-function toggleConnectMode() {
-  connectMode.value = !connectMode.value;
-  pendingSourceNodeId.value = '';
-}
-
-function zoomIn() {
-  zoom.value = Math.min(1.8, Number((zoom.value + 0.1).toFixed(2)));
-}
-
-function zoomOut() {
-  zoom.value = Math.max(0.6, Number((zoom.value - 0.1).toFixed(2)));
-}
-
-function resetViewport() {
-  zoom.value = 1;
-  panX.value = 0;
-  panY.value = 0;
-}
-
-function handleWheel(event: WheelEvent) {
-  event.preventDefault();
-  if (event.deltaY > 0) {
-    zoomOut();
-    return;
-  }
-  zoomIn();
-}
-
-let startPanX = 0;
-let startPanY = 0;
-let originPanX = 0;
-let originPanY = 0;
-
-function handleViewportMouseDown(event: MouseEvent) {
-  const target = event.target as HTMLElement | null;
-  if (target?.closest('.graph-node') || target?.closest('.graph-edge-chip')) {
-    return;
-  }
-
-  isPanning.value = true;
-  startPanX = event.clientX;
-  startPanY = event.clientY;
-  originPanX = panX.value;
-  originPanY = panY.value;
-}
-
-function handleWindowMouseMove(event: MouseEvent) {
-  if (!isPanning.value) {
-    return;
-  }
-
-  panX.value = originPanX + event.clientX - startPanX;
-  panY.value = originPanY + event.clientY - startPanY;
-}
-
-function stopPanning() {
-  isPanning.value = false;
-}
-
-onMounted(() => {
-  window.addEventListener('mousemove', handleWindowMouseMove);
-  window.addEventListener('mouseup', stopPanning);
-});
-
-onBeforeUnmount(() => {
-  window.removeEventListener('mousemove', handleWindowMouseMove);
-  window.removeEventListener('mouseup', stopPanning);
-});
 
 function submitSave() {
   if (!current.value) {
     return;
   }
-
+  validationError.value = validateOrchestrationGraph(workingNodes.value, workingEdges.value);
+  if (validationError.value) {
+    return;
+  }
   emit('saveOrchestration', {
     assistantId: current.value.assistantId,
     data: {
@@ -346,16 +207,6 @@ function submitSave() {
       edges: workingEdges.value,
     },
   });
-}
-
-function nodeResourceNames(resourceIds: string[]) {
-  return resourceIds
-    .map((resourceId) => props.resources.find((item) => item.id === resourceId)?.name ?? resourceId)
-    .join(' / ');
-}
-
-function nodeById(nodeId: string) {
-  return workingNodes.value.find((item) => item.nodeId === nodeId);
 }
 </script>
 
@@ -368,69 +219,55 @@ function nodeById(nodeId: string) {
             v-model:value="selectedAssistantId"
             :options="assistants.map((item) => ({ label: item.name, value: item.id }))"
           />
-
           <a-form layout="vertical">
             <a-form-item label="执行模式">
-              <a-select
-                v-model:value="executionMode"
-                :options="[
-                  { label: '顺序图', value: 'SEQUENTIAL_GRAPH' },
-                  { label: '阶段并行', value: 'PARALLEL_STAGES' },
-                ]"
-              />
+              <a-input v-model:value="executionMode" />
             </a-form-item>
           </a-form>
-
           <a-space wrap>
-            <a-button :type="connectMode ? 'primary' : 'default'" @click="toggleConnectMode">
-              {{ connectMode ? '退出连线模式' : '新增分支连线' }}
+            <a-button v-for="option in nodeTypeOptions" :key="option.value" @click="addNode(option.value)">
+              新增{{ option.label }}
             </a-button>
-            <a-button @click="resetToLinearFlow">重建主链</a-button>
+            <a-button @click="addEdge">新增边</a-button>
           </a-space>
-
-          <a-space wrap>
-            <a-button @click="zoomOut">缩小</a-button>
-            <a-button @click="resetViewport">重置视角</a-button>
-            <a-button @click="zoomIn">放大</a-button>
-          </a-space>
-
+          <a-alert
+            v-if="validationError"
+            type="error"
+            show-icon
+            :message="validationError"
+          />
           <a-button type="primary" @click="submitSave">保存编排</a-button>
         </a-space>
       </a-card>
 
-      <a-card title="节点目录">
+      <a-card title="节点列表">
         <a-list :data-source="workingNodes">
           <template #renderItem="{ item }">
             <a-list-item
               class="clickable-item"
-              :class="{ 'graph-list-item--active': selectedNodeId === item.nodeId }"
-              draggable="true"
-              @click="handleNodeClick(item.nodeId)"
-              @dragstart="draggedNodeId = item.nodeId"
-              @dragover.prevent
-              @drop.prevent="reorderNode(draggedNodeId, item.nodeId)"
-              @dragend="draggedNodeId = ''"
+              :class="{ 'graph-list-item--active': selectedNodeKey === item.nodeKey }"
+              @click="selectedNodeKey = item.nodeKey"
             >
               <a-list-item-meta
-                :title="item.nodeName"
-                :description="pendingSourceNodeId === item.nodeId ? '等待选择目标节点' : item.description"
+                :title="`${item.nodeName} · ${item.nodeType}`"
+                :description="item.description"
               />
             </a-list-item>
           </template>
         </a-list>
       </a-card>
 
-      <a-card title="连线目录">
+      <a-card title="边列表">
         <a-list :data-source="workingEdges">
           <template #renderItem="{ item }">
             <a-list-item
               class="clickable-item"
-              :class="{ 'graph-list-item--active': selectedEdgeId === item.edgeId }"
-              @click="selectEdge(item.edgeId)"
+              :class="{ 'graph-list-item--active': selectedEdgeKey === item.edgeKey }"
+              @click="selectedEdgeKey = item.edgeKey"
             >
               <a-list-item-meta
-                :title="`${nodeById(item.fromNodeId)?.nodeName ?? item.fromNodeId} -> ${nodeById(item.toNodeId)?.nodeName ?? item.toNodeId}`"
-                :description="item.condition"
+                :title="`${nodeLabel(item.sourceNodeKey)} -> ${nodeLabel(item.targetNodeKey)}`"
+                :description="`${item.label}${item.routeKey ? ` · route=${item.routeKey}` : ''}${item.defaultEdge ? ' · 默认边' : ''}`"
               />
             </a-list-item>
           </template>
@@ -441,135 +278,122 @@ function nodeById(nodeId: string) {
     <a-col :span="17">
       <a-space direction="vertical" style="width: 100%" size="large">
         <a-card v-if="current" :title="current.assistantName">
-          <template #extra>
-            <a-space>
-              <a-tag color="blue">{{ executionMode }}</a-tag>
-              <a-tag v-if="connectMode" color="gold">
-                {{ pendingSourceNodeId ? '请选择目标节点' : '请选择源节点' }}
-              </a-tag>
-            </a-space>
-          </template>
-
-          <div
-            class="graph-editor"
-            :class="{ 'graph-editor--panning': isPanning }"
-            @wheel="handleWheel"
-            @mousedown="handleViewportMouseDown"
+          <a-table
+            :pagination="false"
+            :data-source="graphRows"
+            row-key="nodeKey"
+            size="small"
           >
-            <div class="graph-editor__viewport">
-              <div
-                class="graph-editor__scene"
-                :style="[canvasStyle, { width: `${canvasWidth}px`, height: `${CANVAS_HEIGHT}px` }]"
-              >
-                <svg class="graph-editor__svg" :width="canvasWidth" :height="CANVAS_HEIGHT">
-                  <g v-for="connector in connectorModels" :key="connector.edgeId">
-                    <path
-                      class="graph-editor__path-hit"
-                      :d="connector.d"
-                      fill="none"
-                      @click="selectEdge(connector.edgeId)"
-                    />
-                    <path
-                      class="graph-editor__path"
-                      :class="{ 'graph-editor__path--active': selectedEdgeId === connector.edgeId }"
-                      :d="connector.d"
-                      fill="none"
-                    />
-                  </g>
-                </svg>
-
-                <div
-                  v-for="node in workingNodes"
-                  :key="node.nodeId"
-                  class="graph-node"
-                  :class="{
-                    'graph-node--active': selectedNodeId === node.nodeId,
-                    'graph-node--pending': pendingSourceNodeId === node.nodeId,
-                  }"
-                  :style="{
-                    left: `${nodePositions.find((item) => item.nodeId === node.nodeId)?.left ?? 0}px`,
-                    top: `${nodePositions.find((item) => item.nodeId === node.nodeId)?.top ?? 0}px`,
-                  }"
-                  draggable="true"
-                  @click="handleNodeClick(node.nodeId)"
-                  @dragstart="draggedNodeId = node.nodeId"
-                  @dragover.prevent
-                  @drop.prevent="reorderNode(draggedNodeId, node.nodeId)"
-                  @dragend="draggedNodeId = ''"
-                >
-                  <span class="graph-node__eyebrow">智能体节点</span>
-                  <strong class="graph-node__title">{{ node.nodeName }}</strong>
-                  <span class="graph-node__description">{{ node.description }}</span>
-                  <span class="graph-node__resources">
-                    {{ node.resourceIds.length ? nodeResourceNames(node.resourceIds) : '无直接资源绑定' }}
-                  </span>
-                  <span class="graph-node__actions">
-                    <a-button size="small" @click.stop="moveNode(node.nodeId, -1)">左移</a-button>
-                    <a-button size="small" @click.stop="moveNode(node.nodeId, 1)">右移</a-button>
-                  </span>
-                </div>
-
-                <button
-                  v-for="connector in connectorModels"
-                  :key="`${connector.edgeId}-label`"
-                  class="graph-edge-chip"
-                  :class="{ 'graph-edge-chip--active': selectedEdgeId === connector.edgeId }"
-                  :style="{ left: `${connector.labelX}px`, top: `${connector.labelY}px` }"
-                  type="button"
-                  @click="selectEdge(connector.edgeId)"
-                >
-                  {{ workingEdges.find((item) => item.edgeId === connector.edgeId)?.handoffPolicy }}
-                </button>
-              </div>
-            </div>
-          </div>
+            <a-table-column title="节点" key="nodeName">
+              <template #default="{ record }">
+                <a-space direction="vertical" size="small">
+                  <strong>{{ record.nodeName }}</strong>
+                  <a-tag>{{ record.nodeType }}</a-tag>
+                </a-space>
+              </template>
+            </a-table-column>
+            <a-table-column title="说明" data-index="description" key="description" />
+            <a-table-column title="资源 / 人工配置" key="config">
+              <template #default="{ record }">
+                <span v-if="record.nodeType === 'AGENT'">
+                  {{ resourceNamesForAgent(record.agentId) }}
+                </span>
+                <span v-else-if="record.nodeType === 'HUMAN'">
+                  {{ record.humanNode?.title }} / {{ record.humanNode?.expectedAction }}
+                </span>
+                <span v-else>系统节点</span>
+              </template>
+            </a-table-column>
+            <a-table-column title="出口边" key="outgoing">
+              <template #default="{ record }">
+                <a-space wrap>
+                  <a-tag v-for="edge in record.outgoing" :key="edge.edgeKey">
+                    {{ edge.label }} -> {{ nodeLabel(edge.targetNodeKey) }}
+                  </a-tag>
+                </a-space>
+              </template>
+            </a-table-column>
+          </a-table>
         </a-card>
 
         <a-row :gutter="[16, 16]">
           <a-col :span="12">
             <a-card v-if="selectedNode" title="节点属性">
+              <template #extra>
+                <a-button danger size="small" @click="deleteSelectedNode">删除节点</a-button>
+              </template>
               <a-form layout="vertical">
-                <a-form-item label="节点名称">
-                  <a-input :value="selectedNode.nodeName" disabled />
+                <a-form-item label="节点 Key">
+                  <a-input v-model:value="selectedNode.nodeKey" />
                 </a-form-item>
-                <a-form-item label="节点说明">
+                <a-form-item label="节点名称">
+                  <a-input v-model:value="selectedNode.nodeName" />
+                </a-form-item>
+                <a-form-item label="节点类型">
+                  <a-select v-model:value="selectedNode.nodeType" :options="nodeTypeOptions" />
+                </a-form-item>
+                <a-form-item label="说明">
                   <a-textarea v-model:value="selectedNode.description" :rows="4" />
                 </a-form-item>
-                <a-form-item label="绑定资源">
-                  <a-input
-                    :value="selectedNode.resourceIds.length ? nodeResourceNames(selectedNode.resourceIds) : '无直接资源绑定'"
-                    disabled
+                <a-form-item v-if="selectedNode.nodeType === 'AGENT'" label="绑定智能体">
+                  <a-select
+                    v-model:value="selectedNode.agentId"
+                    :options="assistantAgents.map((item) => ({ label: `${item.name} · ${item.role}`, value: item.id }))"
                   />
                 </a-form-item>
+                <template v-if="selectedNode.nodeType === 'HUMAN' && selectedNode.humanNode">
+                  <a-form-item label="人工待办标题">
+                    <a-input v-model:value="selectedNode.humanNode.title" />
+                  </a-form-item>
+                  <a-form-item label="人工说明">
+                    <a-textarea v-model:value="selectedNode.humanNode.instruction" :rows="3" />
+                  </a-form-item>
+                  <a-row :gutter="[16, 16]">
+                    <a-col :span="12">
+                      <a-form-item label="预期动作">
+                        <a-input v-model:value="selectedNode.humanNode.expectedAction" />
+                      </a-form-item>
+                    </a-col>
+                    <a-col :span="12">
+                      <a-form-item label="恢复 Route Key">
+                        <a-input v-model:value="selectedNode.humanNode.resumeRouteKey" />
+                      </a-form-item>
+                    </a-col>
+                  </a-row>
+                </template>
               </a-form>
             </a-card>
           </a-col>
 
           <a-col :span="12">
-            <a-card v-if="selectedEdge" title="连线属性">
+            <a-card v-if="selectedEdge" title="边属性">
               <template #extra>
-                <a-button danger size="small" @click="deleteSelectedEdge">删除连线</a-button>
+                <a-button danger size="small" @click="deleteSelectedEdge">删除边</a-button>
               </template>
-
               <a-form layout="vertical">
-                <a-form-item label="交接路径">
-                  <a-input
-                    :value="`${nodeById(selectedEdge.fromNodeId)?.nodeName ?? selectedEdge.fromNodeId} -> ${nodeById(selectedEdge.toNodeId)?.nodeName ?? selectedEdge.toNodeId}`"
-                    disabled
-                  />
+                <a-form-item label="边 Key">
+                  <a-input v-model:value="selectedEdge.edgeKey" />
                 </a-form-item>
-                <a-form-item label="流转条件">
-                  <a-input v-model:value="selectedEdge.condition" placeholder="例如：命中升级意图" />
-                </a-form-item>
-                <a-form-item label="交接策略">
+                <a-form-item label="源节点">
                   <a-select
-                    v-model:value="selectedEdge.handoffPolicy"
-                    :options="[
-                      { label: '直接交接', value: 'direct-handoff' },
-                      { label: '条件交接', value: 'conditional-handoff' },
-                      { label: '人工确认', value: 'manual-gate' },
-                    ]"
+                    v-model:value="selectedEdge.sourceNodeKey"
+                    :options="workingNodes.map((item) => ({ label: item.nodeName, value: item.nodeKey }))"
                   />
+                </a-form-item>
+                <a-form-item label="目标节点">
+                  <a-select
+                    v-model:value="selectedEdge.targetNodeKey"
+                    :options="workingNodes.map((item) => ({ label: item.nodeName, value: item.nodeKey }))"
+                  />
+                </a-form-item>
+                <a-form-item label="边标签">
+                  <a-input v-model:value="selectedEdge.label" />
+                </a-form-item>
+                <a-form-item label="Route Key">
+                  <a-input v-model:value="selectedEdge.routeKey" placeholder="例如 faq / after_sales / confirmed" />
+                </a-form-item>
+                <a-form-item label="默认边">
+                  <a-switch v-model:checked="selectedEdge.defaultEdge" />
                 </a-form-item>
               </a-form>
             </a-card>

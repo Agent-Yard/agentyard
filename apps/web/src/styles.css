@@ -16,6 +16,7 @@ body {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+  box-sizing: border-box;
   min-height: 88px;
   height: auto;
   line-height: 1.4;
@@ -59,6 +60,10 @@ body {
 
 .app-header.ant-layout-header {
   background: rgba(255, 255, 255, 0.96) !important;
+  height: auto !important;
+  min-height: 88px;
+  line-height: 1.4 !important;
+  padding: 18px 24px !important;
 }
 
 .app-header .ant-typography,
@@ -246,6 +251,10 @@ body {
   border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 18px;
   background: linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(255, 255, 255, 0.98));
+}
+
+.conversation-board--empty {
+  justify-content: center;
 }
 
 .conversation-bubble {

@@ -1,5 +1,6 @@
 package com.lynxus.platform.catalog;
 
+import com.lynxus.contracts.runtime.WorkflowContracts.OrchestrationNodeType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ResourceType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
 import com.lynxus.contracts.runtime.WorkflowContracts.VersionStatus;
@@ -51,17 +52,33 @@ public final class CatalogDtos {
         VersionStatus status,
         Instant createdAt,
         Instant publishedAt,
-        List<AssistantReleaseResourceDto> resources
+        List<AssistantReleaseResourceDto> resources,
+        List<AssistantReleaseAgentDto> agents,
+        AssistantOrchestrationDto orchestration,
+        AssistantModelPolicyDto modelPolicy,
+        RagPolicyDto ragPolicy,
+        MemoryPolicyDto memoryPolicy
     ) {
     }
 
     public record AssistantReleaseResourceDto(
         String resourceId,
         String resourceName,
-        String resourceType,
+        ResourceType resourceType,
         String resourceVersionId,
         String resourceVersion,
-        List<String> boundAgents
+        List<String> boundAgents,
+        ResourceVersionConfigurationDto configuration
+    ) {
+    }
+
+    public record AssistantReleaseAgentDto(
+        String agentId,
+        String name,
+        String role,
+        String instructions,
+        AgentExecutionPolicyDto executionPolicy,
+        List<String> bindingResourceVersionIds
     ) {
     }
 
@@ -232,6 +249,14 @@ public final class CatalogDtos {
     ) {
     }
 
+    public record HumanNodeConfigDto(
+        String title,
+        String instruction,
+        String expectedAction,
+        String resumeRouteKey
+    ) {
+    }
+
     public record AssistantOrchestrationDto(
         String assistantId,
         String assistantName,
@@ -243,21 +268,22 @@ public final class CatalogDtos {
     }
 
     public record OrchestrationNodeDto(
-        String nodeId,
+        String nodeKey,
         String nodeName,
-        String nodeType,
-        String agentId,
+        OrchestrationNodeType nodeType,
         String description,
-        List<String> resourceIds
+        String agentId,
+        HumanNodeConfigDto humanNode
     ) {
     }
 
     public record OrchestrationEdgeDto(
-        String edgeId,
-        String fromNodeId,
-        String toNodeId,
-        String condition,
-        String handoffPolicy
+        String edgeKey,
+        String sourceNodeKey,
+        String targetNodeKey,
+        String routeKey,
+        String label,
+        boolean defaultEdge
     ) {
     }
 

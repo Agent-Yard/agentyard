@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Lynxus Control Plane API
-  version: 0.1.0
+  version: 1.0.0
 servers:
   - url: http://localhost:8080/api
 paths:
@@ -14,6 +14,15 @@ paths:
   /auth/switch-role:
     patch:
       summary: Switch current mock role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role:
+                  type: string
       responses:
         '200':
           description: Updated session
@@ -22,53 +31,44 @@ paths:
       summary: Get aggregate catalog summary
       responses:
         '200':
-          description: Aggregate catalog state
-  /domains:
-    get:
-      summary: List business domains
-    post:
-      summary: Create business domain
-  /scenarios:
-    get:
-      summary: List scenarios
-    post:
-      summary: Create scenario
-  /scenarios/{scenarioId}:
-    get:
-      summary: Get scenario detail
-      parameters:
-        - in: path
-          name: scenarioId
-          required: true
-          schema:
-            type: string
-    put:
-      summary: Update scenario
-      parameters:
-        - in: path
-          name: scenarioId
-          required: true
-          schema:
-            type: string
+          description: Aggregate catalog state with assistants, agents, resources, and orchestrations
   /assistants:
     get:
       summary: List assistants
     post:
       summary: Create assistant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAssistantRequest'
   /assistants/{assistantId}:
     put:
-      summary: Update assistant
+      summary: Update assistant and optionally publish a new release
       parameters:
         - in: path
           name: assistantId
           required: true
           schema:
             type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAssistantRequest'
   /agents:
     get:
       summary: List agents
     post:
       summary: Create agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAgentRequest'
   /agents/{agentId}:
     get:
       summary: Get agent detail
@@ -86,6 +86,12 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAgentRequest'
   /agents/{agentId}/bindings:
     put:
       summary: Replace agent resource bindings
@@ -95,6 +101,12 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAgentBindingsRequest'
   /resources:
     get:
       summary: List resources
@@ -131,18 +143,12 @@ paths:
           required: true
           schema:
             type: string
-  /resource-center:
-    get:
-      summary: Get resource versioning, ownership, and binding overview
-  /resource-blueprints:
-    get:
-      summary: Get resource type blueprints for knowledge bases, skills, and MCPs
   /orchestrations:
     get:
-      summary: List orchestration designs for assistants
+      summary: List assistant orchestration graphs
   /orchestrations/{assistantId}:
     get:
-      summary: Get orchestration detail
+      summary: Get assistant orchestration graph
       parameters:
         - in: path
           name: assistantId
@@ -150,71 +156,368 @@ paths:
           schema:
             type: string
     put:
-      summary: Save orchestration design
+      summary: Save assistant orchestration graph
       parameters:
         - in: path
           name: assistantId
           required: true
           schema:
             type: string
-  /resource-bindings:
-    post:
-      summary: Bind resource to agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOrchestrationRequest'
   /tasks:
     get:
       summary: List task instances
     post:
-      summary: Launch task
+      summary: Launch task with explicit assistant binding
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskLaunchRequest'
+      responses:
+        '200':
+          description: Task instance created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskInstance'
   /runtime/sessions:
     get:
       summary: List conversation runtime sessions
-      description: Returns sessions with latest task, workflow, and MCP invocation summary.
     post:
-      summary: Create a conversation runtime session
+      summary: Create a runtime session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateConversationSessionRequest'
   /runtime/sessions/{sessionId}:
     get:
-      summary: Get conversation session detail
-      description: Returns session messages plus the latest MCP invocation summary for the active conversation.
+      summary: Get runtime session detail
       parameters:
         - in: path
           name: sessionId
           required: true
           schema:
             type: string
+      responses:
+        '200':
+          description: Session detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationSession'
   /runtime/sessions/{sessionId}/messages:
     post:
-      summary: Send a message to a conversation session
+      summary: Send a message to an existing runtime session
       parameters:
         - in: path
           name: sessionId
           required: true
           schema:
             type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConversationMessageRequest'
   /workflows:
     get:
       summary: List workflow instances
-      description: Returns workflow state, node executions, resource anchors, and MCP invocation summary.
+      responses:
+        '200':
+          description: Workflow list
   /workflows/{workflowId}:
     get:
       summary: Get workflow detail
-      description: Returns workflow state, node executions, human interventions, and MCP invocation summary.
       parameters:
         - in: path
           name: workflowId
           required: true
           schema:
             type: string
+      responses:
+        '200':
+          description: Workflow detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowInstance'
   /workflows/{workflowId}/human-action:
     patch:
-      summary: Handle human action
+      summary: Submit structured human action and resume or terminate the workflow
       parameters:
         - in: path
           name: workflowId
           required: true
           schema:
             type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HumanActionRequest'
+      responses:
+        '200':
+          description: Updated workflow state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowInstance'
 components:
   schemas:
+    VersionStatus:
+      type: string
+      enum: [DRAFT, PUBLISHED]
+    TaskStatus:
+      type: string
+      enum: [PENDING, RUNNING, WAITING_HUMAN, COMPLETED, FAILED, CANCELLED]
+    WorkflowStatus:
+      type: string
+      enum: [DRAFT, RUNNING, WAITING_HUMAN, COMPLETED, FAILED, CANCELLED]
+    NodeStatus:
+      type: string
+      enum: [PENDING, RUNNING, WAITING_HUMAN, COMPLETED, FAILED]
+    OrchestrationNodeType:
+      type: string
+      enum: [START, AGENT, HUMAN, END]
+    AssistantModelPolicy:
+      type: object
+      properties:
+        providerResourceId:
+          type: string
+          nullable: true
+        promptTemplateResourceId:
+          type: string
+          nullable: true
+        temperature:
+          type: number
+        maxTokens:
+          type: integer
+    RagPolicy:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        knowledgeBaseResourceId:
+          type: string
+          nullable: true
+        topK:
+          type: integer
+    MemoryPolicy:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        windowSize:
+          type: integer
+    AgentExecutionPolicy:
+      type: object
+      properties:
+        inheritAssistantDefaults:
+          type: boolean
+        modelResourceId:
+          type: string
+          nullable: true
+        promptTemplateResourceId:
+          type: string
+          nullable: true
+        inlinePrompt:
+          type: string
+        ragEnabled:
+          type: boolean
+        knowledgeBaseResourceId:
+          type: string
+          nullable: true
+        memoryWindowSize:
+          type: integer
+        toolResourceIds:
+          type: array
+          items:
+            type: string
+    HumanNodeConfig:
+      type: object
+      properties:
+        title:
+          type: string
+        instruction:
+          type: string
+        expectedAction:
+          type: string
+        resumeRouteKey:
+          type: string
+    OrchestrationNode:
+      type: object
+      properties:
+        nodeKey:
+          type: string
+        nodeName:
+          type: string
+        nodeType:
+          $ref: '#/components/schemas/OrchestrationNodeType'
+        description:
+          type: string
+        agentId:
+          type: string
+          nullable: true
+        humanNode:
+          allOf:
+            - $ref: '#/components/schemas/HumanNodeConfig'
+          nullable: true
+    OrchestrationEdge:
+      type: object
+      properties:
+        edgeKey:
+          type: string
+        sourceNodeKey:
+          type: string
+        targetNodeKey:
+          type: string
+        routeKey:
+          type: string
+          nullable: true
+        label:
+          type: string
+        defaultEdge:
+          type: boolean
+    UpdateOrchestrationRequest:
+      type: object
+      properties:
+        executionMode:
+          type: string
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrchestrationNode'
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrchestrationEdge'
+    CreateAssistantRequest:
+      type: object
+      properties:
+        scenarioId:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        modelPolicy:
+          $ref: '#/components/schemas/AssistantModelPolicy'
+        ragPolicy:
+          $ref: '#/components/schemas/RagPolicy'
+        memoryPolicy:
+          $ref: '#/components/schemas/MemoryPolicy'
+    UpdateAssistantRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/VersionStatus'
+        modelPolicy:
+          $ref: '#/components/schemas/AssistantModelPolicy'
+        ragPolicy:
+          $ref: '#/components/schemas/RagPolicy'
+        memoryPolicy:
+          $ref: '#/components/schemas/MemoryPolicy'
+    CreateAgentRequest:
+      type: object
+      properties:
+        assistantId:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        instructions:
+          type: string
+        executionPolicy:
+          $ref: '#/components/schemas/AgentExecutionPolicy'
+    UpdateAgentRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        role:
+          type: string
+        instructions:
+          type: string
+        executionPolicy:
+          $ref: '#/components/schemas/AgentExecutionPolicy'
+    UpdateAgentBindingsRequest:
+      type: object
+      properties:
+        bindings:
+          type: array
+          items:
+            type: object
+            properties:
+              resourceId:
+                type: string
+              resourceVersionId:
+                type: string
+    TaskLaunchRequest:
+      type: object
+      required: [scenarioId, assistantId, question, requester]
+      properties:
+        scenarioId:
+          type: string
+        assistantId:
+          type: string
+        question:
+          type: string
+        requester:
+          type: string
+    HumanActionRequest:
+      type: object
+      required: [action, comment, operatorId, attributes]
+      properties:
+        action:
+          type: string
+        comment:
+          type: string
+        operatorId:
+          type: string
+        attributes:
+          type: object
+          additionalProperties:
+            type: string
+    ExecutionCheckpoint:
+      type: object
+      properties:
+        checkpointId:
+          type: string
+        currentNodeKey:
+          type: string
+        waitingNodeKey:
+          type: string
+        statePayload:
+          type: string
+        resumeCount:
+          type: integer
+    HumanTaskSnapshot:
+      type: object
+      properties:
+        nodeKey:
+          type: string
+        title:
+          type: string
+        instruction:
+          type: string
+        expectedAction:
+          type: string
     McpInvocationSummary:
       type: object
       properties:
@@ -228,26 +531,208 @@ components:
           type: string
         detail:
           type: string
+    ToolInvocationSnapshot:
+      type: object
+      properties:
+        id:
+          type: string
+        toolType:
+          type: string
+        resourceId:
+          type: string
+        resourceName:
+          type: string
+        operation:
+          type: string
+        status:
+          type: string
+        detail:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    NodeExecution:
+      type: object
+      properties:
+        id:
+          type: string
+        workflowInstanceId:
+          type: string
+        nodeKey:
+          type: string
+        nodeName:
+          type: string
+        status:
+          $ref: '#/components/schemas/NodeStatus'
+        detail:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+    HumanIntervention:
+      type: object
+      properties:
+        id:
+          type: string
+        workflowInstanceId:
+          type: string
+        action:
+          type: string
+        operator:
+          type: string
+        comment:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    TaskInstance:
+      type: object
+      properties:
+        id:
+          type: string
+        scenarioId:
+          type: string
+        assistantId:
+          type: string
+        assistantName:
+          type: string
+        assistantReleaseVersion:
+          type: string
+        question:
+          type: string
+        requester:
+          type: string
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+        createdAt:
+          type: string
+          format: date-time
+        workflowInstanceId:
+          type: string
     WorkflowInstance:
       type: object
       properties:
         id:
           type: string
-        status:
+        taskId:
           type: string
+        assistantId:
+          type: string
+        assistantName:
+          type: string
+        assistantReleaseVersion:
+          type: string
+        status:
+          $ref: '#/components/schemas/WorkflowStatus'
         summary:
           type: string
+        finalReply:
+          type: string
+          nullable: true
+        currentNodeKey:
+          type: string
+          nullable: true
         escalationRequired:
           type: boolean
+        checkpoint:
+          allOf:
+            - $ref: '#/components/schemas/ExecutionCheckpoint'
+          nullable: true
+        humanTask:
+          allOf:
+            - $ref: '#/components/schemas/HumanTaskSnapshot'
+          nullable: true
         mcpSummary:
-          $ref: '#/components/schemas/McpInvocationSummary'
+          allOf:
+            - $ref: '#/components/schemas/McpInvocationSummary'
+          nullable: true
+        resourceAnchors:
+          type: array
+          items:
+            type: string
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/NodeExecution'
+        toolCalls:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolInvocationSnapshot'
+        interventions:
+          type: array
+          items:
+            $ref: '#/components/schemas/HumanIntervention'
+    ConversationMessageRequest:
+      type: object
+      properties:
+        requester:
+          type: string
+        message:
+          type: string
+    CreateConversationSessionRequest:
+      type: object
+      properties:
+        scenarioId:
+          type: string
+        assistantId:
+          type: string
+        requester:
+          type: string
+        openingMessage:
+          type: string
+    ConversationMessage:
+      type: object
+      properties:
+        id:
+          type: string
+        sessionId:
+          type: string
+        role:
+          type: string
+        senderType:
+          type: string
+        senderId:
+          type: string
+        senderName:
+          type: string
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        taskId:
+          type: string
+          nullable: true
+        workflowInstanceId:
+          type: string
+          nullable: true
     ConversationSession:
       type: object
       properties:
         id:
           type: string
+        scenarioId:
+          type: string
         title:
           type: string
+        requester:
+          type: string
+        assistantId:
+          type: string
+        assistantName:
+          type: string
+        assistantReleaseVersion:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationMessage'
         latestTaskId:
           type: string
           nullable: true
@@ -257,4 +742,8 @@ components:
         latestMcpSummary:
           allOf:
             - $ref: '#/components/schemas/McpInvocationSummary'
+          nullable: true
+        latestHumanTask:
+          allOf:
+            - $ref: '#/components/schemas/HumanTaskSnapshot'
           nullable: true

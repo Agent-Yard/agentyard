@@ -8,14 +8,17 @@ const props = defineProps<{
   sessions: ConversationSession[];
   tasks: TaskInstance[];
   workflows: WorkflowInstance[];
+  creatingSession: boolean;
+  sendingSessionId: string | null;
+  preferredSessionId: string | null;
+  selectedSessionId: string | null;
 }>();
 
 const emit = defineEmits<{
+  selectSession: [sessionId: string];
   createSession: [payload: { scenarioId: string; assistantId: string; requester: string; openingMessage: string }];
   sendMessage: [payload: { sessionId: string; requester: string; message: string }];
 }>();
-
-const selectedSessionId = ref('');
 const createForm = reactive({
   scenarioId: '',
   assistantId: '',
@@ -25,12 +28,13 @@ const createForm = reactive({
 const messageDraft = ref('');
 
 const currentSession = computed(() =>
-  props.sessions.find((item) => item.id === selectedSessionId.value) ?? props.sessions[0],
+  props.sessions.find((item) => item.id === props.selectedSessionId) ?? props.sessions[0],
 );
 
 const currentScenario = computed(() =>
   props.scenarios.find((item) => item.id === currentSession.value?.scenarioId),
 );
+const isCurrentSessionSending = computed(() => props.sendingSessionId === currentSession.value?.id);
 
 const availableAssistants = computed(() => currentScenario.value?.assistants ?? []);
 const latestWorkflow = computed(() =>
@@ -43,13 +47,21 @@ const latestTask = computed(() =>
 watch(
   () => props.sessions,
   (sessions) => {
-    if (!sessions.length) {
-      selectedSessionId.value = '';
+    if (sessions.length === 1 && props.selectedSessionId !== sessions[0].id) {
+      emit('selectSession', sessions[0].id);
+    }
+  },
+  { immediate: true },
+);
+
+watch(
+  () => props.preferredSessionId,
+  (sessionId) => {
+    if (!sessionId) {
       return;
     }
-
-    if (!sessions.some((item) => item.id === selectedSessionId.value)) {
-      selectedSessionId.value = sessions[0].id;
+    if (props.sessions.some((item) => item.id === sessionId)) {
+      emit('selectSession', sessionId);
     }
   },
   { immediate: true },
@@ -74,21 +86,27 @@ watch(
 );
 
 function submitCreate() {
+  if (!createForm.scenarioId || !createForm.assistantId || props.creatingSession) {
+    return;
+  }
   emit('createSession', { ...createForm });
   createForm.openingMessage = '';
 }
 
 function submitMessage() {
-  if (!currentSession.value || !messageDraft.value.trim()) {
+  if (!currentSession.value || !messageDraft.value.trim() || isCurrentSessionSending.value) {
     return;
   }
 
   emit('sendMessage', {
     sessionId: currentSession.value.id,
     requester: currentSession.value.requester,
-    message: messageDraft.value,
+    message: messageDraft.value.trim(),
   });
-  messageDraft.value = '';
+}
+
+function selectSession(sessionId: string) {
+  emit('selectSession', sessionId);
 }
 </script>
 
@@ -96,26 +114,35 @@ function submitMessage() {
   <a-row :gutter="[16, 16]">
     <a-col :span="7">
       <a-card title="新建会话">
-        <a-form layout="vertical" :model="createForm" @finish="submitCreate">
+        <a-form layout="vertical" :model="createForm">
           <a-form-item label="业务场景">
             <a-select
               v-model:value="createForm.scenarioId"
+              :disabled="creatingSession"
               :options="scenarios.map((item) => ({ label: item.name, value: item.id }))"
             />
           </a-form-item>
           <a-form-item label="会话助手">
             <a-select
               v-model:value="createForm.assistantId"
+              :disabled="creatingSession"
               :options="(scenarios.find((item) => item.id === createForm.scenarioId)?.assistants ?? []).map((item) => ({ label: item.name, value: item.id }))"
             />
           </a-form-item>
           <a-form-item label="发起人">
-            <a-input v-model:value="createForm.requester" />
+            <a-input v-model:value="createForm.requester" :disabled="creatingSession" />
           </a-form-item>
           <a-form-item label="开场问题">
-            <a-textarea v-model:value="createForm.openingMessage" :rows="4" />
+            <a-textarea v-model:value="createForm.openingMessage" :rows="4" :disabled="creatingSession" />
           </a-form-item>
-          <a-button type="primary" html-type="submit">创建并开始对话</a-button>
+          <a-button
+            type="primary"
+            :loading="creatingSession"
+            :disabled="!createForm.scenarioId || !createForm.assistantId"
+            @click="submitCreate"
+          >
+            {{ creatingSession ? '正在创建会话...' : '创建并开始对话' }}
+          </a-button>
         </a-form>
       </a-card>
 
@@ -124,12 +151,12 @@ function submitMessage() {
           <template #renderItem="{ item }">
             <a-list-item
               class="clickable-item"
-              :class="{ 'graph-list-item--active': selectedSessionId === item.id }"
-              @click="selectedSessionId = item.id"
+              :class="{ 'graph-list-item--active': props.selectedSessionId === item.id }"
+              @click="selectSession(item.id)"
             >
               <a-list-item-meta
                 :title="item.title"
-                :description="`${item.assistantName} · ${item.messages.length} 条消息`"
+                :description="`${item.assistantName} · ${item.messages.length} 条消息${item.latestWorkflowInstanceId ? '' : ' · 尚未开始'}${sendingSessionId === item.id ? ' · 正在处理中' : ''}`"
               />
             </a-list-item>
           </template>
@@ -144,39 +171,69 @@ function submitMessage() {
             <a-space>
               <a-tag color="blue">{{ currentSession.assistantName }}</a-tag>
               <a-tag>{{ currentScenario?.name }}</a-tag>
+              <a-tag v-if="isCurrentSessionSending" color="processing">处理中</a-tag>
             </a-space>
           </template>
 
           <a-row :gutter="[16, 16]">
             <a-col :span="16">
-              <div class="conversation-board">
-                <div
-                  v-for="message in currentSession.messages"
-                  :key="message.id"
-                  class="conversation-bubble"
-                  :class="{
-                    'conversation-bubble--user': message.role === 'USER',
-                    'conversation-bubble--assistant': message.role === 'ASSISTANT',
-                    'conversation-bubble--system': message.role === 'SYSTEM',
-                  }"
-                >
-                  <strong>{{ message.senderName }}</strong>
-                  <p>{{ message.content }}</p>
-                  <span v-if="message.workflowInstanceId" class="conversation-bubble__meta">
-                    workflow: {{ message.workflowInstanceId }}
-                  </span>
+              <a-alert
+                v-if="isCurrentSessionSending"
+                type="info"
+                show-icon
+                message="消息已提交，助手正在执行 workflow。"
+                description="页面会在当前请求完成后自动刷新。"
+                style="margin-bottom: 16px"
+              />
+              <a-alert
+                v-if="currentSession.latestHumanTask"
+                type="warning"
+                show-icon
+                :message="currentSession.latestHumanTask.title"
+                :description="`${currentSession.latestHumanTask.instruction} 期望动作：${currentSession.latestHumanTask.expectedAction}`"
+                style="margin-bottom: 16px"
+              />
+              <a-spin :spinning="isCurrentSessionSending">
+                <div class="conversation-board" :class="{ 'conversation-board--empty': currentSession.messages.length === 0 }">
+                  <template v-if="currentSession.messages.length">
+                    <div
+                      v-for="message in currentSession.messages"
+                      :key="message.id"
+                      class="conversation-bubble"
+                      :class="{
+                        'conversation-bubble--user': message.role === 'USER',
+                        'conversation-bubble--assistant': message.role === 'ASSISTANT',
+                        'conversation-bubble--system': message.role === 'SYSTEM',
+                      }"
+                    >
+                      <strong>{{ message.senderName }}</strong>
+                      <p>{{ message.content }}</p>
+                      <span v-if="message.workflowInstanceId" class="conversation-bubble__meta">
+                        workflow: {{ message.workflowInstanceId }}
+                      </span>
+                    </div>
+                  </template>
+                  <a-empty v-else description="这个会话还没有开始。发送第一条消息后，会触发助手运行和 workflow 观测。" />
                 </div>
-              </div>
+              </a-spin>
 
-              <a-form layout="vertical" @finish="submitMessage">
+              <a-form layout="vertical">
                 <a-form-item label="继续对话">
                   <a-textarea
                     v-model:value="messageDraft"
                     :rows="4"
+                    :disabled="isCurrentSessionSending"
                     placeholder="继续输入问题，消息会持续交给当前会话选择的助手处理"
                   />
                 </a-form-item>
-                <a-button type="primary" html-type="submit">发送消息</a-button>
+                <a-button
+                  type="primary"
+                  :loading="isCurrentSessionSending"
+                  :disabled="!currentSession || !messageDraft.trim()"
+                  @click="submitMessage"
+                >
+                  {{ isCurrentSessionSending ? '正在发送...' : '发送消息' }}
+                </a-button>
               </a-form>
             </a-col>
             <a-col :span="8">
@@ -211,11 +268,18 @@ function submitMessage() {
                 <a-descriptions-item label="流程 ID">{{ latestWorkflow.id }}</a-descriptions-item>
                 <a-descriptions-item label="助手版本">{{ latestWorkflow.assistantReleaseVersion }}</a-descriptions-item>
                 <a-descriptions-item label="状态">{{ latestWorkflow.status }}</a-descriptions-item>
+                <a-descriptions-item label="当前节点">{{ latestWorkflow.currentNodeKey }}</a-descriptions-item>
                 <a-descriptions-item label="摘要">{{ latestWorkflow.summary }}</a-descriptions-item>
+                <a-descriptions-item label="最终回复">{{ latestWorkflow.finalReply ?? '尚未输出' }}</a-descriptions-item>
                 <a-descriptions-item label="MCP 摘要">
                   {{ currentSession?.latestMcpSummary?.externalTicketId
                     ? `${currentSession.latestMcpSummary.capabilityName} / ${currentSession.latestMcpSummary.externalTicketId} / ${currentSession.latestMcpSummary.recommendedAction}`
                     : '当前无 MCP 调用记录' }}
+                </a-descriptions-item>
+                <a-descriptions-item label="人工待办">
+                  {{ currentSession?.latestHumanTask
+                    ? `${currentSession.latestHumanTask.title} / ${currentSession.latestHumanTask.expectedAction}`
+                    : '当前无人工待办' }}
                 </a-descriptions-item>
                 <a-descriptions-item label="资源锚点">{{ latestWorkflow.resourceAnchors.join(' / ') }}</a-descriptions-item>
               </a-descriptions>

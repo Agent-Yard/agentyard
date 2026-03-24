@@ -1,5 +1,6 @@
 package com.lynxus.worker.workflow;
 
+import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowResumeRequest;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowResult;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowStartRequest;
 import com.lynxus.worker.runtime.AgentRuntimeGateway;
@@ -14,7 +15,12 @@ public class KnowledgeQaActivitiesImpl implements KnowledgeQaActivities {
     }
 
     @Override
-    public WorkflowResult executeAgentRuntime(WorkflowStartRequest request) {
-        return agentRuntimeGateway.run(request);
+    public WorkflowResult startExecution(WorkflowStartRequest request) {
+        return agentRuntimeGateway.start(request);
+    }
+
+    @Override
+    public WorkflowResult resumeExecution(WorkflowResumeRequest request) {
+        return agentRuntimeGateway.resume(request);
     }
 }

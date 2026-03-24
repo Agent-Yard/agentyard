@@ -10,6 +10,8 @@ spring:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/lynxus}
     username: ${SPRING_DATASOURCE_USERNAME:lynxus}
     password: ${SPRING_DATASOURCE_PASSWORD:lynxus}
+  flyway:
+    enabled: true
   data:
     redis:
       host: ${SPRING_DATA_REDIS_HOST:localhost}
@@ -25,6 +27,13 @@ server:
   port: ${LYNXUS_API_PORT:8080}
 
 lynxus:
+  catalog:
+    seed:
+      enabled: ${LYNXUS_CATALOG_SEED_ENABLED:true}
+  runtime:
+    seed:
+      enabled: ${LYNXUS_RUNTIME_SEED_ENABLED:true}
+      execute-opening-messages: ${LYNXUS_RUNTIME_SEED_EXECUTE_OPENING_MESSAGES:false}
   minio:
     endpoint: ${LYNXUS_MINIO_ENDPOINT:http://localhost:9000}
     access-key: ${LYNXUS_MINIO_ACCESS_KEY:minioadmin}
@@ -32,4 +41,4 @@ lynxus:
   temporal:
     target: ${LYNXUS_TEMPORAL_TARGET:localhost:7233}
     namespace: ${LYNXUS_TEMPORAL_NAMESPACE:default}
-    task-queue: ${LYNXUS_TEMPORAL_TASK_QUEUE:lynxus-knowledge-escalation}
+    task-queue: ${LYNXUS_TEMPORAL_TASK_QUEUE:lynxus-customer-ops}
