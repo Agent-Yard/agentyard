@@ -10,6 +10,7 @@ import com.lynxus.contracts.runtime.WorkflowContracts;
 import com.lynxus.contracts.runtime.WorkflowContracts.TaskStatus;
 import java.time.Instant;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
@@ -35,10 +36,13 @@ class RuntimeServiceTest {
                 ),
                 List.of(),
                 waitingHuman,
-                new WorkflowContracts.McpInvocationSummary(
-                    "创建协同工单",
-                    "TICKET-10001",
+                new WorkflowContracts.ToolOutcomeSummary(
+                    "resource-tool-ticket",
+                    "工单协同 Tool",
+                    "create_ticket",
+                    "MCP",
                     waitingHuman ? "ACCEPTED" : "RECORDED",
+                    "TICKET-10001",
                     waitingHuman ? "HUMAN_HANDOFF" : "AUTO_CLOSE",
                     waitingHuman ? "需要人工介入" : "无需人工介入"
                 )
@@ -58,7 +62,7 @@ class RuntimeServiceTest {
                 List.of(new WorkflowContracts.NodeSnapshot("end", "结束", WorkflowContracts.NodeStatus.COMPLETED, action.comment(), Instant.now())),
                 List.of(),
                 false,
-                new WorkflowContracts.McpInvocationSummary("创建协同工单", "TICKET-10001", "ACCEPTED", "HUMAN_HANDOFF", "已同步工单")
+                new WorkflowContracts.ToolOutcomeSummary("resource-tool-ticket", "工单协同 Tool", "create_ticket", "MCP", "ACCEPTED", "TICKET-10001", "HUMAN_HANDOFF", "已同步工单")
             );
         }
 
@@ -76,7 +80,7 @@ class RuntimeServiceTest {
 
         assertEquals(TaskStatus.WAITING_HUMAN, task.status());
         assertFalse(task.assistantReleaseVersion().isBlank());
-        assertNotNull(service.getWorkflow(task.workflowInstanceId()).mcpSummary());
+        assertNotNull(service.getWorkflow(task.workflowInstanceId()).latestToolOutcome());
         assertNotNull(service.getWorkflow(task.workflowInstanceId()).checkpoint());
     }
 
@@ -88,7 +92,7 @@ class RuntimeServiceTest {
 
         assertEquals(TaskStatus.COMPLETED, task.status());
         assertFalse(service.getWorkflow(task.workflowInstanceId()).resourceAnchors().isEmpty());
-        assertNotNull(service.getWorkflow(task.workflowInstanceId()).mcpSummary());
+        assertNotNull(service.getWorkflow(task.workflowInstanceId()).latestToolOutcome());
     }
 
     @Test
@@ -215,5 +219,49 @@ class RuntimeServiceTest {
 
         assertEquals("请通过登录页的忘记密码完成密码重置。", refreshed.messages().get(refreshed.messages().size() - 1).content());
         assertEquals(WorkflowContracts.WorkflowStatus.COMPLETED, refreshingService.getWorkflow(refreshed.latestWorkflowInstanceId()).status());
+    }
+
+    @Test
+    void shouldIncludeKnowledgeDocumentsInRuntimeSnapshot() {
+        List<WorkflowContracts.WorkflowStartRequest> capturedRequests = new ArrayList<>();
+        RuntimeService snapshotService = new RuntimeService(new AssistantRunWorkflowGateway() {
+            @Override
+            public WorkflowContracts.WorkflowResult startAndAwaitFirstResult(WorkflowContracts.WorkflowStartRequest request) {
+                capturedRequests.add(request);
+                return new WorkflowContracts.WorkflowResult(
+                    request.workflowInstanceId(),
+                    WorkflowContracts.WorkflowStatus.COMPLETED,
+                    "问题已自动处理完成。",
+                    "请通过登录页的忘记密码完成密码重置。",
+                    "end",
+                    null,
+                    null,
+                    List.of(new WorkflowContracts.NodeSnapshot("end", "结束", WorkflowContracts.NodeStatus.COMPLETED, "流程结束", Instant.now())),
+                    List.of(),
+                    false,
+                    null
+                );
+            }
+
+            @Override
+            public WorkflowContracts.WorkflowResult submitHumanActionAndAwaitResult(String workflowId, WorkflowContracts.HumanAction action) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public WorkflowContracts.WorkflowResult currentResult(String workflowId) {
+                return null;
+            }
+        }, new CatalogService());
+
+        snapshotService.launchTask(new RuntimeDtos.TaskLaunchRequest("scenario-customer-ops", "assistant-customer-ops", "怎么重置密码", "tester"));
+
+        WorkflowContracts.ResourceVersionSnapshot knowledgeBase = capturedRequests.getFirst().assistant().resources().stream()
+            .filter(resource -> resource.resourceType() == WorkflowContracts.ResourceType.KNOWLEDGE_BASE)
+            .findFirst()
+            .orElseThrow();
+
+        assertFalse(knowledgeBase.configuration().knowledgeBase().documents().isEmpty());
+        assertTrue(knowledgeBase.configuration().knowledgeBase().documents().getFirst().content().contains("密码重置"));
     }
 }

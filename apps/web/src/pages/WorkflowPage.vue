@@ -56,9 +56,9 @@ function submitAction(action: string) {
         <a-descriptions-item label="资源锚点">
           {{ current.resourceAnchors.join(' / ') || '无' }}
         </a-descriptions-item>
-        <a-descriptions-item label="MCP 工单">{{ current.mcpSummary?.externalTicketId || '无' }}</a-descriptions-item>
-        <a-descriptions-item label="MCP 结果">
-          {{ current.mcpSummary ? `${current.mcpSummary.status} / ${current.mcpSummary.recommendedAction}` : '无' }}
+        <a-descriptions-item label="工具外部引用">{{ current.latestToolOutcome?.externalReference || '无' }}</a-descriptions-item>
+        <a-descriptions-item label="工具结果">
+          {{ current.latestToolOutcome ? `${current.latestToolOutcome.status} / ${current.latestToolOutcome.recommendedAction}` : '无' }}
         </a-descriptions-item>
       </a-descriptions>
 
@@ -103,7 +103,7 @@ function submitAction(action: string) {
               <a-list-item>
                 <a-list-item-meta
                   :title="`${item.resourceName} · ${item.operation}`"
-                  :description="`${item.toolType} / ${item.status} / ${item.detail}`"
+                  :description="`${item.providerType} / ${item.status} / ${item.detail}`"
                 />
               </a-list-item>
             </template>

@@ -36,14 +36,8 @@ const createForm = reactive<CreateResourcePayload>({
     configuration: {
       type: 'KNOWLEDGE_BASE',
       knowledgeBase: {
-        sourceType: 'OBJECT_STORAGE',
-        sourceLocation: 'minio://knowledge/new-resource',
-        syncMode: 'MANUAL',
-        retrievalMode: 'HYBRID',
-        embeddingModel: 'text-embedding-3-large',
-        chunkStrategy: 'markdown-512-overlap-80',
         defaultTopK: 5,
-        documentCount: 0,
+        documents: [],
       },
     },
   },
@@ -62,43 +56,32 @@ function defaultConfiguration(type: ResourceType) {
     return {
       type,
       knowledgeBase: {
-        sourceType: 'OBJECT_STORAGE',
-        sourceLocation: 'minio://knowledge/new-resource',
-        syncMode: 'MANUAL',
-        retrievalMode: 'HYBRID',
-        embeddingModel: 'text-embedding-3-large',
-        chunkStrategy: 'markdown-512-overlap-80',
         defaultTopK: 5,
-        documentCount: 0,
+        documents: [],
       },
     };
   }
-  if (type === 'SKILL') {
+  if (type === 'TOOL') {
     return {
       type,
-      skill: {
-        runtime: 'HTTP',
-        endpoint: 'https://skill-gateway.internal/new-skill',
-        method: 'POST',
+      tool: {
+        operations: [
+          {
+            name: 'invoke',
+            description: '执行通用工具动作',
+            inputSchema: '{"input":"string"}',
+            outputSchema: '{"output":"string"}',
+          },
+        ],
+        providerType: 'HTTP',
         authType: 'SERVICE_ACCOUNT',
         timeoutSeconds: 15,
-        retryPolicy: 'EXPONENTIAL_BACKOFF',
-        inputSchema: '{input}',
-        outputSchema: '{output}',
-      },
-    };
-  }
-  if (type === 'MCP') {
-    return {
-      type,
-      mcp: {
-        serverName: 'new-mcp-server',
-        transport: 'STREAMABLE_HTTP',
-        connectionUri: 'https://mcp-gateway.internal/new-server',
-        namespace: 'default.namespace',
-        authType: 'API_KEY',
-        heartbeatSeconds: 30,
-        exposedTools: ['tool_a', 'tool_b'],
+        retryPolicy: 'NONE',
+        http: {
+          endpoint: 'https://tool-gateway.internal/new-tool',
+          method: 'POST',
+        },
+        mcp: null,
       },
     };
   }

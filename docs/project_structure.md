@@ -53,7 +53,7 @@
 ### 资源
 
 定义：可被助手、智能体引用的能力资产。
-当前范围：Knowledge Base、Skill、MCP、LLM Model、Prompt Template。
+当前范围：Knowledge Base、Tool、LLM Model、Prompt Template。
 职责：提供可复用能力和稳定版本锚点。
 主要使用者：开发者、域管理员。
 
@@ -105,7 +105,7 @@
 - 工作流 Workflow
 - 节点执行记录
 - 人工介入记录
-- Human checkpoint / MCP 摘要 / Tool 调用记录
+- Human checkpoint / Tool 结果摘要 / Tool 调用记录
 
 这样才能把“定义态”和“运行态”真正分开。
 
@@ -118,7 +118,7 @@
 - 节点类型：`START / AGENT / HUMAN / END`
 - 边模型：`sourceNodeKey / targetNodeKey / routeKey / defaultEdge`
 - HUMAN 节点可生成人工待办与 checkpoint
-- AGENT 节点内部负责知识检索、LLM 调用、Skill / MCP 调用和路由决策
+- AGENT 节点内部负责知识检索、LLM 调用、Tool 调用和路由决策
 
 ## 4. 一句话总结
 

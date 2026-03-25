@@ -122,14 +122,6 @@ public class CatalogController {
         return ApiResponse.ok(catalogService.deleteAgent(agentId));
     }
 
-    @PutMapping("/agents/{agentId}/tool-version-pins")
-    public ApiResponse<?> updateAgentToolVersionPins(
-        @PathVariable String agentId,
-        @RequestBody UpdateAgentToolVersionPinsRequest request
-    ) {
-        return ApiResponse.ok(catalogService.updateAgentToolVersionPins(agentId, request));
-    }
-
     @GetMapping("/resources")
     public ApiResponse<?> resources() {
         return ApiResponse.ok(catalogService.listResources());
@@ -190,8 +182,4 @@ public class CatalogController {
         return ApiResponse.ok(catalogService.deleteResource(resourceId));
     }
 
-    @PostMapping("/tool-version-pins")
-    public ApiResponse<?> pinToolVersion(@RequestBody PinToolVersionRequest request) {
-        return ApiResponse.ok(catalogService.pinToolVersion(request));
-    }
 }

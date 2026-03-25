@@ -279,10 +279,12 @@ function selectSession(sessionId: string) {
                 <a-descriptions-item label="当前节点">{{ latestWorkflow.currentNodeKey }}</a-descriptions-item>
                 <a-descriptions-item label="摘要">{{ latestWorkflow.summary }}</a-descriptions-item>
                 <a-descriptions-item label="最终回复">{{ latestWorkflow.finalReply ?? '尚未输出' }}</a-descriptions-item>
-                <a-descriptions-item label="MCP 摘要">
-                  {{ currentSession?.latestMcpSummary?.externalTicketId
-                    ? `${currentSession.latestMcpSummary.capabilityName} / ${currentSession.latestMcpSummary.externalTicketId} / ${currentSession.latestMcpSummary.recommendedAction}`
-                    : '当前无 MCP 调用记录' }}
+                <a-descriptions-item label="工具结果">
+                  {{ currentSession?.latestToolOutcome?.externalReference
+                    ? `${currentSession.latestToolOutcome.toolResourceName} / ${currentSession.latestToolOutcome.externalReference} / ${currentSession.latestToolOutcome.recommendedAction}`
+                    : currentSession?.latestToolOutcome
+                      ? `${currentSession.latestToolOutcome.toolResourceName} / ${currentSession.latestToolOutcome.status} / ${currentSession.latestToolOutcome.recommendedAction}`
+                      : '当前无工具调用记录' }}
                 </a-descriptions-item>
                 <a-descriptions-item label="人工待办">
                   {{ currentSession?.latestHumanTask

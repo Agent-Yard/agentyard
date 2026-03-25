@@ -44,7 +44,7 @@ class AssistantRunWorkflowTest {
                         List.of(new WorkflowContracts.NodeSnapshot("human-review", "人工介入", WorkflowContracts.NodeStatus.WAITING_HUMAN, "等待人工", Instant.now())),
                         List.of(),
                         true,
-                        new WorkflowContracts.McpInvocationSummary("创建协同工单", "TICKET-10001", "ACCEPTED", "HUMAN_HANDOFF", "stub")
+                        new WorkflowContracts.ToolOutcomeSummary("resource-tool-ticket", "工单协同 Tool", "create_ticket", "MCP", "ACCEPTED", "TICKET-10001", "HUMAN_HANDOFF", "stub")
                     )
                     : new WorkflowContracts.WorkflowResult(
                         request.workflowInstanceId(),
@@ -77,7 +77,7 @@ class AssistantRunWorkflowTest {
                     List.of(new WorkflowContracts.NodeSnapshot("end", "结束", WorkflowContracts.NodeStatus.COMPLETED, "流程结束", Instant.now())),
                     List.of(),
                     false,
-                    new WorkflowContracts.McpInvocationSummary("创建协同工单", "TICKET-10001", "ACCEPTED", "HUMAN_HANDOFF", "stub")
+                    new WorkflowContracts.ToolOutcomeSummary("resource-tool-ticket", "工单协同 Tool", "create_ticket", "MCP", "ACCEPTED", "TICKET-10001", "HUMAN_HANDOFF", "stub")
                 );
             }
         }));

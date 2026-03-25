@@ -30,8 +30,7 @@
 ### 4. 真实资源执行层
 - LLM：按已发布模型资源真实调用 provider，agent 级配置优先，缺省回退 assistant 默认模型与 Prompt。
 - 知识库：实现轻量检索适配层，按知识库资源配置从可访问文档源加载内容，先提供仓内可运行的 keyword/BM25/hybrid 检索闭环，不绑定外部向量库。
-- Skill：本阶段统一走 runtime 可直接调用的 HTTP adapter；现有 `WORKFLOW_ACTIVITY` 作为破坏性升级内容移出 demo 主链，不作为第一阶段真实执行路径。
-- MCP：实现 runtime 侧 MCP adapter，第一阶段优先支持当前 demo 已使用的 `STREAMABLE_HTTP`，记录工具名、参数、结果摘要与失败信息。
+- Tool provider：本阶段统一落地 `HTTP / MCP` 两种 provider；`HTTP` 直接调用 endpoint，`MCP` 通过 operation mapping 接入远端工具。
 - 所有资源执行都写入节点执行记录与 workflow 观测数据，失败时可按节点策略决定重试、转人工或终止。
 
 ### 5. 前端与观测
@@ -50,11 +49,11 @@
 
 ## Test Plan
 - 图模型单元测试：合法图校验、非法图拒绝、结构化路由匹配、默认分支回退、死节点检测。
-- runtime 单元测试：agent 继承/覆盖模型与 Prompt、生效资源解析、知识检索、Skill 调用、MCP 调用、tool 失败转人工。
+- runtime 单元测试：agent 继承/覆盖模型与 Prompt、生效资源解析、知识检索、HTTP Tool 调用、MCP Tool 调用、tool 失败转人工。
 - workflow 集成测试：用户消息启动、多 agent 串行分支、进入 `WAITING_HUMAN`、signal 恢复、恢复后继续执行到完成。
 - API 集成测试：assistant 发布冻结图快照与资源锚点、session 绑定 release 启动、workflow 详情返回新观测字段。
 - 前端测试：编排页创建/保存新图、非法图阻止保存、流程页展示人工阻塞与恢复结果。
-- 端到端 demo：FAQ 自动完成、售后策略调用 Skill、投诉进入人工节点并恢复闭环。
+- 端到端 demo：FAQ 自动完成、售后策略调用 Tool、投诉进入人工节点并恢复闭环。
 
 ## Assumptions / Defaults
 - 仅做单 assistant 内多 agent 编排，不引入跨 assistant workflow。
@@ -62,4 +61,4 @@
 - 节点类型采用显式模型，tool 不独立成图节点。
 - 路由采用结构化决策，不依赖自然语言解释边条件。
 - 本阶段前后端一起升级，且允许 breaking change；旧 orchestration 数据不保留兼容。
-- 真实资源执行第一阶段优先保证 `LLM + 轻量知识检索 + HTTP Skill + STREAMABLE_HTTP MCP` 闭环可用。
+- 真实资源执行第一阶段优先保证 `LLM + 轻量知识检索 + HTTP Tool + STREAMABLE_HTTP MCP Tool` 闭环可用。

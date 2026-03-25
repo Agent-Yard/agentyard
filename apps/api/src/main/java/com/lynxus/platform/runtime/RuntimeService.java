@@ -31,17 +31,20 @@ import com.lynxus.contracts.runtime.WorkflowContracts.GraphSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.HumanAction;
 import com.lynxus.contracts.runtime.WorkflowContracts.HumanNodeConfig;
 import com.lynxus.contracts.runtime.WorkflowContracts.HumanTaskSnapshot;
+import com.lynxus.contracts.runtime.WorkflowContracts.HttpToolProviderConfig;
 import com.lynxus.contracts.runtime.WorkflowContracts.KnowledgeBaseConfig;
 import com.lynxus.contracts.runtime.WorkflowContracts.LlmModelConfig;
-import com.lynxus.contracts.runtime.WorkflowContracts.McpConfig;
+import com.lynxus.contracts.runtime.WorkflowContracts.McpToolProviderConfig;
 import com.lynxus.contracts.runtime.WorkflowContracts.NodeStatus;
 import com.lynxus.contracts.runtime.WorkflowContracts.PromptTemplateConfig;
 import com.lynxus.contracts.runtime.WorkflowContracts.ResourceConfigurationSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.ResourceVersionSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.SessionContext;
 import com.lynxus.contracts.runtime.WorkflowContracts.SessionMessageSnapshot;
-import com.lynxus.contracts.runtime.WorkflowContracts.SkillConfig;
 import com.lynxus.contracts.runtime.WorkflowContracts.TaskStatus;
+import com.lynxus.contracts.runtime.WorkflowContracts.ToolConfig;
+import com.lynxus.contracts.runtime.WorkflowContracts.ToolOperationConfig;
+import com.lynxus.contracts.runtime.WorkflowContracts.ToolOutcomeSummary;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowResult;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowStartRequest;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowStatus;
@@ -167,7 +170,7 @@ public class RuntimeService {
             messages,
             turn.task().id(),
             turn.workflow().id(),
-            turn.workflow().mcpSummary(),
+            turn.workflow().latestToolOutcome(),
             turn.workflow().humanTask()
         );
         replaceSession(updated);
@@ -321,7 +324,7 @@ public class RuntimeService {
             result.escalationRequired(),
             result.checkpoint(),
             result.humanTask(),
-            result.mcpSummary(),
+            result.latestToolOutcome(),
             existing.resourceAnchors(),
             result.nodes().stream()
                 .map(node -> new NodeExecutionDto(nextId("node"), existing.id(), node.nodeKey(), node.nodeName(), node.status(), node.detail(), node.updatedAt()))
@@ -387,7 +390,7 @@ public class RuntimeService {
                 messages,
                 session.latestTaskId(),
                 session.latestWorkflowInstanceId(),
-                workflow.mcpSummary(),
+                workflow.latestToolOutcome(),
                 workflow.humanTask()
             );
         });
@@ -423,7 +426,7 @@ public class RuntimeService {
             || !Objects.equals(previous.summary(), updated.summary())
             || !Objects.equals(previous.finalReply(), updated.finalReply())
             || !Objects.equals(session.latestHumanTask(), updated.humanTask())
-            || !Objects.equals(session.latestMcpSummary(), updated.mcpSummary());
+            || !Objects.equals(session.latestToolOutcome(), updated.latestToolOutcome());
         if (!changed) {
             return session;
         }
@@ -440,7 +443,7 @@ public class RuntimeService {
             messages,
             session.latestTaskId(),
             session.latestWorkflowInstanceId(),
-            updated.mcpSummary(),
+            updated.latestToolOutcome(),
             updated.humanTask()
         );
     }
@@ -514,7 +517,7 @@ public class RuntimeService {
 
     private AgentSnapshot toAgentSnapshot(AgentDto agent, List<AssistantReleaseResourceDto> resources) {
         List<String> toolVersionIds = agent.executionPolicy().toolResourceIds().stream()
-            .map(toolResourceId -> resolvePinnedToolVersionId(agent, toolResourceId))
+            .map(toolResourceId -> resolveReleasedVersionId(resources, toolResourceId))
             .toList();
         return new AgentSnapshot(
             agent.id(),
@@ -561,8 +564,7 @@ public class RuntimeService {
                 captureAdHocEffectiveResource(resolved, resourceViews, agent.executionPolicy().knowledgeBaseResourceId(), agent.name());
             }
             for (String toolResourceId : agent.executionPolicy().toolResourceIds()) {
-                String pinnedVersionId = resolvePinnedToolVersionId(agent, toolResourceId);
-                captureAdHocPinnedToolResource(resolved, resourceViews, toolResourceId, pinnedVersionId, agent.name());
+                captureAdHocEffectiveResource(resolved, resourceViews, toolResourceId, agent.name());
             }
         }
         return List.copyOf(resolved.values());
@@ -579,21 +581,6 @@ public class RuntimeService {
         }
         ResourceDto resource = findRuntimeResource(resourceViews, resourceId);
         var version = resource.effectiveVersion() == null ? resource.latestVersion() : resource.effectiveVersion();
-        mergeAdHocResource(resolved, resource, version, boundAgent);
-    }
-
-    private void captureAdHocPinnedToolResource(
-        Map<String, AssistantReleaseResourceDto> resolved,
-        List<ResourceDto> resourceViews,
-        String resourceId,
-        String versionId,
-        String boundAgent
-    ) {
-        ResourceDto resource = findRuntimeResource(resourceViews, resourceId);
-        var version = resource.versions().stream()
-            .filter(item -> item.id().equals(versionId))
-            .findFirst()
-            .orElseThrow(() -> new IllegalStateException("tool version pin not found in runtime snapshot: " + resourceId + "/" + versionId));
         mergeAdHocResource(resolved, resource, version, boundAgent);
     }
 
@@ -651,14 +638,6 @@ public class RuntimeService {
             .orElseThrow(() -> new IllegalStateException("released resource version not found: " + resourceId));
     }
 
-    private String resolvePinnedToolVersionId(AgentDto agent, String toolResourceId) {
-        return agent.toolVersionPins().stream()
-            .filter(toolVersionPin -> toolVersionPin.resourceId().equals(toolResourceId))
-            .map(toolVersionPin -> toolVersionPin.resourceVersionId())
-            .findFirst()
-            .orElseThrow(() -> new IllegalStateException("tool version pin is required before runtime execution: " + agent.name() + " -> " + toolResourceId));
-    }
-
     private ResourceVersionSnapshot toResourceSnapshot(AssistantReleaseResourceDto resource) {
         return new ResourceVersionSnapshot(
             resource.resourceId(),
@@ -675,33 +654,41 @@ public class RuntimeService {
         return new ResourceConfigurationSnapshot(
             configuration.type(),
             configuration.knowledgeBase() == null ? null : new KnowledgeBaseConfig(
-                configuration.knowledgeBase().sourceType(),
-                configuration.knowledgeBase().sourceLocation(),
-                configuration.knowledgeBase().syncMode(),
-                configuration.knowledgeBase().retrievalMode(),
-                configuration.knowledgeBase().embeddingModel(),
-                configuration.knowledgeBase().chunkStrategy(),
                 configuration.knowledgeBase().defaultTopK(),
-                configuration.knowledgeBase().documentCount()
+                configuration.knowledgeBase().documents() == null ? List.of() : configuration.knowledgeBase().documents().stream()
+                    .map(document -> new WorkflowContracts.KnowledgeBaseDocument(
+                        document.id(),
+                        document.title(),
+                        document.content(),
+                        document.sourceUri()
+                    ))
+                    .toList()
             ),
-            configuration.skill() == null ? null : new SkillConfig(
-                configuration.skill().runtime(),
-                configuration.skill().endpoint(),
-                configuration.skill().method(),
-                configuration.skill().authType(),
-                configuration.skill().timeoutSeconds(),
-                configuration.skill().retryPolicy(),
-                configuration.skill().inputSchema(),
-                configuration.skill().outputSchema()
-            ),
-            configuration.mcp() == null ? null : new McpConfig(
-                configuration.mcp().serverName(),
-                configuration.mcp().transport(),
-                configuration.mcp().connectionUri(),
-                configuration.mcp().namespace(),
-                configuration.mcp().authType(),
-                configuration.mcp().heartbeatSeconds(),
-                configuration.mcp().exposedTools()
+            configuration.tool() == null ? null : new ToolConfig(
+                configuration.tool().operations() == null ? List.of() : configuration.tool().operations().stream()
+                    .map(operation -> new ToolOperationConfig(
+                        operation.name(),
+                        operation.description(),
+                        operation.inputSchema(),
+                        operation.outputSchema()
+                    ))
+                    .toList(),
+                configuration.tool().providerType(),
+                configuration.tool().authType(),
+                configuration.tool().timeoutSeconds(),
+                configuration.tool().retryPolicy(),
+                configuration.tool().http() == null ? null : new HttpToolProviderConfig(
+                    configuration.tool().http().endpoint(),
+                    configuration.tool().http().method()
+                ),
+                configuration.tool().mcp() == null ? null : new McpToolProviderConfig(
+                    configuration.tool().mcp().serverName(),
+                    configuration.tool().mcp().transport(),
+                    configuration.tool().mcp().connectionUri(),
+                    configuration.tool().mcp().namespace(),
+                    configuration.tool().mcp().heartbeatSeconds(),
+                    configuration.tool().mcp().operationMappings()
+                )
             ),
             configuration.llmModel() == null ? null : new LlmModelConfig(
                 configuration.llmModel().providerType(),
@@ -916,7 +903,7 @@ public class RuntimeService {
             && existing.escalationRequired() == result.escalationRequired()
             && Objects.equals(existing.checkpoint(), result.checkpoint())
             && Objects.equals(existing.humanTask(), result.humanTask())
-            && Objects.equals(existing.mcpSummary(), result.mcpSummary())
+            && Objects.equals(existing.latestToolOutcome(), result.latestToolOutcome())
             && existing.toolCalls().equals(result.toolCalls())
             && sameNodes(existing.nodes(), result.nodes());
     }

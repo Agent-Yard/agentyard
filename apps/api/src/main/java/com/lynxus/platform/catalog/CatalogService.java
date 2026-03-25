@@ -5,6 +5,7 @@ import static com.lynxus.platform.catalog.CatalogDtos.*;
 import com.lynxus.contracts.runtime.WorkflowContracts.OrchestrationNodeType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ResourceType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
+import com.lynxus.contracts.runtime.WorkflowContracts.ToolProviderType;
 import com.lynxus.contracts.runtime.WorkflowContracts.VersionStatus;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -19,12 +20,9 @@ import java.util.UUID;
 import java.util.function.Function;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 @Service
 public class CatalogService {
-    private static final Logger log = LoggerFactory.getLogger(CatalogService.class);
     private final CatalogRepository repository;
     private boolean initialized;
     private final List<BusinessDomainDto> domains = new ArrayList<>();
@@ -271,7 +269,6 @@ public class CatalogService {
             request.name(),
             request.role(),
             request.instructions(),
-            List.of(),
             normalizeAgentExecutionPolicy(request.executionPolicy())
         );
         agents.add(agent);
@@ -288,7 +285,6 @@ public class CatalogService {
             request.name(),
             request.role(),
             request.instructions(),
-            existing.toolVersionPins(),
             normalizeAgentExecutionPolicy(request.executionPolicy())
         );
         replace(agents, AgentDto::id, updated);
@@ -303,30 +299,6 @@ public class CatalogService {
         recycleOrchestrationAfterAgentDeletion(existing.assistantId(), agentId);
         persistState();
         return existing;
-    }
-
-    public AgentDto updateAgentToolVersionPins(String agentId, UpdateAgentToolVersionPinsRequest request) {
-        ensureLoaded();
-        AgentDto agent = findAgent(agentId);
-        Map<String, ToolVersionPinDto> existingToolVersionPins = agent.toolVersionPins().stream()
-            .collect(LinkedHashMap::new, (map, item) -> map.put(item.resourceVersionId(), item), Map::putAll);
-
-        List<ToolVersionPinDto> updatedToolVersionPins = request.toolVersionPins().stream()
-            .map(toolVersionPin -> toToolVersionPin(agentId, existingToolVersionPins, toolVersionPin))
-            .toList();
-
-        AgentDto updated = new AgentDto(
-            agent.id(),
-            agent.assistantId(),
-            agent.name(),
-            agent.role(),
-            agent.instructions(),
-            updatedToolVersionPins,
-            agent.executionPolicy()
-        );
-        replace(agents, AgentDto::id, updated);
-        persistState();
-        return updated;
     }
 
     public List<AgentDto> listAgents() {
@@ -385,6 +357,10 @@ public class CatalogService {
         ensureLoaded();
         ResourceDto resource = findResource(resourceId);
         VersionStatus status = request.status() == null ? VersionStatus.DRAFT : request.status();
+        ResourceVersionConfigurationDto normalizedConfiguration = normalizeConfiguration(resource.type(), request.configuration());
+        if (status == VersionStatus.PUBLISHED) {
+            validateVersionReadyForActivation(resource.type(), normalizedConfiguration);
+        }
         List<ResourceVersionDto> existingVersions = versionsFor(resourceId).stream()
             .map(version -> status == VersionStatus.PUBLISHED && version.status() == VersionStatus.PUBLISHED
                 ? new ResourceVersionDto(
@@ -409,7 +385,7 @@ public class CatalogService {
             request.configDigest() == null || request.configDigest().isBlank() ? "digest-" + nextId("cfg") : request.configDigest(),
             Instant.now(),
             status == VersionStatus.PUBLISHED ? Instant.now() : null,
-            normalizeConfiguration(resource.type(), request.configuration())
+            normalizedConfiguration
         );
         existingVersions.add(created);
         resourceVersions.put(resourceId, existingVersions);
@@ -419,7 +395,9 @@ public class CatalogService {
 
     public ResourceVersionDto publishResourceVersion(String resourceId, String versionId) {
         ensureLoaded();
-        findResource(resourceId);
+        ResourceDto resource = findResource(resourceId);
+        ResourceVersionDto targetVersion = findResourceVersion(resourceId, versionId);
+        validateVersionReadyForActivation(resource.type(), targetVersion.configuration());
         List<ResourceVersionDto> updatedVersions = versionsFor(resourceId).stream()
             .map(version -> new ResourceVersionDto(
                 version.id(),
@@ -532,23 +510,16 @@ public class CatalogService {
             new ResourceBlueprintDto(
                 ResourceType.KNOWLEDGE_BASE,
                 "知识库",
-                "承载文档语料、检索策略和索引同步配置，供助手在问答与决策阶段检索知识。",
-                List.of("数据来源", "同步方式", "检索模式", "Embedding 模型", "切片策略", "默认召回数", "文档规模"),
+                "承载可发布的知识文档集合和默认召回数，供助手在问答与决策阶段检索知识。",
+                List.of("默认召回数", "导入文档"),
                 defaultConfiguration(ResourceType.KNOWLEDGE_BASE)
             ),
             new ResourceBlueprintDto(
-                ResourceType.SKILL,
-                "Skill",
-                "承载可执行能力的调用协议、输入输出契约和超时重试策略，适合封装业务动作。",
-                List.of("运行方式", "调用端点", "鉴权方式", "超时设置", "重试策略", "输入 Schema", "输出 Schema"),
-                defaultConfiguration(ResourceType.SKILL)
-            ),
-            new ResourceBlueprintDto(
-                ResourceType.MCP,
-                "MCP",
-                "承载外部工具服务的连接方式、命名空间和暴露工具清单，适合接入系统能力。",
-                List.of("服务名称", "传输协议", "连接地址", "命名空间", "鉴权方式", "心跳设置", "暴露工具"),
-                defaultConfiguration(ResourceType.MCP)
+                ResourceType.TOOL,
+                "Tool",
+                "承载 agent 可调用的业务能力，并通过 provider 定义其 HTTP 或 MCP 实现方式。",
+                List.of("操作定义", "Provider 类型", "鉴权方式", "超时设置", "重试策略", "HTTP / MCP Provider 配置"),
+                defaultConfiguration(ResourceType.TOOL)
             ),
             new ResourceBlueprintDto(
                 ResourceType.LLM_MODEL,
@@ -565,35 +536,6 @@ public class CatalogService {
                 defaultConfiguration(ResourceType.PROMPT_TEMPLATE)
             )
         );
-    }
-
-    public ToolVersionPinDto pinToolVersion(PinToolVersionRequest request) {
-        ensureLoaded();
-        AgentDto agent = findAgent(request.consumerId());
-        ResourceDto resource = findResource(request.resourceId());
-        validateToolVersionPin(agent, resource, effectiveVersion(resource).id());
-        ResourceVersionDto version = effectiveVersion(resource);
-        ToolVersionPinDto toolVersionPin = new ToolVersionPinDto(
-            nextId("tool-version-pin"),
-            request.resourceId(),
-            version.id(),
-            version.version(),
-            request.consumerType(),
-            request.consumerId(),
-            Instant.now()
-        );
-        AgentDto updated = new AgentDto(
-            agent.id(),
-            agent.assistantId(),
-            agent.name(),
-            agent.role(),
-            agent.instructions(),
-            append(agent.toolVersionPins(), toolVersionPin),
-            agent.executionPolicy()
-        );
-        replace(agents, AgentDto::id, updated);
-        persistState();
-        return toolVersionPin;
     }
 
     public synchronized boolean initializeDemoDataIfEmpty() {
@@ -755,37 +697,37 @@ public class CatalogService {
             null,
             List.of()
         );
-        ResourceDto refundSkill = new ResourceDto(
-            "resource-skill-refund",
+        ResourceDto refundTool = new ResourceDto(
+            "resource-tool-refund",
             domain.id(),
-            "售后策略 Skill",
-            ResourceType.SKILL,
+            "售后策略 Tool",
+            ResourceType.TOOL,
             ShareScope.PRIVATE,
             "ASSISTANT",
             assistant.id(),
-            "通过 HTTP 协议返回退款与补偿策略",
+            "通过 HTTP provider 返回退款与补偿策略",
             "售后策略团队",
-            List.of("Skill", "退款"),
+            List.of("Tool", "退款"),
             null,
             null,
             List.of()
         );
-        ResourceDto ticketMcp = new ResourceDto(
-            "resource-mcp-ticket",
+        ResourceDto ticketTool = new ResourceDto(
+            "resource-tool-ticket",
             domain.id(),
-            "工单协同 MCP",
-            ResourceType.MCP,
+            "工单协同 Tool",
+            ResourceType.TOOL,
             ShareScope.DOMAIN_SHARED,
             "DOMAIN",
             domain.id(),
-            "用于创建和同步人工协同工单",
+            "通过 MCP provider 创建和同步人工协同工单",
             "客服平台集成",
-            List.of("MCP", "工单"),
+            List.of("Tool", "工单"),
             null,
             null,
             List.of()
         );
-        resources.addAll(List.of(kb, llmModel, compatibleLlmModel, routerPrompt, faqPrompt, policyPrompt, handoffPrompt, refundSkill, ticketMcp));
+        resources.addAll(List.of(kb, llmModel, compatibleLlmModel, routerPrompt, faqPrompt, policyPrompt, handoffPrompt, refundTool, ticketTool));
 
         ResourceVersionDto kbPublished = seedResourceVersion(
             kb.id(),
@@ -795,8 +737,17 @@ public class CatalogService {
             "digest-kb-v1",
             new ResourceVersionConfigurationDto(
                 ResourceType.KNOWLEDGE_BASE,
-                new KnowledgeBaseConfigDto("SEED_DATA", "seed://support-faq", "MANUAL", "HYBRID", "text-embedding-3-large", "markdown-512-overlap-80", 5, 12),
-                null,
+                new KnowledgeBaseConfigDto(
+                    5,
+                    List.of(
+                        new KnowledgeBaseDocumentDto("kb-doc-password", "密码重置流程", "密码重置可以通过登录页的忘记密码完成，若邮箱不可用则需要人工验证。", "manual://customer-support/password-reset"),
+                        new KnowledgeBaseDocumentDto("kb-doc-refund-policy", "售后退款判定", "售后退款通常需要结合订单状态、支付时间和投诉原因综合判定。", "manual://customer-support/refund-policy"),
+                        new KnowledgeBaseDocumentDto("kb-doc-escalation", "争议升级规则", "涉及争议、投诉或升级字样的请求应优先进入人工协同分支。", "manual://customer-support/escalation-rule"),
+                        new KnowledgeBaseDocumentDto("kb-doc-ticketing", "人工协同工单规范", "人工协同时应创建工单，并保留问题摘要、处理意见与回访结果。", "manual://customer-support/ticketing"),
+                        new KnowledgeBaseDocumentDto("kb-doc-refund-direct", "七天无理由退款", "若订单满足七天无理由且未发货，可直接给出退款结论。", "manual://customer-support/refund-direct"),
+                        new KnowledgeBaseDocumentDto("kb-doc-refund-review", "发货后退款处理", "若订单已发货或存在争议，需要人工进一步确认。", "manual://customer-support/refund-review")
+                    )
+                ),
                 null,
                 null,
                 null
@@ -812,7 +763,6 @@ public class CatalogService {
                 ResourceType.LLM_MODEL,
                 null,
                 null,
-                null,
                 new LlmModelConfigDto("OPENAI", "gpt-4.1-mini", "https://api.openai.com/v1", "OPENAI_API_KEY", "lynxus-demo", "customer-ops", "global", 0.2, 1200),
                 null
             )
@@ -825,7 +775,6 @@ public class CatalogService {
             "digest-llm-compatible-v1",
             new ResourceVersionConfigurationDto(
                 ResourceType.LLM_MODEL,
-                null,
                 null,
                 null,
                 new LlmModelConfigDto(
@@ -853,7 +802,6 @@ public class CatalogService {
                 null,
                 null,
                 null,
-                null,
                 new PromptTemplateConfigDto(
                     "STRUCTURED_OUTPUT",
                     "你是客服协同编排里的路由智能体，请判断问题应该进入 FAQ、售后策略还是人工协同。",
@@ -870,7 +818,6 @@ public class CatalogService {
             "digest-prompt-faq-v1",
             new ResourceVersionConfigurationDto(
                 ResourceType.PROMPT_TEMPLATE,
-                null,
                 null,
                 null,
                 null,
@@ -893,7 +840,6 @@ public class CatalogService {
                 null,
                 null,
                 null,
-                null,
                 new PromptTemplateConfigDto(
                     "STRUCTURED_OUTPUT",
                     "你是售后策略智能体，请结合知识和工具结果给出结构化判断。",
@@ -913,7 +859,6 @@ public class CatalogService {
                 null,
                 null,
                 null,
-                null,
                 new PromptTemplateConfigDto(
                     "CHAT",
                     "你是人工协同闭环智能体，请根据人工动作补充后续说明和最终回复。",
@@ -922,32 +867,74 @@ public class CatalogService {
                 )
             )
         );
-        ResourceVersionDto refundSkillVersion = seedResourceVersion(
-            refundSkill.id(),
+        ResourceVersionDto refundToolVersion = seedResourceVersion(
+            refundTool.id(),
             "1.0.0",
             VersionStatus.PUBLISHED,
-            "售后策略 Skill",
-            "digest-skill-refund-v1",
+            "售后策略 Tool",
+            "digest-tool-refund-v1",
             new ResourceVersionConfigurationDto(
-                ResourceType.SKILL,
+                ResourceType.TOOL,
                 null,
-                new SkillConfigDto("HTTP", "http://demo.local/skills/refund-policy", "POST", "SERVICE_ACCOUNT", 15, "NONE", "{question}", "{eligibility, routeKey, actionPlan}"),
-                null,
+                new ToolConfigDto(
+                    List.of(new ToolOperationDto(
+                        "evaluate_refund",
+                        "根据问题和知识上下文判断退款/补偿策略",
+                        "{\"question\":\"string\",\"knowledgeHits\":[\"string\"]}",
+                        "{\"eligibility\":\"string\",\"routeKey\":\"string\",\"actionPlan\":\"string\"}"
+                    )),
+                    ToolProviderType.HTTP,
+                    "SERVICE_ACCOUNT",
+                    15,
+                    "NONE",
+                    new HttpToolProviderConfigDto("http://demo.local/skills/refund-policy", "POST"),
+                    null
+                ),
                 null,
                 null
             )
         );
-        ResourceVersionDto ticketMcpVersion = seedResourceVersion(
-            ticketMcp.id(),
+        ResourceVersionDto ticketToolVersion = seedResourceVersion(
+            ticketTool.id(),
             "1.0.0",
             VersionStatus.PUBLISHED,
-            "工单协同 MCP",
-            "digest-mcp-ticket-v1",
+            "工单协同 Tool",
+            "digest-tool-ticket-v1",
             new ResourceVersionConfigurationDto(
-                ResourceType.MCP,
+                ResourceType.TOOL,
                 null,
-                null,
-                new McpConfigDto("ticketing-server", "STREAMABLE_HTTP", "http://demo.local/mcp/ticketing", "support.ticket", "NONE", 30, List.of("create_ticket", "append_comment")),
+                new ToolConfigDto(
+                    List.of(
+                        new ToolOperationDto(
+                            "create_ticket",
+                            "创建人工协同工单",
+                            "{\"question\":\"string\",\"operator\":\"string\",\"comment\":\"string\"}",
+                            "{\"ticketId\":\"string\",\"status\":\"string\",\"detail\":\"string\"}"
+                        ),
+                        new ToolOperationDto(
+                            "append_comment",
+                            "为协同工单追加处理备注",
+                            "{\"ticketId\":\"string\",\"comment\":\"string\"}",
+                            "{\"status\":\"string\",\"detail\":\"string\"}"
+                        )
+                    ),
+                    ToolProviderType.MCP,
+                    "NONE",
+                    30,
+                    "NONE",
+                    null,
+                    new McpToolProviderConfigDto(
+                        "ticketing-server",
+                        "STREAMABLE_HTTP",
+                        "http://demo.local/mcp/ticketing",
+                        "support.ticket",
+                        30,
+                        Map.of(
+                            "create_ticket", "create_ticket",
+                            "append_comment", "append_comment"
+                        )
+                    )
+                ),
                 null,
                 null
             )
@@ -959,7 +946,6 @@ public class CatalogService {
             "问题分诊智能体",
             "router",
             "识别问题类型，决定 FAQ、售后策略或人工协同分支。",
-            List.of(new ToolVersionPinDto("tool-version-pin-router-kb", kb.id(), kbPublished.id(), kbPublished.version(), "AGENT", "agent-router", Instant.now())),
             new AgentExecutionPolicyDto(true, null, routerPrompt.id(), "输出 route_key 和摘要。", true, kb.id(), 8, List.of())
         ));
         agents.add(new AgentDto(
@@ -968,7 +954,6 @@ public class CatalogService {
             "FAQ 回答智能体",
             "faq",
             "基于知识检索结果输出最终 FAQ 回复。",
-            List.of(),
             new AgentExecutionPolicyDto(true, defaultLlmResourceId, faqPrompt.id(), "回答简单 FAQ 并完成会话。", true, kb.id(), 8, List.of())
         ));
         agents.add(new AgentDto(
@@ -976,18 +961,16 @@ public class CatalogService {
             assistant.id(),
             "售后策略智能体",
             "policy",
-            "调用售后策略 Skill，给出退款或补偿结论。",
-            List.of(new ToolVersionPinDto("tool-version-pin-policy-skill", refundSkill.id(), refundSkillVersion.id(), refundSkillVersion.version(), "AGENT", "agent-policy", Instant.now())),
-            new AgentExecutionPolicyDto(true, defaultLlmResourceId, policyPrompt.id(), "结合工具输出结构化 route_key。", true, kb.id(), 8, List.of(refundSkill.id()))
+            "调用售后策略 Tool，给出退款或补偿结论。",
+            new AgentExecutionPolicyDto(true, defaultLlmResourceId, policyPrompt.id(), "结合工具输出结构化 route_key。", true, kb.id(), 8, List.of(refundTool.id()))
         ));
         agents.add(new AgentDto(
             "agent-coordinator",
             assistant.id(),
             "人工协同闭环智能体",
             "handoff",
-            "在人工处理后整理摘要、调用工单 MCP，并生成闭环答复。",
-            List.of(new ToolVersionPinDto("tool-version-pin-handoff-mcp", ticketMcp.id(), ticketMcpVersion.id(), ticketMcpVersion.version(), "AGENT", "agent-coordinator", Instant.now())),
-            new AgentExecutionPolicyDto(true, defaultLlmResourceId, handoffPrompt.id(), "根据人工动作补充最终回复。", false, null, 12, List.of(ticketMcp.id()))
+            "在人工处理后整理摘要、调用工单 Tool，并生成闭环答复。",
+            new AgentExecutionPolicyDto(true, defaultLlmResourceId, handoffPrompt.id(), "根据人工动作补充最终回复。", false, null, 12, List.of(ticketTool.id()))
         ));
 
         orchestrations.put(assistant.id(), new AssistantOrchestrationDto(
@@ -1316,21 +1299,6 @@ public class CatalogService {
         }
     }
 
-    private ToolVersionPinDto toToolVersionPin(
-        String agentId,
-        Map<String, ToolVersionPinDto> existingToolVersionPins,
-        ToolVersionPinTarget target
-    ) {
-        AgentDto agent = findAgent(agentId);
-        ResourceDto resource = findResource(target.resourceId());
-        validateToolVersionPin(agent, resource, target.resourceVersionId());
-        ResourceVersionDto version = findResourceVersion(target.resourceId(), target.resourceVersionId());
-        return existingToolVersionPins.getOrDefault(
-            version.id(),
-            new ToolVersionPinDto(nextId("tool-version-pin"), target.resourceId(), version.id(), version.version(), "AGENT", agentId, Instant.now())
-        );
-    }
-
     private AssistantReleaseDto createAssistantRelease(String assistantId, String releaseVersion, VersionStatus status) {
         AssistantDto assistant = findAssistant(assistantId);
         Map<String, AssistantReleaseResourceDto> snapshotMap = new LinkedHashMap<>();
@@ -1350,9 +1318,13 @@ public class CatalogService {
 
             List<String> toolResourceVersionIds = new ArrayList<>();
             for (String toolResourceId : agent.executionPolicy().toolResourceIds()) {
-                ToolVersionPinDto toolVersionPin = findRequiredToolVersionPin(agent, toolResourceId);
-                toolResourceVersionIds.add(toolVersionPin.resourceVersionId());
-                capturePinnedToolResource(snapshotMap, toolVersionPin, agent.name());
+                ResourceDto toolResource = toResourceView(findResource(toolResourceId));
+                if (toolResource.type() != ResourceType.TOOL) {
+                    throw new IllegalStateException("agent tool must reference TOOL resource: " + agent.name() + " -> " + toolResource.name());
+                }
+                ResourceVersionDto version = effectiveVersion(toolResource);
+                toolResourceVersionIds.add(version.id());
+                mergeReleaseResource(snapshotMap, toolResource, version, agent.name());
             }
             releaseAgents.add(new AssistantReleaseAgentDto(
                 agent.id(),
@@ -1390,16 +1362,6 @@ public class CatalogService {
         }
         ResourceDto resource = toResourceView(findResource(resourceId));
         ResourceVersionDto version = effectiveVersion(resource);
-        mergeReleaseResource(snapshotMap, resource, version, boundAgent);
-    }
-
-    private void capturePinnedToolResource(
-        Map<String, AssistantReleaseResourceDto> snapshotMap,
-        ToolVersionPinDto toolVersionPin,
-        String boundAgent
-    ) {
-        ResourceDto resource = toResourceView(findResource(toolVersionPin.resourceId()));
-        ResourceVersionDto version = findResourceVersion(toolVersionPin.resourceId(), toolVersionPin.resourceVersionId());
         mergeReleaseResource(snapshotMap, resource, version, boundAgent);
     }
 
@@ -1486,20 +1448,6 @@ public class CatalogService {
             if (agent.executionPolicy().toolResourceIds().contains(resource.id())) {
                 references.add(toResourceReference(resource, "AGENT_TOOL_ENABLED", "AGENT", agent.id(), agent.name(), null, null, true));
             }
-            for (ToolVersionPinDto toolVersionPin : agent.toolVersionPins()) {
-                if (resource.id().equals(toolVersionPin.resourceId())) {
-                    references.add(toResourceReference(
-                        resource,
-                        "AGENT_TOOL_VERSION_PIN",
-                        "AGENT",
-                        agent.id(),
-                        agent.name(),
-                        toolVersionPin.resourceVersionId(),
-                        toolVersionPin.resourceVersion(),
-                        true
-                    ));
-                }
-            }
         }
 
         for (Map.Entry<String, List<AssistantReleaseDto>> entry : assistantReleases.entrySet()) {
@@ -1570,16 +1518,12 @@ public class CatalogService {
             case "AGENT_OVERRIDE_PROMPT" -> "resource is used as agent override prompt: " + reference.sourceName();
             case "AGENT_OVERRIDE_KNOWLEDGE_BASE" -> "resource is used as agent override knowledge base: " + reference.sourceName();
             case "AGENT_TOOL_ENABLED" -> "resource is used as agent tool: " + reference.sourceName();
-            case "AGENT_TOOL_VERSION_PIN" -> "resource still has tool version pins on agent: " + reference.sourceName();
             default -> "resource is still referenced: " + reference.sourceName();
         };
     }
 
     private String toResourceVersionDeletionMessage(ResourceReferenceDto reference) {
-        return switch (reference.referenceKind()) {
-            case "AGENT_TOOL_VERSION_PIN" -> "resource version still pinned on agent tool: " + reference.sourceName();
-            default -> "resource version is still referenced: " + reference.sourceName();
-        };
+        return "resource version is still referenced: " + reference.sourceName();
     }
 
     private OrchestrationNodeDto toNode(AgentDto agent) {
@@ -1649,7 +1593,32 @@ public class CatalogService {
         agents.clear();
         agents.addAll(snapshot.agents().stream().map(this::normalizeLoadedAgent).toList());
         resourceVersions.clear();
-        resourceVersions.putAll(snapshot.resourceVersions());
+        snapshot.resourceVersions().forEach((resourceId, versions) -> {
+            ResourceType resourceType = resources.stream()
+                .filter(resource -> resource.id().equals(resourceId))
+                .map(ResourceDto::type)
+                .findFirst()
+                .orElse(null);
+            resourceVersions.put(
+                resourceId,
+                versions.stream()
+                    .map(version -> new ResourceVersionDto(
+                        version.id(),
+                        version.resourceId(),
+                        version.version(),
+                        version.status(),
+                        version.summary(),
+                        version.configDigest(),
+                        version.createdAt(),
+                        version.publishedAt(),
+                        normalizeConfiguration(
+                            resourceType == null ? version.configuration().type() : resourceType,
+                            version.configuration()
+                        )
+                    ))
+                    .toList()
+            );
+        });
         assistantReleases.clear();
         snapshot.assistantReleases().forEach((assistantId, releases) -> assistantReleases.put(
             assistantId,
@@ -1661,7 +1630,17 @@ public class CatalogService {
                     release.status(),
                     release.createdAt(),
                     release.publishedAt(),
-                    release.resources(),
+                    release.resources().stream()
+                        .map(resource -> new AssistantReleaseResourceDto(
+                            resource.resourceId(),
+                            resource.resourceName(),
+                            resource.resourceType(),
+                            resource.resourceVersionId(),
+                            resource.resourceVersion(),
+                            resource.boundAgents(),
+                            normalizeConfiguration(resource.resourceType(), resource.configuration())
+                        ))
+                        .toList(),
                     release.agents(),
                     release.orchestration(),
                     normalizeAssistantModelPolicy(release.modelPolicy()),
@@ -1676,31 +1655,15 @@ public class CatalogService {
 
     private AgentDto normalizeLoadedAgent(AgentDto agent) {
         AgentExecutionPolicyDto normalizedPolicy = normalizeAgentExecutionPolicy(agent.executionPolicy());
-        Set<String> enabledToolResourceIds = new HashSet<>(normalizedPolicy.toolResourceIds());
-        List<ToolVersionPinDto> validToolPins = new ArrayList<>();
-        for (ToolVersionPinDto toolVersionPin : agent.toolVersionPins()) {
-            ResourceDto resource = resources.stream()
-                .filter(item -> item.id().equals(toolVersionPin.resourceId()))
-                .findFirst()
-                .orElse(null);
-            if (resource == null) {
-                log.warn("Dropping legacy tool pin for missing resource agent={} resource={}", agent.id(), toolVersionPin.resourceId());
-                continue;
-            }
-            if (resource.type() != ResourceType.SKILL && resource.type() != ResourceType.MCP) {
-                log.warn("Dropping invalid non-tool version pin agent={} resource={} type={}", agent.id(), toolVersionPin.resourceId(), resource.type());
-                continue;
-            }
-            validToolPins.add(toolVersionPin);
-            enabledToolResourceIds.add(toolVersionPin.resourceId());
-        }
+        List<String> enabledToolResourceIds = normalizedPolicy.toolResourceIds().stream()
+            .filter(resourceId -> resources.stream().anyMatch(item -> item.id().equals(resourceId) && item.type() == ResourceType.TOOL))
+            .toList();
         return new AgentDto(
             agent.id(),
             agent.assistantId(),
             agent.name(),
             agent.role(),
             agent.instructions(),
-            validToolPins,
             new AgentExecutionPolicyDto(
                 normalizedPolicy.inheritAssistantDefaults(),
                 normalizedPolicy.modelResourceId(),
@@ -1824,11 +1787,10 @@ public class CatalogService {
             return defaultConfiguration(type);
         }
         return switch (type) {
-            case KNOWLEDGE_BASE -> new ResourceVersionConfigurationDto(type, configuration.knowledgeBase() == null ? defaultConfiguration(type).knowledgeBase() : configuration.knowledgeBase(), null, null, null, null);
-            case SKILL -> new ResourceVersionConfigurationDto(type, null, configuration.skill() == null ? defaultConfiguration(type).skill() : configuration.skill(), null, null, null);
-            case MCP -> new ResourceVersionConfigurationDto(type, null, null, configuration.mcp() == null ? defaultConfiguration(type).mcp() : configuration.mcp(), null, null);
-            case LLM_MODEL -> new ResourceVersionConfigurationDto(type, null, null, null, configuration.llmModel() == null ? defaultConfiguration(type).llmModel() : configuration.llmModel(), null);
-            case PROMPT_TEMPLATE -> new ResourceVersionConfigurationDto(type, null, null, null, null, configuration.promptTemplate() == null ? defaultConfiguration(type).promptTemplate() : configuration.promptTemplate());
+            case KNOWLEDGE_BASE -> new ResourceVersionConfigurationDto(type, normalizeKnowledgeBaseConfig(configuration.knowledgeBase()), null, null, null);
+            case TOOL -> new ResourceVersionConfigurationDto(type, null, normalizeToolConfig(configuration.tool()), null, null);
+            case LLM_MODEL -> new ResourceVersionConfigurationDto(type, null, null, configuration.llmModel() == null ? defaultConfiguration(type).llmModel() : configuration.llmModel(), null);
+            case PROMPT_TEMPLATE -> new ResourceVersionConfigurationDto(type, null, null, null, configuration.promptTemplate() == null ? defaultConfiguration(type).promptTemplate() : configuration.promptTemplate());
         };
     }
 
@@ -1836,31 +1798,20 @@ public class CatalogService {
         return switch (type) {
             case KNOWLEDGE_BASE -> new ResourceVersionConfigurationDto(
                 type,
-                new KnowledgeBaseConfigDto("SEED_DATA", "seed://default", "MANUAL", "HYBRID", "text-embedding-3-large", "markdown-512-overlap-80", 5, 0),
-                null,
-                null,
-                null,
-                null
-            );
-            case SKILL -> new ResourceVersionConfigurationDto(
-                type,
-                null,
-                new SkillConfigDto("HTTP", "http://demo.local/skills/new-skill", "POST", "SERVICE_ACCOUNT", 15, "NONE", "{input}", "{output}"),
+                new KnowledgeBaseConfigDto(5, List.of()),
                 null,
                 null,
                 null
             );
-            case MCP -> new ResourceVersionConfigurationDto(
+            case TOOL -> new ResourceVersionConfigurationDto(
                 type,
                 null,
-                null,
-                new McpConfigDto("demo-mcp-server", "STREAMABLE_HTTP", "http://demo.local/mcp/default", "default.namespace", "NONE", 30, List.of("tool_a")),
+                defaultToolConfig(),
                 null,
                 null
             );
             case LLM_MODEL -> new ResourceVersionConfigurationDto(
                 type,
-                null,
                 null,
                 null,
                 new LlmModelConfigDto(
@@ -1881,10 +1832,157 @@ public class CatalogService {
                 null,
                 null,
                 null,
-                null,
                 new PromptTemplateConfigDto("CHAT", "你是执行智能体。", "用户问题：{{question}}\n知识上下文：{{knowledge_context}}", "markdown")
             );
         };
+    }
+
+    private void validateVersionReadyForActivation(ResourceType type, ResourceVersionConfigurationDto configuration) {
+        if (type != ResourceType.KNOWLEDGE_BASE) {
+            return;
+        }
+        KnowledgeBaseConfigDto knowledgeBase = configuration == null ? null : configuration.knowledgeBase();
+        if (knowledgeBase == null || knowledgeBase.documents() == null || knowledgeBase.documents().isEmpty()) {
+            throw new IllegalStateException("knowledge base published version must contain at least one document");
+        }
+    }
+
+    private KnowledgeBaseConfigDto normalizeKnowledgeBaseConfig(KnowledgeBaseConfigDto configuration) {
+        List<KnowledgeBaseDocumentDto> documents = normalizeKnowledgeBaseDocuments(configuration == null ? null : configuration.documents());
+        int defaultTopK = configuration == null || configuration.defaultTopK() <= 0 ? 5 : configuration.defaultTopK();
+
+        return new KnowledgeBaseConfigDto(
+            defaultTopK,
+            List.copyOf(documents)
+        );
+    }
+
+    private List<KnowledgeBaseDocumentDto> normalizeKnowledgeBaseDocuments(List<KnowledgeBaseDocumentDto> documents) {
+        if (documents == null || documents.isEmpty()) {
+            return List.of();
+        }
+        List<KnowledgeBaseDocumentDto> normalized = new ArrayList<>();
+        int index = 1;
+        for (KnowledgeBaseDocumentDto document : documents) {
+            if (document == null) {
+                continue;
+            }
+            String content = normalizeOptionalText(document.content());
+            if (content.isBlank()) {
+                continue;
+            }
+            String title = normalizeOptionalText(document.title());
+            if (title.isBlank()) {
+                title = defaultKnowledgeDocumentTitle(content, index);
+            }
+            String documentId = normalizeOptionalText(document.id());
+            if (documentId.isBlank()) {
+                documentId = nextId("kb-doc");
+            }
+            normalized.add(new KnowledgeBaseDocumentDto(
+                documentId,
+                title,
+                content,
+                normalizeOptionalText(document.sourceUri())
+            ));
+            index += 1;
+        }
+        return List.copyOf(normalized);
+    }
+
+    private String defaultKnowledgeDocumentTitle(String content, int index) {
+        String singleLine = content.replace('\n', ' ').trim();
+        if (singleLine.isBlank()) {
+            return "文档 " + index;
+        }
+        int maxLength = Math.min(singleLine.length(), 24);
+        return singleLine.substring(0, maxLength);
+    }
+
+    private ToolConfigDto defaultToolConfig() {
+        return new ToolConfigDto(
+            List.of(new ToolOperationDto("invoke", "执行通用工具动作", "{\"input\":\"string\"}", "{\"output\":\"string\"}")),
+            ToolProviderType.HTTP,
+            "SERVICE_ACCOUNT",
+            15,
+            "NONE",
+            new HttpToolProviderConfigDto("http://demo.local/tools/new-tool", "POST"),
+            null
+        );
+    }
+
+    private ToolConfigDto normalizeToolConfig(ToolConfigDto configuration) {
+        ToolConfigDto defaults = defaultToolConfig();
+        ToolProviderType providerType = configuration == null || configuration.providerType() == null ? defaults.providerType() : configuration.providerType();
+        List<ToolOperationDto> operations = normalizeToolOperations(configuration == null ? null : configuration.operations());
+        if (operations.isEmpty()) {
+            operations = defaults.operations();
+        }
+        HttpToolProviderConfigDto http = providerType == ToolProviderType.HTTP
+            ? normalizeHttpToolProvider(configuration == null ? null : configuration.http())
+            : null;
+        McpToolProviderConfigDto mcp = providerType == ToolProviderType.MCP
+            ? normalizeMcpToolProvider(configuration == null ? null : configuration.mcp(), operations)
+            : null;
+
+        return new ToolConfigDto(
+            List.copyOf(operations),
+            providerType,
+            configuration == null || configuration.authType() == null || configuration.authType().isBlank() ? defaults.authType() : configuration.authType(),
+            configuration == null || configuration.timeoutSeconds() <= 0 ? defaults.timeoutSeconds() : configuration.timeoutSeconds(),
+            configuration == null || configuration.retryPolicy() == null || configuration.retryPolicy().isBlank() ? defaults.retryPolicy() : configuration.retryPolicy(),
+            http,
+            mcp
+        );
+    }
+
+    private List<ToolOperationDto> normalizeToolOperations(List<ToolOperationDto> operations) {
+        if (operations == null || operations.isEmpty()) {
+            return List.of();
+        }
+        List<ToolOperationDto> normalized = new ArrayList<>();
+        for (ToolOperationDto operation : operations) {
+            if (operation == null) {
+                continue;
+            }
+            String name = normalizeOptionalText(operation.name());
+            if (name.isBlank()) {
+                continue;
+            }
+            normalized.add(new ToolOperationDto(
+                name,
+                normalizeOptionalText(operation.description()),
+                normalizeOptionalText(operation.inputSchema()),
+                normalizeOptionalText(operation.outputSchema())
+            ));
+        }
+        return List.copyOf(normalized);
+    }
+
+    private HttpToolProviderConfigDto normalizeHttpToolProvider(HttpToolProviderConfigDto configuration) {
+        HttpToolProviderConfigDto defaults = defaultToolConfig().http();
+        return new HttpToolProviderConfigDto(
+            configuration == null || configuration.endpoint() == null || configuration.endpoint().isBlank() ? defaults.endpoint() : configuration.endpoint(),
+            configuration == null || configuration.method() == null || configuration.method().isBlank() ? defaults.method() : configuration.method()
+        );
+    }
+
+    private McpToolProviderConfigDto normalizeMcpToolProvider(McpToolProviderConfigDto configuration, List<ToolOperationDto> operations) {
+        Map<String, String> operationMappings = new LinkedHashMap<>();
+        Map<String, String> requestedMappings = configuration == null || configuration.operationMappings() == null
+            ? Map.of()
+            : configuration.operationMappings();
+        for (ToolOperationDto operation : operations) {
+            operationMappings.put(operation.name(), normalizeOptionalText(requestedMappings.getOrDefault(operation.name(), operation.name())));
+        }
+        return new McpToolProviderConfigDto(
+            configuration == null || configuration.serverName() == null || configuration.serverName().isBlank() ? "demo-mcp-server" : configuration.serverName(),
+            configuration == null || configuration.transport() == null || configuration.transport().isBlank() ? "STREAMABLE_HTTP" : configuration.transport(),
+            configuration == null || configuration.connectionUri() == null || configuration.connectionUri().isBlank() ? "http://demo.local/mcp/default" : configuration.connectionUri(),
+            configuration == null || configuration.namespace() == null || configuration.namespace().isBlank() ? "default.namespace" : configuration.namespace(),
+            configuration == null || configuration.heartbeatSeconds() <= 0 ? 30 : configuration.heartbeatSeconds(),
+            Map.copyOf(operationMappings)
+        );
     }
 
     private AssistantModelPolicyDto normalizeAssistantModelPolicy(AssistantModelPolicyDto policy) {
@@ -1948,31 +2046,6 @@ public class CatalogService {
         }
     }
 
-    private ToolVersionPinDto findRequiredToolVersionPin(AgentDto agent, String toolResourceId) {
-        ResourceDto resource = findResource(toolResourceId);
-        List<ToolVersionPinDto> matches = agent.toolVersionPins().stream()
-            .filter(toolVersionPin -> toolVersionPin.resourceId().equals(toolResourceId))
-            .toList();
-        if (matches.isEmpty()) {
-            throw new IllegalStateException("agent tool requires a pinned version before release: " + agent.name() + " -> " + resource.name());
-        }
-        if (matches.size() > 1) {
-            throw new IllegalStateException("agent tool must pin exactly one version: " + agent.name() + " -> " + resource.name());
-        }
-        validateToolVersionPin(agent, resource, matches.getFirst().resourceVersionId());
-        return matches.getFirst();
-    }
-
-    private void validateToolVersionPin(AgentDto agent, ResourceDto resource, String resourceVersionId) {
-        if (resource.type() != ResourceType.SKILL && resource.type() != ResourceType.MCP) {
-            throw new IllegalArgumentException("tool version pins only support SKILL or MCP resources: " + resource.id());
-        }
-        if (!agent.executionPolicy().toolResourceIds().contains(resource.id())) {
-            throw new IllegalArgumentException("tool version pin requires the resource to be enabled first: " + agent.name() + " -> " + resource.name());
-        }
-        findResourceVersion(resource.id(), resourceVersionId);
-    }
-
     private String nextResourceVersion(List<ResourceVersionDto> versions) {
         if (versions.isEmpty()) {
             return "0.1.0";
@@ -1984,12 +2057,6 @@ public class CatalogService {
 
     private static String nextId(String prefix) {
         return prefix + "-" + UUID.randomUUID().toString().substring(0, 8);
-    }
-
-    private static List<ToolVersionPinDto> append(List<ToolVersionPinDto> toolVersionPins, ToolVersionPinDto toolVersionPin) {
-        List<ToolVersionPinDto> updated = new ArrayList<>(toolVersionPins);
-        updated.add(toolVersionPin);
-        return updated;
     }
 
     private static List<String> append(List<String> items, String item) {

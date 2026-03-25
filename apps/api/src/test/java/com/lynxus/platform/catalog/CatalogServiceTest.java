@@ -2,6 +2,7 @@ package com.lynxus.platform.catalog;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -195,14 +196,13 @@ class CatalogServiceTest {
                 && reference.referenceKind().equals("ASSISTANT_DEFAULT_KNOWLEDGE_BASE")
                 && reference.blocksDeletion()));
         assertTrue(resourceCenter.references().stream()
-            .anyMatch(reference -> reference.resourceId().equals("resource-skill-refund")
-                && reference.referenceKind().equals("AGENT_TOOL_VERSION_PIN")
-                && reference.resourceVersionId() != null
+            .anyMatch(reference -> reference.resourceId().equals("resource-tool-refund")
+                && reference.referenceKind().equals("AGENT_TOOL_ENABLED")
                 && reference.blocksDeletion()));
         assertTrue(resourceCenter.references().stream()
             .anyMatch(reference -> reference.referenceKind().equals("RELEASE_FROZEN")
                 && !reference.blocksDeletion()));
-        assertThrows(IllegalStateException.class, () -> catalogService.deleteResource("resource-skill-refund"));
+        assertThrows(IllegalStateException.class, () -> catalogService.deleteResource("resource-tool-refund"));
     }
 
     @Test
@@ -236,7 +236,7 @@ class CatalogServiceTest {
             new CatalogDtos.CreateResourceRequest(
                 orderDomain.id(),
                 "非法助手归属资源",
-                ResourceType.SKILL,
+                ResourceType.TOOL,
                 ShareScope.PRIVATE,
                 "ASSISTANT",
                 serviceAssistant.id(),
@@ -249,7 +249,7 @@ class CatalogServiceTest {
     }
 
     @Test
-    void shouldRequirePinnedToolVersionsBeforePublishingAssistant() {
+    void shouldFreezeEffectiveToolVersionsWhenPublishingAssistant() {
         CatalogService catalogService = new CatalogService(new InMemoryCatalogRepository(), false);
         CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("交付域", "承载交付流程"));
         CatalogDtos.ScenarioDto scenario = catalogService.createScenario(
@@ -261,8 +261,8 @@ class CatalogServiceTest {
         CatalogDtos.ResourceDto tool = catalogService.createResource(
             new CatalogDtos.CreateResourceRequest(
                 domain.id(),
-                "交付 Skill",
-                ResourceType.SKILL,
+                "交付 Tool",
+                ResourceType.TOOL,
                 ShareScope.DOMAIN_SHARED,
                 "DOMAIN",
                 domain.id(),
@@ -280,20 +280,80 @@ class CatalogServiceTest {
             new CatalogDtos.AgentExecutionPolicyDto(true, null, null, "", false, null, 8, java.util.List.of(tool.id()))
         ));
 
-        assertThrows(IllegalStateException.class, () -> catalogService.updateAssistant(
-            assistant.id(),
-            new CatalogDtos.UpdateAssistantRequest("交付助手", "处理交付跟进", VersionStatus.PUBLISHED, assistant.modelPolicy(), assistant.ragPolicy(), assistant.memoryPolicy())
-        ));
-
-        CatalogDtos.ResourceVersionDto effectiveToolVersion = catalogService.listResourceVersions(tool.id()).getFirst();
-        catalogService.updateAgentToolVersionPins(agent.id(), new CatalogDtos.UpdateAgentToolVersionPinsRequest(
-            java.util.List.of(new CatalogDtos.ToolVersionPinTarget(tool.id(), effectiveToolVersion.id()))
-        ));
-
         CatalogDtos.AssistantDto published = catalogService.updateAssistant(
             assistant.id(),
             new CatalogDtos.UpdateAssistantRequest("交付助手", "处理交付跟进", VersionStatus.PUBLISHED, assistant.modelPolicy(), assistant.ragPolicy(), assistant.memoryPolicy())
         );
         assertEquals(VersionStatus.PUBLISHED, published.version().status());
+        assertFalse(published.currentRelease().agents().stream()
+            .filter(releaseAgent -> releaseAgent.agentId().equals(agent.id()))
+            .findFirst()
+            .orElseThrow()
+            .toolResourceVersionIds()
+            .isEmpty());
+    }
+
+    @Test
+    void shouldRequireManualKnowledgeDocumentsBeforePublishing() {
+        CatalogService catalogService = new CatalogService(new InMemoryCatalogRepository(), false);
+        CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("知识运营域", "承载知识沉淀"));
+
+        CatalogDtos.ResourceDto resource = catalogService.createResource(
+            new CatalogDtos.CreateResourceRequest(
+                domain.id(),
+                "人工知识库",
+                ResourceType.KNOWLEDGE_BASE,
+                ShareScope.DOMAIN_SHARED,
+                "DOMAIN",
+                domain.id(),
+                "用于手工导入 FAQ",
+                "知识运营",
+                java.util.List.of("FAQ"),
+                new CatalogDtos.CreateResourceVersionRequest(
+                    "初始草稿",
+                    "digest-kb-manual-v1",
+                    VersionStatus.DRAFT,
+                    new CatalogDtos.ResourceVersionConfigurationDto(
+                        ResourceType.KNOWLEDGE_BASE,
+                        new CatalogDtos.KnowledgeBaseConfigDto(
+                            5,
+                            java.util.List.of()
+                        ),
+                        null,
+                        null,
+                        null
+                    )
+                )
+            )
+        );
+
+        CatalogDtos.ResourceVersionDto initialVersion = catalogService.listResourceVersions(resource.id()).getFirst();
+        assertThrows(IllegalStateException.class, () -> catalogService.publishResourceVersion(resource.id(), initialVersion.id()));
+
+        CatalogDtos.ResourceVersionDto published = catalogService.createResourceVersion(
+            resource.id(),
+            new CatalogDtos.CreateResourceVersionRequest(
+                "补充退款说明",
+                "digest-kb-manual-v2",
+                VersionStatus.PUBLISHED,
+                new CatalogDtos.ResourceVersionConfigurationDto(
+                    ResourceType.KNOWLEDGE_BASE,
+                    new CatalogDtos.KnowledgeBaseConfigDto(
+                        5,
+                        java.util.List.of(
+                            new CatalogDtos.KnowledgeBaseDocumentDto("", "退款说明", "满足七天无理由且未发货时可直接退款。", "manual://refund-policy/doc-1")
+                        )
+                    ),
+                    null,
+                    null,
+                    null
+                )
+            )
+        );
+
+        assertEquals(VersionStatus.PUBLISHED, published.status());
+        assertEquals(1, published.configuration().knowledgeBase().documents().size());
+        assertNotNull(published.publishedAt());
+        assertEquals("退款说明", published.configuration().knowledgeBase().documents().getFirst().title());
     }
 }

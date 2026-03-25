@@ -5,7 +5,6 @@ import type {
   Assistant,
   CreateAgentPayload,
   Resource,
-  UpdateAgentToolVersionPinsPayload,
   UpdateAgentPayload,
 } from '../types';
 
@@ -17,7 +16,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   createAgent: [payload: CreateAgentPayload];
-  saveAgent: [payload: { agentId: string; agent: UpdateAgentPayload; toolVersionPins: UpdateAgentToolVersionPinsPayload }];
+  saveAgent: [payload: { agentId: string; agent: UpdateAgentPayload }];
   deleteAgent: [agentId: string];
 }>();
 
@@ -43,7 +42,6 @@ const editForm = reactive({
   name: '',
   role: '',
   instructions: '',
-  toolVersionPins: [] as Array<{ resourceId: string; resourceVersionId: string }>,
   executionPolicy: {
     inheritAssistantDefaults: true,
     modelResourceId: null as string | null,
@@ -70,7 +68,13 @@ const currentAgent = computed(() =>
 const modelResources = computed(() => props.resources.filter((item) => item.type === 'LLM_MODEL'));
 const promptResources = computed(() => props.resources.filter((item) => item.type === 'PROMPT_TEMPLATE'));
 const knowledgeBases = computed(() => props.resources.filter((item) => item.type === 'KNOWLEDGE_BASE'));
-const toolResources = computed(() => props.resources.filter((item) => item.type === 'SKILL' || item.type === 'MCP'));
+const toolResources = computed(() => props.resources.filter((item) => item.type === 'TOOL'));
+
+function toolOperationSummary(resource: Resource) {
+  return resource.effectiveVersion?.configuration.tool?.operations?.map((operation) => operation.name).join(' / ')
+    || resource.latestVersion?.configuration.tool?.operations?.map((operation) => operation.name).join(' / ')
+    || '未定义操作';
+}
 
 function syncCreateFormDefaults() {
   if (!knowledgeBases.value.some((item) => item.id === createForm.executionPolicy.knowledgeBaseResourceId)) {
@@ -117,10 +121,6 @@ watch(
 
 watch(knowledgeBases, syncCreateFormDefaults, { immediate: true });
 
-const toolVersionPinMap = computed(() =>
-  new Map(editForm.toolVersionPins.map((toolVersionPin) => [toolVersionPin.resourceId, toolVersionPin.resourceVersionId])),
-);
-
 watch(
   currentAgent,
   (agent) => {
@@ -131,10 +131,6 @@ watch(
     editForm.name = agent.name;
     editForm.role = agent.role;
     editForm.instructions = agent.instructions;
-    editForm.toolVersionPins = agent.toolVersionPins.map((toolVersionPin) => ({
-      resourceId: toolVersionPin.resourceId,
-      resourceVersionId: toolVersionPin.resourceVersionId,
-    }));
     editForm.executionPolicy = {
       ...agent.executionPolicy,
       toolResourceIds: [...agent.executionPolicy.toolResourceIds],
@@ -164,42 +160,7 @@ function submitSave() {
       instructions: editForm.instructions,
       executionPolicy: { ...editForm.executionPolicy, toolResourceIds: [...editForm.executionPolicy.toolResourceIds] },
     },
-    toolVersionPins: {
-      toolVersionPins: editForm.toolVersionPins.map((toolVersionPin) => ({ ...toolVersionPin })),
-    },
   });
-}
-
-function hasToolVersionPin(resourceId: string) {
-  return toolVersionPinMap.value.has(resourceId);
-}
-
-function versionOptions(resource: Resource) {
-  return resource.versions.map((version) => ({
-    label: `${version.version} · ${version.status}`,
-    value: version.id,
-  }));
-}
-
-function toggleToolVersionPin(resource: Resource, checked: boolean) {
-  if (checked) {
-    const selectedVersionId = toolVersionPinMap.value.get(resource.id) ?? resource.effectiveVersion?.id ?? resource.latestVersion?.id ?? resource.versions[0]?.id;
-    if (!selectedVersionId) {
-      return;
-    }
-    editForm.toolVersionPins = editForm.toolVersionPins
-      .filter((toolVersionPin) => toolVersionPin.resourceId !== resource.id)
-      .concat({ resourceId: resource.id, resourceVersionId: selectedVersionId });
-    return;
-  }
-
-  editForm.toolVersionPins = editForm.toolVersionPins.filter((toolVersionPin) => toolVersionPin.resourceId !== resource.id);
-}
-
-function updateToolVersionPinVersion(resourceId: string, resourceVersionId: string) {
-  editForm.toolVersionPins = editForm.toolVersionPins.map((toolVersionPin) =>
-    toolVersionPin.resourceId === resourceId ? { ...toolVersionPin, resourceVersionId } : toolVersionPin,
-  );
 }
 </script>
 
@@ -352,13 +313,13 @@ function updateToolVersionPinVersion(resourceId: string, resourceVersionId: stri
             <a-textarea v-model:value="editForm.executionPolicy.inlinePrompt" :rows="4" />
           </a-form-item>
 
-          <a-form-item label="工具版本固定">
+          <a-form-item label="Tool 发布冻结">
             <a-space direction="vertical" style="width: 100%" size="middle">
               <a-alert
                 type="info"
                 show-icon
-                message="仅 Skill 和 MCP 需要固定版本"
-                description="先在“可用工具集”里启用工具，再为已启用工具选择一个固定版本。模型、Prompt 和知识库会在发布时自动冻结当前生效版本。"
+                message="Tool 不再单独固定版本"
+                description="agent 只声明可用 Tool。助手发布时，平台会和模型、Prompt、知识库一样，统一冻结当前生效版本。"
               />
               <a-card
                 v-for="resource in toolResources"
@@ -367,12 +328,9 @@ function updateToolVersionPinVersion(resourceId: string, resourceVersionId: stri
               >
                 <a-space direction="vertical" style="width: 100%">
                   <a-space style="justify-content: space-between; width: 100%">
-                    <a-checkbox
-                      :checked="hasToolVersionPin(resource.id)"
-                      @change="(event: { target: { checked: boolean } }) => toggleToolVersionPin(resource, event.target.checked)"
-                    >
-                      {{ resource.name }} · {{ resource.type }}
-                    </a-checkbox>
+                    <a-tag :color="editForm.executionPolicy.toolResourceIds.includes(resource.id) ? 'blue' : 'default'">
+                      {{ editForm.executionPolicy.toolResourceIds.includes(resource.id) ? '已启用' : '未启用' }}
+                    </a-tag>
                     <a-space>
                       <a-tag color="blue">最新 {{ resource.latestVersion?.version ?? '-' }}</a-tag>
                       <a-tag color="green">生效 {{ resource.effectiveVersion?.version ?? '-' }}</a-tag>
@@ -381,13 +339,12 @@ function updateToolVersionPinVersion(resourceId: string, resourceVersionId: stri
                   <a-typography-text type="secondary">
                     {{ resource.summary }}
                   </a-typography-text>
-                  <a-select
-                    :disabled="!hasToolVersionPin(resource.id)"
-                    :value="toolVersionPinMap.get(resource.id)"
-                    :options="versionOptions(resource)"
-                    placeholder="选择固定版本"
-                    @change="(value: string | number) => updateToolVersionPinVersion(resource.id, String(value))"
-                  />
+                  <a-typography-text type="secondary">
+                    操作定义：{{ toolOperationSummary(resource) }}
+                  </a-typography-text>
+                  <a-typography-text type="secondary">
+                    发布时会自动冻结生效版本：{{ resource.effectiveVersion?.version ?? resource.latestVersion?.version ?? '-' }}
+                  </a-typography-text>
                 </a-space>
               </a-card>
             </a-space>

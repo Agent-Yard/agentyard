@@ -22,5 +22,5 @@
 - 权限与身份：OIDC / 企业 IAM + 更细粒度授权策略
 - 观测：OpenTelemetry + 指标 / 日志 / Trace 统一关联
 - 发布治理：灰度、回滚、分批发布和稳定 CI/CD
-- 资源执行层：更真实的知识库、Skill、MCP provider 和安全隔离
+- 资源执行层：更真实的知识库、Tool provider 和安全隔离
 - 运行态：异步事件 / SSE / WebSocket 观测与更完整持久化

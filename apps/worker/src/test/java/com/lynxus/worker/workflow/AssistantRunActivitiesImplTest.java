@@ -33,7 +33,7 @@ class AssistantRunActivitiesImplTest {
                 ),
                 List.of(),
                 false,
-                new WorkflowContracts.McpInvocationSummary("创建协同工单", "TICKET-1", "ACCEPTED", "HUMAN_HANDOFF", "test")
+                new WorkflowContracts.ToolOutcomeSummary("resource-tool-ticket", "工单协同 Tool", "create_ticket", "MCP", "ACCEPTED", "TICKET-1", "HUMAN_HANDOFF", "test")
             );
         }
     });
@@ -90,7 +90,7 @@ class AssistantRunActivitiesImplTest {
             ),
             List.of(),
             true,
-            new WorkflowContracts.McpInvocationSummary("创建协同工单", "TICKET-1", "ACCEPTED", "HUMAN_HANDOFF", "test")
+            new WorkflowContracts.ToolOutcomeSummary("resource-tool-ticket", "工单协同 Tool", "create_ticket", "MCP", "ACCEPTED", "TICKET-1", "HUMAN_HANDOFF", "test")
         );
     }
 

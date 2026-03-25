@@ -19,8 +19,7 @@
 | 资源类型 | 定义 | 当前用途 | 推荐绑定对象 | 当前状态 |
 | -- | -- | -- | -- | -- |
 | Knowledge Base | 可检索的知识资产 | FAQ、规则参考、检索增强 | 助手 / 智能体 | 已落地 |
-| Skill | 可调用的业务能力单元 | 业务处理、策略判断 | 智能体 | 已落地 |
-| MCP | 外部工具与系统接入能力 | 工单、外部服务协同 | 智能体 | 已落地 |
+| Tool | 可被 agent 调用的业务能力单元 | 业务处理、策略判断、外部系统协同 | 智能体 | 已落地 |
 | LLM Model | 模型提供方配置 | 推理执行 | 助手 / 智能体 | 已落地 |
 | Prompt Template | 提示模板资源 | 统一 system / user prompt | 助手 / 智能体 | 已落地 |
 
@@ -63,8 +62,8 @@
 | WorkflowStartRequest | workflow 启动输入 | 已落地 |
 | WorkflowResumeRequest | 人工恢复输入 | 已落地 |
 | WorkflowResult | workflow 当前结果或最终结果 | 已落地 |
-| ToolInvocationSnapshot | Skill / MCP 调用摘要 | 已落地 |
-| McpInvocationSummary | MCP 外部协同摘要 | 已落地 |
+| ToolInvocationSnapshot | Tool 调用摘要 | 已落地 |
+| ToolOutcomeSummary | Tool 执行结果摘要 | 已落地 |
 
 ## 7. 当前边界
 

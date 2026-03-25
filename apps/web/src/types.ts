@@ -1,5 +1,6 @@
 export type Role = 'PLATFORM_ADMIN' | 'DOMAIN_ADMIN' | 'DEVELOPER' | 'BUSINESS_USER';
-export type ResourceType = 'SKILL' | 'MCP' | 'KNOWLEDGE_BASE' | 'LLM_MODEL' | 'PROMPT_TEMPLATE';
+export type ResourceType = 'TOOL' | 'KNOWLEDGE_BASE' | 'LLM_MODEL' | 'PROMPT_TEMPLATE';
+export type ToolProviderType = 'HTTP' | 'MCP';
 export type ShareScope = 'PRIVATE' | 'DOMAIN_SHARED';
 export type ResourceOwnerType = 'DOMAIN' | 'ASSISTANT';
 export type VersionStatus = 'DRAFT' | 'PUBLISHED';
@@ -21,46 +22,47 @@ export interface Version {
   updatedAt: string;
 }
 
-export interface ToolVersionPin {
+export interface KnowledgeBaseDocument {
   id: string;
-  resourceId: string;
-  resourceVersionId: string;
-  resourceVersion: string;
-  consumerType: string;
-  consumerId: string;
-  createdAt: string;
+  title: string;
+  content: string;
+  sourceUri: string;
 }
 
 export interface KnowledgeBaseConfig {
-  sourceType: 'OBJECT_STORAGE' | 'WEB_SYNC' | 'MANUAL_IMPORT';
-  sourceLocation: string;
-  syncMode: 'MANUAL' | 'SCHEDULED';
-  retrievalMode: 'SEMANTIC' | 'HYBRID' | 'KEYWORD';
-  embeddingModel: string;
-  chunkStrategy: string;
   defaultTopK: number;
-  documentCount: number;
+  documents: KnowledgeBaseDocument[];
 }
 
-export interface SkillConfig {
-  runtime: 'HTTP' | 'WORKFLOW_ACTIVITY' | 'FUNCTION_CALL';
-  endpoint: string;
-  method: 'GET' | 'POST' | 'RPC';
-  authType: 'NONE' | 'API_KEY' | 'SERVICE_ACCOUNT';
-  timeoutSeconds: number;
-  retryPolicy: string;
+export interface ToolOperation {
+  name: string;
+  description: string;
   inputSchema: string;
   outputSchema: string;
 }
 
-export interface McpConfig {
+export interface HttpToolProviderConfig {
+  endpoint: string;
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'RPC';
+}
+
+export interface McpToolProviderConfig {
   serverName: string;
   transport: 'SSE' | 'STREAMABLE_HTTP' | 'STDIO';
   connectionUri: string;
   namespace: string;
-  authType: 'NONE' | 'API_KEY' | 'OAUTH';
   heartbeatSeconds: number;
-  exposedTools: string[];
+  operationMappings: Record<string, string>;
+}
+
+export interface ToolConfig {
+  operations: ToolOperation[];
+  providerType: ToolProviderType;
+  authType: 'NONE' | 'API_KEY' | 'SERVICE_ACCOUNT' | 'OAUTH';
+  timeoutSeconds: number;
+  retryPolicy: string;
+  http?: HttpToolProviderConfig | null;
+  mcp?: McpToolProviderConfig | null;
 }
 
 export interface LlmModelConfig {
@@ -85,8 +87,7 @@ export interface PromptTemplateConfig {
 export interface ResourceVersionConfiguration {
   type: ResourceType;
   knowledgeBase?: KnowledgeBaseConfig | null;
-  skill?: SkillConfig | null;
-  mcp?: McpConfig | null;
+  tool?: ToolConfig | null;
   llmModel?: LlmModelConfig | null;
   promptTemplate?: PromptTemplateConfig | null;
 }
@@ -143,7 +144,6 @@ export interface Agent {
   name: string;
   role: string;
   instructions: string;
-  toolVersionPins: ToolVersionPin[];
   executionPolicy: AgentExecutionPolicy;
 }
 
@@ -310,17 +310,20 @@ export interface TaskInstance {
   workflowInstanceId: string;
 }
 
-export interface McpInvocationSummary {
-  capabilityName: string;
-  externalTicketId: string;
+export interface ToolOutcomeSummary {
+  toolResourceId: string;
+  toolResourceName: string;
+  operation: string;
+  providerType: string;
   status: string;
+  externalReference: string;
   recommendedAction: string;
   detail: string;
 }
 
 export interface ToolInvocationSnapshot {
   id: string;
-  toolType: string;
+  providerType: string;
   resourceId: string;
   resourceName: string;
   operation: string;
@@ -376,7 +379,7 @@ export interface WorkflowInstance {
   escalationRequired: boolean;
   checkpoint: ExecutionCheckpoint | null;
   humanTask: HumanTaskSnapshot | null;
-  mcpSummary: McpInvocationSummary | null;
+  latestToolOutcome: ToolOutcomeSummary | null;
   resourceAnchors: string[];
   nodes: NodeExecution[];
   toolCalls: ToolInvocationSnapshot[];
@@ -409,7 +412,7 @@ export interface ConversationSession {
   messages: ConversationMessage[];
   latestTaskId: string | null;
   latestWorkflowInstanceId: string | null;
-  latestMcpSummary: McpInvocationSummary | null;
+  latestToolOutcome: ToolOutcomeSummary | null;
   latestHumanTask: HumanTaskSnapshot | null;
 }
 
@@ -485,13 +488,6 @@ export interface UpdateAgentPayload {
   role: string;
   instructions: string;
   executionPolicy: AgentExecutionPolicy;
-}
-
-export interface UpdateAgentToolVersionPinsPayload {
-  toolVersionPins: Array<{
-    resourceId: string;
-    resourceVersionId: string;
-  }>;
 }
 
 export interface UpdateOrchestrationPayload {

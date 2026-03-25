@@ -31,10 +31,10 @@ docs/
 - 助手发布时冻结资源锚点、agent 执行配置和可执行图快照
 - 调用方选择助手后的单助手会话运行态，以及任务、流程、节点状态、人工介入
 - 资源区拆分为“资源目录”和“资源新建”两页，分别承接版本治理与按类型建模的资源创建
-- 资源类型覆盖知识库、Skill、MCP、LLM 模型和 Prompt 模板
+- 资源类型覆盖知识库、Tool、LLM 模型和 Prompt 模板，其中 Tool 通过 `HTTP / MCP` provider 接入外部能力
 - 单助手内真实多智能体图编排，支持 `START / AGENT / HUMAN / END` 节点
 - 基于 Temporal 的 `start / wait / signal / resume` 长流程运行，支持人工节点暂停与恢复
-- Python agent-runtime 基于发布图动态执行，并提供 KB / Skill / MCP / LLM 轻量适配
+- Python agent-runtime 基于发布图动态执行，并提供 KB / Tool / LLM 轻量适配
 - 本地 mock 认证、角色切换和未来 OIDC 适配边界
 
 当前仍然保留一些原型阶段边界：
@@ -119,7 +119,7 @@ LYNXUS_RUNTIME_SEED_EXECUTE_OPENING_MESSAGES=true
 当前默认 seed 会写入一套“客户协同助手”演示图，覆盖：
 
 - FAQ 自动回答
-- 售后策略 Skill 调用
+- 售后策略 Tool 调用
 - 投诉进入人工节点后等待恢复
 - 人工恢复后由协同智能体收口
 

@@ -92,21 +92,6 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/UpdateAgentRequest'
-  /agents/{agentId}/tool-version-pins:
-    put:
-      summary: Replace agent tool version pins
-      parameters:
-        - in: path
-          name: agentId
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateAgentToolVersionPinsRequest'
   /resources:
     get:
       summary: List resources
@@ -456,18 +441,6 @@ components:
           type: string
         executionPolicy:
           $ref: '#/components/schemas/AgentExecutionPolicy'
-    UpdateAgentToolVersionPinsRequest:
-      type: object
-      properties:
-        toolVersionPins:
-          type: array
-          items:
-            type: object
-            properties:
-              resourceId:
-                type: string
-              resourceVersionId:
-                type: string
     TaskLaunchRequest:
       type: object
       required: [scenarioId, assistantId, question, requester]
@@ -518,12 +491,18 @@ components:
           type: string
         expectedAction:
           type: string
-    McpInvocationSummary:
+    ToolOutcomeSummary:
       type: object
       properties:
-        capabilityName:
+        toolResourceId:
           type: string
-        externalTicketId:
+        toolResourceName:
+          type: string
+        operation:
+          type: string
+        providerType:
+          type: string
+        externalReference:
           type: string
         status:
           type: string
@@ -536,7 +515,7 @@ components:
       properties:
         id:
           type: string
-        toolType:
+        providerType:
           type: string
         resourceId:
           type: string
@@ -642,9 +621,9 @@ components:
           allOf:
             - $ref: '#/components/schemas/HumanTaskSnapshot'
           nullable: true
-        mcpSummary:
+        latestToolOutcome:
           allOf:
-            - $ref: '#/components/schemas/McpInvocationSummary'
+            - $ref: '#/components/schemas/ToolOutcomeSummary'
           nullable: true
         resourceAnchors:
           type: array
@@ -739,9 +718,9 @@ components:
         latestWorkflowInstanceId:
           type: string
           nullable: true
-        latestMcpSummary:
+        latestToolOutcome:
           allOf:
-            - $ref: '#/components/schemas/McpInvocationSummary'
+            - $ref: '#/components/schemas/ToolOutcomeSummary'
           nullable: true
         latestHumanTask:
           allOf:

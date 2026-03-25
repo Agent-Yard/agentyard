@@ -12,8 +12,12 @@ import type {
   CreateResourcePayload,
   CreateResourceVersionPayload,
   CreateScenarioPayload,
+  KnowledgeBaseConfig,
+  KnowledgeBaseDocument,
   ResourceType,
   ResourceVersionConfiguration,
+  ToolConfig,
+  ToolOperation,
   OrchestrationEdge,
   OrchestrationNode,
   Resource,
@@ -21,7 +25,6 @@ import type {
   Role,
   Scenario,
   TaskInstance,
-  UpdateAgentToolVersionPinsPayload,
   UpdateAssistantPayload,
   UpdateAgentPayload,
   UpdateDomainPayload,
@@ -91,49 +94,126 @@ function nextId(prefix: string): string {
   return `${prefix}-${Math.random().toString(16).slice(2, 10)}`;
 }
 
+function defaultKnowledgeBaseConfig(): KnowledgeBaseConfig {
+  return {
+    defaultTopK: 5,
+    documents: [],
+  };
+}
+
+function normalizeKnowledgeBaseDocuments(documents?: KnowledgeBaseDocument[] | null): KnowledgeBaseDocument[] {
+  return (documents ?? [])
+    .map((document, index) => {
+      const content = document.content.trim();
+      if (!content) {
+        return null;
+      }
+      const title = document.title.trim() || content.slice(0, 24) || `文档 ${index + 1}`;
+      return {
+        id: document.id?.trim() || nextId('kb-doc'),
+        title,
+        content,
+        sourceUri: document.sourceUri?.trim() || '',
+      };
+    })
+    .filter((document): document is KnowledgeBaseDocument => document !== null);
+}
+
+function normalizeKnowledgeBaseConfig(configuration?: KnowledgeBaseConfig | null): KnowledgeBaseConfig {
+  const defaults = defaultKnowledgeBaseConfig();
+  const documents = normalizeKnowledgeBaseDocuments(configuration?.documents);
+  return {
+    defaultTopK: configuration?.defaultTopK && configuration.defaultTopK > 0 ? configuration.defaultTopK : defaults.defaultTopK,
+    documents,
+  };
+}
+
+function defaultToolOperations(): ToolOperation[] {
+  return [
+    {
+      name: 'invoke',
+      description: '执行通用工具动作',
+      inputSchema: '{"input":"string"}',
+      outputSchema: '{"output":"string"}',
+    },
+  ];
+}
+
+function defaultToolConfig(): ToolConfig {
+  return {
+    operations: defaultToolOperations(),
+    providerType: 'HTTP',
+    authType: 'SERVICE_ACCOUNT',
+    timeoutSeconds: 15,
+    retryPolicy: 'NONE',
+    http: {
+      endpoint: 'https://tool-gateway.internal/new-tool',
+      method: 'POST',
+    },
+    mcp: null,
+  };
+}
+
+function normalizeToolOperations(operations?: ToolOperation[] | null): ToolOperation[] {
+  return (operations ?? [])
+    .map((operation) => {
+      const name = operation.name.trim();
+      if (!name) {
+        return null;
+      }
+      return {
+        name,
+        description: operation.description?.trim() || '',
+        inputSchema: operation.inputSchema?.trim() || '',
+        outputSchema: operation.outputSchema?.trim() || '',
+      };
+    })
+    .filter((operation): operation is ToolOperation => operation !== null);
+}
+
+function normalizeToolConfig(configuration?: ToolConfig | null): ToolConfig {
+  const defaults = defaultToolConfig();
+  const providerType = configuration?.providerType ?? defaults.providerType;
+  const operations = normalizeToolOperations(configuration?.operations);
+  return {
+    operations: operations.length ? operations : defaults.operations,
+    providerType,
+    authType: configuration?.authType ?? defaults.authType,
+    timeoutSeconds: configuration?.timeoutSeconds && configuration.timeoutSeconds > 0 ? configuration.timeoutSeconds : defaults.timeoutSeconds,
+    retryPolicy: configuration?.retryPolicy?.trim() || defaults.retryPolicy,
+    http: providerType === 'HTTP'
+      ? {
+          endpoint: configuration?.http?.endpoint?.trim() || defaults.http!.endpoint,
+          method: configuration?.http?.method || defaults.http!.method,
+        }
+      : null,
+    mcp: providerType === 'MCP'
+      ? {
+          serverName: configuration?.mcp?.serverName?.trim() || 'new-mcp-server',
+          transport: configuration?.mcp?.transport || 'STREAMABLE_HTTP',
+          connectionUri: configuration?.mcp?.connectionUri?.trim() || 'https://mcp-gateway.internal/new-server',
+          namespace: configuration?.mcp?.namespace?.trim() || 'default.namespace',
+          heartbeatSeconds: configuration?.mcp?.heartbeatSeconds && configuration.mcp.heartbeatSeconds > 0 ? configuration.mcp.heartbeatSeconds : 30,
+          operationMappings: Object.fromEntries((operations.length ? operations : defaults.operations).map((operation) => [
+            operation.name,
+            configuration?.mcp?.operationMappings?.[operation.name]?.trim() || operation.name,
+          ])),
+        }
+      : null,
+  };
+}
+
 function defaultConfiguration(type: ResourceType): ResourceVersionConfiguration {
   if (type === 'KNOWLEDGE_BASE') {
     return {
       type,
-      knowledgeBase: {
-        sourceType: 'OBJECT_STORAGE',
-        sourceLocation: 'minio://knowledge/new-resource',
-        syncMode: 'MANUAL',
-        retrievalMode: 'HYBRID',
-        embeddingModel: 'text-embedding-3-large',
-        chunkStrategy: 'markdown-512-overlap-80',
-        defaultTopK: 5,
-        documentCount: 0,
-      },
+      knowledgeBase: defaultKnowledgeBaseConfig(),
     };
   }
-  if (type === 'SKILL') {
+  if (type === 'TOOL') {
     return {
       type,
-      skill: {
-        runtime: 'HTTP',
-        endpoint: 'https://skill-gateway.internal/new-skill',
-        method: 'POST',
-        authType: 'SERVICE_ACCOUNT',
-        timeoutSeconds: 15,
-        retryPolicy: 'EXPONENTIAL_BACKOFF',
-        inputSchema: '{input}',
-        outputSchema: '{output}',
-      },
-    };
-  }
-  if (type === 'MCP') {
-    return {
-      type,
-      mcp: {
-        serverName: 'new-mcp-server',
-        transport: 'STREAMABLE_HTTP',
-        connectionUri: 'https://mcp-gateway.internal/new-server',
-        namespace: 'default.namespace',
-        authType: 'API_KEY',
-        heartbeatSeconds: 30,
-        exposedTools: ['tool_a', 'tool_b'],
-      },
+      tool: defaultToolConfig(),
     };
   }
   if (type === 'LLM_MODEL') {
@@ -170,19 +250,13 @@ function normalizeConfiguration(type: ResourceType, configuration?: ResourceVers
   if (type === 'KNOWLEDGE_BASE') {
     return {
       type,
-      knowledgeBase: configuration.knowledgeBase ?? defaultConfiguration(type).knowledgeBase,
+      knowledgeBase: normalizeKnowledgeBaseConfig(configuration.knowledgeBase),
     };
   }
-  if (type === 'SKILL') {
+  if (type === 'TOOL') {
     return {
       type,
-      skill: configuration.skill ?? defaultConfiguration(type).skill,
-    };
-  }
-  if (type === 'MCP') {
-    return {
-      type,
-      mcp: configuration.mcp ?? defaultConfiguration(type).mcp,
+      tool: normalizeToolConfig(configuration.tool),
     };
   }
   if (type === 'LLM_MODEL') {
@@ -221,7 +295,8 @@ function buildAssistantRelease(assistant: Assistant, releaseVersion: string) {
     role: agent.role,
     instructions: agent.instructions,
     executionPolicy: clone(agent.executionPolicy),
-    toolResourceVersionIds: agent.toolVersionPins.map((toolVersionPin) => toolVersionPin.resourceVersionId),
+    toolResourceVersionIds: agent.executionPolicy.toolResourceIds
+      .map((resourceId) => resolveResourceVersion(resourceId).version.id),
   }));
   const releaseResources = collectReleaseResources(assistant);
   return {
@@ -418,9 +493,7 @@ function findResourceDeletionBlocker(resourceId: string): string | null {
         case 'AGENT_OVERRIDE_KNOWLEDGE_BASE':
           return `资源仍被智能体知识库覆盖引用：${reference.sourceName}`;
         case 'AGENT_TOOL_ENABLED':
-          return `资源仍被智能体工具集引用：${reference.sourceName}`;
-        case 'AGENT_TOOL_VERSION_PIN':
-          return `资源仍存在智能体工具版本固定：${reference.sourceName}`;
+          return `资源仍被智能体 Tool 集引用：${reference.sourceName}`;
         default:
           return `资源仍被引用：${reference.sourceName}`;
       }
@@ -495,9 +568,6 @@ function buildResourceReferenceEntries(resource: Resource) {
     if (agent.executionPolicy.toolResourceIds.includes(resource.id)) {
       pushEntry('AGENT_TOOL_ENABLED', 'AGENT', agent.id, agent.name, null, null, true);
     }
-    for (const toolVersionPin of agent.toolVersionPins.filter((item) => item.resourceId === resource.id)) {
-      pushEntry('AGENT_TOOL_VERSION_PIN', 'AGENT', agent.id, agent.name, toolVersionPin.resourceVersionId, toolVersionPin.resourceVersion, true);
-    }
   }
 
   for (const assistant of fallbackState.catalog.assistants) {
@@ -569,11 +639,7 @@ function collectReleaseResources(assistant: Assistant) {
     addResource(agent.executionPolicy.promptTemplateResourceId, null, agent.name);
     addResource(agent.executionPolicy.ragEnabled ? agent.executionPolicy.knowledgeBaseResourceId : null, null, agent.name);
     for (const resourceId of agent.executionPolicy.toolResourceIds) {
-      const toolVersionPin = agent.toolVersionPins.find((item) => item.resourceId === resourceId);
-      if (!toolVersionPin) {
-        throw new Error(`工具已启用但未固定版本：${agent.name} -> ${resourceId}`);
-      }
-      addResource(resourceId, toolVersionPin.resourceVersionId, agent.name);
+      addResource(resourceId, null, agent.name);
     }
   }
 
@@ -628,10 +694,10 @@ function buildFallbackExecution(sessionId: string, assistant: Assistant, request
     ? [
         {
           id: nextId('tool'),
-          toolType: afterSales ? 'SKILL' : 'MCP',
-          resourceId: afterSales ? 'resource-skill-refund' : 'resource-mcp-ticket',
-          resourceName: afterSales ? '退款策略 Skill' : '工单协同 MCP',
-          operation: afterSales ? 'refund-policy' : 'create-ticket',
+          providerType: afterSales ? 'HTTP' : 'MCP',
+          resourceId: afterSales ? 'resource-tool-refund' : 'resource-tool-ticket',
+          resourceName: afterSales ? '售后策略 Tool' : '工单协同 Tool',
+          operation: afterSales ? 'evaluate_refund' : 'create_ticket',
           status: 'COMPLETED',
           detail: afterSales ? '已生成售后策略建议。' : '已创建人工协同工单。',
           createdAt: now,
@@ -657,19 +723,25 @@ function buildFallbackExecution(sessionId: string, assistant: Assistant, request
     escalationRequired: waitingHuman,
     checkpoint,
     humanTask,
-    mcpSummary: waitingHuman
+    latestToolOutcome: waitingHuman
       ? {
-          capabilityName: '创建协同工单',
-          externalTicketId: `TICKET-${Math.floor(10000 + Math.random() * 90000)}`,
+          toolResourceId: 'resource-tool-ticket',
+          toolResourceName: '工单协同 Tool',
+          operation: 'create_ticket',
+          providerType: 'MCP',
           status: 'ACCEPTED',
+          externalReference: `TICKET-${Math.floor(10000 + Math.random() * 90000)}`,
           recommendedAction: 'HUMAN_HANDOFF',
           detail: '已创建人工协同工单。',
         }
       : afterSales
         ? {
-            capabilityName: '售后策略执行',
-            externalTicketId: '',
+            toolResourceId: 'resource-tool-refund',
+            toolResourceName: '售后策略 Tool',
+            operation: 'evaluate_refund',
+            providerType: 'HTTP',
             status: 'RECORDED',
+            externalReference: '',
             recommendedAction: 'AUTO_RESOLVE',
             detail: '售后策略已自动执行。',
           }
@@ -776,7 +848,7 @@ export const api = {
           messages: [],
           latestTaskId: null,
           latestWorkflowInstanceId: null,
-          latestMcpSummary: null,
+          latestToolOutcome: null,
           latestHumanTask: null,
         };
         fallbackState.sessions.push(created);
@@ -825,7 +897,7 @@ export const api = {
           messages: [...current.messages, userMessage, assistantMessage],
           latestTaskId: execution.task.id,
           latestWorkflowInstanceId: execution.workflow.id,
-          latestMcpSummary: execution.workflow.mcpSummary,
+          latestToolOutcome: execution.workflow.latestToolOutcome,
           latestHumanTask: execution.workflow.humanTask,
         };
         fallbackState.sessions = fallbackState.sessions.map((item) => item.id === sessionId ? updated : item);
@@ -1060,7 +1132,6 @@ export const api = {
           name: payload.name,
           role: payload.role,
           instructions: payload.instructions,
-          toolVersionPins: [],
           executionPolicy: payload.executionPolicy,
         };
         fallbackState.catalog.agents.push(created);
@@ -1136,39 +1207,6 @@ export const api = {
             ? { ...node, nodeName: payload.name, description: payload.instructions }
             : node),
         }));
-        rebuildCatalogState();
-        return clone(updated);
-      },
-    ),
-  updateAgentToolVersionPins: (agentId: string, payload: UpdateAgentToolVersionPinsPayload) =>
-    request<Agent>(
-      `/agents/${agentId}/tool-version-pins`,
-      { method: 'PUT', body: JSON.stringify(payload) },
-      () => {
-        const current = findAgent(agentId);
-        const updated: Agent = {
-          ...current,
-          toolVersionPins: payload.toolVersionPins.map((toolVersionPin) => {
-            const resource = fallbackState.catalog.resources.find((item) => item.id === toolVersionPin.resourceId);
-            if (!resource || (resource.type !== 'SKILL' && resource.type !== 'MCP')) {
-              throw new Error('只有 Skill 和 MCP 支持固定版本');
-            }
-            if (!current.executionPolicy.toolResourceIds.includes(toolVersionPin.resourceId)) {
-              throw new Error(`请先启用工具再固定版本：${resource.name}`);
-            }
-            const version = resource?.versions.find((item) => item.id === toolVersionPin.resourceVersionId);
-            return {
-            id: nextId('tool-version-pin'),
-            resourceId: toolVersionPin.resourceId,
-            resourceVersionId: toolVersionPin.resourceVersionId,
-            resourceVersion: version?.version ?? 'unknown',
-            consumerType: 'AGENT',
-            consumerId: agentId,
-            createdAt: new Date().toISOString(),
-            };
-          }),
-        };
-        fallbackState.catalog.agents = fallbackState.catalog.agents.map((item) => item.id === agentId ? updated : item);
         rebuildCatalogState();
         return clone(updated);
       },

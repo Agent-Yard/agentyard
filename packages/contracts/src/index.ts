@@ -1,4 +1,5 @@
-export type ResourceType = 'SKILL' | 'MCP' | 'KNOWLEDGE_BASE' | 'LLM_MODEL' | 'PROMPT_TEMPLATE';
+export type ResourceType = 'TOOL' | 'KNOWLEDGE_BASE' | 'LLM_MODEL' | 'PROMPT_TEMPLATE';
+export type ToolProviderType = 'HTTP' | 'MCP';
 export type ShareScope = 'PRIVATE' | 'DOMAIN_SHARED';
 export type VersionStatus = 'DRAFT' | 'PUBLISHED';
 export type TaskStatus = 'PENDING' | 'RUNNING' | 'WAITING_HUMAN' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
@@ -48,13 +49,24 @@ export interface HumanTaskSnapshot {
 
 export interface ToolInvocationSnapshot {
   id: string;
-  toolType: string;
+  providerType: string;
   resourceId: string;
   resourceName: string;
   operation: string;
   status: string;
   detail: string;
   createdAt: string;
+}
+
+export interface ToolOutcomeSummary {
+  toolResourceId: string;
+  toolResourceName: string;
+  operation: string;
+  providerType: string;
+  status: string;
+  externalReference: string;
+  recommendedAction: string;
+  detail: string;
 }
 
 export interface HumanActionRequest {

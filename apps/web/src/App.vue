@@ -12,7 +12,6 @@ import type {
   CreateScenarioPayload,
   Role,
   TaskInstance,
-  UpdateAgentToolVersionPinsPayload,
   UpdateAssistantPayload,
   UpdateAgentPayload,
   UpdateDomainPayload,
@@ -86,7 +85,7 @@ const pageMeta: Record<PageKey, { label: string; title: string; subtitle: string
   agent: {
     label: '智能体',
     title: '智能体详情与资源绑定页',
-    subtitle: '配置智能体职责、工具启用与工具版本固定。',
+    subtitle: '配置智能体职责、继承覆盖和可用 Tool 集。',
     section: 'build',
   },
   orchestration: {
@@ -104,7 +103,7 @@ const pageMeta: Record<PageKey, { label: string; title: string; subtitle: string
   'resource-create': {
     label: '资源新建',
     title: '资源新建页',
-    subtitle: '按资源类型维护结构化配置，创建可版本化的五类资源。',
+    subtitle: '按资源类型维护结构化配置，创建可版本化的四类资源。',
     section: 'asset',
   },
   runtime: {
@@ -446,10 +445,8 @@ async function handleDeleteAgent(agentId: string) {
 async function handleSaveAgent(payload: {
   agentId: string;
   agent: UpdateAgentPayload;
-  toolVersionPins: UpdateAgentToolVersionPinsPayload;
 }) {
   await api.updateAgent(payload.agentId, payload.agent);
-  await api.updateAgentToolVersionPins(payload.agentId, payload.toolVersionPins);
   await refresh();
   void message.success('智能体配置已保存');
 }

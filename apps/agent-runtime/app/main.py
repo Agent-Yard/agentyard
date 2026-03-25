@@ -19,36 +19,47 @@ except Exception as exc:  # pragma: no cover
     raise RuntimeError("langgraph is required for agent-runtime") from exc
 
 
+class KnowledgeBaseDocument(BaseModel):
+    id: str
+    title: str
+    content: str
+    sourceUri: str = ""
+
+
 class KnowledgeBaseConfig(BaseModel):
-    sourceType: str
-    sourceLocation: str
-    syncMode: str
-    retrievalMode: str
-    embeddingModel: str
-    chunkStrategy: str
     defaultTopK: int
-    documentCount: int
+    documents: List[KnowledgeBaseDocument] = Field(default_factory=list)
 
 
-class SkillConfig(BaseModel):
-    runtime: str
+class ToolOperationConfig(BaseModel):
+    name: str
+    description: str = ""
+    inputSchema: str = ""
+    outputSchema: str = ""
+
+
+class HttpToolProviderConfig(BaseModel):
     endpoint: str
     method: str
-    authType: str
-    timeoutSeconds: int
-    retryPolicy: str
-    inputSchema: str
-    outputSchema: str
 
 
-class McpConfig(BaseModel):
+class McpToolProviderConfig(BaseModel):
     serverName: str
     transport: str
     connectionUri: str
     namespace: str
-    authType: str
     heartbeatSeconds: int
-    exposedTools: List[str]
+    operationMappings: Dict[str, str] = Field(default_factory=dict)
+
+
+class ToolConfig(BaseModel):
+    operations: List[ToolOperationConfig] = Field(default_factory=list)
+    providerType: str
+    authType: str
+    timeoutSeconds: int
+    retryPolicy: str
+    http: Optional[HttpToolProviderConfig] = None
+    mcp: Optional[McpToolProviderConfig] = None
 
 
 class LlmModelConfig(BaseModel):
@@ -73,8 +84,7 @@ class PromptTemplateConfig(BaseModel):
 class ResourceConfigurationSnapshot(BaseModel):
     type: str
     knowledgeBase: Optional[KnowledgeBaseConfig] = None
-    skill: Optional[SkillConfig] = None
-    mcp: Optional[McpConfig] = None
+    tool: Optional[ToolConfig] = None
     llmModel: Optional[LlmModelConfig] = None
     promptTemplate: Optional[PromptTemplateConfig] = None
 
@@ -227,7 +237,7 @@ class WorkflowResumeRequest(BaseModel):
 
 class ToolInvocationSnapshot(BaseModel):
     id: str
-    toolType: str
+    providerType: str
     resourceId: str
     resourceName: str
     operation: str
@@ -243,12 +253,35 @@ class HumanTaskSnapshot(BaseModel):
     expectedAction: str
 
 
-class McpInvocationSummary(BaseModel):
-    capabilityName: str
-    externalTicketId: str
+class ToolOutcomeSummary(BaseModel):
+    toolResourceId: str
+    toolResourceName: str
+    operation: str
+    providerType: str
     status: str
+    externalReference: str
     recommendedAction: str
     detail: str
+
+
+class ToolRequest(BaseModel):
+    toolResourceVersionId: str
+    operation: str
+    arguments: Dict[str, Any] = Field(default_factory=dict)
+
+
+class HumanRequest(BaseModel):
+    title: str = ""
+    instruction: str = ""
+    expectedAction: str = ""
+
+
+class AgentStructuredResponse(BaseModel):
+    message: str = ""
+    routeDecision: Optional[str] = None
+    toolRequests: List[ToolRequest] = Field(default_factory=list)
+    finish: bool = False
+    humanRequest: Optional[HumanRequest] = None
 
 
 class NodeSnapshot(BaseModel):
@@ -270,7 +303,7 @@ class WorkflowResult(BaseModel):
     nodes: List[NodeSnapshot]
     toolCalls: List[ToolInvocationSnapshot]
     escalationRequired: bool
-    mcpSummary: Optional[McpInvocationSummary] = None
+    latestToolOutcome: Optional[ToolOutcomeSummary] = None
 
 
 class AgentState(TypedDict):
@@ -293,7 +326,7 @@ class AgentState(TypedDict):
     human_task: Optional[Dict[str, Any]]
     checkpoint: Optional[Dict[str, Any]]
     escalation_required: bool
-    mcp_summary: Optional[Dict[str, Any]]
+    latest_tool_outcome: Optional[Dict[str, Any]]
     human_input: Optional[Dict[str, Any]]
     resume_count: int
 
@@ -301,18 +334,6 @@ class AgentState(TypedDict):
 app = FastAPI(title="lynxus-agent-runtime", version="1.0.0")
 logger = logging.getLogger("lynxus.agent_runtime")
 LLM_REQUEST_TIMEOUT_SECONDS = 30
-
-
-SEED_KB: Dict[str, List[str]] = {
-    "seed://support-faq": [
-        "密码重置可以通过登录页的忘记密码完成，若邮箱不可用则需要人工验证。",
-        "售后退款通常需要结合订单状态、支付时间和投诉原因综合判定。",
-        "涉及争议、投诉或升级字样的请求应优先进入人工协同分支。",
-        "人工协同时应创建工单，并保留问题摘要、处理意见与回访结果。",
-        "若订单满足七天无理由且未发货，可直接给出退款结论。",
-        "若订单已发货或存在争议，需要人工进一步确认。",
-    ]
-}
 
 
 def now_iso() -> str:
@@ -337,7 +358,7 @@ def append_node(state: AgentState, key: str, name: str, detail: str, status: str
 
 def record_tool_call(
     state: AgentState,
-    tool_type: str,
+    provider_type: str,
     resource: ResourceVersionSnapshot,
     operation: str,
     status: str,
@@ -346,7 +367,7 @@ def record_tool_call(
     state["tool_calls"].append(
         {
             "id": next_id("tool"),
-            "toolType": tool_type,
+            "providerType": provider_type,
             "resourceId": resource.resourceId,
             "resourceName": resource.resourceName,
             "operation": operation,
@@ -510,6 +531,112 @@ def build_prompt(
         .replace("{{human_input}}", json.dumps(human_input or {}, ensure_ascii=False))
     )
 
+
+def available_route_keys(graph: GraphSnapshot, node_key: str) -> List[str]:
+    return [edge.routeKey for edge in graph.edges if edge.sourceNodeKey == node_key and edge.routeKey]
+
+
+def tool_catalog_for_prompt(tool_resources: List[ResourceVersionSnapshot]) -> List[Dict[str, Any]]:
+    catalog: List[Dict[str, Any]] = []
+    for resource in tool_resources:
+        tool = resource.configuration.tool
+        if tool is None:
+            continue
+        catalog.append(
+            {
+                "toolResourceId": resource.resourceId,
+                "toolResourceVersionId": resource.resourceVersionId,
+                "toolResourceName": resource.resourceName,
+                "providerType": tool.providerType,
+                "operations": [
+                    {
+                        "name": operation.name,
+                        "description": operation.description,
+                        "inputSchema": operation.inputSchema,
+                        "outputSchema": operation.outputSchema,
+                    }
+                    for operation in tool.operations
+                ],
+            }
+        )
+    return catalog
+
+
+def build_structured_agent_prompt(
+    prompt_config: Optional[PromptTemplateConfig],
+    question: str,
+    knowledge_context: List[str],
+    tool_results: Dict[str, Any],
+    human_input: Optional[Dict[str, Any]],
+    tool_resources: List[ResourceVersionSnapshot],
+    route_keys: List[str],
+    loop_index: int,
+) -> str:
+    base_prompt = build_prompt(prompt_config, question, knowledge_context, tool_results, human_input)
+    tool_catalog = tool_catalog_for_prompt(tool_resources)
+    response_schema = {
+        "message": "string",
+        "routeDecision": "string | null",
+        "toolRequests": [
+            {
+                "toolResourceVersionId": "string",
+                "operation": "string",
+                "arguments": {"key": "value"},
+            }
+        ],
+        "finish": "boolean",
+        "humanRequest": {
+            "title": "string",
+            "instruction": "string",
+            "expectedAction": "string",
+        },
+    }
+    guidance = {
+        "loopIndex": loop_index,
+        "availableRouteKeys": route_keys,
+        "availableTools": tool_catalog,
+        "toolCallRules": [
+            "Only request tools listed in availableTools.",
+            "Use toolRequests when external capability is needed.",
+            "When tool results are sufficient, set finish=true.",
+            "Return JSON only.",
+        ],
+    }
+    return (
+        f"{base_prompt}\n\n"
+        f"可用路由与工具信息：\n{json.dumps(guidance, ensure_ascii=False, indent=2)}\n\n"
+        f"请严格输出 JSON，字段结构如下：\n{json.dumps(response_schema, ensure_ascii=False, indent=2)}"
+    )
+
+
+def strip_json_fence(text: str) -> str:
+    candidate = text.strip()
+    if candidate.startswith("```"):
+        lines = candidate.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        candidate = "\n".join(lines).strip()
+    return candidate
+
+
+def extract_json_object(text: str) -> Optional[Dict[str, Any]]:
+    candidate = strip_json_fence(text)
+    try:
+        parsed = json.loads(candidate)
+        return parsed if isinstance(parsed, dict) else None
+    except json.JSONDecodeError:
+        start = candidate.find("{")
+        end = candidate.rfind("}")
+        if start >= 0 and end > start:
+            try:
+                parsed = json.loads(candidate[start : end + 1])
+                return parsed if isinstance(parsed, dict) else None
+            except json.JSONDecodeError:
+                return None
+    return None
+
 async def call_llm(model_resource: ResourceVersionSnapshot, prompt: str, system_prompt: str) -> str:
     model_config = model_resource.configuration.llmModel
     if model_config is None:
@@ -589,11 +716,19 @@ def tokenize(text: str) -> List[str]:
     return [token for token in text.replace("？", " ").replace("，", " ").replace("。", " ").split() if token]
 
 
+def knowledge_documents(config: KnowledgeBaseConfig) -> List[str]:
+    return [
+        f"{document.title}\n{document.content}".strip()
+        for document in config.documents
+        if document.content.strip()
+    ]
+
+
 def retrieve_knowledge(resource: Optional[ResourceVersionSnapshot], question: str) -> List[str]:
     if resource is None or resource.configuration.knowledgeBase is None:
         return []
     config = resource.configuration.knowledgeBase
-    documents = SEED_KB.get(config.sourceLocation, [])
+    documents = knowledge_documents(config)
     if not documents:
         return []
 
@@ -609,57 +744,260 @@ def retrieve_knowledge(resource: Optional[ResourceVersionSnapshot], question: st
     return [document for _, document in scored[: config.defaultTopK]]
 
 
-async def call_skill(resource: ResourceVersionSnapshot, payload: Dict[str, Any]) -> Dict[str, Any]:
-    config = resource.configuration.skill
-    if config is None:
-        raise HTTPException(status_code=500, detail=f"resource {resource.resourceId} is not a skill")
+def resolve_tool_operation(resource: ResourceVersionSnapshot, operation_name: Optional[str] = None) -> ToolOperationConfig:
+    config = resource.configuration.tool
+    if config is None or not config.operations:
+        raise HTTPException(status_code=500, detail=f"resource {resource.resourceId} has no tool operations configured")
+    if operation_name:
+        for operation in config.operations:
+            if operation.name == operation_name:
+                return operation
+    return config.operations[0]
 
-    parsed = urlparse(config.endpoint)
+
+async def call_http_tool(resource: ResourceVersionSnapshot, operation: ToolOperationConfig, payload: Dict[str, Any]) -> Dict[str, Any]:
+    config = resource.configuration.tool
+    if config is None or config.http is None:
+        raise HTTPException(status_code=500, detail=f"resource {resource.resourceId} is not an HTTP tool")
+
+    parsed = urlparse(config.http.endpoint)
     if parsed.hostname == "demo.local":
         question = payload.get("question", "")
-        if any(word in question for word in ["投诉", "争议", "人工", "升级"]):
+        if operation.name == "evaluate_refund" and any(word in question for word in ["投诉", "争议", "人工", "升级"]):
             return {
                 "eligibility": "REQUIRES_REVIEW",
                 "routeKey": "manual_review",
                 "actionPlan": "涉及争议和投诉，需要人工复核后再决定退款策略。",
             }
-        return {
-            "eligibility": "APPROVED",
-            "routeKey": "resolved",
-            "actionPlan": "订单符合规则，可直接按标准退款流程处理。",
-        }
+        if operation.name == "evaluate_refund":
+            return {
+                "eligibility": "APPROVED",
+                "routeKey": "resolved",
+                "actionPlan": "订单符合规则，可直接按标准退款流程处理。",
+            }
+        return {"status": "COMPLETED", "detail": "工具执行成功。"}
 
     async with httpx.AsyncClient(timeout=config.timeoutSeconds) as client:
-        response = await client.request(config.method.upper(), config.endpoint, json=payload)
+        response = await client.request(config.http.method.upper(), config.http.endpoint, json=payload)
         response.raise_for_status()
         return response.json()
 
 
-async def call_mcp(resource: ResourceVersionSnapshot, tool_name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    config = resource.configuration.mcp
-    if config is None:
-        raise HTTPException(status_code=500, detail=f"resource {resource.resourceId} is not an MCP resource")
+async def call_mcp_tool(resource: ResourceVersionSnapshot, operation: ToolOperationConfig, payload: Dict[str, Any]) -> Dict[str, Any]:
+    config = resource.configuration.tool
+    if config is None or config.mcp is None:
+        raise HTTPException(status_code=500, detail=f"resource {resource.resourceId} is not an MCP-backed tool")
+    remote_tool_name = config.mcp.operationMappings.get(operation.name, operation.name)
 
-    parsed = urlparse(config.connectionUri)
+    parsed = urlparse(config.mcp.connectionUri)
     if parsed.hostname == "demo.local":
-        ticket_id = f"TICKET-{abs(hash((tool_name, payload.get('question', ''), payload.get('operator', '')))) % 100000}"
+        ticket_id = f"TICKET-{abs(hash((remote_tool_name, payload.get('question', ''), payload.get('operator', '')))) % 100000}"
         return {
             "ticketId": ticket_id,
             "status": "ACCEPTED",
             "detail": "已创建人工协同工单，并记录人工处理意见。",
         }
 
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=config.timeoutSeconds) as client:
         response = await client.post(
-            config.connectionUri,
+            config.mcp.connectionUri,
             json={
-                "namespace": config.namespace,
-                "tool": tool_name,
+                "namespace": config.mcp.namespace,
+                "tool": remote_tool_name,
                 "arguments": payload,
             },
         )
         response.raise_for_status()
         return response.json()
+
+
+async def call_tool(resource: ResourceVersionSnapshot, operation_name: Optional[str], payload: Dict[str, Any]) -> tuple[ToolOperationConfig, Dict[str, Any]]:
+    config = resource.configuration.tool
+    if config is None:
+        raise HTTPException(status_code=500, detail=f"resource {resource.resourceId} is not a tool")
+    operation = resolve_tool_operation(resource, operation_name)
+    if config.providerType == "HTTP":
+        return operation, await call_http_tool(resource, operation, payload)
+    if config.providerType == "MCP":
+        return operation, await call_mcp_tool(resource, operation, payload)
+    raise HTTPException(status_code=400, detail=f"Unsupported tool provider: {config.providerType}")
+
+
+def build_tool_payload(state: AgentState, hits: List[str]) -> Dict[str, Any]:
+    human_input = state["human_input"] or {}
+    latest_tool_result = next(reversed(list(state["tool_results"].values())), {}) if state["tool_results"] else {}
+    return {
+        "question": state["question"],
+        "knowledgeHits": hits,
+        "operator": human_input.get("operatorId", ""),
+        "comment": human_input.get("comment", ""),
+        "ticketId": latest_tool_result.get("ticketId", ""),
+    }
+
+
+def choose_tool_request(agent: AgentSnapshot, tool_resources: List[ResourceVersionSnapshot], state: AgentState, hits: List[str]) -> Optional[tuple[ResourceVersionSnapshot, str, Dict[str, Any]]]:
+    if not tool_resources:
+        return None
+    question = state["question"]
+    has_human_input = bool(state["human_input"])
+    has_ticket_context = any(result.get("ticketId") for result in state["tool_results"].values() if isinstance(result, dict))
+
+    preferred_operation_names: List[str] = []
+    if has_human_input and has_ticket_context:
+        preferred_operation_names.extend(["append_comment", "update_ticket", "sync_ticket"])
+    if any(word in question for word in ["投诉", "人工", "升级", "工单", "协同"]):
+        preferred_operation_names.extend(["create_ticket", "open_ticket"])
+    if any(word in question for word in ["退款", "补偿", "退货", "售后"]):
+        preferred_operation_names.extend(["evaluate_refund", "review_after_sales", "calculate_compensation"])
+    preferred_operation_names.extend(["invoke"])
+
+    for tool_resource in tool_resources:
+        config = tool_resource.configuration.tool
+        if config is None:
+            continue
+        operations = config.operations or []
+        for preferred_name in preferred_operation_names:
+            if any(operation.name == preferred_name for operation in operations):
+                return tool_resource, preferred_name, build_tool_payload(state, hits)
+        if operations:
+            return tool_resource, operations[0].name, build_tool_payload(state, hits)
+    return None
+
+
+def infer_route_decision(graph: GraphSnapshot, node: GraphNodeSnapshot, state: AgentState) -> str:
+    route_keys = available_route_keys(graph, node.nodeKey)
+    if not route_keys:
+        return "default"
+
+    question = state["question"]
+    latest_outcome = state["latest_tool_outcome"] or {}
+    recommended_action = str(latest_outcome.get("recommendedAction", "")).lower()
+
+    if "manual_review" in route_keys and (
+        recommended_action in {"manual_review", "human_handoff"} or any(word in question for word in ["投诉", "人工", "升级"])
+    ):
+        return "manual_review"
+    if "human_handoff" in route_keys and (
+        recommended_action in {"human_handoff", "manual_review"} or any(word in question for word in ["投诉", "人工", "升级"])
+    ):
+        return "human_handoff"
+    if "after_sales" in route_keys and any(word in question for word in ["退款", "补偿", "退货", "售后"]):
+        return "after_sales"
+    if "resolved" in route_keys and (
+        recommended_action in {"resolved", "auto_resolve", "recorded"} or any(word in question for word in ["退款", "补偿", "退货", "售后"])
+    ):
+        return "resolved"
+    if "faq" in route_keys:
+        return "faq"
+    if "default" in route_keys:
+        return "default"
+    return route_keys[0]
+
+
+def normalize_tool_requests(
+    raw_requests: List[Dict[str, Any]],
+    tool_resources: List[ResourceVersionSnapshot],
+    fallback_payload: Dict[str, Any],
+) -> List[ToolRequest]:
+    by_version_id = {resource.resourceVersionId: resource for resource in tool_resources}
+    normalized: List[ToolRequest] = []
+    for raw_request in raw_requests:
+        if not isinstance(raw_request, dict):
+            continue
+        resource_version_id = str(raw_request.get("toolResourceVersionId", "")).strip()
+        operation = str(raw_request.get("operation", "")).strip()
+        arguments = raw_request.get("arguments", {})
+        if resource_version_id not in by_version_id or not operation:
+            continue
+        normalized.append(
+            ToolRequest(
+                toolResourceVersionId=resource_version_id,
+                operation=operation,
+                arguments={**fallback_payload, **(arguments if isinstance(arguments, dict) else {})},
+            )
+        )
+    return normalized
+
+
+def parse_agent_structured_response(
+    llm_output: str,
+    graph: GraphSnapshot,
+    node: GraphNodeSnapshot,
+    agent: AgentSnapshot,
+    tool_resources: List[ResourceVersionSnapshot],
+    state: AgentState,
+    hits: List[str],
+) -> AgentStructuredResponse:
+    payload = build_tool_payload(state, hits)
+    agent_has_tool_result = any(key.startswith(f"{agent.agentId}:") for key in state["tool_results"].keys())
+    parsed = extract_json_object(llm_output)
+    if parsed is not None:
+        route_decision = parsed.get("routeDecision")
+        route_keys = set(available_route_keys(graph, node.nodeKey))
+        if route_decision and route_keys and route_decision not in route_keys:
+            route_decision = None
+        tool_requests = normalize_tool_requests(parsed.get("toolRequests", []), tool_resources, payload)
+        return AgentStructuredResponse(
+            message=str(parsed.get("message", "")).strip(),
+            routeDecision=str(route_decision).strip() if route_decision else None,
+            toolRequests=tool_requests,
+            finish=bool(parsed.get("finish", False)),
+            humanRequest=HumanRequest.model_validate(parsed.get("humanRequest")) if parsed.get("humanRequest") else None,
+        )
+
+    fallback_tool_request = choose_tool_request(agent, tool_resources, state, hits)
+    fallback_requests = []
+    if fallback_tool_request is not None and not agent_has_tool_result:
+        fallback_resource, fallback_operation, fallback_payload = fallback_tool_request
+        fallback_requests = [
+            ToolRequest(
+                toolResourceVersionId=fallback_resource.resourceVersionId,
+                operation=fallback_operation,
+                arguments=fallback_payload,
+            )
+        ]
+    return AgentStructuredResponse(
+        message=llm_output.strip(),
+        routeDecision=infer_route_decision(graph, node, state),
+        toolRequests=fallback_requests,
+        finish=not bool(fallback_requests),
+        humanRequest=None,
+    )
+
+
+def store_tool_result(
+    state: AgentState,
+    agent: AgentSnapshot,
+    resource: ResourceVersionSnapshot,
+    operation: ToolOperationConfig,
+    result: Dict[str, Any],
+) -> None:
+    key = f"{agent.agentId}:{operation.name}:{len(state['tool_results']) + 1}"
+    state["tool_results"][key] = {
+        "toolResourceId": resource.resourceId,
+        "toolResourceVersionId": resource.resourceVersionId,
+        "toolResourceName": resource.resourceName,
+        "providerType": resource.configuration.tool.providerType if resource.configuration.tool else "UNKNOWN",
+        "operation": operation.name,
+        "result": result,
+    }
+
+
+def build_tool_outcome(resource: ResourceVersionSnapshot, operation: ToolOperationConfig, result: Dict[str, Any]) -> Dict[str, Any]:
+    provider_type = resource.configuration.tool.providerType if resource.configuration.tool else "UNKNOWN"
+    external_reference = str(result.get("ticketId", result.get("externalReference", "")))
+    recommended_action = str(result.get("recommendedAction", result.get("routeKey", "DEFAULT")))
+    detail = str(result.get("detail", result.get("actionPlan", json.dumps(result, ensure_ascii=False))))
+    return {
+        "toolResourceId": resource.resourceId,
+        "toolResourceName": resource.resourceName,
+        "operation": operation.name,
+        "providerType": provider_type,
+        "status": str(result.get("status", "COMPLETED")),
+        "externalReference": external_reference,
+        "recommendedAction": recommended_action,
+        "detail": detail,
+    }
 
 
 def export_state(state: AgentState) -> Dict[str, Any]:
@@ -675,7 +1013,7 @@ def export_state(state: AgentState) -> Dict[str, Any]:
         "tool_results": state["tool_results"],
         "tool_calls": state["tool_calls"],
         "node_snapshots": state["node_snapshots"],
-        "mcp_summary": state["mcp_summary"],
+        "latest_tool_outcome": state["latest_tool_outcome"],
         "escalation_required": state["escalation_required"],
         "resume_count": state["resume_count"],
     }
@@ -702,7 +1040,7 @@ def restore_state(data: Dict[str, Any], resume_request: WorkflowResumeRequest) -
         "human_task": None,
         "checkpoint": None,
         "escalation_required": data.get("escalation_required", False),
-        "mcp_summary": data.get("mcp_summary"),
+        "latest_tool_outcome": data.get("latest_tool_outcome"),
         "human_input": resume_request.action.model_dump(mode="json"),
         "resume_count": resume_request.checkpoint.resumeCount + 1,
     }
@@ -724,6 +1062,7 @@ def resolve_next_node(graph: GraphSnapshot, source_node_key: str, route_key: Opt
 
 async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None:
     assistant = assistant_from_state(state)
+    graph = graph_from_state(state)
     agent = find_agent(assistant, node.agentId)
     kb_resource = resolve_knowledge_resource(assistant, agent)
     hits = retrieve_knowledge(kb_resource, state["question"]) if (agent.executionPolicy.ragEnabled or assistant.assistantPolicy.ragEnabled) else []
@@ -733,85 +1072,86 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
     prompt_resource = resolve_prompt_resource(assistant, agent)
     model_resource = resolve_model_resource(assistant, agent)
     system_prompt = prompt_resource.configuration.promptTemplate.systemPrompt if prompt_resource and prompt_resource.configuration.promptTemplate else agent.instructions
-    prompt = build_prompt(
-        prompt_resource.configuration.promptTemplate if prompt_resource else None,
-        state["question"],
-        hits,
-        state["tool_results"],
-        state["human_input"],
-    )
-
-    route_key = "default"
+    tool_resources = resolve_tool_resources(assistant, agent)
+    route_key = infer_route_decision(graph, node, state)
     detail_lines = [agent.instructions]
 
-    if agent.role == "router":
-        question = state["question"]
-        if any(word in question for word in ["投诉", "人工", "升级"]):
-            route_key = "human_handoff"
-            state["summary"] = "问题需要人工介入，已进入人工协同节点。"
-        elif any(word in question for word in ["退款", "补偿", "售后"]):
-            route_key = "after_sales"
-            state["summary"] = "问题进入售后策略分支。"
-        else:
-            route_key = "faq"
-            state["summary"] = "问题进入 FAQ 分支。"
-        detail_lines.append(f"route_key={route_key}")
-    elif agent.role == "policy":
-        tool_resources = [tool for tool in resolve_tool_resources(assistant, agent) if tool.configuration.skill]
-        if not tool_resources:
-            raise HTTPException(status_code=500, detail=f"agent {agent.agentId} has no skill resource")
-        skill_resource = tool_resources[0]
-        try:
-            result = await call_skill(skill_resource, {"question": state["question"], "knowledgeHits": hits})
-            state["tool_results"][agent.agentId] = result
-            record_tool_call(state, "SKILL", skill_resource, "invoke", "COMPLETED", json.dumps(result, ensure_ascii=False))
-            route_key = result.get("routeKey", "default")
-            llm_output = await call_llm(model_resource, prompt, system_prompt)
-            state["final_reply"] = f"{llm_output}\n\n处理建议：{result.get('actionPlan', '')}".strip()
-            state["summary"] = result.get("actionPlan", state["final_reply"])
-            detail_lines.append(f"skill_route={route_key}")
-        except Exception as exc:
-            record_tool_call(state, "SKILL", skill_resource, "invoke", "FAILED", str(exc))
-            route_key = "manual_review"
-            state["summary"] = f"工具调用失败，转人工处理：{exc}"
-            state["escalation_required"] = True
-            detail_lines.append("skill_failed=manual_review")
-    elif agent.role == "handoff":
-        tool_resources = [tool for tool in resolve_tool_resources(assistant, agent) if tool.configuration.mcp]
-        if not tool_resources:
-            raise HTTPException(status_code=500, detail=f"agent {agent.agentId} has no MCP resource")
-        mcp_resource = tool_resources[0]
-        mcp_result = await call_mcp(
-            mcp_resource,
-            "create_ticket",
-            {
-                "question": state["question"],
-                "operator": state["human_input"]["operatorId"] if state["human_input"] else "",
-                "comment": state["human_input"]["comment"] if state["human_input"] else "",
-            },
+    final_message = ""
+    last_llm_output = ""
+    loop_count = 0
+    for loop_index in range(3):
+        loop_count = loop_index + 1
+        prompt = build_structured_agent_prompt(
+            prompt_resource.configuration.promptTemplate if prompt_resource else None,
+            state["question"],
+            hits,
+            state["tool_results"],
+            state["human_input"],
+            tool_resources,
+            available_route_keys(graph, node.nodeKey),
+            loop_index,
         )
-        state["tool_results"][agent.agentId] = mcp_result
-        record_tool_call(state, "MCP", mcp_resource, "create_ticket", "COMPLETED", json.dumps(mcp_result, ensure_ascii=False))
-        state["mcp_summary"] = {
-            "capabilityName": "创建协同工单",
-            "externalTicketId": mcp_result.get("ticketId", ""),
-            "status": mcp_result.get("status", "ACCEPTED"),
-            "recommendedAction": "HUMAN_HANDOFF",
-            "detail": mcp_result.get("detail", "已完成人工协同。"),
-        }
-        llm_output = await call_llm(model_resource, prompt, system_prompt)
-        human_comment = state["human_input"]["comment"] if state["human_input"] else ""
-        state["final_reply"] = f"{llm_output}\n\n人工处理说明：{human_comment}".strip()
-        state["summary"] = state["mcp_summary"]["detail"]
-        route_key = "default"
+        last_llm_output = await call_llm(model_resource, prompt, system_prompt)
+        structured = parse_agent_structured_response(last_llm_output, graph, node, agent, tool_resources, state, hits)
+        if structured.message:
+            final_message = structured.message
+        if structured.routeDecision:
+            route_key = structured.routeDecision
+        if structured.humanRequest and not state["summary"]:
+            state["summary"] = structured.humanRequest.instruction or state["summary"]
+
+        if structured.toolRequests and loop_index < 2:
+            detail_lines.append(f"tool_requests={len(structured.toolRequests)}")
+            tool_failed = False
+            for tool_request in structured.toolRequests:
+                tool_resource = next(
+                    (resource for resource in tool_resources if resource.resourceVersionId == tool_request.toolResourceVersionId),
+                    None,
+                )
+                if tool_resource is None:
+                    continue
+                try:
+                    operation, tool_result = await call_tool(tool_resource, tool_request.operation, tool_request.arguments)
+                    store_tool_result(state, agent, tool_resource, operation, tool_result)
+                    provider_type = tool_resource.configuration.tool.providerType if tool_resource.configuration.tool else "UNKNOWN"
+                    record_tool_call(state, provider_type, tool_resource, operation.name, "COMPLETED", json.dumps(tool_result, ensure_ascii=False))
+                    state["latest_tool_outcome"] = build_tool_outcome(tool_resource, operation, tool_result)
+                    detail_lines.append(f"tool_operation={operation.name}")
+                    route_key = str(tool_result.get("routeKey", route_key or "default"))
+                except Exception as exc:
+                    provider_type = tool_resource.configuration.tool.providerType if tool_resource.configuration.tool else "UNKNOWN"
+                    record_tool_call(state, provider_type, tool_resource, tool_request.operation, "FAILED", str(exc))
+                    route_key = "manual_review"
+                    state["summary"] = f"工具调用失败，转人工处理：{exc}"
+                    state["escalation_required"] = True
+                    detail_lines.append("tool_failed=manual_review")
+                    tool_failed = True
+                    break
+            if tool_failed:
+                break
+            continue
+
+        if structured.finish or not structured.toolRequests:
+            break
+
+    message = final_message or last_llm_output or agent.instructions
+    human_comment = state["human_input"]["comment"] if state["human_input"] else ""
+    latest_outcome = state["latest_tool_outcome"] or {}
+    suggestion = str(latest_outcome.get("detail", ""))
+    suffix_parts = [part for part in [suggestion, f"人工处理说明：{human_comment}" if human_comment else ""] if part]
+    suffix = "\n\n".join(suffix_parts)
+    state["final_reply"] = f"{message}\n\n{suffix}".strip() if suffix and suggestion not in message else message
+    if state["summary"]:
+        state["summary"] = state["summary"]
+    elif suggestion:
+        state["summary"] = suggestion
     else:
-        llm_output = await call_llm(model_resource, prompt, system_prompt)
-        state["final_reply"] = llm_output
-        state["summary"] = llm_output
-        route_key = "default"
+        state["summary"] = state["final_reply"]
+    detail_lines.append(f"loop_count={loop_count}")
+    detail_lines.append(f"route_key={route_key}")
 
     state["route_key"] = route_key
-    state["next_node_key"] = resolve_next_node(graph_from_state(state), node.nodeKey, route_key)
+    state["next_node_key"] = resolve_next_node(graph, node.nodeKey, route_key)
     state["current_node_key"] = node.nodeKey
     append_node(state, node.nodeKey, node.nodeName, "\n".join(detail_lines))
 
@@ -944,7 +1284,7 @@ def workflow_result_from_state(state: AgentState) -> WorkflowResult:
         nodes=[NodeSnapshot(**node) for node in state["node_snapshots"]],
         toolCalls=[ToolInvocationSnapshot(**tool) for tool in state["tool_calls"]],
         escalationRequired=state["escalation_required"],
-        mcpSummary=McpInvocationSummary(**state["mcp_summary"]) if state["mcp_summary"] else None,
+        latestToolOutcome=ToolOutcomeSummary(**state["latest_tool_outcome"]) if state["latest_tool_outcome"] else None,
     )
 
 
@@ -973,7 +1313,7 @@ async def start_agent_run(request: WorkflowStartRequest) -> WorkflowResult:
         "human_task": None,
         "checkpoint": None,
         "escalation_required": False,
-        "mcp_summary": None,
+        "latest_tool_outcome": None,
         "human_input": None,
         "resume_count": 0,
     }

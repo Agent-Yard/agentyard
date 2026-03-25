@@ -42,7 +42,7 @@
 - `auth-domain`：当前用户、角色策略、mock 登录
 - `tenant-domain`：保留租户边界，当前实现默认单租户
 - `scenario-domain`：业务域、业务场景、助手、智能体
-- `resource-domain`：知识库、Skill、MCP、LLM、Prompt 模板及资源版本配置
+- `resource-domain`：知识库、Tool、LLM、Prompt 模板及资源版本配置
 - `runtime-domain`：任务、流程、节点、人工介入
 - `release-domain`：草稿、发布、快照冻结与运行锚点
 - `shared-kernel`：公共枚举、错误码、审计字段、上下文
@@ -60,12 +60,12 @@
 
 ## 当前实现策略
 
-- LLM、知识库、MCP、Skill 采用轻量 adapter，并保留 `demo.local` 演示闭环
+- LLM、知识库、Tool provider 采用轻量 adapter，并保留 `demo.local` 演示闭环
 - 资源按“资源头 + 版本”建模，智能体绑定时必须显式锚定资源版本
 - 助手切换到 `PUBLISHED` 时会冻结资源版本、agent 执行配置和编排图快照，作为后续运行和审计的稳定锚点
 - 前端资源区拆分为“资源目录”和“资源新建”两页
 - `资源目录`：聚焦资源清单、详情、版本流转、生效版本切换和结构化引用分析
-- `资源新建`：按知识库、Skill、MCP、LLM、Prompt 模板五种蓝图维护结构化初始版本配置
+- `资源新建`：按知识库、Tool、LLM、Prompt 模板四种蓝图维护结构化初始版本配置
 - 认证采用本地 mock 用户，不接真实 OIDC
 - 持久化采用 JSONB catalog store，工作流支持人工节点暂停恢复
 - 控制面 API 优先提供演示闭环与前端真实接口消费

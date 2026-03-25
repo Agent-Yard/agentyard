@@ -3,9 +3,11 @@ package com.lynxus.platform.catalog;
 import com.lynxus.contracts.runtime.WorkflowContracts.OrchestrationNodeType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ResourceType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
+import com.lynxus.contracts.runtime.WorkflowContracts.ToolProviderType;
 import com.lynxus.contracts.runtime.WorkflowContracts.VersionStatus;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 public final class CatalogDtos {
     private CatalogDtos() {
@@ -88,7 +90,6 @@ public final class CatalogDtos {
         String name,
         String role,
         String instructions,
-        List<ToolVersionPinDto> toolVersionPins,
         AgentExecutionPolicyDto executionPolicy
     ) {
     }
@@ -110,17 +111,6 @@ public final class CatalogDtos {
     ) {
     }
 
-    public record ToolVersionPinDto(
-        String id,
-        String resourceId,
-        String resourceVersionId,
-        String resourceVersion,
-        String consumerType,
-        String consumerId,
-        Instant createdAt
-    ) {
-    }
-
     public record ResourceVersionDto(
         String id,
         String resourceId,
@@ -137,45 +127,58 @@ public final class CatalogDtos {
     public record ResourceVersionConfigurationDto(
         ResourceType type,
         KnowledgeBaseConfigDto knowledgeBase,
-        SkillConfigDto skill,
-        McpConfigDto mcp,
+        ToolConfigDto tool,
         LlmModelConfigDto llmModel,
         PromptTemplateConfigDto promptTemplate
     ) {
     }
 
-    public record KnowledgeBaseConfigDto(
-        String sourceType,
-        String sourceLocation,
-        String syncMode,
-        String retrievalMode,
-        String embeddingModel,
-        String chunkStrategy,
-        int defaultTopK,
-        int documentCount
+    public record KnowledgeBaseDocumentDto(
+        String id,
+        String title,
+        String content,
+        String sourceUri
     ) {
     }
 
-    public record SkillConfigDto(
-        String runtime,
-        String endpoint,
-        String method,
-        String authType,
-        int timeoutSeconds,
-        String retryPolicy,
+    public record KnowledgeBaseConfigDto(
+        int defaultTopK,
+        List<KnowledgeBaseDocumentDto> documents
+    ) {
+    }
+
+    public record ToolOperationDto(
+        String name,
+        String description,
         String inputSchema,
         String outputSchema
     ) {
     }
 
-    public record McpConfigDto(
+    public record HttpToolProviderConfigDto(
+        String endpoint,
+        String method
+    ) {
+    }
+
+    public record McpToolProviderConfigDto(
         String serverName,
         String transport,
         String connectionUri,
         String namespace,
-        String authType,
         int heartbeatSeconds,
-        List<String> exposedTools
+        Map<String, String> operationMappings
+    ) {
+    }
+
+    public record ToolConfigDto(
+        List<ToolOperationDto> operations,
+        ToolProviderType providerType,
+        String authType,
+        int timeoutSeconds,
+        String retryPolicy,
+        HttpToolProviderConfigDto http,
+        McpToolProviderConfigDto mcp
     ) {
     }
 
@@ -359,12 +362,6 @@ public final class CatalogDtos {
     ) {
     }
 
-    public record ToolVersionPinTarget(String resourceId, String resourceVersionId) {
-    }
-
-    public record UpdateAgentToolVersionPinsRequest(List<ToolVersionPinTarget> toolVersionPins) {
-    }
-
     public record CreateResourceRequest(
         String domainId,
         String name,
@@ -385,9 +382,6 @@ public final class CatalogDtos {
         VersionStatus status,
         ResourceVersionConfigurationDto configuration
     ) {
-    }
-
-    public record PinToolVersionRequest(String resourceId, String consumerType, String consumerId) {
     }
 
     public record UpdateOrchestrationRequest(

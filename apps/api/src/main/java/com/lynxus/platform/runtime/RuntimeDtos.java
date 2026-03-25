@@ -2,9 +2,9 @@ package com.lynxus.platform.runtime;
 
 import com.lynxus.contracts.runtime.WorkflowContracts.ExecutionCheckpoint;
 import com.lynxus.contracts.runtime.WorkflowContracts.HumanTaskSnapshot;
-import com.lynxus.contracts.runtime.WorkflowContracts.McpInvocationSummary;
 import com.lynxus.contracts.runtime.WorkflowContracts.NodeStatus;
 import com.lynxus.contracts.runtime.WorkflowContracts.TaskStatus;
+import com.lynxus.contracts.runtime.WorkflowContracts.ToolOutcomeSummary;
 import com.lynxus.contracts.runtime.WorkflowContracts.ToolInvocationSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowStatus;
 import java.time.Instant;
@@ -54,7 +54,7 @@ public final class RuntimeDtos {
         boolean escalationRequired,
         ExecutionCheckpoint checkpoint,
         HumanTaskSnapshot humanTask,
-        McpInvocationSummary mcpSummary,
+        ToolOutcomeSummary latestToolOutcome,
         List<String> resourceAnchors,
         List<NodeExecutionDto> nodes,
         List<ToolInvocationSnapshot> toolCalls,
@@ -110,7 +110,7 @@ public final class RuntimeDtos {
         List<ConversationMessageDto> messages,
         String latestTaskId,
         String latestWorkflowInstanceId,
-        McpInvocationSummary latestMcpSummary,
+        ToolOutcomeSummary latestToolOutcome,
         HumanTaskSnapshot latestHumanTask
     ) {
     }

@@ -23,7 +23,7 @@
 - 发布冻结：资源锚点、agent 执行配置和图快照
 - 运行编排：`START / AGENT / HUMAN / END` 显式图执行
 - 长流程托管：Temporal `start / signal / resume`
-- 运行观测：任务、流程、节点、人工介入、tool 调用与 MCP 摘要
+- 运行观测：任务、流程、节点、人工介入、tool 调用与工具结果摘要
 
 ## 当前已验证的核心问题
 

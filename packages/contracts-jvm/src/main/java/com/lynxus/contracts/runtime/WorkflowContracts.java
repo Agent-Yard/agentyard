@@ -9,11 +9,15 @@ public final class WorkflowContracts {
     }
 
     public enum ResourceType {
-        SKILL,
-        MCP,
+        TOOL,
         KNOWLEDGE_BASE,
         LLM_MODEL,
         PROMPT_TEMPLATE
+    }
+
+    public enum ToolProviderType {
+        HTTP,
+        MCP
     }
 
     public enum ShareScope {
@@ -60,37 +64,51 @@ public final class WorkflowContracts {
     }
 
     public record KnowledgeBaseConfig(
-        String sourceType,
-        String sourceLocation,
-        String syncMode,
-        String retrievalMode,
-        String embeddingModel,
-        String chunkStrategy,
         int defaultTopK,
-        int documentCount
+        List<KnowledgeBaseDocument> documents
     ) {
     }
 
-    public record SkillConfig(
-        String runtime,
-        String endpoint,
-        String method,
-        String authType,
-        int timeoutSeconds,
-        String retryPolicy,
+    public record KnowledgeBaseDocument(
+        String id,
+        String title,
+        String content,
+        String sourceUri
+    ) {
+    }
+
+    public record ToolOperationConfig(
+        String name,
+        String description,
         String inputSchema,
         String outputSchema
     ) {
     }
 
-    public record McpConfig(
+    public record HttpToolProviderConfig(
+        String endpoint,
+        String method
+    ) {
+    }
+
+    public record McpToolProviderConfig(
         String serverName,
         String transport,
         String connectionUri,
         String namespace,
-        String authType,
         int heartbeatSeconds,
-        List<String> exposedTools
+        Map<String, String> operationMappings
+    ) {
+    }
+
+    public record ToolConfig(
+        List<ToolOperationConfig> operations,
+        ToolProviderType providerType,
+        String authType,
+        int timeoutSeconds,
+        String retryPolicy,
+        HttpToolProviderConfig http,
+        McpToolProviderConfig mcp
     ) {
     }
 
@@ -118,8 +136,7 @@ public final class WorkflowContracts {
     public record ResourceConfigurationSnapshot(
         ResourceType type,
         KnowledgeBaseConfig knowledgeBase,
-        SkillConfig skill,
-        McpConfig mcp,
+        ToolConfig tool,
         LlmModelConfig llmModel,
         PromptTemplateConfig promptTemplate
     ) {
@@ -277,7 +294,7 @@ public final class WorkflowContracts {
 
     public record ToolInvocationSnapshot(
         String id,
-        String toolType,
+        String providerType,
         String resourceId,
         String resourceName,
         String operation,
@@ -295,10 +312,13 @@ public final class WorkflowContracts {
     ) {
     }
 
-    public record McpInvocationSummary(
-        String capabilityName,
-        String externalTicketId,
+    public record ToolOutcomeSummary(
+        String toolResourceId,
+        String toolResourceName,
+        String operation,
+        String providerType,
         String status,
+        String externalReference,
         String recommendedAction,
         String detail
     ) {
@@ -324,7 +344,7 @@ public final class WorkflowContracts {
         List<NodeSnapshot> nodes,
         List<ToolInvocationSnapshot> toolCalls,
         boolean escalationRequired,
-        McpInvocationSummary mcpSummary
+        ToolOutcomeSummary latestToolOutcome
     ) {
     }
 }

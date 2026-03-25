@@ -1,6 +1,6 @@
 package com.lynxus.platform.adapters;
 
-import com.lynxus.contracts.runtime.WorkflowContracts.McpInvocationSummary;
+import com.lynxus.contracts.runtime.WorkflowContracts.ToolOutcomeSummary;
 import java.util.List;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
@@ -13,12 +13,12 @@ public final class ResourceAdapters {
         List<String> retrieve(String scenarioId, String question);
     }
 
-    public interface SkillExecutor {
-        String execute(String skillName, String question, List<String> contexts);
+    public interface ToolExecutor {
+        String execute(String toolName, String question, List<String> contexts);
     }
 
-    public interface McpClient {
-        McpInvocationSummary invoke(String capabilityName, String payload);
+    public interface ToolProviderClient {
+        ToolOutcomeSummary invoke(String toolName, String operation, String payload);
     }
 
     @Component
@@ -45,7 +45,7 @@ public final class ResourceAdapters {
             return List.of(
                 "Lynxus MVP 支持按业务场景配置知识问答流程。",
                 "当问题超出知识库置信范围时，流程会进入人工介入节点。",
-                "资源支持知识库、Skill 和 MCP 三类最小模型。"
+                "资源支持知识库、Tool、LLM 和 Prompt 等可复用能力。"
             );
         }
     }
@@ -57,48 +57,54 @@ public final class ResourceAdapters {
             return List.of(
                 "Lynxus MVP 支持按业务场景配置知识问答流程。",
                 "当问题超出知识库置信范围时，流程会进入人工介入节点。",
-                "资源支持知识库、Skill 和 MCP 三类最小模型。"
+                "资源支持知识库、Tool、LLM 和 Prompt 等可复用能力。"
             );
         }
     }
 
     @Component
-    public static class MockSkillExecutor implements SkillExecutor {
+    public static class MockToolExecutor implements ToolExecutor {
         @Override
-        public String execute(String skillName, String question, List<String> contexts) {
+        public String execute(String toolName, String question, List<String> contexts) {
             return "基于知识库结果的回答：%s。若仍未解决，请转人工。".formatted(contexts.getFirst());
         }
     }
 
     @Component
     @Primary
-    public static class LocalRealMcpClient implements McpClient {
+    public static class LocalToolProviderClient implements ToolProviderClient {
         @Override
-        public McpInvocationSummary invoke(String capabilityName, String payload) {
+        public ToolOutcomeSummary invoke(String toolName, String operation, String payload) {
             boolean humanHandoff = payload.contains("投诉") || payload.contains("人工");
             String ticketId = "TICKET-" + Math.abs(payload.hashCode() % 100000);
-            return new McpInvocationSummary(
-                capabilityName,
-                ticketId,
+            return new ToolOutcomeSummary(
+                toolName,
+                toolName,
+                operation,
+                "MCP",
                 humanHandoff ? "ACCEPTED" : "RECORDED",
+                ticketId,
                 humanHandoff ? "HUMAN_HANDOFF" : "AUTO_CLOSE",
                 humanHandoff
-                    ? "本地 MCP stub 已受理协同请求，建议人工坐席接管。"
-                    : "本地 MCP stub 已记录本次处理结果，无需人工介入。"
+                    ? "本地工具 stub 已受理协同请求，建议人工坐席接管。"
+                    : "本地工具 stub 已记录本次处理结果，无需人工介入。"
             );
         }
     }
 
     @Component
-    public static class MockMcpClient implements McpClient {
+    public static class MockToolProviderClient implements ToolProviderClient {
         @Override
-        public McpInvocationSummary invoke(String capabilityName, String payload) {
-            return new McpInvocationSummary(
-                capabilityName,
-                "mock-ticket",
+        public ToolOutcomeSummary invoke(String toolName, String operation, String payload) {
+            return new ToolOutcomeSummary(
+                toolName,
+                toolName,
+                operation,
+                "MCP",
                 "RECORDED",
+                "mock-ticket",
                 "AUTO_CLOSE",
-                "mock-mcp:" + capabilityName + ":" + payload
+                "mock-tool:" + toolName + ":" + payload
             );
         }
     }

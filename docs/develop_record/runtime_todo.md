@@ -12,7 +12,7 @@
 
 问题：
 
-- LLM、Skill、MCP 任一节点稍慢，API 就可能先返回 timeout
+- LLM、Tool 任一节点稍慢，API 就可能先返回 timeout
 - 真实错误可能已经发生，但前端先收到的是“workflow did not expose a result before timeout”
 - Query 轮询 `currentResult` 只是观察，不是可靠同步点
 
@@ -91,3 +91,24 @@
 3. API 启动后支持从数据库重建运行态列表，并和 Temporal 当前 execution 做对账
 4. 把“待人工处理 workflow”做成稳定查询，不依赖单个 API 进程存活
 5. 为超时恢复场景补充一个明确的“按 sessionId / workflowId 找回并继续处理”入口
+
+## 5. 把结构化 agent 响应升级为显式契约
+
+现状：
+
+- `agent-runtime` 已经支持结构化 `toolRequests / routeDecision / finish / humanRequest` 响应
+- 但当前仍以 runtime 内部 JSON 解析和 fallback 逻辑为主
+- JVM contracts、OpenAPI、控制面 DTO 里还没有一套正式公开的 agent 节点结构化响应契约
+
+问题：
+
+- Python runtime、控制面和文档之间的语义约束仍然偏松，后续演进容易出现字段漂移
+- 目前的结构化输出更多是 prompt 约定，不是跨端共享的强类型接口
+- 一旦要做更稳定的多轮 tool loop、调试观测或 provider 扩展，就会缺少统一 wire shape
+
+后续目标：
+
+1. 在 `packages/contracts-jvm`、`packages/contracts` 和 OpenAPI 中新增显式的 agent 结构化响应模型
+2. 明确 `message / routeDecision / toolRequests / finish / humanRequest` 的字段定义、必填性和约束
+3. 让 Python runtime、worker、API 和前端观测统一消费这套结构化契约，而不是各自推断 JSON
+4. 为结构化响应补充单测、集成测试和失败回退策略，确保新旧 prompt 过渡稳定
