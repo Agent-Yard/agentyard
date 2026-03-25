@@ -45,7 +45,7 @@ public final class ResourceAdapters {
             return List.of(
                 "Lynxus MVP 支持按业务场景配置知识问答流程。",
                 "当问题超出知识库置信范围时，流程会进入人工介入节点。",
-                "资源支持知识库、Tool、LLM 和 Prompt 等可复用能力。"
+                "资源支持知识库、Tool、LLM 和 Skill 等可复用能力。"
             );
         }
     }
@@ -57,7 +57,7 @@ public final class ResourceAdapters {
             return List.of(
                 "Lynxus MVP 支持按业务场景配置知识问答流程。",
                 "当问题超出知识库置信范围时，流程会进入人工介入节点。",
-                "资源支持知识库、Tool、LLM 和 Prompt 等可复用能力。"
+                "资源支持知识库、Tool、LLM 和 Skill 等可复用能力。"
             );
         }
     }

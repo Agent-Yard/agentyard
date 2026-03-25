@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
-import type { ConversationSession, Scenario, TaskInstance, WorkflowInstance } from '../types';
+import type { ConversationSession, HumanTaskSource, Scenario, TaskInstance, WorkflowInstance } from '../types';
 
 const props = defineProps<{
   scenarios: Scenario[];
@@ -43,6 +43,11 @@ const latestWorkflow = computed(() =>
 const latestTask = computed(() =>
   props.tasks.find((item) => item.id === currentSession.value?.latestTaskId),
 );
+
+const sourceLabel: Record<HumanTaskSource, string> = {
+  GRAPH_NODE: '编排人工节点',
+  AGENT_REQUEST: '智能体主动求助',
+};
 
 watch(
   () => props.sessions,
@@ -190,7 +195,7 @@ function selectSession(sessionId: string) {
                 type="warning"
                 show-icon
                 :message="currentSession.latestHumanTask.title"
-                :description="`${currentSession.latestHumanTask.instruction} 期望动作：${currentSession.latestHumanTask.expectedAction}。如果之前操作页已超时，也可以直接去流程观测页继续恢复这个 workflow。`"
+                :description="`${currentSession.latestHumanTask.instruction} 来源：${sourceLabel[currentSession.latestHumanTask.source]}。处理指引：${currentSession.latestHumanTask.expectedAction}${currentSession.latestPauseReason ? `。挂起原因：${currentSession.latestPauseReason.code}` : ''}。如果之前操作页已超时，也可以直接去流程观测页继续恢复这个 workflow。`"
                 style="margin-bottom: 16px"
               />
               <a-alert
@@ -288,8 +293,13 @@ function selectSession(sessionId: string) {
                 </a-descriptions-item>
                 <a-descriptions-item label="人工待办">
                   {{ currentSession?.latestHumanTask
-                    ? `${currentSession.latestHumanTask.title} / ${currentSession.latestHumanTask.expectedAction}`
+                    ? `${currentSession.latestHumanTask.title} / ${sourceLabel[currentSession.latestHumanTask.source]} / ${currentSession.latestHumanTask.expectedAction}`
                     : '当前无人工待办' }}
+                </a-descriptions-item>
+                <a-descriptions-item label="挂起原因">
+                  {{ currentSession?.latestPauseReason
+                    ? `${currentSession.latestPauseReason.code} / ${currentSession.latestPauseReason.detail}`
+                    : '当前无挂起原因' }}
                 </a-descriptions-item>
                 <a-descriptions-item label="资源锚点">{{ latestWorkflow.resourceAnchors.join(' / ') }}</a-descriptions-item>
               </a-descriptions>

@@ -50,10 +50,9 @@ const toolOperationNames = computed(() =>
     </a-descriptions-item>
   </a-descriptions>
 
-  <a-descriptions v-else-if="resourceType === 'PROMPT_TEMPLATE' && configuration.promptTemplate" :column="1" size="small">
-    <a-descriptions-item label="模板类型">{{ configuration.promptTemplate.templateType }}</a-descriptions-item>
-    <a-descriptions-item label="响应格式">{{ configuration.promptTemplate.responseFormat }}</a-descriptions-item>
-    <a-descriptions-item label="System Prompt">{{ configuration.promptTemplate.systemPrompt }}</a-descriptions-item>
-    <a-descriptions-item label="User Prompt Template">{{ configuration.promptTemplate.userPromptTemplate }}</a-descriptions-item>
+  <a-descriptions v-else-if="resourceType === 'SKILL' && configuration.skill" :column="1" size="small">
+    <a-descriptions-item label="技能名称">{{ configuration.skill.skillName }}</a-descriptions-item>
+    <a-descriptions-item label="技能描述">{{ configuration.skill.skillDesc }}</a-descriptions-item>
+    <a-descriptions-item label="技能提示">{{ configuration.skill.skillPrompt }}</a-descriptions-item>
   </a-descriptions>
 </template>

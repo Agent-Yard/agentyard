@@ -30,11 +30,11 @@ const createForm = reactive<CreateAgentPayload>({
   executionPolicy: {
     inheritAssistantDefaults: true,
     modelResourceId: null,
-    promptTemplateResourceId: null,
-    inlinePrompt: '',
+    systemPrompt: '',
     ragEnabled: false,
     knowledgeBaseResourceId: null,
     memoryWindowSize: 8,
+    skillResourceIds: [],
     toolResourceIds: [],
   },
 });
@@ -45,11 +45,11 @@ const editForm = reactive({
   executionPolicy: {
     inheritAssistantDefaults: true,
     modelResourceId: null as string | null,
-    promptTemplateResourceId: null as string | null,
-    inlinePrompt: '',
+    systemPrompt: '',
     ragEnabled: false,
     knowledgeBaseResourceId: null as string | null,
     memoryWindowSize: 8,
+    skillResourceIds: [] as string[],
     toolResourceIds: [] as string[],
   },
 });
@@ -66,7 +66,7 @@ const currentAgent = computed(() =>
   assistantAgents.value.find((item) => item.id === selectedAgentId.value) ?? assistantAgents.value[0],
 );
 const modelResources = computed(() => props.resources.filter((item) => item.type === 'LLM_MODEL'));
-const promptResources = computed(() => props.resources.filter((item) => item.type === 'PROMPT_TEMPLATE'));
+const skillResources = computed(() => props.resources.filter((item) => item.type === 'SKILL'));
 const knowledgeBases = computed(() => props.resources.filter((item) => item.type === 'KNOWLEDGE_BASE'));
 const toolResources = computed(() => props.resources.filter((item) => item.type === 'TOOL'));
 
@@ -133,6 +133,7 @@ watch(
     editForm.instructions = agent.instructions;
     editForm.executionPolicy = {
       ...agent.executionPolicy,
+      skillResourceIds: [...agent.executionPolicy.skillResourceIds],
       toolResourceIds: [...agent.executionPolicy.toolResourceIds],
     };
   },
@@ -144,7 +145,7 @@ function submitCreate() {
   createForm.name = '';
   createForm.role = '';
   createForm.instructions = '';
-  createForm.executionPolicy.inlinePrompt = '';
+  createForm.executionPolicy.systemPrompt = '';
 }
 
 function submitSave() {
@@ -154,13 +155,17 @@ function submitSave() {
 
   emit('saveAgent', {
     agentId: currentAgent.value.id,
-    agent: {
-      name: editForm.name,
-      role: editForm.role,
-      instructions: editForm.instructions,
-      executionPolicy: { ...editForm.executionPolicy, toolResourceIds: [...editForm.executionPolicy.toolResourceIds] },
-    },
-  });
+      agent: {
+        name: editForm.name,
+        role: editForm.role,
+        instructions: editForm.instructions,
+        executionPolicy: {
+          ...editForm.executionPolicy,
+          skillResourceIds: [...editForm.executionPolicy.skillResourceIds],
+          toolResourceIds: [...editForm.executionPolicy.toolResourceIds],
+        },
+      },
+    });
 }
 </script>
 
@@ -195,15 +200,18 @@ function submitSave() {
               </a-form-item>
             </a-col>
             <a-col :span="12">
-              <a-form-item label="Prompt 覆盖">
+              <a-form-item label="挂载技能">
                 <a-select
-                  v-model:value="createForm.executionPolicy.promptTemplateResourceId"
-                  allow-clear
-                  :options="promptResources.map((item) => ({ label: item.name, value: item.id }))"
+                  v-model:value="createForm.executionPolicy.skillResourceIds"
+                  mode="multiple"
+                  :options="skillResources.map((item) => ({ label: item.name, value: item.id }))"
                 />
               </a-form-item>
             </a-col>
           </a-row>
+          <a-form-item label="System Prompt">
+            <a-textarea v-model:value="createForm.executionPolicy.systemPrompt" :rows="4" />
+          </a-form-item>
           <a-button type="primary" html-type="submit">创建智能体</a-button>
         </a-form>
       </a-card>
@@ -251,6 +259,9 @@ function submitSave() {
           <a-form-item label="指令说明" name="instructions">
             <a-textarea v-model:value="editForm.instructions" :rows="5" />
           </a-form-item>
+          <a-form-item label="System Prompt">
+            <a-textarea v-model:value="editForm.executionPolicy.systemPrompt" :rows="5" />
+          </a-form-item>
           <a-row :gutter="[16, 16]">
             <a-col :span="8">
               <a-form-item label="继承助手默认">
@@ -280,11 +291,11 @@ function submitSave() {
               </a-form-item>
             </a-col>
             <a-col :span="12">
-              <a-form-item label="Prompt 覆盖">
+              <a-form-item label="挂载技能">
                 <a-select
-                  v-model:value="editForm.executionPolicy.promptTemplateResourceId"
-                  allow-clear
-                  :options="promptResources.map((item) => ({ label: item.name, value: item.id }))"
+                  v-model:value="editForm.executionPolicy.skillResourceIds"
+                  mode="multiple"
+                  :options="skillResources.map((item) => ({ label: item.name, value: item.id }))"
                 />
               </a-form-item>
             </a-col>
@@ -309,17 +320,13 @@ function submitSave() {
               </a-form-item>
             </a-col>
           </a-row>
-          <a-form-item label="Inline Prompt">
-            <a-textarea v-model:value="editForm.executionPolicy.inlinePrompt" :rows="4" />
-          </a-form-item>
-
           <a-form-item label="Tool 发布冻结">
             <a-space direction="vertical" style="width: 100%" size="middle">
               <a-alert
                 type="info"
                 show-icon
                 message="Tool 不再单独固定版本"
-                description="agent 只声明可用 Tool。助手发布时，平台会和模型、Prompt、知识库一样，统一冻结当前生效版本。"
+                description="agent 只声明可用 Tool。助手发布时，平台会和模型、Skill、知识库一样，统一冻结当前生效版本。"
               />
               <a-card
                 v-for="resource in toolResources"

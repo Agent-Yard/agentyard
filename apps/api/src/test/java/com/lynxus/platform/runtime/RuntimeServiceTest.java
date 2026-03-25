@@ -29,7 +29,8 @@ class RuntimeServiceTest {
                 waitingHuman ? "已进入人工协同流程。" : "请通过登录页的忘记密码完成密码重置。",
                 waitingHuman ? "human-review" : "end",
                 waitingHuman ? new WorkflowContracts.ExecutionCheckpoint("cp-1", "handoff-close", "human-review", "{}", 0) : null,
-                waitingHuman ? new WorkflowContracts.HumanTaskSnapshot("human-review", "人工介入待办", "请人工处理。", "CONFIRM") : null,
+                waitingHuman ? new WorkflowContracts.HumanTaskSnapshot("human-review", "人工介入待办", "请人工处理。", "补充处理意见并确认后续动作", "GRAPH_NODE", List.of("CONFIRM", "TERMINATE")) : null,
+                waitingHuman ? new WorkflowContracts.PauseReasonSnapshot("GRAPH_HUMAN_NODE", "请人工处理。", "GRAPH_NODE") : null,
                 List.of(
                     new WorkflowContracts.NodeSnapshot("start", "开始", WorkflowContracts.NodeStatus.COMPLETED, request.question(), Instant.now()),
                     new WorkflowContracts.NodeSnapshot(waitingHuman ? "human-review" : "end", waitingHuman ? "人工介入" : "结束", waitingHuman ? WorkflowContracts.NodeStatus.WAITING_HUMAN : WorkflowContracts.NodeStatus.COMPLETED, waitingHuman ? "等待人工接管" : "流程结束", Instant.now())
@@ -45,7 +46,8 @@ class RuntimeServiceTest {
                     "TICKET-10001",
                     waitingHuman ? "HUMAN_HANDOFF" : "AUTO_CLOSE",
                     waitingHuman ? "需要人工介入" : "无需人工介入"
-                )
+                ),
+                List.of()
             );
         }
 
@@ -59,10 +61,12 @@ class RuntimeServiceTest {
                 "end",
                 null,
                 null,
+                null,
                 List.of(new WorkflowContracts.NodeSnapshot("end", "结束", WorkflowContracts.NodeStatus.COMPLETED, action.comment(), Instant.now())),
                 List.of(),
                 false,
-                new WorkflowContracts.ToolOutcomeSummary("resource-tool-ticket", "工单协同 Tool", "create_ticket", "MCP", "ACCEPTED", "TICKET-10001", "HUMAN_HANDOFF", "已同步工单")
+                new WorkflowContracts.ToolOutcomeSummary("resource-tool-ticket", "工单协同 Tool", "create_ticket", "MCP", "ACCEPTED", "TICKET-10001", "HUMAN_HANDOFF", "已同步工单"),
+                List.of()
             );
         }
 
@@ -177,10 +181,12 @@ class RuntimeServiceTest {
                     "end",
                     null,
                     null,
+                    null,
                     List.of(new WorkflowContracts.NodeSnapshot("end", "结束", WorkflowContracts.NodeStatus.COMPLETED, "流程结束", Instant.now())),
                     List.of(),
                     false,
-                    null
+                    null,
+                    List.of()
                 );
                 polledResults.add(completed);
                 return new WorkflowContracts.WorkflowResult(
@@ -191,10 +197,12 @@ class RuntimeServiceTest {
                     "workflow-starting",
                     null,
                     null,
+                    null,
                     List.of(new WorkflowContracts.NodeSnapshot("workflow-starting", "流程运行中", WorkflowContracts.NodeStatus.RUNNING, "流程已启动，正在执行首轮节点。", Instant.now())),
                     List.of(),
                     false,
-                    null
+                    null,
+                    List.of()
                 );
             }
 
@@ -236,10 +244,12 @@ class RuntimeServiceTest {
                     "end",
                     null,
                     null,
+                    null,
                     List.of(new WorkflowContracts.NodeSnapshot("end", "结束", WorkflowContracts.NodeStatus.COMPLETED, "流程结束", Instant.now())),
                     List.of(),
                     false,
-                    null
+                    null,
+                    List.of()
                 );
             }
 

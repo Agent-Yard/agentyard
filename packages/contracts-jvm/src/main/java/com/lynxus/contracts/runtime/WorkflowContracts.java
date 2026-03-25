@@ -12,7 +12,7 @@ public final class WorkflowContracts {
         TOOL,
         KNOWLEDGE_BASE,
         LLM_MODEL,
-        PROMPT_TEMPLATE
+        SKILL
     }
 
     public enum ToolProviderType {
@@ -53,7 +53,8 @@ public final class WorkflowContracts {
         RUNNING,
         COMPLETED,
         FAILED,
-        WAITING_HUMAN
+        WAITING_HUMAN,
+        CANCELLED
     }
 
     public enum OrchestrationNodeType {
@@ -125,11 +126,10 @@ public final class WorkflowContracts {
     ) {
     }
 
-    public record PromptTemplateConfig(
-        String templateType,
-        String systemPrompt,
-        String userPromptTemplate,
-        String responseFormat
+    public record SkillConfig(
+        String skillName,
+        String skillDesc,
+        String skillPrompt
     ) {
     }
 
@@ -138,7 +138,7 @@ public final class WorkflowContracts {
         KnowledgeBaseConfig knowledgeBase,
         ToolConfig tool,
         LlmModelConfig llmModel,
-        PromptTemplateConfig promptTemplate
+        SkillConfig skill
     ) {
     }
 
@@ -156,8 +156,6 @@ public final class WorkflowContracts {
     public record AssistantPolicySnapshot(
         String providerResourceId,
         String providerResourceVersionId,
-        String promptTemplateResourceId,
-        String promptTemplateResourceVersionId,
         boolean ragEnabled,
         String knowledgeBaseResourceId,
         String knowledgeBaseResourceVersionId,
@@ -170,13 +168,13 @@ public final class WorkflowContracts {
         boolean inheritAssistantDefaults,
         String modelResourceId,
         String modelResourceVersionId,
-        String promptTemplateResourceId,
-        String promptTemplateResourceVersionId,
-        String inlinePrompt,
+        String systemPrompt,
         boolean ragEnabled,
         String knowledgeBaseResourceId,
         String knowledgeBaseResourceVersionId,
         int memoryWindowSize,
+        List<String> skillResourceIds,
+        List<String> skillResourceVersionIds,
         List<String> toolResourceIds,
         List<String> toolResourceVersionIds
     ) {
@@ -249,7 +247,8 @@ public final class WorkflowContracts {
         String sessionId,
         String requester,
         String latestMessage,
-        List<SessionMessageSnapshot> history
+        List<SessionMessageSnapshot> history,
+        List<String> loadedSkillResourceVersionIds
     ) {
     }
 
@@ -308,7 +307,16 @@ public final class WorkflowContracts {
         String nodeKey,
         String title,
         String instruction,
-        String expectedAction
+        String expectedAction,
+        String source,
+        List<String> allowedActions
+    ) {
+    }
+
+    public record PauseReasonSnapshot(
+        String code,
+        String detail,
+        String source
     ) {
     }
 
@@ -341,10 +349,12 @@ public final class WorkflowContracts {
         String currentNodeKey,
         ExecutionCheckpoint checkpoint,
         HumanTaskSnapshot humanTask,
+        PauseReasonSnapshot pauseReason,
         List<NodeSnapshot> nodes,
         List<ToolInvocationSnapshot> toolCalls,
         boolean escalationRequired,
-        ToolOutcomeSummary latestToolOutcome
+        ToolOutcomeSummary latestToolOutcome,
+        List<String> loadedSkillResourceVersionIds
     ) {
     }
 }

@@ -40,11 +40,13 @@ class AssistantRunWorkflowTest {
                         "已进入人工协同流程。",
                         "human-review",
                         new WorkflowContracts.ExecutionCheckpoint("cp-1", "handoff-close", "human-review", "{}", 0),
-                        new WorkflowContracts.HumanTaskSnapshot("human-review", "人工介入待办", "请人工确认并补充处理意见。", "CONFIRM"),
+                        new WorkflowContracts.HumanTaskSnapshot("human-review", "人工介入待办", "请人工确认并补充处理意见。", "补充处理意见并确认后续动作", "GRAPH_NODE", List.of("CONFIRM", "TERMINATE")),
+                        new WorkflowContracts.PauseReasonSnapshot("GRAPH_HUMAN_NODE", "请人工确认并补充处理意见。", "GRAPH_NODE"),
                         List.of(new WorkflowContracts.NodeSnapshot("human-review", "人工介入", WorkflowContracts.NodeStatus.WAITING_HUMAN, "等待人工", Instant.now())),
                         List.of(),
                         true,
-                        new WorkflowContracts.ToolOutcomeSummary("resource-tool-ticket", "工单协同 Tool", "create_ticket", "MCP", "ACCEPTED", "TICKET-10001", "HUMAN_HANDOFF", "stub")
+                        new WorkflowContracts.ToolOutcomeSummary("resource-tool-ticket", "工单协同 Tool", "create_ticket", "MCP", "ACCEPTED", "TICKET-10001", "HUMAN_HANDOFF", "stub"),
+                        List.of("resource-version-skill-handoff-v1")
                     )
                     : new WorkflowContracts.WorkflowResult(
                         request.workflowInstanceId(),
@@ -54,10 +56,12 @@ class AssistantRunWorkflowTest {
                         "end",
                         null,
                         null,
+                        null,
                         List.of(new WorkflowContracts.NodeSnapshot("end", "结束", WorkflowContracts.NodeStatus.COMPLETED, "流程结束", Instant.now())),
                         List.of(),
                         false,
-                        null
+                        null,
+                        List.of()
                     );
             }
 
@@ -74,10 +78,12 @@ class AssistantRunWorkflowTest {
                     "end",
                     null,
                     null,
+                    null,
                     List.of(new WorkflowContracts.NodeSnapshot("end", "结束", WorkflowContracts.NodeStatus.COMPLETED, "流程结束", Instant.now())),
                     List.of(),
                     false,
-                    new WorkflowContracts.ToolOutcomeSummary("resource-tool-ticket", "工单协同 Tool", "create_ticket", "MCP", "ACCEPTED", "TICKET-10001", "HUMAN_HANDOFF", "stub")
+                    new WorkflowContracts.ToolOutcomeSummary("resource-tool-ticket", "工单协同 Tool", "create_ticket", "MCP", "ACCEPTED", "TICKET-10001", "HUMAN_HANDOFF", "stub"),
+                    List.of("resource-version-skill-handoff-v1")
                 );
             }
         }));
@@ -157,10 +163,12 @@ class AssistantRunWorkflowTest {
                     "end",
                     null,
                     null,
+                    null,
                     List.of(new WorkflowContracts.NodeSnapshot("end", "结束", WorkflowContracts.NodeStatus.COMPLETED, "流程结束", Instant.now())),
                     List.of(),
                     false,
-                    null
+                    null,
+                    List.of()
                 );
             }
 
@@ -214,7 +222,8 @@ class AssistantRunWorkflowTest {
                 "session-" + workflowId,
                 "tester",
                 question,
-                List.of(new WorkflowContracts.SessionMessageSnapshot("USER", "tester", question, Instant.now()))
+                List.of(new WorkflowContracts.SessionMessageSnapshot("USER", "tester", question, Instant.now())),
+                List.of()
             ),
             new WorkflowContracts.AssistantRunSnapshot(
                 "assistant-customer-ops",
@@ -223,8 +232,6 @@ class AssistantRunWorkflowTest {
                 new WorkflowContracts.AssistantPolicySnapshot(
                     "resource-llm-openai",
                     "resource-version-llm-v1",
-                    "resource-prompt-router",
-                    "resource-version-prompt-router-v1",
                     true,
                     "resource-kb-support",
                     "resource-version-kb-v1",
@@ -241,13 +248,13 @@ class AssistantRunWorkflowTest {
                             true,
                             null,
                             null,
-                            "resource-prompt-router",
-                            "resource-version-prompt-router-v1",
-                            "",
+                            "你是问题分诊智能体",
                             true,
                             "resource-kb-support",
                             "resource-version-kb-v1",
                             8,
+                            List.of("resource-skill-router"),
+                            List.of("resource-version-skill-router-v1"),
                             List.of(),
                             List.of()
                         )

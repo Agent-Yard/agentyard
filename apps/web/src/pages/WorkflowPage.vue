@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive } from 'vue';
-import type { WorkflowInstance } from '../types';
+import type { HumanActionType, HumanTaskSource, WorkflowInstance } from '../types';
 
 const props = defineProps<{
   workflow?: WorkflowInstance;
@@ -17,6 +17,11 @@ const humanForm = reactive({
   comment: '人工已完成处理并同步客户',
 });
 
+const sourceLabel: Record<HumanTaskSource, string> = {
+  GRAPH_NODE: '编排人工节点',
+  AGENT_REQUEST: '智能体主动求助',
+};
+
 function actionStatus(status: string) {
   if (status === 'COMPLETED') return 'finish';
   if (status === 'WAITING_HUMAN') return 'process';
@@ -24,7 +29,7 @@ function actionStatus(status: string) {
   return 'wait';
 }
 
-function submitAction(action: string) {
+function submitAction(action: HumanActionType) {
   if (!current.value) {
     return;
   }
@@ -35,6 +40,10 @@ function submitAction(action: string) {
     operatorId: humanForm.operatorId,
     attributes: {},
   });
+}
+
+function allowedActions(actions?: HumanActionType[]) {
+  return actions ?? ['CONFIRM', 'TERMINATE'];
 }
 </script>
 
@@ -53,6 +62,9 @@ function submitAction(action: string) {
         <a-descriptions-item label="Checkpoint">
           {{ current.checkpoint ? `${current.checkpoint.checkpointId} / resume=${current.checkpoint.resumeCount}` : '无' }}
         </a-descriptions-item>
+        <a-descriptions-item label="挂起原因">
+          {{ current.pauseReason ? `${current.pauseReason.code} / ${current.pauseReason.detail}` : '无' }}
+        </a-descriptions-item>
         <a-descriptions-item label="资源锚点">
           {{ current.resourceAnchors.join(' / ') || '无' }}
         </a-descriptions-item>
@@ -67,7 +79,7 @@ function submitAction(action: string) {
         type="warning"
         show-icon
         :message="current.humanTask.title"
-        :description="`${current.humanTask.instruction} 期望动作：${current.humanTask.expectedAction}`"
+        :description="`${current.humanTask.instruction} 来源：${sourceLabel[current.humanTask.source]}。处理指引：${current.humanTask.expectedAction}`"
         style="margin-top: 16px"
       />
 
@@ -130,8 +142,20 @@ function submitAction(action: string) {
               <a-textarea v-model:value="humanForm.comment" :rows="3" />
             </a-form-item>
             <a-space>
-              <a-button type="primary" @click="submitAction('CONFIRM')">确认并恢复流程</a-button>
-              <a-button danger @click="submitAction('TERMINATE')">终止流程</a-button>
+              <a-button
+                v-if="allowedActions(current?.humanTask?.allowedActions).includes('CONFIRM')"
+                type="primary"
+                @click="submitAction('CONFIRM')"
+              >
+                确认并恢复流程
+              </a-button>
+              <a-button
+                v-if="allowedActions(current?.humanTask?.allowedActions).includes('TERMINATE')"
+                danger
+                @click="submitAction('TERMINATE')"
+              >
+                终止流程
+              </a-button>
             </a-space>
           </a-form>
         </a-card>

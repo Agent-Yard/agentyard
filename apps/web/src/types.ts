@@ -1,12 +1,14 @@
 export type Role = 'PLATFORM_ADMIN' | 'DOMAIN_ADMIN' | 'DEVELOPER' | 'BUSINESS_USER';
-export type ResourceType = 'TOOL' | 'KNOWLEDGE_BASE' | 'LLM_MODEL' | 'PROMPT_TEMPLATE';
+export type ResourceType = 'TOOL' | 'KNOWLEDGE_BASE' | 'LLM_MODEL' | 'SKILL';
 export type ToolProviderType = 'HTTP' | 'MCP';
 export type ShareScope = 'PRIVATE' | 'DOMAIN_SHARED';
 export type ResourceOwnerType = 'DOMAIN' | 'ASSISTANT';
 export type VersionStatus = 'DRAFT' | 'PUBLISHED';
 export type TaskStatus = 'PENDING' | 'RUNNING' | 'WAITING_HUMAN' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 export type WorkflowStatus = 'DRAFT' | 'RUNNING' | 'WAITING_HUMAN' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
-export type NodeStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'WAITING_HUMAN';
+export type NodeStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'WAITING_HUMAN' | 'CANCELLED';
+export type HumanTaskSource = 'GRAPH_NODE' | 'AGENT_REQUEST';
+export type HumanActionType = 'CONFIRM' | 'TERMINATE';
 export type OrchestrationNodeType = 'START' | 'AGENT' | 'HUMAN' | 'END';
 
 export interface UserSession {
@@ -77,11 +79,10 @@ export interface LlmModelConfig {
   maxTokens: number;
 }
 
-export interface PromptTemplateConfig {
-  templateType: 'CHAT' | 'ROUTER' | 'STRUCTURED_OUTPUT';
-  systemPrompt: string;
-  userPromptTemplate: string;
-  responseFormat: string;
+export interface SkillConfig {
+  skillName: string;
+  skillDesc: string;
+  skillPrompt: string;
 }
 
 export interface ResourceVersionConfiguration {
@@ -89,7 +90,7 @@ export interface ResourceVersionConfiguration {
   knowledgeBase?: KnowledgeBaseConfig | null;
   tool?: ToolConfig | null;
   llmModel?: LlmModelConfig | null;
-  promptTemplate?: PromptTemplateConfig | null;
+  skill?: SkillConfig | null;
 }
 
 export interface ResourceVersion {
@@ -114,7 +115,6 @@ export interface ResourceBlueprint {
 
 export interface AssistantModelPolicy {
   providerResourceId: string | null;
-  promptTemplateResourceId: string | null;
 }
 
 export interface RagPolicy {
@@ -130,11 +130,11 @@ export interface MemoryPolicy {
 export interface AgentExecutionPolicy {
   inheritAssistantDefaults: boolean;
   modelResourceId: string | null;
-  promptTemplateResourceId: string | null;
-  inlinePrompt: string;
+  systemPrompt: string;
   ragEnabled: boolean;
   knowledgeBaseResourceId: string | null;
   memoryWindowSize: number;
+  skillResourceIds: string[];
   toolResourceIds: string[];
 }
 
@@ -197,6 +197,7 @@ export interface AssistantReleaseAgent {
   role: string;
   instructions: string;
   executionPolicy: AgentExecutionPolicy;
+  skillResourceVersionIds: string[];
   toolResourceVersionIds: string[];
 }
 
@@ -345,6 +346,14 @@ export interface HumanTaskSnapshot {
   title: string;
   instruction: string;
   expectedAction: string;
+  source: HumanTaskSource;
+  allowedActions: HumanActionType[];
+}
+
+export interface PauseReasonSnapshot {
+  code: string;
+  detail: string;
+  source: HumanTaskSource;
 }
 
 export interface NodeExecution {
@@ -379,11 +388,13 @@ export interface WorkflowInstance {
   escalationRequired: boolean;
   checkpoint: ExecutionCheckpoint | null;
   humanTask: HumanTaskSnapshot | null;
+  pauseReason: PauseReasonSnapshot | null;
   latestToolOutcome: ToolOutcomeSummary | null;
   resourceAnchors: string[];
   nodes: NodeExecution[];
   toolCalls: ToolInvocationSnapshot[];
   interventions: HumanIntervention[];
+  loadedSkillResourceVersionIds: string[];
 }
 
 export interface ConversationMessage {
@@ -414,6 +425,8 @@ export interface ConversationSession {
   latestWorkflowInstanceId: string | null;
   latestToolOutcome: ToolOutcomeSummary | null;
   latestHumanTask: HumanTaskSnapshot | null;
+  latestPauseReason: PauseReasonSnapshot | null;
+  loadedSkillResourceVersionIds: string[];
 }
 
 export interface CreateAssistantPayload {

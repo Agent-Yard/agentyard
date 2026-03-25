@@ -136,10 +136,12 @@ public class AssistantRunWorkflowImpl implements AssistantRunWorkflow {
             currentNodeKey,
             null,
             null,
+            null,
             List.of(new NodeSnapshot(nodeKey, "流程运行中", NodeStatus.RUNNING, summary, workflowNow())),
             List.of(),
             false,
-            null
+            null,
+            List.of()
         );
     }
 
@@ -153,10 +155,12 @@ public class AssistantRunWorkflowImpl implements AssistantRunWorkflow {
             null,
             null,
             null,
+            null,
             List.of(new NodeSnapshot("workflow-failed", "流程失败", NodeStatus.FAILED, message, workflowNow())),
             List.of(),
             false,
-            null
+            null,
+            List.of()
         );
     }
 

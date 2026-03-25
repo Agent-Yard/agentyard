@@ -271,7 +271,7 @@ components:
       enum: [DRAFT, RUNNING, WAITING_HUMAN, COMPLETED, FAILED, CANCELLED]
     NodeStatus:
       type: string
-      enum: [PENDING, RUNNING, WAITING_HUMAN, COMPLETED, FAILED]
+      enum: [PENDING, RUNNING, WAITING_HUMAN, COMPLETED, FAILED, CANCELLED]
     OrchestrationNodeType:
       type: string
       enum: [START, AGENT, HUMAN, END]
@@ -279,9 +279,6 @@ components:
       type: object
       properties:
         providerResourceId:
-          type: string
-          nullable: true
-        promptTemplateResourceId:
           type: string
           nullable: true
         temperature:
@@ -313,10 +310,7 @@ components:
         modelResourceId:
           type: string
           nullable: true
-        promptTemplateResourceId:
-          type: string
-          nullable: true
-        inlinePrompt:
+        systemPrompt:
           type: string
         ragEnabled:
           type: boolean
@@ -325,6 +319,10 @@ components:
           nullable: true
         memoryWindowSize:
           type: integer
+        skillResourceIds:
+          type: array
+          items:
+            type: string
         toolResourceIds:
           type: array
           items:
@@ -459,6 +457,7 @@ components:
       properties:
         action:
           type: string
+          enum: [CONFIRM, TERMINATE]
         comment:
           type: string
         operatorId:
@@ -491,6 +490,30 @@ components:
           type: string
         expectedAction:
           type: string
+        source:
+          type: string
+          enum:
+            - GRAPH_NODE
+            - AGENT_REQUEST
+        allowedActions:
+          type: array
+          items:
+            type: string
+            enum:
+              - CONFIRM
+              - TERMINATE
+    PauseReasonSnapshot:
+      type: object
+      properties:
+        code:
+          type: string
+        detail:
+          type: string
+        source:
+          type: string
+          enum:
+            - GRAPH_NODE
+            - AGENT_REQUEST
     ToolOutcomeSummary:
       type: object
       properties:
@@ -621,6 +644,10 @@ components:
           allOf:
             - $ref: '#/components/schemas/HumanTaskSnapshot'
           nullable: true
+        pauseReason:
+          allOf:
+            - $ref: '#/components/schemas/PauseReasonSnapshot'
+          nullable: true
         latestToolOutcome:
           allOf:
             - $ref: '#/components/schemas/ToolOutcomeSummary'
@@ -641,6 +668,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/HumanIntervention'
+        loadedSkillResourceVersionIds:
+          type: array
+          items:
+            type: string
     ConversationMessageRequest:
       type: object
       properties:
@@ -726,3 +757,11 @@ components:
           allOf:
             - $ref: '#/components/schemas/HumanTaskSnapshot'
           nullable: true
+        latestPauseReason:
+          allOf:
+            - $ref: '#/components/schemas/PauseReasonSnapshot'
+          nullable: true
+        loadedSkillResourceVersionIds:
+          type: array
+          items:
+            type: string

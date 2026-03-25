@@ -77,7 +77,7 @@ const llmVersion: ResourceVersion = {
   },
 };
 
-function promptVersion(resourceId: string, versionId: string, summary: string, templateType: 'CHAT' | 'ROUTER' | 'STRUCTURED_OUTPUT', systemPrompt: string, userPromptTemplate: string, responseFormat: string): ResourceVersion {
+function skillVersion(resourceId: string, versionId: string, summary: string, skillName: string, skillDesc: string, skillPrompt: string): ResourceVersion {
   return {
     id: versionId,
     resourceId,
@@ -88,55 +88,50 @@ function promptVersion(resourceId: string, versionId: string, summary: string, t
     createdAt: now(),
     publishedAt: now(),
     configuration: {
-      type: 'PROMPT_TEMPLATE',
-      promptTemplate: {
-        templateType,
-        systemPrompt,
-        userPromptTemplate,
-        responseFormat,
+      type: 'SKILL',
+      skill: {
+        skillName,
+        skillDesc,
+        skillPrompt,
       },
     },
   };
 }
 
-const routerPromptVersion = promptVersion(
-  'resource-prompt-router',
-  'resource-version-prompt-router-v1',
-  '路由 Prompt',
-  'STRUCTURED_OUTPUT',
-  '你是客服协同编排里的路由智能体，请判断问题应该进入 FAQ、售后策略还是人工协同。',
-  '用户问题：{{question}}\n知识上下文：{{knowledge_context}}\n请输出路由决策。',
-  'json',
+const routerSkillVersion = skillVersion(
+  'resource-skill-router',
+  'resource-version-skill-router-v1',
+  '路由 Skill',
+  '路由技能',
+  '根据用户问题、知识和上下文判断路由方向。',
+  '当你需要做问题分诊时，优先判断是否属于 FAQ、售后策略或人工协同，并输出明确路由依据。',
 );
 
-const faqPromptVersion = promptVersion(
-  'resource-prompt-faq',
-  'resource-version-prompt-faq-v1',
-  'FAQ Prompt',
-  'CHAT',
-  '你是 FAQ 回答智能体，请结合知识检索结果输出简洁、准确的回复。',
-  '用户问题：{{question}}\n知识上下文：{{knowledge_context}}',
-  'markdown',
+const faqSkillVersion = skillVersion(
+  'resource-skill-faq',
+  'resource-version-skill-faq-v1',
+  'FAQ Skill',
+  'FAQ 技能',
+  '基于知识召回内容提供常规问答回复。',
+  '当问题属于 FAQ 时，优先基于召回到的知识内容直接回答，保持简洁、准确、可执行。',
 );
 
-const policyPromptVersion = promptVersion(
-  'resource-prompt-policy',
-  'resource-version-prompt-policy-v1',
-  '售后 Prompt',
-  'STRUCTURED_OUTPUT',
-  '你是售后策略智能体，请结合知识和工具结果给出结构化判断。',
-  '用户问题：{{question}}\n知识上下文：{{knowledge_context}}\n工具结果：{{tool_results}}',
-  'json',
+const policySkillVersion = skillVersion(
+  'resource-skill-policy',
+  'resource-version-skill-policy-v1',
+  '售后策略 Skill',
+  '售后策略技能',
+  '结合知识和工具输出判断退款或补偿策略。',
+  '当处理退款、补偿、退货、售后类问题时，结合规则与工具结果给出明确策略建议，并说明是否需要人工复核。',
 );
 
-const handoffPromptVersion = promptVersion(
-  'resource-prompt-handoff',
-  'resource-version-prompt-handoff-v1',
-  '人工协同 Prompt',
-  'CHAT',
-  '你是人工协同闭环智能体，请根据人工动作补充后续说明和最终回复。',
-  '用户问题：{{question}}\n人工处理说明：{{human_input}}\n工具结果：{{tool_results}}',
-  'markdown',
+const handoffSkillVersion = skillVersion(
+  'resource-skill-handoff',
+  'resource-version-skill-handoff-v1',
+  '人工协同 Skill',
+  '人工协同闭环技能',
+  '根据人工动作、工具结果与上下文生成闭环说明。',
+  '当人工已经介入时，整合人工处理说明、工单结果和当前上下文，生成对用户的最终闭环答复。',
 );
 
 const refundToolVersion: ResourceVersion = {
@@ -255,56 +250,56 @@ const resources: Resource[] = [
     version: llmVersion,
   }),
   resource({
-    id: 'resource-prompt-router',
+    id: 'resource-skill-router',
     domainId: 'domain-support',
-    name: '路由 Prompt',
-    type: 'PROMPT_TEMPLATE',
+    name: '路由 Skill',
+    type: 'SKILL',
     shareScope: 'PRIVATE',
     ownerType: 'ASSISTANT',
     ownerId: 'assistant-customer-ops',
-    summary: '用于问题分诊和路由决策',
+    summary: '用于问题分诊和路由决策的技能',
     steward: '客服协同助手团队',
-    tags: ['Prompt', 'Router'],
-    version: routerPromptVersion,
+    tags: ['Skill', 'Router'],
+    version: routerSkillVersion,
   }),
   resource({
-    id: 'resource-prompt-faq',
+    id: 'resource-skill-faq',
     domainId: 'domain-support',
-    name: 'FAQ Prompt',
-    type: 'PROMPT_TEMPLATE',
+    name: 'FAQ Skill',
+    type: 'SKILL',
     shareScope: 'PRIVATE',
     ownerType: 'ASSISTANT',
     ownerId: 'assistant-customer-ops',
-    summary: '用于知识问答回复',
+    summary: '用于知识问答回复的技能',
     steward: '客服协同助手团队',
-    tags: ['Prompt', 'FAQ'],
-    version: faqPromptVersion,
+    tags: ['Skill', 'FAQ'],
+    version: faqSkillVersion,
   }),
   resource({
-    id: 'resource-prompt-policy',
+    id: 'resource-skill-policy',
     domainId: 'domain-support',
-    name: '售后策略 Prompt',
-    type: 'PROMPT_TEMPLATE',
+    name: '售后策略 Skill',
+    type: 'SKILL',
     shareScope: 'PRIVATE',
     ownerType: 'ASSISTANT',
     ownerId: 'assistant-customer-ops',
-    summary: '用于售后策略判定',
+    summary: '用于售后策略判定的技能',
     steward: '客服协同助手团队',
-    tags: ['Prompt', '售后'],
-    version: policyPromptVersion,
+    tags: ['Skill', '售后'],
+    version: policySkillVersion,
   }),
   resource({
-    id: 'resource-prompt-handoff',
+    id: 'resource-skill-handoff',
     domainId: 'domain-support',
-    name: '人工协同 Prompt',
-    type: 'PROMPT_TEMPLATE',
+    name: '人工协同 Skill',
+    type: 'SKILL',
     shareScope: 'PRIVATE',
     ownerType: 'ASSISTANT',
     ownerId: 'assistant-customer-ops',
-    summary: '用于人工交接后的总结与闭环',
+    summary: '用于人工交接后的总结与闭环技能',
     steward: '客服协同助手团队',
-    tags: ['Prompt', '人工协同'],
-    version: handoffPromptVersion,
+    tags: ['Skill', '人工协同'],
+    version: handoffSkillVersion,
   }),
   resource({
     id: 'resource-tool-refund',
@@ -344,11 +339,11 @@ const agents: Agent[] = [
     executionPolicy: {
       inheritAssistantDefaults: true,
       modelResourceId: null,
-      promptTemplateResourceId: 'resource-prompt-router',
-      inlinePrompt: '输出 route_key 和摘要。',
+      systemPrompt: '你是问题分诊智能体，负责判断当前问题应进入 FAQ、售后或人工协同路径。',
       ragEnabled: true,
       knowledgeBaseResourceId: 'resource-kb-support',
       memoryWindowSize: 8,
+      skillResourceIds: ['resource-skill-router'],
       toolResourceIds: [],
     },
   },
@@ -361,11 +356,11 @@ const agents: Agent[] = [
     executionPolicy: {
       inheritAssistantDefaults: true,
       modelResourceId: 'resource-llm-compatible',
-      promptTemplateResourceId: 'resource-prompt-faq',
-      inlinePrompt: '回答简单 FAQ 并完成会话。',
+      systemPrompt: '你是 FAQ 回答智能体，负责基于知识库给出直接回复。',
       ragEnabled: true,
       knowledgeBaseResourceId: 'resource-kb-support',
       memoryWindowSize: 8,
+      skillResourceIds: ['resource-skill-faq'],
       toolResourceIds: [],
     },
   },
@@ -378,11 +373,11 @@ const agents: Agent[] = [
     executionPolicy: {
       inheritAssistantDefaults: true,
       modelResourceId: 'resource-llm-compatible',
-      promptTemplateResourceId: 'resource-prompt-policy',
-      inlinePrompt: '结合工具输出结构化 route_key。',
+      systemPrompt: '你是售后策略智能体，负责结合规则与工具结果给出处理建议。',
       ragEnabled: true,
       knowledgeBaseResourceId: 'resource-kb-support',
       memoryWindowSize: 8,
+      skillResourceIds: ['resource-skill-policy'],
       toolResourceIds: ['resource-tool-refund'],
     },
   },
@@ -395,11 +390,11 @@ const agents: Agent[] = [
     executionPolicy: {
       inheritAssistantDefaults: true,
       modelResourceId: 'resource-llm-compatible',
-      promptTemplateResourceId: 'resource-prompt-handoff',
-      inlinePrompt: '根据人工动作补充最终回复。',
+      systemPrompt: '你是人工协同闭环智能体，负责整理人工动作并生成最终回复。',
       ragEnabled: false,
       knowledgeBaseResourceId: null,
       memoryWindowSize: 12,
+      skillResourceIds: ['resource-skill-handoff'],
       toolResourceIds: ['resource-tool-ticket'],
     },
   },
@@ -452,7 +447,7 @@ const releaseResources = resources.map((item) => ({
   resourceType: item.type,
   resourceVersionId: item.effectiveVersion!.id,
   resourceVersion: item.effectiveVersion!.version,
-  boundAgents: item.type === 'PROMPT_TEMPLATE'
+  boundAgents: item.type === 'SKILL'
     ? item.ownerId === 'assistant-customer-ops' ? ['问题分诊智能体', 'FAQ 回答智能体', '售后策略智能体', '人工协同闭环智能体'] : []
     : item.id === 'resource-kb-support'
       ? ['问题分诊智能体', 'FAQ 回答智能体', '售后策略智能体']
@@ -470,6 +465,7 @@ const releaseAgents = agents.map((agent) => ({
   role: agent.role,
   instructions: agent.instructions,
   executionPolicy: agent.executionPolicy,
+  skillResourceVersionIds: agent.executionPolicy.skillResourceIds.map((resourceId) => resources.find((item) => item.id === resourceId)!.effectiveVersion!.id),
   toolResourceVersionIds: agent.executionPolicy.toolResourceIds.map((resourceId) => resources.find((item) => item.id === resourceId)!.effectiveVersion!.id),
 }));
 
@@ -485,7 +481,6 @@ const currentRelease: AssistantRelease = {
   orchestration,
   modelPolicy: {
     providerResourceId: 'resource-llm-compatible',
-    promptTemplateResourceId: 'resource-prompt-router',
   },
   ragPolicy: {
     enabled: true,
@@ -551,11 +546,11 @@ const resourceBlueprints: ResourceBlueprint[] = [
     defaultConfiguration: llmVersion.configuration,
   },
   {
-    type: 'PROMPT_TEMPLATE',
-    label: 'Prompt 模板',
-    description: '管理 system prompt、user prompt 模板与响应格式。',
-    maintainedFields: ['模板类型', 'System Prompt', 'User Prompt Template', '响应格式'],
-    defaultConfiguration: routerPromptVersion.configuration,
+    type: 'SKILL',
+    label: 'Skill',
+    description: '管理供智能体按需读取的行为模式说明。',
+    maintainedFields: ['技能名称', '技能描述', '技能提示'],
+    defaultConfiguration: routerSkillVersion.configuration,
   },
 ];
 
@@ -592,7 +587,15 @@ const waitingHumanTask: HumanTaskSnapshot = {
   nodeKey: 'human-review',
   title: '人工介入待办',
   instruction: '请人工确认客户诉求、补偿方案和回复口径。',
-  expectedAction: 'CONFIRM',
+  expectedAction: '补充处理意见并确认后续动作',
+  source: 'GRAPH_NODE',
+  allowedActions: ['CONFIRM', 'TERMINATE'],
+};
+
+const waitingPauseReason = {
+  code: 'GRAPH_HUMAN_NODE',
+  detail: '流程已运行到人工节点，等待人工确认。',
+  source: 'GRAPH_NODE' as const,
 };
 
 export const mockWorkflows: WorkflowInstance[] = [
@@ -615,6 +618,7 @@ export const mockWorkflows: WorkflowInstance[] = [
       resumeCount: 0,
     },
     humanTask: waitingHumanTask,
+    pauseReason: waitingPauseReason,
     latestToolOutcome: waitingToolOutcome,
     resourceAnchors: ['客服知识库@1.0.0', '售后策略 Tool@1.0.0', '工单协同 Tool@1.0.0'],
     nodes: [
@@ -644,6 +648,7 @@ export const mockWorkflows: WorkflowInstance[] = [
         createdAt: now(),
       },
     ],
+    loadedSkillResourceVersionIds: ['resource-version-skill-handoff-v1'],
   },
 ];
 
@@ -709,4 +714,6 @@ export const mockConversationSession: ConversationSession = {
   latestWorkflowInstanceId: 'wf-10001',
   latestToolOutcome: waitingToolOutcome,
   latestHumanTask: waitingHumanTask,
+  latestPauseReason: waitingPauseReason,
+  loadedSkillResourceVersionIds: ['resource-version-skill-handoff-v1'],
 };

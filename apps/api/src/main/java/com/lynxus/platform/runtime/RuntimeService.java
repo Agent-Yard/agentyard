@@ -36,11 +36,11 @@ import com.lynxus.contracts.runtime.WorkflowContracts.KnowledgeBaseConfig;
 import com.lynxus.contracts.runtime.WorkflowContracts.LlmModelConfig;
 import com.lynxus.contracts.runtime.WorkflowContracts.McpToolProviderConfig;
 import com.lynxus.contracts.runtime.WorkflowContracts.NodeStatus;
-import com.lynxus.contracts.runtime.WorkflowContracts.PromptTemplateConfig;
 import com.lynxus.contracts.runtime.WorkflowContracts.ResourceConfigurationSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.ResourceVersionSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.SessionContext;
 import com.lynxus.contracts.runtime.WorkflowContracts.SessionMessageSnapshot;
+import com.lynxus.contracts.runtime.WorkflowContracts.SkillConfig;
 import com.lynxus.contracts.runtime.WorkflowContracts.TaskStatus;
 import com.lynxus.contracts.runtime.WorkflowContracts.ToolConfig;
 import com.lynxus.contracts.runtime.WorkflowContracts.ToolOperationConfig;
@@ -112,7 +112,9 @@ public class RuntimeService {
             null,
             null,
             null,
-            null
+            null,
+            null,
+            List.of()
         );
         sessions.add(session);
 
@@ -143,7 +145,15 @@ public class RuntimeService {
         );
         messages.add(userMessage);
 
-        TurnExecutionResult turn = executeTurn(sessionId, scenario.id(), assistant, request.requester(), request.message(), messages);
+        TurnExecutionResult turn = executeTurn(
+            sessionId,
+            scenario.id(),
+            assistant,
+            request.requester(),
+            request.message(),
+            messages,
+            existing.loadedSkillResourceVersionIds()
+        );
         messages.add(new ConversationMessageDto(
             nextId("msg"),
             sessionId,
@@ -171,7 +181,9 @@ public class RuntimeService {
             turn.task().id(),
             turn.workflow().id(),
             turn.workflow().latestToolOutcome(),
-            turn.workflow().humanTask()
+            turn.workflow().humanTask(),
+            turn.workflow().pauseReason(),
+            turn.workflow().loadedSkillResourceVersionIds()
         );
         replaceSession(updated);
         return updated;
@@ -180,7 +192,7 @@ public class RuntimeService {
     public TaskInstanceDto launchTask(TaskLaunchRequest request) {
         ScenarioDto scenario = catalogService.getScenario(request.scenarioId());
         AssistantDto assistant = resolveAssistant(scenario, request.assistantId());
-        return executeTurn(null, request.scenarioId(), assistant, request.requester(), request.question(), List.of()).task();
+        return executeTurn(null, request.scenarioId(), assistant, request.requester(), request.question(), List.of(), List.of()).task();
     }
 
     public WorkflowInstanceDto getWorkflow(String workflowId) {
@@ -220,7 +232,8 @@ public class RuntimeService {
         AssistantDto assistant,
         String requester,
         String message,
-        List<ConversationMessageDto> currentMessages
+        List<ConversationMessageDto> currentMessages,
+        List<String> loadedSkillResourceVersionIds
     ) {
         String taskId = nextId("task");
         String workflowId = nextId("wf");
@@ -256,8 +269,10 @@ public class RuntimeService {
             null,
             null,
             null,
+            null,
             resourceAnchors,
             List.of(node(workflowId, "workflow-submitted", "流程提交", NodeStatus.RUNNING, "已提交到 Temporal 工作流队列")),
+            List.of(),
             List.of(),
             List.of()
         );
@@ -271,7 +286,7 @@ public class RuntimeService {
                 scenarioId,
                 message,
                 requester,
-                buildSessionContext(sessionId, requester, message, currentMessages),
+                buildSessionContext(sessionId, requester, message, currentMessages, loadedSkillResourceVersionIds),
                 assistantSnapshot
             ));
         } catch (RuntimeException error) {
@@ -290,8 +305,10 @@ public class RuntimeService {
                 null,
                 null,
                 null,
+                null,
                 resourceAnchors,
                 List.of(node(workflowId, "workflow-failed", "流程执行失败", NodeStatus.FAILED, failureDetail)),
+                List.of(),
                 List.of(),
                 List.of()
             );
@@ -324,13 +341,15 @@ public class RuntimeService {
             result.escalationRequired(),
             result.checkpoint(),
             result.humanTask(),
+            result.pauseReason(),
             result.latestToolOutcome(),
             existing.resourceAnchors(),
             result.nodes().stream()
                 .map(node -> new NodeExecutionDto(nextId("node"), existing.id(), node.nodeKey(), node.nodeName(), node.status(), node.detail(), node.updatedAt()))
                 .toList(),
             result.toolCalls(),
-            interventions
+            interventions,
+            result.loadedSkillResourceVersionIds()
         );
     }
 
@@ -391,7 +410,9 @@ public class RuntimeService {
                 session.latestTaskId(),
                 session.latestWorkflowInstanceId(),
                 workflow.latestToolOutcome(),
-                workflow.humanTask()
+                workflow.humanTask(),
+                workflow.pauseReason(),
+                workflow.loadedSkillResourceVersionIds()
             );
         });
     }
@@ -426,6 +447,7 @@ public class RuntimeService {
             || !Objects.equals(previous.summary(), updated.summary())
             || !Objects.equals(previous.finalReply(), updated.finalReply())
             || !Objects.equals(session.latestHumanTask(), updated.humanTask())
+            || !Objects.equals(session.latestPauseReason(), updated.pauseReason())
             || !Objects.equals(session.latestToolOutcome(), updated.latestToolOutcome());
         if (!changed) {
             return session;
@@ -444,7 +466,9 @@ public class RuntimeService {
             session.latestTaskId(),
             session.latestWorkflowInstanceId(),
             updated.latestToolOutcome(),
-            updated.humanTask()
+            updated.humanTask(),
+            updated.pauseReason(),
+            updated.loadedSkillResourceVersionIds()
         );
     }
 
@@ -495,8 +519,6 @@ public class RuntimeService {
         return new AssistantPolicySnapshot(
             modelPolicy.providerResourceId(),
             resolveReleasedVersionId(resources, modelPolicy.providerResourceId()),
-            modelPolicy.promptTemplateResourceId(),
-            resolveReleasedVersionId(resources, modelPolicy.promptTemplateResourceId()),
             ragPolicy.enabled(),
             ragPolicy.knowledgeBaseResourceId(),
             ragPolicy.enabled() ? resolveReleasedVersionId(resources, ragPolicy.knowledgeBaseResourceId()) : null,
@@ -511,11 +533,14 @@ public class RuntimeService {
             agent.name(),
             agent.role(),
             agent.instructions(),
-            toAgentExecutionPolicySnapshot(agent.executionPolicy(), resources, agent.toolResourceVersionIds())
+            toAgentExecutionPolicySnapshot(agent.executionPolicy(), resources, agent.skillResourceVersionIds(), agent.toolResourceVersionIds())
         );
     }
 
     private AgentSnapshot toAgentSnapshot(AgentDto agent, List<AssistantReleaseResourceDto> resources) {
+        List<String> skillVersionIds = agent.executionPolicy().skillResourceIds().stream()
+            .map(skillResourceId -> resolveReleasedVersionId(resources, skillResourceId))
+            .toList();
         List<String> toolVersionIds = agent.executionPolicy().toolResourceIds().stream()
             .map(toolResourceId -> resolveReleasedVersionId(resources, toolResourceId))
             .toList();
@@ -524,26 +549,27 @@ public class RuntimeService {
             agent.name(),
             agent.role(),
             agent.instructions(),
-            toAgentExecutionPolicySnapshot(agent.executionPolicy(), resources, toolVersionIds)
+            toAgentExecutionPolicySnapshot(agent.executionPolicy(), resources, skillVersionIds, toolVersionIds)
         );
     }
 
     private AgentExecutionPolicySnapshot toAgentExecutionPolicySnapshot(
         AgentExecutionPolicyDto policy,
         List<AssistantReleaseResourceDto> resources,
+        List<String> skillResourceVersionIds,
         List<String> toolResourceVersionIds
     ) {
         return new AgentExecutionPolicySnapshot(
             policy.inheritAssistantDefaults(),
             policy.modelResourceId(),
             resolveReleasedVersionId(resources, policy.modelResourceId()),
-            policy.promptTemplateResourceId(),
-            resolveReleasedVersionId(resources, policy.promptTemplateResourceId()),
-            policy.inlinePrompt(),
+            policy.systemPrompt(),
             policy.ragEnabled(),
             policy.knowledgeBaseResourceId(),
             policy.ragEnabled() ? resolveReleasedVersionId(resources, policy.knowledgeBaseResourceId()) : null,
             policy.memoryWindowSize(),
+            policy.skillResourceIds(),
+            skillResourceVersionIds,
             policy.toolResourceIds(),
             toolResourceVersionIds
         );
@@ -552,16 +578,17 @@ public class RuntimeService {
     private List<AssistantReleaseResourceDto> collectAdHocResources(AssistantDto assistant, List<ResourceDto> resourceViews) {
         Map<String, AssistantReleaseResourceDto> resolved = new java.util.LinkedHashMap<>();
         captureAdHocEffectiveResource(resolved, resourceViews, assistant.modelPolicy().providerResourceId(), "ASSISTANT_DEFAULT_MODEL");
-        captureAdHocEffectiveResource(resolved, resourceViews, assistant.modelPolicy().promptTemplateResourceId(), "ASSISTANT_DEFAULT_PROMPT");
         if (assistant.ragPolicy().enabled()) {
             captureAdHocEffectiveResource(resolved, resourceViews, assistant.ragPolicy().knowledgeBaseResourceId(), "ASSISTANT_DEFAULT_RAG");
         }
 
         for (AgentDto agent : assistant.agents()) {
             captureAdHocEffectiveResource(resolved, resourceViews, agent.executionPolicy().modelResourceId(), agent.name());
-            captureAdHocEffectiveResource(resolved, resourceViews, agent.executionPolicy().promptTemplateResourceId(), agent.name());
             if (agent.executionPolicy().ragEnabled()) {
                 captureAdHocEffectiveResource(resolved, resourceViews, agent.executionPolicy().knowledgeBaseResourceId(), agent.name());
+            }
+            for (String skillResourceId : agent.executionPolicy().skillResourceIds()) {
+                captureAdHocEffectiveResource(resolved, resourceViews, skillResourceId, agent.name());
             }
             for (String toolResourceId : agent.executionPolicy().toolResourceIds()) {
                 captureAdHocEffectiveResource(resolved, resourceViews, toolResourceId, agent.name());
@@ -701,11 +728,10 @@ public class RuntimeService {
                 configuration.llmModel().temperature(),
                 configuration.llmModel().maxTokens()
             ),
-            configuration.promptTemplate() == null ? null : new PromptTemplateConfig(
-                configuration.promptTemplate().templateType(),
-                configuration.promptTemplate().systemPrompt(),
-                configuration.promptTemplate().userPromptTemplate(),
-                configuration.promptTemplate().responseFormat()
+            configuration.skill() == null ? null : new SkillConfig(
+                configuration.skill().skillName(),
+                configuration.skill().skillDesc(),
+                configuration.skill().skillPrompt()
             )
         );
     }
@@ -739,7 +765,8 @@ public class RuntimeService {
         String sessionId,
         String requester,
         String latestMessage,
-        List<ConversationMessageDto> currentMessages
+        List<ConversationMessageDto> currentMessages,
+        List<String> loadedSkillResourceVersionIds
     ) {
         return new SessionContext(
             sessionId == null ? "adhoc-session" : sessionId,
@@ -747,7 +774,8 @@ public class RuntimeService {
             latestMessage,
             currentMessages.stream()
                 .map(message -> new SessionMessageSnapshot(message.role(), message.senderName(), message.content(), message.createdAt()))
-                .toList()
+                .toList(),
+            loadedSkillResourceVersionIds == null ? List.of() : List.copyOf(loadedSkillResourceVersionIds)
         );
     }
 
@@ -903,7 +931,9 @@ public class RuntimeService {
             && existing.escalationRequired() == result.escalationRequired()
             && Objects.equals(existing.checkpoint(), result.checkpoint())
             && Objects.equals(existing.humanTask(), result.humanTask())
+            && Objects.equals(existing.pauseReason(), result.pauseReason())
             && Objects.equals(existing.latestToolOutcome(), result.latestToolOutcome())
+            && Objects.equals(existing.loadedSkillResourceVersionIds(), result.loadedSkillResourceVersionIds())
             && existing.toolCalls().equals(result.toolCalls())
             && sameNodes(existing.nodes(), result.nodes());
     }

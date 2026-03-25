@@ -1,11 +1,13 @@
-export type ResourceType = 'TOOL' | 'KNOWLEDGE_BASE' | 'LLM_MODEL' | 'PROMPT_TEMPLATE';
+export type ResourceType = 'TOOL' | 'KNOWLEDGE_BASE' | 'LLM_MODEL' | 'SKILL';
 export type ToolProviderType = 'HTTP' | 'MCP';
 export type ShareScope = 'PRIVATE' | 'DOMAIN_SHARED';
 export type VersionStatus = 'DRAFT' | 'PUBLISHED';
 export type TaskStatus = 'PENDING' | 'RUNNING' | 'WAITING_HUMAN' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 export type WorkflowStatus = 'DRAFT' | 'RUNNING' | 'WAITING_HUMAN' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
-export type NodeStatus = 'PENDING' | 'RUNNING' | 'WAITING_HUMAN' | 'COMPLETED' | 'FAILED';
+export type NodeStatus = 'PENDING' | 'RUNNING' | 'WAITING_HUMAN' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 export type OrchestrationNodeType = 'START' | 'AGENT' | 'HUMAN' | 'END';
+export type HumanTaskSource = 'GRAPH_NODE' | 'AGENT_REQUEST';
+export type HumanActionType = 'CONFIRM' | 'TERMINATE';
 
 export interface HumanNodeConfig {
   title: string;
@@ -45,6 +47,14 @@ export interface HumanTaskSnapshot {
   title: string;
   instruction: string;
   expectedAction: string;
+  source: HumanTaskSource;
+  allowedActions: HumanActionType[];
+}
+
+export interface PauseReasonSnapshot {
+  code: string;
+  detail: string;
+  source: HumanTaskSource;
 }
 
 export interface ToolInvocationSnapshot {
@@ -70,7 +80,7 @@ export interface ToolOutcomeSummary {
 }
 
 export interface HumanActionRequest {
-  action: string;
+  action: HumanActionType;
   comment: string;
   operatorId: string;
   attributes: Record<string, string>;

@@ -234,11 +234,10 @@ function defaultConfiguration(type: ResourceType): ResourceVersionConfiguration 
   }
   return {
     type,
-    promptTemplate: {
-      templateType: 'CHAT',
-      systemPrompt: '你是企业级智能体，请根据上下文输出可执行答案。',
-      userPromptTemplate: '用户问题：{{question}}\n知识上下文：{{knowledge_context}}',
-      responseFormat: 'markdown',
+    skill: {
+      skillName: '新技能',
+      skillDesc: '请填写技能用途说明。',
+      skillPrompt: '请填写技能行为说明。',
     },
   };
 }
@@ -267,7 +266,7 @@ function normalizeConfiguration(type: ResourceType, configuration?: ResourceVers
   }
   return {
     type,
-    promptTemplate: configuration.promptTemplate ?? defaultConfiguration(type).promptTemplate,
+    skill: configuration.skill ?? defaultConfiguration(type).skill,
   };
 }
 
@@ -295,6 +294,8 @@ function buildAssistantRelease(assistant: Assistant, releaseVersion: string) {
     role: agent.role,
     instructions: agent.instructions,
     executionPolicy: clone(agent.executionPolicy),
+    skillResourceVersionIds: agent.executionPolicy.skillResourceIds
+      .map((resourceId) => resolveResourceVersion(resourceId).version.id),
     toolResourceVersionIds: agent.executionPolicy.toolResourceIds
       .map((resourceId) => resolveResourceVersion(resourceId).version.id),
   }));
@@ -415,7 +416,7 @@ function buildDefaultOrchestrationForAssistant(assistantId: string) {
       nodeKey: `node-${agent.id}`,
       nodeName: agent.name,
       nodeType: 'AGENT' as const,
-      description: agent.executionPolicy.inlinePrompt || agent.instructions,
+      description: agent.instructions,
       agentId: agent.id,
       humanNode: null,
     })),
@@ -482,16 +483,14 @@ function findResourceDeletionBlocker(resourceId: string): string | null {
       switch (reference.referenceKind) {
         case 'ASSISTANT_DEFAULT_MODEL':
           return `资源仍被助手默认模型引用：${reference.sourceName}`;
-        case 'ASSISTANT_DEFAULT_PROMPT':
-          return `资源仍被助手默认 Prompt 引用：${reference.sourceName}`;
         case 'ASSISTANT_DEFAULT_KNOWLEDGE_BASE':
           return `资源仍被助手默认知识库引用：${reference.sourceName}`;
         case 'AGENT_OVERRIDE_MODEL':
           return `资源仍被智能体模型覆盖引用：${reference.sourceName}`;
-        case 'AGENT_OVERRIDE_PROMPT':
-          return `资源仍被智能体 Prompt 覆盖引用：${reference.sourceName}`;
         case 'AGENT_OVERRIDE_KNOWLEDGE_BASE':
           return `资源仍被智能体知识库覆盖引用：${reference.sourceName}`;
+        case 'AGENT_SKILL_ENABLED':
+          return `资源仍被智能体技能集引用：${reference.sourceName}`;
         case 'AGENT_TOOL_ENABLED':
           return `资源仍被智能体 Tool 集引用：${reference.sourceName}`;
         default:
@@ -547,9 +546,6 @@ function buildResourceReferenceEntries(resource: Resource) {
     if (assistant.modelPolicy.providerResourceId === resource.id) {
       pushEntry('ASSISTANT_DEFAULT_MODEL', 'ASSISTANT', assistant.id, assistant.name, null, null, true);
     }
-    if (assistant.modelPolicy.promptTemplateResourceId === resource.id) {
-      pushEntry('ASSISTANT_DEFAULT_PROMPT', 'ASSISTANT', assistant.id, assistant.name, null, null, true);
-    }
     if (assistant.ragPolicy.enabled && assistant.ragPolicy.knowledgeBaseResourceId === resource.id) {
       pushEntry('ASSISTANT_DEFAULT_KNOWLEDGE_BASE', 'ASSISTANT', assistant.id, assistant.name, null, null, true);
     }
@@ -559,11 +555,11 @@ function buildResourceReferenceEntries(resource: Resource) {
     if (agent.executionPolicy.modelResourceId === resource.id) {
       pushEntry('AGENT_OVERRIDE_MODEL', 'AGENT', agent.id, agent.name, null, null, true);
     }
-    if (agent.executionPolicy.promptTemplateResourceId === resource.id) {
-      pushEntry('AGENT_OVERRIDE_PROMPT', 'AGENT', agent.id, agent.name, null, null, true);
-    }
     if (agent.executionPolicy.ragEnabled && agent.executionPolicy.knowledgeBaseResourceId === resource.id) {
       pushEntry('AGENT_OVERRIDE_KNOWLEDGE_BASE', 'AGENT', agent.id, agent.name, null, null, true);
+    }
+    if (agent.executionPolicy.skillResourceIds.includes(resource.id)) {
+      pushEntry('AGENT_SKILL_ENABLED', 'AGENT', agent.id, agent.name, null, null, true);
     }
     if (agent.executionPolicy.toolResourceIds.includes(resource.id)) {
       pushEntry('AGENT_TOOL_ENABLED', 'AGENT', agent.id, agent.name, null, null, true);
@@ -631,13 +627,14 @@ function collectReleaseResources(assistant: Assistant) {
   };
 
   addResource(assistant.modelPolicy.providerResourceId);
-  addResource(assistant.modelPolicy.promptTemplateResourceId);
   addResource(assistant.ragPolicy.enabled ? assistant.ragPolicy.knowledgeBaseResourceId : null);
 
   for (const agent of assistant.agents) {
     addResource(agent.executionPolicy.modelResourceId, null, agent.name);
-    addResource(agent.executionPolicy.promptTemplateResourceId, null, agent.name);
     addResource(agent.executionPolicy.ragEnabled ? agent.executionPolicy.knowledgeBaseResourceId : null, null, agent.name);
+    for (const resourceId of agent.executionPolicy.skillResourceIds) {
+      addResource(resourceId, null, agent.name);
+    }
     for (const resourceId of agent.executionPolicy.toolResourceIds) {
       addResource(resourceId, null, agent.name);
     }
@@ -666,7 +663,16 @@ function buildFallbackExecution(sessionId: string, assistant: Assistant, request
         nodeKey: 'human-review',
         title: '人工协同待办',
         instruction: '请人工确认客户诉求、补偿方案和回复口径。',
-        expectedAction: 'CONFIRM',
+        expectedAction: '补充处理意见并确认后续动作',
+        source: 'GRAPH_NODE' as const,
+        allowedActions: ['CONFIRM', 'TERMINATE'] as const,
+      }
+    : null;
+  const pauseReason = waitingHuman
+    ? {
+        code: 'GRAPH_HUMAN_NODE',
+        detail: '流程已运行到人工节点，等待人工确认。',
+        source: 'GRAPH_NODE' as const,
       }
     : null;
   const checkpoint = waitingHuman
@@ -723,6 +729,7 @@ function buildFallbackExecution(sessionId: string, assistant: Assistant, request
     escalationRequired: waitingHuman,
     checkpoint,
     humanTask,
+    pauseReason,
     latestToolOutcome: waitingHuman
       ? {
           toolResourceId: 'resource-tool-ticket',
@@ -761,6 +768,7 @@ function buildFallbackExecution(sessionId: string, assistant: Assistant, request
           },
         ]
       : [],
+    loadedSkillResourceVersionIds: [],
   };
   const task: TaskInstance = {
     id: taskId,
@@ -850,6 +858,8 @@ export const api = {
           latestWorkflowInstanceId: null,
           latestToolOutcome: null,
           latestHumanTask: null,
+          latestPauseReason: null,
+          loadedSkillResourceVersionIds: [],
         };
         fallbackState.sessions.push(created);
         return clone(created);
@@ -899,6 +909,8 @@ export const api = {
           latestWorkflowInstanceId: execution.workflow.id,
           latestToolOutcome: execution.workflow.latestToolOutcome,
           latestHumanTask: execution.workflow.humanTask,
+          latestPauseReason: execution.workflow.pauseReason,
+          loadedSkillResourceVersionIds: execution.workflow.loadedSkillResourceVersionIds,
         };
         fallbackState.sessions = fallbackState.sessions.map((item) => item.id === sessionId ? updated : item);
         return clone(updated);
@@ -1420,8 +1432,17 @@ export const api = {
           escalationRequired: false,
           checkpoint: null,
           humanTask: null,
+          pauseReason: null,
           nodes: current.nodes.concat(nextStatus === 'CANCELLED'
-            ? []
+            ? [{
+                id: nextId('node-exec'),
+                workflowInstanceId: workflowId,
+                nodeKey: current.currentNodeKey ?? 'workflow-cancelled',
+                nodeName: '人工终止',
+                status: 'CANCELLED',
+                detail: payload.comment || '人工终止了当前流程。',
+                updatedAt: completedAt,
+              }]
             : [{
                 id: nextId('node-exec'),
                 workflowInstanceId: workflowId,
@@ -1445,6 +1466,7 @@ export const api = {
             ...item,
             updatedAt: completedAt,
             latestHumanTask: null,
+            latestPauseReason: null,
             messages: item.messages.concat({
               id: nextId('msg'),
               sessionId: item.id,

@@ -88,11 +88,10 @@ function defaultConfiguration(type: ResourceType): CreateResourceVersionPayload[
   }
   return {
     type,
-    promptTemplate: {
-      templateType: 'CHAT',
-      systemPrompt: '你是企业智能体，请输出清晰、可执行的结果。',
-      userPromptTemplate: '用户问题：{{question}}\n知识上下文：{{knowledge_context}}',
-      responseFormat: 'markdown',
+    skill: {
+      skillName: '新技能',
+      skillDesc: '请填写技能用途说明。',
+      skillPrompt: '请填写技能行为说明。',
     },
   };
 }

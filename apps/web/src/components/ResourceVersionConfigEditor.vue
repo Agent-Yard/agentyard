@@ -35,7 +35,7 @@ if (props.resourceType === 'TOOL' && props.configuration.tool && !props.configur
 }
 const toolOperations = computed(() => tool.value.operations);
 const llmModel = computed(() => props.configuration.llmModel!);
-const promptTemplate = computed(() => props.configuration.promptTemplate!);
+const skill = computed(() => props.configuration.skill!);
 const isOpenAiCompatible = computed(() => llmModel.value?.providerType === 'OPENAI_COMPATIBLE');
 const llmModelIdPlaceholder = computed(() => (
   isOpenAiCompatible.value ? '例如：qwen2.5-72b-instruct / deepseek-chat' : '例如：gpt-4.1-mini'
@@ -376,28 +376,18 @@ function removeToolOperation(index: number) {
   <template v-else>
     <a-row :gutter="[16, 16]">
       <a-col :span="12">
-        <a-form-item label="模板类型">
-          <a-select
-            v-model:value="promptTemplate.templateType"
-            :options="[
-              { label: 'Chat', value: 'CHAT' },
-              { label: 'Router', value: 'ROUTER' },
-              { label: 'Structured Output', value: 'STRUCTURED_OUTPUT' },
-            ]"
-          />
+        <a-form-item label="技能名称">
+          <a-input v-model:value="skill.skillName" placeholder="例如：FAQ 技能" />
         </a-form-item>
       </a-col>
       <a-col :span="12">
-        <a-form-item label="响应格式">
-          <a-input v-model:value="promptTemplate.responseFormat" />
+        <a-form-item label="技能描述">
+          <a-input v-model:value="skill.skillDesc" placeholder="一句话描述这个技能的用途" />
         </a-form-item>
       </a-col>
     </a-row>
-    <a-form-item label="System Prompt">
-      <a-textarea v-model:value="promptTemplate.systemPrompt" :rows="5" />
-    </a-form-item>
-    <a-form-item label="User Prompt Template">
-      <a-textarea v-model:value="promptTemplate.userPromptTemplate" :rows="6" />
+    <a-form-item label="技能提示">
+      <a-textarea v-model:value="skill.skillPrompt" :rows="8" />
     </a-form-item>
   </template>
 </template>

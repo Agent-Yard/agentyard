@@ -37,10 +37,12 @@ class AssistantRunWorkflowGatewayTest {
             "workflow-starting",
             null,
             null,
+            null,
             List.of(new NodeSnapshot("workflow-starting", "流程运行中", NodeStatus.RUNNING, "启动中", Instant.now())),
             List.of(),
             false,
-            null
+            null,
+            List.of()
         );
         WorkflowResult completed = new WorkflowResult(
             "wf-123",
@@ -50,10 +52,12 @@ class AssistantRunWorkflowGatewayTest {
             "end",
             null,
             null,
+            null,
             List.of(new NodeSnapshot("end", "结束", NodeStatus.COMPLETED, "流程结束", Instant.now())),
             List.of(),
             false,
-            null
+            null,
+            List.of()
         );
         when(workflowClient.newWorkflowStub(eq(AssistantRunWorkflow.class), any(WorkflowOptions.class))).thenReturn(workflow);
         when(workflow.currentResult()).thenReturn(running, completed);
@@ -79,10 +83,12 @@ class AssistantRunWorkflowGatewayTest {
             "end",
             null,
             null,
+            null,
             List.of(new NodeSnapshot("end", "结束", NodeStatus.COMPLETED, "人工已处理", Instant.now())),
             List.of(),
             false,
-            null
+            null,
+            List.of()
         );
         when(workflowClient.newWorkflowStub(AssistantRunWorkflow.class, "wf-123")).thenReturn(existingWorkflow);
         when(existingWorkflow.currentResult()).thenReturn(expected);

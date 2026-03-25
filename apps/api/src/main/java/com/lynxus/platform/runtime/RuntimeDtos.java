@@ -3,6 +3,7 @@ package com.lynxus.platform.runtime;
 import com.lynxus.contracts.runtime.WorkflowContracts.ExecutionCheckpoint;
 import com.lynxus.contracts.runtime.WorkflowContracts.HumanTaskSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.NodeStatus;
+import com.lynxus.contracts.runtime.WorkflowContracts.PauseReasonSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.TaskStatus;
 import com.lynxus.contracts.runtime.WorkflowContracts.ToolOutcomeSummary;
 import com.lynxus.contracts.runtime.WorkflowContracts.ToolInvocationSnapshot;
@@ -54,11 +55,13 @@ public final class RuntimeDtos {
         boolean escalationRequired,
         ExecutionCheckpoint checkpoint,
         HumanTaskSnapshot humanTask,
+        PauseReasonSnapshot pauseReason,
         ToolOutcomeSummary latestToolOutcome,
         List<String> resourceAnchors,
         List<NodeExecutionDto> nodes,
         List<ToolInvocationSnapshot> toolCalls,
-        List<HumanInterventionDto> interventions
+        List<HumanInterventionDto> interventions,
+        List<String> loadedSkillResourceVersionIds
     ) {
     }
 
@@ -111,7 +114,9 @@ public final class RuntimeDtos {
         String latestTaskId,
         String latestWorkflowInstanceId,
         ToolOutcomeSummary latestToolOutcome,
-        HumanTaskSnapshot latestHumanTask
+        HumanTaskSnapshot latestHumanTask,
+        PauseReasonSnapshot latestPauseReason,
+        List<String> loadedSkillResourceVersionIds
     ) {
     }
 }

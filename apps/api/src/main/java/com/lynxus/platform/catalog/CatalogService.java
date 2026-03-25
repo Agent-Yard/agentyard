@@ -529,11 +529,11 @@ public class CatalogService {
                 defaultConfiguration(ResourceType.LLM_MODEL)
             ),
             new ResourceBlueprintDto(
-                ResourceType.PROMPT_TEMPLATE,
-                "Prompt 模板",
-                "承载系统提示、用户模板和结构化输出约束，供助手和智能体复用。",
-                List.of("模板类型", "System Prompt", "User Prompt Template", "响应格式"),
-                defaultConfiguration(ResourceType.PROMPT_TEMPLATE)
+                ResourceType.SKILL,
+                "Skill",
+                "承载供智能体按需读取的行为模式说明，包括技能名称、描述和完整技能提示。",
+                List.of("技能名称", "技能描述", "技能提示"),
+                defaultConfiguration(ResourceType.SKILL)
             )
         );
     }
@@ -586,7 +586,7 @@ public class CatalogService {
             List.of(),
             null,
             List.of(),
-            new AssistantModelPolicyDto(defaultLlmResourceId, "resource-prompt-router"),
+            new AssistantModelPolicyDto(defaultLlmResourceId),
             new RagPolicyDto(true, "resource-kb-support"),
             new MemoryPolicyDto(true, 10)
         );
@@ -637,62 +637,62 @@ public class CatalogService {
             null,
             List.of()
         );
-        ResourceDto routerPrompt = new ResourceDto(
-            "resource-prompt-router",
+        ResourceDto routerSkill = new ResourceDto(
+            "resource-skill-router",
             domain.id(),
-            "路由 Prompt",
-            ResourceType.PROMPT_TEMPLATE,
+            "路由 Skill",
+            ResourceType.SKILL,
             ShareScope.PRIVATE,
             "ASSISTANT",
             assistant.id(),
-            "用于问题分诊和路由决策",
+            "用于问题分诊和路由决策的技能",
             "客服协同助手团队",
-            List.of("Prompt", "Router"),
+            List.of("Skill", "Router"),
             null,
             null,
             List.of()
         );
-        ResourceDto faqPrompt = new ResourceDto(
-            "resource-prompt-faq",
+        ResourceDto faqSkill = new ResourceDto(
+            "resource-skill-faq",
             domain.id(),
-            "FAQ Prompt",
-            ResourceType.PROMPT_TEMPLATE,
+            "FAQ Skill",
+            ResourceType.SKILL,
             ShareScope.PRIVATE,
             "ASSISTANT",
             assistant.id(),
-            "用于知识问答回复",
+            "用于知识问答回复的技能",
             "客服协同助手团队",
-            List.of("Prompt", "FAQ"),
+            List.of("Skill", "FAQ"),
             null,
             null,
             List.of()
         );
-        ResourceDto policyPrompt = new ResourceDto(
-            "resource-prompt-policy",
+        ResourceDto policySkill = new ResourceDto(
+            "resource-skill-policy",
             domain.id(),
-            "售后策略 Prompt",
-            ResourceType.PROMPT_TEMPLATE,
+            "售后策略 Skill",
+            ResourceType.SKILL,
             ShareScope.PRIVATE,
             "ASSISTANT",
             assistant.id(),
-            "用于售后策略判定",
+            "用于售后策略判定的技能",
             "客服协同助手团队",
-            List.of("Prompt", "售后"),
+            List.of("Skill", "售后"),
             null,
             null,
             List.of()
         );
-        ResourceDto handoffPrompt = new ResourceDto(
-            "resource-prompt-handoff",
+        ResourceDto handoffSkill = new ResourceDto(
+            "resource-skill-handoff",
             domain.id(),
-            "人工协同 Prompt",
-            ResourceType.PROMPT_TEMPLATE,
+            "人工协同 Skill",
+            ResourceType.SKILL,
             ShareScope.PRIVATE,
             "ASSISTANT",
             assistant.id(),
-            "用于人工交接后的总结与闭环",
+            "用于人工交接后的总结与闭环技能",
             "客服协同助手团队",
-            List.of("Prompt", "人工协同"),
+            List.of("Skill", "人工协同"),
             null,
             null,
             List.of()
@@ -727,7 +727,7 @@ public class CatalogService {
             null,
             List.of()
         );
-        resources.addAll(List.of(kb, llmModel, compatibleLlmModel, routerPrompt, faqPrompt, policyPrompt, handoffPrompt, refundTool, ticketTool));
+        resources.addAll(List.of(kb, llmModel, compatibleLlmModel, routerSkill, faqSkill, policySkill, handoffSkill, refundTool, ticketTool));
 
         ResourceVersionDto kbPublished = seedResourceVersion(
             kb.id(),
@@ -792,78 +792,74 @@ public class CatalogService {
             )
         );
         seedResourceVersion(
-            routerPrompt.id(),
+            routerSkill.id(),
             "1.0.0",
             VersionStatus.PUBLISHED,
-            "路由 Prompt",
-            "digest-prompt-router-v1",
+            "路由 Skill",
+            "digest-skill-router-v1",
             new ResourceVersionConfigurationDto(
-                ResourceType.PROMPT_TEMPLATE,
+                ResourceType.SKILL,
                 null,
                 null,
                 null,
-                new PromptTemplateConfigDto(
-                    "STRUCTURED_OUTPUT",
-                    "你是客服协同编排里的路由智能体，请判断问题应该进入 FAQ、售后策略还是人工协同。",
-                    "用户问题：{{question}}\n知识上下文：{{knowledge_context}}\n请输出路由决策。",
-                    "json"
+                new SkillConfigDto(
+                    "路由技能",
+                    "根据用户问题、知识和上下文判断路由方向。",
+                    "当你需要做问题分诊时，优先判断是否属于 FAQ、售后策略或人工协同，并输出明确路由依据。"
                 )
             )
         );
         seedResourceVersion(
-            faqPrompt.id(),
+            faqSkill.id(),
             "1.0.0",
             VersionStatus.PUBLISHED,
-            "FAQ Prompt",
-            "digest-prompt-faq-v1",
+            "FAQ Skill",
+            "digest-skill-faq-v1",
             new ResourceVersionConfigurationDto(
-                ResourceType.PROMPT_TEMPLATE,
+                ResourceType.SKILL,
                 null,
                 null,
                 null,
-                new PromptTemplateConfigDto(
-                    "CHAT",
-                    "你是 FAQ 回答智能体，请结合知识检索结果输出简洁、准确的回复。",
-                    "用户问题：{{question}}\n知识上下文：{{knowledge_context}}",
-                    "markdown"
+                new SkillConfigDto(
+                    "FAQ 技能",
+                    "基于知识召回内容提供常规问答回复。",
+                    "当问题属于 FAQ 时，优先基于召回到的知识内容直接回答，保持简洁、准确、可执行。"
                 )
             )
         );
         seedResourceVersion(
-            policyPrompt.id(),
+            policySkill.id(),
             "1.0.0",
             VersionStatus.PUBLISHED,
-            "售后 Prompt",
-            "digest-prompt-policy-v1",
+            "售后策略 Skill",
+            "digest-skill-policy-v1",
             new ResourceVersionConfigurationDto(
-                ResourceType.PROMPT_TEMPLATE,
+                ResourceType.SKILL,
                 null,
                 null,
                 null,
-                new PromptTemplateConfigDto(
-                    "STRUCTURED_OUTPUT",
-                    "你是售后策略智能体，请结合知识和工具结果给出结构化判断。",
-                    "用户问题：{{question}}\n知识上下文：{{knowledge_context}}\n工具结果：{{tool_results}}",
-                    "json"
+                new SkillConfigDto(
+                    "售后策略技能",
+                    "结合知识和工具输出判断退款或补偿策略。",
+                    "当处理退款、补偿、退货、售后类问题时，结合规则与工具结果给出明确策略建议，并说明是否需要人工复核。"
                 )
             )
         );
         seedResourceVersion(
-            handoffPrompt.id(),
+            handoffSkill.id(),
             "1.0.0",
             VersionStatus.PUBLISHED,
-            "人工协同 Prompt",
-            "digest-prompt-handoff-v1",
+            "人工协同 Skill",
+            "digest-skill-handoff-v1",
             new ResourceVersionConfigurationDto(
-                ResourceType.PROMPT_TEMPLATE,
+                ResourceType.SKILL,
                 null,
                 null,
                 null,
-                new PromptTemplateConfigDto(
-                    "CHAT",
-                    "你是人工协同闭环智能体，请根据人工动作补充后续说明和最终回复。",
-                    "用户问题：{{question}}\n人工处理说明：{{human_input}}\n工具结果：{{tool_results}}",
-                    "markdown"
+                new SkillConfigDto(
+                    "人工协同闭环技能",
+                    "根据人工动作、工具结果与上下文生成闭环说明。",
+                    "当人工已经介入时，整合人工处理说明、工单结果和当前上下文，生成对用户的最终闭环答复。"
                 )
             )
         );
@@ -946,7 +942,7 @@ public class CatalogService {
             "问题分诊智能体",
             "router",
             "识别问题类型，决定 FAQ、售后策略或人工协同分支。",
-            new AgentExecutionPolicyDto(true, null, routerPrompt.id(), "输出 route_key 和摘要。", true, kb.id(), 8, List.of())
+            new AgentExecutionPolicyDto(true, null, "你是问题分诊智能体，负责判断当前问题应进入 FAQ、售后或人工协同路径。", true, kb.id(), 8, List.of(routerSkill.id()), List.of())
         ));
         agents.add(new AgentDto(
             "agent-faq",
@@ -954,7 +950,7 @@ public class CatalogService {
             "FAQ 回答智能体",
             "faq",
             "基于知识检索结果输出最终 FAQ 回复。",
-            new AgentExecutionPolicyDto(true, defaultLlmResourceId, faqPrompt.id(), "回答简单 FAQ 并完成会话。", true, kb.id(), 8, List.of())
+            new AgentExecutionPolicyDto(true, defaultLlmResourceId, "你是 FAQ 回答智能体，负责基于知识库给出直接回复。", true, kb.id(), 8, List.of(faqSkill.id()), List.of())
         ));
         agents.add(new AgentDto(
             "agent-policy",
@@ -962,7 +958,7 @@ public class CatalogService {
             "售后策略智能体",
             "policy",
             "调用售后策略 Tool，给出退款或补偿结论。",
-            new AgentExecutionPolicyDto(true, defaultLlmResourceId, policyPrompt.id(), "结合工具输出结构化 route_key。", true, kb.id(), 8, List.of(refundTool.id()))
+            new AgentExecutionPolicyDto(true, defaultLlmResourceId, "你是售后策略智能体，负责结合规则与工具结果给出处理建议。", true, kb.id(), 8, List.of(policySkill.id()), List.of(refundTool.id()))
         ));
         agents.add(new AgentDto(
             "agent-coordinator",
@@ -970,7 +966,7 @@ public class CatalogService {
             "人工协同闭环智能体",
             "handoff",
             "在人工处理后整理摘要、调用工单 Tool，并生成闭环答复。",
-            new AgentExecutionPolicyDto(true, defaultLlmResourceId, handoffPrompt.id(), "根据人工动作补充最终回复。", false, null, 12, List.of(ticketTool.id()))
+            new AgentExecutionPolicyDto(true, defaultLlmResourceId, "你是人工协同闭环智能体，负责整理人工动作并生成最终回复。", false, null, 12, List.of(handoffSkill.id()), List.of(ticketTool.id()))
         ));
 
         orchestrations.put(assistant.id(), new AssistantOrchestrationDto(
@@ -1303,7 +1299,6 @@ public class CatalogService {
         AssistantDto assistant = findAssistant(assistantId);
         Map<String, AssistantReleaseResourceDto> snapshotMap = new LinkedHashMap<>();
         captureEffectiveResource(snapshotMap, assistant.modelPolicy().providerResourceId(), "ASSISTANT_DEFAULT_MODEL");
-        captureEffectiveResource(snapshotMap, assistant.modelPolicy().promptTemplateResourceId(), "ASSISTANT_DEFAULT_PROMPT");
         if (assistant.ragPolicy().enabled()) {
             captureEffectiveResource(snapshotMap, assistant.ragPolicy().knowledgeBaseResourceId(), "ASSISTANT_DEFAULT_RAG");
         }
@@ -1311,11 +1306,20 @@ public class CatalogService {
         List<AssistantReleaseAgentDto> releaseAgents = new ArrayList<>();
         for (AgentDto agent : orderAgentsForAssistant(assistantId)) {
             captureEffectiveResource(snapshotMap, agent.executionPolicy().modelResourceId(), agent.name());
-            captureEffectiveResource(snapshotMap, agent.executionPolicy().promptTemplateResourceId(), agent.name());
             if (agent.executionPolicy().ragEnabled()) {
                 captureEffectiveResource(snapshotMap, agent.executionPolicy().knowledgeBaseResourceId(), agent.name());
             }
 
+            List<String> skillResourceVersionIds = new ArrayList<>();
+            for (String skillResourceId : agent.executionPolicy().skillResourceIds()) {
+                ResourceDto skillResource = toResourceView(findResource(skillResourceId));
+                if (skillResource.type() != ResourceType.SKILL) {
+                    throw new IllegalStateException("agent skill must reference SKILL resource: " + agent.name() + " -> " + skillResource.name());
+                }
+                ResourceVersionDto version = effectiveVersion(skillResource);
+                skillResourceVersionIds.add(version.id());
+                mergeReleaseResource(snapshotMap, skillResource, version, agent.name());
+            }
             List<String> toolResourceVersionIds = new ArrayList<>();
             for (String toolResourceId : agent.executionPolicy().toolResourceIds()) {
                 ResourceDto toolResource = toResourceView(findResource(toolResourceId));
@@ -1332,6 +1336,7 @@ public class CatalogService {
                 agent.role(),
                 agent.instructions(),
                 agent.executionPolicy(),
+                List.copyOf(skillResourceVersionIds),
                 List.copyOf(toolResourceVersionIds)
             ));
         }
@@ -1427,9 +1432,6 @@ public class CatalogService {
             if (resource.id().equals(assistant.modelPolicy().providerResourceId())) {
                 references.add(toResourceReference(resource, "ASSISTANT_DEFAULT_MODEL", "ASSISTANT", assistant.id(), assistant.name(), null, null, true));
             }
-            if (resource.id().equals(assistant.modelPolicy().promptTemplateResourceId())) {
-                references.add(toResourceReference(resource, "ASSISTANT_DEFAULT_PROMPT", "ASSISTANT", assistant.id(), assistant.name(), null, null, true));
-            }
             if (assistant.ragPolicy().enabled() && resource.id().equals(assistant.ragPolicy().knowledgeBaseResourceId())) {
                 references.add(toResourceReference(resource, "ASSISTANT_DEFAULT_KNOWLEDGE_BASE", "ASSISTANT", assistant.id(), assistant.name(), null, null, true));
             }
@@ -1439,11 +1441,11 @@ public class CatalogService {
             if (resource.id().equals(agent.executionPolicy().modelResourceId())) {
                 references.add(toResourceReference(resource, "AGENT_OVERRIDE_MODEL", "AGENT", agent.id(), agent.name(), null, null, true));
             }
-            if (resource.id().equals(agent.executionPolicy().promptTemplateResourceId())) {
-                references.add(toResourceReference(resource, "AGENT_OVERRIDE_PROMPT", "AGENT", agent.id(), agent.name(), null, null, true));
-            }
             if (agent.executionPolicy().ragEnabled() && resource.id().equals(agent.executionPolicy().knowledgeBaseResourceId())) {
                 references.add(toResourceReference(resource, "AGENT_OVERRIDE_KNOWLEDGE_BASE", "AGENT", agent.id(), agent.name(), null, null, true));
+            }
+            if (agent.executionPolicy().skillResourceIds().contains(resource.id())) {
+                references.add(toResourceReference(resource, "AGENT_SKILL_ENABLED", "AGENT", agent.id(), agent.name(), null, null, true));
             }
             if (agent.executionPolicy().toolResourceIds().contains(resource.id())) {
                 references.add(toResourceReference(resource, "AGENT_TOOL_ENABLED", "AGENT", agent.id(), agent.name(), null, null, true));
@@ -1512,11 +1514,10 @@ public class CatalogService {
     private String toResourceDeletionMessage(ResourceReferenceDto reference) {
         return switch (reference.referenceKind()) {
             case "ASSISTANT_DEFAULT_MODEL" -> "resource is used as assistant default model: " + reference.sourceName();
-            case "ASSISTANT_DEFAULT_PROMPT" -> "resource is used as assistant default prompt: " + reference.sourceName();
             case "ASSISTANT_DEFAULT_KNOWLEDGE_BASE" -> "resource is used as assistant default knowledge base: " + reference.sourceName();
             case "AGENT_OVERRIDE_MODEL" -> "resource is used as agent override model: " + reference.sourceName();
-            case "AGENT_OVERRIDE_PROMPT" -> "resource is used as agent override prompt: " + reference.sourceName();
             case "AGENT_OVERRIDE_KNOWLEDGE_BASE" -> "resource is used as agent override knowledge base: " + reference.sourceName();
+            case "AGENT_SKILL_ENABLED" -> "resource is used as agent skill: " + reference.sourceName();
             case "AGENT_TOOL_ENABLED" -> "resource is used as agent tool: " + reference.sourceName();
             default -> "resource is still referenced: " + reference.sourceName();
         };
@@ -1531,9 +1532,7 @@ public class CatalogService {
             "node-" + agent.id(),
             agent.name(),
             OrchestrationNodeType.AGENT,
-            agent.executionPolicy().inlinePrompt() == null || agent.executionPolicy().inlinePrompt().isBlank()
-                ? agent.instructions()
-                : agent.executionPolicy().inlinePrompt(),
+            agent.instructions(),
             agent.id(),
             null
         );
@@ -1655,6 +1654,9 @@ public class CatalogService {
 
     private AgentDto normalizeLoadedAgent(AgentDto agent) {
         AgentExecutionPolicyDto normalizedPolicy = normalizeAgentExecutionPolicy(agent.executionPolicy());
+        List<String> enabledSkillResourceIds = normalizedPolicy.skillResourceIds().stream()
+            .filter(resourceId -> resources.stream().anyMatch(item -> item.id().equals(resourceId) && item.type() == ResourceType.SKILL))
+            .toList();
         List<String> enabledToolResourceIds = normalizedPolicy.toolResourceIds().stream()
             .filter(resourceId -> resources.stream().anyMatch(item -> item.id().equals(resourceId) && item.type() == ResourceType.TOOL))
             .toList();
@@ -1667,11 +1669,11 @@ public class CatalogService {
             new AgentExecutionPolicyDto(
                 normalizedPolicy.inheritAssistantDefaults(),
                 normalizedPolicy.modelResourceId(),
-                normalizedPolicy.promptTemplateResourceId(),
-                normalizedPolicy.inlinePrompt(),
+                normalizedPolicy.systemPrompt(),
                 normalizedPolicy.ragEnabled(),
                 normalizedPolicy.knowledgeBaseResourceId(),
                 normalizedPolicy.memoryWindowSize(),
+                List.copyOf(enabledSkillResourceIds),
                 List.copyOf(enabledToolResourceIds)
             )
         );
@@ -1790,7 +1792,7 @@ public class CatalogService {
             case KNOWLEDGE_BASE -> new ResourceVersionConfigurationDto(type, normalizeKnowledgeBaseConfig(configuration.knowledgeBase()), null, null, null);
             case TOOL -> new ResourceVersionConfigurationDto(type, null, normalizeToolConfig(configuration.tool()), null, null);
             case LLM_MODEL -> new ResourceVersionConfigurationDto(type, null, null, configuration.llmModel() == null ? defaultConfiguration(type).llmModel() : configuration.llmModel(), null);
-            case PROMPT_TEMPLATE -> new ResourceVersionConfigurationDto(type, null, null, null, configuration.promptTemplate() == null ? defaultConfiguration(type).promptTemplate() : configuration.promptTemplate());
+            case SKILL -> new ResourceVersionConfigurationDto(type, null, null, null, configuration.skill() == null ? defaultConfiguration(type).skill() : normalizeSkillConfig(configuration.skill()));
         };
     }
 
@@ -1827,12 +1829,12 @@ public class CatalogService {
                 ),
                 null
             );
-            case PROMPT_TEMPLATE -> new ResourceVersionConfigurationDto(
+            case SKILL -> new ResourceVersionConfigurationDto(
                 type,
                 null,
                 null,
                 null,
-                new PromptTemplateConfigDto("CHAT", "你是执行智能体。", "用户问题：{{question}}\n知识上下文：{{knowledge_context}}", "markdown")
+                new SkillConfigDto("新技能", "请填写技能用途说明。", "请填写技能行为说明。")
             );
         };
     }
@@ -1897,6 +1899,20 @@ public class CatalogService {
         }
         int maxLength = Math.min(singleLine.length(), 24);
         return singleLine.substring(0, maxLength);
+    }
+
+    private SkillConfigDto normalizeSkillConfig(SkillConfigDto configuration) {
+        if (configuration == null) {
+            return defaultConfiguration(ResourceType.SKILL).skill();
+        }
+        String skillName = normalizeOptionalText(configuration.skillName());
+        String skillDesc = normalizeOptionalText(configuration.skillDesc());
+        String skillPrompt = normalizeOptionalText(configuration.skillPrompt());
+        return new SkillConfigDto(
+            skillName.isBlank() ? "未命名技能" : skillName,
+            skillDesc,
+            skillPrompt.isBlank() ? "请补充技能行为说明。" : skillPrompt
+        );
     }
 
     private ToolConfigDto defaultToolConfig() {
@@ -1987,12 +2003,9 @@ public class CatalogService {
 
     private AssistantModelPolicyDto normalizeAssistantModelPolicy(AssistantModelPolicyDto policy) {
         if (policy == null) {
-            return new AssistantModelPolicyDto(
-                resolveDefaultResourceId(ResourceType.LLM_MODEL, defaultLlmResourceId()),
-                resolveDefaultResourceId(ResourceType.PROMPT_TEMPLATE, "resource-prompt-router")
-            );
+            return new AssistantModelPolicyDto(resolveDefaultResourceId(ResourceType.LLM_MODEL, defaultLlmResourceId()));
         }
-        return new AssistantModelPolicyDto(policy.providerResourceId(), policy.promptTemplateResourceId());
+        return new AssistantModelPolicyDto(policy.providerResourceId());
     }
 
     private RagPolicyDto normalizeRagPolicy(RagPolicyDto policy) {
@@ -2013,16 +2026,16 @@ public class CatalogService {
     private AgentExecutionPolicyDto normalizeAgentExecutionPolicy(AgentExecutionPolicyDto policy) {
         if (policy == null) {
             String defaultKnowledgeBaseId = resolveDefaultResourceId(ResourceType.KNOWLEDGE_BASE, "resource-kb-support");
-            return new AgentExecutionPolicyDto(true, null, null, "", defaultKnowledgeBaseId != null, defaultKnowledgeBaseId, 8, List.of());
+            return new AgentExecutionPolicyDto(true, null, "", defaultKnowledgeBaseId != null, defaultKnowledgeBaseId, 8, List.of(), List.of());
         }
         return new AgentExecutionPolicyDto(
             policy.inheritAssistantDefaults(),
             policy.modelResourceId(),
-            policy.promptTemplateResourceId(),
-            policy.inlinePrompt(),
+            normalizeOptionalText(policy.systemPrompt()),
             policy.ragEnabled(),
             policy.knowledgeBaseResourceId(),
             policy.memoryWindowSize(),
+            policy.skillResourceIds() == null ? List.of() : List.copyOf(policy.skillResourceIds()),
             policy.toolResourceIds() == null ? List.of() : List.copyOf(policy.toolResourceIds())
         );
     }

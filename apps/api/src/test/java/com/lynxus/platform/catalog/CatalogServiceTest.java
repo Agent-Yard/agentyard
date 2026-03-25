@@ -277,7 +277,7 @@ class CatalogServiceTest {
             "交付执行智能体",
             "executor",
             "调用交付工具",
-            new CatalogDtos.AgentExecutionPolicyDto(true, null, null, "", false, null, 8, java.util.List.of(tool.id()))
+            new CatalogDtos.AgentExecutionPolicyDto(true, null, null, false, null, 8, java.util.List.of(), java.util.List.of(tool.id()))
         ));
 
         CatalogDtos.AssistantDto published = catalogService.updateAssistant(

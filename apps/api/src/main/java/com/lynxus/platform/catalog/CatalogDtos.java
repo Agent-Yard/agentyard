@@ -80,6 +80,7 @@ public final class CatalogDtos {
         String role,
         String instructions,
         AgentExecutionPolicyDto executionPolicy,
+        List<String> skillResourceVersionIds,
         List<String> toolResourceVersionIds
     ) {
     }
@@ -129,7 +130,7 @@ public final class CatalogDtos {
         KnowledgeBaseConfigDto knowledgeBase,
         ToolConfigDto tool,
         LlmModelConfigDto llmModel,
-        PromptTemplateConfigDto promptTemplate
+        SkillConfigDto skill
     ) {
     }
 
@@ -195,17 +196,15 @@ public final class CatalogDtos {
     ) {
     }
 
-    public record PromptTemplateConfigDto(
-        String templateType,
-        String systemPrompt,
-        String userPromptTemplate,
-        String responseFormat
+    public record SkillConfigDto(
+        String skillName,
+        String skillDesc,
+        String skillPrompt
     ) {
     }
 
     public record AssistantModelPolicyDto(
-        String providerResourceId,
-        String promptTemplateResourceId
+        String providerResourceId
     ) {
     }
 
@@ -224,11 +223,11 @@ public final class CatalogDtos {
     public record AgentExecutionPolicyDto(
         boolean inheritAssistantDefaults,
         String modelResourceId,
-        String promptTemplateResourceId,
-        String inlinePrompt,
+        String systemPrompt,
         boolean ragEnabled,
         String knowledgeBaseResourceId,
         int memoryWindowSize,
+        List<String> skillResourceIds,
         List<String> toolResourceIds
     ) {
     }

@@ -21,7 +21,6 @@ const createForm = reactive<CreateAssistantPayload>({
   description: '',
   modelPolicy: {
     providerResourceId: null,
-    promptTemplateResourceId: null,
   },
   ragPolicy: {
     enabled: false,
@@ -38,7 +37,6 @@ const editForm = reactive<UpdateAssistantPayload>({
   status: 'DRAFT',
   modelPolicy: {
     providerResourceId: null,
-    promptTemplateResourceId: null,
   },
   ragPolicy: {
     enabled: false,
@@ -54,15 +52,11 @@ const current = computed(() =>
   props.assistants.find((item) => item.id === selectedAssistantId.value) ?? props.assistants[0],
 );
 const modelResources = computed(() => props.resources.filter((item) => item.type === 'LLM_MODEL'));
-const promptResources = computed(() => props.resources.filter((item) => item.type === 'PROMPT_TEMPLATE'));
 const knowledgeBases = computed(() => props.resources.filter((item) => item.type === 'KNOWLEDGE_BASE'));
 
 function syncCreateFormResourceDefaults() {
   if (!modelResources.value.some((item) => item.id === createForm.modelPolicy.providerResourceId)) {
     createForm.modelPolicy.providerResourceId = modelResources.value[0]?.id ?? null;
-  }
-  if (!promptResources.value.some((item) => item.id === createForm.modelPolicy.promptTemplateResourceId)) {
-    createForm.modelPolicy.promptTemplateResourceId = promptResources.value[0]?.id ?? null;
   }
   if (!knowledgeBases.value.some((item) => item.id === createForm.ragPolicy.knowledgeBaseResourceId)) {
     createForm.ragPolicy.knowledgeBaseResourceId = knowledgeBases.value[0]?.id ?? null;
@@ -112,7 +106,7 @@ watch(
   { immediate: true },
 );
 
-watch([modelResources, promptResources, knowledgeBases], syncCreateFormResourceDefaults, { immediate: true });
+watch([modelResources, knowledgeBases], syncCreateFormResourceDefaults, { immediate: true });
 
 function submitCreate() {
   emit('createAssistant', { ...createForm });
@@ -154,19 +148,11 @@ function submitUpdate() {
             />
           </a-form-item>
           <a-row :gutter="[16, 16]">
-            <a-col :span="12">
+            <a-col :span="24">
               <a-form-item label="默认模型">
                 <a-select
                   v-model:value="createForm.modelPolicy.providerResourceId"
                   :options="modelResources.map((item) => ({ label: item.name, value: item.id }))"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="默认 Prompt">
-                <a-select
-                  v-model:value="createForm.modelPolicy.promptTemplateResourceId"
-                  :options="promptResources.map((item) => ({ label: item.name, value: item.id }))"
                 />
               </a-form-item>
             </a-col>
@@ -245,19 +231,11 @@ function submitUpdate() {
             </a-col>
           </a-row>
           <a-row :gutter="[16, 16]">
-            <a-col :span="12">
+            <a-col :span="24">
               <a-form-item label="默认模型">
                 <a-select
                   v-model:value="editForm.modelPolicy.providerResourceId"
                   :options="modelResources.map((item) => ({ label: item.name, value: item.id }))"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="默认 Prompt">
-                <a-select
-                  v-model:value="editForm.modelPolicy.promptTemplateResourceId"
-                  :options="promptResources.map((item) => ({ label: item.name, value: item.id }))"
                 />
               </a-form-item>
             </a-col>
