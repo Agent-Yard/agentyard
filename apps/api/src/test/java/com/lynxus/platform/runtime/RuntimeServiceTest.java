@@ -9,8 +9,10 @@ import com.lynxus.platform.catalog.CatalogService;
 import com.lynxus.contracts.runtime.WorkflowContracts;
 import com.lynxus.contracts.runtime.WorkflowContracts.TaskStatus;
 import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
 import org.junit.jupiter.api.Test;
 
 class RuntimeServiceTest {
@@ -59,6 +61,11 @@ class RuntimeServiceTest {
                 new WorkflowContracts.McpInvocationSummary("创建协同工单", "TICKET-10001", "ACCEPTED", "HUMAN_HANDOFF", "已同步工单")
             );
         }
+
+        @Override
+        public WorkflowContracts.WorkflowResult currentResult(String workflowId) {
+            return null;
+        }
     }, catalogService);
 
     @Test
@@ -96,6 +103,11 @@ class RuntimeServiceTest {
             public WorkflowContracts.WorkflowResult submitHumanActionAndAwaitResult(String workflowId, WorkflowContracts.HumanAction action) {
                 throw new AssertionError("seed should not resume workflow executions");
             }
+
+            @Override
+            public WorkflowContracts.WorkflowResult currentResult(String workflowId) {
+                throw new AssertionError("seed should not query workflow executions");
+            }
         }, new CatalogService());
 
         seededService.seedDemoData(false);
@@ -120,6 +132,11 @@ class RuntimeServiceTest {
             public WorkflowContracts.WorkflowResult submitHumanActionAndAwaitResult(String workflowId, WorkflowContracts.HumanAction action) {
                 throw new UnsupportedOperationException();
             }
+
+            @Override
+            public WorkflowContracts.WorkflowResult currentResult(String workflowId) {
+                return null;
+            }
         }, new CatalogService());
 
         RuntimeDtos.TaskInstanceDto task = failingService.launchTask(
@@ -140,5 +157,63 @@ class RuntimeServiceTest {
 
         assertEquals(WorkflowContracts.WorkflowStatus.COMPLETED, workflow.status());
         assertEquals(TaskStatus.COMPLETED, service.listTasks().stream().filter(item -> item.id().equals(task.id())).findFirst().orElseThrow().status());
+    }
+
+    @Test
+    void shouldRefreshRunningWorkflowResultOnRead() {
+        Queue<WorkflowContracts.WorkflowResult> polledResults = new ArrayDeque<>();
+        RuntimeService refreshingService = new RuntimeService(new AssistantRunWorkflowGateway() {
+            @Override
+            public WorkflowContracts.WorkflowResult startAndAwaitFirstResult(WorkflowContracts.WorkflowStartRequest request) {
+                WorkflowContracts.WorkflowResult completed = new WorkflowContracts.WorkflowResult(
+                    request.workflowInstanceId(),
+                    WorkflowContracts.WorkflowStatus.COMPLETED,
+                    "问题已自动处理完成。",
+                    "请通过登录页的忘记密码完成密码重置。",
+                    "end",
+                    null,
+                    null,
+                    List.of(new WorkflowContracts.NodeSnapshot("end", "结束", WorkflowContracts.NodeStatus.COMPLETED, "流程结束", Instant.now())),
+                    List.of(),
+                    false,
+                    null
+                );
+                polledResults.add(completed);
+                return new WorkflowContracts.WorkflowResult(
+                    request.workflowInstanceId(),
+                    WorkflowContracts.WorkflowStatus.RUNNING,
+                    "流程已启动，正在执行首轮节点。",
+                    null,
+                    "workflow-starting",
+                    null,
+                    null,
+                    List.of(new WorkflowContracts.NodeSnapshot("workflow-starting", "流程运行中", WorkflowContracts.NodeStatus.RUNNING, "流程已启动，正在执行首轮节点。", Instant.now())),
+                    List.of(),
+                    false,
+                    null
+                );
+            }
+
+            @Override
+            public WorkflowContracts.WorkflowResult submitHumanActionAndAwaitResult(String workflowId, WorkflowContracts.HumanAction action) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public WorkflowContracts.WorkflowResult currentResult(String workflowId) {
+                return polledResults.peek();
+            }
+        }, new CatalogService());
+
+        RuntimeDtos.ConversationSessionDto session = refreshingService.createSession(
+            new RuntimeDtos.CreateConversationSessionRequest("scenario-customer-ops", "assistant-customer-ops", "tester", "怎么重置密码")
+        );
+
+        assertEquals("流程已启动，正在执行首轮节点。", session.messages().get(session.messages().size() - 1).content());
+
+        RuntimeDtos.ConversationSessionDto refreshed = refreshingService.getSession(session.id());
+
+        assertEquals("请通过登录页的忘记密码完成密码重置。", refreshed.messages().get(refreshed.messages().size() - 1).content());
+        assertEquals(WorkflowContracts.WorkflowStatus.COMPLETED, refreshingService.getWorkflow(refreshed.latestWorkflowInstanceId()).status());
     }
 }

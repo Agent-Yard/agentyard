@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { message } from 'ant-design-vue';
 import type {
   CatalogSummary,
@@ -165,6 +165,8 @@ const catalog = ref<CatalogSummary | null>(null);
 const conversationSessions = ref<ConversationSession[]>([]);
 const tasks = ref<TaskInstance[]>([]);
 const workflows = ref<WorkflowInstance[]>([]);
+const workflowPollingHandle = ref<number | null>(null);
+let workflowRefreshInFlight = false;
 
 const selectedKeys = computed(() => [activeKey.value]);
 const currentPageMeta = computed(() => pageMeta[activeKey.value]);
@@ -183,7 +185,19 @@ function errorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
+function findSessionById(sessionId: string) {
+  return conversationSessions.value.find((item) => item.id === sessionId);
+}
+
+function findWorkflowById(workflowId: string | null | undefined) {
+  return workflows.value.find((item) => item.id === workflowId);
+}
+
 async function refresh(showLoading = false) {
+  if (!showLoading && workflowRefreshInFlight) {
+    return;
+  }
+  workflowRefreshInFlight = true;
   if (showLoading) {
     loading.value = true;
   }
@@ -208,17 +222,62 @@ async function refresh(showLoading = false) {
       runtimeSelectedSessionId.value = sessionList[0].id;
     }
   } finally {
+    workflowRefreshInFlight = false;
     if (showLoading) {
       loading.value = false;
     }
   }
 }
 
+function stopWorkflowPolling() {
+  if (workflowPollingHandle.value === null) {
+    return;
+  }
+  window.clearInterval(workflowPollingHandle.value);
+  workflowPollingHandle.value = null;
+}
+
+function startWorkflowPolling() {
+  if (workflowPollingHandle.value !== null) {
+    return;
+  }
+  workflowPollingHandle.value = window.setInterval(() => {
+    void refresh();
+  }, 3000);
+}
+
 async function handleCreateSession(payload: { scenarioId: string; assistantId: string; requester: string; openingMessage: string }) {
   creatingSession.value = true;
   try {
-    const created = await api.createConversationSession(payload);
+    const openingMessage = payload.openingMessage.trim();
+    const created = await api.createConversationSession({
+      ...payload,
+      openingMessage: '',
+    });
     runtimePreferredSessionId.value = created.id;
+    runtimeSelectedSessionId.value = created.id;
+    if (openingMessage) {
+      try {
+        await api.sendConversationMessage(created.id, {
+          requester: payload.requester,
+          message: openingMessage,
+        });
+      } catch (error) {
+        await refresh();
+        const recoveredSession = findSessionById(created.id);
+        const recoveredWorkflow = findWorkflowById(recoveredSession?.latestWorkflowInstanceId);
+        if (recoveredWorkflow) {
+          activeKey.value = recoveredWorkflow.status === 'WAITING_HUMAN' ? 'workflow' : 'runtime';
+          void message.warning(
+            recoveredWorkflow.status === 'WAITING_HUMAN'
+              ? '开场消息请求已超时，但 workflow 已进入人工等待，可在流程观测页继续恢复。'
+              : '开场消息请求已超时，但 workflow 已经启动，可继续在运行页观察结果。',
+          );
+          return;
+        }
+        throw error;
+      }
+    }
     await refresh();
     activeKey.value = 'runtime';
     void message.success('会话已创建');
@@ -233,6 +292,7 @@ async function handleSendMessage(payload: { sessionId: string; requester: string
   sendingSessionId.value = payload.sessionId;
   runtimePreferredSessionId.value = payload.sessionId;
   runtimeSelectedSessionId.value = payload.sessionId;
+  const previousWorkflowId = findSessionById(payload.sessionId)?.latestWorkflowInstanceId ?? null;
   try {
     await api.sendConversationMessage(payload.sessionId, {
       requester: payload.requester,
@@ -240,7 +300,20 @@ async function handleSendMessage(payload: { sessionId: string; requester: string
     });
     await refresh();
   } catch (error) {
-    void message.error(errorMessage(error, '发送消息失败'));
+    await refresh();
+    const recoveredSession = findSessionById(payload.sessionId);
+    const recoveredWorkflowId = recoveredSession?.latestWorkflowInstanceId ?? null;
+    const recoveredWorkflow = findWorkflowById(recoveredWorkflowId);
+    if (recoveredWorkflowId && recoveredWorkflowId !== previousWorkflowId && recoveredWorkflow) {
+      activeKey.value = recoveredWorkflow.status === 'WAITING_HUMAN' ? 'workflow' : 'runtime';
+      void message.warning(
+        recoveredWorkflow.status === 'WAITING_HUMAN'
+          ? '请求超时，但 workflow 已进入人工等待，可直接在流程观测页提交人工动作恢复。'
+          : '请求超时，但 workflow 已经启动，页面会继续自动刷新结果。',
+      );
+    } else {
+      void message.error(errorMessage(error, '发送消息失败'));
+    }
   } finally {
     sendingSessionId.value = null;
   }
@@ -330,8 +403,24 @@ function handleRoleSelect(value: string | number) {
   void handleRoleChange(value as Role);
 }
 
+watch(
+  () => workflows.value.some((item) => item.status === 'RUNNING'),
+  (hasRunningWorkflow) => {
+    if (hasRunningWorkflow) {
+      startWorkflowPolling();
+      return;
+    }
+    stopWorkflowPolling();
+  },
+  { immediate: true },
+);
+
 onMounted(() => {
   void refresh(true);
+});
+
+onUnmounted(() => {
+  stopWorkflowPolling();
 });
 </script>
 

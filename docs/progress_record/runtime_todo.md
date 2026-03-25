@@ -69,3 +69,25 @@
 1. 在 workflow 详情页直接展示 root cause、失败节点、失败资源
 2. 在会话页把“timeout / runtime failure / tool failure”区分展示
 3. 为 tool / llm / mcp 失败补充统一错误码和更稳定的错误摘要
+
+## 4. 持久化 runtime 会话 / workflow 观测状态
+
+现状：
+
+- `RuntimeService` 中的 `sessions / tasks / workflows` 仍主要保存在 API 进程内存里
+- 当前页面刷新可以依赖同一进程内存做“超时后找回 workflow 并继续恢复”
+- 但如果 API 进程重启，已有会话、人工待办、workflow 观测状态和失败摘要都会丢失
+
+问题：
+
+- Temporal workflow 还在，但控制面可能失去对应的业务视图与恢复入口
+- 人工节点虽然可以继续等待 signal，但控制台无法稳定列出“待处理 workflow”
+- 真实失败已经发生时，前端未必还能看到之前同步下来的失败摘要
+
+后续目标：
+
+1. 把 `ConversationSession / TaskInstance / WorkflowInstance / HumanIntervention` 持久化到数据库
+2. workflow 启动、进入 `WAITING_HUMAN`、恢复、完成、失败时都增量落库，而不是只存内存快照
+3. API 启动后支持从数据库重建运行态列表，并和 Temporal 当前 execution 做对账
+4. 把“待人工处理 workflow”做成稳定查询，不依赖单个 API 进程存活
+5. 为超时恢复场景补充一个明确的“按 sessionId / workflowId 找回并继续处理”入口

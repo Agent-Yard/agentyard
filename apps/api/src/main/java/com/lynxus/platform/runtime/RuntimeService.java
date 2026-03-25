@@ -72,18 +72,22 @@ public class RuntimeService {
     }
 
     public List<TaskInstanceDto> listTasks() {
+        refreshRunningWorkflows();
         return tasks.stream().sorted(Comparator.comparing(TaskInstanceDto::createdAt).reversed()).toList();
     }
 
     public List<WorkflowInstanceDto> listWorkflows() {
+        refreshRunningWorkflows();
         return workflows.stream().sorted(Comparator.comparing(WorkflowInstanceDto::id).reversed()).toList();
     }
 
     public List<ConversationSessionDto> listSessions() {
+        refreshRunningWorkflows();
         return sessions.stream().sorted(Comparator.comparing(ConversationSessionDto::updatedAt).reversed()).toList();
     }
 
     public ConversationSessionDto getSession(String sessionId) {
+        refreshRunningWorkflows();
         return sessions.stream().filter(item -> item.id().equals(sessionId)).findFirst().orElseThrow();
     }
 
@@ -177,6 +181,7 @@ public class RuntimeService {
     }
 
     public WorkflowInstanceDto getWorkflow(String workflowId) {
+        refreshRunningWorkflows();
         return workflows.stream().filter(item -> item.id().equals(workflowId)).findFirst().orElseThrow();
     }
 
@@ -326,9 +331,29 @@ public class RuntimeService {
         );
     }
 
+    private void refreshRunningWorkflows() {
+        List<WorkflowInstanceDto> runningWorkflows = workflows.stream()
+            .filter(workflow -> workflow.status() == WorkflowStatus.RUNNING)
+            .toList();
+        for (WorkflowInstanceDto workflow : runningWorkflows) {
+            WorkflowResult latest = workflowGateway.currentResult(workflow.id());
+            if (latest == null || matchesWorkflowResult(workflow, latest)) {
+                continue;
+            }
+            WorkflowInstanceDto updated = mergeWorkflowResult(workflow, latest, workflow.interventions());
+            replaceWorkflow(updated);
+            syncTaskWithWorkflow(updated);
+            syncSessionsForWorkflowRefresh(workflow, updated);
+        }
+    }
+
     private void syncTaskWithWorkflow(WorkflowInstanceDto workflow) {
         TaskInstanceDto task = tasks.stream().filter(item -> item.workflowInstanceId().equals(workflow.id())).findFirst().orElseThrow();
         updateTaskStatus(task, toTaskStatus(workflow.status()));
+    }
+
+    private void syncSessionsForWorkflowRefresh(WorkflowInstanceDto previous, WorkflowInstanceDto updated) {
+        sessions.replaceAll(session -> refreshSessionForWorkflow(session, previous, updated));
     }
 
     private void syncSessionsForWorkflow(WorkflowInstanceDto workflow, HumanInterventionDto intervention) {
@@ -366,6 +391,58 @@ public class RuntimeService {
                 workflow.humanTask()
             );
         });
+    }
+
+    private ConversationSessionDto refreshSessionForWorkflow(
+        ConversationSessionDto session,
+        WorkflowInstanceDto previous,
+        WorkflowInstanceDto updated
+    ) {
+        if (!Objects.equals(session.latestWorkflowInstanceId(), updated.id())) {
+            return session;
+        }
+        List<ConversationMessageDto> messages = new ArrayList<>(session.messages());
+        int latestWorkflowMessageIndex = findLatestWorkflowMessageIndex(messages, updated.id());
+        if (latestWorkflowMessageIndex >= 0) {
+            ConversationMessageDto original = messages.get(latestWorkflowMessageIndex);
+            String content = firstNonBlank(updated.finalReply(), updated.summary());
+            messages.set(latestWorkflowMessageIndex, new ConversationMessageDto(
+                original.id(),
+                original.sessionId(),
+                original.role(),
+                original.senderType(),
+                original.senderId(),
+                original.senderName(),
+                content,
+                original.createdAt(),
+                original.taskId(),
+                original.workflowInstanceId()
+            ));
+        }
+        boolean changed = previous.status() != updated.status()
+            || !Objects.equals(previous.summary(), updated.summary())
+            || !Objects.equals(previous.finalReply(), updated.finalReply())
+            || !Objects.equals(session.latestHumanTask(), updated.humanTask())
+            || !Objects.equals(session.latestMcpSummary(), updated.mcpSummary());
+        if (!changed) {
+            return session;
+        }
+        return new ConversationSessionDto(
+            session.id(),
+            session.scenarioId(),
+            session.title(),
+            session.requester(),
+            session.assistantId(),
+            session.assistantName(),
+            session.assistantReleaseVersion(),
+            session.createdAt(),
+            Instant.now(),
+            messages,
+            session.latestTaskId(),
+            session.latestWorkflowInstanceId(),
+            updated.mcpSummary(),
+            updated.humanTask()
+        );
     }
 
     private AssistantDto resolveAssistant(ScenarioDto scenario, String assistantId) {
@@ -668,6 +745,15 @@ public class RuntimeService {
         return new NodeExecutionDto(nextId("node"), workflowId, key, name, status, detail, Instant.now());
     }
 
+    private static int findLatestWorkflowMessageIndex(List<ConversationMessageDto> messages, String workflowId) {
+        for (int index = messages.size() - 1; index >= 0; index--) {
+            if (Objects.equals(messages.get(index).workflowInstanceId(), workflowId)) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
     private static List<HumanInterventionDto> append(List<HumanInterventionDto> items, HumanInterventionDto item) {
         List<HumanInterventionDto> updated = new ArrayList<>(items);
         updated.add(item);
@@ -721,6 +807,37 @@ public class RuntimeService {
             return primary;
         }
         return fallback == null || fallback.isBlank() ? "未知错误" : fallback;
+    }
+
+    private static boolean matchesWorkflowResult(WorkflowInstanceDto existing, WorkflowResult result) {
+        return existing.status() == result.status()
+            && Objects.equals(existing.summary(), result.summary())
+            && Objects.equals(existing.finalReply(), result.finalReply())
+            && Objects.equals(existing.currentNodeKey(), result.currentNodeKey())
+            && existing.escalationRequired() == result.escalationRequired()
+            && Objects.equals(existing.checkpoint(), result.checkpoint())
+            && Objects.equals(existing.humanTask(), result.humanTask())
+            && Objects.equals(existing.mcpSummary(), result.mcpSummary())
+            && existing.toolCalls().equals(result.toolCalls())
+            && sameNodes(existing.nodes(), result.nodes());
+    }
+
+    private static boolean sameNodes(List<NodeExecutionDto> existing, List<WorkflowContracts.NodeSnapshot> latest) {
+        if (existing.size() != latest.size()) {
+            return false;
+        }
+        for (int index = 0; index < existing.size(); index++) {
+            NodeExecutionDto existingNode = existing.get(index);
+            WorkflowContracts.NodeSnapshot latestNode = latest.get(index);
+            if (!Objects.equals(existingNode.nodeKey(), latestNode.nodeKey())
+                || !Objects.equals(existingNode.nodeName(), latestNode.nodeName())
+                || existingNode.status() != latestNode.status()
+                || !Objects.equals(existingNode.detail(), latestNode.detail())
+                || !Objects.equals(existingNode.updatedAt(), latestNode.updatedAt())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private record TurnExecutionResult(TaskInstanceDto task, WorkflowInstanceDto workflow, String reply) {

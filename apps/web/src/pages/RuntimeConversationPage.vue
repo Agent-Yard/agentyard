@@ -190,7 +190,15 @@ function selectSession(sessionId: string) {
                 type="warning"
                 show-icon
                 :message="currentSession.latestHumanTask.title"
-                :description="`${currentSession.latestHumanTask.instruction} 期望动作：${currentSession.latestHumanTask.expectedAction}`"
+                :description="`${currentSession.latestHumanTask.instruction} 期望动作：${currentSession.latestHumanTask.expectedAction}。如果之前操作页已超时，也可以直接去流程观测页继续恢复这个 workflow。`"
+                style="margin-bottom: 16px"
+              />
+              <a-alert
+                v-else-if="latestWorkflow?.status === 'RUNNING'"
+                type="info"
+                show-icon
+                message="workflow 正在后台继续执行"
+                :description="`当前流程 ${latestWorkflow.id} 已脱离本次页面等待，页面会自动刷新；如果浏览器之前报超时，也不代表流程丢失。`"
                 style="margin-bottom: 16px"
               />
               <a-spin :spinning="isCurrentSessionSending">

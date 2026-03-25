@@ -63,6 +63,9 @@ class AssistantRunWorkflowTest {
 
             @Override
             public WorkflowContracts.WorkflowResult resume(WorkflowContracts.WorkflowResumeRequest request) {
+                assertNotNull(request.checkpoint());
+                assertEquals("handoff-close", request.checkpoint().currentNodeKey());
+                assertEquals("human-review", request.checkpoint().waitingNodeKey());
                 return new WorkflowContracts.WorkflowResult(
                     request.workflowInstanceId(),
                     WorkflowContracts.WorkflowStatus.COMPLETED,
@@ -107,7 +110,7 @@ class AssistantRunWorkflowTest {
         );
 
         WorkflowClient.start(workflow::run, sampleRequest("这是一个客户投诉，需要人工处理", "wf-2"));
-        WorkflowContracts.WorkflowResult waiting = waitForResult(workflow);
+        WorkflowContracts.WorkflowResult waiting = waitForResult(workflow, result -> result.status() == WorkflowStatus.WAITING_HUMAN);
         assertEquals(WorkflowStatus.WAITING_HUMAN, waiting.status());
         assertNotNull(waiting.humanTask());
 
@@ -125,13 +128,65 @@ class AssistantRunWorkflowTest {
         );
 
         WorkflowClient.start(workflow::run, sampleRequest("触发失败", "wf-failed"));
-        WorkflowContracts.WorkflowResult failed = waitForResult(workflow);
+        WorkflowContracts.WorkflowResult failed = waitForResult(workflow, result -> result.status() == WorkflowStatus.FAILED);
 
         assertEquals(WorkflowStatus.FAILED, failed.status());
         assertNotNull(failed.summary());
     }
 
-    private WorkflowContracts.WorkflowResult waitForResult(AssistantRunWorkflow workflow) throws InterruptedException {
+    @Test
+    void shouldExposeRunningResultBeforeLongActivityCompletes() throws Exception {
+        environment.close();
+        environment = TestWorkflowEnvironment.newInstance();
+        var worker = environment.newWorker("test-assistant-run");
+        worker.registerWorkflowImplementationTypes(AssistantRunWorkflowImpl.class);
+        worker.registerActivitiesImplementations(new AssistantRunActivitiesImpl(new AgentRuntimeGateway() {
+            @Override
+            public WorkflowContracts.WorkflowResult start(WorkflowContracts.WorkflowStartRequest request) {
+                try {
+                    Thread.sleep(300);
+                } catch (InterruptedException error) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(error);
+                }
+                return new WorkflowContracts.WorkflowResult(
+                    request.workflowInstanceId(),
+                    WorkflowContracts.WorkflowStatus.COMPLETED,
+                    "问题已自动处理完成。",
+                    "请通过登录页的忘记密码完成密码重置。",
+                    "end",
+                    null,
+                    null,
+                    List.of(new WorkflowContracts.NodeSnapshot("end", "结束", WorkflowContracts.NodeStatus.COMPLETED, "流程结束", Instant.now())),
+                    List.of(),
+                    false,
+                    null
+                );
+            }
+
+            @Override
+            public WorkflowContracts.WorkflowResult resume(WorkflowContracts.WorkflowResumeRequest request) {
+                throw new UnsupportedOperationException();
+            }
+        }));
+        environment.start();
+
+        AssistantRunWorkflow workflow = environment.getWorkflowClient().newWorkflowStub(
+            AssistantRunWorkflow.class,
+            io.temporal.client.WorkflowOptions.newBuilder().setTaskQueue("test-assistant-run").setWorkflowId("wf-running").build()
+        );
+
+        WorkflowClient.start(workflow::run, sampleRequest("怎么重置密码", "wf-running"));
+        WorkflowContracts.WorkflowResult running = waitForResult(workflow, result -> result.status() == WorkflowStatus.RUNNING);
+
+        assertEquals(WorkflowStatus.RUNNING, running.status());
+        assertEquals("workflow-starting", running.currentNodeKey());
+    }
+
+    private WorkflowContracts.WorkflowResult waitForResult(
+        AssistantRunWorkflow workflow,
+        java.util.function.Predicate<WorkflowContracts.WorkflowResult> matcher
+    ) throws InterruptedException {
         WorkflowContracts.WorkflowResult result = null;
         long deadline = System.currentTimeMillis() + 5_000;
         while (System.currentTimeMillis() < deadline) {
@@ -140,7 +195,7 @@ class AssistantRunWorkflowTest {
             } catch (RuntimeException ignored) {
                 result = null;
             }
-            if (result != null) {
+            if (result != null && matcher.test(result)) {
                 return result;
             }
             Thread.sleep(50);

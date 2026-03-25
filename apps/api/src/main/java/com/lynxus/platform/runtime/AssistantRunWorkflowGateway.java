@@ -14,6 +14,8 @@ public interface AssistantRunWorkflowGateway {
 
     WorkflowResult submitHumanActionAndAwaitResult(String workflowId, HumanAction action);
 
+    WorkflowResult currentResult(String workflowId);
+
     @Component
     class TemporalAssistantRunWorkflowGateway implements AssistantRunWorkflowGateway {
         private static final long INITIAL_RESULT_TIMEOUT_MILLIS = 30_000;
@@ -45,6 +47,15 @@ public interface AssistantRunWorkflowGateway {
             return pollForResult(workflow, RESUME_RESULT_TIMEOUT_MILLIS, false);
         }
 
+        @Override
+        public WorkflowResult currentResult(String workflowId) {
+            try {
+                return existingWorkflowStub(workflowId).currentResult();
+            } catch (RuntimeException error) {
+                return null;
+            }
+        }
+
         private AssistantRunWorkflow newStartWorkflowStub(String workflowId) {
             return workflowClient.newWorkflowStub(
                 AssistantRunWorkflow.class,
@@ -68,10 +79,8 @@ public interface AssistantRunWorkflowGateway {
                 } catch (RuntimeException error) {
                     latest = null;
                 }
-                if (latest != null) {
-                    if (allowWaitingHuman || latest.status() != com.lynxus.contracts.runtime.WorkflowContracts.WorkflowStatus.WAITING_HUMAN) {
-                        return latest;
-                    }
+                if (latest != null && isReturnable(latest, allowWaitingHuman)) {
+                    return latest;
                 }
                 sleepQuietly();
             }
@@ -88,6 +97,14 @@ public interface AssistantRunWorkflowGateway {
                 Thread.currentThread().interrupt();
                 throw new IllegalStateException("interrupted while polling workflow result", error);
             }
+        }
+
+        private boolean isReturnable(WorkflowResult result, boolean allowWaitingHuman) {
+            return switch (result.status()) {
+                case DRAFT, RUNNING -> false;
+                case WAITING_HUMAN -> allowWaitingHuman;
+                default -> true;
+            };
         }
     }
 }

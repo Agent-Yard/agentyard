@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from collections import defaultdict
@@ -295,6 +296,7 @@ class AgentState(TypedDict):
 
 
 app = FastAPI(title="lynxus-agent-runtime", version="1.0.0")
+logger = logging.getLogger("lynxus.agent_runtime")
 LLM_REQUEST_TIMEOUT_SECONDS = 30
 
 
@@ -844,6 +846,12 @@ def execute_human_node(state: AgentState, node: GraphNodeSnapshot) -> None:
     }
     state["next_node_key"] = "__end__"
     append_node(state, node.nodeKey, node.nodeName, state["summary"], status="WAITING_HUMAN")
+    logger.info(
+        "workflow %s paused for human action waitingNode=%s resumeNode=%s",
+        state["workflow_instance_id"],
+        node.nodeKey,
+        next_node_key,
+    )
 
 
 def make_node_executor(node: GraphNodeSnapshot) -> Callable[[AgentState], Awaitable[AgentState]]:
@@ -873,14 +881,38 @@ def make_route_selector(node: GraphNodeSnapshot) -> Callable[[AgentState], str]:
     return selector
 
 
-def compile_graph(graph_snapshot: GraphSnapshot, entry_node_key: str):
-    graph = StateGraph(AgentState)
+def prune_graph_from_entry(graph_snapshot: GraphSnapshot, entry_node_key: str) -> GraphSnapshot:
     outgoing = edge_index(graph_snapshot)
-    for node in graph_snapshot.nodes:
+    reachable: set[str] = set()
+    stack = [entry_node_key]
+    while stack:
+        node_key = stack.pop()
+        if node_key in reachable:
+            continue
+        reachable.add(node_key)
+        for edge in outgoing.get(node_key, []):
+            stack.append(edge.targetNodeKey)
+
+    return GraphSnapshot(
+        executionMode=graph_snapshot.executionMode,
+        nodes=[node for node in graph_snapshot.nodes if node.nodeKey in reachable],
+        edges=[
+            edge
+            for edge in graph_snapshot.edges
+            if edge.sourceNodeKey in reachable and edge.targetNodeKey in reachable
+        ],
+    )
+
+
+def compile_graph(graph_snapshot: GraphSnapshot, entry_node_key: str):
+    active_graph = prune_graph_from_entry(graph_snapshot, entry_node_key)
+    graph = StateGraph(AgentState)
+    outgoing = edge_index(active_graph)
+    for node in active_graph.nodes:
         graph.add_node(node.nodeKey, make_node_executor(node))
     graph.set_entry_point(entry_node_key)
 
-    for node in graph_snapshot.nodes:
+    for node in active_graph.nodes:
         if node.nodeType == "END":
             graph.add_edge(node.nodeKey, END)
             continue
@@ -911,6 +943,7 @@ def workflow_result_from_state(state: AgentState) -> WorkflowResult:
 
 @app.post("/agent-runs/start", response_model=WorkflowResult)
 async def start_agent_run(request: WorkflowStartRequest) -> WorkflowResult:
+    logger.info("workflow %s start request received", request.workflowInstanceId)
     validate_graph(request.assistant.graph, request.assistant)
     entry_node = find_start_node(request.assistant.graph)
     state: AgentState = {
@@ -939,11 +972,25 @@ async def start_agent_run(request: WorkflowStartRequest) -> WorkflowResult:
     }
     graph = compile_graph(request.assistant.graph, entry_node.nodeKey)
     result_state = await graph.ainvoke(state)
-    return workflow_result_from_state(result_state)
+    result = workflow_result_from_state(result_state)
+    logger.info(
+        "workflow %s start request completed status=%s currentNode=%s summary=%s",
+        request.workflowInstanceId,
+        result.status,
+        result.currentNodeKey,
+        result.summary,
+    )
+    return result
 
 
 @app.post("/agent-runs/resume", response_model=WorkflowResult)
 async def resume_agent_run(request: WorkflowResumeRequest) -> WorkflowResult:
+    logger.info(
+        "workflow %s resume request received action=%s operator=%s",
+        request.workflowInstanceId,
+        request.action.action,
+        request.action.operatorId,
+    )
     validate_graph(request.assistant.graph, request.assistant)
     payload = json.loads(request.checkpoint.statePayload or "{}")
     state = restore_state(payload, request)
@@ -951,6 +998,13 @@ async def resume_agent_run(request: WorkflowResumeRequest) -> WorkflowResult:
     graph = compile_graph(request.assistant.graph, entry_node_key)
     result_state = await graph.ainvoke(state)
     result = workflow_result_from_state(result_state)
+    logger.info(
+        "workflow %s resume request completed status=%s currentNode=%s summary=%s",
+        request.workflowInstanceId,
+        result.status,
+        result.currentNodeKey,
+        result.summary,
+    )
     if result.status == "WAITING_HUMAN":
         return result
     return result.model_copy(update={"escalationRequired": False})
