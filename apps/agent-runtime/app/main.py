@@ -91,12 +91,12 @@ class ResourceVersionSnapshot(BaseModel):
 
 class AssistantPolicySnapshot(BaseModel):
     providerResourceId: Optional[str] = None
+    providerResourceVersionId: Optional[str] = None
     promptTemplateResourceId: Optional[str] = None
-    temperature: float
-    maxTokens: int
+    promptTemplateResourceVersionId: Optional[str] = None
     ragEnabled: bool
     knowledgeBaseResourceId: Optional[str] = None
-    ragTopK: int
+    knowledgeBaseResourceVersionId: Optional[str] = None
     memoryEnabled: bool
     memoryWindowSize: int
 
@@ -104,12 +104,16 @@ class AssistantPolicySnapshot(BaseModel):
 class AgentExecutionPolicySnapshot(BaseModel):
     inheritAssistantDefaults: bool
     modelResourceId: Optional[str] = None
+    modelResourceVersionId: Optional[str] = None
     promptTemplateResourceId: Optional[str] = None
+    promptTemplateResourceVersionId: Optional[str] = None
     inlinePrompt: str = ""
     ragEnabled: bool
     knowledgeBaseResourceId: Optional[str] = None
+    knowledgeBaseResourceVersionId: Optional[str] = None
     memoryWindowSize: int
     toolResourceIds: List[str]
+    toolResourceVersionIds: List[str]
 
 
 class AgentSnapshot(BaseModel):
@@ -118,7 +122,6 @@ class AgentSnapshot(BaseModel):
     role: str
     instructions: str
     executionPolicy: AgentExecutionPolicySnapshot
-    bindingResourceVersionIds: List[str]
 
 
 class HumanNodeConfig(BaseModel):
@@ -363,7 +366,7 @@ def graph_from_state(state: AgentState) -> GraphSnapshot:
 
 
 def resource_index(assistant: AssistantRunSnapshot) -> Dict[str, ResourceVersionSnapshot]:
-    return {resource.resourceId: resource for resource in assistant.resources}
+    return {resource.resourceVersionId: resource for resource in assistant.resources}
 
 
 def node_index(graph: GraphSnapshot) -> Dict[str, GraphNodeSnapshot]:
@@ -442,38 +445,42 @@ def find_agent(assistant: AssistantRunSnapshot, agent_id: Optional[str]) -> Agen
     raise HTTPException(status_code=500, detail=f"agent not found: {agent_id}")
 
 
-def resolve_resource(assistant: AssistantRunSnapshot, resource_id: Optional[str]) -> Optional[ResourceVersionSnapshot]:
-    if not resource_id:
+def resolve_resource(assistant: AssistantRunSnapshot, resource_version_id: Optional[str]) -> Optional[ResourceVersionSnapshot]:
+    if not resource_version_id:
         return None
     for resource in assistant.resources:
-        if resource.resourceId == resource_id:
+        if resource.resourceVersionId == resource_version_id:
             return resource
     return None
 
 
 def resolve_model_resource(assistant: AssistantRunSnapshot, agent: AgentSnapshot) -> ResourceVersionSnapshot:
-    model_id = agent.executionPolicy.modelResourceId if not agent.executionPolicy.inheritAssistantDefaults else assistant.assistantPolicy.providerResourceId
-    if not model_id and agent.executionPolicy.modelResourceId:
-        model_id = agent.executionPolicy.modelResourceId
-    resource = resolve_resource(assistant, model_id or assistant.assistantPolicy.providerResourceId)
+    model_version_id = (
+        agent.executionPolicy.modelResourceVersionId
+        if not agent.executionPolicy.inheritAssistantDefaults
+        else assistant.assistantPolicy.providerResourceVersionId
+    )
+    if not model_version_id and agent.executionPolicy.modelResourceVersionId:
+        model_version_id = agent.executionPolicy.modelResourceVersionId
+    resource = resolve_resource(assistant, model_version_id or assistant.assistantPolicy.providerResourceVersionId)
     if not resource or not resource.configuration.llmModel:
         raise HTTPException(status_code=500, detail=f"No active model resource configured for agent {agent.agentId}")
     return resource
 
 
 def resolve_prompt_resource(assistant: AssistantRunSnapshot, agent: AgentSnapshot) -> Optional[ResourceVersionSnapshot]:
-    prompt_id = agent.executionPolicy.promptTemplateResourceId or assistant.assistantPolicy.promptTemplateResourceId
-    resource = resolve_resource(assistant, prompt_id)
+    prompt_version_id = agent.executionPolicy.promptTemplateResourceVersionId or assistant.assistantPolicy.promptTemplateResourceVersionId
+    resource = resolve_resource(assistant, prompt_version_id)
     if resource and resource.configuration.promptTemplate:
         return resource
     return None
 
 
 def resolve_knowledge_resource(assistant: AssistantRunSnapshot, agent: AgentSnapshot) -> Optional[ResourceVersionSnapshot]:
-    resource_id = agent.executionPolicy.knowledgeBaseResourceId
-    if agent.executionPolicy.inheritAssistantDefaults and not resource_id:
-        resource_id = assistant.assistantPolicy.knowledgeBaseResourceId
-    resource = resolve_resource(assistant, resource_id)
+    resource_version_id = agent.executionPolicy.knowledgeBaseResourceVersionId
+    if agent.executionPolicy.inheritAssistantDefaults and not resource_version_id:
+        resource_version_id = assistant.assistantPolicy.knowledgeBaseResourceVersionId
+    resource = resolve_resource(assistant, resource_version_id)
     if resource and resource.configuration.knowledgeBase:
         return resource
     return None
@@ -481,8 +488,8 @@ def resolve_knowledge_resource(assistant: AssistantRunSnapshot, agent: AgentSnap
 
 def resolve_tool_resources(assistant: AssistantRunSnapshot, agent: AgentSnapshot) -> List[ResourceVersionSnapshot]:
     tools = []
-    for resource_id in agent.executionPolicy.toolResourceIds:
-        resource = resolve_resource(assistant, resource_id)
+    for resource_version_id in agent.executionPolicy.toolResourceVersionIds:
+        resource = resolve_resource(assistant, resource_version_id)
         if resource:
             tools.append(resource)
     return tools

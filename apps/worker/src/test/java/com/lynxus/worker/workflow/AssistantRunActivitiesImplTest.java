@@ -127,15 +127,37 @@ class AssistantRunActivitiesImplTest {
             "assistant-customer-ops",
             "客服协同助手",
             "1.0.0",
-            new WorkflowContracts.AssistantPolicySnapshot("resource-llm-openai", "resource-prompt-router", 0.2, 1200, true, "resource-kb-support", 5, true, 8),
+            new WorkflowContracts.AssistantPolicySnapshot(
+                "resource-llm-openai",
+                "resource-version-llm-v1",
+                "resource-prompt-router",
+                "resource-version-prompt-router-v1",
+                true,
+                "resource-kb-support",
+                "resource-version-kb-v1",
+                true,
+                8
+            ),
             List.of(
                 new WorkflowContracts.AgentSnapshot(
                     "agent-router",
                     "问题分诊智能体",
                     "router",
                     "决定分支",
-                    new WorkflowContracts.AgentExecutionPolicySnapshot(true, null, "resource-prompt-router", "", true, "resource-kb-support", 8, List.of()),
-                    List.of()
+                    new WorkflowContracts.AgentExecutionPolicySnapshot(
+                        true,
+                        null,
+                        null,
+                        "resource-prompt-router",
+                        "resource-version-prompt-router-v1",
+                        "",
+                        true,
+                        "resource-kb-support",
+                        "resource-version-kb-v1",
+                        8,
+                        List.of(),
+                        List.of()
+                    )
                 )
             ),
             List.of(),

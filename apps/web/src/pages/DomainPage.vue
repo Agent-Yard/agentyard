@@ -1,33 +1,206 @@
 <script setup lang="ts">
-import type { BusinessDomain, Scenario } from '../types';
+import { computed, reactive, ref, watch } from 'vue';
+import type { BusinessDomain, CreateDomainPayload, UpdateDomainPayload } from '../types';
 
-defineProps<{
+const props = defineProps<{
   domains: BusinessDomain[];
-  scenarios: Scenario[];
 }>();
+
+const emit = defineEmits<{
+  createDomain: [payload: CreateDomainPayload];
+  updateDomain: [payload: { domainId: string; data: UpdateDomainPayload }];
+  deleteDomain: [domainId: string];
+}>();
+
+const selectedDomainId = ref('');
+const createForm = reactive<CreateDomainPayload>({
+  name: '',
+  description: '',
+});
+const editForm = reactive<UpdateDomainPayload>({
+  name: '',
+  description: '',
+});
+
+const current = computed(() =>
+  props.domains.find((item) => item.id === selectedDomainId.value) ?? props.domains[0] ?? null,
+);
+const scenarioCount = computed(() => props.domains.flatMap((item) => item.scenarios).length);
+const resourceCount = computed(() => props.domains.flatMap((item) => item.resources).length);
+const assistantCount = computed(() => props.domains.flatMap((item) => item.scenarios).flatMap((item) => item.assistants).length);
+
+watch(
+  () => props.domains,
+  (domains) => {
+    if (!domains.length) {
+      selectedDomainId.value = '';
+      return;
+    }
+    if (!domains.some((item) => item.id === selectedDomainId.value)) {
+      selectedDomainId.value = domains[0].id;
+    }
+  },
+  { immediate: true },
+);
+
+watch(
+  current,
+  (domain) => {
+    if (!domain) {
+      return;
+    }
+    editForm.name = domain.name;
+    editForm.description = domain.description;
+  },
+  { immediate: true },
+);
+
+function submitCreate() {
+  emit('createDomain', {
+    name: createForm.name,
+    description: createForm.description,
+  });
+  createForm.name = '';
+  createForm.description = '';
+}
+
+function submitUpdate() {
+  if (!current.value) {
+    return;
+  }
+  emit('updateDomain', {
+    domainId: current.value.id,
+    data: {
+      name: editForm.name,
+      description: editForm.description,
+    },
+  });
+}
 </script>
 
 <template>
   <a-row :gutter="[16, 16]">
-    <a-col :span="8">
+    <a-col :span="6">
       <a-card><a-statistic title="业务域数" :value="domains.length" /></a-card>
     </a-col>
-    <a-col :span="8">
-      <a-card><a-statistic title="场景数" :value="scenarios.length" /></a-card>
+    <a-col :span="6">
+      <a-card><a-statistic title="场景总数" :value="scenarioCount" /></a-card>
     </a-col>
-    <a-col :span="8">
-      <a-card><a-statistic title="资源总数" :value="domains.flatMap((item) => item.resources).length" /></a-card>
+    <a-col :span="6">
+      <a-card><a-statistic title="域下资源" :value="resourceCount" /></a-card>
+    </a-col>
+    <a-col :span="6">
+      <a-card><a-statistic title="承载助手" :value="assistantCount" /></a-card>
     </a-col>
   </a-row>
 
-  <a-card title="域列表">
-    <a-list :data-source="domains">
-      <template #renderItem="{ item }">
-        <a-list-item>
-          <a-list-item-meta :title="item.name" :description="item.description" />
-          <a-tag color="blue">{{ item.resources.length }} 资源</a-tag>
-        </a-list-item>
-      </template>
-    </a-list>
-  </a-card>
+  <a-row :gutter="[16, 16]">
+    <a-col :span="9">
+      <a-card title="新建业务域">
+        <a-form layout="vertical" :model="createForm" @finish="submitCreate">
+          <a-form-item label="业务域名称">
+            <a-input v-model:value="createForm.name" placeholder="例如：客户运营域" />
+          </a-form-item>
+          <a-form-item label="业务域说明">
+            <a-textarea
+              v-model:value="createForm.description"
+              :rows="4"
+              placeholder="描述域边界、职责范围和核心资产"
+            />
+          </a-form-item>
+          <a-button type="primary" html-type="submit">创建业务域</a-button>
+        </a-form>
+      </a-card>
+
+      <a-card title="业务域列表">
+        <a-list :data-source="domains" :locale="{ emptyText: '暂无业务域' }">
+          <template #renderItem="{ item }">
+            <a-list-item
+              class="clickable-item"
+              :class="{ 'graph-list-item--active': current?.id === item.id }"
+              @click="selectedDomainId = item.id"
+            >
+              <a-list-item-meta :title="item.name" :description="item.description || '暂无说明'" />
+              <a-space>
+                <a-tag color="blue">{{ item.scenarios.length }} 场景</a-tag>
+                <a-tag>{{ item.resources.length }} 资源</a-tag>
+              </a-space>
+            </a-list-item>
+          </template>
+        </a-list>
+      </a-card>
+    </a-col>
+
+    <a-col :span="15">
+      <a-card v-if="current" :title="current.name">
+        <template #extra>
+          <a-space>
+            <a-tag color="blue">{{ current.scenarios.length }} 个场景</a-tag>
+            <a-tag>{{ current.resources.length }} 个资源</a-tag>
+          </a-space>
+        </template>
+
+        <a-descriptions :column="3" size="small">
+          <a-descriptions-item label="业务域 ID">{{ current.id }}</a-descriptions-item>
+          <a-descriptions-item label="助手数">
+            {{ current.scenarios.flatMap((item) => item.assistants).length }}
+          </a-descriptions-item>
+          <a-descriptions-item label="资源数">{{ current.resources.length }}</a-descriptions-item>
+          <a-descriptions-item label="描述" :span="3">
+            {{ current.description || '暂无说明' }}
+          </a-descriptions-item>
+        </a-descriptions>
+
+        <a-divider />
+
+        <a-form layout="vertical" :model="editForm" @finish="submitUpdate">
+          <a-form-item label="业务域名称">
+            <a-input v-model:value="editForm.name" />
+          </a-form-item>
+          <a-form-item label="业务域说明">
+            <a-textarea v-model:value="editForm.description" :rows="4" />
+          </a-form-item>
+          <a-space>
+            <a-button type="primary" html-type="submit">保存业务域</a-button>
+            <a-popconfirm
+              title="确认删除该业务域？"
+              description="如果域下仍有场景或资源，删除会被阻止。"
+              ok-text="删除"
+              cancel-text="取消"
+              @confirm="emit('deleteDomain', current.id)"
+            >
+              <a-button danger>删除业务域</a-button>
+            </a-popconfirm>
+          </a-space>
+        </a-form>
+      </a-card>
+
+      <a-card v-if="current" title="当前域承载关系">
+        <a-row :gutter="[16, 16]">
+          <a-col :span="12">
+            <a-list header="业务场景" :data-source="current.scenarios" :locale="{ emptyText: '暂无场景' }">
+              <template #renderItem="{ item }">
+                <a-list-item>
+                  <a-list-item-meta :title="item.name" :description="item.goal" />
+                  <a-tag>{{ item.assistants.length }} 助手</a-tag>
+                </a-list-item>
+              </template>
+            </a-list>
+          </a-col>
+          <a-col :span="12">
+            <a-list header="域内资源" :data-source="current.resources" :locale="{ emptyText: '暂无资源' }">
+              <template #renderItem="{ item }">
+                <a-list-item>
+                  <a-list-item-meta :title="item.name" :description="item.summary || '暂无摘要'" />
+                  <a-tag>{{ item.type }}</a-tag>
+                </a-list-item>
+              </template>
+            </a-list>
+          </a-col>
+        </a-row>
+      </a-card>
+
+      <a-empty v-else description="暂无业务域，请先创建" />
+    </a-col>
+  </a-row>
 </template>

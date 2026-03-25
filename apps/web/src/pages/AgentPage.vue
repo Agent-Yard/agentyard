@@ -5,7 +5,7 @@ import type {
   Assistant,
   CreateAgentPayload,
   Resource,
-  UpdateAgentBindingsPayload,
+  UpdateAgentToolVersionPinsPayload,
   UpdateAgentPayload,
 } from '../types';
 
@@ -17,7 +17,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   createAgent: [payload: CreateAgentPayload];
-  saveAgent: [payload: { agentId: string; agent: UpdateAgentPayload; bindings: UpdateAgentBindingsPayload }];
+  saveAgent: [payload: { agentId: string; agent: UpdateAgentPayload; toolVersionPins: UpdateAgentToolVersionPinsPayload }];
+  deleteAgent: [agentId: string];
 }>();
 
 const selectedAssistantId = ref('');
@@ -32,8 +33,8 @@ const createForm = reactive<CreateAgentPayload>({
     modelResourceId: null,
     promptTemplateResourceId: null,
     inlinePrompt: '',
-    ragEnabled: true,
-    knowledgeBaseResourceId: 'resource-kb-support',
+    ragEnabled: false,
+    knowledgeBaseResourceId: null,
     memoryWindowSize: 8,
     toolResourceIds: [],
   },
@@ -42,14 +43,14 @@ const editForm = reactive({
   name: '',
   role: '',
   instructions: '',
-  bindings: [] as Array<{ resourceId: string; resourceVersionId: string }>,
+  toolVersionPins: [] as Array<{ resourceId: string; resourceVersionId: string }>,
   executionPolicy: {
     inheritAssistantDefaults: true,
     modelResourceId: null as string | null,
     promptTemplateResourceId: null as string | null,
     inlinePrompt: '',
-    ragEnabled: true,
-    knowledgeBaseResourceId: 'resource-kb-support' as string | null,
+    ragEnabled: false,
+    knowledgeBaseResourceId: null as string | null,
     memoryWindowSize: 8,
     toolResourceIds: [] as string[],
   },
@@ -70,6 +71,13 @@ const modelResources = computed(() => props.resources.filter((item) => item.type
 const promptResources = computed(() => props.resources.filter((item) => item.type === 'PROMPT_TEMPLATE'));
 const knowledgeBases = computed(() => props.resources.filter((item) => item.type === 'KNOWLEDGE_BASE'));
 const toolResources = computed(() => props.resources.filter((item) => item.type === 'SKILL' || item.type === 'MCP'));
+
+function syncCreateFormDefaults() {
+  if (!knowledgeBases.value.some((item) => item.id === createForm.executionPolicy.knowledgeBaseResourceId)) {
+    createForm.executionPolicy.knowledgeBaseResourceId = knowledgeBases.value[0]?.id ?? null;
+  }
+  createForm.executionPolicy.ragEnabled = createForm.executionPolicy.knowledgeBaseResourceId !== null;
+}
 
 watch(
   () => props.assistants,
@@ -107,8 +115,10 @@ watch(
   { immediate: true },
 );
 
-const bindingMap = computed(() =>
-  new Map(editForm.bindings.map((binding) => [binding.resourceId, binding.resourceVersionId])),
+watch(knowledgeBases, syncCreateFormDefaults, { immediate: true });
+
+const toolVersionPinMap = computed(() =>
+  new Map(editForm.toolVersionPins.map((toolVersionPin) => [toolVersionPin.resourceId, toolVersionPin.resourceVersionId])),
 );
 
 watch(
@@ -121,9 +131,9 @@ watch(
     editForm.name = agent.name;
     editForm.role = agent.role;
     editForm.instructions = agent.instructions;
-    editForm.bindings = agent.bindings.map((binding) => ({
-      resourceId: binding.resourceId,
-      resourceVersionId: binding.resourceVersionId,
+    editForm.toolVersionPins = agent.toolVersionPins.map((toolVersionPin) => ({
+      resourceId: toolVersionPin.resourceId,
+      resourceVersionId: toolVersionPin.resourceVersionId,
     }));
     editForm.executionPolicy = {
       ...agent.executionPolicy,
@@ -154,14 +164,14 @@ function submitSave() {
       instructions: editForm.instructions,
       executionPolicy: { ...editForm.executionPolicy, toolResourceIds: [...editForm.executionPolicy.toolResourceIds] },
     },
-    bindings: {
-      bindings: editForm.bindings.map((binding) => ({ ...binding })),
+    toolVersionPins: {
+      toolVersionPins: editForm.toolVersionPins.map((toolVersionPin) => ({ ...toolVersionPin })),
     },
   });
 }
 
-function isResourceBound(resourceId: string) {
-  return bindingMap.value.has(resourceId);
+function hasToolVersionPin(resourceId: string) {
+  return toolVersionPinMap.value.has(resourceId);
 }
 
 function versionOptions(resource: Resource) {
@@ -171,24 +181,24 @@ function versionOptions(resource: Resource) {
   }));
 }
 
-function toggleResourceBinding(resource: Resource, checked: boolean) {
+function toggleToolVersionPin(resource: Resource, checked: boolean) {
   if (checked) {
-    const selectedVersionId = bindingMap.value.get(resource.id) ?? resource.effectiveVersion?.id ?? resource.latestVersion?.id ?? resource.versions[0]?.id;
+    const selectedVersionId = toolVersionPinMap.value.get(resource.id) ?? resource.effectiveVersion?.id ?? resource.latestVersion?.id ?? resource.versions[0]?.id;
     if (!selectedVersionId) {
       return;
     }
-    editForm.bindings = editForm.bindings
-      .filter((binding) => binding.resourceId !== resource.id)
+    editForm.toolVersionPins = editForm.toolVersionPins
+      .filter((toolVersionPin) => toolVersionPin.resourceId !== resource.id)
       .concat({ resourceId: resource.id, resourceVersionId: selectedVersionId });
     return;
   }
 
-  editForm.bindings = editForm.bindings.filter((binding) => binding.resourceId !== resource.id);
+  editForm.toolVersionPins = editForm.toolVersionPins.filter((toolVersionPin) => toolVersionPin.resourceId !== resource.id);
 }
 
-function updateBindingVersion(resourceId: string, resourceVersionId: string) {
-  editForm.bindings = editForm.bindings.map((binding) =>
-    binding.resourceId === resourceId ? { ...binding, resourceVersionId } : binding,
+function updateToolVersionPinVersion(resourceId: string, resourceVersionId: string) {
+  editForm.toolVersionPins = editForm.toolVersionPins.map((toolVersionPin) =>
+    toolVersionPin.resourceId === resourceId ? { ...toolVersionPin, resourceVersionId } : toolVersionPin,
   );
 }
 </script>
@@ -342,18 +352,24 @@ function updateBindingVersion(resourceId: string, resourceVersionId: string) {
             <a-textarea v-model:value="editForm.executionPolicy.inlinePrompt" :rows="4" />
           </a-form-item>
 
-          <a-form-item label="资源版本绑定">
+          <a-form-item label="工具版本固定">
             <a-space direction="vertical" style="width: 100%" size="middle">
+              <a-alert
+                type="info"
+                show-icon
+                message="仅 Skill 和 MCP 需要固定版本"
+                description="先在“可用工具集”里启用工具，再为已启用工具选择一个固定版本。模型、Prompt 和知识库会在发布时自动冻结当前生效版本。"
+              />
               <a-card
-                v-for="resource in resources"
+                v-for="resource in toolResources"
                 :key="resource.id"
                 size="small"
               >
                 <a-space direction="vertical" style="width: 100%">
                   <a-space style="justify-content: space-between; width: 100%">
                     <a-checkbox
-                      :checked="isResourceBound(resource.id)"
-                      @change="(event: { target: { checked: boolean } }) => toggleResourceBinding(resource, event.target.checked)"
+                      :checked="hasToolVersionPin(resource.id)"
+                      @change="(event: { target: { checked: boolean } }) => toggleToolVersionPin(resource, event.target.checked)"
                     >
                       {{ resource.name }} · {{ resource.type }}
                     </a-checkbox>
@@ -366,18 +382,29 @@ function updateBindingVersion(resourceId: string, resourceVersionId: string) {
                     {{ resource.summary }}
                   </a-typography-text>
                   <a-select
-                    :disabled="!isResourceBound(resource.id)"
-                    :value="bindingMap.get(resource.id)"
+                    :disabled="!hasToolVersionPin(resource.id)"
+                    :value="toolVersionPinMap.get(resource.id)"
                     :options="versionOptions(resource)"
-                    placeholder="选择绑定版本"
-                    @change="(value: string | number) => updateBindingVersion(resource.id, String(value))"
+                    placeholder="选择固定版本"
+                    @change="(value: string | number) => updateToolVersionPinVersion(resource.id, String(value))"
                   />
                 </a-space>
               </a-card>
             </a-space>
           </a-form-item>
 
-          <a-button type="primary" html-type="submit">保存智能体</a-button>
+          <a-space>
+            <a-button type="primary" html-type="submit">保存智能体</a-button>
+            <a-popconfirm
+              title="确认删除该智能体？"
+              description="删除后会一并回收该智能体的资源绑定，并重建助手默认编排。"
+              ok-text="删除"
+              cancel-text="取消"
+              @confirm="emit('deleteAgent', currentAgent.id)"
+            >
+              <a-button danger>删除智能体</a-button>
+            </a-popconfirm>
+          </a-space>
         </a-form>
       </a-card>
     </a-col>

@@ -3,6 +3,7 @@ package com.lynxus.platform.catalog;
 import static com.lynxus.platform.catalog.CatalogDtos.*;
 
 import com.lynxus.platform.shared.ApiResponse;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -31,9 +32,24 @@ public class CatalogController {
         return ApiResponse.ok(catalogService.listDomains());
     }
 
+    @GetMapping("/domains/{domainId}")
+    public ApiResponse<?> domain(@PathVariable String domainId) {
+        return ApiResponse.ok(catalogService.getDomain(domainId));
+    }
+
     @PostMapping("/domains")
     public ApiResponse<?> createDomain(@RequestBody CreateDomainRequest request) {
         return ApiResponse.ok(catalogService.createDomain(request));
+    }
+
+    @PutMapping("/domains/{domainId}")
+    public ApiResponse<?> updateDomain(@PathVariable String domainId, @RequestBody UpdateDomainRequest request) {
+        return ApiResponse.ok(catalogService.updateDomain(domainId, request));
+    }
+
+    @DeleteMapping("/domains/{domainId}")
+    public ApiResponse<?> deleteDomain(@PathVariable String domainId) {
+        return ApiResponse.ok(catalogService.deleteDomain(domainId));
     }
 
     @GetMapping("/scenarios")
@@ -56,6 +72,11 @@ public class CatalogController {
         return ApiResponse.ok(catalogService.updateScenario(scenarioId, request));
     }
 
+    @DeleteMapping("/scenarios/{scenarioId}")
+    public ApiResponse<?> deleteScenario(@PathVariable String scenarioId) {
+        return ApiResponse.ok(catalogService.deleteScenario(scenarioId));
+    }
+
     @GetMapping("/assistants")
     public ApiResponse<?> assistants() {
         return ApiResponse.ok(catalogService.listAssistants());
@@ -69,6 +90,11 @@ public class CatalogController {
     @PutMapping("/assistants/{assistantId}")
     public ApiResponse<?> updateAssistant(@PathVariable String assistantId, @RequestBody UpdateAssistantRequest request) {
         return ApiResponse.ok(catalogService.updateAssistant(assistantId, request));
+    }
+
+    @DeleteMapping("/assistants/{assistantId}")
+    public ApiResponse<?> deleteAssistant(@PathVariable String assistantId) {
+        return ApiResponse.ok(catalogService.deleteAssistant(assistantId));
     }
 
     @GetMapping("/agents")
@@ -91,9 +117,17 @@ public class CatalogController {
         return ApiResponse.ok(catalogService.updateAgent(agentId, request));
     }
 
-    @PutMapping("/agents/{agentId}/bindings")
-    public ApiResponse<?> updateAgentBindings(@PathVariable String agentId, @RequestBody UpdateAgentBindingsRequest request) {
-        return ApiResponse.ok(catalogService.updateAgentBindings(agentId, request));
+    @DeleteMapping("/agents/{agentId}")
+    public ApiResponse<?> deleteAgent(@PathVariable String agentId) {
+        return ApiResponse.ok(catalogService.deleteAgent(agentId));
+    }
+
+    @PutMapping("/agents/{agentId}/tool-version-pins")
+    public ApiResponse<?> updateAgentToolVersionPins(
+        @PathVariable String agentId,
+        @RequestBody UpdateAgentToolVersionPinsRequest request
+    ) {
+        return ApiResponse.ok(catalogService.updateAgentToolVersionPins(agentId, request));
     }
 
     @GetMapping("/resources")
@@ -114,6 +148,11 @@ public class CatalogController {
     @PatchMapping("/resources/{resourceId}/versions/{versionId}/publish")
     public ApiResponse<?> publishResourceVersion(@PathVariable String resourceId, @PathVariable String versionId) {
         return ApiResponse.ok(catalogService.publishResourceVersion(resourceId, versionId));
+    }
+
+    @DeleteMapping("/resources/{resourceId}/versions/{versionId}")
+    public ApiResponse<?> deleteResourceVersion(@PathVariable String resourceId, @PathVariable String versionId) {
+        return ApiResponse.ok(catalogService.deleteResourceVersion(resourceId, versionId));
     }
 
     @GetMapping("/resource-center")
@@ -146,8 +185,13 @@ public class CatalogController {
         return ApiResponse.ok(catalogService.createResource(request));
     }
 
-    @PostMapping("/resource-bindings")
-    public ApiResponse<?> bindResource(@RequestBody BindResourceRequest request) {
-        return ApiResponse.ok(catalogService.bindResource(request));
+    @DeleteMapping("/resources/{resourceId}")
+    public ApiResponse<?> deleteResource(@PathVariable String resourceId) {
+        return ApiResponse.ok(catalogService.deleteResource(resourceId));
+    }
+
+    @PostMapping("/tool-version-pins")
+    public ApiResponse<?> pinToolVersion(@RequestBody PinToolVersionRequest request) {
+        return ApiResponse.ok(catalogService.pinToolVersion(request));
     }
 }

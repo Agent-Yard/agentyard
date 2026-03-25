@@ -136,7 +136,7 @@ public class AssistantRunWorkflowImpl implements AssistantRunWorkflow {
             currentNodeKey,
             null,
             null,
-            List.of(new NodeSnapshot(nodeKey, "流程运行中", NodeStatus.RUNNING, summary, Instant.now())),
+            List.of(new NodeSnapshot(nodeKey, "流程运行中", NodeStatus.RUNNING, summary, workflowNow())),
             List.of(),
             false,
             null
@@ -153,7 +153,7 @@ public class AssistantRunWorkflowImpl implements AssistantRunWorkflow {
             null,
             null,
             null,
-            List.of(new NodeSnapshot("workflow-failed", "流程失败", NodeStatus.FAILED, message, Instant.now())),
+            List.of(new NodeSnapshot("workflow-failed", "流程失败", NodeStatus.FAILED, message, workflowNow())),
             List.of(),
             false,
             null
@@ -168,5 +168,9 @@ public class AssistantRunWorkflowImpl implements AssistantRunWorkflow {
         return current.getMessage() == null || current.getMessage().isBlank()
             ? error.getMessage()
             : current.getMessage();
+    }
+
+    private Instant workflowNow() {
+        return Instant.ofEpochMilli(Workflow.currentTimeMillis());
     }
 }

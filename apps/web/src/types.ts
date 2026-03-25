@@ -21,7 +21,7 @@ export interface Version {
   updatedAt: string;
 }
 
-export interface ResourceBinding {
+export interface ToolVersionPin {
   id: string;
   resourceId: string;
   resourceVersionId: string;
@@ -114,14 +114,11 @@ export interface ResourceBlueprint {
 export interface AssistantModelPolicy {
   providerResourceId: string | null;
   promptTemplateResourceId: string | null;
-  temperature: number;
-  maxTokens: number;
 }
 
 export interface RagPolicy {
   enabled: boolean;
   knowledgeBaseResourceId: string | null;
-  topK: number;
 }
 
 export interface MemoryPolicy {
@@ -146,7 +143,7 @@ export interface Agent {
   name: string;
   role: string;
   instructions: string;
-  bindings: ResourceBinding[];
+  toolVersionPins: ToolVersionPin[];
   executionPolicy: AgentExecutionPolicy;
 }
 
@@ -200,7 +197,7 @@ export interface AssistantReleaseAgent {
   role: string;
   instructions: string;
   executionPolicy: AgentExecutionPolicy;
-  bindingResourceVersionIds: string[];
+  toolResourceVersionIds: string[];
 }
 
 export interface AssistantRelease {
@@ -265,7 +262,7 @@ export interface BusinessDomain {
   resources: Resource[];
 }
 
-export interface ResourceUsage {
+export interface ResourceReference {
   resourceId: string;
   resourceName: string;
   type: ResourceType;
@@ -273,16 +270,20 @@ export interface ResourceUsage {
   ownerLabel: string;
   latestVersion: string | null;
   effectiveVersion: string | null;
-  boundAgents: string[];
-  boundAssistants: string[];
-  bindingAnchors: string[];
+  referenceKind: string;
+  sourceType: string;
+  sourceId: string;
+  sourceName: string;
+  resourceVersionId: string | null;
+  resourceVersion: string | null;
+  blocksDeletion: boolean;
 }
 
 export interface ResourceCenter {
   totalResources: number;
   domainSharedResources: number;
   privateResources: number;
-  usages: ResourceUsage[];
+  references: ResourceReference[];
 }
 
 export interface CatalogSummary {
@@ -421,6 +422,27 @@ export interface CreateAssistantPayload {
   memoryPolicy: MemoryPolicy;
 }
 
+export interface CreateDomainPayload {
+  name: string;
+  description: string;
+}
+
+export interface UpdateDomainPayload {
+  name: string;
+  description: string;
+}
+
+export interface CreateScenarioPayload {
+  domainId: string;
+  name: string;
+  goal: string;
+}
+
+export interface UpdateScenarioPayload {
+  name: string;
+  goal: string;
+}
+
 export interface UpdateAssistantPayload {
   name: string;
   description: string;
@@ -465,8 +487,8 @@ export interface UpdateAgentPayload {
   executionPolicy: AgentExecutionPolicy;
 }
 
-export interface UpdateAgentBindingsPayload {
-  bindings: Array<{
+export interface UpdateAgentToolVersionPinsPayload {
+  toolVersionPins: Array<{
     resourceId: string;
     resourceVersionId: string;
   }>;

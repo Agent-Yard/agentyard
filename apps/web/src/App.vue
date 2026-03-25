@@ -6,14 +6,18 @@ import type {
   ConversationSession,
   CreateAssistantPayload,
   CreateAgentPayload,
+  CreateDomainPayload,
   CreateResourcePayload,
   CreateResourceVersionPayload,
+  CreateScenarioPayload,
   Role,
   TaskInstance,
-  UpdateAgentBindingsPayload,
+  UpdateAgentToolVersionPinsPayload,
   UpdateAssistantPayload,
   UpdateAgentPayload,
+  UpdateDomainPayload,
   UpdateOrchestrationPayload,
+  UpdateScenarioPayload,
   UserSession,
   WorkflowInstance,
 } from './types';
@@ -82,7 +86,7 @@ const pageMeta: Record<PageKey, { label: string; title: string; subtitle: string
   agent: {
     label: '智能体',
     title: '智能体详情与资源绑定页',
-    subtitle: '配置智能体职责，并把资源绑定到明确版本。',
+    subtitle: '配置智能体职责、工具启用与工具版本固定。',
     section: 'build',
   },
   orchestration: {
@@ -94,13 +98,13 @@ const pageMeta: Record<PageKey, { label: string; title: string; subtitle: string
   'resource-library': {
     label: '资源目录',
     title: '资源目录页',
-    subtitle: '查看现有资源、版本流转、生效状态和绑定影响。',
+    subtitle: '查看现有资源、版本流转、生效状态和结构化引用分析。',
     section: 'asset',
   },
   'resource-create': {
     label: '资源新建',
     title: '资源新建页',
-    subtitle: '按资源类型维护结构化配置，创建可版本化的知识库、Skill 和 MCP。',
+    subtitle: '按资源类型维护结构化配置，创建可版本化的五类资源。',
     section: 'asset',
   },
   runtime: {
@@ -343,10 +347,84 @@ async function handleCreateAssistant(payload: CreateAssistantPayload) {
   void message.success('助手已创建');
 }
 
+async function handleCreateDomain(payload: CreateDomainPayload) {
+  try {
+    await api.createDomain(payload);
+    await refresh();
+    void message.success('业务域已创建');
+  } catch (error) {
+    void message.error(errorMessage(error, '创建业务域失败'));
+  }
+}
+
+async function handleUpdateDomain(payload: { domainId: string; data: UpdateDomainPayload }) {
+  try {
+    await api.updateDomain(payload.domainId, payload.data);
+    await refresh();
+    void message.success('业务域已更新');
+  } catch (error) {
+    void message.error(errorMessage(error, '更新业务域失败'));
+  }
+}
+
+async function handleDeleteDomain(domainId: string) {
+  try {
+    await api.deleteDomain(domainId);
+    await refresh();
+    void message.success('业务域已删除');
+  } catch (error) {
+    void message.error(errorMessage(error, '删除业务域失败'));
+  }
+}
+
+async function handleCreateScenario(payload: CreateScenarioPayload) {
+  try {
+    await api.createScenario(payload);
+    await refresh();
+    void message.success('业务场景已创建');
+  } catch (error) {
+    void message.error(errorMessage(error, '创建业务场景失败'));
+  }
+}
+
+async function handleUpdateScenario(payload: { scenarioId: string; data: UpdateScenarioPayload }) {
+  try {
+    await api.updateScenario(payload.scenarioId, payload.data);
+    await refresh();
+    void message.success('业务场景已更新');
+  } catch (error) {
+    void message.error(errorMessage(error, '更新业务场景失败'));
+  }
+}
+
+async function handleDeleteScenario(scenarioId: string) {
+  try {
+    await api.deleteScenario(scenarioId);
+    await refresh();
+    void message.success('业务场景已删除');
+  } catch (error) {
+    void message.error(errorMessage(error, '删除业务场景失败'));
+  }
+}
+
 async function handleUpdateAssistant(payload: { assistantId: string; data: UpdateAssistantPayload }) {
-  await api.updateAssistant(payload.assistantId, payload.data);
-  await refresh();
-  void message.success('助手已更新');
+  try {
+    await api.updateAssistant(payload.assistantId, payload.data);
+    await refresh();
+    void message.success('助手已更新');
+  } catch (error) {
+    void message.error(errorMessage(error, '更新助手失败'));
+  }
+}
+
+async function handleDeleteAssistant(assistantId: string) {
+  try {
+    await api.deleteAssistant(assistantId);
+    await refresh();
+    void message.success('助手已删除');
+  } catch (error) {
+    void message.error(errorMessage(error, '删除助手失败'));
+  }
 }
 
 async function handleCreateAgent(payload: CreateAgentPayload) {
@@ -355,13 +433,23 @@ async function handleCreateAgent(payload: CreateAgentPayload) {
   void message.success('智能体已创建');
 }
 
+async function handleDeleteAgent(agentId: string) {
+  try {
+    await api.deleteAgent(agentId);
+    await refresh();
+    void message.success('智能体已删除');
+  } catch (error) {
+    void message.error(errorMessage(error, '删除智能体失败'));
+  }
+}
+
 async function handleSaveAgent(payload: {
   agentId: string;
   agent: UpdateAgentPayload;
-  bindings: UpdateAgentBindingsPayload;
+  toolVersionPins: UpdateAgentToolVersionPinsPayload;
 }) {
   await api.updateAgent(payload.agentId, payload.agent);
-  await api.updateAgentBindings(payload.agentId, payload.bindings);
+  await api.updateAgentToolVersionPins(payload.agentId, payload.toolVersionPins);
   await refresh();
   void message.success('智能体配置已保存');
 }
@@ -379,10 +467,30 @@ async function handleCreateResource(payload: CreateResourcePayload) {
   void message.success('资源已创建');
 }
 
+async function handleDeleteResource(resourceId: string) {
+  try {
+    await api.deleteResource(resourceId);
+    await refresh();
+    void message.success('资源已删除');
+  } catch (error) {
+    void message.error(errorMessage(error, '删除资源失败'));
+  }
+}
+
 async function handleCreateResourceVersion(payload: { resourceId: string; data: CreateResourceVersionPayload }) {
   await api.createResourceVersion(payload.resourceId, payload.data);
   await refresh();
   void message.success('资源版本已创建');
+}
+
+async function handleDeleteResourceVersion(payload: { resourceId: string; versionId: string }) {
+  try {
+    await api.deleteResourceVersion(payload.resourceId, payload.versionId);
+    await refresh();
+    void message.success('资源版本已删除');
+  } catch (error) {
+    void message.error(errorMessage(error, '删除资源版本失败'));
+  }
 }
 
 async function handlePublishResourceVersion(payload: { resourceId: string; versionId: string }) {
@@ -470,9 +578,18 @@ onUnmounted(() => {
           <DomainPage
             v-if="activeKey === 'domain'"
             :domains="catalog.domains"
-            :scenarios="catalog.scenarios"
+            @create-domain="handleCreateDomain"
+            @update-domain="handleUpdateDomain"
+            @delete-domain="handleDeleteDomain"
           />
-          <ScenarioPage v-else-if="activeKey === 'scenario'" :scenarios="catalog.scenarios" />
+          <ScenarioPage
+            v-else-if="activeKey === 'scenario'"
+            :domains="catalog.domains"
+            :scenarios="catalog.scenarios"
+            @create-scenario="handleCreateScenario"
+            @update-scenario="handleUpdateScenario"
+            @delete-scenario="handleDeleteScenario"
+          />
           <AssistantPage
             v-else-if="activeKey === 'assistant'"
             :assistants="catalog.assistants"
@@ -480,6 +597,7 @@ onUnmounted(() => {
             :resources="catalog.resources"
             @create-assistant="handleCreateAssistant"
             @update-assistant="handleUpdateAssistant"
+            @delete-assistant="handleDeleteAssistant"
           />
           <AgentPage
             v-else-if="activeKey === 'agent'"
@@ -488,6 +606,7 @@ onUnmounted(() => {
             :resources="catalog.resources"
             @create-agent="handleCreateAgent"
             @save-agent="handleSaveAgent"
+            @delete-agent="handleDeleteAgent"
           />
           <OrchestrationPage
             v-else-if="activeKey === 'orchestration'"
@@ -500,7 +619,9 @@ onUnmounted(() => {
             v-else-if="activeKey === 'resource-library'"
             :resource-center="catalog.resourceCenter"
             :resources="catalog.resources"
+            @delete-resource="handleDeleteResource"
             @create-resource-version="handleCreateResourceVersion"
+            @delete-resource-version="handleDeleteResourceVersion"
             @publish-resource-version="handlePublishResourceVersion"
           />
           <ResourceCreatePage

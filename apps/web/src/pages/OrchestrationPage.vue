@@ -127,7 +127,8 @@ function resourceNamesForAgent(agentId: string | null) {
   if (!agent) {
     return '无';
   }
-  const names = agent.bindings.map((binding) => props.resources.find((item) => item.id === binding.resourceId)?.name ?? binding.resourceId);
+  const names = agent.executionPolicy.toolResourceIds
+    .map((resourceId) => props.resources.find((item) => item.id === resourceId)?.name ?? resourceId);
   return names.length ? names.join(' / ') : '无';
 }
 

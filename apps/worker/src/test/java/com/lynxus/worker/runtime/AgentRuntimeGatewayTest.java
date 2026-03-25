@@ -26,7 +26,7 @@ class AgentRuntimeGatewayTest {
                 "assistant-customer-ops",
                 "客户协同助手",
                 "1.0.0",
-                new WorkflowContracts.AssistantPolicySnapshot(null, null, 0.2, 1200, false, null, 0, false, 0),
+                new WorkflowContracts.AssistantPolicySnapshot(null, null, null, null, false, null, null, false, 0),
                 List.of(),
                 List.of(),
                 new WorkflowContracts.GraphSnapshot("GRAPH", List.of(), List.of())

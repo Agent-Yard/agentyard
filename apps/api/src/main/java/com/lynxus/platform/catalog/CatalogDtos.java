@@ -78,7 +78,7 @@ public final class CatalogDtos {
         String role,
         String instructions,
         AgentExecutionPolicyDto executionPolicy,
-        List<String> bindingResourceVersionIds
+        List<String> toolResourceVersionIds
     ) {
     }
 
@@ -88,7 +88,7 @@ public final class CatalogDtos {
         String name,
         String role,
         String instructions,
-        List<ResourceBindingDto> bindings,
+        List<ToolVersionPinDto> toolVersionPins,
         AgentExecutionPolicyDto executionPolicy
     ) {
     }
@@ -110,7 +110,7 @@ public final class CatalogDtos {
     ) {
     }
 
-    public record ResourceBindingDto(
+    public record ToolVersionPinDto(
         String id,
         String resourceId,
         String resourceVersionId,
@@ -202,16 +202,13 @@ public final class CatalogDtos {
 
     public record AssistantModelPolicyDto(
         String providerResourceId,
-        String promptTemplateResourceId,
-        double temperature,
-        int maxTokens
+        String promptTemplateResourceId
     ) {
     }
 
     public record RagPolicyDto(
         boolean enabled,
-        String knowledgeBaseResourceId,
-        int topK
+        String knowledgeBaseResourceId
     ) {
     }
 
@@ -287,7 +284,7 @@ public final class CatalogDtos {
     ) {
     }
 
-    public record ResourceUsageDto(
+    public record ResourceReferenceDto(
         String resourceId,
         String resourceName,
         ResourceType type,
@@ -295,9 +292,13 @@ public final class CatalogDtos {
         String ownerLabel,
         String latestVersion,
         String effectiveVersion,
-        List<String> boundAgents,
-        List<String> boundAssistants,
-        List<String> bindingAnchors
+        String referenceKind,
+        String sourceType,
+        String sourceId,
+        String sourceName,
+        String resourceVersionId,
+        String resourceVersion,
+        boolean blocksDeletion
     ) {
     }
 
@@ -305,11 +306,14 @@ public final class CatalogDtos {
         int totalResources,
         int domainSharedResources,
         int privateResources,
-        List<ResourceUsageDto> usages
+        List<ResourceReferenceDto> references
     ) {
     }
 
     public record CreateDomainRequest(String name, String description) {
+    }
+
+    public record UpdateDomainRequest(String name, String description) {
     }
 
     public record CreateScenarioRequest(String domainId, String name, String goal) {
@@ -355,10 +359,10 @@ public final class CatalogDtos {
     ) {
     }
 
-    public record ResourceBindingTarget(String resourceId, String resourceVersionId) {
+    public record ToolVersionPinTarget(String resourceId, String resourceVersionId) {
     }
 
-    public record UpdateAgentBindingsRequest(List<ResourceBindingTarget> bindings) {
+    public record UpdateAgentToolVersionPinsRequest(List<ToolVersionPinTarget> toolVersionPins) {
     }
 
     public record CreateResourceRequest(
@@ -383,7 +387,7 @@ public final class CatalogDtos {
     ) {
     }
 
-    public record BindResourceRequest(String resourceId, String consumerType, String consumerId) {
+    public record PinToolVersionRequest(String resourceId, String consumerType, String consumerId) {
     }
 
     public record UpdateOrchestrationRequest(

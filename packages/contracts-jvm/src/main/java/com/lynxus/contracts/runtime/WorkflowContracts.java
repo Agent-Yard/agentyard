@@ -138,12 +138,12 @@ public final class WorkflowContracts {
 
     public record AssistantPolicySnapshot(
         String providerResourceId,
+        String providerResourceVersionId,
         String promptTemplateResourceId,
-        double temperature,
-        int maxTokens,
+        String promptTemplateResourceVersionId,
         boolean ragEnabled,
         String knowledgeBaseResourceId,
-        int ragTopK,
+        String knowledgeBaseResourceVersionId,
         boolean memoryEnabled,
         int memoryWindowSize
     ) {
@@ -152,12 +152,16 @@ public final class WorkflowContracts {
     public record AgentExecutionPolicySnapshot(
         boolean inheritAssistantDefaults,
         String modelResourceId,
+        String modelResourceVersionId,
         String promptTemplateResourceId,
+        String promptTemplateResourceVersionId,
         String inlinePrompt,
         boolean ragEnabled,
         String knowledgeBaseResourceId,
+        String knowledgeBaseResourceVersionId,
         int memoryWindowSize,
-        List<String> toolResourceIds
+        List<String> toolResourceIds,
+        List<String> toolResourceVersionIds
     ) {
     }
 
@@ -166,8 +170,7 @@ public final class WorkflowContracts {
         String name,
         String role,
         String instructions,
-        AgentExecutionPolicySnapshot executionPolicy,
-        List<String> bindingResourceVersionIds
+        AgentExecutionPolicySnapshot executionPolicy
     ) {
     }
 

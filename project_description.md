@@ -556,9 +556,9 @@ paths:
   /mcpServers/{mcpId}/versions:
     post:
       summary: Publish a new MCP server version
-  /bindings:
+  /tool-version-pins:
     post:
-      summary: Bind a skill/MCP to a consumer agent with policy constraints
+      summary: Pin a skill/MCP version for a consumer agent with policy constraints
 ```
 
 ### 附录：示例数据模型表（核心字段）
@@ -569,7 +569,7 @@ paths:
 | Agent | id, domainId, name, runtimeRef, status, defaultPolicyRef | 可部署运行单元 |
 | Skill | id, ownerAgentId, scope(agent/domain/tenant), openapiRef, riskLevel | 工具/能力单元 |
 | MCPServer | id, ownerAgentId, scope, endpoint, capabilityManifest, riskLevel | MCP 服务端资产（Tools/Resources/Prompts）citeturn4view0 |
-| ResourceBinding | id, resourceType, resourceId, consumerAgentId, constraints, approvalState | 共享与隔离的核心控制点 |
+| ToolVersionPin | id, resourceType, resourceId, resourceVersionId, consumerAgentId, constraints | 工具版本固定与隔离的核心控制点 |
 | EventSchema | id, topic, version, schemaRef, compatibility | 事件契约版本化（建议 AsyncAPI/Schema Registry）citeturn5search2 |
 | Run | id, tenantId, domainId, agentId, traceId, status, cost | 执行记录（观测与成本核算） |
 

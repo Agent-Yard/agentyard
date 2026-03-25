@@ -459,8 +459,8 @@ public class RuntimeService {
                 assistant.id(),
                 assistant.name(),
                 release.releaseVersion(),
-                toAssistantPolicySnapshot(release.modelPolicy(), release.ragPolicy(), release.memoryPolicy()),
-                release.agents().stream().map(this::toAgentSnapshot).toList(),
+                toAssistantPolicySnapshot(release.modelPolicy(), release.ragPolicy(), release.memoryPolicy(), release.resources()),
+                release.agents().stream().map(agent -> toAgentSnapshot(agent, release.resources())).toList(),
                 release.resources().stream().map(this::toResourceSnapshot).toList(),
                 toGraphSnapshot(release.orchestration())
             );
@@ -468,96 +468,195 @@ public class RuntimeService {
 
         AssistantOrchestrationDto orchestration = catalogService.getOrchestration(assistant.id());
         List<ResourceDto> resourceViews = catalogService.summary().resources();
-        List<ResourceVersionSnapshot> resourceSnapshots = resourceViews.stream()
-            .filter(resource -> isReferencedByAssistant(resource, assistant))
-            .map(resource -> toResourceSnapshot(
-                new AssistantReleaseResourceDto(
-                    resource.id(),
-                    resource.name(),
-                    resource.type(),
-                    resource.effectiveVersion() == null ? resource.latestVersion().id() : resource.effectiveVersion().id(),
-                    resource.effectiveVersion() == null ? resource.latestVersion().version() : resource.effectiveVersion().version(),
-                    List.of("AD_HOC"),
-                    (resource.effectiveVersion() == null ? resource.latestVersion() : resource.effectiveVersion()).configuration()
-                )
-            ))
-            .toList();
+        List<AssistantReleaseResourceDto> resolvedResources = collectAdHocResources(assistant, resourceViews);
 
         return new AssistantRunSnapshot(
             assistant.id(),
             assistant.name(),
             assistant.version().version(),
-            toAssistantPolicySnapshot(assistant.modelPolicy(), assistant.ragPolicy(), assistant.memoryPolicy()),
+            toAssistantPolicySnapshot(assistant.modelPolicy(), assistant.ragPolicy(), assistant.memoryPolicy(), resolvedResources),
             assistant.agents().stream()
-                .map(agent -> new AgentSnapshot(
-                    agent.id(),
-                    agent.name(),
-                    agent.role(),
-                    agent.instructions(),
-                    toAgentExecutionPolicySnapshot(agent.executionPolicy()),
-                    agent.bindings().stream().map(binding -> binding.resourceVersionId()).toList()
-                ))
+                .map(agent -> toAgentSnapshot(agent, resolvedResources))
                 .toList(),
-            resourceSnapshots,
+            resolvedResources.stream().map(this::toResourceSnapshot).toList(),
             toGraphSnapshot(orchestration)
-        );
-    }
-
-    private boolean isReferencedByAssistant(ResourceDto resource, AssistantDto assistant) {
-        if (Objects.equals(assistant.modelPolicy().providerResourceId(), resource.id())
-            || Objects.equals(assistant.modelPolicy().promptTemplateResourceId(), resource.id())
-            || Objects.equals(assistant.ragPolicy().knowledgeBaseResourceId(), resource.id())) {
-            return true;
-        }
-        return assistant.agents().stream().anyMatch(agent ->
-            Objects.equals(agent.executionPolicy().modelResourceId(), resource.id())
-                || Objects.equals(agent.executionPolicy().promptTemplateResourceId(), resource.id())
-                || Objects.equals(agent.executionPolicy().knowledgeBaseResourceId(), resource.id())
-                || agent.executionPolicy().toolResourceIds().contains(resource.id())
-                || agent.bindings().stream().anyMatch(binding -> binding.resourceId().equals(resource.id()))
         );
     }
 
     private AssistantPolicySnapshot toAssistantPolicySnapshot(
         AssistantModelPolicyDto modelPolicy,
         RagPolicyDto ragPolicy,
-        MemoryPolicyDto memoryPolicy
+        MemoryPolicyDto memoryPolicy,
+        List<AssistantReleaseResourceDto> resources
     ) {
         return new AssistantPolicySnapshot(
             modelPolicy.providerResourceId(),
+            resolveReleasedVersionId(resources, modelPolicy.providerResourceId()),
             modelPolicy.promptTemplateResourceId(),
-            modelPolicy.temperature(),
-            modelPolicy.maxTokens(),
+            resolveReleasedVersionId(resources, modelPolicy.promptTemplateResourceId()),
             ragPolicy.enabled(),
             ragPolicy.knowledgeBaseResourceId(),
-            ragPolicy.topK(),
+            ragPolicy.enabled() ? resolveReleasedVersionId(resources, ragPolicy.knowledgeBaseResourceId()) : null,
             memoryPolicy.enabled(),
             memoryPolicy.windowSize()
         );
     }
 
-    private AgentSnapshot toAgentSnapshot(AssistantReleaseAgentDto agent) {
+    private AgentSnapshot toAgentSnapshot(AssistantReleaseAgentDto agent, List<AssistantReleaseResourceDto> resources) {
         return new AgentSnapshot(
             agent.agentId(),
             agent.name(),
             agent.role(),
             agent.instructions(),
-            toAgentExecutionPolicySnapshot(agent.executionPolicy()),
-            agent.bindingResourceVersionIds()
+            toAgentExecutionPolicySnapshot(agent.executionPolicy(), resources, agent.toolResourceVersionIds())
         );
     }
 
-    private AgentExecutionPolicySnapshot toAgentExecutionPolicySnapshot(AgentExecutionPolicyDto policy) {
+    private AgentSnapshot toAgentSnapshot(AgentDto agent, List<AssistantReleaseResourceDto> resources) {
+        List<String> toolVersionIds = agent.executionPolicy().toolResourceIds().stream()
+            .map(toolResourceId -> resolvePinnedToolVersionId(agent, toolResourceId))
+            .toList();
+        return new AgentSnapshot(
+            agent.id(),
+            agent.name(),
+            agent.role(),
+            agent.instructions(),
+            toAgentExecutionPolicySnapshot(agent.executionPolicy(), resources, toolVersionIds)
+        );
+    }
+
+    private AgentExecutionPolicySnapshot toAgentExecutionPolicySnapshot(
+        AgentExecutionPolicyDto policy,
+        List<AssistantReleaseResourceDto> resources,
+        List<String> toolResourceVersionIds
+    ) {
         return new AgentExecutionPolicySnapshot(
             policy.inheritAssistantDefaults(),
             policy.modelResourceId(),
+            resolveReleasedVersionId(resources, policy.modelResourceId()),
             policy.promptTemplateResourceId(),
+            resolveReleasedVersionId(resources, policy.promptTemplateResourceId()),
             policy.inlinePrompt(),
             policy.ragEnabled(),
             policy.knowledgeBaseResourceId(),
+            policy.ragEnabled() ? resolveReleasedVersionId(resources, policy.knowledgeBaseResourceId()) : null,
             policy.memoryWindowSize(),
-            policy.toolResourceIds()
+            policy.toolResourceIds(),
+            toolResourceVersionIds
         );
+    }
+
+    private List<AssistantReleaseResourceDto> collectAdHocResources(AssistantDto assistant, List<ResourceDto> resourceViews) {
+        Map<String, AssistantReleaseResourceDto> resolved = new java.util.LinkedHashMap<>();
+        captureAdHocEffectiveResource(resolved, resourceViews, assistant.modelPolicy().providerResourceId(), "ASSISTANT_DEFAULT_MODEL");
+        captureAdHocEffectiveResource(resolved, resourceViews, assistant.modelPolicy().promptTemplateResourceId(), "ASSISTANT_DEFAULT_PROMPT");
+        if (assistant.ragPolicy().enabled()) {
+            captureAdHocEffectiveResource(resolved, resourceViews, assistant.ragPolicy().knowledgeBaseResourceId(), "ASSISTANT_DEFAULT_RAG");
+        }
+
+        for (AgentDto agent : assistant.agents()) {
+            captureAdHocEffectiveResource(resolved, resourceViews, agent.executionPolicy().modelResourceId(), agent.name());
+            captureAdHocEffectiveResource(resolved, resourceViews, agent.executionPolicy().promptTemplateResourceId(), agent.name());
+            if (agent.executionPolicy().ragEnabled()) {
+                captureAdHocEffectiveResource(resolved, resourceViews, agent.executionPolicy().knowledgeBaseResourceId(), agent.name());
+            }
+            for (String toolResourceId : agent.executionPolicy().toolResourceIds()) {
+                String pinnedVersionId = resolvePinnedToolVersionId(agent, toolResourceId);
+                captureAdHocPinnedToolResource(resolved, resourceViews, toolResourceId, pinnedVersionId, agent.name());
+            }
+        }
+        return List.copyOf(resolved.values());
+    }
+
+    private void captureAdHocEffectiveResource(
+        Map<String, AssistantReleaseResourceDto> resolved,
+        List<ResourceDto> resourceViews,
+        String resourceId,
+        String boundAgent
+    ) {
+        if (resourceId == null || resourceId.isBlank()) {
+            return;
+        }
+        ResourceDto resource = findRuntimeResource(resourceViews, resourceId);
+        var version = resource.effectiveVersion() == null ? resource.latestVersion() : resource.effectiveVersion();
+        mergeAdHocResource(resolved, resource, version, boundAgent);
+    }
+
+    private void captureAdHocPinnedToolResource(
+        Map<String, AssistantReleaseResourceDto> resolved,
+        List<ResourceDto> resourceViews,
+        String resourceId,
+        String versionId,
+        String boundAgent
+    ) {
+        ResourceDto resource = findRuntimeResource(resourceViews, resourceId);
+        var version = resource.versions().stream()
+            .filter(item -> item.id().equals(versionId))
+            .findFirst()
+            .orElseThrow(() -> new IllegalStateException("tool version pin not found in runtime snapshot: " + resourceId + "/" + versionId));
+        mergeAdHocResource(resolved, resource, version, boundAgent);
+    }
+
+    private void mergeAdHocResource(
+        Map<String, AssistantReleaseResourceDto> resolved,
+        ResourceDto resource,
+        com.lynxus.platform.catalog.CatalogDtos.ResourceVersionDto version,
+        String boundAgent
+    ) {
+        AssistantReleaseResourceDto current = resolved.get(version.id());
+        if (current == null) {
+            resolved.put(
+                version.id(),
+                new AssistantReleaseResourceDto(
+                    resource.id(),
+                    resource.name(),
+                    resource.type(),
+                    version.id(),
+                    version.version(),
+                    List.of(boundAgent),
+                    version.configuration()
+                )
+            );
+            return;
+        }
+        resolved.put(
+            version.id(),
+            new AssistantReleaseResourceDto(
+                current.resourceId(),
+                current.resourceName(),
+                current.resourceType(),
+                current.resourceVersionId(),
+                current.resourceVersion(),
+                append(current.boundAgents(), boundAgent),
+                current.configuration()
+            )
+        );
+    }
+
+    private ResourceDto findRuntimeResource(List<ResourceDto> resourceViews, String resourceId) {
+        return resourceViews.stream()
+            .filter(resource -> resource.id().equals(resourceId))
+            .findFirst()
+            .orElseThrow(() -> new IllegalStateException("runtime resource not found: " + resourceId));
+    }
+
+    private String resolveReleasedVersionId(List<AssistantReleaseResourceDto> resources, String resourceId) {
+        if (resourceId == null || resourceId.isBlank()) {
+            return null;
+        }
+        return resources.stream()
+            .filter(resource -> resource.resourceId().equals(resourceId))
+            .map(AssistantReleaseResourceDto::resourceVersionId)
+            .findFirst()
+            .orElseThrow(() -> new IllegalStateException("released resource version not found: " + resourceId));
+    }
+
+    private String resolvePinnedToolVersionId(AgentDto agent, String toolResourceId) {
+        return agent.toolVersionPins().stream()
+            .filter(toolVersionPin -> toolVersionPin.resourceId().equals(toolResourceId))
+            .map(toolVersionPin -> toolVersionPin.resourceVersionId())
+            .findFirst()
+            .orElseThrow(() -> new IllegalStateException("tool version pin is required before runtime execution: " + agent.name() + " -> " + toolResourceId));
     }
 
     private ResourceVersionSnapshot toResourceSnapshot(AssistantReleaseResourceDto resource) {
@@ -754,8 +853,8 @@ public class RuntimeService {
         return -1;
     }
 
-    private static List<HumanInterventionDto> append(List<HumanInterventionDto> items, HumanInterventionDto item) {
-        List<HumanInterventionDto> updated = new ArrayList<>(items);
+    private static <T> List<T> append(List<T> items, T item) {
+        List<T> updated = new ArrayList<>(items);
         updated.add(item);
         return updated;
     }

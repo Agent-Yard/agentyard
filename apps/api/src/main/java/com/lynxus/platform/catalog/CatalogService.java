@@ -13,14 +13,18 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class CatalogService {
+    private static final Logger log = LoggerFactory.getLogger(CatalogService.class);
     private final CatalogRepository repository;
     private boolean initialized;
     private final List<BusinessDomainDto> domains = new ArrayList<>();
@@ -71,12 +75,56 @@ public class CatalogService {
             .toList();
     }
 
+    public BusinessDomainDto getDomain(String domainId) {
+        ensureLoaded();
+        return toDomainView(findDomain(domainId));
+    }
+
     public BusinessDomainDto createDomain(CreateDomainRequest request) {
         ensureLoaded();
-        BusinessDomainDto domain = new BusinessDomainDto(nextId("domain"), request.name(), request.description(), List.of(), List.of());
+        String name = requireText(request.name(), "domain.name");
+        ensureUniqueDomainName(name, null);
+        BusinessDomainDto domain = new BusinessDomainDto(
+            nextId("domain"),
+            name,
+            normalizeOptionalText(request.description()),
+            List.of(),
+            List.of()
+        );
         domains.add(domain);
         persistState();
         return toDomainView(domain);
+    }
+
+    public BusinessDomainDto updateDomain(String domainId, UpdateDomainRequest request) {
+        ensureLoaded();
+        BusinessDomainDto existing = findDomain(domainId);
+        String name = requireText(request.name(), "domain.name");
+        ensureUniqueDomainName(name, existing.id());
+        BusinessDomainDto updated = new BusinessDomainDto(
+            existing.id(),
+            name,
+            normalizeOptionalText(request.description()),
+            existing.scenarios(),
+            existing.resources()
+        );
+        replace(domains, BusinessDomainDto::id, updated);
+        persistState();
+        return toDomainView(updated);
+    }
+
+    public BusinessDomainDto deleteDomain(String domainId) {
+        ensureLoaded();
+        BusinessDomainDto existing = findDomain(domainId);
+        if (scenarios.stream().anyMatch(item -> item.domainId().equals(domainId))) {
+            throw new IllegalStateException("business domain still contains scenarios: " + domainId);
+        }
+        if (resources.stream().anyMatch(item -> item.domainId().equals(domainId))) {
+            throw new IllegalStateException("business domain still contains resources: " + domainId);
+        }
+        domains.removeIf(item -> item.id().equals(domainId));
+        persistState();
+        return toDomainView(existing);
     }
 
     public List<ScenarioDto> listScenarios() {
@@ -94,11 +142,15 @@ public class CatalogService {
 
     public ScenarioDto createScenario(CreateScenarioRequest request) {
         ensureLoaded();
+        String domainId = requireText(request.domainId(), "scenario.domainId");
+        findDomain(domainId);
+        String name = requireText(request.name(), "scenario.name");
+        ensureUniqueScenarioName(domainId, name, null);
         ScenarioDto scenario = new ScenarioDto(
             nextId("scenario"),
-            request.domainId(),
-            request.name(),
-            request.goal(),
+            domainId,
+            name,
+            requireText(request.goal(), "scenario.goal"),
             new VersionDto("0.1.0", VersionStatus.DRAFT, Instant.now()),
             List.of()
         );
@@ -110,17 +162,30 @@ public class CatalogService {
     public ScenarioDto updateScenario(String scenarioId, UpdateScenarioRequest request) {
         ensureLoaded();
         ScenarioDto existing = findScenario(scenarioId);
+        String name = requireText(request.name(), "scenario.name");
+        ensureUniqueScenarioName(existing.domainId(), name, existing.id());
         ScenarioDto updated = new ScenarioDto(
             existing.id(),
             existing.domainId(),
-            request.name(),
-            request.goal(),
+            name,
+            requireText(request.goal(), "scenario.goal"),
             existing.version(),
             existing.assistants()
         );
         replace(scenarios, ScenarioDto::id, updated);
         persistState();
         return toScenarioView(updated);
+    }
+
+    public ScenarioDto deleteScenario(String scenarioId) {
+        ensureLoaded();
+        ScenarioDto existing = findScenario(scenarioId);
+        if (assistants.stream().anyMatch(item -> item.scenarioId().equals(scenarioId))) {
+            throw new IllegalStateException("scenario still contains assistants: " + scenarioId);
+        }
+        scenarios.removeIf(item -> item.id().equals(scenarioId));
+        persistState();
+        return toScenarioView(existing);
     }
 
     public AssistantDto createAssistant(CreateAssistantRequest request) {
@@ -172,6 +237,24 @@ public class CatalogService {
         return toAssistantView(updated);
     }
 
+    public AssistantDto deleteAssistant(String assistantId) {
+        ensureLoaded();
+        AssistantDto existing = findAssistant(assistantId);
+        if (agents.stream().anyMatch(item -> item.assistantId().equals(assistantId))) {
+            throw new IllegalStateException("assistant still contains agents: " + assistantId);
+        }
+        if (resources.stream().anyMatch(item -> "ASSISTANT".equals(item.ownerType()) && assistantId.equals(item.ownerId()))) {
+            throw new IllegalStateException("assistant still owns resources: " + assistantId);
+        }
+
+        AssistantDto deleted = toAssistantView(existing);
+        assistants.removeIf(item -> item.id().equals(assistantId));
+        assistantReleases.remove(assistantId);
+        orchestrations.remove(assistantId);
+        persistState();
+        return deleted;
+    }
+
     public List<AssistantDto> listAssistants() {
         ensureLoaded();
         return assistants.stream()
@@ -205,7 +288,7 @@ public class CatalogService {
             request.name(),
             request.role(),
             request.instructions(),
-            existing.bindings(),
+            existing.toolVersionPins(),
             normalizeAgentExecutionPolicy(request.executionPolicy())
         );
         replace(agents, AgentDto::id, updated);
@@ -213,15 +296,23 @@ public class CatalogService {
         return updated;
     }
 
-    public AgentDto updateAgentBindings(String agentId, UpdateAgentBindingsRequest request) {
+    public AgentDto deleteAgent(String agentId) {
+        ensureLoaded();
+        AgentDto existing = findAgent(agentId);
+        agents.removeIf(item -> item.id().equals(agentId));
+        recycleOrchestrationAfterAgentDeletion(existing.assistantId(), agentId);
+        persistState();
+        return existing;
+    }
+
+    public AgentDto updateAgentToolVersionPins(String agentId, UpdateAgentToolVersionPinsRequest request) {
         ensureLoaded();
         AgentDto agent = findAgent(agentId);
-        Map<String, ResourceBindingDto> existingBindings = agent.bindings().stream()
+        Map<String, ToolVersionPinDto> existingToolVersionPins = agent.toolVersionPins().stream()
             .collect(LinkedHashMap::new, (map, item) -> map.put(item.resourceVersionId(), item), Map::putAll);
 
-        List<ResourceBindingDto> updatedBindings = request.bindings().stream()
-            .distinct()
-            .map(binding -> toVersionAnchoredBinding(agentId, existingBindings, binding))
+        List<ToolVersionPinDto> updatedToolVersionPins = request.toolVersionPins().stream()
+            .map(toolVersionPin -> toToolVersionPin(agentId, existingToolVersionPins, toolVersionPin))
             .toList();
 
         AgentDto updated = new AgentDto(
@@ -230,7 +321,7 @@ public class CatalogService {
             agent.name(),
             agent.role(),
             agent.instructions(),
-            updatedBindings,
+            updatedToolVersionPins,
             agent.executionPolicy()
         );
         replace(agents, AgentDto::id, updated);
@@ -250,17 +341,20 @@ public class CatalogService {
 
     public ResourceDto createResource(CreateResourceRequest request) {
         ensureLoaded();
+        String domainId = requireText(request.domainId(), "resource.domainId");
+        findDomain(domainId);
+        validateResourceOwner(domainId, request.ownerType(), request.ownerId());
         String resourceId = nextId("resource");
         ResourceDto resource = new ResourceDto(
             resourceId,
-            request.domainId(),
-            request.name(),
+            domainId,
+            requireText(request.name(), "resource.name"),
             request.type(),
             request.shareScope(),
             request.ownerType(),
             request.ownerId(),
-            request.summary(),
-            request.steward(),
+            normalizeOptionalText(request.summary()),
+            normalizeOptionalText(request.steward()),
             request.tags() == null ? List.of() : List.copyOf(request.tags()),
             null,
             null,
@@ -344,12 +438,50 @@ public class CatalogService {
         return updatedVersions.stream().filter(item -> item.id().equals(versionId)).findFirst().orElseThrow();
     }
 
+    public ResourceVersionDto deleteResourceVersion(String resourceId, String versionId) {
+        ensureLoaded();
+        ResourceDto resource = toResourceView(findResource(resourceId));
+        ResourceVersionDto version = findResourceVersion(resourceId, versionId);
+        if (resource.effectiveVersion() != null && resource.effectiveVersion().id().equals(versionId)) {
+            throw new IllegalStateException("resource effective version cannot be deleted: " + resourceId + "/" + versionId);
+        }
+        if (versionsFor(resourceId).size() <= 1) {
+            throw new IllegalStateException("resource must keep at least one version: " + resourceId);
+        }
+
+        String versionPinBlocker = findResourceVersionDeletionBlocker(versionId);
+        if (versionPinBlocker != null) {
+            throw new IllegalStateException(versionPinBlocker);
+        }
+
+        List<ResourceVersionDto> updatedVersions = versionsFor(resourceId).stream()
+            .filter(item -> !item.id().equals(versionId))
+            .toList();
+        resourceVersions.put(resourceId, updatedVersions);
+        persistState();
+        return version;
+    }
+
     public List<ResourceDto> listResources() {
         ensureLoaded();
         return resources.stream()
             .sorted(Comparator.comparing(ResourceDto::name))
             .map(this::toResourceView)
             .toList();
+    }
+
+    public ResourceDto deleteResource(String resourceId) {
+        ensureLoaded();
+        ResourceDto deleted = toResourceView(findResource(resourceId));
+        String referenceBlocker = findResourceDeletionBlocker(resourceId);
+        if (referenceBlocker != null) {
+            throw new IllegalStateException(referenceBlocker);
+        }
+
+        resources.removeIf(item -> item.id().equals(resourceId));
+        resourceVersions.remove(resourceId);
+        persistState();
+        return deleted;
     }
 
     public List<AssistantOrchestrationDto> listOrchestrations() {
@@ -385,14 +517,14 @@ public class CatalogService {
 
     public ResourceCenterDto resourceCenter() {
         ensureLoaded();
-        List<ResourceUsageDto> usages = resources.stream()
+        List<ResourceReferenceDto> references = resources.stream()
             .sorted(Comparator.comparing(ResourceDto::name))
             .map(this::toResourceView)
-            .map(this::buildResourceUsage)
+            .flatMap(resource -> listResourceReferences(resource).stream())
             .toList();
         long domainShared = resources.stream().filter(item -> item.shareScope() == ShareScope.DOMAIN_SHARED).count();
         long privateCount = resources.stream().filter(item -> item.shareScope() == ShareScope.PRIVATE).count();
-        return new ResourceCenterDto(resources.size(), Math.toIntExact(domainShared), Math.toIntExact(privateCount), usages);
+        return new ResourceCenterDto(resources.size(), Math.toIntExact(domainShared), Math.toIntExact(privateCount), references);
     }
 
     public List<ResourceBlueprintDto> resourceBlueprints() {
@@ -435,12 +567,14 @@ public class CatalogService {
         );
     }
 
-    public ResourceBindingDto bindResource(BindResourceRequest request) {
+    public ToolVersionPinDto pinToolVersion(PinToolVersionRequest request) {
         ensureLoaded();
         AgentDto agent = findAgent(request.consumerId());
-        ResourceVersionDto version = effectiveVersion(findResource(request.resourceId()));
-        ResourceBindingDto binding = new ResourceBindingDto(
-            nextId("binding"),
+        ResourceDto resource = findResource(request.resourceId());
+        validateToolVersionPin(agent, resource, effectiveVersion(resource).id());
+        ResourceVersionDto version = effectiveVersion(resource);
+        ToolVersionPinDto toolVersionPin = new ToolVersionPinDto(
+            nextId("tool-version-pin"),
             request.resourceId(),
             version.id(),
             version.version(),
@@ -454,12 +588,12 @@ public class CatalogService {
             agent.name(),
             agent.role(),
             agent.instructions(),
-            append(agent.bindings(), binding),
+            append(agent.toolVersionPins(), toolVersionPin),
             agent.executionPolicy()
         );
         replace(agents, AgentDto::id, updated);
         persistState();
-        return binding;
+        return toolVersionPin;
     }
 
     public synchronized boolean initializeDemoDataIfEmpty() {
@@ -510,8 +644,8 @@ public class CatalogService {
             List.of(),
             null,
             List.of(),
-            new AssistantModelPolicyDto(defaultLlmResourceId, "resource-prompt-router", 0.2, 1200),
-            new RagPolicyDto(true, "resource-kb-support", 5),
+            new AssistantModelPolicyDto(defaultLlmResourceId, "resource-prompt-router"),
+            new RagPolicyDto(true, "resource-kb-support"),
             new MemoryPolicyDto(true, 10)
         );
         assistants.add(assistant);
@@ -825,7 +959,7 @@ public class CatalogService {
             "问题分诊智能体",
             "router",
             "识别问题类型，决定 FAQ、售后策略或人工协同分支。",
-            List.of(new ResourceBindingDto("binding-router-kb", kb.id(), kbPublished.id(), kbPublished.version(), "AGENT", "agent-router", Instant.now())),
+            List.of(new ToolVersionPinDto("tool-version-pin-router-kb", kb.id(), kbPublished.id(), kbPublished.version(), "AGENT", "agent-router", Instant.now())),
             new AgentExecutionPolicyDto(true, null, routerPrompt.id(), "输出 route_key 和摘要。", true, kb.id(), 8, List.of())
         ));
         agents.add(new AgentDto(
@@ -843,7 +977,7 @@ public class CatalogService {
             "售后策略智能体",
             "policy",
             "调用售后策略 Skill，给出退款或补偿结论。",
-            List.of(new ResourceBindingDto("binding-policy-skill", refundSkill.id(), refundSkillVersion.id(), refundSkillVersion.version(), "AGENT", "agent-policy", Instant.now())),
+            List.of(new ToolVersionPinDto("tool-version-pin-policy-skill", refundSkill.id(), refundSkillVersion.id(), refundSkillVersion.version(), "AGENT", "agent-policy", Instant.now())),
             new AgentExecutionPolicyDto(true, defaultLlmResourceId, policyPrompt.id(), "结合工具输出结构化 route_key。", true, kb.id(), 8, List.of(refundSkill.id()))
         ));
         agents.add(new AgentDto(
@@ -852,7 +986,7 @@ public class CatalogService {
             "人工协同闭环智能体",
             "handoff",
             "在人工处理后整理摘要、调用工单 MCP，并生成闭环答复。",
-            List.of(new ResourceBindingDto("binding-handoff-mcp", ticketMcp.id(), ticketMcpVersion.id(), ticketMcpVersion.version(), "AGENT", "agent-coordinator", Instant.now())),
+            List.of(new ToolVersionPinDto("tool-version-pin-handoff-mcp", ticketMcp.id(), ticketMcpVersion.id(), ticketMcpVersion.version(), "AGENT", "agent-coordinator", Instant.now())),
             new AgentExecutionPolicyDto(true, defaultLlmResourceId, handoffPrompt.id(), "根据人工动作补充最终回复。", false, null, 12, List.of(ticketMcp.id()))
         ));
 
@@ -1066,6 +1200,38 @@ public class CatalogService {
         );
     }
 
+    private void recycleOrchestrationAfterAgentDeletion(String assistantId, String agentId) {
+        AssistantOrchestrationDto current = orchestrations.get(assistantId);
+        if (current == null) {
+            return;
+        }
+
+        List<OrchestrationNodeDto> remainingNodes = current.nodes().stream()
+            .filter(node -> !(node.nodeType() == OrchestrationNodeType.AGENT && agentId.equals(node.agentId())))
+            .toList();
+        Set<String> remainingNodeKeys = remainingNodes.stream()
+            .map(OrchestrationNodeDto::nodeKey)
+            .collect(HashSet::new, Set::add, Set::addAll);
+        List<OrchestrationEdgeDto> remainingEdges = current.edges().stream()
+            .filter(edge -> remainingNodeKeys.contains(edge.sourceNodeKey()) && remainingNodeKeys.contains(edge.targetNodeKey()))
+            .toList();
+
+        AssistantOrchestrationDto candidate = synchronizeOrchestration(new AssistantOrchestrationDto(
+            assistantId,
+            current.assistantName(),
+            current.scenarioId(),
+            current.executionMode(),
+            remainingNodes,
+            remainingEdges
+        ));
+        try {
+            validateOrchestration(candidate);
+            orchestrations.put(assistantId, candidate);
+        } catch (IllegalArgumentException ignored) {
+            orchestrations.put(assistantId, buildDefaultOrchestration(assistantId));
+        }
+    }
+
     private List<AgentDto> orderAgentsForSavedNodes(String assistantId, Map<String, OrchestrationNodeDto> existingNodes) {
         Map<String, Integer> orderIndex = new LinkedHashMap<>();
         int index = 0;
@@ -1150,63 +1316,43 @@ public class CatalogService {
         }
     }
 
-    private ResourceBindingDto toVersionAnchoredBinding(
+    private ToolVersionPinDto toToolVersionPin(
         String agentId,
-        Map<String, ResourceBindingDto> existingBindings,
-        ResourceBindingTarget target
+        Map<String, ToolVersionPinDto> existingToolVersionPins,
+        ToolVersionPinTarget target
     ) {
+        AgentDto agent = findAgent(agentId);
+        ResourceDto resource = findResource(target.resourceId());
+        validateToolVersionPin(agent, resource, target.resourceVersionId());
         ResourceVersionDto version = findResourceVersion(target.resourceId(), target.resourceVersionId());
-        return existingBindings.getOrDefault(
+        return existingToolVersionPins.getOrDefault(
             version.id(),
-            new ResourceBindingDto(nextId("binding"), target.resourceId(), version.id(), version.version(), "AGENT", agentId, Instant.now())
+            new ToolVersionPinDto(nextId("tool-version-pin"), target.resourceId(), version.id(), version.version(), "AGENT", agentId, Instant.now())
         );
     }
 
     private AssistantReleaseDto createAssistantRelease(String assistantId, String releaseVersion, VersionStatus status) {
         AssistantDto assistant = findAssistant(assistantId);
         Map<String, AssistantReleaseResourceDto> snapshotMap = new LinkedHashMap<>();
-        capturePolicyResource(snapshotMap, assistant.modelPolicy().providerResourceId(), "ASSISTANT_DEFAULT_MODEL");
-        capturePolicyResource(snapshotMap, assistant.modelPolicy().promptTemplateResourceId(), "ASSISTANT_DEFAULT_PROMPT");
-        capturePolicyResource(snapshotMap, assistant.ragPolicy().knowledgeBaseResourceId(), "ASSISTANT_DEFAULT_RAG");
+        captureEffectiveResource(snapshotMap, assistant.modelPolicy().providerResourceId(), "ASSISTANT_DEFAULT_MODEL");
+        captureEffectiveResource(snapshotMap, assistant.modelPolicy().promptTemplateResourceId(), "ASSISTANT_DEFAULT_PROMPT");
+        if (assistant.ragPolicy().enabled()) {
+            captureEffectiveResource(snapshotMap, assistant.ragPolicy().knowledgeBaseResourceId(), "ASSISTANT_DEFAULT_RAG");
+        }
 
         List<AssistantReleaseAgentDto> releaseAgents = new ArrayList<>();
         for (AgentDto agent : orderAgentsForAssistant(assistantId)) {
-            capturePolicyResource(snapshotMap, agent.executionPolicy().modelResourceId(), agent.name());
-            capturePolicyResource(snapshotMap, agent.executionPolicy().promptTemplateResourceId(), agent.name());
-            capturePolicyResource(snapshotMap, agent.executionPolicy().knowledgeBaseResourceId(), agent.name());
-            List<String> bindingResourceVersionIds = new ArrayList<>();
-            for (ResourceBindingDto binding : agent.bindings()) {
-                bindingResourceVersionIds.add(binding.resourceVersionId());
-                ResourceVersionDto version = findResourceVersion(binding.resourceId(), binding.resourceVersionId());
-                ResourceDto resource = findResource(binding.resourceId());
-                AssistantReleaseResourceDto existing = snapshotMap.get(binding.resourceVersionId());
-                if (existing == null) {
-                    snapshotMap.put(
-                        binding.resourceVersionId(),
-                        new AssistantReleaseResourceDto(
-                            resource.id(),
-                            resource.name(),
-                            resource.type(),
-                            version.id(),
-                            version.version(),
-                            List.of(agent.name()),
-                            version.configuration()
-                        )
-                    );
-                    continue;
-                }
-                snapshotMap.put(
-                    binding.resourceVersionId(),
-                    new AssistantReleaseResourceDto(
-                        existing.resourceId(),
-                        existing.resourceName(),
-                        existing.resourceType(),
-                        existing.resourceVersionId(),
-                        existing.resourceVersion(),
-                        append(existing.boundAgents(), agent.name()),
-                        existing.configuration()
-                    )
-                );
+            captureEffectiveResource(snapshotMap, agent.executionPolicy().modelResourceId(), agent.name());
+            captureEffectiveResource(snapshotMap, agent.executionPolicy().promptTemplateResourceId(), agent.name());
+            if (agent.executionPolicy().ragEnabled()) {
+                captureEffectiveResource(snapshotMap, agent.executionPolicy().knowledgeBaseResourceId(), agent.name());
+            }
+
+            List<String> toolResourceVersionIds = new ArrayList<>();
+            for (String toolResourceId : agent.executionPolicy().toolResourceIds()) {
+                ToolVersionPinDto toolVersionPin = findRequiredToolVersionPin(agent, toolResourceId);
+                toolResourceVersionIds.add(toolVersionPin.resourceVersionId());
+                capturePinnedToolResource(snapshotMap, toolVersionPin, agent.name());
             }
             releaseAgents.add(new AssistantReleaseAgentDto(
                 agent.id(),
@@ -1214,7 +1360,7 @@ public class CatalogService {
                 agent.role(),
                 agent.instructions(),
                 agent.executionPolicy(),
-                List.copyOf(bindingResourceVersionIds)
+                List.copyOf(toolResourceVersionIds)
             ));
         }
 
@@ -1238,12 +1384,31 @@ public class CatalogService {
         return release;
     }
 
-    private void capturePolicyResource(Map<String, AssistantReleaseResourceDto> snapshotMap, String resourceId, String boundAgent) {
+    private void captureEffectiveResource(Map<String, AssistantReleaseResourceDto> snapshotMap, String resourceId, String boundAgent) {
         if (resourceId == null || resourceId.isBlank()) {
             return;
         }
         ResourceDto resource = toResourceView(findResource(resourceId));
         ResourceVersionDto version = effectiveVersion(resource);
+        mergeReleaseResource(snapshotMap, resource, version, boundAgent);
+    }
+
+    private void capturePinnedToolResource(
+        Map<String, AssistantReleaseResourceDto> snapshotMap,
+        ToolVersionPinDto toolVersionPin,
+        String boundAgent
+    ) {
+        ResourceDto resource = toResourceView(findResource(toolVersionPin.resourceId()));
+        ResourceVersionDto version = findResourceVersion(toolVersionPin.resourceId(), toolVersionPin.resourceVersionId());
+        mergeReleaseResource(snapshotMap, resource, version, boundAgent);
+    }
+
+    private void mergeReleaseResource(
+        Map<String, AssistantReleaseResourceDto> snapshotMap,
+        ResourceDto resource,
+        ResourceVersionDto version,
+        String boundAgent
+    ) {
         AssistantReleaseResourceDto existing = snapshotMap.get(version.id());
         if (existing == null) {
             snapshotMap.put(
@@ -1258,42 +1423,127 @@ public class CatalogService {
                     version.configuration()
                 )
             );
-            return;
+        } else {
+            snapshotMap.put(
+                version.id(),
+                new AssistantReleaseResourceDto(
+                    existing.resourceId(),
+                    existing.resourceName(),
+                    existing.resourceType(),
+                    existing.resourceVersionId(),
+                    existing.resourceVersion(),
+                    append(existing.boundAgents(), boundAgent),
+                    existing.configuration()
+                )
+            );
         }
-        snapshotMap.put(
-            version.id(),
-            new AssistantReleaseResourceDto(
-                existing.resourceId(),
-                existing.resourceName(),
-                existing.resourceType(),
-                existing.resourceVersionId(),
-                existing.resourceVersion(),
-                append(existing.boundAgents(), boundAgent),
-                existing.configuration()
-            )
-        );
     }
 
-    private ResourceUsageDto buildResourceUsage(ResourceDto resource) {
-        List<String> boundAgents = agents.stream()
-            .filter(agent -> agent.bindings().stream().anyMatch(binding -> binding.resourceId().equals(resource.id())))
-            .map(AgentDto::name)
-            .sorted()
-            .toList();
-        List<String> boundAssistants = assistants.stream()
-            .filter(assistant -> agents.stream()
-                .filter(agent -> agent.assistantId().equals(assistant.id()))
-                .anyMatch(agent -> agent.bindings().stream().anyMatch(binding -> binding.resourceId().equals(resource.id()))))
-            .map(AssistantDto::name)
-            .sorted()
-            .toList();
-        List<String> bindingAnchors = agents.stream()
-            .flatMap(agent -> agent.bindings().stream()
-                .filter(binding -> binding.resourceId().equals(resource.id()))
-                .map(binding -> agent.name() + " -> " + binding.resourceVersion()))
-            .sorted()
-            .toList();
-        return new ResourceUsageDto(
+    private String findResourceDeletionBlocker(String resourceId) {
+        ResourceDto resource = toResourceView(findResource(resourceId));
+        return listResourceReferences(resource).stream()
+            .filter(ResourceReferenceDto::blocksDeletion)
+            .map(this::toResourceDeletionMessage)
+            .findFirst()
+            .orElse(null);
+    }
+
+    private String findResourceVersionDeletionBlocker(String versionId) {
+        return resources.stream()
+            .map(this::toResourceView)
+            .flatMap(resource -> listResourceReferences(resource).stream())
+            .filter(ResourceReferenceDto::blocksDeletion)
+            .filter(reference -> versionId.equals(reference.resourceVersionId()))
+            .map(this::toResourceVersionDeletionMessage)
+            .findFirst()
+            .orElse(null);
+    }
+
+    private List<ResourceReferenceDto> listResourceReferences(ResourceDto resource) {
+        List<ResourceReferenceDto> references = new ArrayList<>();
+        for (AssistantDto assistant : assistants) {
+            if (resource.id().equals(assistant.modelPolicy().providerResourceId())) {
+                references.add(toResourceReference(resource, "ASSISTANT_DEFAULT_MODEL", "ASSISTANT", assistant.id(), assistant.name(), null, null, true));
+            }
+            if (resource.id().equals(assistant.modelPolicy().promptTemplateResourceId())) {
+                references.add(toResourceReference(resource, "ASSISTANT_DEFAULT_PROMPT", "ASSISTANT", assistant.id(), assistant.name(), null, null, true));
+            }
+            if (assistant.ragPolicy().enabled() && resource.id().equals(assistant.ragPolicy().knowledgeBaseResourceId())) {
+                references.add(toResourceReference(resource, "ASSISTANT_DEFAULT_KNOWLEDGE_BASE", "ASSISTANT", assistant.id(), assistant.name(), null, null, true));
+            }
+        }
+
+        for (AgentDto agent : agents) {
+            if (resource.id().equals(agent.executionPolicy().modelResourceId())) {
+                references.add(toResourceReference(resource, "AGENT_OVERRIDE_MODEL", "AGENT", agent.id(), agent.name(), null, null, true));
+            }
+            if (resource.id().equals(agent.executionPolicy().promptTemplateResourceId())) {
+                references.add(toResourceReference(resource, "AGENT_OVERRIDE_PROMPT", "AGENT", agent.id(), agent.name(), null, null, true));
+            }
+            if (agent.executionPolicy().ragEnabled() && resource.id().equals(agent.executionPolicy().knowledgeBaseResourceId())) {
+                references.add(toResourceReference(resource, "AGENT_OVERRIDE_KNOWLEDGE_BASE", "AGENT", agent.id(), agent.name(), null, null, true));
+            }
+            if (agent.executionPolicy().toolResourceIds().contains(resource.id())) {
+                references.add(toResourceReference(resource, "AGENT_TOOL_ENABLED", "AGENT", agent.id(), agent.name(), null, null, true));
+            }
+            for (ToolVersionPinDto toolVersionPin : agent.toolVersionPins()) {
+                if (resource.id().equals(toolVersionPin.resourceId())) {
+                    references.add(toResourceReference(
+                        resource,
+                        "AGENT_TOOL_VERSION_PIN",
+                        "AGENT",
+                        agent.id(),
+                        agent.name(),
+                        toolVersionPin.resourceVersionId(),
+                        toolVersionPin.resourceVersion(),
+                        true
+                    ));
+                }
+            }
+        }
+
+        for (Map.Entry<String, List<AssistantReleaseDto>> entry : assistantReleases.entrySet()) {
+            AssistantDto assistant = assistants.stream()
+                .filter(item -> item.id().equals(entry.getKey()))
+                .findFirst()
+                .orElse(null);
+            String assistantName = assistant == null ? entry.getKey() : assistant.name();
+            for (AssistantReleaseDto release : entry.getValue()) {
+                for (AssistantReleaseResourceDto releaseResource : release.resources()) {
+                    if (resource.id().equals(releaseResource.resourceId())) {
+                        references.add(toResourceReference(
+                            resource,
+                            "RELEASE_FROZEN",
+                            "ASSISTANT_RELEASE",
+                            release.id(),
+                            assistantName + "@" + release.releaseVersion(),
+                            releaseResource.resourceVersionId(),
+                            releaseResource.resourceVersion(),
+                            false
+                        ));
+                    }
+                }
+            }
+        }
+
+        references.sort(Comparator
+            .comparing(ResourceReferenceDto::referenceKind)
+            .thenComparing(ResourceReferenceDto::sourceName)
+            .thenComparing(reference -> reference.resourceVersionId() == null ? "" : reference.resourceVersionId()));
+        return references;
+    }
+
+    private ResourceReferenceDto toResourceReference(
+        ResourceDto resource,
+        String referenceKind,
+        String sourceType,
+        String sourceId,
+        String sourceName,
+        String resourceVersionId,
+        String resourceVersion,
+        boolean blocksDeletion
+    ) {
+        return new ResourceReferenceDto(
             resource.id(),
             resource.name(),
             resource.type(),
@@ -1301,10 +1551,35 @@ public class CatalogService {
             resource.ownerType() + ":" + resource.ownerId(),
             resource.latestVersion() == null ? null : resource.latestVersion().version(),
             resource.effectiveVersion() == null ? null : resource.effectiveVersion().version(),
-            boundAgents,
-            boundAssistants,
-            bindingAnchors
+            referenceKind,
+            sourceType,
+            sourceId,
+            sourceName,
+            resourceVersionId,
+            resourceVersion,
+            blocksDeletion
         );
+    }
+
+    private String toResourceDeletionMessage(ResourceReferenceDto reference) {
+        return switch (reference.referenceKind()) {
+            case "ASSISTANT_DEFAULT_MODEL" -> "resource is used as assistant default model: " + reference.sourceName();
+            case "ASSISTANT_DEFAULT_PROMPT" -> "resource is used as assistant default prompt: " + reference.sourceName();
+            case "ASSISTANT_DEFAULT_KNOWLEDGE_BASE" -> "resource is used as assistant default knowledge base: " + reference.sourceName();
+            case "AGENT_OVERRIDE_MODEL" -> "resource is used as agent override model: " + reference.sourceName();
+            case "AGENT_OVERRIDE_PROMPT" -> "resource is used as agent override prompt: " + reference.sourceName();
+            case "AGENT_OVERRIDE_KNOWLEDGE_BASE" -> "resource is used as agent override knowledge base: " + reference.sourceName();
+            case "AGENT_TOOL_ENABLED" -> "resource is used as agent tool: " + reference.sourceName();
+            case "AGENT_TOOL_VERSION_PIN" -> "resource still has tool version pins on agent: " + reference.sourceName();
+            default -> "resource is still referenced: " + reference.sourceName();
+        };
+    }
+
+    private String toResourceVersionDeletionMessage(ResourceReferenceDto reference) {
+        return switch (reference.referenceKind()) {
+            case "AGENT_TOOL_VERSION_PIN" -> "resource version still pinned on agent tool: " + reference.sourceName();
+            default -> "resource version is still referenced: " + reference.sourceName();
+        };
     }
 
     private OrchestrationNodeDto toNode(AgentDto agent) {
@@ -1354,17 +1629,89 @@ public class CatalogService {
         scenarios.clear();
         scenarios.addAll(snapshot.scenarios());
         assistants.clear();
-        assistants.addAll(snapshot.assistants());
-        agents.clear();
-        agents.addAll(snapshot.agents());
+        assistants.addAll(snapshot.assistants().stream()
+            .map(assistant -> new AssistantDto(
+                assistant.id(),
+                assistant.scenarioId(),
+                assistant.name(),
+                assistant.description(),
+                assistant.version(),
+                assistant.agents(),
+                assistant.currentRelease(),
+                assistant.releases(),
+                normalizeAssistantModelPolicy(assistant.modelPolicy()),
+                normalizeRagPolicy(assistant.ragPolicy()),
+                normalizeMemoryPolicy(assistant.memoryPolicy())
+            ))
+            .toList());
         resources.clear();
         resources.addAll(snapshot.resources());
+        agents.clear();
+        agents.addAll(snapshot.agents().stream().map(this::normalizeLoadedAgent).toList());
         resourceVersions.clear();
         resourceVersions.putAll(snapshot.resourceVersions());
         assistantReleases.clear();
-        assistantReleases.putAll(snapshot.assistantReleases());
+        snapshot.assistantReleases().forEach((assistantId, releases) -> assistantReleases.put(
+            assistantId,
+            releases.stream()
+                .map(release -> new AssistantReleaseDto(
+                    release.id(),
+                    release.assistantId(),
+                    release.releaseVersion(),
+                    release.status(),
+                    release.createdAt(),
+                    release.publishedAt(),
+                    release.resources(),
+                    release.agents(),
+                    release.orchestration(),
+                    normalizeAssistantModelPolicy(release.modelPolicy()),
+                    normalizeRagPolicy(release.ragPolicy()),
+                    normalizeMemoryPolicy(release.memoryPolicy())
+                ))
+                .toList()
+        ));
         orchestrations.clear();
         orchestrations.putAll(snapshot.orchestrations());
+    }
+
+    private AgentDto normalizeLoadedAgent(AgentDto agent) {
+        AgentExecutionPolicyDto normalizedPolicy = normalizeAgentExecutionPolicy(agent.executionPolicy());
+        Set<String> enabledToolResourceIds = new HashSet<>(normalizedPolicy.toolResourceIds());
+        List<ToolVersionPinDto> validToolPins = new ArrayList<>();
+        for (ToolVersionPinDto toolVersionPin : agent.toolVersionPins()) {
+            ResourceDto resource = resources.stream()
+                .filter(item -> item.id().equals(toolVersionPin.resourceId()))
+                .findFirst()
+                .orElse(null);
+            if (resource == null) {
+                log.warn("Dropping legacy tool pin for missing resource agent={} resource={}", agent.id(), toolVersionPin.resourceId());
+                continue;
+            }
+            if (resource.type() != ResourceType.SKILL && resource.type() != ResourceType.MCP) {
+                log.warn("Dropping invalid non-tool version pin agent={} resource={} type={}", agent.id(), toolVersionPin.resourceId(), resource.type());
+                continue;
+            }
+            validToolPins.add(toolVersionPin);
+            enabledToolResourceIds.add(toolVersionPin.resourceId());
+        }
+        return new AgentDto(
+            agent.id(),
+            agent.assistantId(),
+            agent.name(),
+            agent.role(),
+            agent.instructions(),
+            validToolPins,
+            new AgentExecutionPolicyDto(
+                normalizedPolicy.inheritAssistantDefaults(),
+                normalizedPolicy.modelResourceId(),
+                normalizedPolicy.promptTemplateResourceId(),
+                normalizedPolicy.inlinePrompt(),
+                normalizedPolicy.ragEnabled(),
+                normalizedPolicy.knowledgeBaseResourceId(),
+                normalizedPolicy.memoryWindowSize(),
+                List.copyOf(enabledToolResourceIds)
+            )
+        );
     }
 
     private void persistState() {
@@ -1381,27 +1728,45 @@ public class CatalogService {
     }
 
     private BusinessDomainDto findDomain(String domainId) {
-        return domains.stream().filter(item -> item.id().equals(domainId)).findFirst().orElseThrow();
+        return domains.stream()
+            .filter(item -> item.id().equals(domainId))
+            .findFirst()
+            .orElseThrow(() -> new NoSuchElementException("business domain not found: " + domainId));
     }
 
     private ScenarioDto findScenario(String scenarioId) {
-        return scenarios.stream().filter(item -> item.id().equals(scenarioId)).findFirst().orElseThrow();
+        return scenarios.stream()
+            .filter(item -> item.id().equals(scenarioId))
+            .findFirst()
+            .orElseThrow(() -> new NoSuchElementException("scenario not found: " + scenarioId));
     }
 
     private ResourceDto findResource(String resourceId) {
-        return resources.stream().filter(item -> item.id().equals(resourceId)).findFirst().orElseThrow();
+        return resources.stream()
+            .filter(item -> item.id().equals(resourceId))
+            .findFirst()
+            .orElseThrow(() -> new NoSuchElementException("resource not found: " + resourceId));
     }
 
     private AssistantDto findAssistant(String assistantId) {
-        return assistants.stream().filter(item -> item.id().equals(assistantId)).findFirst().orElseThrow();
+        return assistants.stream()
+            .filter(item -> item.id().equals(assistantId))
+            .findFirst()
+            .orElseThrow(() -> new NoSuchElementException("assistant not found: " + assistantId));
     }
 
     private AgentDto findAgent(String agentId) {
-        return agents.stream().filter(item -> item.id().equals(agentId)).findFirst().orElseThrow();
+        return agents.stream()
+            .filter(item -> item.id().equals(agentId))
+            .findFirst()
+            .orElseThrow(() -> new NoSuchElementException("agent not found: " + agentId));
     }
 
     private ResourceVersionDto findResourceVersion(String resourceId, String versionId) {
-        return versionsFor(resourceId).stream().filter(item -> item.id().equals(versionId)).findFirst().orElseThrow();
+        return versionsFor(resourceId).stream()
+            .filter(item -> item.id().equals(versionId))
+            .findFirst()
+            .orElseThrow(() -> new NoSuchElementException("resource version not found: " + resourceId + "/" + versionId));
     }
 
     private List<ResourceVersionDto> versionsFor(String resourceId) {
@@ -1524,16 +1889,20 @@ public class CatalogService {
 
     private AssistantModelPolicyDto normalizeAssistantModelPolicy(AssistantModelPolicyDto policy) {
         if (policy == null) {
-            return new AssistantModelPolicyDto(defaultLlmResourceId(), "resource-prompt-router", 0.2, 1200);
+            return new AssistantModelPolicyDto(
+                resolveDefaultResourceId(ResourceType.LLM_MODEL, defaultLlmResourceId()),
+                resolveDefaultResourceId(ResourceType.PROMPT_TEMPLATE, "resource-prompt-router")
+            );
         }
-        return new AssistantModelPolicyDto(policy.providerResourceId(), policy.promptTemplateResourceId(), policy.temperature(), policy.maxTokens());
+        return new AssistantModelPolicyDto(policy.providerResourceId(), policy.promptTemplateResourceId());
     }
 
     private RagPolicyDto normalizeRagPolicy(RagPolicyDto policy) {
         if (policy == null) {
-            return new RagPolicyDto(true, "resource-kb-support", 5);
+            String defaultKnowledgeBaseId = resolveDefaultResourceId(ResourceType.KNOWLEDGE_BASE, "resource-kb-support");
+            return new RagPolicyDto(defaultKnowledgeBaseId != null, defaultKnowledgeBaseId);
         }
-        return new RagPolicyDto(policy.enabled(), policy.knowledgeBaseResourceId(), policy.topK());
+        return new RagPolicyDto(policy.enabled(), policy.knowledgeBaseResourceId());
     }
 
     private MemoryPolicyDto normalizeMemoryPolicy(MemoryPolicyDto policy) {
@@ -1545,7 +1914,8 @@ public class CatalogService {
 
     private AgentExecutionPolicyDto normalizeAgentExecutionPolicy(AgentExecutionPolicyDto policy) {
         if (policy == null) {
-            return new AgentExecutionPolicyDto(true, null, null, "", true, "resource-kb-support", 8, List.of());
+            String defaultKnowledgeBaseId = resolveDefaultResourceId(ResourceType.KNOWLEDGE_BASE, "resource-kb-support");
+            return new AgentExecutionPolicyDto(true, null, null, "", defaultKnowledgeBaseId != null, defaultKnowledgeBaseId, 8, List.of());
         }
         return new AgentExecutionPolicyDto(
             policy.inheritAssistantDefaults(),
@@ -1557,6 +1927,50 @@ public class CatalogService {
             policy.memoryWindowSize(),
             policy.toolResourceIds() == null ? List.of() : List.copyOf(policy.toolResourceIds())
         );
+    }
+
+    private void validateResourceOwner(String domainId, String ownerType, String ownerId) {
+        String normalizedOwnerType = requireText(ownerType, "resource.ownerType");
+        String normalizedOwnerId = requireText(ownerId, "resource.ownerId");
+        if ("DOMAIN".equals(normalizedOwnerType)) {
+            if (!domainId.equals(normalizedOwnerId)) {
+                throw new IllegalArgumentException("resource ownerId must match domainId when ownerType=DOMAIN");
+            }
+            return;
+        }
+        if (!"ASSISTANT".equals(normalizedOwnerType)) {
+            throw new IllegalArgumentException("resource ownerType must be DOMAIN or ASSISTANT");
+        }
+        AssistantDto assistant = findAssistant(normalizedOwnerId);
+        ScenarioDto scenario = findScenario(assistant.scenarioId());
+        if (!domainId.equals(scenario.domainId())) {
+            throw new IllegalArgumentException("assistant owner must belong to the same business domain as resource.domainId");
+        }
+    }
+
+    private ToolVersionPinDto findRequiredToolVersionPin(AgentDto agent, String toolResourceId) {
+        ResourceDto resource = findResource(toolResourceId);
+        List<ToolVersionPinDto> matches = agent.toolVersionPins().stream()
+            .filter(toolVersionPin -> toolVersionPin.resourceId().equals(toolResourceId))
+            .toList();
+        if (matches.isEmpty()) {
+            throw new IllegalStateException("agent tool requires a pinned version before release: " + agent.name() + " -> " + resource.name());
+        }
+        if (matches.size() > 1) {
+            throw new IllegalStateException("agent tool must pin exactly one version: " + agent.name() + " -> " + resource.name());
+        }
+        validateToolVersionPin(agent, resource, matches.getFirst().resourceVersionId());
+        return matches.getFirst();
+    }
+
+    private void validateToolVersionPin(AgentDto agent, ResourceDto resource, String resourceVersionId) {
+        if (resource.type() != ResourceType.SKILL && resource.type() != ResourceType.MCP) {
+            throw new IllegalArgumentException("tool version pins only support SKILL or MCP resources: " + resource.id());
+        }
+        if (!agent.executionPolicy().toolResourceIds().contains(resource.id())) {
+            throw new IllegalArgumentException("tool version pin requires the resource to be enabled first: " + agent.name() + " -> " + resource.name());
+        }
+        findResourceVersion(resource.id(), resourceVersionId);
     }
 
     private String nextResourceVersion(List<ResourceVersionDto> versions) {
@@ -1572,9 +1986,9 @@ public class CatalogService {
         return prefix + "-" + UUID.randomUUID().toString().substring(0, 8);
     }
 
-    private static List<ResourceBindingDto> append(List<ResourceBindingDto> bindings, ResourceBindingDto binding) {
-        List<ResourceBindingDto> updated = new ArrayList<>(bindings);
-        updated.add(binding);
+    private static List<ToolVersionPinDto> append(List<ToolVersionPinDto> toolVersionPins, ToolVersionPinDto toolVersionPin) {
+        List<ToolVersionPinDto> updated = new ArrayList<>(toolVersionPins);
+        updated.add(toolVersionPin);
         return updated;
     }
 
@@ -1602,6 +2016,52 @@ public class CatalogService {
     private static boolean hasEnv(String key) {
         String value = System.getenv(key);
         return value != null && !value.isBlank();
+    }
+
+    private String resolveDefaultResourceId(ResourceType type, String preferredResourceId) {
+        if (preferredResourceId != null && resources.stream().anyMatch(resource -> resource.id().equals(preferredResourceId))) {
+            return preferredResourceId;
+        }
+        return resources.stream()
+            .filter(resource -> resource.type() == type)
+            .map(ResourceDto::id)
+            .findFirst()
+            .orElse(null);
+    }
+
+    private void ensureUniqueDomainName(String name, String excludedDomainId) {
+        boolean exists = domains.stream().anyMatch(item ->
+            !item.id().equals(excludedDomainId)
+                && item.name().equalsIgnoreCase(name)
+        );
+        if (exists) {
+            throw new IllegalArgumentException("business domain name already exists: " + name);
+        }
+    }
+
+    private void ensureUniqueScenarioName(String domainId, String name, String excludedScenarioId) {
+        boolean exists = scenarios.stream().anyMatch(item ->
+            item.domainId().equals(domainId)
+                && !item.id().equals(excludedScenarioId)
+                && item.name().equalsIgnoreCase(name)
+        );
+        if (exists) {
+            throw new IllegalArgumentException("scenario name already exists in domain: " + name);
+        }
+    }
+
+    private static String requireText(String value, String fieldName) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(fieldName + " must not be blank");
+        }
+        return value.trim();
+    }
+
+    private static String normalizeOptionalText(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        return value.trim();
     }
 
     private static <T, K> void replace(List<T> items, Function<T, K> keyExtractor, T replacement) {

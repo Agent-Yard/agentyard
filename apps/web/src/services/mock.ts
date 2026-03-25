@@ -225,9 +225,9 @@ const agents: Agent[] = [
     name: '问题路由智能体',
     role: 'router',
     instructions: '识别用户问题属于 FAQ、售后还是需要人工接管的投诉。',
-    bindings: [
+    toolVersionPins: [
       {
-        id: 'binding-router-kb',
+        id: 'tool-version-pin-router-kb',
         resourceId: 'resource-kb-support',
         resourceVersionId: 'resource-version-kb-v1',
         resourceVersion: '1.0.0',
@@ -253,7 +253,7 @@ const agents: Agent[] = [
     name: 'FAQ 智能体',
     role: 'faq',
     instructions: '根据知识库回答标准问题。',
-    bindings: [],
+    toolVersionPins: [],
     executionPolicy: {
       inheritAssistantDefaults: true,
       modelResourceId: null,
@@ -271,9 +271,9 @@ const agents: Agent[] = [
     name: '售后策略智能体',
     role: 'policy',
     instructions: '调用售后策略 Skill 评估退款或补偿方案。',
-    bindings: [
+    toolVersionPins: [
       {
-        id: 'binding-policy-skill',
+        id: 'tool-version-pin-policy-skill',
         resourceId: 'resource-skill-refund',
         resourceVersionId: 'resource-version-refund-v1',
         resourceVersion: '1.0.0',
@@ -299,9 +299,9 @@ const agents: Agent[] = [
     name: '人工协同智能体',
     role: 'handoff',
     instructions: '在人工节点前后同步工单和总结。',
-    bindings: [
+    toolVersionPins: [
       {
-        id: 'binding-coordinator-mcp',
+        id: 'tool-version-pin-coordinator-mcp',
         resourceId: 'resource-mcp-ticket',
         resourceVersionId: 'resource-version-ticket-v1',
         resourceVersion: '1.0.0',
@@ -422,19 +422,16 @@ const release: AssistantRelease = {
     role: agent.role,
     instructions: agent.instructions,
     executionPolicy: agent.executionPolicy,
-    bindingResourceVersionIds: agent.bindings.map((binding) => binding.resourceVersionId),
+    toolResourceVersionIds: agent.toolVersionPins.map((toolVersionPin) => toolVersionPin.resourceVersionId),
   })),
   orchestration,
   modelPolicy: {
     providerResourceId: 'resource-llm-openai',
     promptTemplateResourceId: 'resource-prompt-support',
-    temperature: 0.2,
-    maxTokens: 1200,
   },
   ragPolicy: {
     enabled: true,
     knowledgeBaseResourceId: 'resource-kb-support',
-    topK: 5,
   },
   memoryPolicy: {
     enabled: true,
@@ -602,7 +599,7 @@ export const mockCatalogSummary: CatalogSummary = {
     totalResources: resources.length,
     domainSharedResources: resources.filter((item) => item.shareScope === 'DOMAIN_SHARED').length,
     privateResources: resources.filter((item) => item.shareScope === 'PRIVATE').length,
-    usages: [
+    references: [
       {
         resourceId: 'resource-kb-support',
         resourceName: '客服知识库',
@@ -611,9 +608,13 @@ export const mockCatalogSummary: CatalogSummary = {
         ownerLabel: 'DOMAIN:domain-support',
         latestVersion: '1.0.0',
         effectiveVersion: '1.0.0',
-        boundAgents: ['问题路由智能体', 'FAQ 智能体', '售后策略智能体'],
-        boundAssistants: ['客户协同助手'],
-        bindingAnchors: ['问题路由智能体 -> 1.0.0'],
+        referenceKind: 'ASSISTANT_DEFAULT_KNOWLEDGE_BASE',
+        sourceType: 'ASSISTANT',
+        sourceId: 'assistant-customer-ops',
+        sourceName: '客户协同助手',
+        resourceVersionId: null,
+        resourceVersion: null,
+        blocksDeletion: true,
       },
       {
         resourceId: 'resource-skill-refund',
@@ -623,9 +624,13 @@ export const mockCatalogSummary: CatalogSummary = {
         ownerLabel: 'ASSISTANT:assistant-customer-ops',
         latestVersion: '1.0.0',
         effectiveVersion: '1.0.0',
-        boundAgents: ['售后策略智能体'],
-        boundAssistants: ['客户协同助手'],
-        bindingAnchors: ['售后策略智能体 -> 1.0.0'],
+        referenceKind: 'AGENT_TOOL_VERSION_PIN',
+        sourceType: 'AGENT',
+        sourceId: 'agent-policy',
+        sourceName: '售后策略智能体',
+        resourceVersionId: 'resource-version-refund-v1',
+        resourceVersion: '1.0.0',
+        blocksDeletion: true,
       },
       {
         resourceId: 'resource-mcp-ticket',
@@ -635,9 +640,13 @@ export const mockCatalogSummary: CatalogSummary = {
         ownerLabel: 'DOMAIN:domain-support',
         latestVersion: '1.0.0',
         effectiveVersion: '1.0.0',
-        boundAgents: ['人工协同智能体'],
-        boundAssistants: ['客户协同助手'],
-        bindingAnchors: ['人工协同智能体 -> 1.0.0'],
+        referenceKind: 'AGENT_TOOL_VERSION_PIN',
+        sourceType: 'AGENT',
+        sourceId: 'agent-coordinator',
+        sourceName: '人工协同智能体',
+        resourceVersionId: 'resource-version-ticket-v1',
+        resourceVersion: '1.0.0',
+        blocksDeletion: true,
       },
     ],
   } satisfies ResourceCenter,

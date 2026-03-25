@@ -11,6 +11,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   createAssistant: [payload: CreateAssistantPayload];
   updateAssistant: [payload: { assistantId: string; data: UpdateAssistantPayload }];
+  deleteAssistant: [assistantId: string];
 }>();
 
 const selectedAssistantId = ref('');
@@ -19,15 +20,12 @@ const createForm = reactive<CreateAssistantPayload>({
   name: '',
   description: '',
   modelPolicy: {
-    providerResourceId: 'resource-llm-openai',
-    promptTemplateResourceId: 'resource-prompt-support',
-    temperature: 0.2,
-    maxTokens: 1200,
+    providerResourceId: null,
+    promptTemplateResourceId: null,
   },
   ragPolicy: {
-    enabled: true,
-    knowledgeBaseResourceId: 'resource-kb-support',
-    topK: 5,
+    enabled: false,
+    knowledgeBaseResourceId: null,
   },
   memoryPolicy: {
     enabled: true,
@@ -39,15 +37,12 @@ const editForm = reactive<UpdateAssistantPayload>({
   description: '',
   status: 'DRAFT',
   modelPolicy: {
-    providerResourceId: 'resource-llm-openai',
-    promptTemplateResourceId: 'resource-prompt-support',
-    temperature: 0.2,
-    maxTokens: 1200,
+    providerResourceId: null,
+    promptTemplateResourceId: null,
   },
   ragPolicy: {
-    enabled: true,
-    knowledgeBaseResourceId: 'resource-kb-support',
-    topK: 5,
+    enabled: false,
+    knowledgeBaseResourceId: null,
   },
   memoryPolicy: {
     enabled: true,
@@ -61,6 +56,19 @@ const current = computed(() =>
 const modelResources = computed(() => props.resources.filter((item) => item.type === 'LLM_MODEL'));
 const promptResources = computed(() => props.resources.filter((item) => item.type === 'PROMPT_TEMPLATE'));
 const knowledgeBases = computed(() => props.resources.filter((item) => item.type === 'KNOWLEDGE_BASE'));
+
+function syncCreateFormResourceDefaults() {
+  if (!modelResources.value.some((item) => item.id === createForm.modelPolicy.providerResourceId)) {
+    createForm.modelPolicy.providerResourceId = modelResources.value[0]?.id ?? null;
+  }
+  if (!promptResources.value.some((item) => item.id === createForm.modelPolicy.promptTemplateResourceId)) {
+    createForm.modelPolicy.promptTemplateResourceId = promptResources.value[0]?.id ?? null;
+  }
+  if (!knowledgeBases.value.some((item) => item.id === createForm.ragPolicy.knowledgeBaseResourceId)) {
+    createForm.ragPolicy.knowledgeBaseResourceId = knowledgeBases.value[0]?.id ?? null;
+  }
+  createForm.ragPolicy.enabled = createForm.ragPolicy.knowledgeBaseResourceId !== null;
+}
 
 watch(
   () => props.assistants,
@@ -103,6 +111,8 @@ watch(
   },
   { immediate: true },
 );
+
+watch([modelResources, promptResources, knowledgeBases], syncCreateFormResourceDefaults, { immediate: true });
 
 function submitCreate() {
   emit('createAssistant', { ...createForm });
@@ -162,17 +172,7 @@ function submitUpdate() {
             </a-col>
           </a-row>
           <a-row :gutter="[16, 16]">
-            <a-col :span="8">
-              <a-form-item label="Temperature">
-                <a-input-number v-model:value="createForm.modelPolicy.temperature" :min="0" :max="2" :step="0.1" style="width: 100%" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item label="Max Tokens">
-                <a-input-number v-model:value="createForm.modelPolicy.maxTokens" :min="1" style="width: 100%" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
+            <a-col :span="24">
               <a-form-item label="记忆窗口">
                 <a-input-number v-model:value="createForm.memoryPolicy.windowSize" :min="1" style="width: 100%" />
               </a-form-item>
@@ -185,11 +185,6 @@ function submitUpdate() {
                   v-model:value="createForm.ragPolicy.knowledgeBaseResourceId"
                   :options="knowledgeBases.map((item) => ({ label: item.name, value: item.id }))"
                 />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="默认 TopK">
-                <a-input-number v-model:value="createForm.ragPolicy.topK" :min="1" style="width: 100%" />
               </a-form-item>
             </a-col>
           </a-row>
@@ -268,17 +263,7 @@ function submitUpdate() {
             </a-col>
           </a-row>
           <a-row :gutter="[16, 16]">
-            <a-col :span="8">
-              <a-form-item label="Temperature">
-                <a-input-number v-model:value="editForm.modelPolicy.temperature" :min="0" :max="2" :step="0.1" style="width: 100%" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item label="Max Tokens">
-                <a-input-number v-model:value="editForm.modelPolicy.maxTokens" :min="1" style="width: 100%" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
+            <a-col :span="24">
               <a-form-item label="记忆窗口">
                 <a-input-number v-model:value="editForm.memoryPolicy.windowSize" :min="1" style="width: 100%" />
               </a-form-item>
@@ -293,14 +278,18 @@ function submitUpdate() {
                 />
               </a-form-item>
             </a-col>
-            <a-col :span="12">
-              <a-form-item label="默认 TopK">
-                <a-input-number v-model:value="editForm.ragPolicy.topK" :min="1" style="width: 100%" />
-              </a-form-item>
-            </a-col>
           </a-row>
 
           <a-button type="primary" html-type="submit">保存助手</a-button>
+          <a-popconfirm
+            title="确认删除该助手？"
+            description="如果助手下仍有智能体或私有资源，删除会被阻止；删除成功后会回收编排和发布快照。"
+            ok-text="删除"
+            cancel-text="取消"
+            @confirm="emit('deleteAssistant', current.id)"
+          >
+            <a-button danger style="margin-left: 12px">删除助手</a-button>
+          </a-popconfirm>
         </a-form>
       </a-card>
 

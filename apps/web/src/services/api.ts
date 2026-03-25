@@ -1,14 +1,17 @@
 import type {
   Agent,
   Assistant,
+  BusinessDomain,
   CatalogSummary,
   ConversationMessagePayload,
   ConversationSession,
   CreateAssistantPayload,
   CreateAgentPayload,
   CreateConversationSessionPayload,
+  CreateDomainPayload,
   CreateResourcePayload,
   CreateResourceVersionPayload,
+  CreateScenarioPayload,
   ResourceType,
   ResourceVersionConfiguration,
   OrchestrationEdge,
@@ -16,11 +19,14 @@ import type {
   Resource,
   ResourceVersion,
   Role,
+  Scenario,
   TaskInstance,
-  UpdateAgentBindingsPayload,
+  UpdateAgentToolVersionPinsPayload,
   UpdateAssistantPayload,
   UpdateAgentPayload,
+  UpdateDomainPayload,
   UpdateOrchestrationPayload,
+  UpdateScenarioPayload,
   UserSession,
   WorkflowInstance,
 } from '../types';
@@ -77,25 +83,7 @@ function rebuildCatalogState() {
     totalResources: catalog.resources.length,
     domainSharedResources: catalog.resources.filter((resource) => resource.shareScope === 'DOMAIN_SHARED').length,
     privateResources: catalog.resources.filter((resource) => resource.shareScope === 'PRIVATE').length,
-    usages: catalog.resources.map((resource) => ({
-      resourceId: resource.id,
-      resourceName: resource.name,
-      type: resource.type,
-      shareScope: resource.shareScope,
-      ownerLabel: `${resource.ownerType}:${resource.ownerId}`,
-      latestVersion: resource.latestVersion?.version ?? null,
-      effectiveVersion: resource.effectiveVersion?.version ?? null,
-      boundAgents: catalog.agents
-        .filter((agent) => agent.bindings.some((binding) => binding.resourceId === resource.id))
-        .map((agent) => agent.name),
-      boundAssistants: catalog.assistants
-        .filter((assistant) => assistant.agents.some((agent) => agent.bindings.some((binding) => binding.resourceId === resource.id)))
-        .map((assistant) => assistant.name),
-      bindingAnchors: catalog.agents
-        .flatMap((agent) => agent.bindings
-          .filter((binding) => binding.resourceId === resource.id)
-          .map((binding) => `${agent.name} -> ${binding.resourceVersion}`)),
-    })),
+    references: catalog.resources.flatMap((resource) => buildResourceReferenceEntries(resource)),
   };
 }
 
@@ -217,6 +205,14 @@ function findAssistant(assistantId: string): Assistant {
   return assistant;
 }
 
+function findDomain(domainId: string): BusinessDomain {
+  const domain = fallbackState.catalog.domains.find((item) => item.id === domainId);
+  if (!domain) {
+    throw new Error(`Domain ${domainId} not found`);
+  }
+  return domain;
+}
+
 function buildAssistantRelease(assistant: Assistant, releaseVersion: string) {
   const orchestration = clone(findOrchestration(assistant.id));
   const agentSnapshots = assistant.agents.map((agent) => ({
@@ -225,7 +221,7 @@ function buildAssistantRelease(assistant: Assistant, releaseVersion: string) {
     role: agent.role,
     instructions: agent.instructions,
     executionPolicy: clone(agent.executionPolicy),
-    bindingResourceVersionIds: agent.bindings.map((binding) => binding.resourceVersionId),
+    toolResourceVersionIds: agent.toolVersionPins.map((toolVersionPin) => toolVersionPin.resourceVersionId),
   }));
   const releaseResources = collectReleaseResources(assistant);
   return {
@@ -252,12 +248,28 @@ function findAgent(agentId: string): Agent {
   return agent;
 }
 
+function findScenario(scenarioId: string): Scenario {
+  const scenario = fallbackState.catalog.scenarios.find((item) => item.id === scenarioId);
+  if (!scenario) {
+    throw new Error(`Scenario ${scenarioId} not found`);
+  }
+  return scenario;
+}
+
 function findResource(resourceId: string): Resource {
   const resource = fallbackState.catalog.resources.find((item) => item.id === resourceId);
   if (!resource) {
     throw new Error(`Resource ${resourceId} not found`);
   }
   return resource;
+}
+
+function findResourceVersion(resourceId: string, versionId: string): ResourceVersion {
+  const version = findResource(resourceId).versions.find((item) => item.id === versionId);
+  if (!version) {
+    throw new Error(`Resource version ${resourceId}/${versionId} not found`);
+  }
+  return version;
 }
 
 function findSession(sessionId: string): ConversationSession {
@@ -310,6 +322,72 @@ function findOrchestration(assistantId: string) {
   };
 }
 
+function buildDefaultOrchestrationForAssistant(assistantId: string) {
+  const assistant = findAssistant(assistantId);
+  const assistantAgents = fallbackState.catalog.agents
+    .filter((item) => item.assistantId === assistantId)
+    .sort((left, right) => left.name.localeCompare(right.name));
+  const nodes: OrchestrationNode[] = [
+    {
+      nodeKey: 'start',
+      nodeName: '开始',
+      nodeType: 'START',
+      description: '会话开始',
+      agentId: null,
+      humanNode: null,
+    },
+    ...assistantAgents.map((agent) => ({
+      nodeKey: `node-${agent.id}`,
+      nodeName: agent.name,
+      nodeType: 'AGENT' as const,
+      description: agent.executionPolicy.inlinePrompt || agent.instructions,
+      agentId: agent.id,
+      humanNode: null,
+    })),
+    {
+      nodeKey: 'end',
+      nodeName: '结束',
+      nodeType: 'END',
+      description: '流程结束',
+      agentId: null,
+      humanNode: null,
+    },
+  ];
+  const edges: OrchestrationEdge[] = nodes.slice(0, -1).map((node, index) => ({
+    edgeKey: `edge-${node.nodeKey}-${nodes[index + 1].nodeKey}`,
+    sourceNodeKey: node.nodeKey,
+    targetNodeKey: nodes[index + 1].nodeKey,
+    routeKey: 'default',
+    label: node.nodeType === 'START' ? '开始处理' : '默认流转',
+    defaultEdge: true,
+  }));
+  return {
+    assistantId,
+    assistantName: assistant.name,
+    scenarioId: assistant.scenarioId,
+    executionMode: 'GRAPH',
+    nodes,
+    edges,
+  };
+}
+
+function validateResourceOwner(domainId: string, ownerType: string, ownerId: string) {
+  if (ownerType === 'DOMAIN') {
+    if (domainId !== ownerId) {
+      throw new Error('资源归属为业务域时，归属对象必须等于当前业务域');
+    }
+    return;
+  }
+  if (ownerType !== 'ASSISTANT') {
+    throw new Error('资源归属类型仅支持业务域或助手');
+  }
+  const assistant = findAssistant(ownerId);
+  const scenario = findScenario(assistant.scenarioId);
+  if (scenario.domainId !== domainId) {
+    throw new Error('助手私有资源只能归属到当前业务域内的助手');
+  }
+}
+
 function resolveResourceVersion(resourceId: string, preferredVersionId?: string | null) {
   const resource = findResource(resourceId);
   const version = (preferredVersionId
@@ -319,6 +397,126 @@ function resolveResourceVersion(resourceId: string, preferredVersionId?: string 
     throw new Error(`Resource ${resourceId} has no versions`);
   }
   return { resource, version };
+}
+
+function findResourceDeletionBlocker(resourceId: string): string | null {
+  const resource = findResource(resourceId);
+  return buildResourceReferenceEntries(resource)
+    .filter((reference) => reference.blocksDeletion)
+    .map((reference) => {
+      switch (reference.referenceKind) {
+        case 'ASSISTANT_DEFAULT_MODEL':
+          return `资源仍被助手默认模型引用：${reference.sourceName}`;
+        case 'ASSISTANT_DEFAULT_PROMPT':
+          return `资源仍被助手默认 Prompt 引用：${reference.sourceName}`;
+        case 'ASSISTANT_DEFAULT_KNOWLEDGE_BASE':
+          return `资源仍被助手默认知识库引用：${reference.sourceName}`;
+        case 'AGENT_OVERRIDE_MODEL':
+          return `资源仍被智能体模型覆盖引用：${reference.sourceName}`;
+        case 'AGENT_OVERRIDE_PROMPT':
+          return `资源仍被智能体 Prompt 覆盖引用：${reference.sourceName}`;
+        case 'AGENT_OVERRIDE_KNOWLEDGE_BASE':
+          return `资源仍被智能体知识库覆盖引用：${reference.sourceName}`;
+        case 'AGENT_TOOL_ENABLED':
+          return `资源仍被智能体工具集引用：${reference.sourceName}`;
+        case 'AGENT_TOOL_VERSION_PIN':
+          return `资源仍存在智能体工具版本固定：${reference.sourceName}`;
+        default:
+          return `资源仍被引用：${reference.sourceName}`;
+      }
+    })[0] ?? null;
+}
+
+function findResourceVersionDeletionBlocker(versionId: string): string | null {
+  for (const resource of fallbackState.catalog.resources) {
+    const blocker = buildResourceReferenceEntries(resource)
+      .find((reference) => reference.blocksDeletion && reference.resourceVersionId === versionId);
+    if (blocker) {
+      return `资源版本仍被智能体工具固定：${blocker.sourceName}`;
+    }
+  }
+  return null;
+}
+
+function buildResourceReferenceEntries(resource: Resource) {
+  const entries = [] as CatalogSummary['resourceCenter']['references'];
+  const ownerLabel = `${resource.ownerType}:${resource.ownerId}`;
+  const latestVersion = resource.latestVersion?.version ?? null;
+  const effectiveVersion = resource.effectiveVersion?.version ?? null;
+  const pushEntry = (
+    referenceKind: string,
+    sourceType: string,
+    sourceId: string,
+    sourceName: string,
+    resourceVersionId: string | null,
+    resourceVersion: string | null,
+    blocksDeletion: boolean,
+  ) => {
+    entries.push({
+      resourceId: resource.id,
+      resourceName: resource.name,
+      type: resource.type,
+      shareScope: resource.shareScope,
+      ownerLabel,
+      latestVersion,
+      effectiveVersion,
+      referenceKind,
+      sourceType,
+      sourceId,
+      sourceName,
+      resourceVersionId,
+      resourceVersion,
+      blocksDeletion,
+    });
+  };
+
+  for (const assistant of fallbackState.catalog.assistants) {
+    if (assistant.modelPolicy.providerResourceId === resource.id) {
+      pushEntry('ASSISTANT_DEFAULT_MODEL', 'ASSISTANT', assistant.id, assistant.name, null, null, true);
+    }
+    if (assistant.modelPolicy.promptTemplateResourceId === resource.id) {
+      pushEntry('ASSISTANT_DEFAULT_PROMPT', 'ASSISTANT', assistant.id, assistant.name, null, null, true);
+    }
+    if (assistant.ragPolicy.enabled && assistant.ragPolicy.knowledgeBaseResourceId === resource.id) {
+      pushEntry('ASSISTANT_DEFAULT_KNOWLEDGE_BASE', 'ASSISTANT', assistant.id, assistant.name, null, null, true);
+    }
+  }
+
+  for (const agent of fallbackState.catalog.agents) {
+    if (agent.executionPolicy.modelResourceId === resource.id) {
+      pushEntry('AGENT_OVERRIDE_MODEL', 'AGENT', agent.id, agent.name, null, null, true);
+    }
+    if (agent.executionPolicy.promptTemplateResourceId === resource.id) {
+      pushEntry('AGENT_OVERRIDE_PROMPT', 'AGENT', agent.id, agent.name, null, null, true);
+    }
+    if (agent.executionPolicy.ragEnabled && agent.executionPolicy.knowledgeBaseResourceId === resource.id) {
+      pushEntry('AGENT_OVERRIDE_KNOWLEDGE_BASE', 'AGENT', agent.id, agent.name, null, null, true);
+    }
+    if (agent.executionPolicy.toolResourceIds.includes(resource.id)) {
+      pushEntry('AGENT_TOOL_ENABLED', 'AGENT', agent.id, agent.name, null, null, true);
+    }
+    for (const toolVersionPin of agent.toolVersionPins.filter((item) => item.resourceId === resource.id)) {
+      pushEntry('AGENT_TOOL_VERSION_PIN', 'AGENT', agent.id, agent.name, toolVersionPin.resourceVersionId, toolVersionPin.resourceVersion, true);
+    }
+  }
+
+  for (const assistant of fallbackState.catalog.assistants) {
+    for (const release of assistant.releases) {
+      for (const releaseResource of release.resources.filter((item) => item.resourceId === resource.id)) {
+        pushEntry(
+          'RELEASE_FROZEN',
+          'ASSISTANT_RELEASE',
+          release.id,
+          `${assistant.name}@${release.releaseVersion}`,
+          releaseResource.resourceVersionId,
+          releaseResource.resourceVersion,
+          false,
+        );
+      }
+    }
+  }
+
+  return entries;
 }
 
 function mergeBoundAgents(current: string[], incoming: string[]) {
@@ -371,10 +569,11 @@ function collectReleaseResources(assistant: Assistant) {
     addResource(agent.executionPolicy.promptTemplateResourceId, null, agent.name);
     addResource(agent.executionPolicy.ragEnabled ? agent.executionPolicy.knowledgeBaseResourceId : null, null, agent.name);
     for (const resourceId of agent.executionPolicy.toolResourceIds) {
-      addResource(resourceId, null, agent.name);
-    }
-    for (const binding of agent.bindings) {
-      addResource(binding.resourceId, binding.resourceVersionId, agent.name);
+      const toolVersionPin = agent.toolVersionPins.find((item) => item.resourceId === resourceId);
+      if (!toolVersionPin) {
+        throw new Error(`工具已启用但未固定版本：${agent.name} -> ${resourceId}`);
+      }
+      addResource(resourceId, toolVersionPin.resourceVersionId, agent.name);
     }
   }
 
@@ -519,7 +718,17 @@ async function request<T>(path: string, options?: RequestInit, fallback?: T | ((
     });
 
     if (!response.ok) {
-      throw new Error(`Request failed: ${response.status}`);
+      const rawText = await response.text();
+      let detail = rawText || `Request failed: ${response.status}`;
+      if (rawText) {
+        try {
+          const errorBody = JSON.parse(rawText) as { detail?: string; message?: string; error?: string };
+          detail = errorBody.detail ?? errorBody.message ?? errorBody.error ?? detail;
+        } catch {
+          detail = rawText;
+        }
+      }
+      throw new Error(detail);
     }
 
     const body = await response.json();
@@ -623,6 +832,109 @@ export const api = {
         return clone(updated);
       },
     ),
+  createDomain: (payload: CreateDomainPayload) =>
+    request<BusinessDomain>(
+      '/domains',
+      { method: 'POST', body: JSON.stringify(payload) },
+      () => {
+        const created: BusinessDomain = {
+          id: nextId('domain'),
+          name: payload.name.trim(),
+          description: payload.description.trim(),
+          scenarios: [],
+          resources: [],
+        };
+        fallbackState.catalog.domains.push(created);
+        rebuildCatalogState();
+        return clone(created);
+      },
+    ),
+  updateDomain: (domainId: string, payload: UpdateDomainPayload) =>
+    request<BusinessDomain>(
+      `/domains/${domainId}`,
+      { method: 'PUT', body: JSON.stringify(payload) },
+      () => {
+        const current = findDomain(domainId);
+        const updated: BusinessDomain = {
+          ...current,
+          name: payload.name.trim(),
+          description: payload.description.trim(),
+        };
+        fallbackState.catalog.domains = fallbackState.catalog.domains.map((item) => item.id === domainId ? updated : item);
+        rebuildCatalogState();
+        return clone(updated);
+      },
+    ),
+  deleteDomain: (domainId: string) =>
+    request<BusinessDomain>(
+      `/domains/${domainId}`,
+      { method: 'DELETE' },
+      () => {
+        if (fallbackState.catalog.scenarios.some((item) => item.domainId === domainId)) {
+          throw new Error('业务域下仍存在业务场景，暂时不能删除');
+        }
+        if (fallbackState.catalog.resources.some((item) => item.domainId === domainId)) {
+          throw new Error('业务域下仍存在资源，暂时不能删除');
+        }
+        const current = findDomain(domainId);
+        fallbackState.catalog.domains = fallbackState.catalog.domains.filter((item) => item.id !== domainId);
+        rebuildCatalogState();
+        return clone(current);
+      },
+    ),
+  createScenario: (payload: CreateScenarioPayload) =>
+    request<Scenario>(
+      '/scenarios',
+      { method: 'POST', body: JSON.stringify(payload) },
+      () => {
+        findDomain(payload.domainId);
+        const created: Scenario = {
+          id: nextId('scenario'),
+          domainId: payload.domainId,
+          name: payload.name.trim(),
+          goal: payload.goal.trim(),
+          version: {
+            version: '0.1.0',
+            status: 'DRAFT',
+            updatedAt: new Date().toISOString(),
+          },
+          assistants: [],
+        };
+        fallbackState.catalog.scenarios.push(created);
+        rebuildCatalogState();
+        return clone(created);
+      },
+    ),
+  updateScenario: (scenarioId: string, payload: UpdateScenarioPayload) =>
+    request<Scenario>(
+      `/scenarios/${scenarioId}`,
+      { method: 'PUT', body: JSON.stringify(payload) },
+      () => {
+        const current = findScenario(scenarioId);
+        const updated: Scenario = {
+          ...current,
+          name: payload.name.trim(),
+          goal: payload.goal.trim(),
+        };
+        fallbackState.catalog.scenarios = fallbackState.catalog.scenarios.map((item) => item.id === scenarioId ? updated : item);
+        rebuildCatalogState();
+        return clone(updated);
+      },
+    ),
+  deleteScenario: (scenarioId: string) =>
+    request<Scenario>(
+      `/scenarios/${scenarioId}`,
+      { method: 'DELETE' },
+      () => {
+        if (fallbackState.catalog.assistants.some((item) => item.scenarioId === scenarioId)) {
+          throw new Error('业务场景下仍存在助手，暂时不能删除');
+        }
+        const current = findScenario(scenarioId);
+        fallbackState.catalog.scenarios = fallbackState.catalog.scenarios.filter((item) => item.id !== scenarioId);
+        rebuildCatalogState();
+        return clone(current);
+      },
+    ),
   createAssistant: (payload: CreateAssistantPayload) =>
     request<Assistant>(
       '/assistants',
@@ -719,6 +1031,24 @@ export const api = {
         return clone(updated);
       },
     ),
+  deleteAssistant: (assistantId: string) =>
+    request<Assistant>(
+      `/assistants/${assistantId}`,
+      { method: 'DELETE' },
+      () => {
+        if (fallbackState.catalog.agents.some((item) => item.assistantId === assistantId)) {
+          throw new Error('助手下仍存在智能体，暂时不能删除');
+        }
+        if (fallbackState.catalog.resources.some((item) => item.ownerType === 'ASSISTANT' && item.ownerId === assistantId)) {
+          throw new Error('助手下仍存在私有资源，暂时不能删除');
+        }
+        const current = findAssistant(assistantId);
+        fallbackState.catalog.assistants = fallbackState.catalog.assistants.filter((item) => item.id !== assistantId);
+        fallbackState.catalog.orchestrations = fallbackState.catalog.orchestrations.filter((item) => item.assistantId !== assistantId);
+        rebuildCatalogState();
+        return clone(current);
+      },
+    ),
   createAgent: (payload: CreateAgentPayload) =>
     request<Agent>(
       '/agents',
@@ -730,7 +1060,7 @@ export const api = {
           name: payload.name,
           role: payload.role,
           instructions: payload.instructions,
-          bindings: [],
+          toolVersionPins: [],
           executionPolicy: payload.executionPolicy,
         };
         fallbackState.catalog.agents.push(created);
@@ -772,6 +1102,20 @@ export const api = {
         return clone(created);
       },
     ),
+  deleteAgent: (agentId: string) =>
+    request<Agent>(
+      `/agents/${agentId}`,
+      { method: 'DELETE' },
+      () => {
+        const current = findAgent(agentId);
+        fallbackState.catalog.agents = fallbackState.catalog.agents.filter((item) => item.id !== agentId);
+        fallbackState.catalog.orchestrations = fallbackState.catalog.orchestrations.map((item) =>
+          item.assistantId === current.assistantId ? buildDefaultOrchestrationForAssistant(current.assistantId) : item,
+        );
+        rebuildCatalogState();
+        return clone(current);
+      },
+    ),
   updateAgent: (agentId: string, payload: UpdateAgentPayload) =>
     request<Agent>(
       `/agents/${agentId}`,
@@ -796,21 +1140,27 @@ export const api = {
         return clone(updated);
       },
     ),
-  updateAgentBindings: (agentId: string, payload: UpdateAgentBindingsPayload) =>
+  updateAgentToolVersionPins: (agentId: string, payload: UpdateAgentToolVersionPinsPayload) =>
     request<Agent>(
-      `/agents/${agentId}/bindings`,
+      `/agents/${agentId}/tool-version-pins`,
       { method: 'PUT', body: JSON.stringify(payload) },
       () => {
         const current = findAgent(agentId);
         const updated: Agent = {
           ...current,
-          bindings: payload.bindings.map((binding) => {
-            const resource = fallbackState.catalog.resources.find((item) => item.id === binding.resourceId);
-            const version = resource?.versions.find((item) => item.id === binding.resourceVersionId);
+          toolVersionPins: payload.toolVersionPins.map((toolVersionPin) => {
+            const resource = fallbackState.catalog.resources.find((item) => item.id === toolVersionPin.resourceId);
+            if (!resource || (resource.type !== 'SKILL' && resource.type !== 'MCP')) {
+              throw new Error('只有 Skill 和 MCP 支持固定版本');
+            }
+            if (!current.executionPolicy.toolResourceIds.includes(toolVersionPin.resourceId)) {
+              throw new Error(`请先启用工具再固定版本：${resource.name}`);
+            }
+            const version = resource?.versions.find((item) => item.id === toolVersionPin.resourceVersionId);
             return {
-            id: nextId('binding'),
-            resourceId: binding.resourceId,
-            resourceVersionId: binding.resourceVersionId,
+            id: nextId('tool-version-pin'),
+            resourceId: toolVersionPin.resourceId,
+            resourceVersionId: toolVersionPin.resourceVersionId,
             resourceVersion: version?.version ?? 'unknown',
             consumerType: 'AGENT',
             consumerId: agentId,
@@ -828,6 +1178,8 @@ export const api = {
       '/resources',
       { method: 'POST', body: JSON.stringify(payload) },
       () => {
+        findDomain(payload.domainId);
+        validateResourceOwner(payload.domainId, payload.ownerType, payload.ownerId);
         const initialVersion: ResourceVersion = {
           id: nextId('resource-version'),
           resourceId: nextId('resource'),
@@ -857,6 +1209,21 @@ export const api = {
         fallbackState.catalog.resources.push(created);
         rebuildCatalogState();
         return clone(created);
+      },
+    ),
+  deleteResource: (resourceId: string) =>
+    request<Resource>(
+      `/resources/${resourceId}`,
+      { method: 'DELETE' },
+      () => {
+        const blocker = findResourceDeletionBlocker(resourceId);
+        if (blocker) {
+          throw new Error(blocker);
+        }
+        const current = findResource(resourceId);
+        fallbackState.catalog.resources = fallbackState.catalog.resources.filter((item) => item.id !== resourceId);
+        rebuildCatalogState();
+        return clone(current);
       },
     ),
   createResourceVersion: (resourceId: string, payload: CreateResourceVersionPayload) =>
@@ -891,6 +1258,35 @@ export const api = {
         fallbackState.catalog.resources = fallbackState.catalog.resources.map((item) => item.id === resourceId ? updatedResource : item);
         rebuildCatalogState();
         return clone(created);
+      },
+    ),
+  deleteResourceVersion: (resourceId: string, versionId: string) =>
+    request<ResourceVersion>(
+      `/resources/${resourceId}/versions/${versionId}`,
+      { method: 'DELETE' },
+      () => {
+        const resource = findResource(resourceId);
+        const version = findResourceVersion(resourceId, versionId);
+        if (resource.effectiveVersion?.id === versionId) {
+          throw new Error('生效版本不能直接删除');
+        }
+        if (resource.versions.length <= 1) {
+          throw new Error('资源至少需要保留一个版本，如需清理请直接删除资源');
+        }
+        const blocker = findResourceVersionDeletionBlocker(versionId);
+        if (blocker) {
+          throw new Error(blocker);
+        }
+        const updatedResource: Resource = {
+          ...resource,
+          latestVersion: resource.latestVersion?.id === versionId
+            ? resource.versions.filter((item) => item.id !== versionId).slice(-1)[0] ?? null
+            : resource.latestVersion,
+          versions: resource.versions.filter((item) => item.id !== versionId),
+        };
+        fallbackState.catalog.resources = fallbackState.catalog.resources.map((item) => item.id === resourceId ? updatedResource : item);
+        rebuildCatalogState();
+        return clone(version);
       },
     ),
   publishResourceVersion: (resourceId: string, versionId: string) =>

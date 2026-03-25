@@ -92,9 +92,9 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/UpdateAgentRequest'
-  /agents/{agentId}/bindings:
+  /agents/{agentId}/tool-version-pins:
     put:
-      summary: Replace agent resource bindings
+      summary: Replace agent tool version pins
       parameters:
         - in: path
           name: agentId
@@ -106,7 +106,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateAgentBindingsRequest'
+              $ref: '#/components/schemas/UpdateAgentToolVersionPinsRequest'
   /resources:
     get:
       summary: List resources
@@ -456,10 +456,10 @@ components:
           type: string
         executionPolicy:
           $ref: '#/components/schemas/AgentExecutionPolicy'
-    UpdateAgentBindingsRequest:
+    UpdateAgentToolVersionPinsRequest:
       type: object
       properties:
-        bindings:
+        toolVersionPins:
           type: array
           items:
             type: object

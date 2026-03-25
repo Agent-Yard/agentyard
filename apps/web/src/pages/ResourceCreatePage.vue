@@ -131,7 +131,10 @@ function defaultConfiguration(type: ResourceType) {
 
 const ownerOptions = computed(() => {
   if (createForm.ownerType === 'ASSISTANT') {
-    return props.assistants.map((assistant) => ({ label: assistant.name, value: assistant.id }));
+    return props.domains
+      .find((domain) => domain.id === createForm.domainId)
+      ?.scenarios.flatMap((scenario) => scenario.assistants.map((assistant) => ({ label: assistant.name, value: assistant.id })))
+      ?? [];
   }
   return props.domains.map((domain) => ({ label: domain.name, value: domain.id }));
 });
@@ -142,7 +145,7 @@ watch(
     if (!createForm.domainId && domains.length) {
       createForm.domainId = domains[0].id;
     }
-    if (!createForm.ownerId && domains.length) {
+    if (!createForm.ownerId && domains.length && createForm.ownerType === 'DOMAIN') {
       createForm.ownerId = domains[0].id;
     }
   },
@@ -153,8 +156,25 @@ watch(
   () => createForm.ownerType,
   (ownerType) => {
     createForm.ownerId = ownerType === 'ASSISTANT'
-      ? props.assistants[0]?.id ?? ''
-      : props.domains[0]?.id ?? '';
+      ? ownerOptions.value[0]?.value ?? ''
+      : (createForm.domainId || props.domains[0]?.id || '');
+  },
+  { immediate: true },
+);
+
+watch(
+  () => createForm.domainId,
+  (domainId) => {
+    if (!domainId) {
+      return;
+    }
+    if (createForm.ownerType === 'DOMAIN') {
+      createForm.ownerId = domainId;
+      return;
+    }
+    if (!ownerOptions.value.some((option) => option.value === createForm.ownerId)) {
+      createForm.ownerId = ownerOptions.value[0]?.value ?? '';
+    }
   },
   { immediate: true },
 );

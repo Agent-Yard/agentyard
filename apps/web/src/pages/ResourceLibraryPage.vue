@@ -15,7 +15,9 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
+  deleteResource: [resourceId: string];
   createResourceVersion: [payload: { resourceId: string; data: CreateResourceVersionPayload }];
+  deleteResourceVersion: [payload: { resourceId: string; versionId: string }];
   publishResourceVersion: [payload: { resourceId: string; versionId: string }];
 }>();
 
@@ -120,6 +122,10 @@ const selectedVersion = computed(() =>
   selectedResource.value?.versions.find((item) => item.id === selectedVersionId.value)
   ?? selectedResource.value?.versions[0],
 );
+const selectedReferences = computed(() =>
+  props.resourceCenter.references.filter((item) => item.resourceId === selectedResource.value?.id),
+);
+const blockingReferenceCount = computed(() => selectedReferences.value.filter((item) => item.blocksDeletion).length);
 
 watch(
   () => props.resources,
@@ -201,21 +207,25 @@ function submitCreateVersion() {
         </a-list>
       </a-card>
 
-      <a-card title="绑定影响">
+      <a-card title="引用分析">
         <a-table
           :columns="[
-            { title: '资源', dataIndex: 'resourceName', key: 'resourceName' },
-            { title: '生效版本', dataIndex: 'effectiveVersion', key: 'effectiveVersion' },
-            { title: '绑定智能体', dataIndex: 'boundAgents', key: 'boundAgents' },
+            { title: '引用类型', dataIndex: 'referenceKind', key: 'referenceKind' },
+            { title: '来源对象', dataIndex: 'sourceName', key: 'sourceName' },
+            { title: '版本', dataIndex: 'resourceVersion', key: 'resourceVersion' },
+            { title: '阻断删除', dataIndex: 'blocksDeletion', key: 'blocksDeletion' },
           ]"
-          :data-source="resourceCenter.usages"
+          :data-source="selectedReferences"
           :pagination="false"
-          row-key="resourceId"
+          row-key="(record) => `${record.referenceKind}:${record.sourceId}:${record.resourceVersionId ?? 'none'}`"
           size="small"
         >
           <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'boundAgents'">
-              {{ record.boundAgents.join(' / ') || '-' }}
+            <template v-if="column.key === 'resourceVersion'">
+              {{ record.resourceVersion ?? '-' }}
+            </template>
+            <template v-else-if="column.key === 'blocksDeletion'">
+              <a-tag :color="record.blocksDeletion ? 'red' : 'default'">{{ record.blocksDeletion ? '是' : '否' }}</a-tag>
             </template>
           </template>
         </a-table>
@@ -225,6 +235,17 @@ function submitCreateVersion() {
     <a-col :span="16">
       <a-space direction="vertical" style="width: 100%" size="large">
         <a-card v-if="selectedResource" :title="selectedResource.name">
+          <template #extra>
+            <a-popconfirm
+              title="确认删除该资源？"
+              description="只有未被助手默认策略、智能体执行策略或版本绑定引用的资源才允许删除。"
+              ok-text="删除"
+              cancel-text="取消"
+              @confirm="emit('deleteResource', selectedResource.id)"
+            >
+              <a-button danger size="small">删除资源</a-button>
+            </a-popconfirm>
+          </template>
           <a-descriptions :column="2" size="small">
             <a-descriptions-item label="资源类型">{{ selectedResource.type }}</a-descriptions-item>
             <a-descriptions-item label="共享范围">{{ selectedResource.shareScope }}</a-descriptions-item>
@@ -234,6 +255,12 @@ function submitCreateVersion() {
             <a-descriptions-item label="生效版本">{{ selectedResource.effectiveVersion?.version ?? '-' }}</a-descriptions-item>
             <a-descriptions-item label="归属">{{ `${selectedResource.ownerType}:${selectedResource.ownerId}` }}</a-descriptions-item>
             <a-descriptions-item label="说明">{{ selectedResource.summary }}</a-descriptions-item>
+            <a-descriptions-item label="引用总数">
+              {{ selectedReferences.length }}
+            </a-descriptions-item>
+            <a-descriptions-item label="阻断删除引用">
+              {{ blockingReferenceCount }}
+            </a-descriptions-item>
           </a-descriptions>
         </a-card>
 
@@ -261,6 +288,16 @@ function submitCreateVersion() {
                       >
                         设为生效版本
                       </a-button>
+                      <a-popconfirm
+                        v-if="selectedResource.effectiveVersion?.id !== item.id"
+                        title="确认删除该版本？"
+                        description="只有未生效且未被智能体绑定的版本才允许删除。"
+                        ok-text="删除"
+                        cancel-text="取消"
+                        @confirm="emit('deleteResourceVersion', { resourceId: selectedResource.id, versionId: item.id })"
+                      >
+                        <a-button danger size="small">删除版本</a-button>
+                      </a-popconfirm>
                     </a-space>
                   </a-list-item>
                 </template>
