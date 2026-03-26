@@ -233,10 +233,17 @@ class AssistantRunWorkflowTest {
                     "resource-llm-openai",
                     "resource-version-llm-v1",
                     true,
-                    "resource-kb-support",
-                    "resource-version-kb-v1",
-                    true,
                     8
+                ),
+                new WorkflowContracts.KnowledgeBindingSnapshot(
+                    "knowledge-base-support",
+                    "客服知识库",
+                    "knowledge-release-support-v1",
+                    "1.0.0",
+                    "snapshot-kb-support-v1",
+                    5,
+                    "HYBRID",
+                    0.1
                 ),
                 List.of(
                     new WorkflowContracts.AgentSnapshot(
@@ -250,8 +257,8 @@ class AssistantRunWorkflowTest {
                             null,
                             "你是问题分诊智能体",
                             true,
-                            "resource-kb-support",
-                            "resource-version-kb-v1",
+                            true,
+                            null,
                             8,
                             List.of("resource-skill-router"),
                             List.of("resource-version-skill-router-v1"),

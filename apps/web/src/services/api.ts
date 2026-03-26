@@ -9,15 +9,19 @@ import type {
   CreateAgentPayload,
   CreateConversationSessionPayload,
   CreateDomainPayload,
+  CreateKnowledgeBasePayload,
+  CreateKnowledgeReleasePayload,
   CreateResourcePayload,
   CreateResourceVersionPayload,
   CreateScenarioPayload,
   HumanTaskSnapshot,
-  KnowledgeBaseConfig,
+  KnowledgeBase,
   KnowledgeDocument,
   KnowledgeFile,
   KnowledgeImportJob,
   KnowledgeIndexSnapshot,
+  KnowledgeReference,
+  KnowledgeRelease,
   KnowledgeUploadCompletion,
   KnowledgeUploadSession,
   ResourceType,
@@ -34,6 +38,7 @@ import type {
   UpdateAssistantPayload,
   UpdateAgentPayload,
   UpdateDomainPayload,
+  UpdateKnowledgeBasePayload,
   UpdateOrchestrationPayload,
   UpdateScenarioPayload,
   UserSession,
@@ -75,6 +80,7 @@ function rebuildCatalogState() {
     ...domain,
     scenarios: catalog.scenarios.filter((scenario) => scenario.domainId === domain.id),
     resources: catalog.resources.filter((resource) => resource.domainId === domain.id),
+    knowledgeBases: catalog.knowledgeBases.filter((knowledgeBase) => knowledgeBase.domainId === domain.id),
   }));
 
   catalog.orchestrations = catalog.orchestrations.map((orchestration) => {
@@ -98,25 +104,6 @@ function rebuildCatalogState() {
 
 function nextId(prefix: string): string {
   return `${prefix}-${Math.random().toString(16).slice(2, 10)}`;
-}
-
-function defaultKnowledgeBaseConfig(): KnowledgeBaseConfig {
-  return {
-    indexSnapshotId: null,
-    defaultTopK: 5,
-    retrievalMode: 'HYBRID',
-    minScore: 0.1,
-  };
-}
-
-function normalizeKnowledgeBaseConfig(configuration?: KnowledgeBaseConfig | null): KnowledgeBaseConfig {
-  const defaults = defaultKnowledgeBaseConfig();
-  return {
-    indexSnapshotId: configuration?.indexSnapshotId?.trim() || null,
-    defaultTopK: configuration?.defaultTopK && configuration.defaultTopK > 0 ? configuration.defaultTopK : defaults.defaultTopK,
-    retrievalMode: configuration?.retrievalMode === 'LEXICAL' || configuration?.retrievalMode === 'VECTOR' ? configuration.retrievalMode : 'HYBRID',
-    minScore: typeof configuration?.minScore === 'number' && configuration.minScore >= 0 ? configuration.minScore : defaults.minScore,
-  };
 }
 
 function defaultToolOperations(): ToolOperation[] {
@@ -195,12 +182,6 @@ function normalizeToolConfig(configuration?: ToolConfig | null): ToolConfig {
 }
 
 function defaultConfiguration(type: ResourceType): ResourceVersionConfiguration {
-  if (type === 'KNOWLEDGE_BASE') {
-    return {
-      type,
-      knowledgeBase: defaultKnowledgeBaseConfig(),
-    };
-  }
   if (type === 'TOOL') {
     return {
       type,
@@ -237,12 +218,6 @@ function normalizeConfiguration(type: ResourceType, configuration?: ResourceVers
   if (!configuration) {
     return defaultConfiguration(type);
   }
-  if (type === 'KNOWLEDGE_BASE') {
-    return {
-      type,
-      knowledgeBase: normalizeKnowledgeBaseConfig(configuration.knowledgeBase),
-    };
-  }
   if (type === 'TOOL') {
     return {
       type,
@@ -277,14 +252,24 @@ function findDomain(domainId: string): BusinessDomain {
   return domain;
 }
 
+function findKnowledgeBase(knowledgeBaseId: string): KnowledgeBase {
+  const knowledgeBase = fallbackState.catalog.knowledgeBases.find((item) => item.id === knowledgeBaseId);
+  if (!knowledgeBase) {
+    throw new Error(`Knowledge base ${knowledgeBaseId} not found`);
+  }
+  return knowledgeBase;
+}
+
 function buildAssistantRelease(assistant: Assistant, releaseVersion: string) {
   const orchestration = clone(findOrchestration(assistant.id));
+  const assistantKnowledge = resolveAssistantKnowledgeBinding(assistant);
   const agentSnapshots = assistant.agents.map((agent) => ({
     agentId: agent.id,
     name: agent.name,
     role: agent.role,
     instructions: agent.instructions,
     executionPolicy: clone(agent.executionPolicy),
+    knowledge: resolveAgentKnowledgeBinding(assistant, agent),
     skillResourceVersionIds: agent.executionPolicy.skillResourceIds
       .map((resourceId) => resolveResourceVersion(resourceId).version.id),
     toolResourceVersionIds: agent.executionPolicy.toolResourceIds
@@ -298,6 +283,7 @@ function buildAssistantRelease(assistant: Assistant, releaseVersion: string) {
     status: 'PUBLISHED' as const,
     createdAt: new Date().toISOString(),
     publishedAt: new Date().toISOString(),
+    assistantKnowledge,
     resources: releaseResources,
     agents: agentSnapshots,
     orchestration,
@@ -305,6 +291,44 @@ function buildAssistantRelease(assistant: Assistant, releaseVersion: string) {
     ragPolicy: clone(assistant.ragPolicy),
     memoryPolicy: clone(assistant.memoryPolicy),
   };
+}
+
+function resolveKnowledgeBinding(knowledgeBaseId: string | null | undefined) {
+  if (!knowledgeBaseId) {
+    return null;
+  }
+  const knowledgeBase = findKnowledgeBase(knowledgeBaseId);
+  const release = knowledgeBase.effectiveRelease;
+  if (!release) {
+    throw new Error(`知识库尚未发布：${knowledgeBase.name}`);
+  }
+  return {
+    knowledgeBaseId: knowledgeBase.id,
+    knowledgeBaseName: knowledgeBase.name,
+    knowledgeReleaseId: release.id,
+    knowledgeReleaseVersion: release.version,
+    snapshotId: release.snapshotId,
+    defaultTopK: release.retrievalProfile.defaultTopK,
+    retrievalMode: release.retrievalProfile.retrievalMode,
+    minScore: release.retrievalProfile.minScore,
+  };
+}
+
+function resolveAssistantKnowledgeBinding(assistant: Assistant) {
+  if (!assistant.ragPolicy.enabled) {
+    return null;
+  }
+  return resolveKnowledgeBinding(assistant.ragPolicy.knowledgeBaseId);
+}
+
+function resolveAgentKnowledgeBinding(assistant: Assistant, agent: Agent) {
+  if (!agent.executionPolicy.ragEnabled) {
+    return null;
+  }
+  if (agent.executionPolicy.inheritAssistantKnowledge) {
+    return resolveAssistantKnowledgeBinding(assistant);
+  }
+  return resolveKnowledgeBinding(agent.executionPolicy.knowledgeBaseId) ?? resolveAssistantKnowledgeBinding(assistant);
 }
 
 function findAgent(agentId: string): Agent {
@@ -474,12 +498,8 @@ function findResourceDeletionBlocker(resourceId: string): string | null {
       switch (reference.referenceKind) {
         case 'ASSISTANT_DEFAULT_MODEL':
           return `资源仍被助手默认模型引用：${reference.sourceName}`;
-        case 'ASSISTANT_DEFAULT_KNOWLEDGE_BASE':
-          return `资源仍被助手默认知识库引用：${reference.sourceName}`;
         case 'AGENT_OVERRIDE_MODEL':
           return `资源仍被智能体模型覆盖引用：${reference.sourceName}`;
-        case 'AGENT_OVERRIDE_KNOWLEDGE_BASE':
-          return `资源仍被智能体知识库覆盖引用：${reference.sourceName}`;
         case 'AGENT_SKILL_ENABLED':
           return `资源仍被智能体技能集引用：${reference.sourceName}`;
         case 'AGENT_TOOL_ENABLED':
@@ -537,17 +557,11 @@ function buildResourceReferenceEntries(resource: Resource) {
     if (assistant.modelPolicy.providerResourceId === resource.id) {
       pushEntry('ASSISTANT_DEFAULT_MODEL', 'ASSISTANT', assistant.id, assistant.name, null, null, true);
     }
-    if (assistant.ragPolicy.enabled && assistant.ragPolicy.knowledgeBaseResourceId === resource.id) {
-      pushEntry('ASSISTANT_DEFAULT_KNOWLEDGE_BASE', 'ASSISTANT', assistant.id, assistant.name, null, null, true);
-    }
   }
 
   for (const agent of fallbackState.catalog.agents) {
     if (agent.executionPolicy.modelResourceId === resource.id) {
       pushEntry('AGENT_OVERRIDE_MODEL', 'AGENT', agent.id, agent.name, null, null, true);
-    }
-    if (agent.executionPolicy.ragEnabled && agent.executionPolicy.knowledgeBaseResourceId === resource.id) {
-      pushEntry('AGENT_OVERRIDE_KNOWLEDGE_BASE', 'AGENT', agent.id, agent.name, null, null, true);
     }
     if (agent.executionPolicy.skillResourceIds.includes(resource.id)) {
       pushEntry('AGENT_SKILL_ENABLED', 'AGENT', agent.id, agent.name, null, null, true);
@@ -618,11 +632,9 @@ function collectReleaseResources(assistant: Assistant) {
   };
 
   addResource(assistant.modelPolicy.providerResourceId);
-  addResource(assistant.ragPolicy.enabled ? assistant.ragPolicy.knowledgeBaseResourceId : null);
 
   for (const agent of assistant.agents) {
     addResource(agent.executionPolicy.modelResourceId, null, agent.name);
-    addResource(agent.executionPolicy.ragEnabled ? agent.executionPolicy.knowledgeBaseResourceId : null, null, agent.name);
     for (const resourceId of agent.executionPolicy.skillResourceIds) {
       addResource(resourceId, null, agent.name);
     }
@@ -639,7 +651,12 @@ function assistantReleaseVersion(assistant: Assistant) {
 }
 
 function buildResourceAnchors(assistant: Assistant) {
-  return collectReleaseResources(assistant).map((item) => `${item.resourceName}@${item.resourceVersion}`);
+  const anchors = collectReleaseResources(assistant).map((item) => `${item.resourceName}@${item.resourceVersion}`);
+  const assistantKnowledge = resolveAssistantKnowledgeBinding(assistant);
+  if (assistantKnowledge) {
+    anchors.unshift(`${assistantKnowledge.knowledgeBaseName}@${assistantKnowledge.knowledgeReleaseVersion}`);
+  }
+  return anchors;
 }
 
 function buildFallbackExecution(sessionId: string, assistant: Assistant, requester: string, message: string) {
@@ -920,6 +937,7 @@ export const api = {
           description: payload.description.trim(),
           scenarios: [],
           resources: [],
+          knowledgeBases: [],
         };
         fallbackState.catalog.domains.push(created);
         rebuildCatalogState();
@@ -952,6 +970,9 @@ export const api = {
         }
         if (fallbackState.catalog.resources.some((item) => item.domainId === domainId)) {
           throw new Error('业务域下仍存在资源，暂时不能删除');
+        }
+        if (fallbackState.catalog.knowledgeBases.some((item) => item.domainId === domainId)) {
+          throw new Error('业务域下仍存在知识库，暂时不能删除');
         }
         const current = findDomain(domainId);
         fallbackState.catalog.domains = fallbackState.catalog.domains.filter((item) => item.id !== domainId);
@@ -1118,6 +1139,9 @@ export const api = {
         }
         if (fallbackState.catalog.resources.some((item) => item.ownerType === 'ASSISTANT' && item.ownerId === assistantId)) {
           throw new Error('助手下仍存在私有资源，暂时不能删除');
+        }
+        if (fallbackState.catalog.knowledgeBases.some((item) => item.ownerType === 'ASSISTANT' && item.ownerId === assistantId)) {
+          throw new Error('助手下仍存在私有知识库，暂时不能删除');
         }
         const current = findAssistant(assistantId);
         fallbackState.catalog.assistants = fallbackState.catalog.assistants.filter((item) => item.id !== assistantId);
@@ -1357,22 +1381,197 @@ export const api = {
         return clone(effectiveVersion ?? versions[0]);
       },
     ),
-  createKnowledgeUploadSession: (resourceId: string) =>
+  createKnowledgeBase: (payload: CreateKnowledgeBasePayload) =>
+    request<KnowledgeBase>(
+      '/knowledge-bases',
+      { method: 'POST', body: JSON.stringify(payload) },
+      () => {
+        findDomain(payload.domainId);
+        const created: KnowledgeBase = {
+          id: nextId('knowledge-base'),
+          domainId: payload.domainId,
+          name: payload.name,
+          shareScope: payload.shareScope,
+          ownerType: payload.ownerType,
+          ownerId: payload.ownerId,
+          summary: payload.summary,
+          steward: payload.steward,
+          tags: payload.tags,
+          latestRelease: null,
+          effectiveRelease: null,
+          releases: [],
+        };
+        fallbackState.catalog.knowledgeBases.push(created);
+        rebuildCatalogState();
+        return clone(created);
+      },
+    ),
+  updateKnowledgeBase: (knowledgeBaseId: string, payload: UpdateKnowledgeBasePayload) =>
+    request<KnowledgeBase>(
+      `/knowledge-bases/${knowledgeBaseId}`,
+      { method: 'PUT', body: JSON.stringify(payload) },
+      () => {
+        const current = findKnowledgeBase(knowledgeBaseId);
+        const updated: KnowledgeBase = {
+          ...current,
+          name: payload.name,
+          shareScope: payload.shareScope,
+          ownerType: payload.ownerType,
+          ownerId: payload.ownerId,
+          summary: payload.summary,
+          steward: payload.steward,
+          tags: payload.tags,
+        };
+        fallbackState.catalog.knowledgeBases = fallbackState.catalog.knowledgeBases.map((item) => item.id === knowledgeBaseId ? updated : item);
+        rebuildCatalogState();
+        return clone(updated);
+      },
+    ),
+  deleteKnowledgeBase: (knowledgeBaseId: string) =>
+    request<KnowledgeBase>(
+      `/knowledge-bases/${knowledgeBaseId}`,
+      { method: 'DELETE' },
+      () => {
+        const blocker = fallbackState.catalog.assistants.find((assistant) =>
+          assistant.ragPolicy.enabled && assistant.ragPolicy.knowledgeBaseId === knowledgeBaseId,
+        );
+        if (blocker) {
+          throw new Error(`知识库仍被助手引用：${blocker.name}`);
+        }
+        const current = findKnowledgeBase(knowledgeBaseId);
+        if (current.effectiveRelease) {
+          throw new Error('知识库仍存在已发布版本，暂时不能删除');
+        }
+        fallbackState.catalog.knowledgeBases = fallbackState.catalog.knowledgeBases.filter((item) => item.id !== knowledgeBaseId);
+        rebuildCatalogState();
+        return clone(current);
+      },
+    ),
+  listKnowledgeReleases: (knowledgeBaseId: string) =>
+    request<KnowledgeRelease[]>(`/knowledge-bases/${knowledgeBaseId}/releases`, undefined, clone(findKnowledgeBase(knowledgeBaseId).releases)),
+  createKnowledgeRelease: (knowledgeBaseId: string, payload: CreateKnowledgeReleasePayload) =>
+    request<KnowledgeRelease>(
+      `/knowledge-bases/${knowledgeBaseId}/releases`,
+      { method: 'POST', body: JSON.stringify(payload) },
+      () => {
+        const knowledgeBase = findKnowledgeBase(knowledgeBaseId);
+        const lastVersion = knowledgeBase.releases.at(-1)?.version ?? '0.0.0';
+        const [major, minor, patch] = lastVersion.split('.').map((item) => Number(item));
+        const created: KnowledgeRelease = {
+          id: nextId('knowledge-release'),
+          knowledgeBaseId,
+          version: `${major}.${minor}.${patch + 1}`,
+          status: payload.status,
+          summary: payload.summary,
+          snapshotId: payload.snapshotId,
+          retrievalProfile: payload.retrievalProfile,
+          createdAt: new Date().toISOString(),
+          publishedAt: payload.status === 'PUBLISHED' ? new Date().toISOString() : null,
+        };
+        const releases = knowledgeBase.releases
+          .map((item) => payload.status === 'PUBLISHED' && item.status === 'PUBLISHED'
+            ? { ...item, status: 'DRAFT' as const, publishedAt: null }
+            : item)
+          .concat(created);
+        const updated: KnowledgeBase = {
+          ...knowledgeBase,
+          latestRelease: created,
+          effectiveRelease: payload.status === 'PUBLISHED' ? created : knowledgeBase.effectiveRelease,
+          releases,
+        };
+        fallbackState.catalog.knowledgeBases = fallbackState.catalog.knowledgeBases.map((item) => item.id === knowledgeBaseId ? updated : item);
+        rebuildCatalogState();
+        return clone(created);
+      },
+    ),
+  publishKnowledgeRelease: (knowledgeBaseId: string, releaseId: string) =>
+    request<KnowledgeRelease>(
+      `/knowledge-bases/${knowledgeBaseId}/releases/${releaseId}/publish`,
+      { method: 'PATCH' },
+      () => {
+        const knowledgeBase = findKnowledgeBase(knowledgeBaseId);
+        const publishedAt = new Date().toISOString();
+        let effectiveRelease: KnowledgeRelease | null = null;
+        const releases = knowledgeBase.releases.map((item) => {
+          const updated = item.id === releaseId
+            ? { ...item, status: 'PUBLISHED' as const, publishedAt }
+            : { ...item, status: 'DRAFT' as const, publishedAt: null };
+          if (updated.id === releaseId) {
+            effectiveRelease = updated;
+          }
+          return updated;
+        });
+        const updatedKnowledgeBase: KnowledgeBase = {
+          ...knowledgeBase,
+          latestRelease: releases.at(-1) ?? null,
+          effectiveRelease,
+          releases,
+        };
+        fallbackState.catalog.knowledgeBases = fallbackState.catalog.knowledgeBases.map((item) => item.id === knowledgeBaseId ? updatedKnowledgeBase : item);
+        rebuildCatalogState();
+        return clone(effectiveRelease ?? releases[0]);
+      },
+    ),
+  deleteKnowledgeRelease: (knowledgeBaseId: string, releaseId: string) =>
+    request<KnowledgeRelease>(
+      `/knowledge-bases/${knowledgeBaseId}/releases/${releaseId}`,
+      { method: 'DELETE' },
+      () => {
+        const knowledgeBase = findKnowledgeBase(knowledgeBaseId);
+        const release = knowledgeBase.releases.find((item) => item.id === releaseId);
+        if (!release) {
+          throw new Error(`Knowledge release ${releaseId} not found`);
+        }
+        if (release.status === 'PUBLISHED') {
+          throw new Error('已发布版本不能删除');
+        }
+        const releases = knowledgeBase.releases.filter((item) => item.id !== releaseId);
+        const updatedKnowledgeBase: KnowledgeBase = {
+          ...knowledgeBase,
+          latestRelease: releases.at(-1) ?? null,
+          releases,
+        };
+        fallbackState.catalog.knowledgeBases = fallbackState.catalog.knowledgeBases.map((item) => item.id === knowledgeBaseId ? updatedKnowledgeBase : item);
+        rebuildCatalogState();
+        return clone(release);
+      },
+    ),
+  listKnowledgeReferences: (knowledgeBaseId: string) =>
+    request<KnowledgeReference[]>(
+      `/knowledge-bases/${knowledgeBaseId}/references`,
+      undefined,
+      (() => {
+        const assistantReferences = fallbackState.catalog.assistants
+          .filter((assistant) => assistant.ragPolicy.enabled && assistant.ragPolicy.knowledgeBaseId === knowledgeBaseId)
+          .map((assistant) => ({
+            knowledgeBaseId,
+            referenceKind: 'ASSISTANT_DEFAULT_KNOWLEDGE_BASE',
+            sourceType: 'ASSISTANT',
+            sourceId: assistant.id,
+            sourceName: assistant.name,
+            knowledgeReleaseId: null,
+            knowledgeReleaseVersion: null,
+            blocksDeletion: true,
+          }));
+        return clone(assistantReferences);
+      })(),
+    ),
+  createKnowledgeUploadSession: (knowledgeBaseId: string) =>
     request<KnowledgeUploadSession>(
-      `/resources/${resourceId}/knowledge/upload-sessions`,
+      `/knowledge-bases/${knowledgeBaseId}/upload-sessions`,
       { method: 'POST' },
       () => ({
         id: nextId('upload-session'),
-        resourceId,
+        knowledgeBaseId,
         status: 'OPEN',
         acceptedTypes: ['pdf', 'docx', 'md', 'txt', 'html', 'csv'],
       }),
     ),
-  completeKnowledgeUpload: async (resourceId: string, uploadSessionId: string, file: File) => {
+  completeKnowledgeUpload: async (knowledgeBaseId: string, uploadSessionId: string, file: File) => {
     const formData = new FormData();
     formData.append('file', file);
     try {
-      const response = await fetch(`${API_BASE}/resources/${resourceId}/knowledge/upload-sessions/${uploadSessionId}/complete`, {
+      const response = await fetch(`${API_BASE}/knowledge-bases/${knowledgeBaseId}/upload-sessions/${uploadSessionId}/complete`, {
         method: 'POST',
         body: formData,
       });
@@ -1385,7 +1584,7 @@ export const api = {
       return {
         file: {
           id: nextId('kb-file'),
-          resourceId,
+          knowledgeBaseId,
           uploadSessionId,
           fileName: file.name,
           contentType: file.type || 'application/octet-stream',
@@ -1397,7 +1596,7 @@ export const api = {
         },
         importJob: {
           id: nextId('kb-import'),
-          resourceId,
+          knowledgeBaseId,
           fileId: nextId('kb-file-ref'),
           status: 'PENDING',
           failureReason: null,
@@ -1408,14 +1607,14 @@ export const api = {
       } satisfies KnowledgeUploadCompletion;
     }
   },
-  importKnowledgeUrl: (resourceId: string, url: string, title?: string) =>
+  importKnowledgeUrl: (knowledgeBaseId: string, url: string, title?: string) =>
     request<KnowledgeUploadCompletion>(
-      `/resources/${resourceId}/knowledge/url-imports`,
+      `/knowledge-bases/${knowledgeBaseId}/url-imports`,
       { method: 'POST', body: JSON.stringify({ url, title: title?.trim() || null }) },
       () => ({
         file: {
           id: nextId('kb-file'),
-          resourceId,
+          knowledgeBaseId,
           uploadSessionId: nextId('upload-session'),
           fileName: url,
           contentType: 'text/html',
@@ -1427,7 +1626,7 @@ export const api = {
         },
         importJob: {
           id: nextId('kb-import'),
-          resourceId,
+          knowledgeBaseId,
           fileId: nextId('kb-file-ref'),
           status: 'PENDING',
           failureReason: null,
@@ -1437,19 +1636,19 @@ export const api = {
         },
       }),
     ),
-  listKnowledgeFiles: (resourceId: string) =>
-    request<KnowledgeFile[]>(`/resources/${resourceId}/knowledge/files`, undefined, []),
-  listKnowledgeImportJobs: (resourceId: string) =>
-    request<KnowledgeImportJob[]>(`/resources/${resourceId}/knowledge/import-jobs`, undefined, []),
-  listKnowledgeDocuments: (resourceId: string) =>
-    request<KnowledgeDocument[]>(`/resources/${resourceId}/knowledge/documents`, undefined, []),
-  createKnowledgeIndexSnapshot: (resourceId: string, documentIds: string[]) =>
+  listKnowledgeFiles: (knowledgeBaseId: string) =>
+    request<KnowledgeFile[]>(`/knowledge-bases/${knowledgeBaseId}/files`, undefined, []),
+  listKnowledgeImportJobs: (knowledgeBaseId: string) =>
+    request<KnowledgeImportJob[]>(`/knowledge-bases/${knowledgeBaseId}/import-jobs`, undefined, []),
+  listKnowledgeDocuments: (knowledgeBaseId: string) =>
+    request<KnowledgeDocument[]>(`/knowledge-bases/${knowledgeBaseId}/documents`, undefined, []),
+  createKnowledgeIndexSnapshot: (knowledgeBaseId: string, documentIds: string[]) =>
     request<KnowledgeIndexSnapshot>(
-      `/resources/${resourceId}/knowledge/index-snapshots`,
+      `/knowledge-bases/${knowledgeBaseId}/snapshots`,
       { method: 'POST', body: JSON.stringify({ documentIds }) },
       () => ({
         id: nextId('snapshot'),
-        resourceId,
+        knowledgeBaseId,
         retrievalBackend: 'OPENSEARCH',
         retrievalMode: 'HYBRID',
         status: 'PENDING',
@@ -1461,8 +1660,8 @@ export const api = {
         updatedAt: new Date().toISOString(),
       }),
     ),
-  listKnowledgeIndexSnapshots: (resourceId: string) =>
-    request<KnowledgeIndexSnapshot[]>(`/resources/${resourceId}/knowledge/index-snapshots`, undefined, []),
+  listKnowledgeIndexSnapshots: (knowledgeBaseId: string) =>
+    request<KnowledgeIndexSnapshot[]>(`/knowledge-bases/${knowledgeBaseId}/snapshots`, undefined, []),
   saveOrchestration: (assistantId: string, payload: UpdateOrchestrationPayload) =>
     request(
       `/orchestrations/${assistantId}`,

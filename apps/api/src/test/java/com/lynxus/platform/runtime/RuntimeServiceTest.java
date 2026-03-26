@@ -3,10 +3,16 @@ package com.lynxus.platform.runtime;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.lynxus.platform.catalog.CatalogDtos;
 import com.lynxus.platform.catalog.CatalogService;
+import com.lynxus.platform.catalog.InMemoryCatalogRepository;
+import com.lynxus.platform.knowledge.KnowledgeServiceClient;
+import com.lynxus.platform.knowledge.KnowledgeWorkflowGateway;
 import com.lynxus.contracts.runtime.WorkflowContracts;
+import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
 import com.lynxus.contracts.runtime.WorkflowContracts.TaskStatus;
 import java.time.Instant;
 import java.util.ArrayDeque;
@@ -17,7 +23,7 @@ import java.util.Queue;
 import org.junit.jupiter.api.Test;
 
 class RuntimeServiceTest {
-    private final CatalogService catalogService = new CatalogService();
+    private final CatalogService catalogService = catalogService();
     private final RuntimeService service = new RuntimeService(new AssistantRunWorkflowGateway() {
         @Override
         public WorkflowContracts.WorkflowResult startAndAwaitFirstResult(WorkflowContracts.WorkflowStartRequest request) {
@@ -116,7 +122,7 @@ class RuntimeServiceTest {
             public WorkflowContracts.WorkflowResult currentResult(String workflowId) {
                 throw new AssertionError("seed should not query workflow executions");
             }
-        }, new CatalogService());
+        }, catalogService());
 
         seededService.seedDemoData(false);
 
@@ -145,7 +151,7 @@ class RuntimeServiceTest {
             public WorkflowContracts.WorkflowResult currentResult(String workflowId) {
                 return null;
             }
-        }, new CatalogService());
+        }, catalogService());
 
         RuntimeDtos.TaskInstanceDto task = failingService.launchTask(
             new RuntimeDtos.TaskLaunchRequest("scenario-customer-ops", "assistant-customer-ops", "你好", "tester")
@@ -215,7 +221,7 @@ class RuntimeServiceTest {
             public WorkflowContracts.WorkflowResult currentResult(String workflowId) {
                 return polledResults.peek();
             }
-        }, new CatalogService());
+        }, catalogService());
 
         RuntimeDtos.ConversationSessionDto session = refreshingService.createSession(
             new RuntimeDtos.CreateConversationSessionRequest("scenario-customer-ops", "assistant-customer-ops", "tester", "怎么重置密码")
@@ -262,16 +268,117 @@ class RuntimeServiceTest {
             public WorkflowContracts.WorkflowResult currentResult(String workflowId) {
                 return null;
             }
-        }, new CatalogService());
+        }, catalogService());
 
         snapshotService.launchTask(new RuntimeDtos.TaskLaunchRequest("scenario-customer-ops", "assistant-customer-ops", "怎么重置密码", "tester"));
 
-        WorkflowContracts.ResourceVersionSnapshot knowledgeBase = capturedRequests.getFirst().assistant().resources().stream()
-            .filter(resource -> resource.resourceType() == WorkflowContracts.ResourceType.KNOWLEDGE_BASE)
-            .findFirst()
-            .orElseThrow();
+        WorkflowContracts.KnowledgeBindingSnapshot assistantKnowledge = capturedRequests.getFirst().assistant().assistantKnowledge();
 
-        assertEquals("snapshot-kb-support-v1", knowledgeBase.configuration().knowledgeBase().indexSnapshotId());
-        assertEquals("HYBRID", knowledgeBase.configuration().knowledgeBase().retrievalMode());
+        assertNotNull(assistantKnowledge);
+        assertEquals("knowledge-base-support", assistantKnowledge.knowledgeBaseId());
+        assertEquals("knowledge-release-support-v1", assistantKnowledge.knowledgeReleaseId());
+        assertEquals("snapshot-kb-support-v1", assistantKnowledge.snapshotId());
+        assertEquals("HYBRID", assistantKnowledge.retrievalMode());
+    }
+
+    @Test
+    void shouldFailWhenEnabledKnowledgeBaseHasNoPublishedRelease() {
+        CatalogService catalogService = new CatalogService(
+            new InMemoryCatalogRepository(),
+            readySnapshotKnowledgeClient(),
+            noopKnowledgeWorkflowGateway()
+        );
+        CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("知识运营域", "承载知识演示"));
+        CatalogDtos.ScenarioDto scenario = catalogService.createScenario(
+            new CatalogDtos.CreateScenarioRequest(domain.id(), "知识问答", "处理知识问答")
+        );
+        CatalogDtos.KnowledgeBaseDto knowledgeBase = catalogService.createKnowledgeBase(
+            new CatalogDtos.CreateKnowledgeBaseRequest(
+                domain.id(),
+                "未发布知识库",
+                ShareScope.DOMAIN_SHARED,
+                "DOMAIN",
+                domain.id(),
+                "尚未创建 release",
+                "知识运营",
+                List.of("FAQ")
+            )
+        );
+        CatalogDtos.AssistantDto assistant = catalogService.createAssistant(
+            new CatalogDtos.CreateAssistantRequest(
+                scenario.id(),
+                "知识助手",
+                "依赖知识库回答问题",
+                null,
+                new CatalogDtos.RagPolicyDto(true, knowledgeBase.id()),
+                null
+            )
+        );
+
+        RuntimeService runtimeService = new RuntimeService(new AssistantRunWorkflowGateway() {
+            @Override
+            public WorkflowContracts.WorkflowResult startAndAwaitFirstResult(WorkflowContracts.WorkflowStartRequest request) {
+                throw new AssertionError("workflow should not start when knowledge release is missing");
+            }
+
+            @Override
+            public WorkflowContracts.WorkflowResult submitHumanActionAndAwaitResult(String workflowId, WorkflowContracts.HumanAction action) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public WorkflowContracts.WorkflowResult currentResult(String workflowId) {
+                return null;
+            }
+        }, catalogService);
+
+        IllegalStateException error = assertThrows(
+            IllegalStateException.class,
+            () -> runtimeService.launchTask(new RuntimeDtos.TaskLaunchRequest(scenario.id(), assistant.id(), "怎么重置密码", "tester"))
+        );
+        assertTrue(error.getMessage().contains("published knowledge release not found"));
+    }
+
+    private static CatalogService catalogService() {
+        CatalogService catalogService = new CatalogService(
+            new InMemoryCatalogRepository(),
+            readySnapshotKnowledgeClient(),
+            noopKnowledgeWorkflowGateway()
+        );
+        catalogService.initializeDemoDataIfEmpty();
+        return catalogService;
+    }
+
+    private static KnowledgeServiceClient readySnapshotKnowledgeClient() {
+        return new KnowledgeServiceClient("http://localhost:8091") {
+            @Override
+            public CatalogDtos.KnowledgeIndexSnapshotDto getIndexSnapshot(String snapshotId) {
+                return new CatalogDtos.KnowledgeIndexSnapshotDto(
+                    snapshotId,
+                    "knowledge-base-support",
+                    "OPENSEARCH",
+                    "HYBRID",
+                    "READY",
+                    1,
+                    2,
+                    null,
+                    Instant.now(),
+                    Instant.now(),
+                    Instant.now()
+                );
+            }
+        };
+    }
+
+    private static KnowledgeWorkflowGateway noopKnowledgeWorkflowGateway() {
+        return new KnowledgeWorkflowGateway() {
+            @Override
+            public void startImport(String knowledgeBaseId, String importJobId) {
+            }
+
+            @Override
+            public void startIndexBuild(String knowledgeBaseId, String indexSnapshotId) {
+            }
+        };
     }
 }

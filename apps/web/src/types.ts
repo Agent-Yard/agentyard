@@ -1,5 +1,5 @@
 export type Role = 'PLATFORM_ADMIN' | 'DOMAIN_ADMIN' | 'DEVELOPER' | 'BUSINESS_USER';
-export type ResourceType = 'TOOL' | 'KNOWLEDGE_BASE' | 'LLM_MODEL' | 'SKILL';
+export type ResourceType = 'TOOL' | 'LLM_MODEL' | 'SKILL';
 export type ToolProviderType = 'HTTP' | 'MCP';
 export type ShareScope = 'PRIVATE' | 'DOMAIN_SHARED';
 export type ResourceOwnerType = 'DOMAIN' | 'ASSISTANT';
@@ -24,23 +24,32 @@ export interface Version {
   updatedAt: string;
 }
 
-export interface KnowledgeBaseConfig {
-  indexSnapshotId: string | null;
+export interface KnowledgeRetrievalProfile {
   defaultTopK: number;
   retrievalMode: 'LEXICAL' | 'VECTOR' | 'HYBRID';
   minScore: number;
 }
 
+export type KnowledgeBaseConfig = KnowledgeRetrievalProfile;
+
+export interface KnowledgeBindingSnapshot extends KnowledgeRetrievalProfile {
+  knowledgeBaseId: string;
+  knowledgeBaseName: string;
+  knowledgeReleaseId: string;
+  knowledgeReleaseVersion: string;
+  snapshotId: string;
+}
+
 export interface KnowledgeUploadSession {
   id: string;
-  resourceId: string;
+  knowledgeBaseId: string;
   status: string;
   acceptedTypes: string[];
 }
 
 export interface KnowledgeFile {
   id: string;
-  resourceId: string;
+  knowledgeBaseId: string;
   uploadSessionId: string;
   fileName: string;
   contentType: string;
@@ -53,7 +62,7 @@ export interface KnowledgeFile {
 
 export interface KnowledgeImportJob {
   id: string;
-  resourceId: string;
+  knowledgeBaseId: string;
   fileId: string;
   status: string;
   failureReason: string | null;
@@ -64,7 +73,7 @@ export interface KnowledgeImportJob {
 
 export interface KnowledgeDocument {
   id: string;
-  resourceId: string;
+  knowledgeBaseId: string;
   fileId: string;
   title: string;
   sourceUri: string;
@@ -75,9 +84,9 @@ export interface KnowledgeDocument {
   updatedAt: string;
 }
 
-export interface KnowledgeIndexSnapshot {
+export interface KnowledgeSnapshot {
   id: string;
-  resourceId: string;
+  knowledgeBaseId: string;
   retrievalBackend: string;
   retrievalMode: string;
   status: string;
@@ -89,9 +98,49 @@ export interface KnowledgeIndexSnapshot {
   updatedAt: string;
 }
 
+export type KnowledgeIndexSnapshot = KnowledgeSnapshot;
+
 export interface KnowledgeUploadCompletion {
   file: KnowledgeFile;
   importJob: KnowledgeImportJob;
+}
+
+export interface KnowledgeRelease {
+  id: string;
+  knowledgeBaseId: string;
+  version: string;
+  status: VersionStatus;
+  summary: string;
+  snapshotId: string;
+  retrievalProfile: KnowledgeRetrievalProfile;
+  createdAt: string;
+  publishedAt: string | null;
+}
+
+export interface KnowledgeBase {
+  id: string;
+  domainId: string;
+  name: string;
+  shareScope: ShareScope;
+  ownerType: ResourceOwnerType;
+  ownerId: string;
+  summary: string;
+  steward: string;
+  tags: string[];
+  latestRelease: KnowledgeRelease | null;
+  effectiveRelease: KnowledgeRelease | null;
+  releases: KnowledgeRelease[];
+}
+
+export interface KnowledgeReference {
+  knowledgeBaseId: string;
+  referenceKind: string;
+  sourceType: string;
+  sourceId: string;
+  sourceName: string;
+  knowledgeReleaseId: string | null;
+  knowledgeReleaseVersion: string | null;
+  blocksDeletion: boolean;
 }
 
 export interface ToolOperation {
@@ -145,7 +194,6 @@ export interface SkillConfig {
 
 export interface ResourceVersionConfiguration {
   type: ResourceType;
-  knowledgeBase?: KnowledgeBaseConfig | null;
   tool?: ToolConfig | null;
   llmModel?: LlmModelConfig | null;
   skill?: SkillConfig | null;
@@ -176,7 +224,7 @@ export interface AssistantModelPolicy {
 
 export interface RagPolicy {
   enabled: boolean;
-  knowledgeBaseResourceId: string | null;
+  knowledgeBaseId: string | null;
 }
 
 export interface MemoryPolicy {
@@ -189,7 +237,8 @@ export interface AgentExecutionPolicy {
   modelResourceId: string | null;
   systemPrompt: string;
   ragEnabled: boolean;
-  knowledgeBaseResourceId: string | null;
+  inheritAssistantKnowledge: boolean;
+  knowledgeBaseId: string | null;
   memoryWindowSize: number;
   skillResourceIds: string[];
   toolResourceIds: string[];
@@ -254,6 +303,7 @@ export interface AssistantReleaseAgent {
   role: string;
   instructions: string;
   executionPolicy: AgentExecutionPolicy;
+  knowledge: KnowledgeBindingSnapshot | null;
   skillResourceVersionIds: string[];
   toolResourceVersionIds: string[];
 }
@@ -265,6 +315,7 @@ export interface AssistantRelease {
   status: VersionStatus;
   createdAt: string;
   publishedAt: string | null;
+  assistantKnowledge: KnowledgeBindingSnapshot | null;
   resources: AssistantReleaseResource[];
   agents: AssistantReleaseAgent[];
   orchestration: AssistantOrchestration;
@@ -318,6 +369,7 @@ export interface BusinessDomain {
   description: string;
   scenarios: Scenario[];
   resources: Resource[];
+  knowledgeBases: KnowledgeBase[];
 }
 
 export interface ResourceReference {
@@ -350,6 +402,7 @@ export interface CatalogSummary {
   assistants: Assistant[];
   agents: Agent[];
   resources: Resource[];
+  knowledgeBases: KnowledgeBase[];
   orchestrations: AssistantOrchestration[];
   resourceCenter: ResourceCenter;
   resourceBlueprints: ResourceBlueprint[];
@@ -577,4 +630,32 @@ export interface CreateConversationSessionPayload {
 export interface ConversationMessagePayload {
   requester: string;
   message: string;
+}
+
+export interface CreateKnowledgeBasePayload {
+  domainId: string;
+  name: string;
+  shareScope: ShareScope;
+  ownerType: ResourceOwnerType;
+  ownerId: string;
+  summary: string;
+  steward: string;
+  tags: string[];
+}
+
+export interface UpdateKnowledgeBasePayload {
+  name: string;
+  shareScope: ShareScope;
+  ownerType: ResourceOwnerType;
+  ownerId: string;
+  summary: string;
+  steward: string;
+  tags: string[];
+}
+
+export interface CreateKnowledgeReleasePayload {
+  summary: string;
+  status: VersionStatus;
+  snapshotId: string;
+  retrievalProfile: KnowledgeRetrievalProfile;
 }

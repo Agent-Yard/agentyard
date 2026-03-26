@@ -128,12 +128,169 @@ paths:
           required: true
           schema:
             type: string
-  /resources/{resourceId}/knowledge/upload-sessions:
+  /knowledge-bases:
+    get:
+      summary: List knowledge bases
+      responses:
+        '200':
+          description: Knowledge base list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/KnowledgeBase'
+    post:
+      summary: Create knowledge base
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateKnowledgeBaseRequest'
+      responses:
+        '200':
+          description: Knowledge base created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeBase'
+  /knowledge-bases/{knowledgeBaseId}:
+    get:
+      summary: Get knowledge base
+      parameters:
+        - in: path
+          name: knowledgeBaseId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Knowledge base detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeBase'
+    put:
+      summary: Update knowledge base
+      parameters:
+        - in: path
+          name: knowledgeBaseId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateKnowledgeBaseRequest'
+      responses:
+        '200':
+          description: Knowledge base updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeBase'
+    delete:
+      summary: Delete knowledge base
+      parameters:
+        - in: path
+          name: knowledgeBaseId
+          required: true
+          schema:
+            type: string
+  /knowledge-bases/{knowledgeBaseId}/releases:
+    get:
+      summary: List knowledge releases
+      parameters:
+        - in: path
+          name: knowledgeBaseId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Knowledge release list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/KnowledgeRelease'
+    post:
+      summary: Create knowledge release
+      parameters:
+        - in: path
+          name: knowledgeBaseId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateKnowledgeReleaseRequest'
+      responses:
+        '200':
+          description: Knowledge release created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeRelease'
+  /knowledge-bases/{knowledgeBaseId}/releases/{releaseId}/publish:
+    patch:
+      summary: Publish knowledge release
+      parameters:
+        - in: path
+          name: knowledgeBaseId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: releaseId
+          required: true
+          schema:
+            type: string
+  /knowledge-bases/{knowledgeBaseId}/releases/{releaseId}:
+    delete:
+      summary: Delete knowledge release
+      parameters:
+        - in: path
+          name: knowledgeBaseId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: releaseId
+          required: true
+          schema:
+            type: string
+  /knowledge-bases/{knowledgeBaseId}/references:
+    get:
+      summary: List knowledge references
+      parameters:
+        - in: path
+          name: knowledgeBaseId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Knowledge references
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/KnowledgeReference'
+  /knowledge-bases/{knowledgeBaseId}/upload-sessions:
     post:
       summary: Create a knowledge upload session
       parameters:
         - in: path
-          name: resourceId
+          name: knowledgeBaseId
           required: true
           schema:
             type: string
@@ -144,12 +301,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/KnowledgeUploadSession'
-  /resources/{resourceId}/knowledge/upload-sessions/{uploadSessionId}/complete:
+  /knowledge-bases/{knowledgeBaseId}/upload-sessions/{uploadSessionId}/complete:
     post:
       summary: Complete a knowledge file upload and trigger import
       parameters:
         - in: path
-          name: resourceId
+          name: knowledgeBaseId
           required: true
           schema:
             type: string
@@ -176,12 +333,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/KnowledgeUploadCompletion'
-  /resources/{resourceId}/knowledge/url-imports:
+  /knowledge-bases/{knowledgeBaseId}/url-imports:
     post:
       summary: Import a knowledge document from URL
       parameters:
         - in: path
-          name: resourceId
+          name: knowledgeBaseId
           required: true
           schema:
             type: string
@@ -198,12 +355,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/KnowledgeUploadCompletion'
-  /resources/{resourceId}/knowledge/files:
+  /knowledge-bases/{knowledgeBaseId}/files:
     get:
       summary: List uploaded knowledge files
       parameters:
         - in: path
-          name: resourceId
+          name: knowledgeBaseId
           required: true
           schema:
             type: string
@@ -216,12 +373,12 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/KnowledgeFile'
-  /resources/{resourceId}/knowledge/import-jobs:
+  /knowledge-bases/{knowledgeBaseId}/import-jobs:
     get:
       summary: List knowledge import jobs
       parameters:
         - in: path
-          name: resourceId
+          name: knowledgeBaseId
           required: true
           schema:
             type: string
@@ -234,12 +391,12 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/KnowledgeImportJob'
-  /resources/{resourceId}/knowledge/documents:
+  /knowledge-bases/{knowledgeBaseId}/documents:
     get:
       summary: List parsed knowledge documents
       parameters:
         - in: path
-          name: resourceId
+          name: knowledgeBaseId
           required: true
           schema:
             type: string
@@ -252,12 +409,12 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/KnowledgeDocument'
-  /resources/{resourceId}/knowledge/index-snapshots:
+  /knowledge-bases/{knowledgeBaseId}/snapshots:
     get:
       summary: List knowledge index snapshots
       parameters:
         - in: path
-          name: resourceId
+          name: knowledgeBaseId
           required: true
           schema:
             type: string
@@ -274,7 +431,7 @@ paths:
       summary: Create a knowledge index snapshot and trigger build
       parameters:
         - in: path
-          name: resourceId
+          name: knowledgeBaseId
           required: true
           schema:
             type: string
@@ -453,11 +610,9 @@ components:
       properties:
         enabled:
           type: boolean
-        knowledgeBaseResourceId:
+        knowledgeBaseId:
           type: string
           nullable: true
-        topK:
-          type: integer
     MemoryPolicy:
       type: object
       properties:
@@ -477,7 +632,9 @@ components:
           type: string
         ragEnabled:
           type: boolean
-        knowledgeBaseResourceId:
+        inheritAssistantKnowledge:
+          type: boolean
+        knowledgeBaseId:
           type: string
           nullable: true
         memoryWindowSize:
@@ -490,12 +647,173 @@ components:
           type: array
           items:
             type: string
+    KnowledgeRetrievalProfile:
+      type: object
+      properties:
+        defaultTopK:
+          type: integer
+        retrievalMode:
+          type: string
+          enum: [LEXICAL, VECTOR, HYBRID]
+        minScore:
+          type: number
+    KnowledgeBindingSnapshot:
+      type: object
+      properties:
+        knowledgeBaseId:
+          type: string
+        knowledgeBaseName:
+          type: string
+        knowledgeReleaseId:
+          type: string
+        knowledgeReleaseVersion:
+          type: string
+        snapshotId:
+          type: string
+        defaultTopK:
+          type: integer
+        retrievalMode:
+          type: string
+          enum: [LEXICAL, VECTOR, HYBRID]
+        minScore:
+          type: number
+    KnowledgeRelease:
+      type: object
+      properties:
+        id:
+          type: string
+        knowledgeBaseId:
+          type: string
+        version:
+          type: string
+        status:
+          $ref: '#/components/schemas/VersionStatus'
+        summary:
+          type: string
+        snapshotId:
+          type: string
+        retrievalProfile:
+          $ref: '#/components/schemas/KnowledgeRetrievalProfile'
+        createdAt:
+          type: string
+          format: date-time
+        publishedAt:
+          type: string
+          format: date-time
+          nullable: true
+    KnowledgeBase:
+      type: object
+      properties:
+        id:
+          type: string
+        domainId:
+          type: string
+        name:
+          type: string
+        shareScope:
+          $ref: '#/components/schemas/ShareScope'
+        ownerType:
+          type: string
+        ownerId:
+          type: string
+        summary:
+          type: string
+        steward:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        latestRelease:
+          allOf:
+            - $ref: '#/components/schemas/KnowledgeRelease'
+          nullable: true
+        effectiveRelease:
+          allOf:
+            - $ref: '#/components/schemas/KnowledgeRelease'
+          nullable: true
+        releases:
+          type: array
+          items:
+            $ref: '#/components/schemas/KnowledgeRelease'
+    KnowledgeReference:
+      type: object
+      properties:
+        knowledgeBaseId:
+          type: string
+        referenceKind:
+          type: string
+        sourceType:
+          type: string
+        sourceId:
+          type: string
+        sourceName:
+          type: string
+        knowledgeReleaseId:
+          type: string
+          nullable: true
+        knowledgeReleaseVersion:
+          type: string
+          nullable: true
+        blocksDeletion:
+          type: boolean
+    CreateKnowledgeBaseRequest:
+      type: object
+      properties:
+        domainId:
+          type: string
+        name:
+          type: string
+        shareScope:
+          $ref: '#/components/schemas/ShareScope'
+        ownerType:
+          type: string
+        ownerId:
+          type: string
+        summary:
+          type: string
+        steward:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+    UpdateKnowledgeBaseRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        shareScope:
+          $ref: '#/components/schemas/ShareScope'
+        ownerType:
+          type: string
+        ownerId:
+          type: string
+        summary:
+          type: string
+        steward:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+    CreateKnowledgeReleaseRequest:
+      type: object
+      properties:
+        summary:
+          type: string
+        status:
+          $ref: '#/components/schemas/VersionStatus'
+        snapshotId:
+          type: string
+        retrievalProfile:
+          $ref: '#/components/schemas/KnowledgeRetrievalProfile'
     KnowledgeUploadSession:
       type: object
       properties:
         id:
           type: string
-        resourceId:
+        knowledgeBaseId:
           type: string
         status:
           type: string
@@ -508,7 +826,7 @@ components:
       properties:
         id:
           type: string
-        resourceId:
+        knowledgeBaseId:
           type: string
         uploadSessionId:
           type: string
@@ -534,7 +852,7 @@ components:
       properties:
         id:
           type: string
-        resourceId:
+        knowledgeBaseId:
           type: string
         fileId:
           type: string
@@ -558,7 +876,7 @@ components:
       properties:
         id:
           type: string
-        resourceId:
+        knowledgeBaseId:
           type: string
         fileId:
           type: string
@@ -583,7 +901,7 @@ components:
       properties:
         id:
           type: string
-        resourceId:
+        knowledgeBaseId:
           type: string
         retrievalBackend:
           type: string

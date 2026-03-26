@@ -6,6 +6,6 @@ describe('lynxus web smoke', () => {
     expect(mockCatalogSummary.scenarios[0]?.name).toBe('智能客服协同处理');
     expect(mockCatalogSummary.orchestrations[0]?.nodes.some((node) => node.nodeType === 'HUMAN')).toBe(true);
     expect(mockCatalogSummary.resourceCenter.totalResources).toBeGreaterThan(0);
-    expect(mockCatalogSummary.resources.find((resource) => resource.type === 'KNOWLEDGE_BASE')?.latestVersion?.configuration.knowledgeBase?.indexSnapshotId).toBeTruthy();
+    expect(mockCatalogSummary.knowledgeBases[0]?.effectiveRelease?.snapshotId).toBe('snapshot-kb-support-v1');
   });
 });

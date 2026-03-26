@@ -19,8 +19,12 @@ except Exception as exc:  # pragma: no cover
     raise RuntimeError("langgraph is required for agent-runtime") from exc
 
 
-class KnowledgeBaseConfig(BaseModel):
-    indexSnapshotId: Optional[str] = None
+class KnowledgeBindingSnapshot(BaseModel):
+    knowledgeBaseId: str
+    knowledgeBaseName: str
+    knowledgeReleaseId: str
+    knowledgeReleaseVersion: str
+    snapshotId: str
     defaultTopK: int
     retrievalMode: str = "HYBRID"
     minScore: float = 0.1
@@ -88,7 +92,6 @@ class SkillConfig(BaseModel):
 
 class ResourceConfigurationSnapshot(BaseModel):
     type: str
-    knowledgeBase: Optional[KnowledgeBaseConfig] = None
     tool: Optional[ToolConfig] = None
     llmModel: Optional[LlmModelConfig] = None
     skill: Optional[SkillConfig] = None
@@ -107,9 +110,6 @@ class ResourceVersionSnapshot(BaseModel):
 class AssistantPolicySnapshot(BaseModel):
     providerResourceId: Optional[str] = None
     providerResourceVersionId: Optional[str] = None
-    ragEnabled: bool
-    knowledgeBaseResourceId: Optional[str] = None
-    knowledgeBaseResourceVersionId: Optional[str] = None
     memoryEnabled: bool
     memoryWindowSize: int
 
@@ -120,8 +120,8 @@ class AgentExecutionPolicySnapshot(BaseModel):
     modelResourceVersionId: Optional[str] = None
     systemPrompt: str = ""
     ragEnabled: bool
-    knowledgeBaseResourceId: Optional[str] = None
-    knowledgeBaseResourceVersionId: Optional[str] = None
+    inheritAssistantKnowledge: bool
+    knowledge: Optional[KnowledgeBindingSnapshot] = None
     memoryWindowSize: int
     skillResourceIds: List[str]
     skillResourceVersionIds: List[str]
@@ -173,6 +173,7 @@ class AssistantRunSnapshot(BaseModel):
     assistantName: str
     assistantReleaseVersion: str
     assistantPolicy: AssistantPolicySnapshot
+    assistantKnowledge: Optional[KnowledgeBindingSnapshot] = None
     agents: List[AgentSnapshot]
     resources: List[ResourceVersionSnapshot]
     graph: GraphSnapshot
@@ -583,14 +584,12 @@ def resolve_model_resource(assistant: AssistantRunSnapshot, agent: AgentSnapshot
     return resource
 
 
-def resolve_knowledge_resource(assistant: AssistantRunSnapshot, agent: AgentSnapshot) -> Optional[ResourceVersionSnapshot]:
-    resource_version_id = agent.executionPolicy.knowledgeBaseResourceVersionId
-    if agent.executionPolicy.inheritAssistantDefaults and not resource_version_id:
-        resource_version_id = assistant.assistantPolicy.knowledgeBaseResourceVersionId
-    resource = resolve_resource(assistant, resource_version_id)
-    if resource and resource.configuration.knowledgeBase:
-        return resource
-    return None
+def resolve_knowledge_binding(assistant: AssistantRunSnapshot, agent: AgentSnapshot) -> Optional[KnowledgeBindingSnapshot]:
+    if not agent.executionPolicy.ragEnabled:
+        return None
+    if agent.executionPolicy.inheritAssistantKnowledge:
+        return assistant.assistantKnowledge
+    return agent.executionPolicy.knowledge or assistant.assistantKnowledge
 
 
 def resolve_tool_resources(assistant: AssistantRunSnapshot, agent: AgentSnapshot) -> List[ResourceVersionSnapshot]:
@@ -961,22 +960,21 @@ def tokenize(text: str) -> List[str]:
     return [token for token in text.replace("？", " ").replace("，", " ").replace("。", " ").split() if token]
 
 
-async def retrieve_knowledge(resource: Optional[ResourceVersionSnapshot], question: str) -> List[Dict[str, Any]]:
-    if resource is None or resource.configuration.knowledgeBase is None:
+async def retrieve_knowledge(binding: Optional[KnowledgeBindingSnapshot], question: str) -> List[Dict[str, Any]]:
+    if binding is None:
         return []
-    config = resource.configuration.knowledgeBase
-    if config.indexSnapshotId is None or not config.indexSnapshotId.strip():
+    if not binding.snapshotId.strip():
         return []
     knowledge_service_base_url = os.getenv("LYNXUS_KNOWLEDGE_SERVICE_BASE_URL", "http://localhost:8091").rstrip("/")
     async with httpx.AsyncClient(timeout=10.0) as client:
         response = await client.post(
             f"{knowledge_service_base_url}/internal/retrieve",
             json={
-                "indexSnapshotId": config.indexSnapshotId,
+                "indexSnapshotId": binding.snapshotId,
                 "query": question,
-                "topK": config.defaultTopK,
-                "minScore": config.minScore,
-                "retrievalMode": config.retrievalMode,
+                "topK": binding.defaultTopK,
+                "minScore": binding.minScore,
+                "retrievalMode": binding.retrievalMode,
             },
         )
         response.raise_for_status()
@@ -1461,14 +1459,14 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
     assistant = assistant_from_state(state)
     graph = graph_from_state(state)
     agent = find_agent(assistant, node.agentId)
-    kb_resource = resolve_knowledge_resource(assistant, agent)
+    knowledge_binding = resolve_knowledge_binding(assistant, agent)
     skill_resources = resolve_skill_resources(assistant, agent)
     conversation_history = build_conversation_history(
         state["session_context"],
         state["question"],
         memory_window_for_agent(assistant, agent),
     )
-    hits = await retrieve_knowledge(kb_resource, state["question"]) if (agent.executionPolicy.ragEnabled or assistant.assistantPolicy.ragEnabled) else []
+    hits = await retrieve_knowledge(knowledge_binding, state["question"]) if knowledge_binding else []
     state["retrieval_hits"] = hits
     state["retrieval_cache"][agent.agentId] = hits
 
@@ -1773,13 +1771,12 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
     human_comment = state["human_input"]["comment"] if state["human_input"] else ""
     latest_outcome = state["latest_tool_outcome"] or {}
     suggestion = str(latest_outcome.get("detail", ""))
-    suffix_parts = [part for part in [suggestion, f"人工处理说明：{human_comment}" if human_comment else ""] if part]
-    suffix = "\n\n".join(suffix_parts)
-    state["final_reply"] = f"{message}\n\n{suffix}".strip() if suffix and suggestion not in message else message
-    if suggestion:
-        state["summary"] = suggestion
-    else:
+    human_suffix = f"人工处理说明：{human_comment}" if human_comment else ""
+    state["final_reply"] = f"{message}\n\n{human_suffix}".strip() if human_suffix and human_suffix not in message else message
+    if state["final_reply"]:
         state["summary"] = state["final_reply"]
+    else:
+        state["summary"] = suggestion
     detail_lines.append(f"loop_count={len(turn_logs)}")
     detail_lines.append(f"route_key={route_key}")
 

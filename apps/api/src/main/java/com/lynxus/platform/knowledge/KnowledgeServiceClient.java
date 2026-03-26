@@ -1,4 +1,4 @@
-package com.lynxus.platform.catalog;
+package com.lynxus.platform.knowledge;
 
 import static com.lynxus.platform.catalog.CatalogDtos.*;
 
@@ -26,19 +26,19 @@ public class KnowledgeServiceClient {
         this.restClient = RestClient.builder().baseUrl(baseUrl).build();
     }
 
-    public KnowledgeUploadSessionDto createUploadSession(String resourceId) {
+    public KnowledgeUploadSessionDto createUploadSession(String knowledgeBaseId) {
         return restClient.post()
             .uri("/internal/upload-sessions")
-            .body(new CreateKnowledgeUploadSessionRequest(resourceId))
+            .body(new CreateKnowledgeUploadSessionRequest(knowledgeBaseId))
             .retrieve()
             .body(KnowledgeUploadSessionDto.class);
     }
 
-    public KnowledgeUploadCompletionDto completeUpload(String resourceId, String uploadSessionId, String fileName, String contentType, byte[] payload) {
+    public KnowledgeUploadCompletionDto completeUpload(String knowledgeBaseId, String uploadSessionId, String fileName, String contentType, byte[] payload) {
         return restClient.post()
             .uri("/internal/uploads")
             .body(new InternalCompleteUploadRequest(
-                resourceId,
+                knowledgeBaseId,
                 uploadSessionId,
                 fileName,
                 contentType,
@@ -48,46 +48,46 @@ public class KnowledgeServiceClient {
             .body(KnowledgeUploadCompletionDto.class);
     }
 
-    public KnowledgeUploadCompletionDto importUrl(String resourceId, String url, String title) {
+    public KnowledgeUploadCompletionDto importUrl(String knowledgeBaseId, String url, String title) {
         return restClient.post()
             .uri("/internal/url-imports")
-            .body(new CreateKnowledgeUrlImportInternalRequest(resourceId, url, title))
+            .body(new CreateKnowledgeUrlImportInternalRequest(knowledgeBaseId, url, title))
             .retrieve()
             .body(KnowledgeUploadCompletionDto.class);
     }
 
-    public List<KnowledgeFileDto> listFiles(String resourceId) {
+    public List<KnowledgeFileDto> listFiles(String knowledgeBaseId) {
         return restClient.get()
-            .uri("/internal/resources/{resourceId}/files", resourceId)
+            .uri("/internal/knowledge-bases/{knowledgeBaseId}/files", knowledgeBaseId)
             .retrieve()
             .body(KNOWLEDGE_FILE_LIST);
     }
 
-    public List<KnowledgeImportJobDto> listImportJobs(String resourceId) {
+    public List<KnowledgeImportJobDto> listImportJobs(String knowledgeBaseId) {
         return restClient.get()
-            .uri("/internal/resources/{resourceId}/import-jobs", resourceId)
+            .uri("/internal/knowledge-bases/{knowledgeBaseId}/import-jobs", knowledgeBaseId)
             .retrieve()
             .body(KNOWLEDGE_IMPORT_JOB_LIST);
     }
 
-    public List<KnowledgeDocumentDto> listDocuments(String resourceId) {
+    public List<KnowledgeDocumentDto> listDocuments(String knowledgeBaseId) {
         return restClient.get()
-            .uri("/internal/resources/{resourceId}/documents", resourceId)
+            .uri("/internal/knowledge-bases/{knowledgeBaseId}/documents", knowledgeBaseId)
             .retrieve()
             .body(KNOWLEDGE_DOCUMENT_LIST);
     }
 
-    public KnowledgeIndexSnapshotDto createIndexSnapshot(String resourceId, List<String> documentIds) {
+    public KnowledgeIndexSnapshotDto createIndexSnapshot(String knowledgeBaseId, List<String> documentIds) {
         return restClient.post()
-            .uri("/internal/resources/{resourceId}/index-snapshots", resourceId)
+            .uri("/internal/knowledge-bases/{knowledgeBaseId}/index-snapshots", knowledgeBaseId)
             .body(new CreateKnowledgeIndexSnapshotRequest(documentIds))
             .retrieve()
             .body(KnowledgeIndexSnapshotDto.class);
     }
 
-    public List<KnowledgeIndexSnapshotDto> listIndexSnapshots(String resourceId) {
+    public List<KnowledgeIndexSnapshotDto> listIndexSnapshots(String knowledgeBaseId) {
         return restClient.get()
-            .uri("/internal/resources/{resourceId}/index-snapshots", resourceId)
+            .uri("/internal/knowledge-bases/{knowledgeBaseId}/index-snapshots", knowledgeBaseId)
             .retrieve()
             .body(KNOWLEDGE_SNAPSHOT_LIST);
     }
@@ -100,7 +100,7 @@ public class KnowledgeServiceClient {
     }
 
     record InternalCompleteUploadRequest(
-        String resourceId,
+        String knowledgeBaseId,
         String uploadSessionId,
         String fileName,
         String contentType,
@@ -109,7 +109,7 @@ public class KnowledgeServiceClient {
     }
 
     record CreateKnowledgeUrlImportInternalRequest(
-        String resourceId,
+        String knowledgeBaseId,
         String url,
         String title
     ) {

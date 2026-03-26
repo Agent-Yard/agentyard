@@ -11,6 +11,7 @@ import com.lynxus.platform.catalog.CatalogDtos.AssistantReleaseAgentDto;
 import com.lynxus.platform.catalog.CatalogDtos.AssistantReleaseDto;
 import com.lynxus.platform.catalog.CatalogDtos.AssistantReleaseResourceDto;
 import com.lynxus.platform.catalog.CatalogDtos.HumanNodeConfigDto;
+import com.lynxus.platform.catalog.CatalogDtos.KnowledgeBindingSnapshotDto;
 import com.lynxus.platform.catalog.CatalogDtos.MemoryPolicyDto;
 import com.lynxus.platform.catalog.CatalogDtos.OrchestrationEdgeDto;
 import com.lynxus.platform.catalog.CatalogDtos.OrchestrationNodeDto;
@@ -19,6 +20,7 @@ import com.lynxus.platform.catalog.CatalogDtos.ResourceDto;
 import com.lynxus.platform.catalog.CatalogDtos.ResourceVersionConfigurationDto;
 import com.lynxus.platform.catalog.CatalogDtos.ScenarioDto;
 import com.lynxus.platform.catalog.CatalogService;
+import com.lynxus.platform.knowledge.KnowledgeService;
 import com.lynxus.contracts.runtime.WorkflowContracts;
 import com.lynxus.contracts.runtime.WorkflowContracts.AgentExecutionPolicySnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.AgentSnapshot;
@@ -32,7 +34,7 @@ import com.lynxus.contracts.runtime.WorkflowContracts.HumanAction;
 import com.lynxus.contracts.runtime.WorkflowContracts.HumanNodeConfig;
 import com.lynxus.contracts.runtime.WorkflowContracts.HumanTaskSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.HttpToolProviderConfig;
-import com.lynxus.contracts.runtime.WorkflowContracts.KnowledgeBaseConfig;
+import com.lynxus.contracts.runtime.WorkflowContracts.KnowledgeBindingSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.LlmModelConfig;
 import com.lynxus.contracts.runtime.WorkflowContracts.McpToolProviderConfig;
 import com.lynxus.contracts.runtime.WorkflowContracts.NodeStatus;
@@ -59,19 +61,27 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
 public class RuntimeService {
     private final AssistantRunWorkflowGateway workflowGateway;
     private final CatalogService catalogService;
+    private final KnowledgeService knowledgeService;
     private final List<TaskInstanceDto> tasks = new ArrayList<>();
     private final List<WorkflowInstanceDto> workflows = new ArrayList<>();
     private final List<ConversationSessionDto> sessions = new ArrayList<>();
 
     public RuntimeService(AssistantRunWorkflowGateway workflowGateway, CatalogService catalogService) {
+        this(workflowGateway, catalogService, catalogService.knowledgeService());
+    }
+
+    @Autowired
+    RuntimeService(AssistantRunWorkflowGateway workflowGateway, CatalogService catalogService, KnowledgeService knowledgeService) {
         this.workflowGateway = workflowGateway;
         this.catalogService = catalogService;
+        this.knowledgeService = knowledgeService;
     }
 
     public List<TaskInstanceDto> listTasks() {
@@ -496,7 +506,8 @@ public class RuntimeService {
                 assistant.id(),
                 assistant.name(),
                 release.releaseVersion(),
-                toAssistantPolicySnapshot(release.modelPolicy(), release.ragPolicy(), release.memoryPolicy(), release.resources()),
+                toAssistantPolicySnapshot(release.modelPolicy(), release.memoryPolicy(), release.resources()),
+                toKnowledgeBindingSnapshot(release.assistantKnowledge()),
                 release.agents().stream().map(agent -> toAgentSnapshot(agent, release.resources())).toList(),
                 release.resources().stream().map(this::toResourceSnapshot).toList(),
                 toGraphSnapshot(release.orchestration())
@@ -511,9 +522,10 @@ public class RuntimeService {
             assistant.id(),
             assistant.name(),
             assistant.version().version(),
-            toAssistantPolicySnapshot(assistant.modelPolicy(), assistant.ragPolicy(), assistant.memoryPolicy(), resolvedResources),
+            toAssistantPolicySnapshot(assistant.modelPolicy(), assistant.memoryPolicy(), resolvedResources),
+            toKnowledgeBindingSnapshot(resolveAssistantKnowledgeBinding(assistant)),
             assistant.agents().stream()
-                .map(agent -> toAgentSnapshot(agent, resolvedResources))
+                .map(agent -> toAgentSnapshot(assistant, agent, resolvedResources))
                 .toList(),
             resolvedResources.stream().map(this::toResourceSnapshot).toList(),
             toGraphSnapshot(orchestration)
@@ -522,16 +534,12 @@ public class RuntimeService {
 
     private AssistantPolicySnapshot toAssistantPolicySnapshot(
         AssistantModelPolicyDto modelPolicy,
-        RagPolicyDto ragPolicy,
         MemoryPolicyDto memoryPolicy,
         List<AssistantReleaseResourceDto> resources
     ) {
         return new AssistantPolicySnapshot(
             modelPolicy.providerResourceId(),
             resolveReleasedVersionId(resources, modelPolicy.providerResourceId()),
-            ragPolicy.enabled(),
-            ragPolicy.knowledgeBaseResourceId(),
-            ragPolicy.enabled() ? resolveReleasedVersionId(resources, ragPolicy.knowledgeBaseResourceId()) : null,
             memoryPolicy.enabled(),
             memoryPolicy.windowSize()
         );
@@ -543,11 +551,11 @@ public class RuntimeService {
             agent.name(),
             agent.role(),
             agent.instructions(),
-            toAgentExecutionPolicySnapshot(agent.executionPolicy(), resources, agent.skillResourceVersionIds(), agent.toolResourceVersionIds())
+            toAgentExecutionPolicySnapshot(agent.executionPolicy(), resources, agent.knowledge(), agent.skillResourceVersionIds(), agent.toolResourceVersionIds())
         );
     }
 
-    private AgentSnapshot toAgentSnapshot(AgentDto agent, List<AssistantReleaseResourceDto> resources) {
+    private AgentSnapshot toAgentSnapshot(AssistantDto assistant, AgentDto agent, List<AssistantReleaseResourceDto> resources) {
         List<String> skillVersionIds = agent.executionPolicy().skillResourceIds().stream()
             .map(skillResourceId -> resolveReleasedVersionId(resources, skillResourceId))
             .toList();
@@ -559,13 +567,14 @@ public class RuntimeService {
             agent.name(),
             agent.role(),
             agent.instructions(),
-            toAgentExecutionPolicySnapshot(agent.executionPolicy(), resources, skillVersionIds, toolVersionIds)
+            toAgentExecutionPolicySnapshot(agent.executionPolicy(), resources, resolveAgentKnowledgeBinding(assistant, agent), skillVersionIds, toolVersionIds)
         );
     }
 
     private AgentExecutionPolicySnapshot toAgentExecutionPolicySnapshot(
         AgentExecutionPolicyDto policy,
         List<AssistantReleaseResourceDto> resources,
+        KnowledgeBindingSnapshotDto knowledge,
         List<String> skillResourceVersionIds,
         List<String> toolResourceVersionIds
     ) {
@@ -575,8 +584,8 @@ public class RuntimeService {
             resolveReleasedVersionId(resources, policy.modelResourceId()),
             policy.systemPrompt(),
             policy.ragEnabled(),
-            policy.knowledgeBaseResourceId(),
-            policy.ragEnabled() ? resolveReleasedVersionId(resources, policy.knowledgeBaseResourceId()) : null,
+            policy.inheritAssistantKnowledge(),
+            toKnowledgeBindingSnapshot(knowledge),
             policy.memoryWindowSize(),
             policy.skillResourceIds(),
             skillResourceVersionIds,
@@ -588,15 +597,9 @@ public class RuntimeService {
     private List<AssistantReleaseResourceDto> collectAdHocResources(AssistantDto assistant, List<ResourceDto> resourceViews) {
         Map<String, AssistantReleaseResourceDto> resolved = new java.util.LinkedHashMap<>();
         captureAdHocEffectiveResource(resolved, resourceViews, assistant.modelPolicy().providerResourceId(), "ASSISTANT_DEFAULT_MODEL");
-        if (assistant.ragPolicy().enabled()) {
-            captureAdHocEffectiveResource(resolved, resourceViews, assistant.ragPolicy().knowledgeBaseResourceId(), "ASSISTANT_DEFAULT_RAG");
-        }
 
         for (AgentDto agent : assistant.agents()) {
             captureAdHocEffectiveResource(resolved, resourceViews, agent.executionPolicy().modelResourceId(), agent.name());
-            if (agent.executionPolicy().ragEnabled()) {
-                captureAdHocEffectiveResource(resolved, resourceViews, agent.executionPolicy().knowledgeBaseResourceId(), agent.name());
-            }
             for (String skillResourceId : agent.executionPolicy().skillResourceIds()) {
                 captureAdHocEffectiveResource(resolved, resourceViews, skillResourceId, agent.name());
             }
@@ -605,6 +608,38 @@ public class RuntimeService {
             }
         }
         return List.copyOf(resolved.values());
+    }
+
+    private KnowledgeBindingSnapshotDto resolveAssistantKnowledgeBinding(AssistantDto assistant) {
+        if (!assistant.ragPolicy().enabled() || assistant.ragPolicy().knowledgeBaseId() == null || assistant.ragPolicy().knowledgeBaseId().isBlank()) {
+            return null;
+        }
+        return resolveKnowledgeBinding(assistant.ragPolicy().knowledgeBaseId());
+    }
+
+    private KnowledgeBindingSnapshotDto resolveAgentKnowledgeBinding(AssistantDto assistant, AgentDto agent) {
+        if (!agent.executionPolicy().ragEnabled()) {
+            return null;
+        }
+        if (agent.executionPolicy().inheritAssistantKnowledge()) {
+            return null;
+        }
+        String knowledgeBaseId = agent.executionPolicy().knowledgeBaseId();
+        if (knowledgeBaseId == null || knowledgeBaseId.isBlank()) {
+            knowledgeBaseId = assistant.ragPolicy().knowledgeBaseId();
+        }
+        return knowledgeBaseId == null || knowledgeBaseId.isBlank() ? null : resolveKnowledgeBinding(knowledgeBaseId);
+    }
+
+    private KnowledgeBindingSnapshotDto resolveKnowledgeBinding(String knowledgeBaseId) {
+        try {
+            return knowledgeService.resolveKnowledgeBinding(knowledgeBaseId);
+        } catch (IllegalStateException error) {
+            if (error.getMessage() != null && error.getMessage().contains("has no published release")) {
+                throw new IllegalStateException("published knowledge release not found: " + knowledgeBaseId, error);
+            }
+            throw error;
+        }
     }
 
     private void captureAdHocEffectiveResource(
@@ -690,12 +725,6 @@ public class RuntimeService {
     private ResourceConfigurationSnapshot toResourceConfigurationSnapshot(ResourceVersionConfigurationDto configuration) {
         return new ResourceConfigurationSnapshot(
             configuration.type(),
-            configuration.knowledgeBase() == null ? null : new KnowledgeBaseConfig(
-                configuration.knowledgeBase().indexSnapshotId(),
-                configuration.knowledgeBase().defaultTopK(),
-                configuration.knowledgeBase().retrievalMode(),
-                configuration.knowledgeBase().minScore()
-            ),
             configuration.tool() == null ? null : new ToolConfig(
                 configuration.tool().operations() == null ? List.of() : configuration.tool().operations().stream()
                     .map(operation -> new ToolOperationConfig(
@@ -738,6 +767,22 @@ public class RuntimeService {
                 configuration.skill().skillDesc(),
                 configuration.skill().skillPrompt()
             )
+        );
+    }
+
+    private KnowledgeBindingSnapshot toKnowledgeBindingSnapshot(KnowledgeBindingSnapshotDto binding) {
+        if (binding == null) {
+            return null;
+        }
+        return new KnowledgeBindingSnapshot(
+            binding.knowledgeBaseId(),
+            binding.knowledgeBaseName(),
+            binding.knowledgeReleaseId(),
+            binding.knowledgeReleaseVersion(),
+            binding.snapshotId(),
+            binding.defaultTopK(),
+            binding.retrievalMode(),
+            binding.minScore()
         );
     }
 

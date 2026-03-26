@@ -1,11 +1,19 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
-import type { Assistant, CreateAssistantPayload, Resource, Scenario, UpdateAssistantPayload } from '../types';
+import type {
+  Assistant,
+  CreateAssistantPayload,
+  KnowledgeBase,
+  Resource,
+  Scenario,
+  UpdateAssistantPayload,
+} from '../types';
 
 const props = defineProps<{
   assistants: Assistant[];
   scenarios: Scenario[];
   resources: Resource[];
+  knowledgeBases: KnowledgeBase[];
 }>();
 
 const emit = defineEmits<{
@@ -24,7 +32,7 @@ const createForm = reactive<CreateAssistantPayload>({
   },
   ragPolicy: {
     enabled: false,
-    knowledgeBaseResourceId: null,
+    knowledgeBaseId: null,
   },
   memoryPolicy: {
     enabled: true,
@@ -40,7 +48,7 @@ const editForm = reactive<UpdateAssistantPayload>({
   },
   ragPolicy: {
     enabled: false,
-    knowledgeBaseResourceId: null,
+    knowledgeBaseId: null,
   },
   memoryPolicy: {
     enabled: true,
@@ -52,16 +60,16 @@ const current = computed(() =>
   props.assistants.find((item) => item.id === selectedAssistantId.value) ?? props.assistants[0],
 );
 const modelResources = computed(() => props.resources.filter((item) => item.type === 'LLM_MODEL'));
-const knowledgeBases = computed(() => props.resources.filter((item) => item.type === 'KNOWLEDGE_BASE'));
+const knowledgeBaseOptions = computed(() => props.knowledgeBases.map((item) => ({ label: item.name, value: item.id })));
 
-function syncCreateFormResourceDefaults() {
+function syncCreateDefaults() {
   if (!modelResources.value.some((item) => item.id === createForm.modelPolicy.providerResourceId)) {
     createForm.modelPolicy.providerResourceId = modelResources.value[0]?.id ?? null;
   }
-  if (!knowledgeBases.value.some((item) => item.id === createForm.ragPolicy.knowledgeBaseResourceId)) {
-    createForm.ragPolicy.knowledgeBaseResourceId = knowledgeBases.value[0]?.id ?? null;
+  if (!props.knowledgeBases.some((item) => item.id === createForm.ragPolicy.knowledgeBaseId)) {
+    createForm.ragPolicy.knowledgeBaseId = props.knowledgeBases[0]?.id ?? null;
   }
-  createForm.ragPolicy.enabled = createForm.ragPolicy.knowledgeBaseResourceId !== null;
+  createForm.ragPolicy.enabled = createForm.ragPolicy.enabled && createForm.ragPolicy.knowledgeBaseId !== null;
 }
 
 watch(
@@ -71,7 +79,6 @@ watch(
       selectedAssistantId.value = '';
       return;
     }
-
     if (!assistants.some((item) => item.id === selectedAssistantId.value)) {
       selectedAssistantId.value = assistants[0].id;
     }
@@ -85,7 +92,6 @@ watch(
     if (!assistant) {
       return;
     }
-
     editForm.name = assistant.name;
     editForm.description = assistant.description;
     editForm.status = assistant.version.status;
@@ -106,10 +112,40 @@ watch(
   { immediate: true },
 );
 
-watch([modelResources, knowledgeBases], syncCreateFormResourceDefaults, { immediate: true });
+watch([modelResources, () => props.knowledgeBases], syncCreateDefaults, { immediate: true });
+
+watch(
+  () => createForm.ragPolicy.enabled,
+  (enabled) => {
+    if (enabled && !createForm.ragPolicy.knowledgeBaseId) {
+      createForm.ragPolicy.knowledgeBaseId = props.knowledgeBases[0]?.id ?? null;
+    }
+    if (!enabled) {
+      createForm.ragPolicy.knowledgeBaseId = null;
+    }
+  },
+);
+
+watch(
+  () => editForm.ragPolicy.enabled,
+  (enabled) => {
+    if (enabled && !editForm.ragPolicy.knowledgeBaseId) {
+      editForm.ragPolicy.knowledgeBaseId = props.knowledgeBases[0]?.id ?? null;
+    }
+    if (!enabled) {
+      editForm.ragPolicy.knowledgeBaseId = null;
+    }
+  },
+);
 
 function submitCreate() {
-  emit('createAssistant', { ...createForm });
+  emit('createAssistant', {
+    ...createForm,
+    ragPolicy: {
+      enabled: createForm.ragPolicy.enabled && !!createForm.ragPolicy.knowledgeBaseId,
+      knowledgeBaseId: createForm.ragPolicy.enabled ? createForm.ragPolicy.knowledgeBaseId : null,
+    },
+  });
   createForm.name = '';
   createForm.description = '';
 }
@@ -118,10 +154,15 @@ function submitUpdate() {
   if (!current.value) {
     return;
   }
-
   emit('updateAssistant', {
     assistantId: current.value.id,
-    data: { ...editForm },
+    data: {
+      ...editForm,
+      ragPolicy: {
+        enabled: editForm.ragPolicy.enabled && !!editForm.ragPolicy.knowledgeBaseId,
+        knowledgeBaseId: editForm.ragPolicy.enabled ? editForm.ragPolicy.knowledgeBaseId : null,
+      },
+    },
   });
 }
 </script>
@@ -147,33 +188,33 @@ function submitUpdate() {
               placeholder="说明该助手负责的业务目标和协作方式"
             />
           </a-form-item>
+          <a-form-item label="默认模型">
+            <a-select
+              v-model:value="createForm.modelPolicy.providerResourceId"
+              :options="modelResources.map((item) => ({ label: item.name, value: item.id }))"
+            />
+          </a-form-item>
           <a-row :gutter="[16, 16]">
-            <a-col :span="24">
-              <a-form-item label="默认模型">
-                <a-select
-                  v-model:value="createForm.modelPolicy.providerResourceId"
-                  :options="modelResources.map((item) => ({ label: item.name, value: item.id }))"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <a-row :gutter="[16, 16]">
-            <a-col :span="24">
+            <a-col :span="12">
               <a-form-item label="记忆窗口">
                 <a-input-number v-model:value="createForm.memoryPolicy.windowSize" :min="1" style="width: 100%" />
               </a-form-item>
             </a-col>
-          </a-row>
-          <a-row :gutter="[16, 16]">
             <a-col :span="12">
-              <a-form-item label="默认知识库">
-                <a-select
-                  v-model:value="createForm.ragPolicy.knowledgeBaseResourceId"
-                  :options="knowledgeBases.map((item) => ({ label: item.name, value: item.id }))"
-                />
+              <a-form-item label="默认知识检索">
+                <a-switch v-model:checked="createForm.ragPolicy.enabled" />
               </a-form-item>
             </a-col>
           </a-row>
+          <a-form-item label="默认知识库">
+            <a-select
+              v-model:value="createForm.ragPolicy.knowledgeBaseId"
+              :disabled="!createForm.ragPolicy.enabled"
+              allow-clear
+              :options="knowledgeBaseOptions"
+              placeholder="选择知识库"
+            />
+          </a-form-item>
           <a-button type="primary" html-type="submit">创建助手</a-button>
         </a-form>
       </a-card>
@@ -198,7 +239,10 @@ function submitUpdate() {
     <a-col :span="14">
       <a-card v-if="current" :title="current.name">
         <template #extra>
-          <a-tag color="blue">{{ current.agents.length }} 个智能体</a-tag>
+          <a-space>
+            <a-tag color="blue">{{ current.agents.length }} 个智能体</a-tag>
+            <a-button danger ghost @click="emit('deleteAssistant', current.id)">删除助手</a-button>
+          </a-space>
         </template>
 
         <a-form layout="vertical" :model="editForm" @finish="submitUpdate">
@@ -230,78 +274,50 @@ function submitUpdate() {
               </a-form-item>
             </a-col>
           </a-row>
+
+          <a-form-item label="默认模型">
+            <a-select
+              v-model:value="editForm.modelPolicy.providerResourceId"
+              :options="modelResources.map((item) => ({ label: item.name, value: item.id }))"
+            />
+          </a-form-item>
+
           <a-row :gutter="[16, 16]">
-            <a-col :span="24">
-              <a-form-item label="默认模型">
-                <a-select
-                  v-model:value="editForm.modelPolicy.providerResourceId"
-                  :options="modelResources.map((item) => ({ label: item.name, value: item.id }))"
-                />
+            <a-col :span="12">
+              <a-form-item label="知识检索">
+                <a-switch v-model:checked="editForm.ragPolicy.enabled" />
               </a-form-item>
             </a-col>
-          </a-row>
-          <a-row :gutter="[16, 16]">
-            <a-col :span="24">
+            <a-col :span="12">
               <a-form-item label="记忆窗口">
                 <a-input-number v-model:value="editForm.memoryPolicy.windowSize" :min="1" style="width: 100%" />
               </a-form-item>
             </a-col>
           </a-row>
-          <a-row :gutter="[16, 16]">
-            <a-col :span="12">
-              <a-form-item label="默认知识库">
-                <a-select
-                  v-model:value="editForm.ragPolicy.knowledgeBaseResourceId"
-                  :options="knowledgeBases.map((item) => ({ label: item.name, value: item.id }))"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
 
-          <a-button type="primary" html-type="submit">保存助手</a-button>
-          <a-popconfirm
-            title="确认删除该助手？"
-            description="如果助手下仍有智能体或私有资源，删除会被阻止；删除成功后会回收编排和发布快照。"
-            ok-text="删除"
-            cancel-text="取消"
-            @confirm="emit('deleteAssistant', current.id)"
-          >
-            <a-button danger style="margin-left: 12px">删除助手</a-button>
-          </a-popconfirm>
+          <a-form-item label="默认知识库">
+            <a-select
+              v-model:value="editForm.ragPolicy.knowledgeBaseId"
+              :disabled="!editForm.ragPolicy.enabled"
+              allow-clear
+              :options="knowledgeBaseOptions"
+              placeholder="选择知识库"
+            />
+          </a-form-item>
+
+          <a-alert
+            v-if="current.currentRelease?.assistantKnowledge"
+            type="info"
+            show-icon
+            style="margin-bottom: 16px"
+            :message="`当前发布冻结：${current.currentRelease.assistantKnowledge.knowledgeBaseName} @ ${current.currentRelease.assistantKnowledge.knowledgeReleaseVersion}`"
+            :description="`运行时快照 ${current.currentRelease.assistantKnowledge.snapshotId} · ${current.currentRelease.assistantKnowledge.retrievalMode} · topK ${current.currentRelease.assistantKnowledge.defaultTopK}`"
+          />
+
+          <a-space>
+            <a-button type="primary" html-type="submit">保存助手</a-button>
+          </a-space>
         </a-form>
-      </a-card>
-
-      <a-card v-if="current" title="当前发布快照">
-        <template v-if="current.currentRelease">
-          <a-descriptions :column="2" size="small">
-            <a-descriptions-item label="发布版本">{{ current.currentRelease.releaseVersion }}</a-descriptions-item>
-            <a-descriptions-item label="发布时间">{{ current.currentRelease.publishedAt }}</a-descriptions-item>
-          </a-descriptions>
-          <a-list :data-source="current.currentRelease.resources" size="small">
-            <template #renderItem="{ item }">
-              <a-list-item>
-                <a-list-item-meta
-                  :title="`${item.resourceName} · ${item.resourceVersion}`"
-                  :description="`${item.resourceType} · ${item.boundAgents.join(' / ')}`"
-                />
-              </a-list-item>
-            </template>
-          </a-list>
-        </template>
-        <a-empty v-else description="当前还没有已发布的资源冻结快照" />
-      </a-card>
-
-      <a-card v-if="current?.releases.length" title="发布历史">
-        <a-list :data-source="current.releases" size="small">
-          <template #renderItem="{ item }">
-            <a-list-item>
-              <a-list-item-meta
-                :title="`${item.releaseVersion} · ${item.status}`"
-                :description="`${item.resources.length} 个资源锚点 · ${item.publishedAt ?? item.createdAt}`"
-              />
-            </a-list-item>
-          </template>
-        </a-list>
       </a-card>
     </a-col>
   </a-row>

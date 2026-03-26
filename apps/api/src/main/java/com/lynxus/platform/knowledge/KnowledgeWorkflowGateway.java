@@ -1,4 +1,4 @@
-package com.lynxus.platform.catalog;
+package com.lynxus.platform.knowledge;
 
 import com.lynxus.contracts.runtime.KnowledgeImportWorkflow;
 import com.lynxus.contracts.runtime.KnowledgeIndexBuildWorkflow;
@@ -10,9 +10,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 public interface KnowledgeWorkflowGateway {
-    void startImport(String resourceId, String importJobId);
+    void startImport(String knowledgeBaseId, String importJobId);
 
-    void startIndexBuild(String resourceId, String indexSnapshotId);
+    void startIndexBuild(String knowledgeBaseId, String indexSnapshotId);
 
     @Component
     class TemporalKnowledgeWorkflowGateway implements KnowledgeWorkflowGateway {
@@ -28,7 +28,7 @@ public interface KnowledgeWorkflowGateway {
         }
 
         @Override
-        public void startImport(String resourceId, String importJobId) {
+        public void startImport(String knowledgeBaseId, String importJobId) {
             KnowledgeImportWorkflow workflow = workflowClient.newWorkflowStub(
                 KnowledgeImportWorkflow.class,
                 WorkflowOptions.newBuilder()
@@ -36,11 +36,11 @@ public interface KnowledgeWorkflowGateway {
                     .setWorkflowId("knowledge-import-" + importJobId)
                     .build()
             );
-            WorkflowClient.start(workflow::run, new KnowledgeImportRequest("knowledge-import-" + importJobId, resourceId, importJobId));
+            WorkflowClient.start(workflow::run, new KnowledgeImportRequest("knowledge-import-" + importJobId, knowledgeBaseId, importJobId));
         }
 
         @Override
-        public void startIndexBuild(String resourceId, String indexSnapshotId) {
+        public void startIndexBuild(String knowledgeBaseId, String indexSnapshotId) {
             KnowledgeIndexBuildWorkflow workflow = workflowClient.newWorkflowStub(
                 KnowledgeIndexBuildWorkflow.class,
                 WorkflowOptions.newBuilder()
@@ -48,7 +48,7 @@ public interface KnowledgeWorkflowGateway {
                     .setWorkflowId("knowledge-index-" + indexSnapshotId)
                     .build()
             );
-            WorkflowClient.start(workflow::run, new KnowledgeIndexBuildRequest("knowledge-index-" + indexSnapshotId, resourceId, indexSnapshotId));
+            WorkflowClient.start(workflow::run, new KnowledgeIndexBuildRequest("knowledge-index-" + indexSnapshotId, knowledgeBaseId, indexSnapshotId));
         }
     }
 }

@@ -15,10 +15,12 @@ out/
 # python
 .venv/
 __pycache__/
+apps/knowledge-service/data/
+knowledge-service.db
+data/
 
 .env
 .env.local
 
 
 coverage/
-

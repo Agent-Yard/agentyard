@@ -20,7 +20,7 @@ public class KnowledgeActivitiesImpl implements KnowledgeActivities {
         String status = knowledgeServiceGateway.runImportJob(request.importJobId());
         return new KnowledgeJobResult(
             request.workflowId(),
-            request.resourceId(),
+            request.knowledgeBaseId(),
             request.importJobId(),
             status,
             "knowledge import " + status.toLowerCase(),
@@ -33,7 +33,7 @@ public class KnowledgeActivitiesImpl implements KnowledgeActivities {
         String status = knowledgeServiceGateway.buildIndexSnapshot(request.indexSnapshotId());
         return new KnowledgeJobResult(
             request.workflowId(),
-            request.resourceId(),
+            request.knowledgeBaseId(),
             request.indexSnapshotId(),
             status,
             "knowledge index build " + status.toLowerCase(),

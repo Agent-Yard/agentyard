@@ -10,7 +10,6 @@ public final class WorkflowContracts {
 
     public enum ResourceType {
         TOOL,
-        KNOWLEDGE_BASE,
         LLM_MODEL,
         SKILL
     }
@@ -64,8 +63,12 @@ public final class WorkflowContracts {
         END
     }
 
-    public record KnowledgeBaseConfig(
-        String indexSnapshotId,
+    public record KnowledgeBindingSnapshot(
+        String knowledgeBaseId,
+        String knowledgeBaseName,
+        String knowledgeReleaseId,
+        String knowledgeReleaseVersion,
+        String snapshotId,
         int defaultTopK,
         String retrievalMode,
         double minScore
@@ -129,7 +132,6 @@ public final class WorkflowContracts {
 
     public record ResourceConfigurationSnapshot(
         ResourceType type,
-        KnowledgeBaseConfig knowledgeBase,
         ToolConfig tool,
         LlmModelConfig llmModel,
         SkillConfig skill
@@ -150,9 +152,6 @@ public final class WorkflowContracts {
     public record AssistantPolicySnapshot(
         String providerResourceId,
         String providerResourceVersionId,
-        boolean ragEnabled,
-        String knowledgeBaseResourceId,
-        String knowledgeBaseResourceVersionId,
         boolean memoryEnabled,
         int memoryWindowSize
     ) {
@@ -164,8 +163,8 @@ public final class WorkflowContracts {
         String modelResourceVersionId,
         String systemPrompt,
         boolean ragEnabled,
-        String knowledgeBaseResourceId,
-        String knowledgeBaseResourceVersionId,
+        boolean inheritAssistantKnowledge,
+        KnowledgeBindingSnapshot knowledge,
         int memoryWindowSize,
         List<String> skillResourceIds,
         List<String> skillResourceVersionIds,
@@ -223,6 +222,7 @@ public final class WorkflowContracts {
         String assistantName,
         String assistantReleaseVersion,
         AssistantPolicySnapshot assistantPolicy,
+        KnowledgeBindingSnapshot assistantKnowledge,
         List<AgentSnapshot> agents,
         List<ResourceVersionSnapshot> resources,
         GraphSnapshot graph
@@ -354,21 +354,21 @@ public final class WorkflowContracts {
 
     public record KnowledgeImportRequest(
         String workflowId,
-        String resourceId,
+        String knowledgeBaseId,
         String importJobId
     ) {
     }
 
     public record KnowledgeIndexBuildRequest(
         String workflowId,
-        String resourceId,
+        String knowledgeBaseId,
         String indexSnapshotId
     ) {
     }
 
     public record KnowledgeJobResult(
         String workflowId,
-        String resourceId,
+        String knowledgeBaseId,
         String targetId,
         String status,
         String detail,

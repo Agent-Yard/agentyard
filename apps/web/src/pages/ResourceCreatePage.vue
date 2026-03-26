@@ -19,10 +19,15 @@ const emit = defineEmits<{
   createResource: [payload: CreateResourcePayload];
 }>();
 
+function defaultConfiguration(type: ResourceType) {
+  const blueprint = props.resourceBlueprints.find((item) => item.type === type);
+  return blueprint ? JSON.parse(JSON.stringify(blueprint.defaultConfiguration)) : { type };
+}
+
 const createForm = reactive<CreateResourcePayload>({
   domainId: '',
   name: '',
-  type: 'KNOWLEDGE_BASE',
+  type: 'TOOL',
   shareScope: 'DOMAIN_SHARED',
   ownerType: 'DOMAIN',
   ownerId: '',
@@ -32,88 +37,13 @@ const createForm = reactive<CreateResourcePayload>({
   initialVersion: {
     summary: '初始版本',
     status: 'DRAFT',
-    configuration: {
-      type: 'KNOWLEDGE_BASE',
-      knowledgeBase: {
-        indexSnapshotId: null,
-        defaultTopK: 5,
-        retrievalMode: 'HYBRID',
-        minScore: 0.1,
-      },
-    },
+    configuration: defaultConfiguration('TOOL'),
   },
 });
 
 const currentBlueprint = computed(() =>
   props.resourceBlueprints.find((item) => item.type === createForm.type) ?? props.resourceBlueprints[0],
 );
-const isKnowledgeBaseResource = computed(() => createForm.type === 'KNOWLEDGE_BASE');
-
-function defaultConfiguration(type: ResourceType) {
-  const blueprint = props.resourceBlueprints.find((item) => item.type === type);
-  if (blueprint) {
-    return JSON.parse(JSON.stringify(blueprint.defaultConfiguration));
-  }
-  if (type === 'KNOWLEDGE_BASE') {
-    return {
-      type,
-      knowledgeBase: {
-        indexSnapshotId: null,
-        defaultTopK: 5,
-        retrievalMode: 'HYBRID',
-        minScore: 0.1,
-      },
-    };
-  }
-  if (type === 'TOOL') {
-    return {
-      type,
-      tool: {
-        operations: [
-          {
-            name: 'invoke',
-            description: '执行通用工具动作',
-            inputSchema: '{"input":"string"}',
-            outputSchema: '{"output":"string"}',
-          },
-        ],
-        providerType: 'HTTP',
-        authType: 'SERVICE_ACCOUNT',
-        timeoutSeconds: 15,
-        retryPolicy: 'NONE',
-        http: {
-          endpoint: 'https://tool-gateway.internal/new-tool',
-          method: 'POST',
-        },
-        mcp: null,
-      },
-    };
-  }
-  if (type === 'LLM_MODEL') {
-    return {
-      type,
-      llmModel: {
-        providerType: 'OPENAI',
-        modelId: 'gpt-4.1-mini',
-        baseUrl: 'https://api.openai.com/v1',
-        apiKeyEnvVar: 'OPENAI_API_KEY',
-        organization: 'lynxus-demo',
-        project: 'default-project',
-        region: 'global',
-        temperature: 0.2,
-        maxTokens: 1200,
-      },
-    };
-  }
-  return {
-    type,
-    skill: {
-      skillName: '新技能',
-      skillDesc: '请填写技能用途说明。',
-      skillPrompt: '请填写技能行为说明。',
-    },
-  };
-}
 
 const ownerOptions = computed(() => {
   if (createForm.ownerType === 'ASSISTANT') {
@@ -169,9 +99,7 @@ watch(
   () => createForm.type,
   (type) => {
     createForm.initialVersion.configuration = defaultConfiguration(type);
-    if (type === 'KNOWLEDGE_BASE') {
-      createForm.initialVersion.status = 'DRAFT';
-    }
+    createForm.initialVersion.status = 'DRAFT';
   },
   { immediate: true },
 );
@@ -195,7 +123,7 @@ function submitCreate() {
 <template>
   <a-row :gutter="[16, 16]">
     <a-col :span="8">
-      <a-card title="资源类型蓝图">
+      <a-card title="能力资源蓝图">
         <a-space direction="vertical" style="width: 100%">
           <a-card
             v-for="blueprint in resourceBlueprints"
@@ -221,12 +149,12 @@ function submitCreate() {
     </a-col>
 
     <a-col :span="16">
-      <a-card title="创建资源">
+      <a-card title="创建能力资源">
         <a-form layout="vertical" :model="createForm" @finish="submitCreate">
           <a-row :gutter="[16, 16]">
             <a-col :span="12">
               <a-form-item label="资源名称">
-                <a-input v-model:value="createForm.name" placeholder="例如：售后知识库" />
+                <a-input v-model:value="createForm.name" placeholder="例如：售后策略 Tool" />
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -262,58 +190,62 @@ function submitCreate() {
           </a-row>
 
           <a-row :gutter="[16, 16]">
-            <a-col :span="8">
+            <a-col :span="12">
               <a-form-item label="归属类型">
-                <a-select
+                <a-segmented
                   v-model:value="createForm.ownerType"
                   :options="[
                     { label: '业务域', value: 'DOMAIN' },
-                    { label: '助手', value: 'ASSISTANT' },
+                    { label: '助手私有', value: 'ASSISTANT' },
                   ]"
+                  block
                 />
               </a-form-item>
             </a-col>
-            <a-col :span="8">
+            <a-col :span="12">
               <a-form-item label="归属对象">
                 <a-select v-model:value="createForm.ownerId" :options="ownerOptions" />
               </a-form-item>
             </a-col>
-            <a-col :span="8">
-              <a-form-item label="资源负责人">
-                <a-input v-model:value="createForm.steward" placeholder="例如：客服知识运营" />
+          </a-row>
+
+          <a-form-item label="摘要">
+            <a-textarea v-model:value="createForm.summary" :rows="3" />
+          </a-form-item>
+
+          <a-row :gutter="[16, 16]">
+            <a-col :span="12">
+              <a-form-item label="负责人">
+                <a-input v-model:value="createForm.steward" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="标签">
+                <a-select v-model:value="createForm.tags" mode="tags" />
               </a-form-item>
             </a-col>
           </a-row>
 
-          <a-form-item label="标签">
-            <a-select v-model:value="createForm.tags" mode="tags" style="width: 100%" placeholder="输入标签后回车" />
-          </a-form-item>
+          <a-divider>初始版本</a-divider>
 
-          <a-form-item label="资源说明">
-            <a-textarea v-model:value="createForm.summary" :rows="4" />
-          </a-form-item>
-
-          <a-divider orientation="left">初始版本</a-divider>
-
-          <a-form-item label="版本说明">
-            <a-input v-model:value="createForm.initialVersion.summary" />
-          </a-form-item>
-
-          <a-alert
-            v-if="isKnowledgeBaseResource"
-            type="info"
-            show-icon
-            style="margin-bottom: 16px"
-            message="知识库会先以草稿版本创建"
-            description="创建后先到资源目录的内容工作台导入文件、生成 READY 快照，再从版本页选择快照并发布。"
-          />
-
-          <a-form-item v-else label="初始状态">
-            <a-radio-group v-model:value="createForm.initialVersion.status">
-              <a-radio-button value="DRAFT">草稿</a-radio-button>
-              <a-radio-button value="PUBLISHED">直接生效</a-radio-button>
-            </a-radio-group>
-          </a-form-item>
+          <a-row :gutter="[16, 16]">
+            <a-col :span="12">
+              <a-form-item label="版本摘要">
+                <a-input v-model:value="createForm.initialVersion.summary" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="状态">
+                <a-select
+                  v-model:value="createForm.initialVersion.status"
+                  :options="[
+                    { label: '草稿', value: 'DRAFT' },
+                    { label: '已发布', value: 'PUBLISHED' },
+                  ]"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
 
           <ResourceVersionConfigEditor
             :resource-type="createForm.type"

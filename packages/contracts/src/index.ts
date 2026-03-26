@@ -1,4 +1,4 @@
-export type ResourceType = 'TOOL' | 'KNOWLEDGE_BASE' | 'LLM_MODEL' | 'SKILL';
+export type ResourceType = 'TOOL' | 'LLM_MODEL' | 'SKILL';
 export type ToolProviderType = 'HTTP' | 'MCP';
 export type ShareScope = 'PRIVATE' | 'DOMAIN_SHARED';
 export type VersionStatus = 'DRAFT' | 'PUBLISHED';
@@ -84,6 +84,119 @@ export interface HumanActionRequest {
   comment: string;
   operatorId: string;
   attributes: Record<string, string>;
+}
+
+export interface KnowledgeBindingSnapshot {
+  knowledgeBaseId: string;
+  knowledgeBaseName: string;
+  knowledgeReleaseId: string;
+  knowledgeReleaseVersion: string;
+  snapshotId: string;
+  defaultTopK: number;
+  retrievalMode: string;
+  minScore: number;
+}
+
+export interface KnowledgeRetrievalProfile {
+  defaultTopK: number;
+  retrievalMode: 'LEXICAL' | 'VECTOR' | 'HYBRID';
+  minScore: number;
+}
+
+export interface KnowledgeRelease {
+  id: string;
+  knowledgeBaseId: string;
+  version: string;
+  status: VersionStatus;
+  summary: string;
+  snapshotId: string;
+  retrievalProfile: KnowledgeRetrievalProfile;
+  createdAt: string;
+  publishedAt: string | null;
+}
+
+export interface KnowledgeBase {
+  id: string;
+  domainId: string;
+  name: string;
+  shareScope: ShareScope;
+  ownerType: string;
+  ownerId: string;
+  summary: string;
+  steward: string;
+  tags: string[];
+  latestRelease: KnowledgeRelease | null;
+  effectiveRelease: KnowledgeRelease | null;
+  releases: KnowledgeRelease[];
+}
+
+export interface KnowledgeReference {
+  knowledgeBaseId: string;
+  referenceKind: string;
+  sourceType: string;
+  sourceId: string;
+  sourceName: string;
+  knowledgeReleaseId: string | null;
+  knowledgeReleaseVersion: string | null;
+  blocksDeletion: boolean;
+}
+
+export interface KnowledgeUploadSession {
+  id: string;
+  knowledgeBaseId: string;
+  status: string;
+  acceptedTypes: string[];
+}
+
+export interface KnowledgeFile {
+  id: string;
+  knowledgeBaseId: string;
+  uploadSessionId: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  status: string;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KnowledgeImportJob {
+  id: string;
+  knowledgeBaseId: string;
+  fileId: string;
+  status: string;
+  failureReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}
+
+export interface KnowledgeDocument {
+  id: string;
+  knowledgeBaseId: string;
+  fileId: string;
+  title: string;
+  sourceUri: string;
+  documentType: string;
+  status: string;
+  chunkCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KnowledgeSnapshot {
+  id: string;
+  knowledgeBaseId: string;
+  retrievalBackend: string;
+  retrievalMode: string;
+  status: string;
+  documentCount: number;
+  chunkCount: number;
+  failureReason: string | null;
+  builtAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface TaskLaunchRequest {

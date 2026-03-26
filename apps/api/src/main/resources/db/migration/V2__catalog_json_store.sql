@@ -23,8 +23,18 @@ create table if not exists catalog_resource (
     payload jsonb not null
 );
 
+create table if not exists knowledge_base (
+    id varchar(64) primary key,
+    payload jsonb not null
+);
+
 create table if not exists catalog_resource_versions (
     resource_id varchar(64) primary key,
+    payload jsonb not null
+);
+
+create table if not exists knowledge_release (
+    knowledge_base_id varchar(64) primary key,
     payload jsonb not null
 );
 

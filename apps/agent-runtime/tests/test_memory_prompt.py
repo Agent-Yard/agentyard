@@ -19,6 +19,7 @@ from app.main import (
     HumanAction,
     HttpToolProviderConfig,
     HumanNodeConfig,
+    KnowledgeBindingSnapshot,
     LlmModelConfig,
     ResourceConfigurationSnapshot,
     ResourceVersionSnapshot,
@@ -40,6 +41,7 @@ from app.main import (
     memory_window_for_agent,
     merge_loaded_skills,
     parse_agent_structured_response,
+    retrieve_knowledge,
     restore_state,
 )
 
@@ -56,8 +58,8 @@ def make_agent(memory_window_size: int) -> AgentSnapshot:
             modelResourceVersionId=None,
             systemPrompt="你是测试智能体",
             ragEnabled=False,
-            knowledgeBaseResourceId=None,
-            knowledgeBaseResourceVersionId=None,
+            inheritAssistantKnowledge=False,
+            knowledge=None,
             memoryWindowSize=memory_window_size,
             skillResourceIds=[],
             skillResourceVersionIds=[],
@@ -75,9 +77,6 @@ def make_assistant(memory_enabled: bool, memory_window_size: int) -> AssistantRu
         assistantPolicy=AssistantPolicySnapshot(
             providerResourceId=None,
             providerResourceVersionId=None,
-            ragEnabled=False,
-            knowledgeBaseResourceId=None,
-            knowledgeBaseResourceVersionId=None,
             memoryEnabled=memory_enabled,
             memoryWindowSize=memory_window_size,
         ),
@@ -197,6 +196,80 @@ def make_agent_state(assistant: AssistantRunSnapshot, graph: GraphSnapshot, ques
 
 
 class MemoryPromptTests(unittest.TestCase):
+    def test_should_skip_knowledge_hits_when_retrieval_is_low_confidence(self) -> None:
+        binding = KnowledgeBindingSnapshot(
+            knowledgeBaseId="knowledge-base-support",
+            knowledgeBaseName="客服知识库",
+            knowledgeReleaseId="knowledge-release-support-v1",
+            knowledgeReleaseVersion="1.0.0",
+            snapshotId="snapshot-kb-support-v1",
+            defaultTopK=4,
+            retrievalMode="HYBRID",
+            minScore=0.2,
+        )
+
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict:
+                return {"lowConfidence": True, "hits": [{"snippet": "不应返回"}]}
+
+        class FakeAsyncClient:
+            def __init__(self, *args, **kwargs) -> None:
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb) -> bool:
+                return False
+
+            async def post(self, url: str, json: dict) -> FakeResponse:
+                return FakeResponse()
+
+        with patch("app.main.httpx.AsyncClient", FakeAsyncClient):
+            hits = asyncio.run(retrieve_knowledge(binding, "怎么重置密码"))
+
+        self.assertEqual(hits, [])
+
+    def test_should_return_knowledge_hits_when_retrieval_succeeds(self) -> None:
+        binding = KnowledgeBindingSnapshot(
+            knowledgeBaseId="knowledge-base-support",
+            knowledgeBaseName="客服知识库",
+            knowledgeReleaseId="knowledge-release-support-v1",
+            knowledgeReleaseVersion="1.0.0",
+            snapshotId="snapshot-kb-support-v1",
+            defaultTopK=3,
+            retrievalMode="HYBRID",
+            minScore=0.1,
+        )
+
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict:
+                return {"lowConfidence": False, "hits": [{"snippet": "请通过忘记密码完成重置"}]}
+
+        class FakeAsyncClient:
+            def __init__(self, *args, **kwargs) -> None:
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb) -> bool:
+                return False
+
+            async def post(self, url: str, json: dict) -> FakeResponse:
+                return FakeResponse()
+
+        with patch("app.main.httpx.AsyncClient", FakeAsyncClient):
+            hits = asyncio.run(retrieve_knowledge(binding, "怎么重置密码"))
+
+        self.assertEqual([{"snippet": "请通过忘记密码完成重置"}], hits)
+
     def test_configure_runtime_logger_attaches_console_handler(self) -> None:
         logger_name = "lynxus.agent_runtime"
         test_logger = logging.getLogger(logger_name)
@@ -401,8 +474,8 @@ class MemoryPromptTests(unittest.TestCase):
                 modelResourceVersionId=None,
                 systemPrompt="你是售后策略智能体",
                 ragEnabled=False,
-                knowledgeBaseResourceId=None,
-                knowledgeBaseResourceVersionId=None,
+                inheritAssistantKnowledge=False,
+                knowledge=None,
                 memoryWindowSize=4,
                 skillResourceIds=[skill_resource.resourceId],
                 skillResourceVersionIds=[skill_resource.resourceVersionId],
@@ -417,9 +490,6 @@ class MemoryPromptTests(unittest.TestCase):
                 "assistantPolicy": AssistantPolicySnapshot(
                     providerResourceId=model_resource.resourceId,
                     providerResourceVersionId=model_resource.resourceVersionId,
-                    ragEnabled=False,
-                    knowledgeBaseResourceId=None,
-                    knowledgeBaseResourceVersionId=None,
                     memoryEnabled=True,
                     memoryWindowSize=8,
                 ),
@@ -488,7 +558,9 @@ class MemoryPromptTests(unittest.TestCase):
         self.assertEqual(state["session_context"]["loadedSkillResourceVersionIds"], ["skill-v2"])
         self.assertEqual(len(state["tool_history"]), 1)
         self.assertIn("可以按标准退款流程处理。", state["final_reply"])
-        self.assertIn("订单符合规则，可直接退款。", state["final_reply"])
+        self.assertNotIn("订单符合规则，可直接退款。", state["final_reply"])
+        self.assertEqual(state["summary"], state["final_reply"])
+        self.assertEqual(state["latest_tool_outcome"]["detail"], "订单符合规则，可直接退款。")
 
         first_prompt = mock_llm.await_args_list[0].args[1]
         second_prompt = mock_llm.await_args_list[1].args[1]
@@ -524,9 +596,6 @@ class MemoryPromptTests(unittest.TestCase):
                 "assistantPolicy": AssistantPolicySnapshot(
                     providerResourceId=model_resource.resourceId,
                     providerResourceVersionId=model_resource.resourceVersionId,
-                    ragEnabled=False,
-                    knowledgeBaseResourceId=None,
-                    knowledgeBaseResourceVersionId=None,
                     memoryEnabled=True,
                     memoryWindowSize=4,
                 ),
@@ -651,9 +720,6 @@ class MemoryPromptTests(unittest.TestCase):
                 "assistantPolicy": AssistantPolicySnapshot(
                     providerResourceId=model_resource.resourceId,
                     providerResourceVersionId=model_resource.resourceVersionId,
-                    ragEnabled=False,
-                    knowledgeBaseResourceId=None,
-                    knowledgeBaseResourceVersionId=None,
                     memoryEnabled=True,
                     memoryWindowSize=4,
                 ),
@@ -724,7 +790,9 @@ class MemoryPromptTests(unittest.TestCase):
         second_tool_payload = mock_tool.await_args_list[1].args[2]
         self.assertEqual(second_tool_payload["ticketId"], "TICKET-1001")
         self.assertEqual(len(state["tool_history"]), 2)
-        self.assertIn("备注已追加。", state["final_reply"])
+        self.assertNotIn("备注已追加。", state["final_reply"])
+        self.assertEqual(state["summary"], state["final_reply"])
+        self.assertEqual(state["latest_tool_outcome"]["detail"], "备注已追加。")
 
     def test_execute_agent_node_non_json_output_pauses_for_human(self) -> None:
         model_resource = make_model_resource()
@@ -736,9 +804,6 @@ class MemoryPromptTests(unittest.TestCase):
                 "assistantPolicy": AssistantPolicySnapshot(
                     providerResourceId=model_resource.resourceId,
                     providerResourceVersionId=model_resource.resourceVersionId,
-                    ragEnabled=False,
-                    knowledgeBaseResourceId=None,
-                    knowledgeBaseResourceVersionId=None,
                     memoryEnabled=True,
                     memoryWindowSize=4,
                 ),
@@ -789,9 +854,6 @@ class MemoryPromptTests(unittest.TestCase):
                 "assistantPolicy": AssistantPolicySnapshot(
                     providerResourceId=model_resource.resourceId,
                     providerResourceVersionId=model_resource.resourceVersionId,
-                    ragEnabled=False,
-                    knowledgeBaseResourceId=None,
-                    knowledgeBaseResourceVersionId=None,
                     memoryEnabled=True,
                     memoryWindowSize=4,
                 ),
@@ -857,9 +919,6 @@ class MemoryPromptTests(unittest.TestCase):
                 "assistantPolicy": AssistantPolicySnapshot(
                     providerResourceId=model_resource.resourceId,
                     providerResourceVersionId=model_resource.resourceVersionId,
-                    ragEnabled=False,
-                    knowledgeBaseResourceId=None,
-                    knowledgeBaseResourceVersionId=None,
                     memoryEnabled=True,
                     memoryWindowSize=4,
                 ),
@@ -918,9 +977,6 @@ class MemoryPromptTests(unittest.TestCase):
                 "assistantPolicy": AssistantPolicySnapshot(
                     providerResourceId=model_resource.resourceId,
                     providerResourceVersionId=model_resource.resourceVersionId,
-                    ragEnabled=False,
-                    knowledgeBaseResourceId=None,
-                    knowledgeBaseResourceVersionId=None,
                     memoryEnabled=True,
                     memoryWindowSize=4,
                 ),
@@ -1014,9 +1070,6 @@ class MemoryPromptTests(unittest.TestCase):
                 "assistantPolicy": AssistantPolicySnapshot(
                     providerResourceId=model_resource.resourceId,
                     providerResourceVersionId=model_resource.resourceVersionId,
-                    ragEnabled=False,
-                    knowledgeBaseResourceId=None,
-                    knowledgeBaseResourceVersionId=None,
                     memoryEnabled=True,
                     memoryWindowSize=4,
                 ),
@@ -1193,9 +1246,6 @@ class MemoryPromptTests(unittest.TestCase):
                 "assistantPolicy": AssistantPolicySnapshot(
                     providerResourceId=model_resource.resourceId,
                     providerResourceVersionId=model_resource.resourceVersionId,
-                    ragEnabled=False,
-                    knowledgeBaseResourceId=None,
-                    knowledgeBaseResourceVersionId=None,
                     memoryEnabled=True,
                     memoryWindowSize=4,
                 ),

@@ -23,6 +23,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from minio import Minio
 from pydantic import BaseModel, Field
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, create_engine, select
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
 try:
@@ -39,9 +40,28 @@ def now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
-DATABASE_URL = os.getenv("LYNXUS_KNOWLEDGE_DATABASE_URL", "sqlite+pysqlite:///./knowledge-service.db")
+SERVICE_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_DATA_ROOT = SERVICE_ROOT / "data"
+DEFAULT_DATABASE_PATH = DEFAULT_DATA_ROOT / "knowledge-service.db"
+DEFAULT_STORAGE_ROOT = DEFAULT_DATA_ROOT / "storage"
+
+
+def ensure_sqlite_parent(database_url: str) -> None:
+    try:
+        url = make_url(database_url)
+    except Exception:
+        return
+    if not url.drivername.startswith("sqlite") or url.database in (None, "", ":memory:"):
+        return
+    database_path = Path(url.database)
+    if not database_path.is_absolute():
+        database_path = (Path.cwd() / database_path).resolve()
+    database_path.parent.mkdir(parents=True, exist_ok=True)
+
+
+DATABASE_URL = os.getenv("LYNXUS_KNOWLEDGE_DATABASE_URL", f"sqlite+pysqlite:///{DEFAULT_DATABASE_PATH}")
 STORAGE_MODE = os.getenv("LYNXUS_KNOWLEDGE_STORAGE_MODE", "filesystem").lower()
-STORAGE_ROOT = Path(os.getenv("LYNXUS_KNOWLEDGE_STORAGE_ROOT", "./data"))
+STORAGE_ROOT = Path(os.getenv("LYNXUS_KNOWLEDGE_STORAGE_ROOT", str(DEFAULT_STORAGE_ROOT)))
 MINIO_ENDPOINT = os.getenv("LYNXUS_MINIO_ENDPOINT", "localhost:9000").replace("http://", "").replace("https://", "")
 MINIO_ACCESS_KEY = os.getenv("LYNXUS_MINIO_ACCESS_KEY", "minioadmin")
 MINIO_SECRET_KEY = os.getenv("LYNXUS_MINIO_SECRET_KEY", "minioadmin")
@@ -63,6 +83,10 @@ OPENSEARCH_STARTUP_RETRY_INTERVAL_SECONDS = float(os.getenv("LYNXUS_OPENSEARCH_S
 DEFAULT_SNAPSHOT_RETRIEVAL_MODE = os.getenv("LYNXUS_KNOWLEDGE_DEFAULT_RETRIEVAL_MODE", "HYBRID").upper()
 DEFAULT_SNAPSHOT_RETRIEVAL_BACKEND = os.getenv("LYNXUS_KNOWLEDGE_DEFAULT_RETRIEVAL_BACKEND", "OPENSEARCH").upper()
 
+ensure_sqlite_parent(DATABASE_URL)
+if STORAGE_MODE == "filesystem":
+    STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
+
 engine = create_engine(DATABASE_URL, future=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 logger = logging.getLogger(__name__)
@@ -80,7 +104,7 @@ class UploadSessionRecord(Base):
     __tablename__ = "knowledge_upload_session"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    resource_id: Mapped[str] = mapped_column(String(64), index=True)
+    knowledge_base_id: Mapped[str] = mapped_column(String(64), index=True)
     status: Mapped[str] = mapped_column(String(32), default="OPEN")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
@@ -90,7 +114,7 @@ class KnowledgeFileRecord(Base):
     __tablename__ = "knowledge_file"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    resource_id: Mapped[str] = mapped_column(String(64), index=True)
+    knowledge_base_id: Mapped[str] = mapped_column(String(64), index=True)
     upload_session_id: Mapped[str] = mapped_column(String(64), ForeignKey("knowledge_upload_session.id"))
     file_name: Mapped[str] = mapped_column(String(255))
     content_type: Mapped[str] = mapped_column(String(128))
@@ -108,7 +132,7 @@ class KnowledgeImportJobRecord(Base):
     __tablename__ = "knowledge_import_job"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    resource_id: Mapped[str] = mapped_column(String(64), index=True)
+    knowledge_base_id: Mapped[str] = mapped_column(String(64), index=True)
     file_id: Mapped[str] = mapped_column(String(64), ForeignKey("knowledge_file.id"))
     status: Mapped[str] = mapped_column(String(32), default="PENDING")
     failure_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -123,7 +147,7 @@ class KnowledgeDocumentRecord(Base):
     __tablename__ = "knowledge_document"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    resource_id: Mapped[str] = mapped_column(String(64), index=True)
+    knowledge_base_id: Mapped[str] = mapped_column(String(64), index=True)
     file_id: Mapped[str] = mapped_column(String(64), ForeignKey("knowledge_file.id"))
     title: Mapped[str] = mapped_column(String(255))
     source_uri: Mapped[str] = mapped_column(String(255))
@@ -140,7 +164,7 @@ class KnowledgeChunkRecord(Base):
     __tablename__ = "knowledge_chunk"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    resource_id: Mapped[str] = mapped_column(String(64), index=True)
+    knowledge_base_id: Mapped[str] = mapped_column(String(64), index=True)
     document_id: Mapped[str] = mapped_column(String(64), ForeignKey("knowledge_document.id"))
     chunk_index: Mapped[int] = mapped_column(Integer)
     title: Mapped[str] = mapped_column(String(255))
@@ -162,7 +186,7 @@ class IndexSnapshotRecord(Base):
     __tablename__ = "knowledge_index_snapshot"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    resource_id: Mapped[str] = mapped_column(String(64), index=True)
+    knowledge_base_id: Mapped[str] = mapped_column(String(64), index=True)
     retrieval_backend: Mapped[str] = mapped_column(String(64), default=DEFAULT_SNAPSHOT_RETRIEVAL_BACKEND)
     retrieval_mode: Mapped[str] = mapped_column(String(32), default=DEFAULT_SNAPSHOT_RETRIEVAL_MODE)
     status: Mapped[str] = mapped_column(String(32), default="PENDING")
@@ -199,18 +223,18 @@ class SnapshotDocumentSelectionRecord(Base):
 
 
 class CreateUploadSessionRequest(BaseModel):
-    resourceId: str
+    knowledgeBaseId: str
 
 
 class UploadSessionResponse(BaseModel):
     id: str
-    resourceId: str
+    knowledgeBaseId: str
     status: str
     acceptedTypes: List[str]
 
 
 class CompleteUploadRequest(BaseModel):
-    resourceId: str
+    knowledgeBaseId: str
     uploadSessionId: str
     fileName: str
     contentType: str
@@ -218,14 +242,14 @@ class CompleteUploadRequest(BaseModel):
 
 
 class CreateUrlImportRequest(BaseModel):
-    resourceId: str
+    knowledgeBaseId: str
     url: str
     title: Optional[str] = None
 
 
 class KnowledgeFileResponse(BaseModel):
     id: str
-    resourceId: str
+    knowledgeBaseId: str
     uploadSessionId: str
     fileName: str
     contentType: str
@@ -238,7 +262,7 @@ class KnowledgeFileResponse(BaseModel):
 
 class ImportJobResponse(BaseModel):
     id: str
-    resourceId: str
+    knowledgeBaseId: str
     fileId: str
     status: str
     failureReason: Optional[str] = None
@@ -249,7 +273,7 @@ class ImportJobResponse(BaseModel):
 
 class DocumentResponse(BaseModel):
     id: str
-    resourceId: str
+    knowledgeBaseId: str
     fileId: str
     title: str
     sourceUri: str
@@ -261,14 +285,14 @@ class DocumentResponse(BaseModel):
 
 
 class CreateIndexSnapshotRequest(BaseModel):
-    resourceId: Optional[str] = None
+    knowledgeBaseId: Optional[str] = None
     documentIds: List[str] = Field(default_factory=list)
     retrievalMode: str = Field(default=DEFAULT_SNAPSHOT_RETRIEVAL_MODE)
 
 
 class IndexSnapshotResponse(BaseModel):
     id: str
-    resourceId: str
+    knowledgeBaseId: str
     retrievalBackend: str
     retrievalMode: str
     status: str
@@ -442,7 +466,7 @@ class OpenSearchClient:
                 "mappings": {
                     "properties": {
                         "snapshot_id": {"type": "keyword"},
-                        "resource_id": {"type": "keyword"},
+                        "knowledge_base_id": {"type": "keyword"},
                         "document_id": {"type": "keyword"},
                         "chunk_id": {"type": "keyword"},
                         "chunk_index": {"type": "integer"},
@@ -457,7 +481,7 @@ class OpenSearchClient:
             },
         )
 
-    def bulk_index_chunks(self, snapshot_id: str, resource_id: str, chunks: List[KnowledgeChunkRecord]) -> None:
+    def bulk_index_chunks(self, snapshot_id: str, knowledge_base_id: str, chunks: List[KnowledgeChunkRecord]) -> None:
         index_name = self.snapshot_index_name(snapshot_id)
         self.delete_index(index_name)
         self.ensure_index(index_name)
@@ -468,7 +492,7 @@ class OpenSearchClient:
                 json.dumps(
                     {
                         "snapshot_id": snapshot_id,
-                        "resource_id": resource_id,
+                        "knowledge_base_id": knowledge_base_id,
                         "document_id": chunk.document_id,
                         "chunk_id": chunk.id,
                         "chunk_index": chunk.chunk_index,
@@ -828,7 +852,7 @@ def split_long_segment(segment: ParsedSegment) -> List[ParsedSegment]:
     return chunks
 
 
-def build_chunks(resource_id: str, document_id: str, title: str, source_uri: str, segments: List[ParsedSegment]) -> List[KnowledgeChunkRecord]:
+def build_chunks(knowledge_base_id: str, document_id: str, title: str, source_uri: str, segments: List[ParsedSegment]) -> List[KnowledgeChunkRecord]:
     chunks: List[KnowledgeChunkRecord] = []
     for index, segment in enumerate(segments):
         if not segment.content.strip():
@@ -836,7 +860,7 @@ def build_chunks(resource_id: str, document_id: str, title: str, source_uri: str
         chunks.append(
             KnowledgeChunkRecord(
                 id=f"kb-chunk-{uuid.uuid4().hex[:12]}",
-                resource_id=resource_id,
+                knowledge_base_id=knowledge_base_id,
                 document_id=document_id,
                 chunk_index=index,
                 title=segment.title or title,
@@ -965,13 +989,13 @@ def normalize_retrieval_mode(value: Optional[str]) -> str:
 def infer_source_uri(file_record: KnowledgeFileRecord) -> str:
     if re.match(r"^https?://", file_record.file_name):
         return file_record.file_name
-    return f"upload://{file_record.resource_id}/{file_record.file_name}"
+    return f"upload://{file_record.knowledge_base_id}/{file_record.file_name}"
 
 
 def file_response(record: KnowledgeFileRecord) -> KnowledgeFileResponse:
     return KnowledgeFileResponse(
         id=record.id,
-        resourceId=record.resource_id,
+        knowledgeBaseId=record.knowledge_base_id,
         uploadSessionId=record.upload_session_id,
         fileName=record.file_name,
         contentType=record.content_type,
@@ -986,7 +1010,7 @@ def file_response(record: KnowledgeFileRecord) -> KnowledgeFileResponse:
 def import_job_response(record: KnowledgeImportJobRecord) -> ImportJobResponse:
     return ImportJobResponse(
         id=record.id,
-        resourceId=record.resource_id,
+        knowledgeBaseId=record.knowledge_base_id,
         fileId=record.file_id,
         status=record.status,
         failureReason=record.failure_reason,
@@ -1002,7 +1026,7 @@ def document_response(db: Session, record: KnowledgeDocumentRecord) -> DocumentR
     )
     return DocumentResponse(
         id=record.id,
-        resourceId=record.resource_id,
+        knowledgeBaseId=record.knowledge_base_id,
         fileId=record.file_id,
         title=record.title,
         sourceUri=record.source_uri,
@@ -1017,7 +1041,7 @@ def document_response(db: Session, record: KnowledgeDocumentRecord) -> DocumentR
 def snapshot_response(record: IndexSnapshotRecord) -> IndexSnapshotResponse:
     return IndexSnapshotResponse(
         id=record.id,
-        resourceId=record.resource_id,
+        knowledgeBaseId=record.knowledge_base_id,
         retrievalBackend=record.retrieval_backend,
         retrievalMode=record.retrieval_mode,
         status=record.status,
@@ -1030,21 +1054,21 @@ def snapshot_response(record: IndexSnapshotRecord) -> IndexSnapshotResponse:
     )
 
 
-def make_import_job(db: Session, resource_id: str, file_name: str, content_type: str, payload: bytes) -> dict:
+def make_import_job(db: Session, knowledge_base_id: str, file_name: str, content_type: str, payload: bytes) -> dict:
     try:
         ensure_supported_document_type(file_name, content_type)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     upload_session = UploadSessionRecord(
         id=f"upload-session-{uuid.uuid4().hex[:10]}",
-        resource_id=resource_id,
+        knowledge_base_id=knowledge_base_id,
         status="COMPLETED",
     )
-    object_key = f"{resource_id}/{uuid.uuid4().hex[:12]}-{sanitize_object_name(file_name)}"
+    object_key = f"{knowledge_base_id}/{uuid.uuid4().hex[:12]}-{sanitize_object_name(file_name)}"
     storage.put_bytes(object_key, payload, content_type)
     file_record = KnowledgeFileRecord(
         id=f"kb-file-{uuid.uuid4().hex[:12]}",
-        resource_id=resource_id,
+        knowledge_base_id=knowledge_base_id,
         upload_session_id=upload_session.id,
         file_name=file_name,
         content_type=content_type or "application/octet-stream",
@@ -1054,7 +1078,7 @@ def make_import_job(db: Session, resource_id: str, file_name: str, content_type:
     )
     import_job = KnowledgeImportJobRecord(
         id=f"kb-import-{uuid.uuid4().hex[:12]}",
-        resource_id=resource_id,
+        knowledge_base_id=knowledge_base_id,
         file_id=file_record.id,
         status="PENDING",
     )
@@ -1157,7 +1181,7 @@ def seed_demo_snapshot(db: Session) -> None:
 
     session_record = UploadSessionRecord(
         id="upload-session-kb-support",
-        resource_id="resource-kb-support",
+        knowledge_base_id="knowledge-base-support",
         status="COMPLETED",
     )
     db.add(session_record)
@@ -1165,7 +1189,7 @@ def seed_demo_snapshot(db: Session) -> None:
 
     file_record = KnowledgeFileRecord(
         id="kb-file-support-seed",
-        resource_id="resource-kb-support",
+        knowledge_base_id="knowledge-base-support",
         upload_session_id=session_record.id,
         file_name="customer-support-seed.md",
         content_type="text/markdown",
@@ -1175,7 +1199,7 @@ def seed_demo_snapshot(db: Session) -> None:
     )
     job_record = KnowledgeImportJobRecord(
         id="kb-import-support-seed",
-        resource_id="resource-kb-support",
+        knowledge_base_id="knowledge-base-support",
         file_id=file_record.id,
         status="COMPLETED",
         completed_at=now_utc(),
@@ -1195,7 +1219,7 @@ def seed_demo_snapshot(db: Session) -> None:
     )
     document_record = KnowledgeDocumentRecord(
         id="kb-document-support-seed",
-        resource_id="resource-kb-support",
+        knowledge_base_id="knowledge-base-support",
         file_id=file_record.id,
         title="客服知识库演示版",
         source_uri="manual://customer-support/seed",
@@ -1204,10 +1228,10 @@ def seed_demo_snapshot(db: Session) -> None:
         body_text=body_text,
     )
     segments = parse_markdown_segments(file_record.file_name, body_text)
-    chunks = build_chunks(document_record.resource_id, document_record.id, document_record.title, document_record.source_uri, segments)
+    chunks = build_chunks(document_record.knowledge_base_id, document_record.id, document_record.title, document_record.source_uri, segments)
     snapshot = IndexSnapshotRecord(
         id=snapshot_id,
-        resource_id="resource-kb-support",
+        knowledge_base_id="knowledge-base-support",
         retrieval_backend="OPENSEARCH",
         retrieval_mode="HYBRID",
         status="READY",
@@ -1215,7 +1239,7 @@ def seed_demo_snapshot(db: Session) -> None:
         chunk_count=len(chunks),
         built_at=now_utc(),
     )
-    opensearch.bulk_index_chunks(snapshot.id, snapshot.resource_id, chunks)
+    opensearch.bulk_index_chunks(snapshot.id, snapshot.knowledge_base_id, chunks)
     db.add_all([document_record, *chunks, snapshot])
     db.flush()
     db.add_all(
@@ -1244,14 +1268,14 @@ def seed_demo_snapshot(db: Session) -> None:
 def create_upload_session(request: CreateUploadSessionRequest, db: Session = Depends(get_db)) -> UploadSessionResponse:
     session_record = UploadSessionRecord(
         id=f"upload-session-{uuid.uuid4().hex[:10]}",
-        resource_id=request.resourceId,
+        knowledge_base_id=request.knowledgeBaseId,
         status="OPEN",
     )
     db.add(session_record)
     db.commit()
     return UploadSessionResponse(
         id=session_record.id,
-        resourceId=session_record.resource_id,
+        knowledgeBaseId=session_record.knowledge_base_id,
         status=session_record.status,
         acceptedTypes=SUPPORTED_FILE_TYPES,
     )
@@ -1260,7 +1284,7 @@ def create_upload_session(request: CreateUploadSessionRequest, db: Session = Dep
 @app.post("/internal/uploads")
 def complete_upload(request: CompleteUploadRequest, db: Session = Depends(get_db)) -> dict:
     upload_session = db.get(UploadSessionRecord, request.uploadSessionId)
-    if upload_session is None or upload_session.resource_id != request.resourceId:
+    if upload_session is None or upload_session.knowledge_base_id != request.knowledgeBaseId:
         raise HTTPException(status_code=404, detail="upload session not found")
 
     payload = base64.b64decode(request.contentBase64)
@@ -1271,11 +1295,11 @@ def complete_upload(request: CompleteUploadRequest, db: Session = Depends(get_db
     upload_session.status = "COMPLETED"
     upload_session.updated_at = now_utc()
 
-    object_key = f"{request.resourceId}/{uuid.uuid4().hex[:12]}-{sanitize_object_name(request.fileName)}"
+    object_key = f"{request.knowledgeBaseId}/{uuid.uuid4().hex[:12]}-{sanitize_object_name(request.fileName)}"
     storage.put_bytes(object_key, payload, request.contentType)
     file_record = KnowledgeFileRecord(
         id=f"kb-file-{uuid.uuid4().hex[:12]}",
-        resource_id=request.resourceId,
+        knowledge_base_id=request.knowledgeBaseId,
         upload_session_id=request.uploadSessionId,
         file_name=request.fileName,
         content_type=request.contentType or "application/octet-stream",
@@ -1285,7 +1309,7 @@ def complete_upload(request: CompleteUploadRequest, db: Session = Depends(get_db
     )
     import_job = KnowledgeImportJobRecord(
         id=f"kb-import-{uuid.uuid4().hex[:12]}",
-        resource_id=request.resourceId,
+        knowledge_base_id=request.knowledgeBaseId,
         file_id=file_record.id,
         status="PENDING",
     )
@@ -1305,44 +1329,44 @@ def create_url_import(request: CreateUrlImportRequest, db: Session = Depends(get
         ensure_supported_document_type(file_name, content_type)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return make_import_job(db, request.resourceId, request.url if request.url else file_name, content_type, payload)
+    return make_import_job(db, request.knowledgeBaseId, request.url if request.url else file_name, content_type, payload)
 
 
-@app.get("/internal/resources/{resource_id}/files", response_model=List[KnowledgeFileResponse])
-def list_files(resource_id: str, db: Session = Depends(get_db)) -> List[KnowledgeFileResponse]:
+@app.get("/internal/knowledge-bases/{knowledge_base_id}/files", response_model=List[KnowledgeFileResponse])
+def list_files(knowledge_base_id: str, db: Session = Depends(get_db)) -> List[KnowledgeFileResponse]:
     records = db.scalars(
         select(KnowledgeFileRecord)
-        .where(KnowledgeFileRecord.resource_id == resource_id)
+        .where(KnowledgeFileRecord.knowledge_base_id == knowledge_base_id)
         .order_by(KnowledgeFileRecord.created_at.desc())
     ).all()
     return [file_response(record) for record in records]
 
 
-@app.get("/internal/resources/{resource_id}/import-jobs", response_model=List[ImportJobResponse])
-def list_import_jobs(resource_id: str, db: Session = Depends(get_db)) -> List[ImportJobResponse]:
+@app.get("/internal/knowledge-bases/{knowledge_base_id}/import-jobs", response_model=List[ImportJobResponse])
+def list_import_jobs(knowledge_base_id: str, db: Session = Depends(get_db)) -> List[ImportJobResponse]:
     records = db.scalars(
         select(KnowledgeImportJobRecord)
-        .where(KnowledgeImportJobRecord.resource_id == resource_id)
+        .where(KnowledgeImportJobRecord.knowledge_base_id == knowledge_base_id)
         .order_by(KnowledgeImportJobRecord.created_at.desc())
     ).all()
     return [import_job_response(record) for record in records]
 
 
-@app.get("/internal/resources/{resource_id}/documents", response_model=List[DocumentResponse])
-def list_documents(resource_id: str, db: Session = Depends(get_db)) -> List[DocumentResponse]:
+@app.get("/internal/knowledge-bases/{knowledge_base_id}/documents", response_model=List[DocumentResponse])
+def list_documents(knowledge_base_id: str, db: Session = Depends(get_db)) -> List[DocumentResponse]:
     records = db.scalars(
         select(KnowledgeDocumentRecord)
-        .where(KnowledgeDocumentRecord.resource_id == resource_id)
+        .where(KnowledgeDocumentRecord.knowledge_base_id == knowledge_base_id)
         .order_by(KnowledgeDocumentRecord.created_at.desc())
     ).all()
     return [document_response(db, record) for record in records]
 
 
-@app.post("/internal/resources/{resource_id}/index-snapshots", response_model=IndexSnapshotResponse)
-def create_index_snapshot(resource_id: str, request: CreateIndexSnapshotRequest, db: Session = Depends(get_db)) -> IndexSnapshotResponse:
+@app.post("/internal/knowledge-bases/{knowledge_base_id}/index-snapshots", response_model=IndexSnapshotResponse)
+def create_index_snapshot(knowledge_base_id: str, request: CreateIndexSnapshotRequest, db: Session = Depends(get_db)) -> IndexSnapshotResponse:
     snapshot = IndexSnapshotRecord(
         id=f"snapshot-{uuid.uuid4().hex[:12]}",
-        resource_id=resource_id,
+        knowledge_base_id=knowledge_base_id,
         retrieval_backend="OPENSEARCH",
         retrieval_mode=normalize_retrieval_mode(request.retrievalMode),
         status="PENDING",
@@ -1365,11 +1389,11 @@ def create_index_snapshot(resource_id: str, request: CreateIndexSnapshotRequest,
     return snapshot_response(snapshot)
 
 
-@app.get("/internal/resources/{resource_id}/index-snapshots", response_model=List[IndexSnapshotResponse])
-def list_index_snapshots(resource_id: str, db: Session = Depends(get_db)) -> List[IndexSnapshotResponse]:
+@app.get("/internal/knowledge-bases/{knowledge_base_id}/index-snapshots", response_model=List[IndexSnapshotResponse])
+def list_index_snapshots(knowledge_base_id: str, db: Session = Depends(get_db)) -> List[IndexSnapshotResponse]:
     records = db.scalars(
         select(IndexSnapshotRecord)
-        .where(IndexSnapshotRecord.resource_id == resource_id)
+        .where(IndexSnapshotRecord.knowledge_base_id == knowledge_base_id)
         .order_by(IndexSnapshotRecord.created_at.desc())
     ).all()
     return [snapshot_response(record) for record in records]
@@ -1406,7 +1430,7 @@ def run_import_job(job_id: str, db: Session = Depends(get_db)) -> ImportJobRespo
 
         document = KnowledgeDocumentRecord(
             id=f"kb-document-{uuid.uuid4().hex[:12]}",
-            resource_id=file_record.resource_id,
+            knowledge_base_id=file_record.knowledge_base_id,
             file_id=file_record.id,
             title=parsed.title,
             source_uri=infer_source_uri(file_record),
@@ -1414,7 +1438,7 @@ def run_import_job(job_id: str, db: Session = Depends(get_db)) -> ImportJobRespo
             status="READY",
             body_text=parsed.body_text,
         )
-        chunks = build_chunks(file_record.resource_id, document.id, document.title, document.source_uri, parsed.segments)
+        chunks = build_chunks(file_record.knowledge_base_id, document.id, document.title, document.source_uri, parsed.segments)
         if not chunks:
             raise ValueError("no chunks generated from document")
 
@@ -1458,7 +1482,7 @@ def build_index_snapshot(snapshot_id: str, db: Session = Depends(get_db)) -> Ind
             ).all()
         ]
         query = select(KnowledgeDocumentRecord).where(
-            KnowledgeDocumentRecord.resource_id == snapshot.resource_id,
+            KnowledgeDocumentRecord.knowledge_base_id == snapshot.knowledge_base_id,
             KnowledgeDocumentRecord.status == "READY",
         )
         documents = db.scalars(query).all()
@@ -1491,7 +1515,7 @@ def build_index_snapshot(snapshot_id: str, db: Session = Depends(get_db)) -> Ind
         if chunk_count == 0:
             raise ValueError("no chunks available for snapshot")
 
-        opensearch.bulk_index_chunks(snapshot.id, snapshot.resource_id, all_chunks)
+        opensearch.bulk_index_chunks(snapshot.id, snapshot.knowledge_base_id, all_chunks)
         db.add_all(chunk_records)
         snapshot.status = "READY"
         snapshot.document_count = len(documents)

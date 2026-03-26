@@ -7,6 +7,7 @@ import type {
   CreateAssistantPayload,
   CreateAgentPayload,
   CreateDomainPayload,
+  CreateKnowledgeBasePayload,
   CreateResourcePayload,
   CreateResourceVersionPayload,
   CreateScenarioPayload,
@@ -26,6 +27,8 @@ import ScenarioPage from './pages/ScenarioPage.vue';
 import AssistantPage from './pages/AssistantPage.vue';
 import AgentPage from './pages/AgentPage.vue';
 import OrchestrationPage from './pages/OrchestrationPage.vue';
+import KnowledgeLibraryPage from './pages/KnowledgeLibraryPage.vue';
+import KnowledgeCreatePage from './pages/KnowledgeCreatePage.vue';
 import ResourceLibraryPage from './pages/ResourceLibraryPage.vue';
 import ResourceCreatePage from './pages/ResourceCreatePage.vue';
 import RuntimeConversationPage from './pages/RuntimeConversationPage.vue';
@@ -37,12 +40,14 @@ type PageKey =
   | 'assistant'
   | 'agent'
   | 'orchestration'
+  | 'knowledge-library'
+  | 'knowledge-create'
   | 'resource-library'
   | 'resource-create'
   | 'runtime'
   | 'workflow';
 
-type SectionKey = 'design' | 'build' | 'asset' | 'runtime-observe';
+type SectionKey = 'design' | 'build' | 'knowledge' | 'resource' | 'runtime-observe';
 
 const sectionMeta: Record<SectionKey, { label: string; description: string }> = {
   design: {
@@ -53,9 +58,13 @@ const sectionMeta: Record<SectionKey, { label: string; description: string }> = 
     label: '助手构建',
     description: '围绕助手、智能体和编排，完成核心协作链路配置。',
   },
-  asset: {
-    label: '资源与发布',
-    description: '管理资源版本、绑定锚点和发布冻结快照。',
+  knowledge: {
+    label: '知识库',
+    description: '管理知识库目录、内容导入、索引快照和发布版本。',
+  },
+  resource: {
+    label: '能力资源',
+    description: '管理 Tool / LLM / Skill 等可复用能力资源。',
   },
   'runtime-observe': {
     label: '运行与观测',
@@ -94,17 +103,29 @@ const pageMeta: Record<PageKey, { label: string; title: string; subtitle: string
     subtitle: '以图形化方式组织助手内部协作主链和分支流转。',
     section: 'build',
   },
+  'knowledge-library': {
+    label: '知识库目录',
+    title: '知识库工作台',
+    subtitle: '集中处理内容导入、文档、索引快照、发布版本与引用分析。',
+    section: 'knowledge',
+  },
+  'knowledge-create': {
+    label: '知识库新建',
+    title: '知识库创建页',
+    subtitle: '创建知识库治理对象，后续再进入工作台维护内容与发布。',
+    section: 'knowledge',
+  },
   'resource-library': {
     label: '资源目录',
     title: '资源目录页',
-    subtitle: '查看现有资源、版本流转、生效状态和结构化引用分析。',
-    section: 'asset',
+    subtitle: '查看 Tool / LLM / Skill 的版本流转、生效状态和引用分析。',
+    section: 'resource',
   },
   'resource-create': {
     label: '资源新建',
     title: '资源新建页',
-    subtitle: '按资源类型维护结构化配置，创建可版本化的四类资源。',
-    section: 'asset',
+    subtitle: '按资源类型维护结构化配置，创建可版本化的能力资源。',
+    section: 'resource',
   },
   runtime: {
     label: '会话运行',
@@ -139,8 +160,16 @@ const menuItems = [
     ],
   },
   {
-    key: 'asset',
-    label: sectionMeta.asset.label,
+    key: 'knowledge',
+    label: sectionMeta.knowledge.label,
+    children: [
+      { key: 'knowledge-library', label: pageMeta['knowledge-library'].label },
+      { key: 'knowledge-create', label: pageMeta['knowledge-create'].label },
+    ],
+  },
+  {
+    key: 'resource',
+    label: sectionMeta.resource.label,
     children: [
       { key: 'resource-library', label: pageMeta['resource-library'].label },
       { key: 'resource-create', label: pageMeta['resource-create'].label },
@@ -162,10 +191,11 @@ const sendingSessionId = ref<string | null>(null);
 const runtimePreferredSessionId = ref<string | null>(null);
 const runtimeSelectedSessionId = ref<string | null>(null);
 const selectedWorkflowId = ref<string | null>(null);
+const knowledgeLibraryPreferredKnowledgeBaseId = ref<string | null>(null);
 const resourceLibraryPreferredResourceId = ref<string | null>(null);
 const resourceLibraryPreferredVersionId = ref<string | null>(null);
 const activeKey = ref<PageKey>('domain');
-const openKeys = ref<SectionKey[]>(['design', 'build', 'asset', 'runtime-observe']);
+const openKeys = ref<SectionKey[]>(['design', 'build', 'knowledge', 'resource', 'runtime-observe']);
 const session = ref<UserSession | null>(null);
 const catalog = ref<CatalogSummary | null>(null);
 const conversationSessions = ref<ConversationSession[]>([]);
@@ -361,9 +391,13 @@ async function handleRoleChange(role: Role) {
 }
 
 async function handleCreateAssistant(payload: CreateAssistantPayload) {
-  await api.createAssistant(payload);
-  await refresh();
-  void message.success('助手已创建');
+  try {
+    await api.createAssistant(payload);
+    await refresh();
+    void message.success('助手已创建');
+  } catch (error) {
+    void message.error(errorMessage(error, '创建助手失败'));
+  }
 }
 
 async function handleCreateDomain(payload: CreateDomainPayload) {
@@ -447,9 +481,13 @@ async function handleDeleteAssistant(assistantId: string) {
 }
 
 async function handleCreateAgent(payload: CreateAgentPayload) {
-  await api.createAgent(payload);
-  await refresh();
-  void message.success('智能体已创建');
+  try {
+    await api.createAgent(payload);
+    await refresh();
+    void message.success('智能体已创建');
+  } catch (error) {
+    void message.error(errorMessage(error, '创建智能体失败'));
+  }
 }
 
 async function handleDeleteAgent(agentId: string) {
@@ -466,15 +504,35 @@ async function handleSaveAgent(payload: {
   agentId: string;
   agent: UpdateAgentPayload;
 }) {
-  await api.updateAgent(payload.agentId, payload.agent);
-  await refresh();
-  void message.success('智能体配置已保存');
+  try {
+    await api.updateAgent(payload.agentId, payload.agent);
+    await refresh();
+    void message.success('智能体配置已保存');
+  } catch (error) {
+    void message.error(errorMessage(error, '保存智能体失败'));
+  }
 }
 
 async function handleSaveOrchestration(payload: { assistantId: string; data: UpdateOrchestrationPayload }) {
-  await api.saveOrchestration(payload.assistantId, payload.data);
-  await refresh();
-  void message.success('编排设计已保存');
+  try {
+    await api.saveOrchestration(payload.assistantId, payload.data);
+    await refresh();
+    void message.success('编排设计已保存');
+  } catch (error) {
+    void message.error(errorMessage(error, '保存编排失败'));
+  }
+}
+
+async function handleCreateKnowledgeBase(payload: CreateKnowledgeBasePayload) {
+  try {
+    const created = await api.createKnowledgeBase(payload);
+    await refresh();
+    knowledgeLibraryPreferredKnowledgeBaseId.value = created.id;
+    activeKey.value = 'knowledge-library';
+    void message.success('知识库已创建');
+  } catch (error) {
+    void message.error(errorMessage(error, '创建知识库失败'));
+  }
 }
 
 async function handleCreateResource(payload: CreateResourcePayload) {
@@ -515,9 +573,13 @@ async function handleDeleteResourceVersion(payload: { resourceId: string; versio
 }
 
 async function handlePublishResourceVersion(payload: { resourceId: string; versionId: string }) {
-  await api.publishResourceVersion(payload.resourceId, payload.versionId);
-  await refresh();
-  void message.success('资源版本已发布');
+  try {
+    await api.publishResourceVersion(payload.resourceId, payload.versionId);
+    await refresh();
+    void message.success('资源版本已发布');
+  } catch (error) {
+    void message.error(errorMessage(error, '发布资源版本失败'));
+  }
 }
 
 function handleMenuClick(info: { key: string | number }) {
@@ -616,6 +678,7 @@ onUnmounted(() => {
             :assistants="catalog.assistants"
             :scenarios="catalog.scenarios"
             :resources="catalog.resources"
+            :knowledge-bases="catalog.knowledgeBases"
             @create-assistant="handleCreateAssistant"
             @update-assistant="handleUpdateAssistant"
             @delete-assistant="handleDeleteAssistant"
@@ -625,6 +688,7 @@ onUnmounted(() => {
             :assistants="catalog.assistants"
             :agents="catalog.agents"
             :resources="catalog.resources"
+            :knowledge-bases="catalog.knowledgeBases"
             @create-agent="handleCreateAgent"
             @save-agent="handleSaveAgent"
             @delete-agent="handleDeleteAgent"
@@ -635,6 +699,18 @@ onUnmounted(() => {
             :orchestrations="catalog.orchestrations"
             :resources="catalog.resources"
             @save-orchestration="handleSaveOrchestration"
+          />
+          <KnowledgeLibraryPage
+            v-else-if="activeKey === 'knowledge-library'"
+            :knowledge-bases="catalog.knowledgeBases"
+            :preferred-knowledge-base-id="knowledgeLibraryPreferredKnowledgeBaseId"
+            @refresh-catalog="refresh"
+          />
+          <KnowledgeCreatePage
+            v-else-if="activeKey === 'knowledge-create'"
+            :domains="catalog.domains"
+            :assistants="catalog.assistants"
+            @create-knowledge-base="handleCreateKnowledgeBase"
           />
           <ResourceLibraryPage
             v-else-if="activeKey === 'resource-library'"

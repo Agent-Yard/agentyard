@@ -2,6 +2,10 @@ package com.lynxus.platform.catalog;
 
 import static com.lynxus.platform.catalog.CatalogDtos.*;
 
+import com.lynxus.platform.knowledge.InMemoryKnowledgeRepository;
+import com.lynxus.platform.knowledge.KnowledgeService;
+import com.lynxus.platform.knowledge.KnowledgeServiceClient;
+import com.lynxus.platform.knowledge.KnowledgeWorkflowGateway;
 import com.lynxus.contracts.runtime.WorkflowContracts.OrchestrationNodeType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ResourceType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
@@ -25,8 +29,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class CatalogService {
     private final CatalogRepository repository;
-    private final KnowledgeServiceClient knowledgeServiceClient;
-    private final KnowledgeWorkflowGateway knowledgeWorkflowGateway;
+    private final KnowledgeService knowledgeService;
     private boolean initialized;
     private final List<BusinessDomainDto> domains = new ArrayList<>();
     private final List<ScenarioDto> scenarios = new ArrayList<>();
@@ -38,16 +41,33 @@ public class CatalogService {
     private final Map<String, AssistantOrchestrationDto> orchestrations = new LinkedHashMap<>();
 
     public CatalogService() {
-        this(new InMemoryCatalogRepository(), true, new KnowledgeServiceClient("http://localhost:8091"), new NoOpKnowledgeWorkflowGateway());
+        this(
+            new InMemoryCatalogRepository(),
+            new InMemoryKnowledgeRepository(),
+            true,
+            new KnowledgeServiceClient("http://localhost:8091"),
+            new NoOpKnowledgeWorkflowGateway()
+        );
     }
 
     @Autowired
+    public CatalogService(CatalogRepository repository, KnowledgeService knowledgeService) {
+        this.repository = repository;
+        this.knowledgeService = knowledgeService;
+    }
+
     public CatalogService(CatalogRepository repository, KnowledgeServiceClient knowledgeServiceClient, KnowledgeWorkflowGateway knowledgeWorkflowGateway) {
-        this(repository, false, knowledgeServiceClient, knowledgeWorkflowGateway);
+        this(repository, new InMemoryKnowledgeRepository(), false, knowledgeServiceClient, knowledgeWorkflowGateway);
     }
 
     CatalogService(CatalogRepository repository, boolean seedIfEmpty) {
-        this(repository, seedIfEmpty, new KnowledgeServiceClient("http://localhost:8091"), new NoOpKnowledgeWorkflowGateway());
+        this(
+            repository,
+            new InMemoryKnowledgeRepository(),
+            seedIfEmpty,
+            new KnowledgeServiceClient("http://localhost:8091"),
+            new NoOpKnowledgeWorkflowGateway()
+        );
     }
 
     CatalogService(
@@ -56,13 +76,26 @@ public class CatalogService {
         KnowledgeServiceClient knowledgeServiceClient,
         KnowledgeWorkflowGateway knowledgeWorkflowGateway
     ) {
+        this(repository, new InMemoryKnowledgeRepository(), seedIfEmpty, knowledgeServiceClient, knowledgeWorkflowGateway);
+    }
+
+    CatalogService(
+        CatalogRepository repository,
+        com.lynxus.platform.knowledge.KnowledgeRepository knowledgeRepository,
+        boolean seedIfEmpty,
+        KnowledgeServiceClient knowledgeServiceClient,
+        KnowledgeWorkflowGateway knowledgeWorkflowGateway
+    ) {
         this.repository = repository;
-        this.knowledgeServiceClient = knowledgeServiceClient;
-        this.knowledgeWorkflowGateway = knowledgeWorkflowGateway;
+        this.knowledgeService = new KnowledgeService(knowledgeRepository, repository, knowledgeServiceClient, knowledgeWorkflowGateway);
         if (seedIfEmpty) {
             ensureLoaded();
             initializeDemoDataIfEmpty();
         }
+    }
+
+    public KnowledgeService knowledgeService() {
+        return knowledgeService;
     }
 
     public CatalogSummaryDto summary() {
@@ -73,6 +106,7 @@ public class CatalogService {
             listAssistants(),
             listAgents(),
             listResources(),
+            listKnowledgeBases(),
             listOrchestrations(),
             resourceCenter(),
             resourceBlueprints()
@@ -101,6 +135,7 @@ public class CatalogService {
             name,
             normalizeOptionalText(request.description()),
             List.of(),
+            List.of(),
             List.of()
         );
         domains.add(domain);
@@ -118,7 +153,8 @@ public class CatalogService {
             name,
             normalizeOptionalText(request.description()),
             existing.scenarios(),
-            existing.resources()
+            existing.resources(),
+            existing.knowledgeBases()
         );
         replace(domains, BusinessDomainDto::id, updated);
         persistState();
@@ -133,6 +169,9 @@ public class CatalogService {
         }
         if (resources.stream().anyMatch(item -> item.domainId().equals(domainId))) {
             throw new IllegalStateException("business domain still contains resources: " + domainId);
+        }
+        if (knowledgeService.hasKnowledgeBasesInDomain(domainId)) {
+            throw new IllegalStateException("business domain still contains knowledge bases: " + domainId);
         }
         domains.removeIf(item -> item.id().equals(domainId));
         persistState();
@@ -257,6 +296,9 @@ public class CatalogService {
         }
         if (resources.stream().anyMatch(item -> "ASSISTANT".equals(item.ownerType()) && assistantId.equals(item.ownerId()))) {
             throw new IllegalStateException("assistant still owns resources: " + assistantId);
+        }
+        if (knowledgeService.hasAssistantOwnedKnowledgeBases(assistantId)) {
+            throw new IllegalStateException("assistant still owns knowledge bases: " + assistantId);
         }
 
         AssistantDto deleted = toAssistantView(existing);
@@ -462,6 +504,46 @@ public class CatalogService {
             .toList();
     }
 
+    public List<KnowledgeBaseDto> listKnowledgeBases() {
+        return knowledgeService.listKnowledgeBases();
+    }
+
+    public KnowledgeBaseDto getKnowledgeBase(String knowledgeBaseId) {
+        return knowledgeService.getKnowledgeBase(knowledgeBaseId);
+    }
+
+    public KnowledgeBaseDto createKnowledgeBase(CreateKnowledgeBaseRequest request) {
+        return knowledgeService.createKnowledgeBase(request);
+    }
+
+    public KnowledgeBaseDto updateKnowledgeBase(String knowledgeBaseId, UpdateKnowledgeBaseRequest request) {
+        return knowledgeService.updateKnowledgeBase(knowledgeBaseId, request);
+    }
+
+    public KnowledgeBaseDto deleteKnowledgeBase(String knowledgeBaseId) {
+        return knowledgeService.deleteKnowledgeBase(knowledgeBaseId);
+    }
+
+    public List<KnowledgeReleaseDto> listKnowledgeReleases(String knowledgeBaseId) {
+        return knowledgeService.listKnowledgeReleases(knowledgeBaseId);
+    }
+
+    public KnowledgeReleaseDto createKnowledgeRelease(String knowledgeBaseId, CreateKnowledgeReleaseRequest request) {
+        return knowledgeService.createKnowledgeRelease(knowledgeBaseId, request);
+    }
+
+    public KnowledgeReleaseDto publishKnowledgeRelease(String knowledgeBaseId, String releaseId) {
+        return knowledgeService.publishKnowledgeRelease(knowledgeBaseId, releaseId);
+    }
+
+    public KnowledgeReleaseDto deleteKnowledgeRelease(String knowledgeBaseId, String releaseId) {
+        return knowledgeService.deleteKnowledgeRelease(knowledgeBaseId, releaseId);
+    }
+
+    public List<KnowledgeReferenceDto> listKnowledgeReferences(String knowledgeBaseId) {
+        return knowledgeService.listKnowledgeReferences(knowledgeBaseId);
+    }
+
     public ResourceDto deleteResource(String resourceId) {
         ensureLoaded();
         ResourceDto deleted = toResourceView(findResource(resourceId));
@@ -476,70 +558,42 @@ public class CatalogService {
         return deleted;
     }
 
-    public KnowledgeUploadSessionDto createKnowledgeUploadSession(String resourceId) {
-        ensureLoaded();
-        requireKnowledgeResource(resourceId);
-        return knowledgeServiceClient.createUploadSession(resourceId);
+    public KnowledgeUploadSessionDto createKnowledgeUploadSession(String knowledgeBaseId) {
+        return knowledgeService.createUploadSession(knowledgeBaseId);
     }
 
     public KnowledgeUploadCompletionDto completeKnowledgeUpload(
-        String resourceId,
+        String knowledgeBaseId,
         String uploadSessionId,
         String fileName,
         String contentType,
         byte[] payload
     ) {
-        ensureLoaded();
-        requireKnowledgeResource(resourceId);
-        KnowledgeUploadCompletionDto completed = knowledgeServiceClient.completeUpload(resourceId, uploadSessionId, fileName, contentType, payload);
-        knowledgeWorkflowGateway.startImport(resourceId, completed.importJob().id());
-        return completed;
+        return knowledgeService.completeUpload(knowledgeBaseId, uploadSessionId, fileName, contentType, payload);
     }
 
-    public KnowledgeUploadCompletionDto importKnowledgeUrl(String resourceId, CreateKnowledgeUrlImportRequest request) {
-        ensureLoaded();
-        requireKnowledgeResource(resourceId);
-        if (request == null || request.url() == null || request.url().isBlank()) {
-            throw new IllegalArgumentException("knowledge url import requires a non-empty url");
-        }
-        KnowledgeUploadCompletionDto completed = knowledgeServiceClient.importUrl(resourceId, request.url().trim(), normalizeOptionalText(request.title()));
-        knowledgeWorkflowGateway.startImport(resourceId, completed.importJob().id());
-        return completed;
+    public KnowledgeUploadCompletionDto importKnowledgeUrl(String knowledgeBaseId, CreateKnowledgeUrlImportRequest request) {
+        return knowledgeService.importUrl(knowledgeBaseId, request);
     }
 
-    public List<KnowledgeFileDto> listKnowledgeFiles(String resourceId) {
-        ensureLoaded();
-        requireKnowledgeResource(resourceId);
-        return knowledgeServiceClient.listFiles(resourceId);
+    public List<KnowledgeFileDto> listKnowledgeFiles(String knowledgeBaseId) {
+        return knowledgeService.listFiles(knowledgeBaseId);
     }
 
-    public List<KnowledgeImportJobDto> listKnowledgeImportJobs(String resourceId) {
-        ensureLoaded();
-        requireKnowledgeResource(resourceId);
-        return knowledgeServiceClient.listImportJobs(resourceId);
+    public List<KnowledgeImportJobDto> listKnowledgeImportJobs(String knowledgeBaseId) {
+        return knowledgeService.listImportJobs(knowledgeBaseId);
     }
 
-    public List<KnowledgeDocumentDto> listKnowledgeDocuments(String resourceId) {
-        ensureLoaded();
-        requireKnowledgeResource(resourceId);
-        return knowledgeServiceClient.listDocuments(resourceId);
+    public List<KnowledgeDocumentDto> listKnowledgeDocuments(String knowledgeBaseId) {
+        return knowledgeService.listDocuments(knowledgeBaseId);
     }
 
-    public KnowledgeIndexSnapshotDto createKnowledgeIndexSnapshot(String resourceId, CreateKnowledgeIndexSnapshotRequest request) {
-        ensureLoaded();
-        requireKnowledgeResource(resourceId);
-        KnowledgeIndexSnapshotDto snapshot = knowledgeServiceClient.createIndexSnapshot(
-            resourceId,
-            request == null || request.documentIds() == null ? List.of() : List.copyOf(request.documentIds())
-        );
-        knowledgeWorkflowGateway.startIndexBuild(resourceId, snapshot.id());
-        return snapshot;
+    public KnowledgeIndexSnapshotDto createKnowledgeIndexSnapshot(String knowledgeBaseId, CreateKnowledgeIndexSnapshotRequest request) {
+        return knowledgeService.createIndexSnapshot(knowledgeBaseId, request);
     }
 
-    public List<KnowledgeIndexSnapshotDto> listKnowledgeIndexSnapshots(String resourceId) {
-        ensureLoaded();
-        requireKnowledgeResource(resourceId);
-        return knowledgeServiceClient.listIndexSnapshots(resourceId);
+    public List<KnowledgeIndexSnapshotDto> listKnowledgeIndexSnapshots(String knowledgeBaseId) {
+        return knowledgeService.listIndexSnapshots(knowledgeBaseId);
     }
 
     public List<AssistantOrchestrationDto> listOrchestrations() {
@@ -588,13 +642,6 @@ public class CatalogService {
     public List<ResourceBlueprintDto> resourceBlueprints() {
         return List.of(
             new ResourceBlueprintDto(
-                ResourceType.KNOWLEDGE_BASE,
-                "知识库",
-                "承载可发布的知识索引快照与检索参数，供助手在问答与决策阶段检索知识。",
-                List.of("索引快照", "默认召回数", "检索模式", "最低得分阈值"),
-                defaultConfiguration(ResourceType.KNOWLEDGE_BASE)
-            ),
-            new ResourceBlueprintDto(
                 ResourceType.TOOL,
                 "Tool",
                 "承载 agent 可调用的业务能力，并通过 provider 定义其 HTTP 或 MCP 实现方式。",
@@ -620,12 +667,14 @@ public class CatalogService {
 
     public synchronized boolean initializeDemoDataIfEmpty() {
         ensureLoaded();
-        if (!isCatalogEmpty()) {
-            return false;
+        boolean initializedKnowledge = knowledgeService.initializeDemoDataIfEmpty();
+        boolean initializedCatalog = false;
+        if (isCatalogEmpty()) {
+            seed();
+            persistState();
+            initializedCatalog = true;
         }
-        seed();
-        persistState();
-        return true;
+        return initializedCatalog || initializedKnowledge;
     }
 
     private synchronized void ensureLoaded() {
@@ -641,6 +690,7 @@ public class CatalogService {
             "domain-support",
             "智能客服域",
             "用于多智能体客服编排的演示业务域",
+            List.of(),
             List.of(),
             List.of()
         );
@@ -667,26 +717,11 @@ public class CatalogService {
             null,
             List.of(),
             new AssistantModelPolicyDto(defaultLlmResourceId),
-            new RagPolicyDto(true, "resource-kb-support"),
+            new RagPolicyDto(true, "knowledge-base-support"),
             new MemoryPolicyDto(true, 10)
         );
         assistants.add(assistant);
 
-        ResourceDto kb = new ResourceDto(
-            "resource-kb-support",
-            domain.id(),
-            "客服知识库",
-            ResourceType.KNOWLEDGE_BASE,
-            ShareScope.DOMAIN_SHARED,
-            "DOMAIN",
-            domain.id(),
-            "包含 FAQ、售后规则和人工协同说明的演示知识库",
-            "客服知识运营",
-            List.of("FAQ", "售后", "协同"),
-            null,
-            null,
-            List.of()
-        );
         ResourceDto llmModel = new ResourceDto(
             "resource-llm-openai",
             domain.id(),
@@ -807,22 +842,7 @@ public class CatalogService {
             null,
             List.of()
         );
-        resources.addAll(List.of(kb, llmModel, compatibleLlmModel, routerSkill, faqSkill, policySkill, handoffSkill, refundTool, ticketTool));
-
-        ResourceVersionDto kbPublished = seedResourceVersion(
-            kb.id(),
-            "1.0.0",
-            VersionStatus.PUBLISHED,
-            "客服知识库演示版",
-            "digest-kb-v1",
-            new ResourceVersionConfigurationDto(
-                ResourceType.KNOWLEDGE_BASE,
-                new KnowledgeBaseConfigDto("snapshot-kb-support-v1", 5, "HYBRID", 0.1),
-                null,
-                null,
-                null
-            )
-        );
+        resources.addAll(List.of(llmModel, compatibleLlmModel, routerSkill, faqSkill, policySkill, handoffSkill, refundTool, ticketTool));
         seedResourceVersion(
             llmModel.id(),
             "1.0.0",
@@ -831,7 +851,6 @@ public class CatalogService {
             "digest-llm-openai-v1",
             new ResourceVersionConfigurationDto(
                 ResourceType.LLM_MODEL,
-                null,
                 null,
                 new LlmModelConfigDto("OPENAI", "gpt-4.1-mini", "https://api.openai.com/v1", "OPENAI_API_KEY", "lynxus-demo", "customer-ops", "global", 0.2, 1200),
                 null
@@ -845,7 +864,6 @@ public class CatalogService {
             "digest-llm-compatible-v1",
             new ResourceVersionConfigurationDto(
                 ResourceType.LLM_MODEL,
-                null,
                 null,
                 new LlmModelConfigDto(
                     "OPENAI_COMPATIBLE",
@@ -871,7 +889,6 @@ public class CatalogService {
                 ResourceType.SKILL,
                 null,
                 null,
-                null,
                 new SkillConfigDto(
                     "路由技能",
                     "根据用户问题、知识和上下文判断路由方向。",
@@ -887,7 +904,6 @@ public class CatalogService {
             "digest-skill-faq-v1",
             new ResourceVersionConfigurationDto(
                 ResourceType.SKILL,
-                null,
                 null,
                 null,
                 new SkillConfigDto(
@@ -907,7 +923,6 @@ public class CatalogService {
                 ResourceType.SKILL,
                 null,
                 null,
-                null,
                 new SkillConfigDto(
                     "售后策略技能",
                     "结合知识和工具输出判断退款或补偿策略。",
@@ -925,7 +940,6 @@ public class CatalogService {
                 ResourceType.SKILL,
                 null,
                 null,
-                null,
                 new SkillConfigDto(
                     "人工协同闭环技能",
                     "根据人工动作、工具结果与上下文生成闭环说明。",
@@ -941,7 +955,6 @@ public class CatalogService {
             "digest-tool-refund-v1",
             new ResourceVersionConfigurationDto(
                 ResourceType.TOOL,
-                null,
                 new ToolConfigDto(
                     List.of(new ToolOperationDto(
                         "evaluate_refund",
@@ -968,7 +981,6 @@ public class CatalogService {
             "digest-tool-ticket-v1",
             new ResourceVersionConfigurationDto(
                 ResourceType.TOOL,
-                null,
                 new ToolConfigDto(
                     List.of(
                         new ToolOperationDto(
@@ -1012,7 +1024,7 @@ public class CatalogService {
             "问题分诊智能体",
             "router",
             "识别问题类型，决定 FAQ、售后策略或人工协同分支。",
-            new AgentExecutionPolicyDto(true, null, "你是问题分诊智能体，负责判断当前问题应进入 FAQ、售后或人工协同路径。", true, kb.id(), 8, List.of(routerSkill.id()), List.of())
+            new AgentExecutionPolicyDto(true, null, "你是问题分诊智能体，负责判断当前问题应进入 FAQ、售后或人工协同路径。", true, true, "knowledge-base-support", 8, List.of(routerSkill.id()), List.of())
         ));
         agents.add(new AgentDto(
             "agent-faq",
@@ -1020,7 +1032,7 @@ public class CatalogService {
             "FAQ 回答智能体",
             "faq",
             "基于知识检索结果输出最终 FAQ 回复。",
-            new AgentExecutionPolicyDto(true, defaultLlmResourceId, "你是 FAQ 回答智能体，负责基于知识库给出直接回复。", true, kb.id(), 8, List.of(faqSkill.id()), List.of())
+            new AgentExecutionPolicyDto(true, defaultLlmResourceId, "你是 FAQ 回答智能体，负责基于知识库给出直接回复。", true, true, "knowledge-base-support", 8, List.of(faqSkill.id()), List.of())
         ));
         agents.add(new AgentDto(
             "agent-policy",
@@ -1028,7 +1040,7 @@ public class CatalogService {
             "售后策略智能体",
             "policy",
             "调用售后策略 Tool，给出退款或补偿结论。",
-            new AgentExecutionPolicyDto(true, defaultLlmResourceId, "你是售后策略智能体，负责结合规则与工具结果给出处理建议。", true, kb.id(), 8, List.of(policySkill.id()), List.of(refundTool.id()))
+            new AgentExecutionPolicyDto(true, defaultLlmResourceId, "你是售后策略智能体，负责结合规则与工具结果给出处理建议。", true, true, "knowledge-base-support", 8, List.of(policySkill.id()), List.of(refundTool.id()))
         ));
         agents.add(new AgentDto(
             "agent-coordinator",
@@ -1036,7 +1048,7 @@ public class CatalogService {
             "人工协同闭环智能体",
             "handoff",
             "在人工处理后整理摘要、调用工单 Tool，并生成闭环答复。",
-            new AgentExecutionPolicyDto(true, defaultLlmResourceId, "你是人工协同闭环智能体，负责整理人工动作并生成最终回复。", false, null, 12, List.of(handoffSkill.id()), List.of(ticketTool.id()))
+            new AgentExecutionPolicyDto(true, defaultLlmResourceId, "你是人工协同闭环智能体，负责整理人工动作并生成最终回复。", false, false, null, 12, List.of(handoffSkill.id()), List.of(ticketTool.id()))
         ));
 
         orchestrations.put(assistant.id(), new AssistantOrchestrationDto(
@@ -1089,7 +1101,8 @@ public class CatalogService {
             .sorted(Comparator.comparing(ResourceDto::name))
             .map(this::toResourceView)
             .toList();
-        return new BusinessDomainDto(domain.id(), domain.name(), domain.description(), domainScenarios, domainResources);
+        List<KnowledgeBaseDto> domainKnowledgeBases = knowledgeService.listKnowledgeBasesByDomain(domain.id());
+        return new BusinessDomainDto(domain.id(), domain.name(), domain.description(), domainScenarios, domainResources, domainKnowledgeBases);
     }
 
     private ScenarioDto toScenarioView(ScenarioDto scenario) {
@@ -1369,16 +1382,11 @@ public class CatalogService {
         AssistantDto assistant = findAssistant(assistantId);
         Map<String, AssistantReleaseResourceDto> snapshotMap = new LinkedHashMap<>();
         captureEffectiveResource(snapshotMap, assistant.modelPolicy().providerResourceId(), "ASSISTANT_DEFAULT_MODEL");
-        if (assistant.ragPolicy().enabled()) {
-            captureEffectiveResource(snapshotMap, assistant.ragPolicy().knowledgeBaseResourceId(), "ASSISTANT_DEFAULT_RAG");
-        }
+        KnowledgeBindingSnapshotDto assistantKnowledge = resolveAssistantKnowledgeBinding(assistant);
 
         List<AssistantReleaseAgentDto> releaseAgents = new ArrayList<>();
         for (AgentDto agent : orderAgentsForAssistant(assistantId)) {
             captureEffectiveResource(snapshotMap, agent.executionPolicy().modelResourceId(), agent.name());
-            if (agent.executionPolicy().ragEnabled()) {
-                captureEffectiveResource(snapshotMap, agent.executionPolicy().knowledgeBaseResourceId(), agent.name());
-            }
 
             List<String> skillResourceVersionIds = new ArrayList<>();
             for (String skillResourceId : agent.executionPolicy().skillResourceIds()) {
@@ -1406,6 +1414,7 @@ public class CatalogService {
                 agent.role(),
                 agent.instructions(),
                 agent.executionPolicy(),
+                resolveAgentKnowledgeBinding(assistantKnowledge, agent),
                 List.copyOf(skillResourceVersionIds),
                 List.copyOf(toolResourceVersionIds)
             ));
@@ -1418,6 +1427,7 @@ public class CatalogService {
             status,
             Instant.now(),
             status == VersionStatus.PUBLISHED ? Instant.now() : null,
+            assistantKnowledge,
             List.copyOf(snapshotMap.values()),
             List.copyOf(releaseAgents),
             getOrCreateOrchestration(assistantId),
@@ -1429,6 +1439,26 @@ public class CatalogService {
         releases.add(release);
         assistantReleases.put(assistantId, releases);
         return release;
+    }
+
+    private KnowledgeBindingSnapshotDto resolveAssistantKnowledgeBinding(AssistantDto assistant) {
+        if (!assistant.ragPolicy().enabled() || assistant.ragPolicy().knowledgeBaseId() == null || assistant.ragPolicy().knowledgeBaseId().isBlank()) {
+            return null;
+        }
+        return knowledgeService.resolveKnowledgeBinding(assistant.ragPolicy().knowledgeBaseId());
+    }
+
+    private KnowledgeBindingSnapshotDto resolveAgentKnowledgeBinding(KnowledgeBindingSnapshotDto assistantKnowledge, AgentDto agent) {
+        if (!agent.executionPolicy().ragEnabled()) {
+            return null;
+        }
+        if (agent.executionPolicy().inheritAssistantKnowledge()) {
+            return null;
+        }
+        if (agent.executionPolicy().knowledgeBaseId() == null || agent.executionPolicy().knowledgeBaseId().isBlank()) {
+            return assistantKnowledge;
+        }
+        return knowledgeService.resolveKnowledgeBinding(agent.executionPolicy().knowledgeBaseId());
     }
 
     private void captureEffectiveResource(Map<String, AssistantReleaseResourceDto> snapshotMap, String resourceId, String boundAgent) {
@@ -1502,17 +1532,11 @@ public class CatalogService {
             if (resource.id().equals(assistant.modelPolicy().providerResourceId())) {
                 references.add(toResourceReference(resource, "ASSISTANT_DEFAULT_MODEL", "ASSISTANT", assistant.id(), assistant.name(), null, null, true));
             }
-            if (assistant.ragPolicy().enabled() && resource.id().equals(assistant.ragPolicy().knowledgeBaseResourceId())) {
-                references.add(toResourceReference(resource, "ASSISTANT_DEFAULT_KNOWLEDGE_BASE", "ASSISTANT", assistant.id(), assistant.name(), null, null, true));
-            }
         }
 
         for (AgentDto agent : agents) {
             if (resource.id().equals(agent.executionPolicy().modelResourceId())) {
                 references.add(toResourceReference(resource, "AGENT_OVERRIDE_MODEL", "AGENT", agent.id(), agent.name(), null, null, true));
-            }
-            if (agent.executionPolicy().ragEnabled() && resource.id().equals(agent.executionPolicy().knowledgeBaseResourceId())) {
-                references.add(toResourceReference(resource, "AGENT_OVERRIDE_KNOWLEDGE_BASE", "AGENT", agent.id(), agent.name(), null, null, true));
             }
             if (agent.executionPolicy().skillResourceIds().contains(resource.id())) {
                 references.add(toResourceReference(resource, "AGENT_SKILL_ENABLED", "AGENT", agent.id(), agent.name(), null, null, true));
@@ -1584,9 +1608,7 @@ public class CatalogService {
     private String toResourceDeletionMessage(ResourceReferenceDto reference) {
         return switch (reference.referenceKind()) {
             case "ASSISTANT_DEFAULT_MODEL" -> "resource is used as assistant default model: " + reference.sourceName();
-            case "ASSISTANT_DEFAULT_KNOWLEDGE_BASE" -> "resource is used as assistant default knowledge base: " + reference.sourceName();
             case "AGENT_OVERRIDE_MODEL" -> "resource is used as agent override model: " + reference.sourceName();
-            case "AGENT_OVERRIDE_KNOWLEDGE_BASE" -> "resource is used as agent override knowledge base: " + reference.sourceName();
             case "AGENT_SKILL_ENABLED" -> "resource is used as agent skill: " + reference.sourceName();
             case "AGENT_TOOL_ENABLED" -> "resource is used as agent tool: " + reference.sourceName();
             default -> "resource is still referenced: " + reference.sourceName();
@@ -1699,6 +1721,7 @@ public class CatalogService {
                     release.status(),
                     release.createdAt(),
                     release.publishedAt(),
+                    normalizeKnowledgeBindingSnapshot(release.assistantKnowledge()),
                     release.resources().stream()
                         .map(resource -> new AssistantReleaseResourceDto(
                             resource.resourceId(),
@@ -1710,7 +1733,18 @@ public class CatalogService {
                             normalizeConfiguration(resource.resourceType(), resource.configuration())
                         ))
                         .toList(),
-                    release.agents(),
+                    release.agents().stream()
+                        .map(agent -> new AssistantReleaseAgentDto(
+                            agent.agentId(),
+                            agent.name(),
+                            agent.role(),
+                            agent.instructions(),
+                            normalizeAgentExecutionPolicy(agent.executionPolicy()),
+                            normalizeKnowledgeBindingSnapshot(agent.knowledge()),
+                            agent.skillResourceVersionIds(),
+                            agent.toolResourceVersionIds()
+                        ))
+                        .toList(),
                     release.orchestration(),
                     normalizeAssistantModelPolicy(release.modelPolicy()),
                     normalizeRagPolicy(release.ragPolicy()),
@@ -1741,7 +1775,8 @@ public class CatalogService {
                 normalizedPolicy.modelResourceId(),
                 normalizedPolicy.systemPrompt(),
                 normalizedPolicy.ragEnabled(),
-                normalizedPolicy.knowledgeBaseResourceId(),
+                normalizedPolicy.inheritAssistantKnowledge(),
+                normalizedPolicy.knowledgeBaseId(),
                 normalizedPolicy.memoryWindowSize(),
                 List.copyOf(enabledSkillResourceIds),
                 List.copyOf(enabledToolResourceIds)
@@ -1802,14 +1837,6 @@ public class CatalogService {
             .filter(item -> item.id().equals(versionId))
             .findFirst()
             .orElseThrow(() -> new NoSuchElementException("resource version not found: " + resourceId + "/" + versionId));
-    }
-
-    private ResourceDto requireKnowledgeResource(String resourceId) {
-        ResourceDto resource = findResource(resourceId);
-        if (resource.type() != ResourceType.KNOWLEDGE_BASE) {
-            throw new IllegalArgumentException("resource is not a knowledge base: " + resourceId);
-        }
-        return resource;
     }
 
     private List<ResourceVersionDto> versionsFor(String resourceId) {
@@ -1874,32 +1901,22 @@ public class CatalogService {
             return defaultConfiguration(type);
         }
         return switch (type) {
-            case KNOWLEDGE_BASE -> new ResourceVersionConfigurationDto(type, normalizeKnowledgeBaseConfig(configuration.knowledgeBase()), null, null, null);
-            case TOOL -> new ResourceVersionConfigurationDto(type, null, normalizeToolConfig(configuration.tool()), null, null);
-            case LLM_MODEL -> new ResourceVersionConfigurationDto(type, null, null, configuration.llmModel() == null ? defaultConfiguration(type).llmModel() : configuration.llmModel(), null);
-            case SKILL -> new ResourceVersionConfigurationDto(type, null, null, null, configuration.skill() == null ? defaultConfiguration(type).skill() : normalizeSkillConfig(configuration.skill()));
+            case TOOL -> new ResourceVersionConfigurationDto(type, normalizeToolConfig(configuration.tool()), null, null);
+            case LLM_MODEL -> new ResourceVersionConfigurationDto(type, null, configuration.llmModel() == null ? defaultConfiguration(type).llmModel() : configuration.llmModel(), null);
+            case SKILL -> new ResourceVersionConfigurationDto(type, null, null, configuration.skill() == null ? defaultConfiguration(type).skill() : normalizeSkillConfig(configuration.skill()));
         };
     }
 
     private ResourceVersionConfigurationDto defaultConfiguration(ResourceType type) {
         return switch (type) {
-            case KNOWLEDGE_BASE -> new ResourceVersionConfigurationDto(
-                type,
-                new KnowledgeBaseConfigDto(null, 5, "HYBRID", 0.1),
-                null,
-                null,
-                null
-            );
             case TOOL -> new ResourceVersionConfigurationDto(
                 type,
-                null,
                 defaultToolConfig(),
                 null,
                 null
             );
             case LLM_MODEL -> new ResourceVersionConfigurationDto(
                 type,
-                null,
                 null,
                 new LlmModelConfigDto(
                     "OPENAI_COMPATIBLE",
@@ -1918,32 +1935,20 @@ public class CatalogService {
                 type,
                 null,
                 null,
-                null,
                 new SkillConfigDto("新技能", "请填写技能用途说明。", "请填写技能行为说明。")
             );
         };
     }
 
     private void validateVersionReadyForActivation(ResourceType type, ResourceVersionConfigurationDto configuration) {
-        if (type != ResourceType.KNOWLEDGE_BASE) {
-            return;
-        }
-        KnowledgeBaseConfigDto knowledgeBase = configuration == null ? null : configuration.knowledgeBase();
-        if (knowledgeBase == null || knowledgeBase.indexSnapshotId() == null || knowledgeBase.indexSnapshotId().isBlank()) {
-            throw new IllegalStateException("knowledge base published version must bind a ready index snapshot");
-        }
-        KnowledgeIndexSnapshotDto snapshot = knowledgeServiceClient.getIndexSnapshot(knowledgeBase.indexSnapshotId());
-        if (snapshot == null || !"READY".equals(snapshot.status())) {
-            throw new IllegalStateException("knowledge base published version must bind a ready index snapshot");
+        if (type != ResourceType.TOOL && type != ResourceType.LLM_MODEL && type != ResourceType.SKILL) {
+            throw new IllegalStateException("unsupported resource type: " + type);
         }
     }
 
     private CreateResourceVersionRequest normalizeInitialVersionRequest(ResourceType type, CreateResourceVersionRequest request) {
         ResourceVersionConfigurationDto configuration = normalizeConfiguration(type, request.configuration());
         VersionStatus status = request.status() == null ? VersionStatus.DRAFT : request.status();
-        if (type == ResourceType.KNOWLEDGE_BASE) {
-            status = VersionStatus.DRAFT;
-        }
         return new CreateResourceVersionRequest(
             normalizeOptionalText(request.summary()).isBlank() ? "初始版本" : normalizeOptionalText(request.summary()),
             status,
@@ -1954,17 +1959,6 @@ public class CatalogService {
     private String generateConfigDigest(ResourceVersionConfigurationDto configuration) {
         String fingerprint = configuration == null ? "empty" : configuration.toString();
         return "cfg-" + UUID.nameUUIDFromBytes(fingerprint.getBytes(StandardCharsets.UTF_8)).toString().replace("-", "").substring(0, 12);
-    }
-
-    private KnowledgeBaseConfigDto normalizeKnowledgeBaseConfig(KnowledgeBaseConfigDto configuration) {
-        return new KnowledgeBaseConfigDto(
-            normalizeOptionalText(configuration == null ? null : configuration.indexSnapshotId()),
-            configuration == null || configuration.defaultTopK() <= 0 ? 5 : configuration.defaultTopK(),
-            normalizeOptionalText(configuration == null ? null : configuration.retrievalMode()).isBlank()
-                ? "HYBRID"
-                : normalizeOptionalText(configuration.retrievalMode()).toUpperCase(),
-            configuration == null || configuration.minScore() < 0 ? 0.1 : configuration.minScore()
-        );
     }
 
     private SkillConfigDto normalizeSkillConfig(SkillConfigDto configuration) {
@@ -2076,10 +2070,10 @@ public class CatalogService {
 
     private RagPolicyDto normalizeRagPolicy(RagPolicyDto policy) {
         if (policy == null) {
-            String defaultKnowledgeBaseId = resolveDefaultResourceId(ResourceType.KNOWLEDGE_BASE, "resource-kb-support");
+            String defaultKnowledgeBaseId = resolveDefaultKnowledgeBaseId("knowledge-base-support");
             return new RagPolicyDto(defaultKnowledgeBaseId != null, defaultKnowledgeBaseId);
         }
-        return new RagPolicyDto(policy.enabled(), policy.knowledgeBaseResourceId());
+        return new RagPolicyDto(policy.enabled(), normalizeOptionalText(policy.knowledgeBaseId()));
     }
 
     private MemoryPolicyDto normalizeMemoryPolicy(MemoryPolicyDto policy) {
@@ -2091,15 +2085,16 @@ public class CatalogService {
 
     private AgentExecutionPolicyDto normalizeAgentExecutionPolicy(AgentExecutionPolicyDto policy) {
         if (policy == null) {
-            String defaultKnowledgeBaseId = resolveDefaultResourceId(ResourceType.KNOWLEDGE_BASE, "resource-kb-support");
-            return new AgentExecutionPolicyDto(true, null, "", defaultKnowledgeBaseId != null, defaultKnowledgeBaseId, 8, List.of(), List.of());
+            String defaultKnowledgeBaseId = resolveDefaultKnowledgeBaseId("knowledge-base-support");
+            return new AgentExecutionPolicyDto(true, null, "", defaultKnowledgeBaseId != null, true, defaultKnowledgeBaseId, 8, List.of(), List.of());
         }
         return new AgentExecutionPolicyDto(
             policy.inheritAssistantDefaults(),
             policy.modelResourceId(),
             normalizeOptionalText(policy.systemPrompt()),
             policy.ragEnabled(),
-            policy.knowledgeBaseResourceId(),
+            policy.inheritAssistantKnowledge(),
+            normalizeOptionalText(policy.knowledgeBaseId()),
             policy.memoryWindowSize(),
             policy.skillResourceIds() == null ? List.of() : List.copyOf(policy.skillResourceIds()),
             policy.toolResourceIds() == null ? List.of() : List.copyOf(policy.toolResourceIds())
@@ -2188,6 +2183,26 @@ public class CatalogService {
             .orElse(null);
     }
 
+    private String resolveDefaultKnowledgeBaseId(String preferredKnowledgeBaseId) {
+        return knowledgeService.resolveDefaultKnowledgeBaseId(preferredKnowledgeBaseId);
+    }
+
+    private KnowledgeBindingSnapshotDto normalizeKnowledgeBindingSnapshot(KnowledgeBindingSnapshotDto binding) {
+        if (binding == null) {
+            return null;
+        }
+        return new KnowledgeBindingSnapshotDto(
+            binding.knowledgeBaseId(),
+            binding.knowledgeBaseName(),
+            binding.knowledgeReleaseId(),
+            binding.knowledgeReleaseVersion(),
+            binding.snapshotId(),
+            binding.defaultTopK(),
+            binding.retrievalMode(),
+            binding.minScore()
+        );
+    }
+
     private void ensureUniqueDomainName(String name, String excludedDomainId) {
         boolean exists = domains.stream().anyMatch(item ->
             !item.id().equals(excludedDomainId)
@@ -2231,11 +2246,11 @@ public class CatalogService {
 
     private static final class NoOpKnowledgeWorkflowGateway implements KnowledgeWorkflowGateway {
         @Override
-        public void startImport(String resourceId, String importJobId) {
+        public void startImport(String knowledgeBaseId, String importJobId) {
         }
 
         @Override
-        public void startIndexBuild(String resourceId, String indexSnapshotId) {
+        public void startIndexBuild(String knowledgeBaseId, String indexSnapshotId) {
         }
     }
 }

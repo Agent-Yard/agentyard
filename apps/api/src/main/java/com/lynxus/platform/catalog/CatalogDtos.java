@@ -18,7 +18,8 @@ public final class CatalogDtos {
         String name,
         String description,
         List<ScenarioDto> scenarios,
-        List<ResourceDto> resources
+        List<ResourceDto> resources,
+        List<KnowledgeBaseDto> knowledgeBases
     ) {
     }
 
@@ -54,6 +55,7 @@ public final class CatalogDtos {
         VersionStatus status,
         Instant createdAt,
         Instant publishedAt,
+        KnowledgeBindingSnapshotDto assistantKnowledge,
         List<AssistantReleaseResourceDto> resources,
         List<AssistantReleaseAgentDto> agents,
         AssistantOrchestrationDto orchestration,
@@ -80,6 +82,7 @@ public final class CatalogDtos {
         String role,
         String instructions,
         AgentExecutionPolicyDto executionPolicy,
+        KnowledgeBindingSnapshotDto knowledge,
         List<String> skillResourceVersionIds,
         List<String> toolResourceVersionIds
     ) {
@@ -139,24 +142,63 @@ public final class CatalogDtos {
 
     public record ResourceVersionConfigurationDto(
         ResourceType type,
-        KnowledgeBaseConfigDto knowledgeBase,
         ToolConfigDto tool,
         LlmModelConfigDto llmModel,
         SkillConfigDto skill
     ) {
     }
 
-    public record KnowledgeBaseConfigDto(
-        String indexSnapshotId,
+    public record KnowledgeRetrievalProfileDto(
         int defaultTopK,
         String retrievalMode,
         double minScore
     ) {
     }
 
+    public record KnowledgeBindingSnapshotDto(
+        String knowledgeBaseId,
+        String knowledgeBaseName,
+        String knowledgeReleaseId,
+        String knowledgeReleaseVersion,
+        String snapshotId,
+        int defaultTopK,
+        String retrievalMode,
+        double minScore
+    ) {
+    }
+
+    public record KnowledgeBaseDto(
+        String id,
+        String domainId,
+        String name,
+        ShareScope shareScope,
+        String ownerType,
+        String ownerId,
+        String summary,
+        String steward,
+        List<String> tags,
+        KnowledgeReleaseDto latestRelease,
+        KnowledgeReleaseDto effectiveRelease,
+        List<KnowledgeReleaseDto> releases
+    ) {
+    }
+
+    public record KnowledgeReleaseDto(
+        String id,
+        String knowledgeBaseId,
+        String version,
+        VersionStatus status,
+        String summary,
+        String snapshotId,
+        KnowledgeRetrievalProfileDto retrievalProfile,
+        Instant createdAt,
+        Instant publishedAt
+    ) {
+    }
+
     public record KnowledgeUploadSessionDto(
         String id,
-        String resourceId,
+        String knowledgeBaseId,
         String status,
         List<String> acceptedTypes
     ) {
@@ -164,7 +206,7 @@ public final class CatalogDtos {
 
     public record KnowledgeFileDto(
         String id,
-        String resourceId,
+        String knowledgeBaseId,
         String uploadSessionId,
         String fileName,
         String contentType,
@@ -178,7 +220,7 @@ public final class CatalogDtos {
 
     public record KnowledgeImportJobDto(
         String id,
-        String resourceId,
+        String knowledgeBaseId,
         String fileId,
         String status,
         String failureReason,
@@ -190,7 +232,7 @@ public final class CatalogDtos {
 
     public record KnowledgeDocumentDto(
         String id,
-        String resourceId,
+        String knowledgeBaseId,
         String fileId,
         String title,
         String sourceUri,
@@ -204,7 +246,7 @@ public final class CatalogDtos {
 
     public record KnowledgeIndexSnapshotDto(
         String id,
-        String resourceId,
+        String knowledgeBaseId,
         String retrievalBackend,
         String retrievalMode,
         String status,
@@ -217,7 +259,7 @@ public final class CatalogDtos {
     ) {
     }
 
-    public record CreateKnowledgeUploadSessionRequest(String resourceId) {
+    public record CreateKnowledgeUploadSessionRequest(String knowledgeBaseId) {
     }
 
     public record CreateKnowledgeIndexSnapshotRequest(List<String> documentIds) {
@@ -297,7 +339,7 @@ public final class CatalogDtos {
 
     public record RagPolicyDto(
         boolean enabled,
-        String knowledgeBaseResourceId
+        String knowledgeBaseId
     ) {
     }
 
@@ -312,7 +354,8 @@ public final class CatalogDtos {
         String modelResourceId,
         String systemPrompt,
         boolean ragEnabled,
-        String knowledgeBaseResourceId,
+        boolean inheritAssistantKnowledge,
+        String knowledgeBaseId,
         int memoryWindowSize,
         List<String> skillResourceIds,
         List<String> toolResourceIds
@@ -399,6 +442,18 @@ public final class CatalogDtos {
     ) {
     }
 
+    public record KnowledgeReferenceDto(
+        String knowledgeBaseId,
+        String referenceKind,
+        String sourceType,
+        String sourceId,
+        String sourceName,
+        String knowledgeReleaseId,
+        String knowledgeReleaseVersion,
+        boolean blocksDeletion
+    ) {
+    }
+
     public record CreateDomainRequest(String name, String description) {
     }
 
@@ -469,6 +524,37 @@ public final class CatalogDtos {
     ) {
     }
 
+    public record CreateKnowledgeBaseRequest(
+        String domainId,
+        String name,
+        ShareScope shareScope,
+        String ownerType,
+        String ownerId,
+        String summary,
+        String steward,
+        List<String> tags
+    ) {
+    }
+
+    public record UpdateKnowledgeBaseRequest(
+        String name,
+        ShareScope shareScope,
+        String ownerType,
+        String ownerId,
+        String summary,
+        String steward,
+        List<String> tags
+    ) {
+    }
+
+    public record CreateKnowledgeReleaseRequest(
+        String summary,
+        VersionStatus status,
+        String snapshotId,
+        KnowledgeRetrievalProfileDto retrievalProfile
+    ) {
+    }
+
     public record UpdateOrchestrationRequest(
         String executionMode,
         List<OrchestrationNodeDto> nodes,
@@ -482,6 +568,7 @@ public final class CatalogDtos {
         List<AssistantDto> assistants,
         List<AgentDto> agents,
         List<ResourceDto> resources,
+        List<KnowledgeBaseDto> knowledgeBases,
         List<AssistantOrchestrationDto> orchestrations,
         ResourceCenterDto resourceCenter,
         List<ResourceBlueprintDto> resourceBlueprints
