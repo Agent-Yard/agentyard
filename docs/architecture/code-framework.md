@@ -24,6 +24,7 @@
 - `apps/api`：Spring Boot 控制面 API，负责目录、发布、会话和运行实例聚合
 - `apps/worker`：Temporal workflow worker，负责长流程托管与人工恢复
 - `apps/agent-runtime`：Python 执行运行时，负责图编排、资源调用和节点推进
+- `apps/knowledge-service`：Python 知识服务，负责知识文件、切片、索引快照与检索数据
 - `packages/contracts-jvm`：JVM 侧共享 workflow / runtime 契约
 - `packages/contracts`：TypeScript 合同类型与 OpenAPI 文档
 - `scripts`：本地开发启动脚本与环境变量装载
@@ -55,7 +56,7 @@
 - `shared`：统一响应和异常处理
 - `config`：Web 跨域等基础配置
 
-目录数据当前通过 `JdbcCatalogRepository` 落到 PostgreSQL JSONB；运行态对象仍有一部分保存在 API 进程内存中。
+目录数据当前通过 `JdbcCatalogRepository` 落到 PostgreSQL JSONB；知识服务的结构化存储使用独立数据库；运行态对象仍有一部分保存在 API 进程内存中。
 
 ## Worker 与 Runtime 分工
 

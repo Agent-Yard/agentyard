@@ -5,12 +5,14 @@
 `infra/local/docker-compose.yml` 包含：
 
 - PostgreSQL
+- PostgreSQL bootstrap 初始化器
 - MinIO
 - OpenSearch
 - Temporal
 
 这些依赖服务于当前“控制面 + Temporal + Python runtime + 前端控制台”的本地联调链路。
 其中当前主链路最依赖的是 PostgreSQL、Temporal、MinIO、OpenSearch 和知识服务；知识快照构建与检索默认依赖 OpenSearch。
+本地 PostgreSQL 默认会准备独立的 `lynxus_api` 和 `lynxus_knowledge` 数据库，避免 API 的 Flyway 与 knowledge service 的自建表共享同一个 `public` schema。
 注意：OpenSearch 2.12+ 即使在 `plugins.security.disabled=true` 时，也会校验 `OPENSEARCH_INITIAL_ADMIN_PASSWORD` 是否为强密码；若密码不符合规则，容器会在启动阶段直接退出。
 另外 OpenSearch 首次冷启动通常比其他依赖慢，`knowledge-service` 默认会等待最多 45 秒再执行 seed；如需调整，可设置 `LYNXUS_OPENSEARCH_STARTUP_WAIT_SECONDS`。
 

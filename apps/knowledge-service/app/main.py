@@ -1160,6 +1160,9 @@ def seed_demo_snapshot(db: Session) -> None:
         resource_id="resource-kb-support",
         status="COMPLETED",
     )
+    db.add(session_record)
+    db.flush()
+
     file_record = KnowledgeFileRecord(
         id="kb-file-support-seed",
         resource_id="resource-kb-support",
@@ -1177,7 +1180,7 @@ def seed_demo_snapshot(db: Session) -> None:
         status="COMPLETED",
         completed_at=now_utc(),
     )
-    db.add_all([session_record, file_record, job_record])
+    db.add_all([file_record, job_record])
     db.flush()
 
     body_text = "\n".join(

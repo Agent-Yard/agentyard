@@ -79,6 +79,7 @@ docker compose up -d
 ```
 
 默认本地依赖包含 PostgreSQL、MinIO、OpenSearch 和 Temporal。
+其中 PostgreSQL 会在本地自动准备独立的 `lynxus_api` 和 `lynxus_knowledge` 数据库，分别给 API 和 knowledge service 使用。
 知识服务按当前实现默认要求 OpenSearch 可用，不再保留本地嵌入式检索回退。
 
 如果你需要观察面板，再额外启动：
@@ -94,6 +95,7 @@ cp .env.example .env
 ```
 
 根目录 `.env` 会被 `pnpm dev`、`pnpm dev:api`、`pnpm dev:worker`、`pnpm dev:knowledge-service`、`pnpm dev:agent-runtime` 和 `pnpm dev:web` 自动加载。
+默认示例环境已经把 API 和 knowledge service 指向不同数据库，避免 Flyway 与知识库表互相污染。
 
 ### 3. 安装前端与 Python 依赖
 

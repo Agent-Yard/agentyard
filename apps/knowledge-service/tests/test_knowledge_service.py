@@ -19,6 +19,7 @@ from app.main import (
     IndexSnapshotRecord,
     KnowledgeDocumentRecord,
     KnowledgeFileRecord,
+    UploadSessionRecord,
     SessionLocal,
     app,
     engine,
@@ -257,13 +258,16 @@ class KnowledgeServiceTest(unittest.TestCase):
                 seed_demo_snapshot(db)
 
             with SessionLocal() as db:
+                seeded_session = db.get(UploadSessionRecord, "upload-session-kb-support")
                 seeded_file = db.get(KnowledgeFileRecord, "kb-file-support-seed")
                 seeded_document = db.get(KnowledgeDocumentRecord, "kb-document-support-seed")
                 seeded_snapshot = db.get(IndexSnapshotRecord, "snapshot-kb-support-v1")
 
+        self.assertIsNotNone(seeded_session)
         self.assertIsNotNone(seeded_file)
         self.assertIsNotNone(seeded_document)
         self.assertIsNotNone(seeded_snapshot)
+        self.assertEqual(seeded_file.upload_session_id, seeded_session.id)
         self.assertEqual(seeded_document.file_id, seeded_file.id)
         self.assertEqual(seeded_snapshot.status, "READY")
 
