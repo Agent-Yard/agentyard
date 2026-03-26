@@ -14,19 +14,26 @@
 当前实现主要围绕配置态、发布态与运行态三条主线：
 
 - 智能体编排：表达助手内部节点、交接顺序和资源依赖
-- 资源管理：表达资源归属、共享范围、版本体系、最新版本/生效版本语义和绑定锚点
+- 资源管理：表达资源归属、共享范围、版本体系、最新版本 / 生效版本语义和绑定锚点
 - 运行时会话：由调用方选择一个助手后持续对话，并沉淀任务与流程轨迹
 - 助手发布：发布时冻结当前资源绑定版本，生成可回溯的发布快照
 
 ## 应用划分
 
-- `apps/web`：控制台前端，承接控制台页面与 mock 角色切换
-- `apps/api`：控制面 API，负责配置态与运行态主接口
-- `apps/worker`：Temporal workflow worker，承接长流程托管与人工恢复
+- `apps/web`：Vue 控制台，承接配置态页面、运行态页面和 mock 角色切换
+- `apps/api`：Spring Boot 控制面 API，负责目录、发布、会话和运行实例聚合
+- `apps/worker`：Temporal workflow worker，负责长流程托管与人工恢复
 - `apps/agent-runtime`：Python 执行运行时，负责图编排、资源调用和节点推进
-- `packages/contracts-jvm`：JVM 侧共享运行契约
-- `packages/contracts`：OpenAPI 与前端共享 contract
-- `infra/local`：本地依赖启动
+- `packages/contracts-jvm`：JVM 侧共享 workflow / runtime 契约
+- `packages/contracts`：TypeScript 合同类型与 OpenAPI 文档
+- `scripts`：本地开发启动脚本与环境变量装载
+- `infra/local`：本地 Docker 依赖
+
+当前仓库的构建方式是混合式的：
+
+- `apps/api`、`apps/worker`、`packages/contracts-jvm` 由根目录 Gradle 多项目管理
+- `apps/web`、`packages/contracts` 由 pnpm workspace 管理
+- `apps/agent-runtime` 独立用 Python 虚拟环境运行
 
 ## 前端导航
 
@@ -37,15 +44,24 @@
 - `资源与发布`：资源目录、资源新建
 - `运行与观测`：会话运行、流程观测
 
-## 后端模块
+## API 代码分区
 
-- `auth-domain`：当前用户、角色策略、mock 登录
-- `tenant-domain`：保留租户边界，当前实现默认单租户
-- `scenario-domain`：业务域、业务场景、助手、智能体
-- `resource-domain`：知识库、Tool、LLM、Prompt 模板及资源版本配置
-- `runtime-domain`：任务、流程、节点、人工介入
-- `release-domain`：草稿、发布、快照冻结与运行锚点
-- `shared-kernel`：公共枚举、错误码、审计字段、上下文
+`apps/api` 当前更接近按职责分包，而不是完整 DDD 模块化拆分：
+
+- `catalog`：业务域、场景、助手、智能体、资源、资源版本、编排、发布快照
+- `runtime`：会话、任务、工作流、人工动作、Temporal gateway
+- `auth`：mock 登录与角色切换
+- `system`：健康检查和依赖状态接口
+- `shared`：统一响应和异常处理
+- `config`：Web 跨域等基础配置
+
+目录数据当前通过 `JdbcCatalogRepository` 落到 PostgreSQL JSONB；运行态对象仍有一部分保存在 API 进程内存中。
+
+## Worker 与 Runtime 分工
+
+- `apps/worker` 中的 `workflow` 包负责 Temporal workflow 与 activity 编排
+- `apps/worker` 中的 `runtime` 包负责通过 HTTP 调用 Python `agent-runtime`
+- `apps/agent-runtime` 负责解析发布快照、校验图、执行节点并返回 `WorkflowResult`
 
 ## 运行链路
 
@@ -65,7 +81,8 @@
 - 助手切换到 `PUBLISHED` 时会冻结资源版本、agent 执行配置和编排图快照，作为后续运行和审计的稳定锚点
 - 前端资源区拆分为“资源目录”和“资源新建”两页
 - `资源目录`：聚焦资源清单、详情、版本流转、生效版本切换和结构化引用分析
-- `资源新建`：按知识库、Tool、LLM、Prompt 模板四种蓝图维护结构化初始版本配置
+- `资源新建`：按知识库、Tool、LLM、Skill 四种蓝图维护结构化初始版本配置
+- `SKILL` 资源承担智能体按需读取的技能提示，不再使用独立 Prompt Template 资源
 - 认证采用本地 mock 用户，不接真实 OIDC
 - 持久化采用 JSONB catalog store，工作流支持人工节点暂停恢复
 - 控制面 API 优先提供演示闭环与前端真实接口消费
@@ -78,17 +95,21 @@
 - 部分运行态对象仍在 API 内存中维护，未完全持久化
 - workflow 启动链路仍同步等待首个结果，尚未改为异步订阅式观测
 - 资源执行层优先保证本地联调和演示闭环，生产级安全治理仍需补齐
+- Redis / MinIO 当前主要停留在依赖与配置层，尚未形成稳定业务承载面
 
 ## 版本基线
 
 当前代码按仓库内已落地的版本线组织：
 
+- pnpm：9.12.0
 - Java toolchain：25
 - Spring Boot：4.0.1
-- Vue：3.5
+- Vue：3.5.13
 - Vite：8
 - TypeScript：5.9
 - Temporal SDK：1.32.1
 - FastAPI：0.115.12
+- Uvicorn：0.34.0
 - LangGraph：0.2.53
+- Ant Design Vue：4.2.6
 - PostgreSQL / Redis / MinIO / Temporal：通过本地 Docker 依赖接入

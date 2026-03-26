@@ -1,6 +1,6 @@
 # 当前对象模型说明
 
-历史上的 MVP 版对象模型已归档到 `docs/progress_record/2026-03-mvp_object_model_baseline.md`。
+历史上的 MVP 版对象模型已归档到 `docs/develop_record/2026-03-mvp_object_model_baseline.md`。
 本文件描述当前仓库正在使用的现行模型。
 
 ## 1. 主树对象表
@@ -21,7 +21,7 @@
 | Knowledge Base | 可检索的知识资产 | FAQ、规则参考、检索增强 | 助手 / 智能体 | 已落地 |
 | Tool | 可被 agent 调用的业务能力单元 | 业务处理、策略判断、外部系统协同 | 智能体 | 已落地 |
 | LLM Model | 模型提供方配置 | 推理执行 | 助手 / 智能体 | 已落地 |
-| Prompt Template | 提示模板资源 | 统一 system / user prompt | 助手 / 智能体 | 已落地 |
+| Skill | 可被 agent 按需读取的技能提示资源 | 路由规则、回答策略、人工协同模式说明 | 智能体 | 已落地 |
 
 ## 3. 归属、绑定与冻结关系
 
@@ -29,7 +29,7 @@
 | -- | -- | -- |
 | 归属 | 谁创建、谁维护、谁负责治理 | 资源、场景、助手都有稳定归属对象 |
 | 绑定 | 谁在实际运行中使用该资源 | agent 绑定和 assistant 默认策略同时存在 |
-| 共享 | 是否允许在一定范围内复用 | 当前主要按业务域共享思路组织 |
+| 共享 | 是否允许在一定范围内复用 | 当前通过 `PRIVATE / DOMAIN_SHARED` 表达 |
 | 版本锚定 | 运行时具体命中了哪个资源版本 | 助手发布时冻结资源版本锚点 |
 | 发布冻结 | 运行时到底读草稿还是读快照 | 当前统一基于 release snapshot 启动 |
 
@@ -38,7 +38,7 @@
 | 维度 | 对象 | 作用 | 当前表现 |
 | -- | -- | -- | -- |
 | 配置态 | 业务域 / 场景 / 助手 / 智能体 / 资源 | 维护治理结构和草稿配置 | 控制台配置页与 API DTO |
-| 发布态 | Assistant Release | 冻结资源锚点、执行配置和图快照 | 运行时稳定入口 |
+| 发布态 | Assistant Release | 冻结资源锚点、执行配置、助手策略和图快照 | 运行时稳定入口 |
 | 运行态 | Session | 维护单助手会话上下文 | 会话运行页 |
 | 运行态 | Task | 单次业务入口或用户提问 | 任务列表 / 详情 |
 | 运行态 | Workflow | 长流程执行实例 | 流程观测页 |
@@ -64,6 +64,7 @@
 | WorkflowResult | workflow 当前结果或最终结果 | 已落地 |
 | ToolInvocationSnapshot | Tool 调用摘要 | 已落地 |
 | ToolOutcomeSummary | Tool 执行结果摘要 | 已落地 |
+| loadedSkillResourceVersionIds | 记录会话中已加载的 Skill 版本 | 已落地 |
 
 ## 7. 当前边界
 
@@ -74,6 +75,7 @@
 | 审计体系 | 未完整落地 | 仅保留必要结构和记录 |
 | 异步观测 | 未完整落地 | API 仍同步等待首个 workflow 结果 |
 | 生产级 provider 治理 | 未完整落地 | 仍保留 `demo.local` 演示适配 |
+| 运行态持久化 | 未完整落地 | Session / Task / Workflow 仍部分在 API 内存中维护 |
 
 ## 8. 一句话总结
 

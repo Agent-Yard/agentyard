@@ -6,9 +6,10 @@
 - 控制面后端：Java 25 + Spring Boot 4.0.1
 - 工作流托管：Temporal SDK 1.32.1
 - 执行运行时：Python + FastAPI + LangGraph
-- 数据存储：PostgreSQL + Redis + MinIO
-- 本地依赖编排：Docker Compose
-- API 契约：OpenAPI + `packages/contracts` / `packages/contracts-jvm`
+- 目录持久化：PostgreSQL JSONB
+- 本地依赖：Docker Compose 拉起 PostgreSQL、Redis、MinIO、Temporal、Temporal UI
+- 契约层：`packages/contracts` + `packages/contracts-jvm`
+- 启动脚本：根目录 `scripts/*.sh` 统一装载环境变量并拉起各应用
 
 ## 当前运行架构
 
@@ -16,6 +17,15 @@
 - `apps/worker`：Assistant Run Workflow 的 Temporal worker
 - `apps/agent-runtime`：基于发布图的节点执行运行时
 - `apps/web`：配置态和运行态控制台
+
+当前执行核心是一条“发布快照 -> Temporal -> Python runtime -> WorkflowResult”的闭环。
+
+## 当前模型取舍
+
+- 资源类型统一为 `KNOWLEDGE_BASE / TOOL / LLM_MODEL / SKILL`
+- `SKILL` 资源承担智能体按需技能提示，不再保留独立 Prompt Template 资源
+- 目录数据已持久化，运行态数据仍部分在内存中维护
+- 认证仍是 mock，会话与运行观测先优先跑通产品主链路
 
 ## 目标扩展方向
 
