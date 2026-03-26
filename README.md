@@ -28,7 +28,7 @@ Orchestrate Enterprise Agents
 - 部分运行态数据仍在 API 内存中维护
 - `sendMessage` / `launchTask` 仍同步等待 workflow 首个结果
 - `demo.local` provider 与 seed 数据仍承担本地演示闭环
-- Redis / MinIO 已纳入本地依赖与配置，但当前主业务链路仍以 PostgreSQL + Temporal + runtime 为主
+- MinIO / OpenSearch 已纳入本地依赖与配置，知识服务当前默认以 OpenSearch 作为正式快照检索后端
 
 ## Monorepo Layout
 
@@ -78,7 +78,14 @@ cd infra/local
 docker compose up -d
 ```
 
-本地依赖包含 PostgreSQL、Redis、MinIO、Temporal 和 Temporal UI。
+默认本地依赖包含 PostgreSQL、MinIO、OpenSearch 和 Temporal。
+知识服务按当前实现默认要求 OpenSearch 可用，不再保留本地嵌入式检索回退。
+
+如果你需要观察面板，再额外启动：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dashboards.yml up -d
+```
 
 ### 2. 准备环境变量
 
@@ -86,20 +93,19 @@ docker compose up -d
 cp .env.example .env
 ```
 
-根目录 `.env` 会被 `pnpm dev`、`pnpm dev:api`、`pnpm dev:worker`、`pnpm dev:agent-runtime` 和 `pnpm dev:web` 自动加载。
+根目录 `.env` 会被 `pnpm dev`、`pnpm dev:api`、`pnpm dev:worker`、`pnpm dev:knowledge-service`、`pnpm dev:agent-runtime` 和 `pnpm dev:web` 自动加载。
 
 ### 3. 安装前端与 Python 依赖
 
 ```bash
 pnpm install
-cd apps/agent-runtime
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
-cd ../..
+pip install -r apps/agent-runtime/requirements.txt
+pip install -r apps/knowledge-service/requirements.txt
 ```
 
-`dev-agent-runtime.sh` 会优先使用 `apps/agent-runtime/.venv/bin/python`，也可以通过 `AGENT_RUNTIME_PYTHON_BIN` 显式指定 Python。
+本地开发约定使用项目根目录 `.venv` 作为共享 Python 环境。`dev-agent-runtime.sh` 和 `dev-knowledge-service.sh` 都会优先使用 `.venv/bin/python`，也可以分别通过 `AGENT_RUNTIME_PYTHON_BIN`、`KNOWLEDGE_SERVICE_PYTHON_BIN` 显式指定 Python。
 
 ### 4. 启动应用
 
@@ -114,6 +120,7 @@ pnpm dev
 ```bash
 pnpm dev:api
 pnpm dev:worker
+pnpm dev:knowledge-service
 pnpm dev:agent-runtime
 pnpm dev:web
 ```
@@ -122,6 +129,7 @@ pnpm dev:web
 
 - `apps:api`
 - `apps:worker`
+- `apps:knowledge-service`
 - `apps:agent-runtime`
 - `apps:web`
 
@@ -163,6 +171,16 @@ OPENAI_COMPATIBLE_API_KEY=your-token-if-needed
 ```
 
 当前 LLM 调用没有本地假响应 fallback。只要助手或智能体命中了真实模型资源，就必须提供对应 API key。
+
+本地依赖启动后，常用控制台入口还包括：
+
+- MinIO Console：`http://localhost:9001`
+- OpenSearch：`http://localhost:9200`
+
+可选 dashboard 额外启动后，还可以访问：
+
+- OpenSearch Dashboards：`http://localhost:5601`
+- Temporal UI：`http://localhost:8088`
 
 如果你的模型响应时间较长，可以同步调大 worker 的 Temporal activity 超时：
 

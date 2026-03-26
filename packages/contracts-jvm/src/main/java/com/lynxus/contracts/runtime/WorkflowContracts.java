@@ -65,16 +65,10 @@ public final class WorkflowContracts {
     }
 
     public record KnowledgeBaseConfig(
+        String indexSnapshotId,
         int defaultTopK,
-        List<KnowledgeBaseDocument> documents
-    ) {
-    }
-
-    public record KnowledgeBaseDocument(
-        String id,
-        String title,
-        String content,
-        String sourceUri
+        String retrievalMode,
+        double minScore
     ) {
     }
 
@@ -355,6 +349,30 @@ public final class WorkflowContracts {
         boolean escalationRequired,
         ToolOutcomeSummary latestToolOutcome,
         List<String> loadedSkillResourceVersionIds
+    ) {
+    }
+
+    public record KnowledgeImportRequest(
+        String workflowId,
+        String resourceId,
+        String importJobId
+    ) {
+    }
+
+    public record KnowledgeIndexBuildRequest(
+        String workflowId,
+        String resourceId,
+        String indexSnapshotId
+    ) {
+    }
+
+    public record KnowledgeJobResult(
+        String workflowId,
+        String resourceId,
+        String targetId,
+        String status,
+        String detail,
+        Instant updatedAt
     ) {
     }
 }

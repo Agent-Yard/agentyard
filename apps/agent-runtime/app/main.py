@@ -19,16 +19,22 @@ except Exception as exc:  # pragma: no cover
     raise RuntimeError("langgraph is required for agent-runtime") from exc
 
 
-class KnowledgeBaseDocument(BaseModel):
-    id: str
-    title: str
-    content: str
-    sourceUri: str = ""
-
-
 class KnowledgeBaseConfig(BaseModel):
+    indexSnapshotId: Optional[str] = None
     defaultTopK: int
-    documents: List[KnowledgeBaseDocument] = Field(default_factory=list)
+    retrievalMode: str = "HYBRID"
+    minScore: float = 0.1
+
+
+class KnowledgeHit(BaseModel):
+    chunkId: str
+    documentId: str
+    documentTitle: str
+    sourceUri: str
+    snippet: str
+    score: float
+    pageNumber: Optional[int] = None
+    headingPath: str = ""
 
 
 class ToolOperationConfig(BaseModel):
@@ -349,8 +355,8 @@ class AgentState(TypedDict):
     route_key: Optional[str]
     final_reply: str
     summary: str
-    retrieval_hits: List[str]
-    retrieval_cache: Dict[str, List[str]]
+    retrieval_hits: List[Dict[str, Any]]
+    retrieval_cache: Dict[str, List[Dict[str, Any]]]
     tool_history: List[Dict[str, Any]]
     tool_calls: List[Dict[str, Any]]
     node_snapshots: List[Dict[str, Any]]
@@ -694,7 +700,7 @@ def format_default_user_prompt(
     conversation_history: str,
     available_skills: List[Dict[str, str]],
     loaded_skills: List[Dict[str, str]],
-    knowledge_context: List[str],
+    knowledge_context: List[Dict[str, Any]],
     tool_results: List[Dict[str, Any]],
     human_input: Optional[Dict[str, Any]],
 ) -> str:
@@ -765,7 +771,7 @@ def build_structured_agent_prompt(
     conversation_history: str,
     available_skills: List[Dict[str, str]],
     loaded_skills: List[Dict[str, str]],
-    knowledge_context: List[str],
+    knowledge_context: List[Dict[str, Any]],
     tool_results: List[Dict[str, Any]],
     human_input: Optional[Dict[str, Any]],
     tool_resources: List[ResourceVersionSnapshot],
@@ -955,32 +961,29 @@ def tokenize(text: str) -> List[str]:
     return [token for token in text.replace("？", " ").replace("，", " ").replace("。", " ").split() if token]
 
 
-def knowledge_documents(config: KnowledgeBaseConfig) -> List[str]:
-    return [
-        f"{document.title}\n{document.content}".strip()
-        for document in config.documents
-        if document.content.strip()
-    ]
-
-
-def retrieve_knowledge(resource: Optional[ResourceVersionSnapshot], question: str) -> List[str]:
+async def retrieve_knowledge(resource: Optional[ResourceVersionSnapshot], question: str) -> List[Dict[str, Any]]:
     if resource is None or resource.configuration.knowledgeBase is None:
         return []
     config = resource.configuration.knowledgeBase
-    documents = knowledge_documents(config)
-    if not documents:
+    if config.indexSnapshotId is None or not config.indexSnapshotId.strip():
         return []
-
-    terms = tokenize(question) or list(question)
-    scored: List[tuple[int, str]] = []
-    for document in documents:
-        score = sum(1 for term in terms if term and term in document)
-        if score > 0:
-            scored.append((score, document))
-    if not scored:
-        return documents[: config.defaultTopK]
-    scored.sort(key=lambda item: item[0], reverse=True)
-    return [document for _, document in scored[: config.defaultTopK]]
+    knowledge_service_base_url = os.getenv("LYNXUS_KNOWLEDGE_SERVICE_BASE_URL", "http://localhost:8091").rstrip("/")
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(
+            f"{knowledge_service_base_url}/internal/retrieve",
+            json={
+                "indexSnapshotId": config.indexSnapshotId,
+                "query": question,
+                "topK": config.defaultTopK,
+                "minScore": config.minScore,
+                "retrievalMode": config.retrievalMode,
+            },
+        )
+        response.raise_for_status()
+    payload = response.json()
+    if payload.get("lowConfidence"):
+        return []
+    return payload.get("hits", [])
 
 
 def resolve_tool_operation(resource: ResourceVersionSnapshot, operation_name: Optional[str] = None) -> ToolOperationConfig:
@@ -1465,7 +1468,7 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
         state["question"],
         memory_window_for_agent(assistant, agent),
     )
-    hits = retrieve_knowledge(kb_resource, state["question"]) if (agent.executionPolicy.ragEnabled or assistant.assistantPolicy.ragEnabled) else []
+    hits = await retrieve_knowledge(kb_resource, state["question"]) if (agent.executionPolicy.ragEnabled or assistant.assistantPolicy.ragEnabled) else []
     state["retrieval_hits"] = hits
     state["retrieval_cache"][agent.agentId] = hits
 

@@ -160,6 +160,7 @@ start_process() {
 
 start_process api "$ROOT_DIR/scripts/dev-api.sh"
 start_process worker "$ROOT_DIR/scripts/dev-worker.sh"
+start_process knowledge-service "$ROOT_DIR/scripts/dev-knowledge-service.sh"
 start_process agent-runtime "$ROOT_DIR/scripts/dev-agent-runtime.sh"
 start_process web "$ROOT_DIR/scripts/dev-web.sh"
 

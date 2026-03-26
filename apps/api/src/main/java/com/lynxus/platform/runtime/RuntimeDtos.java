@@ -48,6 +48,8 @@ public final class RuntimeDtos {
         String assistantId,
         String assistantName,
         String assistantReleaseVersion,
+        Instant createdAt,
+        Instant updatedAt,
         WorkflowStatus status,
         String summary,
         String finalReply,

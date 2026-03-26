@@ -18,7 +18,7 @@ public interface CatalogRepository {
         List<AssistantDto> assistants,
         List<AgentDto> agents,
         List<ResourceDto> resources,
-        Map<String, List<ResourceVersionDto>> resourceVersions,
+        Map<String, List<StoredResourceVersion>> resourceVersions,
         Map<String, List<AssistantReleaseDto>> assistantReleases,
         Map<String, AssistantOrchestrationDto> orchestrations
     ) {

@@ -12,8 +12,14 @@ import type {
   CreateResourcePayload,
   CreateResourceVersionPayload,
   CreateScenarioPayload,
+  HumanTaskSnapshot,
   KnowledgeBaseConfig,
-  KnowledgeBaseDocument,
+  KnowledgeDocument,
+  KnowledgeFile,
+  KnowledgeImportJob,
+  KnowledgeIndexSnapshot,
+  KnowledgeUploadCompletion,
+  KnowledgeUploadSession,
   ResourceType,
   ResourceVersionConfiguration,
   ToolConfig,
@@ -96,35 +102,20 @@ function nextId(prefix: string): string {
 
 function defaultKnowledgeBaseConfig(): KnowledgeBaseConfig {
   return {
+    indexSnapshotId: null,
     defaultTopK: 5,
-    documents: [],
+    retrievalMode: 'HYBRID',
+    minScore: 0.1,
   };
-}
-
-function normalizeKnowledgeBaseDocuments(documents?: KnowledgeBaseDocument[] | null): KnowledgeBaseDocument[] {
-  return (documents ?? [])
-    .map((document, index) => {
-      const content = document.content.trim();
-      if (!content) {
-        return null;
-      }
-      const title = document.title.trim() || content.slice(0, 24) || `文档 ${index + 1}`;
-      return {
-        id: document.id?.trim() || nextId('kb-doc'),
-        title,
-        content,
-        sourceUri: document.sourceUri?.trim() || '',
-      };
-    })
-    .filter((document): document is KnowledgeBaseDocument => document !== null);
 }
 
 function normalizeKnowledgeBaseConfig(configuration?: KnowledgeBaseConfig | null): KnowledgeBaseConfig {
   const defaults = defaultKnowledgeBaseConfig();
-  const documents = normalizeKnowledgeBaseDocuments(configuration?.documents);
   return {
+    indexSnapshotId: configuration?.indexSnapshotId?.trim() || null,
     defaultTopK: configuration?.defaultTopK && configuration.defaultTopK > 0 ? configuration.defaultTopK : defaults.defaultTopK,
-    documents,
+    retrievalMode: configuration?.retrievalMode === 'LEXICAL' || configuration?.retrievalMode === 'VECTOR' ? configuration.retrievalMode : 'HYBRID',
+    minScore: typeof configuration?.minScore === 'number' && configuration.minScore >= 0 ? configuration.minScore : defaults.minScore,
   };
 }
 
@@ -658,14 +649,14 @@ function buildFallbackExecution(sessionId: string, assistant: Assistant, request
   const workflowId = nextId('wf');
   const taskId = nextId('task');
   const now = new Date().toISOString();
-  const humanTask = waitingHuman
+  const humanTask: HumanTaskSnapshot | null = waitingHuman
     ? {
         nodeKey: 'human-review',
         title: '人工协同待办',
         instruction: '请人工确认客户诉求、补偿方案和回复口径。',
         expectedAction: '补充处理意见并确认后续动作',
         source: 'GRAPH_NODE' as const,
-        allowedActions: ['CONFIRM', 'TERMINATE'] as const,
+        allowedActions: ['CONFIRM', 'TERMINATE'],
       }
     : null;
   const pauseReason = waitingHuman
@@ -722,6 +713,8 @@ function buildFallbackExecution(sessionId: string, assistant: Assistant, request
     assistantId: assistant.id,
     assistantName: assistant.name,
     assistantReleaseVersion: assistantReleaseVersion(assistant),
+    createdAt: now,
+    updatedAt: now,
     status: waitingHuman ? 'WAITING_HUMAN' : 'COMPLETED',
     summary,
     finalReply: waitingHuman ? null : reply,
@@ -1236,7 +1229,6 @@ export const api = {
           version: '0.1.0',
           status: payload.initialVersion.status,
           summary: payload.initialVersion.summary,
-          configDigest: payload.initialVersion.configDigest || `digest-${Date.now()}`,
           createdAt: new Date().toISOString(),
           publishedAt: payload.initialVersion.status === 'PUBLISHED' ? new Date().toISOString() : null,
           configuration: normalizeConfiguration(payload.type, payload.initialVersion.configuration),
@@ -1290,7 +1282,6 @@ export const api = {
           version: `${major}.${minor}.${patch + 1}`,
           status: payload.status,
           summary: payload.summary,
-          configDigest: payload.configDigest || `digest-${Date.now()}`,
           createdAt: new Date().toISOString(),
           publishedAt: payload.status === 'PUBLISHED' ? new Date().toISOString() : null,
           configuration: normalizeConfiguration(resource.type, payload.configuration),
@@ -1366,6 +1357,112 @@ export const api = {
         return clone(effectiveVersion ?? versions[0]);
       },
     ),
+  createKnowledgeUploadSession: (resourceId: string) =>
+    request<KnowledgeUploadSession>(
+      `/resources/${resourceId}/knowledge/upload-sessions`,
+      { method: 'POST' },
+      () => ({
+        id: nextId('upload-session'),
+        resourceId,
+        status: 'OPEN',
+        acceptedTypes: ['pdf', 'docx', 'md', 'txt', 'html', 'csv'],
+      }),
+    ),
+  completeKnowledgeUpload: async (resourceId: string, uploadSessionId: string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const response = await fetch(`${API_BASE}/resources/${resourceId}/knowledge/upload-sessions/${uploadSessionId}/complete`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const body = await response.json();
+      return body.data as KnowledgeUploadCompletion;
+    } catch {
+      return {
+        file: {
+          id: nextId('kb-file'),
+          resourceId,
+          uploadSessionId,
+          fileName: file.name,
+          contentType: file.type || 'application/octet-stream',
+          sizeBytes: file.size,
+          status: 'UPLOADED',
+          errorMessage: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        importJob: {
+          id: nextId('kb-import'),
+          resourceId,
+          fileId: nextId('kb-file-ref'),
+          status: 'PENDING',
+          failureReason: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          completedAt: null,
+        },
+      } satisfies KnowledgeUploadCompletion;
+    }
+  },
+  importKnowledgeUrl: (resourceId: string, url: string, title?: string) =>
+    request<KnowledgeUploadCompletion>(
+      `/resources/${resourceId}/knowledge/url-imports`,
+      { method: 'POST', body: JSON.stringify({ url, title: title?.trim() || null }) },
+      () => ({
+        file: {
+          id: nextId('kb-file'),
+          resourceId,
+          uploadSessionId: nextId('upload-session'),
+          fileName: url,
+          contentType: 'text/html',
+          sizeBytes: 0,
+          status: 'UPLOADED',
+          errorMessage: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        importJob: {
+          id: nextId('kb-import'),
+          resourceId,
+          fileId: nextId('kb-file-ref'),
+          status: 'PENDING',
+          failureReason: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          completedAt: null,
+        },
+      }),
+    ),
+  listKnowledgeFiles: (resourceId: string) =>
+    request<KnowledgeFile[]>(`/resources/${resourceId}/knowledge/files`, undefined, []),
+  listKnowledgeImportJobs: (resourceId: string) =>
+    request<KnowledgeImportJob[]>(`/resources/${resourceId}/knowledge/import-jobs`, undefined, []),
+  listKnowledgeDocuments: (resourceId: string) =>
+    request<KnowledgeDocument[]>(`/resources/${resourceId}/knowledge/documents`, undefined, []),
+  createKnowledgeIndexSnapshot: (resourceId: string, documentIds: string[]) =>
+    request<KnowledgeIndexSnapshot>(
+      `/resources/${resourceId}/knowledge/index-snapshots`,
+      { method: 'POST', body: JSON.stringify({ documentIds }) },
+      () => ({
+        id: nextId('snapshot'),
+        resourceId,
+        retrievalBackend: 'OPENSEARCH',
+        retrievalMode: 'HYBRID',
+        status: 'PENDING',
+        documentCount: 0,
+        chunkCount: 0,
+        failureReason: null,
+        builtAt: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }),
+    ),
+  listKnowledgeIndexSnapshots: (resourceId: string) =>
+    request<KnowledgeIndexSnapshot[]>(`/resources/${resourceId}/knowledge/index-snapshots`, undefined, []),
   saveOrchestration: (assistantId: string, payload: UpdateOrchestrationPayload) =>
     request(
       `/orchestrations/${assistantId}`,
@@ -1425,6 +1522,7 @@ export const api = {
         };
         const updatedWorkflow: WorkflowInstance = {
           ...current,
+          updatedAt: completedAt,
           status: nextStatus,
           summary: nextStatus === 'CANCELLED' ? '人工终止了当前流程。' : '人工处理完成，流程已恢复并结束。',
           finalReply: nextStatus === 'CANCELLED' ? '当前流程已终止。' : '人工处理完成，结果已同步给客户。',

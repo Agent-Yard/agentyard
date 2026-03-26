@@ -10,11 +10,6 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  redis:
-    image: redis:8.2.1
-    ports:
-      - "6379:6379"
-
   minio:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     command: server /data --console-address ":9001"
@@ -26,6 +21,28 @@ services:
       - "9001:9001"
     volumes:
       - minio_data:/data
+
+  opensearch:
+    image: opensearchproject/opensearch:2.19.1
+    environment:
+      discovery.type: single-node
+      bootstrap.memory_lock: "true"
+      # OpenSearch 2.12+ validates the bootstrap admin password even when security is disabled.
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: Lynxus@2026Search!
+      plugins.security.disabled: "true"
+      OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
 
   temporal:
     image: temporalio/auto-setup:1.28.1
@@ -40,15 +57,7 @@ services:
     depends_on:
       - postgres
 
-  temporal-ui:
-    image: temporalio/ui:2.39.0
-    environment:
-      TEMPORAL_ADDRESS: temporal:7233
-    ports:
-      - "8088:8080"
-    depends_on:
-      - temporal
-
 volumes:
   postgres_data:
   minio_data:
+  opensearch_data:

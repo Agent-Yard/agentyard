@@ -1,6 +1,8 @@
 package com.lynxus.worker.workflow;
 
 import com.lynxus.contracts.runtime.AssistantRunWorkflow;
+import com.lynxus.contracts.runtime.KnowledgeImportWorkflow;
+import com.lynxus.contracts.runtime.KnowledgeIndexBuildWorkflow;
 import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowClientOptions;
 import io.temporal.serviceclient.WorkflowServiceStubsOptions;
@@ -26,6 +28,7 @@ public class TemporalWorkerConfiguration {
     WorkerFactory workerFactory(
         WorkflowServiceStubs serviceStubs,
         AssistantRunActivitiesImpl activities,
+        KnowledgeActivitiesImpl knowledgeActivities,
         @Value("${lynxus.temporal.task-queue}") String taskQueue,
         @Value("${lynxus.temporal.namespace}") String namespace,
         @Value("${lynxus.temporal.activity-start-to-close-timeout:PT2M}") Duration activityStartToCloseTimeout,
@@ -41,7 +44,15 @@ public class TemporalWorkerConfiguration {
             AssistantRunWorkflow.class,
             () -> new AssistantRunWorkflowImpl(activityStartToCloseTimeout)
         );
-        worker.registerActivitiesImplementations(activities);
+        worker.registerWorkflowImplementationFactory(
+            KnowledgeImportWorkflow.class,
+            () -> new KnowledgeImportWorkflowImpl(activityStartToCloseTimeout)
+        );
+        worker.registerWorkflowImplementationFactory(
+            KnowledgeIndexBuildWorkflow.class,
+            () -> new KnowledgeIndexBuildWorkflowImpl(activityStartToCloseTimeout)
+        );
+        worker.registerActivitiesImplementations(activities, knowledgeActivities);
         factory.start();
         return factory;
     }

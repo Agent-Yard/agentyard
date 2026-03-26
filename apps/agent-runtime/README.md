@@ -11,20 +11,21 @@
 
 ## 启动
 
+以下命令默认在仓库根目录执行：
+
 ```bash
 cp .env.example .env
-cd apps/agent-runtime
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
-cd ../..
+pip install -r apps/agent-runtime/requirements.txt
+pip install -r apps/knowledge-service/requirements.txt
 pnpm dev:agent-runtime
 ```
 
 `scripts/dev-agent-runtime.sh` 的 Python 选择顺序为：
 
 1. `AGENT_RUNTIME_PYTHON_BIN`
-2. `apps/agent-runtime/.venv/bin/python`
+2. `.venv/bin/python`
 3. 系统 `python3`
 
 ## 接口

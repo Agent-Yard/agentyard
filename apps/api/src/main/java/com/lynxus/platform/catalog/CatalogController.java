@@ -11,7 +11,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api")
@@ -180,6 +182,62 @@ public class CatalogController {
     @DeleteMapping("/resources/{resourceId}")
     public ApiResponse<?> deleteResource(@PathVariable String resourceId) {
         return ApiResponse.ok(catalogService.deleteResource(resourceId));
+    }
+
+    @PostMapping("/resources/{resourceId}/knowledge/upload-sessions")
+    public ApiResponse<?> createKnowledgeUploadSession(@PathVariable String resourceId) {
+        return ApiResponse.ok(catalogService.createKnowledgeUploadSession(resourceId));
+    }
+
+    @PostMapping("/resources/{resourceId}/knowledge/upload-sessions/{uploadSessionId}/complete")
+    public ApiResponse<?> completeKnowledgeUpload(
+        @PathVariable String resourceId,
+        @PathVariable String uploadSessionId,
+        @RequestParam("file") MultipartFile file
+    ) throws Exception {
+        return ApiResponse.ok(catalogService.completeKnowledgeUpload(
+            resourceId,
+            uploadSessionId,
+            file.getOriginalFilename() == null ? "upload.bin" : file.getOriginalFilename(),
+            file.getContentType() == null ? "application/octet-stream" : file.getContentType(),
+            file.getBytes()
+        ));
+    }
+
+    @PostMapping("/resources/{resourceId}/knowledge/url-imports")
+    public ApiResponse<?> importKnowledgeUrl(
+        @PathVariable String resourceId,
+        @RequestBody CreateKnowledgeUrlImportRequest request
+    ) {
+        return ApiResponse.ok(catalogService.importKnowledgeUrl(resourceId, request));
+    }
+
+    @GetMapping("/resources/{resourceId}/knowledge/files")
+    public ApiResponse<?> knowledgeFiles(@PathVariable String resourceId) {
+        return ApiResponse.ok(catalogService.listKnowledgeFiles(resourceId));
+    }
+
+    @GetMapping("/resources/{resourceId}/knowledge/import-jobs")
+    public ApiResponse<?> knowledgeImportJobs(@PathVariable String resourceId) {
+        return ApiResponse.ok(catalogService.listKnowledgeImportJobs(resourceId));
+    }
+
+    @GetMapping("/resources/{resourceId}/knowledge/documents")
+    public ApiResponse<?> knowledgeDocuments(@PathVariable String resourceId) {
+        return ApiResponse.ok(catalogService.listKnowledgeDocuments(resourceId));
+    }
+
+    @PostMapping("/resources/{resourceId}/knowledge/index-snapshots")
+    public ApiResponse<?> createKnowledgeIndexSnapshot(
+        @PathVariable String resourceId,
+        @RequestBody CreateKnowledgeIndexSnapshotRequest request
+    ) {
+        return ApiResponse.ok(catalogService.createKnowledgeIndexSnapshot(resourceId, request));
+    }
+
+    @GetMapping("/resources/{resourceId}/knowledge/index-snapshots")
+    public ApiResponse<?> knowledgeIndexSnapshots(@PathVariable String resourceId) {
+        return ApiResponse.ok(catalogService.listKnowledgeIndexSnapshots(resourceId));
     }
 
 }

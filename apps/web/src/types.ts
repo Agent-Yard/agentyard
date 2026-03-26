@@ -24,16 +24,74 @@ export interface Version {
   updatedAt: string;
 }
 
-export interface KnowledgeBaseDocument {
-  id: string;
-  title: string;
-  content: string;
-  sourceUri: string;
+export interface KnowledgeBaseConfig {
+  indexSnapshotId: string | null;
+  defaultTopK: number;
+  retrievalMode: 'LEXICAL' | 'VECTOR' | 'HYBRID';
+  minScore: number;
 }
 
-export interface KnowledgeBaseConfig {
-  defaultTopK: number;
-  documents: KnowledgeBaseDocument[];
+export interface KnowledgeUploadSession {
+  id: string;
+  resourceId: string;
+  status: string;
+  acceptedTypes: string[];
+}
+
+export interface KnowledgeFile {
+  id: string;
+  resourceId: string;
+  uploadSessionId: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  status: string;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KnowledgeImportJob {
+  id: string;
+  resourceId: string;
+  fileId: string;
+  status: string;
+  failureReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}
+
+export interface KnowledgeDocument {
+  id: string;
+  resourceId: string;
+  fileId: string;
+  title: string;
+  sourceUri: string;
+  documentType: string;
+  status: string;
+  chunkCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KnowledgeIndexSnapshot {
+  id: string;
+  resourceId: string;
+  retrievalBackend: string;
+  retrievalMode: string;
+  status: string;
+  documentCount: number;
+  chunkCount: number;
+  failureReason: string | null;
+  builtAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KnowledgeUploadCompletion {
+  file: KnowledgeFile;
+  importJob: KnowledgeImportJob;
 }
 
 export interface ToolOperation {
@@ -99,7 +157,6 @@ export interface ResourceVersion {
   version: string;
   status: VersionStatus;
   summary: string;
-  configDigest: string;
   createdAt: string;
   publishedAt: string | null;
   configuration: ResourceVersionConfiguration;
@@ -381,6 +438,8 @@ export interface WorkflowInstance {
   assistantId: string;
   assistantName: string;
   assistantReleaseVersion: string;
+  createdAt: string;
+  updatedAt: string;
   status: WorkflowStatus;
   summary: string;
   finalReply: string | null;
@@ -491,7 +550,6 @@ export interface CreateResourcePayload {
 
 export interface CreateResourceVersionPayload {
   summary: string;
-  configDigest: string;
   status: VersionStatus;
   configuration: ResourceVersionConfiguration;
 }

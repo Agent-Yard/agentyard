@@ -8,6 +8,7 @@
     "dev:all": "./scripts/dev-all.sh",
     "dev:api": "./scripts/dev-api.sh",
     "dev:worker": "./scripts/dev-worker.sh",
+    "dev:knowledge-service": "./scripts/dev-knowledge-service.sh",
     "dev:agent-runtime": "./scripts/dev-agent-runtime.sh",
     "dev:web": "./scripts/dev-web.sh",
     "build:web": "pnpm --filter @lynxus/web build",

@@ -7,7 +7,7 @@
 - 工作流托管：Temporal SDK 1.32.1
 - 执行运行时：Python + FastAPI + LangGraph
 - 目录持久化：PostgreSQL JSONB
-- 本地依赖：Docker Compose 拉起 PostgreSQL、Redis、MinIO、Temporal、Temporal UI
+- 本地依赖：默认 Docker Compose 拉起 PostgreSQL、MinIO、OpenSearch、Temporal；dashboard 相关服务通过额外 compose 文件按需启动，其中知识服务默认以 OpenSearch 作为正式索引与召回后端
 - 契约层：`packages/contracts` + `packages/contracts-jvm`
 - 启动脚本：根目录 `scripts/*.sh` 统一装载环境变量并拉起各应用
 

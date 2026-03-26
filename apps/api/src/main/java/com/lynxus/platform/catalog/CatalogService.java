@@ -7,6 +7,7 @@ import com.lynxus.contracts.runtime.WorkflowContracts.ResourceType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
 import com.lynxus.contracts.runtime.WorkflowContracts.ToolProviderType;
 import com.lynxus.contracts.runtime.WorkflowContracts.VersionStatus;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -24,27 +25,40 @@ import org.springframework.stereotype.Service;
 @Service
 public class CatalogService {
     private final CatalogRepository repository;
+    private final KnowledgeServiceClient knowledgeServiceClient;
+    private final KnowledgeWorkflowGateway knowledgeWorkflowGateway;
     private boolean initialized;
     private final List<BusinessDomainDto> domains = new ArrayList<>();
     private final List<ScenarioDto> scenarios = new ArrayList<>();
     private final List<AssistantDto> assistants = new ArrayList<>();
     private final List<AgentDto> agents = new ArrayList<>();
     private final List<ResourceDto> resources = new ArrayList<>();
-    private final Map<String, List<ResourceVersionDto>> resourceVersions = new LinkedHashMap<>();
+    private final Map<String, List<StoredResourceVersion>> resourceVersions = new LinkedHashMap<>();
     private final Map<String, List<AssistantReleaseDto>> assistantReleases = new LinkedHashMap<>();
     private final Map<String, AssistantOrchestrationDto> orchestrations = new LinkedHashMap<>();
 
     public CatalogService() {
-        this(new InMemoryCatalogRepository(), true);
+        this(new InMemoryCatalogRepository(), true, new KnowledgeServiceClient("http://localhost:8091"), new NoOpKnowledgeWorkflowGateway());
     }
 
     @Autowired
-    public CatalogService(CatalogRepository repository) {
-        this(repository, false);
+    public CatalogService(CatalogRepository repository, KnowledgeServiceClient knowledgeServiceClient, KnowledgeWorkflowGateway knowledgeWorkflowGateway) {
+        this(repository, false, knowledgeServiceClient, knowledgeWorkflowGateway);
     }
 
     CatalogService(CatalogRepository repository, boolean seedIfEmpty) {
+        this(repository, seedIfEmpty, new KnowledgeServiceClient("http://localhost:8091"), new NoOpKnowledgeWorkflowGateway());
+    }
+
+    CatalogService(
+        CatalogRepository repository,
+        boolean seedIfEmpty,
+        KnowledgeServiceClient knowledgeServiceClient,
+        KnowledgeWorkflowGateway knowledgeWorkflowGateway
+    ) {
         this.repository = repository;
+        this.knowledgeServiceClient = knowledgeServiceClient;
+        this.knowledgeWorkflowGateway = knowledgeWorkflowGateway;
         if (seedIfEmpty) {
             ensureLoaded();
             initializeDemoDataIfEmpty();
@@ -336,13 +350,8 @@ public class CatalogService {
         createResourceVersion(
             resourceId,
             request.initialVersion() == null
-                ? new CreateResourceVersionRequest("初始版本", "digest-" + resourceId, VersionStatus.DRAFT, defaultConfiguration(resource.type()))
-                : new CreateResourceVersionRequest(
-                    request.initialVersion().summary(),
-                    request.initialVersion().configDigest(),
-                    request.initialVersion().status(),
-                    normalizeConfiguration(resource.type(), request.initialVersion().configuration())
-                )
+                ? new CreateResourceVersionRequest("初始版本", VersionStatus.DRAFT, defaultConfiguration(resource.type()))
+                : normalizeInitialVersionRequest(resource.type(), request.initialVersion())
         );
         return toResourceView(resource);
     }
@@ -358,12 +367,13 @@ public class CatalogService {
         ResourceDto resource = findResource(resourceId);
         VersionStatus status = request.status() == null ? VersionStatus.DRAFT : request.status();
         ResourceVersionConfigurationDto normalizedConfiguration = normalizeConfiguration(resource.type(), request.configuration());
+        String configDigest = generateConfigDigest(normalizedConfiguration);
         if (status == VersionStatus.PUBLISHED) {
             validateVersionReadyForActivation(resource.type(), normalizedConfiguration);
         }
-        List<ResourceVersionDto> existingVersions = versionsFor(resourceId).stream()
+        List<StoredResourceVersion> existingVersions = storedVersionsFor(resourceId).stream()
             .map(version -> status == VersionStatus.PUBLISHED && version.status() == VersionStatus.PUBLISHED
-                ? new ResourceVersionDto(
+                ? new StoredResourceVersion(
                     version.id(),
                     version.resourceId(),
                     version.version(),
@@ -376,13 +386,13 @@ public class CatalogService {
                 )
                 : version)
             .collect(ArrayList::new, ArrayList::add, ArrayList::addAll);
-        ResourceVersionDto created = new ResourceVersionDto(
+        StoredResourceVersion created = new StoredResourceVersion(
             nextId("resource-version"),
             resource.id(),
             nextResourceVersion(existingVersions),
             status,
             request.summary(),
-            request.configDigest() == null || request.configDigest().isBlank() ? "digest-" + nextId("cfg") : request.configDigest(),
+            configDigest,
             Instant.now(),
             status == VersionStatus.PUBLISHED ? Instant.now() : null,
             normalizedConfiguration
@@ -390,7 +400,7 @@ public class CatalogService {
         existingVersions.add(created);
         resourceVersions.put(resourceId, existingVersions);
         persistState();
-        return created;
+        return toResourceVersionDto(created);
     }
 
     public ResourceVersionDto publishResourceVersion(String resourceId, String versionId) {
@@ -398,8 +408,8 @@ public class CatalogService {
         ResourceDto resource = findResource(resourceId);
         ResourceVersionDto targetVersion = findResourceVersion(resourceId, versionId);
         validateVersionReadyForActivation(resource.type(), targetVersion.configuration());
-        List<ResourceVersionDto> updatedVersions = versionsFor(resourceId).stream()
-            .map(version -> new ResourceVersionDto(
+        List<StoredResourceVersion> updatedVersions = storedVersionsFor(resourceId).stream()
+            .map(version -> new StoredResourceVersion(
                 version.id(),
                 version.resourceId(),
                 version.version(),
@@ -413,7 +423,11 @@ public class CatalogService {
             .toList();
         resourceVersions.put(resourceId, updatedVersions);
         persistState();
-        return updatedVersions.stream().filter(item -> item.id().equals(versionId)).findFirst().orElseThrow();
+        return updatedVersions.stream()
+            .filter(item -> item.id().equals(versionId))
+            .map(this::toResourceVersionDto)
+            .findFirst()
+            .orElseThrow();
     }
 
     public ResourceVersionDto deleteResourceVersion(String resourceId, String versionId) {
@@ -432,7 +446,7 @@ public class CatalogService {
             throw new IllegalStateException(versionPinBlocker);
         }
 
-        List<ResourceVersionDto> updatedVersions = versionsFor(resourceId).stream()
+        List<StoredResourceVersion> updatedVersions = storedVersionsFor(resourceId).stream()
             .filter(item -> !item.id().equals(versionId))
             .toList();
         resourceVersions.put(resourceId, updatedVersions);
@@ -460,6 +474,72 @@ public class CatalogService {
         resourceVersions.remove(resourceId);
         persistState();
         return deleted;
+    }
+
+    public KnowledgeUploadSessionDto createKnowledgeUploadSession(String resourceId) {
+        ensureLoaded();
+        requireKnowledgeResource(resourceId);
+        return knowledgeServiceClient.createUploadSession(resourceId);
+    }
+
+    public KnowledgeUploadCompletionDto completeKnowledgeUpload(
+        String resourceId,
+        String uploadSessionId,
+        String fileName,
+        String contentType,
+        byte[] payload
+    ) {
+        ensureLoaded();
+        requireKnowledgeResource(resourceId);
+        KnowledgeUploadCompletionDto completed = knowledgeServiceClient.completeUpload(resourceId, uploadSessionId, fileName, contentType, payload);
+        knowledgeWorkflowGateway.startImport(resourceId, completed.importJob().id());
+        return completed;
+    }
+
+    public KnowledgeUploadCompletionDto importKnowledgeUrl(String resourceId, CreateKnowledgeUrlImportRequest request) {
+        ensureLoaded();
+        requireKnowledgeResource(resourceId);
+        if (request == null || request.url() == null || request.url().isBlank()) {
+            throw new IllegalArgumentException("knowledge url import requires a non-empty url");
+        }
+        KnowledgeUploadCompletionDto completed = knowledgeServiceClient.importUrl(resourceId, request.url().trim(), normalizeOptionalText(request.title()));
+        knowledgeWorkflowGateway.startImport(resourceId, completed.importJob().id());
+        return completed;
+    }
+
+    public List<KnowledgeFileDto> listKnowledgeFiles(String resourceId) {
+        ensureLoaded();
+        requireKnowledgeResource(resourceId);
+        return knowledgeServiceClient.listFiles(resourceId);
+    }
+
+    public List<KnowledgeImportJobDto> listKnowledgeImportJobs(String resourceId) {
+        ensureLoaded();
+        requireKnowledgeResource(resourceId);
+        return knowledgeServiceClient.listImportJobs(resourceId);
+    }
+
+    public List<KnowledgeDocumentDto> listKnowledgeDocuments(String resourceId) {
+        ensureLoaded();
+        requireKnowledgeResource(resourceId);
+        return knowledgeServiceClient.listDocuments(resourceId);
+    }
+
+    public KnowledgeIndexSnapshotDto createKnowledgeIndexSnapshot(String resourceId, CreateKnowledgeIndexSnapshotRequest request) {
+        ensureLoaded();
+        requireKnowledgeResource(resourceId);
+        KnowledgeIndexSnapshotDto snapshot = knowledgeServiceClient.createIndexSnapshot(
+            resourceId,
+            request == null || request.documentIds() == null ? List.of() : List.copyOf(request.documentIds())
+        );
+        knowledgeWorkflowGateway.startIndexBuild(resourceId, snapshot.id());
+        return snapshot;
+    }
+
+    public List<KnowledgeIndexSnapshotDto> listKnowledgeIndexSnapshots(String resourceId) {
+        ensureLoaded();
+        requireKnowledgeResource(resourceId);
+        return knowledgeServiceClient.listIndexSnapshots(resourceId);
     }
 
     public List<AssistantOrchestrationDto> listOrchestrations() {
@@ -510,8 +590,8 @@ public class CatalogService {
             new ResourceBlueprintDto(
                 ResourceType.KNOWLEDGE_BASE,
                 "知识库",
-                "承载可发布的知识文档集合和默认召回数，供助手在问答与决策阶段检索知识。",
-                List.of("默认召回数", "导入文档"),
+                "承载可发布的知识索引快照与检索参数，供助手在问答与决策阶段检索知识。",
+                List.of("索引快照", "默认召回数", "检索模式", "最低得分阈值"),
                 defaultConfiguration(ResourceType.KNOWLEDGE_BASE)
             ),
             new ResourceBlueprintDto(
@@ -737,17 +817,7 @@ public class CatalogService {
             "digest-kb-v1",
             new ResourceVersionConfigurationDto(
                 ResourceType.KNOWLEDGE_BASE,
-                new KnowledgeBaseConfigDto(
-                    5,
-                    List.of(
-                        new KnowledgeBaseDocumentDto("kb-doc-password", "密码重置流程", "密码重置可以通过登录页的忘记密码完成，若邮箱不可用则需要人工验证。", "manual://customer-support/password-reset"),
-                        new KnowledgeBaseDocumentDto("kb-doc-refund-policy", "售后退款判定", "售后退款通常需要结合订单状态、支付时间和投诉原因综合判定。", "manual://customer-support/refund-policy"),
-                        new KnowledgeBaseDocumentDto("kb-doc-escalation", "争议升级规则", "涉及争议、投诉或升级字样的请求应优先进入人工协同分支。", "manual://customer-support/escalation-rule"),
-                        new KnowledgeBaseDocumentDto("kb-doc-ticketing", "人工协同工单规范", "人工协同时应创建工单，并保留问题摘要、处理意见与回访结果。", "manual://customer-support/ticketing"),
-                        new KnowledgeBaseDocumentDto("kb-doc-refund-direct", "七天无理由退款", "若订单满足七天无理由且未发货，可直接给出退款结论。", "manual://customer-support/refund-direct"),
-                        new KnowledgeBaseDocumentDto("kb-doc-refund-review", "发货后退款处理", "若订单已发货或存在争议，需要人工进一步确认。", "manual://customer-support/refund-review")
-                    )
-                ),
+                new KnowledgeBaseConfigDto("snapshot-kb-support-v1", 5, "HYBRID", 0.1),
                 null,
                 null,
                 null
@@ -1601,7 +1671,7 @@ public class CatalogService {
             resourceVersions.put(
                 resourceId,
                 versions.stream()
-                    .map(version -> new ResourceVersionDto(
+                    .map(version -> new StoredResourceVersion(
                         version.id(),
                         version.resourceId(),
                         version.version(),
@@ -1734,9 +1804,24 @@ public class CatalogService {
             .orElseThrow(() -> new NoSuchElementException("resource version not found: " + resourceId + "/" + versionId));
     }
 
+    private ResourceDto requireKnowledgeResource(String resourceId) {
+        ResourceDto resource = findResource(resourceId);
+        if (resource.type() != ResourceType.KNOWLEDGE_BASE) {
+            throw new IllegalArgumentException("resource is not a knowledge base: " + resourceId);
+        }
+        return resource;
+    }
+
     private List<ResourceVersionDto> versionsFor(String resourceId) {
         return resourceVersions.getOrDefault(resourceId, List.of()).stream()
-            .sorted(Comparator.comparing(ResourceVersionDto::createdAt))
+            .sorted(Comparator.comparing(StoredResourceVersion::createdAt))
+            .map(this::toResourceVersionDto)
+            .toList();
+    }
+
+    private List<StoredResourceVersion> storedVersionsFor(String resourceId) {
+        return resourceVersions.getOrDefault(resourceId, List.of()).stream()
+            .sorted(Comparator.comparing(StoredResourceVersion::createdAt))
             .toList();
     }
 
@@ -1767,7 +1852,7 @@ public class CatalogService {
         String configDigest,
         ResourceVersionConfigurationDto configuration
     ) {
-        ResourceVersionDto created = new ResourceVersionDto(
+        StoredResourceVersion created = new StoredResourceVersion(
             nextId("resource-version"),
             resourceId,
             version,
@@ -1778,10 +1863,10 @@ public class CatalogService {
             status == VersionStatus.PUBLISHED ? Instant.now() : null,
             configuration
         );
-        List<ResourceVersionDto> versions = new ArrayList<>(resourceVersions.getOrDefault(resourceId, List.of()));
+        List<StoredResourceVersion> versions = new ArrayList<>(resourceVersions.getOrDefault(resourceId, List.of()));
         versions.add(created);
         resourceVersions.put(resourceId, versions);
-        return created;
+        return toResourceVersionDto(created);
     }
 
     private ResourceVersionConfigurationDto normalizeConfiguration(ResourceType type, ResourceVersionConfigurationDto configuration) {
@@ -1800,7 +1885,7 @@ public class CatalogService {
         return switch (type) {
             case KNOWLEDGE_BASE -> new ResourceVersionConfigurationDto(
                 type,
-                new KnowledgeBaseConfigDto(5, List.of()),
+                new KnowledgeBaseConfigDto(null, 5, "HYBRID", 0.1),
                 null,
                 null,
                 null
@@ -1844,61 +1929,42 @@ public class CatalogService {
             return;
         }
         KnowledgeBaseConfigDto knowledgeBase = configuration == null ? null : configuration.knowledgeBase();
-        if (knowledgeBase == null || knowledgeBase.documents() == null || knowledgeBase.documents().isEmpty()) {
-            throw new IllegalStateException("knowledge base published version must contain at least one document");
+        if (knowledgeBase == null || knowledgeBase.indexSnapshotId() == null || knowledgeBase.indexSnapshotId().isBlank()) {
+            throw new IllegalStateException("knowledge base published version must bind a ready index snapshot");
+        }
+        KnowledgeIndexSnapshotDto snapshot = knowledgeServiceClient.getIndexSnapshot(knowledgeBase.indexSnapshotId());
+        if (snapshot == null || !"READY".equals(snapshot.status())) {
+            throw new IllegalStateException("knowledge base published version must bind a ready index snapshot");
         }
     }
 
-    private KnowledgeBaseConfigDto normalizeKnowledgeBaseConfig(KnowledgeBaseConfigDto configuration) {
-        List<KnowledgeBaseDocumentDto> documents = normalizeKnowledgeBaseDocuments(configuration == null ? null : configuration.documents());
-        int defaultTopK = configuration == null || configuration.defaultTopK() <= 0 ? 5 : configuration.defaultTopK();
-
-        return new KnowledgeBaseConfigDto(
-            defaultTopK,
-            List.copyOf(documents)
+    private CreateResourceVersionRequest normalizeInitialVersionRequest(ResourceType type, CreateResourceVersionRequest request) {
+        ResourceVersionConfigurationDto configuration = normalizeConfiguration(type, request.configuration());
+        VersionStatus status = request.status() == null ? VersionStatus.DRAFT : request.status();
+        if (type == ResourceType.KNOWLEDGE_BASE) {
+            status = VersionStatus.DRAFT;
+        }
+        return new CreateResourceVersionRequest(
+            normalizeOptionalText(request.summary()).isBlank() ? "初始版本" : normalizeOptionalText(request.summary()),
+            status,
+            configuration
         );
     }
 
-    private List<KnowledgeBaseDocumentDto> normalizeKnowledgeBaseDocuments(List<KnowledgeBaseDocumentDto> documents) {
-        if (documents == null || documents.isEmpty()) {
-            return List.of();
-        }
-        List<KnowledgeBaseDocumentDto> normalized = new ArrayList<>();
-        int index = 1;
-        for (KnowledgeBaseDocumentDto document : documents) {
-            if (document == null) {
-                continue;
-            }
-            String content = normalizeOptionalText(document.content());
-            if (content.isBlank()) {
-                continue;
-            }
-            String title = normalizeOptionalText(document.title());
-            if (title.isBlank()) {
-                title = defaultKnowledgeDocumentTitle(content, index);
-            }
-            String documentId = normalizeOptionalText(document.id());
-            if (documentId.isBlank()) {
-                documentId = nextId("kb-doc");
-            }
-            normalized.add(new KnowledgeBaseDocumentDto(
-                documentId,
-                title,
-                content,
-                normalizeOptionalText(document.sourceUri())
-            ));
-            index += 1;
-        }
-        return List.copyOf(normalized);
+    private String generateConfigDigest(ResourceVersionConfigurationDto configuration) {
+        String fingerprint = configuration == null ? "empty" : configuration.toString();
+        return "cfg-" + UUID.nameUUIDFromBytes(fingerprint.getBytes(StandardCharsets.UTF_8)).toString().replace("-", "").substring(0, 12);
     }
 
-    private String defaultKnowledgeDocumentTitle(String content, int index) {
-        String singleLine = content.replace('\n', ' ').trim();
-        if (singleLine.isBlank()) {
-            return "文档 " + index;
-        }
-        int maxLength = Math.min(singleLine.length(), 24);
-        return singleLine.substring(0, maxLength);
+    private KnowledgeBaseConfigDto normalizeKnowledgeBaseConfig(KnowledgeBaseConfigDto configuration) {
+        return new KnowledgeBaseConfigDto(
+            normalizeOptionalText(configuration == null ? null : configuration.indexSnapshotId()),
+            configuration == null || configuration.defaultTopK() <= 0 ? 5 : configuration.defaultTopK(),
+            normalizeOptionalText(configuration == null ? null : configuration.retrievalMode()).isBlank()
+                ? "HYBRID"
+                : normalizeOptionalText(configuration.retrievalMode()).toUpperCase(),
+            configuration == null || configuration.minScore() < 0 ? 0.1 : configuration.minScore()
+        );
     }
 
     private SkillConfigDto normalizeSkillConfig(SkillConfigDto configuration) {
@@ -2059,13 +2125,26 @@ public class CatalogService {
         }
     }
 
-    private String nextResourceVersion(List<ResourceVersionDto> versions) {
+    private String nextResourceVersion(List<StoredResourceVersion> versions) {
         if (versions.isEmpty()) {
             return "0.1.0";
         }
         String[] segments = versions.getLast().version().split("\\.");
         int patch = Integer.parseInt(segments[2]) + 1;
         return segments[0] + "." + segments[1] + "." + patch;
+    }
+
+    private ResourceVersionDto toResourceVersionDto(StoredResourceVersion version) {
+        return new ResourceVersionDto(
+            version.id(),
+            version.resourceId(),
+            version.version(),
+            version.status(),
+            version.summary(),
+            version.createdAt(),
+            version.publishedAt(),
+            version.configuration()
+        );
     }
 
     private static String nextId(String prefix) {
@@ -2148,5 +2227,15 @@ public class CatalogService {
         K replacementKey = keyExtractor.apply(replacement);
         items.removeIf(item -> keyExtractor.apply(item).equals(replacementKey));
         items.add(replacement);
+    }
+
+    private static final class NoOpKnowledgeWorkflowGateway implements KnowledgeWorkflowGateway {
+        @Override
+        public void startImport(String resourceId, String importJobId) {
+        }
+
+        @Override
+        public void startIndexBuild(String resourceId, String indexSnapshotId) {
+        }
     }
 }

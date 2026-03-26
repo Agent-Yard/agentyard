@@ -36,18 +36,15 @@ const kbVersion: ResourceVersion = {
   version: '1.0.0',
   status: 'PUBLISHED',
   summary: '客服知识库演示版',
-  configDigest: 'digest-kb-v1',
   createdAt: now(),
   publishedAt: now(),
   configuration: {
     type: 'KNOWLEDGE_BASE',
     knowledgeBase: {
+      indexSnapshotId: 'snapshot-kb-support-v1',
       defaultTopK: 5,
-      documents: [
-        { id: 'kb-doc-password', title: '密码重置流程', content: '密码重置可以通过登录页的忘记密码完成，若邮箱不可用则需要人工验证。', sourceUri: 'manual://customer-support/password-reset' },
-        { id: 'kb-doc-refund-policy', title: '售后退款判定', content: '售后退款通常需要结合订单状态、支付时间和投诉原因综合判定。', sourceUri: 'manual://customer-support/refund-policy' },
-        { id: 'kb-doc-escalation', title: '争议升级规则', content: '涉及争议、投诉或升级字样的请求应优先进入人工协同分支。', sourceUri: 'manual://customer-support/escalation-rule' },
-      ],
+      retrievalMode: 'HYBRID',
+      minScore: 0.1,
     },
   },
 };
@@ -58,7 +55,6 @@ const llmVersion: ResourceVersion = {
   version: '1.0.0',
   status: 'PUBLISHED',
   summary: '兼容网关模型基线版',
-  configDigest: 'digest-llm-compatible-v1',
   createdAt: now(),
   publishedAt: now(),
   configuration: {
@@ -84,7 +80,6 @@ function skillVersion(resourceId: string, versionId: string, summary: string, sk
     version: '1.0.0',
     status: 'PUBLISHED',
     summary,
-    configDigest: `digest-${resourceId}-v1`,
     createdAt: now(),
     publishedAt: now(),
     configuration: {
@@ -140,7 +135,6 @@ const refundToolVersion: ResourceVersion = {
   version: '1.0.0',
   status: 'PUBLISHED',
   summary: '售后策略 Tool',
-  configDigest: 'digest-tool-refund-v1',
   createdAt: now(),
   publishedAt: now(),
   configuration: {
@@ -173,7 +167,6 @@ const ticketToolVersion: ResourceVersion = {
   version: '1.0.0',
   status: 'PUBLISHED',
   summary: '工单协同 Tool',
-  configDigest: 'digest-tool-ticket-v1',
   createdAt: now(),
   publishedAt: now(),
   configuration: {
@@ -527,8 +520,8 @@ const resourceBlueprints: ResourceBlueprint[] = [
   {
     type: 'KNOWLEDGE_BASE',
     label: '知识库',
-    description: '管理知识文档内容和默认召回策略。',
-    maintainedFields: ['默认召回数', '导入文档'],
+    description: '管理知识内容、索引快照绑定与默认召回策略。',
+    maintainedFields: ['内容工作台', '快照绑定', '默认召回数', '检索模式', '最低得分阈值'],
     defaultConfiguration: kbVersion.configuration,
   },
   {
@@ -605,6 +598,8 @@ export const mockWorkflows: WorkflowInstance[] = [
     assistantId: assistant.id,
     assistantName: assistant.name,
     assistantReleaseVersion: assistant.currentRelease!.releaseVersion,
+    createdAt: now(),
+    updatedAt: now(),
     status: 'WAITING_HUMAN',
     summary: '流程已运行到人工节点，等待人工确认。',
     finalReply: null,

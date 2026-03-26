@@ -3,12 +3,14 @@ package com.lynxus.platform.catalog;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lynxus.contracts.runtime.WorkflowContracts.ResourceType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
 import com.lynxus.contracts.runtime.WorkflowContracts.VersionStatus;
+import java.time.Instant;
 import org.junit.jupiter.api.Test;
 
 class CatalogServiceTest {
@@ -176,7 +178,7 @@ class CatalogServiceTest {
 
         CatalogDtos.ResourceVersionDto draftVersion = catalogService.createResourceVersion(
             resource.id(),
-            new CatalogDtos.CreateResourceVersionRequest("补充案例", "digest-quality-v2", com.lynxus.contracts.runtime.WorkflowContracts.VersionStatus.DRAFT, null)
+            new CatalogDtos.CreateResourceVersionRequest("补充案例", com.lynxus.contracts.runtime.WorkflowContracts.VersionStatus.DRAFT, null)
         );
         CatalogDtos.ResourceVersionDto deletedVersion = catalogService.deleteResourceVersion(resource.id(), draftVersion.id());
         assertEquals(draftVersion.id(), deletedVersion.id());
@@ -294,8 +296,38 @@ class CatalogServiceTest {
     }
 
     @Test
-    void shouldRequireManualKnowledgeDocumentsBeforePublishing() {
-        CatalogService catalogService = new CatalogService(new InMemoryCatalogRepository(), false);
+    void shouldRequireReadyIndexSnapshotBeforePublishing() {
+        CatalogService catalogService = new CatalogService(
+            new InMemoryCatalogRepository(),
+            false,
+            new KnowledgeServiceClient("http://localhost:8091") {
+                @Override
+                public CatalogDtos.KnowledgeIndexSnapshotDto getIndexSnapshot(String snapshotId) {
+                    return new CatalogDtos.KnowledgeIndexSnapshotDto(
+                        snapshotId,
+                        "resource-kb-manual",
+                        "OPENSEARCH",
+                        "HYBRID",
+                        "READY",
+                        1,
+                        2,
+                        null,
+                        Instant.now(),
+                        Instant.now(),
+                        Instant.now()
+                    );
+                }
+            },
+            new KnowledgeWorkflowGateway() {
+                @Override
+                public void startImport(String resourceId, String importJobId) {
+                }
+
+                @Override
+                public void startIndexBuild(String resourceId, String indexSnapshotId) {
+                }
+            }
+        );
         CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("知识运营域", "承载知识沉淀"));
 
         CatalogDtos.ResourceDto resource = catalogService.createResource(
@@ -311,13 +343,14 @@ class CatalogServiceTest {
                 java.util.List.of("FAQ"),
                 new CatalogDtos.CreateResourceVersionRequest(
                     "初始草稿",
-                    "digest-kb-manual-v1",
                     VersionStatus.DRAFT,
                     new CatalogDtos.ResourceVersionConfigurationDto(
                         ResourceType.KNOWLEDGE_BASE,
                         new CatalogDtos.KnowledgeBaseConfigDto(
+                            null,
                             5,
-                            java.util.List.of()
+                            "HYBRID",
+                            0.1
                         ),
                         null,
                         null,
@@ -334,15 +367,14 @@ class CatalogServiceTest {
             resource.id(),
             new CatalogDtos.CreateResourceVersionRequest(
                 "补充退款说明",
-                "digest-kb-manual-v2",
                 VersionStatus.PUBLISHED,
                 new CatalogDtos.ResourceVersionConfigurationDto(
                     ResourceType.KNOWLEDGE_BASE,
                     new CatalogDtos.KnowledgeBaseConfigDto(
+                        "snapshot-kb-manual-v2",
                         5,
-                        java.util.List.of(
-                            new CatalogDtos.KnowledgeBaseDocumentDto("", "退款说明", "满足七天无理由且未发货时可直接退款。", "manual://refund-policy/doc-1")
-                        )
+                        "HYBRID",
+                        0.1
                     ),
                     null,
                     null,
@@ -352,8 +384,79 @@ class CatalogServiceTest {
         );
 
         assertEquals(VersionStatus.PUBLISHED, published.status());
-        assertEquals(1, published.configuration().knowledgeBase().documents().size());
+        assertEquals("snapshot-kb-manual-v2", published.configuration().knowledgeBase().indexSnapshotId());
         assertNotNull(published.publishedAt());
-        assertEquals("退款说明", published.configuration().knowledgeBase().documents().getFirst().title());
+        assertEquals("HYBRID", published.configuration().knowledgeBase().retrievalMode());
+    }
+
+    @Test
+    void shouldForceKnowledgeBaseInitialVersionToDraft() {
+        CatalogService catalogService = new CatalogService(
+            new InMemoryCatalogRepository(),
+            false,
+            new KnowledgeServiceClient("http://localhost:8091") {
+                @Override
+                public CatalogDtos.KnowledgeIndexSnapshotDto getIndexSnapshot(String snapshotId) {
+                    return new CatalogDtos.KnowledgeIndexSnapshotDto(
+                        snapshotId,
+                        "resource-kb-force-draft",
+                        "OPENSEARCH",
+                        "HYBRID",
+                        "READY",
+                        2,
+                        8,
+                        null,
+                        Instant.now(),
+                        Instant.now(),
+                        Instant.now()
+                    );
+                }
+            },
+            new KnowledgeWorkflowGateway() {
+                @Override
+                public void startImport(String resourceId, String importJobId) {
+                }
+
+                @Override
+                public void startIndexBuild(String resourceId, String indexSnapshotId) {
+                }
+            }
+        );
+        CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("知识治理域", "承载知识生命周期"));
+
+        CatalogDtos.ResourceDto resource = catalogService.createResource(
+            new CatalogDtos.CreateResourceRequest(
+                domain.id(),
+                "运维知识库",
+                ResourceType.KNOWLEDGE_BASE,
+                ShareScope.DOMAIN_SHARED,
+                "DOMAIN",
+                domain.id(),
+                "知识库初始化应始终先草稿",
+                "知识治理",
+                java.util.List.of("运维"),
+                new CatalogDtos.CreateResourceVersionRequest(
+                    "尝试直接发布",
+                    VersionStatus.PUBLISHED,
+                    new CatalogDtos.ResourceVersionConfigurationDto(
+                        ResourceType.KNOWLEDGE_BASE,
+                        new CatalogDtos.KnowledgeBaseConfigDto(
+                            "snapshot-kb-force-draft",
+                            5,
+                            "HYBRID",
+                            0.1
+                        ),
+                        null,
+                        null,
+                        null
+                    )
+                )
+            )
+        );
+
+        CatalogDtos.ResourceVersionDto initialVersion = catalogService.listResourceVersions(resource.id()).getFirst();
+        assertEquals(VersionStatus.DRAFT, initialVersion.status());
+        assertEquals(initialVersion.id(), resource.latestVersion().id());
+        assertNull(resource.effectiveVersion());
     }
 }

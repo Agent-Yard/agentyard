@@ -1,41 +1,30 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import type { ResourceType, ResourceVersionConfiguration } from '../types';
+import { computed, watch } from 'vue';
+import type { KnowledgeIndexSnapshot, ResourceType, ResourceVersionConfiguration } from '../types';
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   resourceType: ResourceType;
   configuration: ResourceVersionConfiguration;
-}>();
+  knowledgeSnapshots?: KnowledgeIndexSnapshot[];
+  snapshotBindingMode?: 'hidden' | 'select';
+}>(), {
+  knowledgeSnapshots: () => [],
+  snapshotBindingMode: 'select',
+});
 
 const knowledgeBase = computed(() => props.configuration.knowledgeBase!);
-if (props.resourceType === 'KNOWLEDGE_BASE' && props.configuration.knowledgeBase && !props.configuration.knowledgeBase.documents) {
-  props.configuration.knowledgeBase.documents = [];
-}
-const knowledgeDocuments = computed(() => knowledgeBase.value.documents);
-const knowledgeDocumentCount = computed(() => knowledgeDocuments.value.filter((document) => document.content.trim()).length);
 const tool = computed(() => props.configuration.tool!);
-if (props.resourceType === 'TOOL' && props.configuration.tool && !props.configuration.tool.operations) {
-  props.configuration.tool.operations = [];
-}
-if (props.resourceType === 'TOOL' && props.configuration.tool && !props.configuration.tool.http) {
-  props.configuration.tool.http = {
-    endpoint: 'https://tool-gateway.internal/new-tool',
-    method: 'POST',
-  };
-}
-if (props.resourceType === 'TOOL' && props.configuration.tool && !props.configuration.tool.mcp) {
-  props.configuration.tool.mcp = {
-    serverName: 'new-mcp-server',
-    transport: 'STREAMABLE_HTTP',
-    connectionUri: 'https://mcp-gateway.internal/new-server',
-    namespace: 'default.namespace',
-    heartbeatSeconds: 30,
-    operationMappings: {},
-  };
-}
 const toolOperations = computed(() => tool.value.operations);
 const llmModel = computed(() => props.configuration.llmModel!);
 const skill = computed(() => props.configuration.skill!);
+const readyKnowledgeSnapshots = computed(() => props.knowledgeSnapshots.filter((snapshot) => snapshot.status === 'READY'));
+const selectedKnowledgeSnapshot = computed(() =>
+  props.knowledgeSnapshots.find((snapshot) => snapshot.id === knowledgeBase.value?.indexSnapshotId) ?? null,
+);
+const snapshotSelectOptions = computed(() => readyKnowledgeSnapshots.value.map((snapshot) => ({
+  label: `${snapshot.id} · 文档 ${snapshot.documentCount} · chunk ${snapshot.chunkCount}`,
+  value: snapshot.id,
+})));
 const isOpenAiCompatible = computed(() => llmModel.value?.providerType === 'OPENAI_COMPATIBLE');
 const llmModelIdPlaceholder = computed(() => (
   isOpenAiCompatible.value ? '例如：qwen2.5-72b-instruct / deepseek-chat' : '例如：gpt-4.1-mini'
@@ -47,18 +36,76 @@ const llmApiKeyPlaceholder = computed(() => (
   isOpenAiCompatible.value ? '例如：OPENAI_COMPATIBLE_API_KEY' : '例如：OPENAI_API_KEY'
 ));
 
-function addKnowledgeDocument() {
-  knowledgeDocuments.value.push({
-    id: `kb-doc-${Math.random().toString(16).slice(2, 10)}`,
-    title: '',
-    content: '',
-    sourceUri: '',
-  });
+function ensureConfigurationState(configuration: ResourceVersionConfiguration, resourceType: ResourceType) {
+  if (resourceType === 'KNOWLEDGE_BASE' && configuration.knowledgeBase) {
+    configuration.knowledgeBase.indexSnapshotId = configuration.knowledgeBase.indexSnapshotId || null;
+    if (!['LEXICAL', 'VECTOR', 'HYBRID'].includes(configuration.knowledgeBase.retrievalMode)) {
+      configuration.knowledgeBase.retrievalMode = 'HYBRID';
+    }
+    if (!configuration.knowledgeBase.defaultTopK || configuration.knowledgeBase.defaultTopK <= 0) {
+      configuration.knowledgeBase.defaultTopK = 5;
+    }
+    if (configuration.knowledgeBase.minScore === undefined || configuration.knowledgeBase.minScore < 0) {
+      configuration.knowledgeBase.minScore = 0.1;
+    }
+  }
+
+  if (resourceType !== 'TOOL' || !configuration.tool) {
+    return;
+  }
+
+  if (!configuration.tool.operations) {
+    configuration.tool.operations = [];
+  }
+  if (!configuration.tool.providerType) {
+    configuration.tool.providerType = 'HTTP';
+  }
+  if (!configuration.tool.authType) {
+    configuration.tool.authType = 'SERVICE_ACCOUNT';
+  }
+  if (!configuration.tool.timeoutSeconds || configuration.tool.timeoutSeconds <= 0) {
+    configuration.tool.timeoutSeconds = 15;
+  }
+  if (!configuration.tool.retryPolicy) {
+    configuration.tool.retryPolicy = 'NONE';
+  }
+  if (!configuration.tool.http) {
+    configuration.tool.http = {
+      endpoint: 'https://tool-gateway.internal/new-tool',
+      method: 'POST',
+    };
+  }
+  if (!configuration.tool.mcp) {
+    configuration.tool.mcp = {
+      serverName: 'new-mcp-server',
+      transport: 'STREAMABLE_HTTP',
+      connectionUri: 'https://mcp-gateway.internal/new-server',
+      namespace: 'default.namespace',
+      heartbeatSeconds: 30,
+      operationMappings: {},
+    };
+  }
+  if (!configuration.tool.mcp.operationMappings) {
+    configuration.tool.mcp.operationMappings = {};
+  }
+  for (const operation of configuration.tool.operations) {
+    const operationName = operation.name?.trim();
+    if (!operationName) {
+      continue;
+    }
+    if (!configuration.tool.mcp.operationMappings[operationName]) {
+      configuration.tool.mcp.operationMappings[operationName] = operationName;
+    }
+  }
 }
 
-function removeKnowledgeDocument(index: number) {
-  knowledgeDocuments.value.splice(index, 1);
-}
+watch(
+  () => [props.resourceType, props.configuration] as const,
+  ([resourceType, configuration]) => {
+    ensureConfigurationState(configuration, resourceType);
+  },
+  { immediate: true, deep: true },
+);
 
 function addToolOperation() {
   toolOperations.value.push({
@@ -72,62 +119,76 @@ function addToolOperation() {
 function removeToolOperation(index: number) {
   toolOperations.value.splice(index, 1);
 }
+
+function formatDateTime(value: string | null): string {
+  if (!value) {
+    return '-';
+  }
+  return new Date(value).toLocaleString('zh-CN', { hour12: false });
+}
 </script>
 
 <template>
-  <template v-if="resourceType === 'KNOWLEDGE_BASE'">
+  <template v-if="resourceType === 'KNOWLEDGE_BASE' && configuration.knowledgeBase">
     <a-alert
+      v-if="snapshotBindingMode === 'select'"
       type="info"
       show-icon
       style="margin-bottom: 16px"
-      message="当前知识库按已发布文档集合直接检索"
-      description="版本里维护的文档内容会进入发布快照并被运行时直接使用。"
+      message="知识库版本按索引快照发布"
+      description="这里只能选择 READY 快照，避免把未完成构建的内容误发布到运行时。"
     />
     <a-row :gutter="[16, 16]">
+      <a-col v-if="snapshotBindingMode === 'select'" :span="24">
+        <a-form-item label="绑定索引快照">
+          <a-select
+            v-model:value="knowledgeBase.indexSnapshotId"
+            :options="snapshotSelectOptions"
+            allow-clear
+            placeholder="选择一个 READY 快照"
+          />
+        </a-form-item>
+        <a-typography-text type="secondary">
+          {{
+            selectedKnowledgeSnapshot
+              ? `当前绑定 ${selectedKnowledgeSnapshot.id} · 文档 ${selectedKnowledgeSnapshot.documentCount} · chunk ${selectedKnowledgeSnapshot.chunkCount} · 构建于 ${formatDateTime(selectedKnowledgeSnapshot.builtAt)}`
+              : readyKnowledgeSnapshots.length
+                ? '请选择一个 READY 快照。未绑定快照的知识库版本只能停留在草稿状态。'
+                : '当前还没有 READY 快照，请先到内容工作台上传内容并生成快照。'
+          }}
+        </a-typography-text>
+      </a-col>
       <a-col :span="12">
         <a-form-item label="默认召回数">
           <a-input-number v-model:value="knowledgeBase.defaultTopK" :min="1" style="width: 100%" />
         </a-form-item>
       </a-col>
       <a-col :span="12">
-        <a-form-item label="文档规模">
-          <a-input-number :value="knowledgeDocumentCount" :min="0" style="width: 100%" disabled />
+        <a-form-item label="检索模式">
+          <a-select
+            v-model:value="knowledgeBase.retrievalMode"
+            :options="[
+              { label: 'HYBRID', value: 'HYBRID' },
+              { label: 'LEXICAL', value: 'LEXICAL' },
+              { label: 'VECTOR', value: 'VECTOR' },
+            ]"
+          />
+        </a-form-item>
+      </a-col>
+      <a-col :span="12">
+        <a-form-item label="最低得分阈值">
+          <a-input-number v-model:value="knowledgeBase.minScore" :min="0" :step="0.1" style="width: 100%" />
         </a-form-item>
       </a-col>
     </a-row>
-
-    <a-card size="small" title="导入文档">
-      <template #extra>
-        <a-button size="small" type="primary" ghost @click="addKnowledgeDocument">新增文档</a-button>
-      </template>
-      <a-empty v-if="!knowledgeDocuments.length" description="还没有导入文档，发布前请至少补充一条知识内容。" />
-      <a-space v-else direction="vertical" style="width: 100%" size="middle">
-        <a-card v-for="(document, index) in knowledgeDocuments" :key="document.id || index" size="small">
-          <template #title>文档 {{ index + 1 }}</template>
-          <template #extra>
-            <a-button danger size="small" @click="removeKnowledgeDocument(index)">删除</a-button>
-          </template>
-          <a-row :gutter="[16, 16]">
-            <a-col :span="12">
-              <a-form-item label="标题">
-                <a-input v-model:value="document.title" placeholder="例如：退款处理规则" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="来源 URI">
-                <a-input v-model:value="document.sourceUri" placeholder="例如：manual://kb/refund-policy" />
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <a-form-item label="正文">
-            <a-textarea
-              v-model:value="document.content"
-              :rows="6"
-              placeholder="输入可被检索与召回的知识正文，建议一条文档聚焦一个主题。"
-            />
-          </a-form-item>
-        </a-card>
-      </a-space>
+    <a-card v-if="selectedKnowledgeSnapshot" size="small" style="margin-top: 8px">
+      <a-descriptions :column="2" size="small">
+        <a-descriptions-item label="快照状态">{{ selectedKnowledgeSnapshot.status }}</a-descriptions-item>
+        <a-descriptions-item label="检索后端">{{ selectedKnowledgeSnapshot.retrievalBackend }}</a-descriptions-item>
+        <a-descriptions-item label="文档数">{{ selectedKnowledgeSnapshot.documentCount }}</a-descriptions-item>
+        <a-descriptions-item label="Chunk 数">{{ selectedKnowledgeSnapshot.chunkCount }}</a-descriptions-item>
+        <a-descriptions-item label="构建时间" :span="2">{{ formatDateTime(selectedKnowledgeSnapshot.builtAt) }}</a-descriptions-item>
+      </a-descriptions>
     </a-card>
   </template>
 

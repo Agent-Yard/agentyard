@@ -18,7 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Repository
 public class JdbcCatalogRepository implements CatalogRepository {
-    private static final TypeReference<List<ResourceVersionDto>> RESOURCE_VERSION_LIST = new TypeReference<>() {
+    private static final TypeReference<List<StoredResourceVersion>> RESOURCE_VERSION_LIST = new TypeReference<>() {
     };
     private static final TypeReference<List<AssistantReleaseDto>> ASSISTANT_RELEASE_LIST = new TypeReference<>() {
     };

@@ -271,7 +271,7 @@ class RuntimeServiceTest {
             .findFirst()
             .orElseThrow();
 
-        assertFalse(knowledgeBase.configuration().knowledgeBase().documents().isEmpty());
-        assertTrue(knowledgeBase.configuration().knowledgeBase().documents().getFirst().content().contains("密码重置"));
+        assertEquals("snapshot-kb-support-v1", knowledgeBase.configuration().knowledgeBase().indexSnapshotId());
+        assertEquals("HYBRID", knowledgeBase.configuration().knowledgeBase().retrievalMode());
     }
 }

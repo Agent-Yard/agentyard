@@ -24,7 +24,6 @@ public class SystemController {
     public ApiResponse<?> dependencies() {
         return ApiResponse.ok(Map.of(
             "postgres", "configured",
-            "redis", "configured",
             "minio", "configured",
             "temporal", "configured"
         ));

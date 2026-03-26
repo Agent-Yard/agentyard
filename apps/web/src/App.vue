@@ -161,6 +161,9 @@ const creatingSession = ref(false);
 const sendingSessionId = ref<string | null>(null);
 const runtimePreferredSessionId = ref<string | null>(null);
 const runtimeSelectedSessionId = ref<string | null>(null);
+const selectedWorkflowId = ref<string | null>(null);
+const resourceLibraryPreferredResourceId = ref<string | null>(null);
+const resourceLibraryPreferredVersionId = ref<string | null>(null);
 const activeKey = ref<PageKey>('domain');
 const openKeys = ref<SectionKey[]>(['design', 'build', 'asset', 'runtime-observe']);
 const session = ref<UserSession | null>(null);
@@ -177,8 +180,14 @@ const currentSectionMeta = computed(() => sectionMeta[currentPageMeta.value.sect
 const roleOptions = computed(() =>
   (session.value?.availableRoles ?? []).map((role) => ({ label: role, value: role })),
 );
+function preferredWorkflowId(workflowList: WorkflowInstance[]) {
+  return workflowList.find((item) => item.status === 'WAITING_HUMAN')?.id ?? workflowList[0]?.id ?? null;
+}
+
 const currentWorkflow = computed(
-  () => workflows.value.find((item) => item.status === 'WAITING_HUMAN') ?? workflows.value[0],
+  () => workflows.value.find((item) => item.id === selectedWorkflowId.value)
+    ?? workflows.value.find((item) => item.status === 'WAITING_HUMAN')
+    ?? workflows.value[0],
 );
 
 function errorMessage(error: unknown, fallback: string) {
@@ -217,6 +226,11 @@ async function refresh(showLoading = false) {
     conversationSessions.value = sessionList;
     tasks.value = tasksData;
     workflows.value = workflowData;
+    if (!workflowData.length) {
+      selectedWorkflowId.value = null;
+    } else if (!selectedWorkflowId.value || !workflowData.some((item) => item.id === selectedWorkflowId.value)) {
+      selectedWorkflowId.value = preferredWorkflowId(workflowData);
+    }
     if (!sessionList.length) {
       runtimeSelectedSessionId.value = null;
     } else if (runtimePreferredSessionId.value && sessionList.some((item) => item.id === runtimePreferredSessionId.value)) {
@@ -270,6 +284,7 @@ async function handleCreateSession(payload: { scenarioId: string; assistantId: s
         const recoveredSession = findSessionById(created.id);
         const recoveredWorkflow = findWorkflowById(recoveredSession?.latestWorkflowInstanceId);
         if (recoveredWorkflow) {
+          selectedWorkflowId.value = recoveredWorkflow.id;
           activeKey.value = recoveredWorkflow.status === 'WAITING_HUMAN' ? 'workflow' : 'runtime';
           void message.warning(
             recoveredWorkflow.status === 'WAITING_HUMAN'
@@ -308,6 +323,7 @@ async function handleSendMessage(payload: { sessionId: string; requester: string
     const recoveredWorkflowId = recoveredSession?.latestWorkflowInstanceId ?? null;
     const recoveredWorkflow = findWorkflowById(recoveredWorkflowId);
     if (recoveredWorkflowId && recoveredWorkflowId !== previousWorkflowId && recoveredWorkflow) {
+      selectedWorkflowId.value = recoveredWorkflow.id;
       activeKey.value = recoveredWorkflow.status === 'WAITING_HUMAN' ? 'workflow' : 'runtime';
       void message.warning(
         recoveredWorkflow.status === 'WAITING_HUMAN'
@@ -324,6 +340,10 @@ async function handleSendMessage(payload: { sessionId: string; requester: string
 
 function handleSelectRuntimeSession(sessionId: string) {
   runtimeSelectedSessionId.value = sessionId;
+}
+
+function handleSelectWorkflow(workflowId: string) {
+  selectedWorkflowId.value = workflowId;
 }
 
 async function handleHumanAction(payload: { workflowId: string; action: string; comment: string; operatorId: string; attributes: Record<string, string> }) {
@@ -458,8 +478,10 @@ async function handleSaveOrchestration(payload: { assistantId: string; data: Upd
 }
 
 async function handleCreateResource(payload: CreateResourcePayload) {
-  await api.createResource(payload);
+  const created = await api.createResource(payload);
   await refresh();
+  resourceLibraryPreferredResourceId.value = created.id;
+  resourceLibraryPreferredVersionId.value = created.latestVersion?.id ?? null;
   activeKey.value = 'resource-library';
   void message.success('资源已创建');
 }
@@ -475,8 +497,10 @@ async function handleDeleteResource(resourceId: string) {
 }
 
 async function handleCreateResourceVersion(payload: { resourceId: string; data: CreateResourceVersionPayload }) {
-  await api.createResourceVersion(payload.resourceId, payload.data);
+  const created = await api.createResourceVersion(payload.resourceId, payload.data);
   await refresh();
+  resourceLibraryPreferredResourceId.value = payload.resourceId;
+  resourceLibraryPreferredVersionId.value = created.id;
   void message.success('资源版本已创建');
 }
 
@@ -616,6 +640,8 @@ onUnmounted(() => {
             v-else-if="activeKey === 'resource-library'"
             :resource-center="catalog.resourceCenter"
             :resources="catalog.resources"
+            :preferred-resource-id="resourceLibraryPreferredResourceId"
+            :preferred-version-id="resourceLibraryPreferredVersionId"
             @delete-resource="handleDeleteResource"
             @create-resource-version="handleCreateResourceVersion"
             @delete-resource-version="handleDeleteResourceVersion"
@@ -647,6 +673,8 @@ onUnmounted(() => {
             v-else
             :workflow="currentWorkflow"
             :workflows="workflows"
+            :selected-workflow-id="selectedWorkflowId"
+            @select-workflow="handleSelectWorkflow"
             @human-action="handleHumanAction"
           />
         </a-layout-content>

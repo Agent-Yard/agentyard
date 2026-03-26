@@ -12,10 +12,6 @@ spring:
     password: ${SPRING_DATASOURCE_PASSWORD:lynxus}
   flyway:
     enabled: true
-  data:
-    redis:
-      host: ${SPRING_DATA_REDIS_HOST:localhost}
-      port: ${SPRING_DATA_REDIS_PORT:6379}
 
 management:
   endpoints:
@@ -38,6 +34,8 @@ lynxus:
     endpoint: ${LYNXUS_MINIO_ENDPOINT:http://localhost:9000}
     access-key: ${LYNXUS_MINIO_ACCESS_KEY:minioadmin}
     secret-key: ${LYNXUS_MINIO_SECRET_KEY:minioadmin}
+  knowledge-service:
+    base-url: ${LYNXUS_KNOWLEDGE_SERVICE_BASE_URL:http://localhost:8091}
   temporal:
     target: ${LYNXUS_TEMPORAL_TARGET:localhost:7233}
     namespace: ${LYNXUS_TEMPORAL_NAMESPACE:default}

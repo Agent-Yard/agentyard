@@ -81,7 +81,10 @@ public class RuntimeService {
 
     public List<WorkflowInstanceDto> listWorkflows() {
         refreshRunningWorkflows();
-        return workflows.stream().sorted(Comparator.comparing(WorkflowInstanceDto::id).reversed()).toList();
+        return workflows.stream()
+            .sorted(Comparator.comparing(WorkflowInstanceDto::updatedAt, Comparator.reverseOrder())
+                .thenComparing(WorkflowInstanceDto::createdAt, Comparator.reverseOrder()))
+            .toList();
     }
 
     public List<ConversationSessionDto> listSessions() {
@@ -237,6 +240,7 @@ public class RuntimeService {
     ) {
         String taskId = nextId("task");
         String workflowId = nextId("wf");
+        Instant now = Instant.now();
         AssistantRunSnapshot assistantSnapshot = buildAssistantSnapshot(assistant);
         List<String> resourceAnchors = assistantSnapshot.resources().stream()
             .map(item -> item.resourceName() + "@" + item.resourceVersion())
@@ -261,6 +265,8 @@ public class RuntimeService {
             assistant.id(),
             assistant.name(),
             assistantSnapshot.assistantReleaseVersion(),
+            now,
+            now,
             WorkflowStatus.RUNNING,
             "流程已提交到 Temporal，等待首个运行结果。",
             null,
@@ -297,6 +303,8 @@ public class RuntimeService {
                 assistant.id(),
                 assistant.name(),
                 assistantSnapshot.assistantReleaseVersion(),
+                now,
+                Instant.now(),
                 WorkflowStatus.FAILED,
                 "流程执行失败：" + failureDetail,
                 null,
@@ -334,6 +342,8 @@ public class RuntimeService {
             existing.assistantId(),
             existing.assistantName(),
             existing.assistantReleaseVersion(),
+            existing.createdAt(),
+            Instant.now(),
             result.status(),
             result.summary(),
             result.finalReply(),
@@ -681,15 +691,10 @@ public class RuntimeService {
         return new ResourceConfigurationSnapshot(
             configuration.type(),
             configuration.knowledgeBase() == null ? null : new KnowledgeBaseConfig(
+                configuration.knowledgeBase().indexSnapshotId(),
                 configuration.knowledgeBase().defaultTopK(),
-                configuration.knowledgeBase().documents() == null ? List.of() : configuration.knowledgeBase().documents().stream()
-                    .map(document -> new WorkflowContracts.KnowledgeBaseDocument(
-                        document.id(),
-                        document.title(),
-                        document.content(),
-                        document.sourceUri()
-                    ))
-                    .toList()
+                configuration.knowledgeBase().retrievalMode(),
+                configuration.knowledgeBase().minScore()
             ),
             configuration.tool() == null ? null : new ToolConfig(
                 configuration.tool().operations() == null ? List.of() : configuration.tool().operations().stream()

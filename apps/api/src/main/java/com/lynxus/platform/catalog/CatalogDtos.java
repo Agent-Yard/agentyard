@@ -118,6 +118,18 @@ public final class CatalogDtos {
         String version,
         VersionStatus status,
         String summary,
+        Instant createdAt,
+        Instant publishedAt,
+        ResourceVersionConfigurationDto configuration
+    ) {
+    }
+
+    public record StoredResourceVersion(
+        String id,
+        String resourceId,
+        String version,
+        VersionStatus status,
+        String summary,
         String configDigest,
         Instant createdAt,
         Instant publishedAt,
@@ -134,17 +146,92 @@ public final class CatalogDtos {
     ) {
     }
 
-    public record KnowledgeBaseDocumentDto(
-        String id,
-        String title,
-        String content,
-        String sourceUri
+    public record KnowledgeBaseConfigDto(
+        String indexSnapshotId,
+        int defaultTopK,
+        String retrievalMode,
+        double minScore
     ) {
     }
 
-    public record KnowledgeBaseConfigDto(
-        int defaultTopK,
-        List<KnowledgeBaseDocumentDto> documents
+    public record KnowledgeUploadSessionDto(
+        String id,
+        String resourceId,
+        String status,
+        List<String> acceptedTypes
+    ) {
+    }
+
+    public record KnowledgeFileDto(
+        String id,
+        String resourceId,
+        String uploadSessionId,
+        String fileName,
+        String contentType,
+        int sizeBytes,
+        String status,
+        String errorMessage,
+        Instant createdAt,
+        Instant updatedAt
+    ) {
+    }
+
+    public record KnowledgeImportJobDto(
+        String id,
+        String resourceId,
+        String fileId,
+        String status,
+        String failureReason,
+        Instant createdAt,
+        Instant updatedAt,
+        Instant completedAt
+    ) {
+    }
+
+    public record KnowledgeDocumentDto(
+        String id,
+        String resourceId,
+        String fileId,
+        String title,
+        String sourceUri,
+        String documentType,
+        String status,
+        int chunkCount,
+        Instant createdAt,
+        Instant updatedAt
+    ) {
+    }
+
+    public record KnowledgeIndexSnapshotDto(
+        String id,
+        String resourceId,
+        String retrievalBackend,
+        String retrievalMode,
+        String status,
+        int documentCount,
+        int chunkCount,
+        String failureReason,
+        Instant builtAt,
+        Instant createdAt,
+        Instant updatedAt
+    ) {
+    }
+
+    public record CreateKnowledgeUploadSessionRequest(String resourceId) {
+    }
+
+    public record CreateKnowledgeIndexSnapshotRequest(List<String> documentIds) {
+    }
+
+    public record CreateKnowledgeUrlImportRequest(
+        String url,
+        String title
+    ) {
+    }
+
+    public record KnowledgeUploadCompletionDto(
+        KnowledgeFileDto file,
+        KnowledgeImportJobDto importJob
     ) {
     }
 
@@ -377,7 +464,6 @@ public final class CatalogDtos {
 
     public record CreateResourceVersionRequest(
         String summary,
-        String configDigest,
         VersionStatus status,
         ResourceVersionConfigurationDto configuration
     ) {

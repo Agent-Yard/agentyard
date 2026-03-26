@@ -8,6 +8,8 @@ server:
 lynxus:
   agent-runtime:
     base-url: ${LYNXUS_AGENT_RUNTIME_BASE_URL:http://localhost:8090}
+  knowledge-service:
+    base-url: ${LYNXUS_KNOWLEDGE_SERVICE_BASE_URL:http://localhost:8091}
   temporal:
     target: ${LYNXUS_TEMPORAL_TARGET:localhost:7233}
     namespace: ${LYNXUS_TEMPORAL_NAMESPACE:default}

@@ -128,6 +128,169 @@ paths:
           required: true
           schema:
             type: string
+  /resources/{resourceId}/knowledge/upload-sessions:
+    post:
+      summary: Create a knowledge upload session
+      parameters:
+        - in: path
+          name: resourceId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Upload session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeUploadSession'
+  /resources/{resourceId}/knowledge/upload-sessions/{uploadSessionId}/complete:
+    post:
+      summary: Complete a knowledge file upload and trigger import
+      parameters:
+        - in: path
+          name: resourceId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: uploadSessionId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Upload completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeUploadCompletion'
+  /resources/{resourceId}/knowledge/url-imports:
+    post:
+      summary: Import a knowledge document from URL
+      parameters:
+        - in: path
+          name: resourceId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateKnowledgeUrlImportRequest'
+      responses:
+        '200':
+          description: URL import queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeUploadCompletion'
+  /resources/{resourceId}/knowledge/files:
+    get:
+      summary: List uploaded knowledge files
+      parameters:
+        - in: path
+          name: resourceId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Knowledge file list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/KnowledgeFile'
+  /resources/{resourceId}/knowledge/import-jobs:
+    get:
+      summary: List knowledge import jobs
+      parameters:
+        - in: path
+          name: resourceId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Knowledge import jobs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/KnowledgeImportJob'
+  /resources/{resourceId}/knowledge/documents:
+    get:
+      summary: List parsed knowledge documents
+      parameters:
+        - in: path
+          name: resourceId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Knowledge documents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/KnowledgeDocument'
+  /resources/{resourceId}/knowledge/index-snapshots:
+    get:
+      summary: List knowledge index snapshots
+      parameters:
+        - in: path
+          name: resourceId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Snapshot list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/KnowledgeIndexSnapshot'
+    post:
+      summary: Create a knowledge index snapshot and trigger build
+      parameters:
+        - in: path
+          name: resourceId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateKnowledgeIndexSnapshotRequest'
+      responses:
+        '200':
+          description: Snapshot created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeIndexSnapshot'
   /orchestrations:
     get:
       summary: List assistant orchestration graphs
@@ -324,6 +487,149 @@ components:
           items:
             type: string
         toolResourceIds:
+          type: array
+          items:
+            type: string
+    KnowledgeUploadSession:
+      type: object
+      properties:
+        id:
+          type: string
+        resourceId:
+          type: string
+        status:
+          type: string
+        acceptedTypes:
+          type: array
+          items:
+            type: string
+    KnowledgeFile:
+      type: object
+      properties:
+        id:
+          type: string
+        resourceId:
+          type: string
+        uploadSessionId:
+          type: string
+        fileName:
+          type: string
+        contentType:
+          type: string
+        sizeBytes:
+          type: integer
+        status:
+          type: string
+        errorMessage:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    KnowledgeImportJob:
+      type: object
+      properties:
+        id:
+          type: string
+        resourceId:
+          type: string
+        fileId:
+          type: string
+        status:
+          type: string
+        failureReason:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+    KnowledgeDocument:
+      type: object
+      properties:
+        id:
+          type: string
+        resourceId:
+          type: string
+        fileId:
+          type: string
+        title:
+          type: string
+        sourceUri:
+          type: string
+        documentType:
+          type: string
+        status:
+          type: string
+        chunkCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    KnowledgeIndexSnapshot:
+      type: object
+      properties:
+        id:
+          type: string
+        resourceId:
+          type: string
+        retrievalBackend:
+          type: string
+          enum: [OPENSEARCH]
+        retrievalMode:
+          type: string
+          enum: [LEXICAL, VECTOR, HYBRID]
+        status:
+          type: string
+        documentCount:
+          type: integer
+        chunkCount:
+          type: integer
+        failureReason:
+          type: string
+          nullable: true
+        builtAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    KnowledgeUploadCompletion:
+      type: object
+      properties:
+        file:
+          $ref: '#/components/schemas/KnowledgeFile'
+        importJob:
+          $ref: '#/components/schemas/KnowledgeImportJob'
+    CreateKnowledgeUrlImportRequest:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+        title:
+          type: string
+          nullable: true
+    CreateKnowledgeIndexSnapshotRequest:
+      type: object
+      properties:
+        documentIds:
           type: array
           items:
             type: string
@@ -624,6 +930,12 @@ components:
           type: string
         assistantReleaseVersion:
           type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
         status:
           $ref: '#/components/schemas/WorkflowStatus'
         summary:

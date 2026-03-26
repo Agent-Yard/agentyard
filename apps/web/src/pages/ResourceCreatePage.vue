@@ -31,13 +31,14 @@ const createForm = reactive<CreateResourcePayload>({
   tags: [],
   initialVersion: {
     summary: '初始版本',
-    configDigest: '',
     status: 'DRAFT',
     configuration: {
       type: 'KNOWLEDGE_BASE',
       knowledgeBase: {
+        indexSnapshotId: null,
         defaultTopK: 5,
-        documents: [],
+        retrievalMode: 'HYBRID',
+        minScore: 0.1,
       },
     },
   },
@@ -46,6 +47,7 @@ const createForm = reactive<CreateResourcePayload>({
 const currentBlueprint = computed(() =>
   props.resourceBlueprints.find((item) => item.type === createForm.type) ?? props.resourceBlueprints[0],
 );
+const isKnowledgeBaseResource = computed(() => createForm.type === 'KNOWLEDGE_BASE');
 
 function defaultConfiguration(type: ResourceType) {
   const blueprint = props.resourceBlueprints.find((item) => item.type === type);
@@ -56,8 +58,10 @@ function defaultConfiguration(type: ResourceType) {
     return {
       type,
       knowledgeBase: {
+        indexSnapshotId: null,
         defaultTopK: 5,
-        documents: [],
+        retrievalMode: 'HYBRID',
+        minScore: 0.1,
       },
     };
   }
@@ -165,6 +169,9 @@ watch(
   () => createForm.type,
   (type) => {
     createForm.initialVersion.configuration = defaultConfiguration(type);
+    if (type === 'KNOWLEDGE_BASE') {
+      createForm.initialVersion.status = 'DRAFT';
+    }
   },
   { immediate: true },
 );
@@ -180,7 +187,6 @@ function submitCreate() {
   createForm.steward = '';
   createForm.tags = [];
   createForm.initialVersion.summary = '初始版本';
-  createForm.initialVersion.configDigest = '';
   createForm.initialVersion.status = 'DRAFT';
   createForm.initialVersion.configuration = defaultConfiguration(createForm.type);
 }
@@ -289,20 +295,20 @@ function submitCreate() {
 
           <a-divider orientation="left">初始版本</a-divider>
 
-          <a-row :gutter="[16, 16]">
-            <a-col :span="12">
-              <a-form-item label="版本说明">
-                <a-input v-model:value="createForm.initialVersion.summary" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="配置摘要">
-                <a-input v-model:value="createForm.initialVersion.configDigest" placeholder="例如：digest-kb-v1" />
-              </a-form-item>
-            </a-col>
-          </a-row>
+          <a-form-item label="版本说明">
+            <a-input v-model:value="createForm.initialVersion.summary" />
+          </a-form-item>
 
-          <a-form-item label="初始状态">
+          <a-alert
+            v-if="isKnowledgeBaseResource"
+            type="info"
+            show-icon
+            style="margin-bottom: 16px"
+            message="知识库会先以草稿版本创建"
+            description="创建后先到资源目录的内容工作台导入文件、生成 READY 快照，再从版本页选择快照并发布。"
+          />
+
+          <a-form-item v-else label="初始状态">
             <a-radio-group v-model:value="createForm.initialVersion.status">
               <a-radio-button value="DRAFT">草稿</a-radio-button>
               <a-radio-button value="PUBLISHED">直接生效</a-radio-button>
@@ -312,6 +318,7 @@ function submitCreate() {
           <ResourceVersionConfigEditor
             :resource-type="createForm.type"
             :configuration="createForm.initialVersion.configuration"
+            snapshot-binding-mode="hidden"
           />
 
           <a-button type="primary" html-type="submit">创建资源</a-button>
