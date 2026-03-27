@@ -1,0 +1,590 @@
+:root {
+  --bg: #f5efe2;
+  --bg-strong: #eadfc8;
+  --surface: rgba(255, 252, 245, 0.76);
+  --surface-strong: rgba(255, 251, 244, 0.92);
+  --text: #1f2330;
+  --muted: #5f6674;
+  --line: rgba(31, 35, 48, 0.12);
+  --brand: #0f766e;
+  --brand-2: #ba3c20;
+  --brand-3: #d9a441;
+  --brand-4: #1d4ed8;
+  --shadow: 0 24px 70px rgba(76, 54, 20, 0.16);
+  --radius-xl: 28px;
+  --radius-lg: 20px;
+  --radius-md: 16px;
+  --slide-width: min(1320px, calc(100vw - 48px));
+  --slide-height: min(780px, calc(100vh - 108px));
+  --font-display: "Avenir Next", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-body: "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background:
+    radial-gradient(circle at top left, rgba(15, 118, 110, 0.12), transparent 30%),
+    radial-gradient(circle at 85% 10%, rgba(186, 60, 32, 0.14), transparent 24%),
+    linear-gradient(180deg, #fbf7ef 0%, #f2ead8 100%);
+  color: var(--text);
+  font-family: var(--font-body);
+}
+
+body {
+  overflow: hidden;
+}
+
+.deck-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  padding: 20px 24px 18px;
+  gap: 12px;
+}
+
+.topbar,
+.bottombar {
+  width: var(--slide-width);
+  margin: 0 auto;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.brand {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.brand-mark {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--brand);
+}
+
+.brand-sub,
+.hint,
+#slide-counter {
+  opacity: 0.9;
+}
+
+.deck-meta {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.deck {
+  position: relative;
+  width: var(--slide-width);
+  height: var(--slide-height);
+  margin: 0 auto;
+}
+
+.slide {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, var(--surface-strong), var(--surface));
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow);
+  padding: 42px 46px 36px;
+  display: grid;
+  gap: 22px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(50px) scale(0.98);
+  transition: opacity 220ms ease, transform 220ms ease;
+  overflow: hidden;
+}
+
+.slide::before {
+  content: "";
+  position: absolute;
+  inset: auto -80px -120px auto;
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(15, 118, 110, 0.18), transparent 70%);
+  pointer-events: none;
+}
+
+.slide.active {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0) scale(1);
+}
+
+.theme-hero,
+.theme-close {
+  background:
+    radial-gradient(circle at 15% 20%, rgba(15, 118, 110, 0.16), transparent 24%),
+    radial-gradient(circle at 80% 18%, rgba(186, 60, 32, 0.18), transparent 20%),
+    linear-gradient(135deg, rgba(255, 250, 243, 0.96), rgba(247, 239, 225, 0.92));
+}
+
+.eyebrow {
+  font-size: 14px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--brand);
+  font-weight: 700;
+}
+
+h1,
+h2,
+h3,
+p,
+ul {
+  margin: 0;
+}
+
+h1,
+h2 {
+  font-family: var(--font-display);
+  line-height: 1.05;
+}
+
+h1 {
+  font-size: clamp(44px, 5vw, 74px);
+  max-width: 900px;
+}
+
+h2 {
+  font-size: clamp(34px, 3.2vw, 50px);
+}
+
+h3 {
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+.lead {
+  font-size: 22px;
+  line-height: 1.6;
+  max-width: 980px;
+  color: var(--muted);
+}
+
+.lead-compact {
+  font-size: 19px;
+  max-width: 1080px;
+}
+
+.hero-grid,
+.closing-grid,
+.capability-grid,
+.value-grid,
+.roadmap {
+  display: grid;
+  gap: 18px;
+}
+
+.hero-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 6px;
+}
+
+.hero-card,
+.closing-card,
+.capability,
+.value-card,
+.roadmap-card,
+.metric-card,
+.decision-card,
+.panel,
+.risk-panel,
+.foot-card,
+.callout,
+.mermaid-card {
+  position: relative;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.86);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 18px 40px rgba(77, 54, 18, 0.08);
+}
+
+.hero-card,
+.closing-card,
+.capability,
+.value-card,
+.roadmap-card,
+.metric-card,
+.decision-card,
+.panel,
+.risk-panel,
+.foot-card,
+.callout {
+  padding: 20px 22px;
+}
+
+.hero-card strong,
+.metric-card strong,
+.closing-card strong {
+  display: block;
+  font-size: 24px;
+  margin: 8px 0 10px;
+}
+
+.label,
+.metric-title {
+  display: inline-block;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--brand);
+  font-weight: 700;
+}
+
+.slide-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.slide-head .index {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(15, 118, 110, 0.14), rgba(29, 78, 216, 0.1));
+  color: var(--brand);
+  font-family: var(--font-display);
+  font-weight: 800;
+}
+
+.two-col,
+.bullet-columns,
+.risk-layout,
+.foot-grid,
+.summary-strip {
+  display: grid;
+  gap: 18px;
+}
+
+.two-col,
+.risk-layout {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.bullet-columns {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.summary-strip {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.foot-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.panel,
+.risk-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.accent-red {
+  border-top: 5px solid #c2410c;
+}
+
+.accent-blue {
+  border-top: 5px solid #2563eb;
+}
+
+.accent-amber {
+  border-top: 5px solid #d97706;
+}
+
+.accent-green {
+  border-top: 5px solid #0f766e;
+}
+
+ul {
+  padding-left: 22px;
+  display: grid;
+  gap: 10px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+li::marker {
+  color: var(--brand-2);
+}
+
+.callout {
+  padding: 18px 22px;
+  border-left: 6px solid var(--brand);
+}
+
+.callout p,
+.bottom-banner,
+.decision-card p,
+.capability p,
+.value-card p,
+.roadmap-card p,
+.closing-card p,
+.hero-card p,
+.panel p,
+.risk-panel p {
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.mermaid-card {
+  padding: 10px 18px;
+  min-height: 320px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  position: relative;
+}
+
+.mermaid-card.compact {
+  min-height: 260px;
+}
+
+.mermaid {
+  width: 100%;
+  font-size: 16px;
+}
+
+.zoomable {
+  cursor: zoom-in;
+}
+
+.diagram-hint {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(15, 118, 110, 0.12);
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.diagram-overlay {
+  position: fixed;
+  inset: 0;
+  display: none;
+  place-items: center;
+  background: rgba(18, 22, 31, 0.72);
+  backdrop-filter: blur(8px);
+  z-index: 1000;
+  padding: 48px;
+}
+
+.diagram-overlay.open {
+  display: grid;
+}
+
+.diagram-overlay-close {
+  position: absolute;
+  top: 24px;
+  right: 28px;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font-size: 32px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.diagram-overlay-meta {
+  position: absolute;
+  top: 28px;
+  left: 32px;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.diagram-overlay-body {
+  width: min(92vw, 1600px);
+  height: min(86vh, 980px);
+  overflow: auto;
+  padding: 28px;
+  border-radius: 24px;
+  background: rgba(255, 252, 245, 0.98);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+  cursor: grab;
+  user-select: none;
+  scrollbar-width: thin;
+}
+
+.diagram-overlay-body.dragging {
+  cursor: grabbing;
+}
+
+.diagram-overlay-body svg {
+  width: 100%;
+  height: auto;
+  min-width: 1100px;
+  max-width: none;
+  display: block;
+}
+
+.capability-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.capability {
+  min-height: 138px;
+}
+
+.capability h3,
+.value-card h3,
+.decision-card h3,
+.roadmap-card h3 {
+  margin-bottom: 10px;
+}
+
+.capability p,
+.value-card p,
+.decision-card p,
+.roadmap-card p,
+.foot-card,
+.panel p,
+.risk-panel p {
+  font-size: 15px;
+}
+
+.value-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.value-card {
+  min-height: 150px;
+}
+
+.decision-stack {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.decision-card {
+  min-height: 160px;
+}
+
+.roadmap {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.roadmap-card span {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background: rgba(15, 118, 110, 0.12);
+  color: var(--brand);
+  font-weight: 800;
+  margin-bottom: 14px;
+}
+
+.bottom-banner {
+  padding: 16px 20px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(90deg, rgba(186, 60, 32, 0.12), rgba(15, 118, 110, 0.12));
+  font-weight: 600;
+}
+
+.progress-track {
+  width: 100%;
+  height: 8px;
+  background: rgba(31, 35, 48, 0.08);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, var(--brand), var(--brand-3), var(--brand-2));
+  transition: width 220ms ease;
+}
+
+.theme-close .closing-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 8px;
+}
+
+code {
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.92em;
+  background: rgba(15, 118, 110, 0.08);
+  padding: 2px 6px;
+  border-radius: 8px;
+}
+
+@media (max-width: 1100px) {
+  body {
+    overflow: auto;
+  }
+
+  .deck-shell {
+    padding: 16px;
+  }
+
+  .deck {
+    height: auto;
+  }
+
+  .slide {
+    position: relative;
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+    margin-bottom: 18px;
+    min-height: 760px;
+  }
+
+  .diagram-overlay {
+    display: none !important;
+  }
+
+  .topbar,
+  .bottombar,
+  .deck {
+    width: 100%;
+  }
+
+  .hero-grid,
+  .summary-strip,
+  .two-col,
+  .bullet-columns,
+  .risk-layout,
+  .foot-grid,
+  .capability-grid,
+  .value-grid,
+  .decision-stack,
+  .roadmap,
+  .theme-close .closing-grid {
+    grid-template-columns: 1fr;
+  }
+}
