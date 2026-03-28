@@ -25,7 +25,7 @@ create table if not exists agent (
     agent_group_id varchar(64) not null,
     name varchar(255) not null,
     role varchar(64) not null,
-    instructions text
+    responsibility text
 );
 
 create table if not exists resource (

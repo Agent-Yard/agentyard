@@ -133,7 +133,7 @@ class AgentSnapshot(BaseModel):
     agentId: str
     name: str
     role: str
-    instructions: str
+    responsibility: str
     executionPolicy: AgentExecutionPolicySnapshot
 
 
@@ -1473,7 +1473,7 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
     model_resource = resolve_model_resource(assistant, agent)
     system_prompt = build_system_prompt(agent)
     tool_resources = resolve_tool_resources(assistant, agent)
-    detail_lines = [agent.instructions]
+    detail_lines = [agent.responsibility]
     route_key: Optional[str] = None
     route_source = ""
     final_message = ""
@@ -1767,7 +1767,7 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
         )
         return
 
-    message = final_message or agent.instructions
+    message = final_message or agent.responsibility
     human_comment = state["human_input"]["comment"] if state["human_input"] else ""
     latest_outcome = state["latest_tool_outcome"] or {}
     suggestion = str(latest_outcome.get("detail", ""))

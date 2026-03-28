@@ -267,7 +267,7 @@ function buildAssistantRelease(assistant: Assistant, releaseVersion: string) {
     agentId: agent.id,
     name: agent.name,
     role: agent.role,
-    instructions: agent.instructions,
+    responsibility: agent.responsibility,
     executionPolicy: clone(agent.executionPolicy),
     knowledge: resolveAgentKnowledgeBinding(assistant, agent),
     skillResourceVersionIds: agent.executionPolicy.skillResourceIds
@@ -431,7 +431,7 @@ function buildDefaultOrchestrationForAssistant(assistantId: string) {
       nodeKey: `node-${agent.id}`,
       nodeName: agent.name,
       nodeType: 'AGENT' as const,
-      description: agent.instructions,
+      description: agent.responsibility,
       agentId: agent.id,
       humanNode: null,
     })),
@@ -1160,7 +1160,7 @@ export const api = {
           assistantId: payload.assistantId,
           name: payload.name,
           role: payload.role,
-          instructions: payload.instructions,
+          responsibility: payload.responsibility,
           executionPolicy: payload.executionPolicy,
         };
         fallbackState.catalog.agents.push(created);
@@ -1171,7 +1171,7 @@ export const api = {
             nodeKey: created.id,
             nodeName: created.name,
             nodeType: 'AGENT' as const,
-            description: created.instructions,
+            description: created.responsibility,
             agentId: created.id,
             humanNode: null,
           };
@@ -1226,14 +1226,14 @@ export const api = {
           ...current,
           name: payload.name,
           role: payload.role,
-          instructions: payload.instructions,
+          responsibility: payload.responsibility,
           executionPolicy: payload.executionPolicy,
         };
         fallbackState.catalog.agents = fallbackState.catalog.agents.map((item) => item.id === agentId ? updated : item);
         fallbackState.catalog.orchestrations = fallbackState.catalog.orchestrations.map((item) => ({
           ...item,
           nodes: item.nodes.map((node) => node.agentId === agentId
-            ? { ...node, nodeName: payload.name, description: payload.instructions }
+            ? { ...node, nodeName: payload.name, description: payload.responsibility }
             : node),
         }));
         rebuildCatalogState();

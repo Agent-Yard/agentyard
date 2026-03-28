@@ -324,7 +324,7 @@ public class CatalogService {
             request.assistantId(),
             request.name(),
             request.role(),
-            request.instructions(),
+            request.responsibility(),
             normalizeAgentExecutionPolicy(request.executionPolicy())
         );
         agents.add(agent);
@@ -340,7 +340,7 @@ public class CatalogService {
             existing.assistantId(),
             request.name(),
             request.role(),
-            request.instructions(),
+            request.responsibility(),
             normalizeAgentExecutionPolicy(request.executionPolicy())
         );
         replace(agents, AgentDto::id, updated);
@@ -1223,7 +1223,7 @@ public class CatalogService {
                     existing.nodeKey(),
                     agent.name(),
                     OrchestrationNodeType.AGENT,
-                    existing.description() == null || existing.description().isBlank() ? agent.instructions() : existing.description(),
+                    existing.description() == null || existing.description().isBlank() ? agent.responsibility() : existing.description(),
                     agent.id(),
                     null
                 );
@@ -1412,7 +1412,7 @@ public class CatalogService {
                 agent.id(),
                 agent.name(),
                 agent.role(),
-                agent.instructions(),
+                agent.responsibility(),
                 agent.executionPolicy(),
                 resolveAgentKnowledgeBinding(assistantKnowledge, agent),
                 List.copyOf(skillResourceVersionIds),
@@ -1624,7 +1624,7 @@ public class CatalogService {
             "node-" + agent.id(),
             agent.name(),
             OrchestrationNodeType.AGENT,
-            agent.instructions(),
+            agent.responsibility(),
             agent.id(),
             null
         );
@@ -1738,7 +1738,7 @@ public class CatalogService {
                             agent.agentId(),
                             agent.name(),
                             agent.role(),
-                            agent.instructions(),
+                            agent.responsibility(),
                             normalizeAgentExecutionPolicy(agent.executionPolicy()),
                             normalizeKnowledgeBindingSnapshot(agent.knowledge()),
                             agent.skillResourceVersionIds(),
@@ -1769,7 +1769,7 @@ public class CatalogService {
             agent.assistantId(),
             agent.name(),
             agent.role(),
-            agent.instructions(),
+            agent.responsibility(),
             new AgentExecutionPolicyDto(
                 normalizedPolicy.inheritAssistantDefaults(),
                 normalizedPolicy.modelResourceId(),

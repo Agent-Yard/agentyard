@@ -51,7 +51,7 @@ def make_agent(memory_window_size: int) -> AgentSnapshot:
         agentId="agent-1",
         name="test-agent",
         role="support",
-        instructions="help user",
+        responsibility="help user",
         executionPolicy=AgentExecutionPolicySnapshot(
             inheritAssistantDefaults=True,
             modelResourceId=None,
@@ -393,10 +393,10 @@ class MemoryPromptTests(unittest.TestCase):
 
         self.assertEqual(memory_window_for_agent(assistant, agent), 0)
 
-    def test_build_system_prompt_does_not_fallback_to_instructions(self) -> None:
+    def test_build_system_prompt_does_not_fallback_to_responsibility(self) -> None:
         agent = make_agent(memory_window_size=4).model_copy(
             update={
-                "instructions": "这是给人看的职责说明",
+                "responsibility": "这是给人看的职责说明",
                 "executionPolicy": make_agent(memory_window_size=4).executionPolicy.model_copy(
                     update={"systemPrompt": ""}
                 ),
@@ -467,7 +467,7 @@ class MemoryPromptTests(unittest.TestCase):
             agentId="agent-1",
             name="after-sales",
             role="support",
-            instructions="处理售后请求",
+            responsibility="处理售后请求",
             executionPolicy=AgentExecutionPolicySnapshot(
                 inheritAssistantDefaults=True,
                 modelResourceId=None,

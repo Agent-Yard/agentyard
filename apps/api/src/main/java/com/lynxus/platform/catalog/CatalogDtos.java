@@ -80,7 +80,7 @@ public final class CatalogDtos {
         String agentId,
         String name,
         String role,
-        String instructions,
+        String responsibility,
         AgentExecutionPolicyDto executionPolicy,
         KnowledgeBindingSnapshotDto knowledge,
         List<String> skillResourceVersionIds,
@@ -93,7 +93,7 @@ public final class CatalogDtos {
         String assistantId,
         String name,
         String role,
-        String instructions,
+        String responsibility,
         AgentExecutionPolicyDto executionPolicy
     ) {
     }
@@ -490,7 +490,7 @@ public final class CatalogDtos {
         String assistantId,
         String name,
         String role,
-        String instructions,
+        String responsibility,
         AgentExecutionPolicyDto executionPolicy
     ) {
     }
@@ -498,7 +498,7 @@ public final class CatalogDtos {
     public record UpdateAgentRequest(
         String name,
         String role,
-        String instructions,
+        String responsibility,
         AgentExecutionPolicyDto executionPolicy
     ) {
     }

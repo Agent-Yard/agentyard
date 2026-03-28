@@ -550,7 +550,7 @@ public class RuntimeService {
             agent.agentId(),
             agent.name(),
             agent.role(),
-            agent.instructions(),
+            agent.responsibility(),
             toAgentExecutionPolicySnapshot(agent.executionPolicy(), resources, agent.knowledge(), agent.skillResourceVersionIds(), agent.toolResourceVersionIds())
         );
     }
@@ -566,7 +566,7 @@ public class RuntimeService {
             agent.id(),
             agent.name(),
             agent.role(),
-            agent.instructions(),
+            agent.responsibility(),
             toAgentExecutionPolicySnapshot(agent.executionPolicy(), resources, resolveAgentKnowledgeBinding(assistant, agent), skillVersionIds, toolVersionIds)
         );
     }

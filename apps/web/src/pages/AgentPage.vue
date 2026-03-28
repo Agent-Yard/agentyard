@@ -28,7 +28,7 @@ const createForm = reactive<CreateAgentPayload>({
   assistantId: '',
   name: '',
   role: '',
-  instructions: '',
+  responsibility: '',
   executionPolicy: {
     inheritAssistantDefaults: true,
     modelResourceId: null,
@@ -44,7 +44,7 @@ const createForm = reactive<CreateAgentPayload>({
 const editForm = reactive<UpdateAgentPayload>({
   name: '',
   role: '',
-  instructions: '',
+  responsibility: '',
   executionPolicy: {
     inheritAssistantDefaults: true,
     modelResourceId: null,
@@ -134,7 +134,7 @@ watch(
     }
     editForm.name = agent.name;
     editForm.role = agent.role;
-    editForm.instructions = agent.instructions;
+    editForm.responsibility = agent.responsibility;
     editForm.executionPolicy = {
       ...agent.executionPolicy,
       skillResourceIds: [...agent.executionPolicy.skillResourceIds],
@@ -175,7 +175,7 @@ function submitCreate() {
   });
   createForm.name = '';
   createForm.role = '';
-  createForm.instructions = '';
+  createForm.responsibility = '';
   createForm.executionPolicy.systemPrompt = '';
   createForm.executionPolicy.skillResourceIds = [];
   createForm.executionPolicy.toolResourceIds = [];
@@ -190,7 +190,7 @@ function submitSave() {
     agent: {
       name: editForm.name,
       role: editForm.role,
-      instructions: editForm.instructions,
+      responsibility: editForm.responsibility,
       executionPolicy: {
         ...editForm.executionPolicy,
         skillResourceIds: [...editForm.executionPolicy.skillResourceIds],
@@ -218,8 +218,8 @@ function submitSave() {
           <a-form-item label="职责角色" name="role">
             <a-input v-model:value="createForm.role" placeholder="例如：router / analyst / reviewer" />
           </a-form-item>
-          <a-form-item label="指令说明" name="instructions">
-            <a-textarea v-model:value="createForm.instructions" :rows="4" />
+          <a-form-item label="职责说明" name="responsibility">
+            <a-textarea v-model:value="createForm.responsibility" :rows="4" />
           </a-form-item>
           <a-form-item label="System Prompt">
             <a-textarea v-model:value="createForm.executionPolicy.systemPrompt" :rows="4" />
@@ -296,8 +296,8 @@ function submitSave() {
             </a-col>
           </a-row>
 
-          <a-form-item label="指令说明" name="instructions">
-            <a-textarea v-model:value="editForm.instructions" :rows="5" />
+          <a-form-item label="职责说明" name="responsibility">
+            <a-textarea v-model:value="editForm.responsibility" :rows="5" />
           </a-form-item>
           <a-form-item label="System Prompt">
             <a-textarea v-model:value="editForm.executionPolicy.systemPrompt" :rows="5" />

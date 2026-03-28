@@ -249,7 +249,7 @@ export interface Agent {
   assistantId: string;
   name: string;
   role: string;
-  instructions: string;
+  responsibility: string;
   executionPolicy: AgentExecutionPolicy;
 }
 
@@ -301,7 +301,7 @@ export interface AssistantReleaseAgent {
   agentId: string;
   name: string;
   role: string;
-  instructions: string;
+  responsibility: string;
   executionPolicy: AgentExecutionPolicy;
   knowledge: KnowledgeBindingSnapshot | null;
   skillResourceVersionIds: string[];
@@ -584,7 +584,7 @@ export interface CreateAgentPayload {
   assistantId: string;
   name: string;
   role: string;
-  instructions: string;
+  responsibility: string;
   executionPolicy: AgentExecutionPolicy;
 }
 
@@ -610,7 +610,7 @@ export interface CreateResourceVersionPayload {
 export interface UpdateAgentPayload {
   name: string;
   role: string;
-  instructions: string;
+  responsibility: string;
   executionPolicy: AgentExecutionPolicy;
 }
 

@@ -349,7 +349,7 @@ const agents: Agent[] = [
     assistantId: 'assistant-customer-ops',
     name: '问题分诊智能体',
     role: 'router',
-    instructions: '识别问题类型，决定 FAQ、售后策略或人工协同分支。',
+    responsibility: '识别问题类型，决定 FAQ、售后策略或人工协同分支。',
     executionPolicy: {
       inheritAssistantDefaults: true,
       modelResourceId: null,
@@ -367,7 +367,7 @@ const agents: Agent[] = [
     assistantId: 'assistant-customer-ops',
     name: 'FAQ 回答智能体',
     role: 'faq',
-    instructions: '基于知识检索结果输出最终 FAQ 回复。',
+    responsibility: '基于知识检索结果输出最终 FAQ 回复。',
     executionPolicy: {
       inheritAssistantDefaults: true,
       modelResourceId: 'resource-llm-compatible',
@@ -385,7 +385,7 @@ const agents: Agent[] = [
     assistantId: 'assistant-customer-ops',
     name: '售后策略智能体',
     role: 'policy',
-    instructions: '调用售后策略 Tool，给出退款或补偿结论。',
+    responsibility: '调用售后策略 Tool，给出退款或补偿结论。',
     executionPolicy: {
       inheritAssistantDefaults: true,
       modelResourceId: 'resource-llm-compatible',
@@ -403,7 +403,7 @@ const agents: Agent[] = [
     assistantId: 'assistant-customer-ops',
     name: '人工协同闭环智能体',
     role: 'handoff',
-    instructions: '在人工处理后整理摘要、调用工单 Tool，并生成闭环答复。',
+    responsibility: '在人工处理后整理摘要、调用工单 Tool，并生成闭环答复。',
     executionPolicy: {
       inheritAssistantDefaults: true,
       modelResourceId: 'resource-llm-compatible',
@@ -486,7 +486,7 @@ const currentRelease: AssistantRelease = {
     agentId: agent.id,
     name: agent.name,
     role: agent.role,
-    instructions: agent.instructions,
+    responsibility: agent.responsibility,
     executionPolicy: agent.executionPolicy,
     knowledge: agent.id === 'agent-policy' ? knowledgeBinding : agent.executionPolicy.ragEnabled ? knowledgeBinding : null,
     skillResourceVersionIds: agent.executionPolicy.skillResourceIds.map((resourceId) => resources.find((item) => item.id === resourceId)!.effectiveVersion!.id),
