@@ -1,56 +1,105 @@
+/* ─── Lynxus Briefing Deck ─── */
+
 :root {
-  --bg: #f5efe2;
-  --bg-strong: #eadfc8;
-  --surface: rgba(255, 252, 245, 0.76);
-  --surface-strong: rgba(255, 251, 244, 0.92);
-  --text: #1f2330;
-  --muted: #5f6674;
-  --line: rgba(31, 35, 48, 0.12);
-  --brand: #0f766e;
-  --brand-2: #ba3c20;
-  --brand-3: #d9a441;
-  --brand-4: #1d4ed8;
-  --shadow: 0 24px 70px rgba(76, 54, 20, 0.16);
-  --radius-xl: 28px;
-  --radius-lg: 20px;
-  --radius-md: 16px;
-  --slide-width: min(1320px, calc(100vw - 48px));
-  --slide-height: min(780px, calc(100vh - 108px));
-  --font-display: "Avenir Next", "PingFang SC", "Microsoft YaHei", sans-serif;
-  --font-body: "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  /* palette */
+  --bg-deep: #050a12;
+  --bg: #0a1120;
+  --bg-elevated: #0f1a2e;
+  --surface: rgba(15, 26, 46, 0.82);
+  --surface-hover: rgba(20, 34, 58, 0.88);
+  --text: #f0f4fc;
+  --text-dim: rgba(230, 238, 252, 0.72);
+  --muted: rgba(180, 198, 228, 0.52);
+  --border: rgba(140, 170, 220, 0.12);
+  --border-hover: rgba(140, 170, 220, 0.22);
+
+  /* accents */
+  --gold: #f0c45c;
+  --gold-soft: rgba(240, 196, 92, 0.15);
+  --blue: #6cb4ff;
+  --blue-soft: rgba(108, 180, 255, 0.12);
+  --coral: #f07a5e;
+  --coral-soft: rgba(240, 122, 94, 0.12);
+  --mint: #5ee0b8;
+  --mint-soft: rgba(94, 224, 184, 0.12);
+
+  /* shadows */
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.2), 0 12px 40px rgba(0, 0, 0, 0.15);
+  --shadow-float: 0 8px 32px rgba(0, 0, 0, 0.35);
+
+  /* layout */
+  --radius-xl: 24px;
+  --radius-lg: 16px;
+  --radius-md: 12px;
+  --radius-sm: 8px;
+  --slide-w: min(1340px, calc(100vw - 64px));
+  --slide-h: min(780px, calc(100vh - 112px));
+
+  /* type */
+  --font-display: "Noto Serif SC", "Songti SC", serif;
+  --font-body: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
-* {
+/* ─── Reset ─── */
+*,
+*::before,
+*::after {
   box-sizing: border-box;
+  margin: 0;
 }
 
-html,
-body {
-  margin: 0;
-  min-height: 100%;
-  background:
-    radial-gradient(circle at top left, rgba(15, 118, 110, 0.12), transparent 30%),
-    radial-gradient(circle at 85% 10%, rgba(186, 60, 32, 0.14), transparent 24%),
-    linear-gradient(180deg, #fbf7ef 0%, #f2ead8 100%);
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html, body {
+  height: 100%;
   color: var(--text);
   font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.6;
 }
 
 body {
   overflow: hidden;
+  background: var(--bg-deep);
 }
 
+/* ─── Ambient background ─── */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 60% 50% at 15% 10%, rgba(108, 180, 255, 0.08), transparent),
+    radial-gradient(ellipse 50% 40% at 85% 15%, rgba(240, 122, 94, 0.06), transparent),
+    radial-gradient(ellipse 55% 45% at 75% 80%, rgba(94, 224, 184, 0.05), transparent),
+    radial-gradient(ellipse 70% 60% at 50% 50%, rgba(15, 26, 46, 1), transparent);
+  animation: ambientShift 20s ease-in-out infinite alternate;
+}
+
+@keyframes ambientShift {
+  0% { opacity: 1; }
+  50% { opacity: 0.7; }
+  100% { opacity: 1; }
+}
+
+/* ─── Shell layout ─── */
 .deck-shell {
-  min-height: 100vh;
+  position: relative;
+  height: 100vh;
   display: grid;
   grid-template-rows: auto 1fr auto;
-  padding: 20px 24px 18px;
+  padding: 20px 32px 16px;
   gap: 12px;
 }
 
+/* ─── Top bar ─── */
 .topbar,
 .bottombar {
-  width: var(--slide-width);
+  width: var(--slide-w);
   margin: 0 auto;
 }
 
@@ -59,147 +108,233 @@ body {
   justify-content: space-between;
   align-items: center;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 12.5px;
+  letter-spacing: 0.06em;
 }
 
 .brand {
   display: flex;
-  gap: 12px;
   align-items: center;
+  gap: 14px;
 }
 
 .brand-mark {
   font-family: var(--font-display);
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 700;
-  letter-spacing: 0.04em;
-  color: var(--brand);
+  letter-spacing: 0.08em;
+  background: linear-gradient(135deg, var(--gold), #f8dfa0);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
-.brand-sub,
-.hint,
-#slide-counter {
-  opacity: 0.9;
+.brand-sub {
+  color: var(--text-dim);
+  font-size: 12.5px;
 }
 
 .deck-meta {
   display: flex;
-  gap: 16px;
   align-items: center;
+  gap: 16px;
 }
 
+#slide-counter {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  color: var(--text-dim);
+}
+
+.hint {
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--muted);
+  transition: opacity 0.6s ease;
+}
+
+.hint.faded {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ─── Deck container ─── */
 .deck {
   position: relative;
-  width: var(--slide-width);
-  height: var(--slide-height);
+  width: var(--slide-w);
+  height: var(--slide-h);
   margin: 0 auto;
 }
 
+/* ─── Slides ─── */
 .slide {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, var(--surface-strong), var(--surface));
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.85);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow);
-  padding: 42px 46px 36px;
+  padding: 44px 52px 36px;
   display: grid;
-  gap: 22px;
+  align-content: start;
+  gap: 20px;
+  overflow: hidden;
   opacity: 0;
   pointer-events: none;
-  transform: translateX(50px) scale(0.98);
-  transition: opacity 220ms ease, transform 220ms ease;
-  overflow: hidden;
+  transform: translateX(60px);
+  transition:
+    opacity 380ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 380ms cubic-bezier(0.4, 0, 0.2, 1);
+  background: linear-gradient(
+    165deg,
+    rgba(16, 28, 50, 0.95) 0%,
+    rgba(10, 18, 34, 0.98) 100%
+  );
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-card);
 }
 
-.slide::before {
-  content: "";
-  position: absolute;
-  inset: auto -80px -120px auto;
-  width: 280px;
-  height: 280px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(15, 118, 110, 0.18), transparent 70%);
-  pointer-events: none;
+.slide.leaving {
+  opacity: 0;
+  transform: translateX(-60px);
 }
 
 .slide.active {
   opacity: 1;
   pointer-events: auto;
-  transform: translateX(0) scale(1);
+  transform: translateX(0);
 }
 
+.slide.backward {
+  transform: translateX(-60px);
+}
+
+.slide.backward.leaving {
+  transform: translateX(60px);
+}
+
+.slide.backward.active {
+  transform: translateX(0);
+}
+
+/* ─── Stagger animation for child elements ─── */
+.slide.active > * {
+  animation: revealUp 480ms cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+}
+
+.slide.active > *:nth-child(1) { animation-delay: 60ms; }
+.slide.active > *:nth-child(2) { animation-delay: 120ms; }
+.slide.active > *:nth-child(3) { animation-delay: 180ms; }
+.slide.active > *:nth-child(4) { animation-delay: 240ms; }
+.slide.active > *:nth-child(5) { animation-delay: 300ms; }
+.slide.active > *:nth-child(6) { animation-delay: 360ms; }
+
+@keyframes revealUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ─── Hero / Close special backgrounds ─── */
 .theme-hero,
 .theme-close {
   background:
-    radial-gradient(circle at 15% 20%, rgba(15, 118, 110, 0.16), transparent 24%),
-    radial-gradient(circle at 80% 18%, rgba(186, 60, 32, 0.18), transparent 20%),
-    linear-gradient(135deg, rgba(255, 250, 243, 0.96), rgba(247, 239, 225, 0.92));
+    radial-gradient(ellipse 40% 35% at 10% 15%, rgba(108, 180, 255, 0.1), transparent),
+    radial-gradient(ellipse 35% 30% at 90% 20%, rgba(240, 122, 94, 0.08), transparent),
+    linear-gradient(165deg, rgba(16, 28, 50, 0.97), rgba(8, 14, 28, 0.99));
 }
 
-.eyebrow {
-  font-size: 14px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--brand);
-  font-weight: 700;
-}
+/* ─── Typography ─── */
+h1, h2, h3, p, ul { margin: 0; }
 
-h1,
-h2,
-h3,
-p,
-ul {
-  margin: 0;
-}
-
-h1,
-h2 {
+h1, h2 {
   font-family: var(--font-display);
-  line-height: 1.05;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
 }
 
 h1 {
-  font-size: clamp(44px, 5vw, 74px);
-  max-width: 900px;
+  font-size: clamp(42px, 4.8vw, 72px);
+  max-width: 920px;
+  background: linear-gradient(135deg, #fff 30%, var(--text-dim));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 h2 {
-  font-size: clamp(34px, 3.2vw, 50px);
+  font-size: clamp(30px, 3.2vw, 48px);
+  max-width: 860px;
+  color: var(--text);
 }
 
 h3 {
-  font-size: 20px;
-  line-height: 1.25;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.eyebrow::before {
+  content: "";
+  width: 32px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--gold), transparent);
+  border-radius: 2px;
 }
 
 .lead {
-  font-size: 22px;
-  line-height: 1.6;
-  max-width: 980px;
-  color: var(--muted);
+  font-size: 19px;
+  line-height: 1.8;
+  max-width: 960px;
+  color: var(--text-dim);
 }
 
 .lead-compact {
-  font-size: 19px;
-  max-width: 1080px;
+  font-size: 18px;
+  max-width: 980px;
 }
 
-.hero-grid,
-.closing-grid,
-.capability-grid,
-.value-grid,
-.roadmap {
-  display: grid;
+/* ─── Slide header with index badge ─── */
+.slide-head {
+  display: flex;
+  align-items: center;
   gap: 18px;
 }
 
-.hero-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin-top: 6px;
+.slide-head .index {
+  flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: var(--gold-soft);
+  border: 1px solid rgba(240, 196, 92, 0.2);
+  color: var(--gold);
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
 }
 
+/* ─── Base card style ─── */
 .hero-card,
 .closing-card,
 .capability,
@@ -213,10 +348,22 @@ h3 {
 .callout,
 .mermaid-card {
   position: relative;
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.86);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: 0 18px 40px rgba(77, 54, 18, 0.08);
+  box-shadow: var(--shadow-card);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+.hero-card:hover,
+.closing-card:hover,
+.capability:hover,
+.value-card:hover,
+.roadmap-card:hover,
+.decision-card:hover {
+  border-color: var(--border-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-float);
 }
 
 .hero-card,
@@ -230,110 +377,133 @@ h3 {
 .risk-panel,
 .foot-card,
 .callout {
-  padding: 20px 22px;
+  padding: 22px 24px;
 }
 
+/* ─── Card title decorations ─── */
 .hero-card strong,
 .metric-card strong,
 .closing-card strong {
   display: block;
-  font-size: 24px;
   margin: 8px 0 10px;
+  font-size: 22px;
+  line-height: 1.3;
+  color: #fff;
 }
 
 .label,
 .metric-title {
-  display: inline-block;
-  font-size: 12px;
-  letter-spacing: 0.1em;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--brand);
+  color: var(--gold);
   font-weight: 700;
 }
 
-.slide-head {
-  display: flex;
-  align-items: center;
-  gap: 16px;
+.label::before,
+.metric-title::before {
+  content: "";
+  width: 14px;
+  height: 2px;
+  background: var(--gold);
+  border-radius: 2px;
+  opacity: 0.6;
 }
 
-.slide-head .index {
-  width: 52px;
-  height: 52px;
-  display: grid;
-  place-items: center;
-  border-radius: 16px;
-  background: linear-gradient(135deg, rgba(15, 118, 110, 0.14), rgba(29, 78, 216, 0.1));
-  color: var(--brand);
-  font-family: var(--font-display);
-  font-weight: 800;
-}
-
+/* ─── Grid layouts ─── */
+.hero-grid,
+.closing-grid,
+.capability-grid,
+.value-grid,
+.roadmap,
 .two-col,
 .bullet-columns,
 .risk-layout,
 .foot-grid,
-.summary-strip {
+.summary-strip,
+.decision-stack {
   display: grid;
-  gap: 18px;
+  align-items: stretch;
+  gap: 16px;
 }
 
-.two-col,
-.risk-layout {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
+.hero-grid { grid-template-columns: 1.15fr 1fr 1fr; }
+.closing-grid { grid-template-columns: repeat(3, 1fr); }
+.capability-grid { grid-template-columns: repeat(3, 1fr); }
+.value-grid { grid-template-columns: repeat(2, 1fr); }
+.roadmap { grid-template-columns: repeat(2, 1fr); }
+.two-col { grid-template-columns: repeat(2, 1fr); }
+.bullet-columns { grid-template-columns: repeat(2, 1fr); }
+.risk-layout { grid-template-columns: repeat(2, 1fr); }
+.foot-grid { grid-template-columns: repeat(2, 1fr); }
+.summary-strip { grid-template-columns: repeat(3, 1fr); }
+.decision-stack { grid-template-columns: repeat(2, 1fr); }
 
-.bullet-columns {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.summary-strip {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.foot-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
+/* ─── Accent panels ─── */
 .panel,
 .risk-panel {
   display: grid;
-  gap: 14px;
+  gap: 8px;
+  grid-template-rows: auto 1fr;
+}
+
+.panel ul,
+.risk-panel ul {
+  align-content: space-between;
+}
+
+.accent-red,
+.accent-blue,
+.accent-amber,
+.accent-green {
+  overflow: hidden;
 }
 
 .accent-red {
-  border-top: 5px solid #c2410c;
+  border-top: 3px solid var(--coral);
+  background: linear-gradient(180deg, var(--coral-soft), var(--surface) 60%);
 }
 
 .accent-blue {
-  border-top: 5px solid #2563eb;
+  border-top: 3px solid var(--blue);
+  background: linear-gradient(180deg, var(--blue-soft), var(--surface) 60%);
 }
 
 .accent-amber {
-  border-top: 5px solid #d97706;
+  border-top: 3px solid var(--gold);
+  background: linear-gradient(180deg, var(--gold-soft), var(--surface) 60%);
 }
 
 .accent-green {
-  border-top: 5px solid #0f766e;
+  border-top: 3px solid var(--mint);
+  background: linear-gradient(180deg, var(--mint-soft), var(--surface) 60%);
 }
 
+/* ─── Lists ─── */
 ul {
-  padding-left: 22px;
+  padding-left: 18px;
   display: grid;
   gap: 10px;
-  line-height: 1.5;
-  color: var(--text);
+  line-height: 1.75;
+  color: var(--text-dim);
+  font-size: 15px;
 }
 
 li::marker {
-  color: var(--brand-2);
+  color: var(--gold);
 }
 
+/* ─── Callout ─── */
 .callout {
-  padding: 18px 22px;
-  border-left: 6px solid var(--brand);
+  padding-left: 28px;
+  border-left: 3px solid var(--gold);
+  background: linear-gradient(90deg, var(--gold-soft), transparent 40%), var(--surface);
 }
 
+/* ─── Text colors for content blocks ─── */
 .callout p,
 .bottom-banner,
 .decision-card p,
@@ -343,27 +513,279 @@ li::marker {
 .closing-card p,
 .hero-card p,
 .panel p,
-.risk-panel p {
-  color: var(--muted);
-  line-height: 1.6;
+.risk-panel p,
+.foot-card {
+  color: var(--text-dim);
+  line-height: 1.7;
 }
 
+.capability p,
+.value-card p,
+.decision-card p,
+.roadmap-card p,
+.foot-card,
+.panel p,
+.risk-panel p {
+  font-size: 14.5px;
+}
+
+.capability h3,
+.value-card h3,
+.decision-card h3,
+.roadmap-card h3 {
+  margin-bottom: 8px;
+}
+
+/* ─── Hero slide ─── */
+.theme-hero {
+  align-content: center;
+  gap: 18px;
+}
+
+.theme-hero .lead {
+  max-width: 1100px;
+}
+
+.theme-hero .hero-grid {
+  margin-top: 12px;
+}
+
+.hero-card {
+  min-height: 180px;
+}
+
+/* ─── Problem definition slide ─── */
+.slide[data-title="问题定义"] {
+  grid-template-rows: auto 1fr;
+}
+
+.slide[data-title="问题定义"] .two-col {
+  align-self: stretch;
+  align-items: stretch;
+}
+
+.slide[data-title="问题定义"] .panel {
+  padding: 26px 26px 30px;
+  grid-template-rows: auto 1fr;
+}
+
+.slide[data-title="问题定义"] .panel h3 {
+  font-size: 24px;
+}
+
+.slide[data-title="问题定义"] .panel ul {
+  height: 100%;
+  align-content: space-between;
+  font-size: 18px;
+  gap: 14px;
+  padding-top: 30px;
+}
+
+/* ─── 阶段判断 slide ─── */
+.slide[data-title="阶段判断"] {
+  grid-template-rows: auto auto auto 1fr;
+}
+
+.slide[data-title="阶段判断"] .bullet-columns {
+  align-self: stretch;
+  align-items: stretch;
+}
+
+.slide[data-title="阶段判断"] .bullet-columns > div {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 22px 24px;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 10px;
+}
+
+.slide[data-title="阶段判断"] .bullet-columns > div ul {
+  align-content: space-between;
+}
+
+.metric-card {
+  text-align: center;
+  padding: 18px 16px;
+}
+
+.metric-card strong {
+  font-size: 18px;
+}
+
+.bullet-columns h3 {
+  font-size: 16px;
+  color: var(--gold);
+  margin-bottom: 10px;
+}
+
+.bullet-columns ul {
+  font-size: 16px;
+  gap: 14px;
+}
+
+/* ─── 已落地能力 slide ─── */
+.slide[data-title="已落地能力"] {
+  grid-template-rows: auto 1fr;
+}
+
+.capability-grid {
+  gap: 14px;
+  align-self: stretch;
+  align-items: stretch;
+}
+
+.capability {
+  padding: 20px 22px;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+/* ─── 当前价值 slide ─── */
+.slide[data-title="当前价值"] {
+  grid-template-rows: auto 1fr auto;
+}
+
+.value-grid {
+  align-self: stretch;
+  align-items: stretch;
+}
+
+.value-card {
+  padding: 26px 28px;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  align-content: start;
+  gap: 12px;
+}
+
+.value-card h3 {
+  font-size: 19px;
+}
+
+.value-card p {
+  font-size: 15.5px;
+}
+
+/* ─── 设计取舍 slide ─── */
+.slide[data-title="设计取舍"] {
+  grid-template-rows: auto 1fr;
+}
+
+.decision-stack {
+  align-self: stretch;
+  align-items: stretch;
+}
+
+.decision-card {
+  padding: 22px 24px;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  align-content: start;
+  gap: 10px;
+}
+
+/* ─── Roadmap cards ─── */
+.roadmap-card span {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  background: var(--gold-soft);
+  border: 1px solid rgba(240, 196, 92, 0.2);
+  color: var(--gold);
+  font-weight: 800;
+  font-size: 14px;
+}
+
+/* ─── 边界与不足 slide ─── */
+.slide[data-title="边界与不足"] {
+  grid-template-rows: auto 1fr auto;
+}
+
+.slide[data-title="边界与不足"] .risk-layout {
+  align-self: stretch;
+  align-items: stretch;
+}
+
+.slide[data-title="边界与不足"] .risk-panel h3 {
+  font-size: 18px;
+}
+
+.slide[data-title="边界与不足"] .risk-panel ul {
+  font-size: 16px;
+  gap: 16px;
+}
+
+/* ─── 下一阶段 slide ─── */
+.slide[data-title="下一阶段"] {
+  grid-template-rows: auto auto 1fr;
+}
+
+.slide[data-title="下一阶段"] .roadmap {
+  align-self: stretch;
+  align-items: stretch;
+}
+
+.slide[data-title="下一阶段"] .two-col {
+  align-self: stretch;
+  align-items: stretch;
+}
+
+/* ─── 主链闭环 slide ─── */
+.slide[data-title="主链闭环"] {
+  grid-template-rows: auto 1fr auto;
+}
+
+.slide[data-title="主链闭环"] .two-col {
+  align-self: stretch;
+  align-items: stretch;
+}
+
+.slide[data-title="主链闭环"] .panel h3 {
+  font-size: 18px;
+}
+
+.slide[data-title="主链闭环"] .panel ul {
+  font-size: 16px;
+  gap: 14px;
+}
+
+/* ─── Bottom banner ─── */
+.bottom-banner {
+  padding: 16px 22px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(
+    90deg,
+    var(--coral-soft),
+    var(--blue-soft)
+  ), var(--surface);
+  border: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 14.5px;
+  color: var(--text-dim);
+}
+
+/* ─── Mermaid diagrams ─── */
 .mermaid-card {
-  padding: 10px 18px;
-  min-height: 320px;
+  padding: 16px 20px 40px;
+  min-height: 300px;
   display: grid;
   place-items: center;
   overflow: hidden;
-  position: relative;
 }
 
 .mermaid-card.compact {
-  min-height: 260px;
+  min-height: 256px;
 }
 
-.mermaid {
+.mermaid-card .mermaid {
   width: 100%;
-  font-size: 16px;
+  font-size: 15px;
 }
 
 .zoomable {
@@ -374,22 +796,24 @@ li::marker {
   position: absolute;
   right: 14px;
   bottom: 12px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: rgba(15, 118, 110, 0.12);
-  color: var(--brand);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: var(--gold-soft);
+  border: 1px solid rgba(240, 196, 92, 0.16);
+  color: var(--gold);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
 }
 
+/* ─── Diagram overlay ─── */
 .diagram-overlay {
   position: fixed;
   inset: 0;
   display: none;
   place-items: center;
-  background: rgba(18, 22, 31, 0.72);
-  backdrop-filter: blur(8px);
+  background: rgba(5, 10, 18, 0.85);
+  backdrop-filter: blur(12px);
   z-index: 1000;
   padding: 48px;
 }
@@ -400,40 +824,47 @@ li::marker {
 
 .diagram-overlay-close {
   position: absolute;
-  top: 24px;
-  right: 28px;
-  width: 44px;
-  height: 44px;
-  border: 0;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.16);
+  top: 20px;
+  right: 24px;
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
   color: #fff;
-  font-size: 32px;
+  font-size: 24px;
   line-height: 1;
   cursor: pointer;
+  transition: background 0.2s;
+}
+
+.diagram-overlay-close:hover {
+  background: rgba(255, 255, 255, 0.15);
 }
 
 .diagram-overlay-meta {
   position: absolute;
-  top: 28px;
-  left: 32px;
-  color: #fff;
-  font-size: 16px;
+  top: 24px;
+  left: 28px;
+  color: var(--gold);
+  font-size: 14px;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
 }
 
 .diagram-overlay-body {
-  width: min(92vw, 1600px);
-  height: min(86vh, 980px);
+  width: min(92vw, 1560px);
+  height: min(84vh, 940px);
   overflow: auto;
   padding: 28px;
-  border-radius: 24px;
-  background: rgba(255, 252, 245, 0.98);
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(10, 18, 34, 0.99), rgba(14, 24, 42, 0.99));
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-float);
   cursor: grab;
   user-select: none;
   scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 }
 
 .diagram-overlay-body.dragging {
@@ -448,100 +879,114 @@ li::marker {
   display: block;
 }
 
-.capability-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+/* ─── Closing slide ─── */
+.theme-close {
+  align-content: center;
+  gap: 22px;
 }
 
-.capability {
-  min-height: 138px;
+.theme-close h2 {
+  font-size: clamp(32px, 3.6vw, 52px);
+  background: linear-gradient(135deg, #fff 40%, var(--gold));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
-.capability h3,
-.value-card h3,
-.decision-card h3,
-.roadmap-card h3 {
-  margin-bottom: 10px;
+.theme-close .closing-grid {
+  margin-top: 8px;
 }
 
-.capability p,
-.value-card p,
-.decision-card p,
-.roadmap-card p,
-.foot-card,
-.panel p,
-.risk-panel p {
-  font-size: 15px;
+.closing-card strong {
+  font-size: 20px;
 }
 
-.value-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+/* ─── 系统结构 slide ─── */
+.slide[data-title="系统结构"] {
+  grid-template-rows: auto 1fr auto;
 }
 
-.value-card {
-  min-height: 150px;
+.slide[data-title="系统结构"] .foot-grid {
+  align-self: end;
 }
 
-.decision-stack {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
+/* ─── Foot grid cards ─── */
+.foot-card {
+  font-size: 14.5px;
+  padding: 18px 20px;
 }
 
-.decision-card {
-  min-height: 160px;
+/* ─── Code ─── */
+code {
+  font-family: "SF Mono", "Fira Code", Consolas, monospace;
+  font-size: 0.9em;
+  background: var(--blue-soft);
+  color: var(--blue);
+  padding: 2px 7px;
+  border-radius: 6px;
 }
 
-.roadmap {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.roadmap-card span {
-  display: inline-grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 999px;
-  background: rgba(15, 118, 110, 0.12);
-  color: var(--brand);
-  font-weight: 800;
-  margin-bottom: 14px;
-}
-
-.bottom-banner {
-  padding: 16px 20px;
-  border-radius: var(--radius-md);
-  background: linear-gradient(90deg, rgba(186, 60, 32, 0.12), rgba(15, 118, 110, 0.12));
-  font-weight: 600;
-}
-
+/* ─── Progress bar ─── */
 .progress-track {
   width: 100%;
-  height: 8px;
-  background: rgba(31, 35, 48, 0.08);
-  border-radius: 999px;
+  height: 3px;
+  border-radius: 3px;
   overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .progress-fill {
   height: 100%;
   width: 0;
-  background: linear-gradient(90deg, var(--brand), var(--brand-3), var(--brand-2));
-  transition: width 220ms ease;
+  background: linear-gradient(90deg, var(--gold), var(--blue), var(--mint));
+  border-radius: 3px;
+  transition: width 350ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.theme-close .closing-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin-top: 8px;
+/* ─── Slide dot nav ─── */
+.slide-dots {
+  display: flex;
+  gap: 6px;
+  align-items: center;
 }
 
-code {
-  font-family: "SFMono-Regular", Consolas, monospace;
-  font-size: 0.92em;
-  background: rgba(15, 118, 110, 0.08);
-  padding: 2px 6px;
-  border-radius: 8px;
+.slide-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: all 0.3s ease;
 }
 
+.slide-dot:hover {
+  background: rgba(255, 255, 255, 0.45);
+  transform: scale(1.2);
+}
+
+.slide-dot.active {
+  width: 26px;
+  border-radius: 5px;
+  background: var(--gold);
+}
+
+/* ─── Reduced motion ─── */
+@media (prefers-reduced-motion: reduce) {
+  .slide,
+  .progress-fill {
+    transition: none;
+  }
+  .slide.active > * {
+    animation: none;
+  }
+  body::before {
+    animation: none;
+  }
+}
+
+/* ─── Mobile / Compact ─── */
 @media (max-width: 1100px) {
   body {
     overflow: auto;
@@ -549,6 +994,7 @@ code {
 
   .deck-shell {
     padding: 16px;
+    height: auto;
   }
 
   .deck {
@@ -560,8 +1006,13 @@ code {
     opacity: 1;
     pointer-events: auto;
     transform: none;
-    margin-bottom: 18px;
-    min-height: 760px;
+    margin-bottom: 16px;
+    min-height: auto;
+    padding: 28px 20px 24px;
+  }
+
+  .slide.active > * {
+    animation: none;
   }
 
   .diagram-overlay {
@@ -573,6 +1024,20 @@ code {
   .deck {
     width: 100%;
   }
+
+  .topbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .hint,
+  .slide-dots {
+    display: none;
+  }
+
+  h1 { font-size: 36px; }
+  h2 { font-size: 28px; }
 
   .hero-grid,
   .summary-strip,
@@ -586,5 +1051,13 @@ code {
   .roadmap,
   .theme-close .closing-grid {
     grid-template-columns: 1fr;
+  }
+
+  .hero-card,
+  .capability,
+  .value-card,
+  .decision-card,
+  .slide[data-title="问题定义"] .panel {
+    min-height: auto;
   }
 }

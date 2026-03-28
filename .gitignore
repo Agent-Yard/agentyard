@@ -22,5 +22,6 @@ data/
 .env
 .env.local
 
+output/
 
 coverage/
