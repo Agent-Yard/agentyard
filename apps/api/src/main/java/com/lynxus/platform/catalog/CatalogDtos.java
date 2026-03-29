@@ -517,7 +517,25 @@ public final class CatalogDtos {
     ) {
     }
 
+    public record UpdateResourceRequest(
+        String name,
+        ShareScope shareScope,
+        String ownerType,
+        String ownerId,
+        String summary,
+        String steward,
+        List<String> tags
+    ) {
+    }
+
     public record CreateResourceVersionRequest(
+        String summary,
+        VersionStatus status,
+        ResourceVersionConfigurationDto configuration
+    ) {
+    }
+
+    public record UpdateResourceVersionRequest(
         String summary,
         VersionStatus status,
         ResourceVersionConfigurationDto configuration

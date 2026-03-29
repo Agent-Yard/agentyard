@@ -4,6 +4,8 @@ import os
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from fastapi import HTTPException
+
 from app.main import (
     AGENT_HUMAN_TASK_SOURCE,
     AGENT_DECISION_SKILL_READ,
@@ -33,6 +35,8 @@ from app.main import (
     build_conversation_history,
     build_structured_agent_prompt,
     build_system_prompt,
+    build_tool_outcome,
+    call_http_tool,
     configure_runtime_logger,
     execute_agent_node,
     execute_human_node,
@@ -43,6 +47,8 @@ from app.main import (
     parse_agent_structured_response,
     retrieve_knowledge,
     restore_state,
+    validate_graph,
+    validate_tool_result,
 )
 
 
@@ -169,6 +175,7 @@ def make_agent_state(assistant: AssistantRunSnapshot, graph: GraphSnapshot, ques
             "latestMessage": question,
             "history": [],
             "loadedSkillResourceVersionIds": [],
+            "sharedState": {"facts": {}, "artifacts": {}, "agentScopes": {}},
         },
         "assistant": assistant.model_dump(mode="json"),
         "graph": graph.model_dump(mode="json"),
@@ -196,6 +203,209 @@ def make_agent_state(assistant: AssistantRunSnapshot, graph: GraphSnapshot, ques
 
 
 class MemoryPromptTests(unittest.TestCase):
+    def test_agent_snapshot_uses_responsibility_field(self) -> None:
+        agent = AgentSnapshot.model_validate(
+            {
+                "agentId": "agent-1",
+                "name": "legacy-agent",
+                "role": "sales",
+                "responsibility": "负责旅游相关保险销售",
+                "executionPolicy": {
+                    "inheritAssistantDefaults": True,
+                    "modelResourceId": None,
+                    "modelResourceVersionId": None,
+                    "systemPrompt": "",
+                    "ragEnabled": False,
+                    "inheritAssistantKnowledge": False,
+                    "knowledge": None,
+                    "memoryWindowSize": 10,
+                    "skillResourceIds": [],
+                    "skillResourceVersionIds": [],
+                    "toolResourceIds": [],
+                    "toolResourceVersionIds": [],
+                },
+            }
+        )
+
+        self.assertEqual("负责旅游相关保险销售", agent.responsibility)
+
+    def test_graph_edge_snapshot_requires_explicit_route_key(self) -> None:
+        edge = GraphEdgeSnapshot.model_validate(
+            {
+                "edgeKey": "edge-1",
+                "sourceNodeKey": "start",
+                "targetNodeKey": "agent",
+                "routeKey": "default",
+                "label": "默认流转",
+                "defaultEdge": True,
+            }
+        )
+
+        self.assertEqual("default", edge.routeKey)
+
+    def test_validate_graph_rejects_start_node_with_multiple_edges(self) -> None:
+        assistant = make_assistant(memory_enabled=True, memory_window_size=10)
+        graph = GraphSnapshot(
+            executionMode="GRAPH",
+            nodes=[
+                GraphNodeSnapshot(nodeKey="start", nodeName="开始", nodeType="START", description="入口", agentId=None, humanNode=None),
+                GraphNodeSnapshot(nodeKey="end-a", nodeName="结束A", nodeType="END", description="出口A", agentId=None, humanNode=None),
+                GraphNodeSnapshot(nodeKey="end-b", nodeName="结束B", nodeType="END", description="出口B", agentId=None, humanNode=None),
+            ],
+            edges=[
+                GraphEdgeSnapshot(edgeKey="edge-a", sourceNodeKey="start", targetNodeKey="end-a", routeKey="default", label="默认", defaultEdge=True),
+                GraphEdgeSnapshot(edgeKey="edge-b", sourceNodeKey="start", targetNodeKey="end-b", routeKey="other", label="其他", defaultEdge=False),
+            ],
+        )
+
+        with self.assertRaises(HTTPException) as ctx:
+            validate_graph(graph, assistant)
+        self.assertIn("START node must have exactly one outgoing edge", str(ctx.exception.detail))
+
+    def test_validate_graph_rejects_start_node_without_default_route(self) -> None:
+        assistant = make_assistant(memory_enabled=True, memory_window_size=10)
+        graph = GraphSnapshot(
+            executionMode="GRAPH",
+            nodes=[
+                GraphNodeSnapshot(nodeKey="start", nodeName="开始", nodeType="START", description="入口", agentId=None, humanNode=None),
+                GraphNodeSnapshot(nodeKey="end", nodeName="结束", nodeType="END", description="出口", agentId=None, humanNode=None),
+            ],
+            edges=[
+                GraphEdgeSnapshot(edgeKey="edge-start", sourceNodeKey="start", targetNodeKey="end", routeKey="sales", label="销售", defaultEdge=False),
+            ],
+        )
+
+        with self.assertRaises(HTTPException) as ctx:
+            validate_graph(graph, assistant)
+        self.assertIn("START node outgoing edge must be routeKey=default and defaultEdge=true", str(ctx.exception.detail))
+
+    def test_build_tool_outcome_keeps_business_result_without_orchestration_mapping(self) -> None:
+        tool_resource = make_tool_resource()
+        operation = tool_resource.configuration.tool.operations[0]
+
+        outcome = build_tool_outcome(
+            tool_resource,
+            operation,
+            {"status": "COMPLETED", "ticketId": "TICKET-1001", "reason": "需要人工复核"},
+        )
+
+        self.assertEqual(
+            outcome,
+            {
+                "toolResourceId": "resource-tool",
+                "toolResourceName": "退款策略工具",
+                "operation": "evaluate_refund",
+                "providerType": "HTTP",
+                "result": {"status": "COMPLETED", "ticketId": "TICKET-1001", "reason": "需要人工复核"},
+            },
+        )
+
+    def test_validate_tool_result_rejects_non_object_response(self) -> None:
+        tool_resource = make_tool_resource()
+        operation = tool_resource.configuration.tool.operations[0]
+
+        with self.assertRaises(AgentTurnError) as captured:
+            validate_tool_result(tool_resource, operation, ["not", "an", "object"])
+
+        self.assertEqual("TOOL_RESPONSE_INVALID", captured.exception.code)
+
+    def test_validate_tool_result_rejects_output_schema_mismatch(self) -> None:
+        tool_resource = make_tool_resource(
+            operations=[
+                ToolOperationConfig(
+                    name="evaluate_refund",
+                    description="判断退款资格",
+                    outputSchema='{"type":"object","required":["ticketId"],"properties":{"ticketId":{"type":"string"}}}',
+                )
+            ]
+        )
+        operation = tool_resource.configuration.tool.operations[0]
+
+        with self.assertRaises(AgentTurnError) as captured:
+            validate_tool_result(tool_resource, operation, {"status": "COMPLETED"})
+
+        self.assertEqual("TOOL_RESPONSE_INVALID", captured.exception.code)
+        self.assertIn("$.ticketId is required", captured.exception.message)
+
+    def test_should_send_get_http_tool_payload_as_query_params(self) -> None:
+        tool_resource = make_tool_resource()
+        tool_resource.configuration.tool.http.method = "GET"
+        tool_resource.configuration.tool.http.endpoint = "https://example.invalid/refund"
+        operation = tool_resource.configuration.tool.operations[0]
+        payload = {"orderId": "ord-1", "includeHistory": True}
+        captured_request: dict = {}
+
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict:
+                return {"status": "ok"}
+
+        class FakeAsyncClient:
+            def __init__(self, *args, **kwargs) -> None:
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb) -> bool:
+                return False
+
+            async def request(self, method: str, url: str, **kwargs) -> FakeResponse:
+                captured_request["method"] = method
+                captured_request["url"] = url
+                captured_request["kwargs"] = kwargs
+                return FakeResponse()
+
+        with patch("app.main.httpx.AsyncClient", FakeAsyncClient):
+            result = asyncio.run(call_http_tool(tool_resource, operation, payload))
+
+        self.assertEqual({"status": "ok"}, result)
+        self.assertEqual("GET", captured_request["method"])
+        self.assertEqual("https://example.invalid/refund", captured_request["url"])
+        self.assertEqual(payload, captured_request["kwargs"].get("params"))
+        self.assertNotIn("json", captured_request["kwargs"])
+
+    def test_should_send_non_get_http_tool_payload_as_json_body(self) -> None:
+        tool_resource = make_tool_resource()
+        tool_resource.configuration.tool.http.endpoint = "https://example.invalid/refund"
+        operation = tool_resource.configuration.tool.operations[0]
+        payload = {"orderId": "ord-1", "reason": "duplicate"}
+        captured_request: dict = {}
+
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict:
+                return {"status": "ok"}
+
+        class FakeAsyncClient:
+            def __init__(self, *args, **kwargs) -> None:
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb) -> bool:
+                return False
+
+            async def request(self, method: str, url: str, **kwargs) -> FakeResponse:
+                captured_request["method"] = method
+                captured_request["url"] = url
+                captured_request["kwargs"] = kwargs
+                return FakeResponse()
+
+        with patch("app.main.httpx.AsyncClient", FakeAsyncClient):
+            result = asyncio.run(call_http_tool(tool_resource, operation, payload))
+
+        self.assertEqual({"status": "ok"}, result)
+        self.assertEqual("POST", captured_request["method"])
+        self.assertEqual("https://example.invalid/refund", captured_request["url"])
+        self.assertEqual(payload, captured_request["kwargs"].get("json"))
+        self.assertNotIn("params", captured_request["kwargs"])
+
     def test_should_skip_knowledge_hits_when_retrieval_is_low_confidence(self) -> None:
         binding = KnowledgeBindingSnapshot(
             knowledgeBaseId="knowledge-base-support",
@@ -326,14 +536,20 @@ class MemoryPromptTests(unittest.TestCase):
             [],
             [{"operation": "evaluate_refund", "detail": "符合规则"}],
             {"human": "none"},
+            {"customer": {"tier": "gold"}},
+            {"refundCheck": {"status": "done"}},
+            {"draft": {"step": "confirm"}},
         )
 
-        self.assertIn("用户问题：\n可以帮我退款吗", prompt)
+        self.assertIn("用户消息：\n可以帮我退款吗", prompt)
         self.assertIn("会话记忆：\n[USER] 用户: 订单号是 123", prompt)
         self.assertIn("可用技能目录：", prompt)
         self.assertIn("已加载技能详情：", prompt)
         self.assertIn("请结合规则与工具结果判断售后策略。", prompt)
         self.assertIn("工具结果：", prompt)
+        self.assertIn("共享事实（facts）：", prompt)
+        self.assertIn("共享产物（artifacts）：", prompt)
+        self.assertIn("当前智能体私有上下文（agentScope）：", prompt)
         self.assertNotIn("请基于知识库直接回答 FAQ。", prompt)
 
     def test_build_structured_agent_prompt_includes_decision_schema_and_route_details(self) -> None:
@@ -368,6 +584,9 @@ class MemoryPromptTests(unittest.TestCase):
         prompt = build_structured_agent_prompt(
             "可以帮我退款吗",
             "[USER] 用户: 订单号是 123",
+            {"customer": {"tier": "gold"}},
+            {"refundCheck": {"status": "done"}},
+            {"draft": {"step": "confirm"}},
             available_skill_catalog(resources),
             loaded_skill_details(resources, {"loadedSkillResourceVersionIds": ["skill-v2"]}),
             [],
@@ -384,6 +603,7 @@ class MemoryPromptTests(unittest.TestCase):
         self.assertIn('"targetNodeKey": "end"', prompt)
         self.assertIn('"decisionSemantics"', prompt)
         self.assertIn('"SKILL_READ"', prompt)
+        self.assertIn('"sessionStatePatch"', prompt)
         self.assertIn('Do not include skillReads.', prompt)
         self.assertIn('Use SKILL_READ for skill-only continuation turns.', prompt)
 
@@ -416,6 +636,123 @@ class MemoryPromptTests(unittest.TestCase):
         self.assertEqual(merged, ["skill-v1", "skill-v2"])
         self.assertEqual(session_context["loadedSkillResourceVersionIds"], ["skill-v1", "skill-v2"])
 
+    def test_execute_agent_node_applies_session_state_patch(self) -> None:
+        model_resource = make_model_resource()
+        agent = make_agent(memory_window_size=4).model_copy(
+            update={
+                "executionPolicy": make_agent(memory_window_size=4).executionPolicy.model_copy(
+                    update={
+                        "modelResourceVersionId": model_resource.resourceVersionId,
+                    }
+                ),
+            }
+        )
+        graph = GraphSnapshot(
+            executionMode="GRAPH",
+            nodes=[
+                GraphNodeSnapshot(nodeKey="start", nodeName="开始", nodeType="START", description="开始"),
+                GraphNodeSnapshot(nodeKey="agent-node", nodeName="节点", nodeType="AGENT", description="说明", agentId=agent.agentId),
+                GraphNodeSnapshot(nodeKey="end", nodeName="结束", nodeType="END", description="结束"),
+            ],
+            edges=[
+                GraphEdgeSnapshot(edgeKey="edge-1", sourceNodeKey="agent-node", targetNodeKey="end", routeKey="default", label="默认", defaultEdge=True),
+            ],
+        )
+        assistant = make_assistant(True, 4).model_copy(
+            update={
+                "agents": [agent],
+                "resources": [model_resource],
+                "graph": graph,
+                "assistantPolicy": AssistantPolicySnapshot(
+                    providerResourceId=model_resource.resourceId,
+                    providerResourceVersionId=model_resource.resourceVersionId,
+                    memoryEnabled=True,
+                    memoryWindowSize=4,
+                ),
+            }
+        )
+        state = make_agent_state(assistant, graph, question="请继续处理")
+
+        with patch(
+            "app.main.call_llm",
+            AsyncMock(
+                return_value="""{
+                  "decisionType": "FINAL",
+                  "message": "处理完成",
+                  "routeDecision": "default",
+                  "sessionStatePatch": {
+                    "ops": [
+                      {"target": "FACTS", "op": "UPSERT", "path": ["entities", "ticketRef"], "value": "T-001"},
+                      {"target": "ARTIFACTS", "op": "UPSERT", "path": ["refund", "status"], "value": "approved"},
+                      {"target": "AGENT_SCOPE", "op": "UPSERT", "path": ["draft", "nextStep"], "value": "notify-user"}
+                    ]
+                  }
+                }"""
+            ),
+        ):
+            asyncio.run(execute_agent_node(state, graph.nodes[1]))
+
+        shared_state = state["session_context"]["sharedState"]
+        self.assertEqual(shared_state["facts"]["entities"]["ticketRef"], "T-001")
+        self.assertEqual(shared_state["artifacts"]["refund"]["status"], "approved")
+        self.assertEqual(shared_state["agentScopes"][agent.agentId]["draft"]["nextStep"], "notify-user")
+
+    def test_execute_agent_node_pauses_for_invalid_session_state_patch(self) -> None:
+        model_resource = make_model_resource()
+        agent = make_agent(memory_window_size=4).model_copy(
+            update={
+                "executionPolicy": make_agent(memory_window_size=4).executionPolicy.model_copy(
+                    update={"modelResourceVersionId": model_resource.resourceVersionId}
+                ),
+            }
+        )
+        graph = GraphSnapshot(
+            executionMode="GRAPH",
+            nodes=[
+                GraphNodeSnapshot(nodeKey="start", nodeName="开始", nodeType="START", description="开始"),
+                GraphNodeSnapshot(nodeKey="agent-node", nodeName="节点", nodeType="AGENT", description="说明", agentId=agent.agentId),
+                GraphNodeSnapshot(nodeKey="end", nodeName="结束", nodeType="END", description="结束"),
+            ],
+            edges=[
+                GraphEdgeSnapshot(edgeKey="edge-1", sourceNodeKey="agent-node", targetNodeKey="end", routeKey="default", label="默认", defaultEdge=True),
+            ],
+        )
+        assistant = make_assistant(True, 4).model_copy(
+            update={
+                "agents": [agent],
+                "resources": [model_resource],
+                "graph": graph,
+                "assistantPolicy": AssistantPolicySnapshot(
+                    providerResourceId=model_resource.resourceId,
+                    providerResourceVersionId=model_resource.resourceVersionId,
+                    memoryEnabled=True,
+                    memoryWindowSize=4,
+                ),
+            }
+        )
+        state = make_agent_state(assistant, graph, question="请审核")
+        state["session_context"]["sharedState"]["facts"] = {"existing": "value"}
+
+        with patch(
+            "app.main.call_llm",
+            AsyncMock(
+                return_value="""{
+                  "decisionType": "FINAL",
+                  "message": "处理完成",
+                  "routeDecision": "default",
+                  "sessionStatePatch": {
+                    "ops": [
+                      {"target": "FACTS", "op": "UPSERT", "path": ["existing", "child"], "value": "broken"}
+                    ]
+                  }
+                }"""
+            ),
+        ):
+            asyncio.run(execute_agent_node(state, graph.nodes[1]))
+
+        self.assertIsNotNone(state["human_task"])
+        self.assertIn("MODEL_OUTPUT_INVALID", state["summary"])
+
     def test_parse_agent_structured_response_rejects_invalid_skill_reads(self) -> None:
         skill_resource = make_skill_resource("skill-v1", "FAQ 技能", "用于 FAQ 回答", "请基于知识库直接回答 FAQ。")
         agent = make_agent(memory_window_size=4)
@@ -445,10 +782,7 @@ class MemoryPromptTests(unittest.TestCase):
                 llm_output,
                 graph,
                 node,
-                agent,
                 [skill_resource],
-                [],
-                state,
                 [],
             )
 
@@ -546,8 +880,9 @@ class MemoryPromptTests(unittest.TestCase):
                 tool_resource.configuration.tool.operations[0],
                 {
                     "status": "COMPLETED",
-                    "routeKey": "default",
-                    "detail": "订单符合规则，可直接退款。",
+                    "eligibility": "APPROVED",
+                    "resolution": "STANDARD_REFUND",
+                    "reason": "订单符合规则，可直接退款。",
                 },
             )
         )
@@ -560,7 +895,15 @@ class MemoryPromptTests(unittest.TestCase):
         self.assertIn("可以按标准退款流程处理。", state["final_reply"])
         self.assertNotIn("订单符合规则，可直接退款。", state["final_reply"])
         self.assertEqual(state["summary"], state["final_reply"])
-        self.assertEqual(state["latest_tool_outcome"]["detail"], "订单符合规则，可直接退款。")
+        self.assertEqual(
+            state["latest_tool_outcome"]["result"],
+            {
+                "status": "COMPLETED",
+                "eligibility": "APPROVED",
+                "resolution": "STANDARD_REFUND",
+                "reason": "订单符合规则，可直接退款。",
+            },
+        )
 
         first_prompt = mock_llm.await_args_list[0].args[1]
         second_prompt = mock_llm.await_args_list[1].args[1]
@@ -569,6 +912,7 @@ class MemoryPromptTests(unittest.TestCase):
         self.assertIn("已加载技能详情：", second_prompt)
         self.assertIn("请结合规则与工具结果判断售后策略。", second_prompt)
         self.assertIn("工具结果：", second_prompt)
+        self.assertIn('"result"', second_prompt)
         self.assertEqual(mock_tool.await_count, 1)
 
     def test_execute_agent_node_supports_skill_read_only_turn(self) -> None:
@@ -686,10 +1030,7 @@ class MemoryPromptTests(unittest.TestCase):
                 llm_output,
                 graph,
                 graph.nodes[0],
-                agent,
                 [skill_resource],
-                [],
-                state,
                 [],
             )
 
@@ -774,11 +1115,11 @@ class MemoryPromptTests(unittest.TestCase):
         tool_results = [
             (
                 tool_resource.configuration.tool.operations[0],
-                {"status": "ACCEPTED", "ticketId": "TICKET-1001", "detail": "工单已创建。"},
+                {"status": "ACCEPTED", "ticketId": "TICKET-1001", "message": "工单已创建。"},
             ),
             (
                 tool_resource.configuration.tool.operations[1],
-                {"status": "COMPLETED", "externalReference": "TICKET-1001", "detail": "备注已追加。"},
+                {"status": "COMPLETED", "message": "备注已追加。"},
             ),
         ]
         mock_llm = AsyncMock(side_effect=llm_outputs)
@@ -788,11 +1129,11 @@ class MemoryPromptTests(unittest.TestCase):
             asyncio.run(execute_agent_node(state, graph.nodes[0]))
 
         second_tool_payload = mock_tool.await_args_list[1].args[2]
-        self.assertEqual(second_tool_payload["ticketId"], "TICKET-1001")
+        self.assertEqual(second_tool_payload, {"comment": "请尽快处理"})
         self.assertEqual(len(state["tool_history"]), 2)
         self.assertNotIn("备注已追加。", state["final_reply"])
         self.assertEqual(state["summary"], state["final_reply"])
-        self.assertEqual(state["latest_tool_outcome"]["detail"], "备注已追加。")
+        self.assertEqual(state["latest_tool_outcome"]["result"], {"status": "COMPLETED", "message": "备注已追加。"})
 
     def test_execute_agent_node_non_json_output_pauses_for_human(self) -> None:
         model_resource = make_model_resource()
@@ -1144,7 +1485,7 @@ class MemoryPromptTests(unittest.TestCase):
                         title="人工审核",
                         instruction="请人工审核订单",
                         expectedAction="填写审核结论",
-                        resumeRouteKey="approved",
+                        resumeRouteKey="default",
                     ),
                 ),
                 GraphNodeSnapshot(nodeKey="end", nodeName="结束", nodeType="END", description="结束"),
@@ -1162,7 +1503,7 @@ class MemoryPromptTests(unittest.TestCase):
                     edgeKey="edge-approved",
                     sourceNodeKey="human",
                     targetNodeKey="end",
-                    routeKey="approved",
+                    routeKey="default",
                     label="审核通过",
                     defaultEdge=True,
                 ),
@@ -1202,6 +1543,68 @@ class MemoryPromptTests(unittest.TestCase):
         self.assertEqual(restored["current_node_key"], "end")
         self.assertEqual(restored["human_input"]["comment"], "审核通过")
         self.assertEqual(restored["pause_reason"]["code"], "GRAPH_HUMAN_NODE")
+
+    def test_restore_state_prefers_resume_session_shared_state(self) -> None:
+        assistant = make_assistant(True, 4)
+        graph = GraphSnapshot(
+            executionMode="GRAPH",
+            nodes=[
+                GraphNodeSnapshot(nodeKey="start", nodeName="开始", nodeType="START", description="开始"),
+                GraphNodeSnapshot(nodeKey="end", nodeName="结束", nodeType="END", description="结束"),
+            ],
+            edges=[
+                GraphEdgeSnapshot(edgeKey="edge-1", sourceNodeKey="start", targetNodeKey="end", routeKey="default", label="默认", defaultEdge=True),
+            ],
+        )
+        state = make_agent_state(assistant.model_copy(update={"graph": graph}), graph, question="继续处理")
+        state["session_context"]["sharedState"]["facts"] = {"fromCheckpoint": True}
+        payload = {
+            "question": state["question"],
+            "session_context": state["session_context"],
+            "assistant": state["assistant"],
+            "graph": state["graph"],
+            "final_reply": "",
+            "summary": "",
+            "retrieval_hits": [],
+            "retrieval_cache": {},
+            "tool_history": [],
+            "tool_calls": [],
+            "node_snapshots": [],
+            "human_task": None,
+            "latest_tool_outcome": None,
+            "escalation_required": False,
+            "resume_count": 0,
+            "agent_turn_state": {"phase": "IDLE", "turnIndex": 0, "turnLogs": []},
+            "pause_reason": None,
+            "workflow_status": "RUNNING",
+        }
+        session_context = SessionContext(
+            sessionId="session-1",
+            requester="u-1",
+            latestMessage="继续处理",
+            history=[],
+            loadedSkillResourceVersionIds=[],
+            sharedState={"facts": {"fromResume": True}, "artifacts": {}, "agentScopes": {}},
+        )
+        resume_request = WorkflowResumeRequest(
+            taskId="task-1",
+            workflowInstanceId="wf-restore",
+            scenarioId="scenario-1",
+            action=HumanAction(action="CONFIRM", comment="继续", operatorId="operator-2"),
+            sessionContext=session_context,
+            assistant=assistant.model_copy(update={"graph": graph}),
+            checkpoint=ExecutionCheckpoint(
+                checkpointId="cp-1",
+                currentNodeKey="end",
+                waitingNodeKey="human",
+                statePayload=__import__("json").dumps(payload),
+                resumeCount=0,
+            ),
+        )
+
+        restored = restore_state(payload, resume_request)
+
+        self.assertEqual(restored["session_context"]["sharedState"]["facts"], {"fromResume": True})
 
     def test_resume_agent_run_terminate_cancels_workflow(self) -> None:
         model_resource = make_model_resource()

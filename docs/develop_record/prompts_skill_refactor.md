@@ -34,7 +34,7 @@
   - `system` = 平台内置系统规则 + `agent.systemPrompt`
   - `user` = 平台内置 `default_v1` 渲染结果
 - `default_v1` 首轮统一按需包含：
-  - 用户问题
+  - 用户消息
   - 会话记忆
   - 当前 agent 挂载技能摘要列表（只含 `skillName / skillDesc`）
   - 当前 session 已加载且当前 agent 挂载的技能详情（注入 `skillPrompt`）

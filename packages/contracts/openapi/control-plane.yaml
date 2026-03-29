@@ -97,6 +97,27 @@ paths:
       summary: List resources
     post:
       summary: Create resource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateResourceRequest'
+  /resources/{resourceId}:
+    put:
+      summary: Update resource
+      parameters:
+        - in: path
+          name: resourceId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateResourceRequest'
   /resources/{resourceId}/versions:
     get:
       summary: List resource versions
@@ -111,6 +132,45 @@ paths:
       parameters:
         - in: path
           name: resourceId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateResourceVersionRequest'
+  /resources/{resourceId}/versions/{versionId}:
+    put:
+      summary: Update resource version
+      parameters:
+        - in: path
+          name: resourceId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: versionId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateResourceVersionRequest'
+    delete:
+      summary: Delete resource version
+      parameters:
+        - in: path
+          name: resourceId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: versionId
           required: true
           schema:
             type: string
@@ -647,6 +707,241 @@ components:
           type: array
           items:
             type: string
+    ResourceType:
+      type: string
+      enum: [TOOL, LLM_MODEL, SKILL]
+    ShareScope:
+      type: string
+      enum: [PRIVATE, DOMAIN_SHARED]
+    ToolProviderType:
+      type: string
+      enum: [HTTP, MCP]
+    ToolOperation:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        inputSchema:
+          type: string
+        outputSchema:
+          type: string
+    HttpToolProviderConfig:
+      type: object
+      properties:
+        endpoint:
+          type: string
+        method:
+          type: string
+    McpToolProviderConfig:
+      type: object
+      properties:
+        serverName:
+          type: string
+        transport:
+          type: string
+        connectionUri:
+          type: string
+        namespace:
+          type: string
+        heartbeatSeconds:
+          type: integer
+        operationMappings:
+          type: object
+          additionalProperties:
+            type: string
+    ToolConfig:
+      type: object
+      properties:
+        operations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolOperation'
+        providerType:
+          $ref: '#/components/schemas/ToolProviderType'
+        authType:
+          type: string
+        timeoutSeconds:
+          type: integer
+        retryPolicy:
+          type: string
+        http:
+          allOf:
+            - $ref: '#/components/schemas/HttpToolProviderConfig'
+          nullable: true
+        mcp:
+          allOf:
+            - $ref: '#/components/schemas/McpToolProviderConfig'
+          nullable: true
+    LlmModelConfig:
+      type: object
+      properties:
+        providerType:
+          type: string
+        modelId:
+          type: string
+        baseUrl:
+          type: string
+        apiKeyEnvVar:
+          type: string
+        organization:
+          type: string
+        project:
+          type: string
+        region:
+          type: string
+        temperature:
+          type: number
+        maxTokens:
+          type: integer
+    SkillConfig:
+      type: object
+      properties:
+        skillName:
+          type: string
+        skillDesc:
+          type: string
+        skillPrompt:
+          type: string
+    ResourceVersionConfiguration:
+      type: object
+      properties:
+        type:
+          $ref: '#/components/schemas/ResourceType'
+        tool:
+          allOf:
+            - $ref: '#/components/schemas/ToolConfig'
+          nullable: true
+        llmModel:
+          allOf:
+            - $ref: '#/components/schemas/LlmModelConfig'
+          nullable: true
+        skill:
+          allOf:
+            - $ref: '#/components/schemas/SkillConfig'
+          nullable: true
+    ResourceVersion:
+      type: object
+      properties:
+        id:
+          type: string
+        resourceId:
+          type: string
+        version:
+          type: string
+        status:
+          $ref: '#/components/schemas/VersionStatus'
+        summary:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        publishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        configuration:
+          $ref: '#/components/schemas/ResourceVersionConfiguration'
+    Resource:
+      type: object
+      properties:
+        id:
+          type: string
+        domainId:
+          type: string
+        name:
+          type: string
+        type:
+          $ref: '#/components/schemas/ResourceType'
+        shareScope:
+          $ref: '#/components/schemas/ShareScope'
+        ownerType:
+          type: string
+        ownerId:
+          type: string
+        summary:
+          type: string
+        steward:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        latestVersion:
+          allOf:
+            - $ref: '#/components/schemas/ResourceVersion'
+          nullable: true
+        effectiveVersion:
+          allOf:
+            - $ref: '#/components/schemas/ResourceVersion'
+          nullable: true
+        versions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResourceVersion'
+    CreateResourceRequest:
+      type: object
+      properties:
+        domainId:
+          type: string
+        name:
+          type: string
+        type:
+          $ref: '#/components/schemas/ResourceType'
+        shareScope:
+          $ref: '#/components/schemas/ShareScope'
+        ownerType:
+          type: string
+        ownerId:
+          type: string
+        summary:
+          type: string
+        steward:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        initialVersion:
+          $ref: '#/components/schemas/CreateResourceVersionRequest'
+    UpdateResourceRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        shareScope:
+          $ref: '#/components/schemas/ShareScope'
+        ownerType:
+          type: string
+        ownerId:
+          type: string
+        summary:
+          type: string
+        steward:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+    CreateResourceVersionRequest:
+      type: object
+      properties:
+        summary:
+          type: string
+        status:
+          $ref: '#/components/schemas/VersionStatus'
+        configuration:
+          $ref: '#/components/schemas/ResourceVersionConfiguration'
+    UpdateResourceVersionRequest:
+      type: object
+      properties:
+        summary:
+          type: string
+        status:
+          $ref: '#/components/schemas/VersionStatus'
+        configuration:
+          $ref: '#/components/schemas/ResourceVersionConfiguration'
     KnowledgeRetrievalProfile:
       type: object
       properties:
@@ -991,7 +1286,6 @@ components:
           type: string
         routeKey:
           type: string
-          nullable: true
         label:
           type: string
         defaultEdge:
@@ -1048,7 +1342,7 @@ components:
           type: string
         role:
           type: string
-        instructions:
+        responsibility:
           type: string
         executionPolicy:
           $ref: '#/components/schemas/AgentExecutionPolicy'
@@ -1059,7 +1353,7 @@ components:
           type: string
         role:
           type: string
-        instructions:
+        responsibility:
           type: string
         executionPolicy:
           $ref: '#/components/schemas/AgentExecutionPolicy'
@@ -1149,14 +1443,23 @@ components:
           type: string
         providerType:
           type: string
-        externalReference:
-          type: string
-        status:
-          type: string
-        recommendedAction:
-          type: string
-        detail:
-          type: string
+        result:
+          type: object
+          additionalProperties: true
+    SharedSessionState:
+      type: object
+      properties:
+        facts:
+          type: object
+          additionalProperties: true
+        artifacts:
+          type: object
+          additionalProperties: true
+        agentScopes:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties: true
     ToolInvocationSnapshot:
       type: object
       properties:
@@ -1302,6 +1605,8 @@ components:
           type: array
           items:
             type: string
+        sharedState:
+          $ref: '#/components/schemas/SharedSessionState'
     ConversationMessageRequest:
       type: object
       properties:
@@ -1395,3 +1700,5 @@ components:
           type: array
           items:
             type: string
+        sharedState:
+          $ref: '#/components/schemas/SharedSessionState'

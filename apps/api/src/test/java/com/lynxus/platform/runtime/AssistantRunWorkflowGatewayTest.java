@@ -42,7 +42,8 @@ class AssistantRunWorkflowGatewayTest {
             List.of(),
             false,
             null,
-            List.of()
+            List.of(),
+            WorkflowContracts.SharedSessionState.empty()
         );
         WorkflowResult completed = new WorkflowResult(
             "wf-123",
@@ -57,7 +58,8 @@ class AssistantRunWorkflowGatewayTest {
             List.of(),
             false,
             null,
-            List.of()
+            List.of(),
+            WorkflowContracts.SharedSessionState.empty()
         );
         when(workflowClient.newWorkflowStub(eq(AssistantRunWorkflow.class), any(WorkflowOptions.class))).thenReturn(workflow);
         when(workflow.currentResult()).thenReturn(running, completed);
@@ -88,7 +90,8 @@ class AssistantRunWorkflowGatewayTest {
             List.of(),
             false,
             null,
-            List.of()
+            List.of(),
+            WorkflowContracts.SharedSessionState.empty()
         );
         when(workflowClient.newWorkflowStub(AssistantRunWorkflow.class, "wf-123")).thenReturn(existingWorkflow);
         when(existingWorkflow.currentResult()).thenReturn(expected);

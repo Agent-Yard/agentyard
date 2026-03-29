@@ -4,6 +4,7 @@ import com.lynxus.contracts.runtime.WorkflowContracts.ExecutionCheckpoint;
 import com.lynxus.contracts.runtime.WorkflowContracts.HumanTaskSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.NodeStatus;
 import com.lynxus.contracts.runtime.WorkflowContracts.PauseReasonSnapshot;
+import com.lynxus.contracts.runtime.WorkflowContracts.SharedSessionState;
 import com.lynxus.contracts.runtime.WorkflowContracts.TaskStatus;
 import com.lynxus.contracts.runtime.WorkflowContracts.ToolOutcomeSummary;
 import com.lynxus.contracts.runtime.WorkflowContracts.ToolInvocationSnapshot;
@@ -63,7 +64,8 @@ public final class RuntimeDtos {
         List<NodeExecutionDto> nodes,
         List<ToolInvocationSnapshot> toolCalls,
         List<HumanInterventionDto> interventions,
-        List<String> loadedSkillResourceVersionIds
+        List<String> loadedSkillResourceVersionIds,
+        SharedSessionState sharedState
     ) {
     }
 
@@ -118,7 +120,8 @@ public final class RuntimeDtos {
         ToolOutcomeSummary latestToolOutcome,
         HumanTaskSnapshot latestHumanTask,
         PauseReasonSnapshot latestPauseReason,
-        List<String> loadedSkillResourceVersionIds
+        List<String> loadedSkillResourceVersionIds,
+        SharedSessionState sharedState
     ) {
     }
 }

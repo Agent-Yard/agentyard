@@ -404,6 +404,31 @@ public class CatalogService {
         return versionsFor(resourceId);
     }
 
+    public ResourceDto updateResource(String resourceId, UpdateResourceRequest request) {
+        ensureLoaded();
+        ResourceDto existing = findResource(resourceId);
+        String name = requireText(request.name(), "resource.name");
+        validateResourceOwner(existing.domainId(), request.ownerType(), request.ownerId());
+        ResourceDto updated = new ResourceDto(
+            existing.id(),
+            existing.domainId(),
+            name,
+            existing.type(),
+            request.shareScope() == null ? existing.shareScope() : request.shareScope(),
+            request.ownerType(),
+            request.ownerId(),
+            normalizeOptionalText(request.summary()),
+            normalizeOptionalText(request.steward()),
+            request.tags() == null ? List.of() : List.copyOf(request.tags()),
+            existing.latestVersion(),
+            existing.effectiveVersion(),
+            existing.versions()
+        );
+        replace(resources, ResourceDto::id, updated);
+        persistState();
+        return toResourceView(updated);
+    }
+
     public ResourceVersionDto createResourceVersion(String resourceId, CreateResourceVersionRequest request) {
         ensureLoaded();
         ResourceDto resource = findResource(resourceId);
@@ -443,6 +468,66 @@ public class CatalogService {
         resourceVersions.put(resourceId, existingVersions);
         persistState();
         return toResourceVersionDto(created);
+    }
+
+    public ResourceVersionDto updateResourceVersion(String resourceId, String versionId, UpdateResourceVersionRequest request) {
+        ensureLoaded();
+        ResourceDto resource = findResource(resourceId);
+        StoredResourceVersion existing = storedVersionsFor(resourceId).stream()
+            .filter(item -> item.id().equals(versionId))
+            .findFirst()
+            .orElseThrow(() -> new NoSuchElementException("resource version not found: " + resourceId + "/" + versionId));
+        if (existing.status() == VersionStatus.PUBLISHED) {
+            throw new IllegalStateException("published resource version cannot be updated directly: " + resourceId + "/" + versionId);
+        }
+
+        VersionStatus targetStatus = request.status() == null ? VersionStatus.DRAFT : request.status();
+        ResourceVersionConfigurationDto normalizedConfiguration = normalizeConfiguration(resource.type(), request.configuration());
+        if (targetStatus == VersionStatus.PUBLISHED) {
+            validateVersionReadyForActivation(resource.type(), normalizedConfiguration);
+        }
+        String summary = normalizeOptionalText(request.summary());
+        String configDigest = generateConfigDigest(normalizedConfiguration);
+        Instant publishedAt = targetStatus == VersionStatus.PUBLISHED ? Instant.now() : null;
+
+        List<StoredResourceVersion> updatedVersions = storedVersionsFor(resourceId).stream()
+            .map(version -> {
+                if (version.id().equals(versionId)) {
+                    return new StoredResourceVersion(
+                        version.id(),
+                        version.resourceId(),
+                        version.version(),
+                        targetStatus,
+                        summary,
+                        configDigest,
+                        version.createdAt(),
+                        publishedAt,
+                        normalizedConfiguration
+                    );
+                }
+                if (targetStatus == VersionStatus.PUBLISHED && version.status() == VersionStatus.PUBLISHED) {
+                    return new StoredResourceVersion(
+                        version.id(),
+                        version.resourceId(),
+                        version.version(),
+                        VersionStatus.DRAFT,
+                        version.summary(),
+                        version.configDigest(),
+                        version.createdAt(),
+                        null,
+                        version.configuration()
+                    );
+                }
+                return version;
+            })
+            .toList();
+        resourceVersions.put(resourceId, updatedVersions);
+        persistState();
+        return updatedVersions.stream()
+            .filter(item -> item.id().equals(versionId))
+            .map(this::toResourceVersionDto)
+            .findFirst()
+            .orElseThrow();
     }
 
     public ResourceVersionDto publishResourceVersion(String resourceId, String versionId) {
@@ -891,7 +976,7 @@ public class CatalogService {
                 null,
                 new SkillConfigDto(
                     "路由技能",
-                    "根据用户问题、知识和上下文判断路由方向。",
+                    "根据用户消息、知识和上下文判断路由方向。",
                     "当你需要做问题分诊时，优先判断是否属于 FAQ、售后策略或人工协同，并输出明确路由依据。"
                 )
             )
@@ -960,7 +1045,7 @@ public class CatalogService {
                         "evaluate_refund",
                         "根据问题和知识上下文判断退款/补偿策略",
                         "{\"question\":\"string\",\"knowledgeHits\":[\"string\"]}",
-                        "{\"eligibility\":\"string\",\"routeKey\":\"string\",\"actionPlan\":\"string\"}"
+                        "{\"type\":\"object\",\"required\":[\"eligibility\",\"reason\"],\"properties\":{\"eligibility\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"},\"resolution\":{\"type\":[\"string\",\"null\"]},\"reviewMode\":{\"type\":[\"string\",\"null\"]}},\"additionalProperties\":false}"
                     )),
                     ToolProviderType.HTTP,
                     "SERVICE_ACCOUNT",
@@ -987,13 +1072,13 @@ public class CatalogService {
                             "create_ticket",
                             "创建人工协同工单",
                             "{\"question\":\"string\",\"operator\":\"string\",\"comment\":\"string\"}",
-                            "{\"ticketId\":\"string\",\"status\":\"string\",\"detail\":\"string\"}"
+                            "{\"type\":\"object\",\"required\":[\"ticketId\",\"status\",\"message\"],\"properties\":{\"ticketId\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"message\":{\"type\":\"string\"}},\"additionalProperties\":false}"
                         ),
                         new ToolOperationDto(
                             "append_comment",
                             "为协同工单追加处理备注",
                             "{\"ticketId\":\"string\",\"comment\":\"string\"}",
-                            "{\"status\":\"string\",\"detail\":\"string\"}"
+                            "{\"type\":\"object\",\"required\":[\"status\",\"message\"],\"properties\":{\"status\":{\"type\":\"string\"},\"message\":{\"type\":\"string\"}},\"additionalProperties\":false}"
                         )
                     ),
                     ToolProviderType.MCP,
@@ -1067,7 +1152,7 @@ public class CatalogService {
                     OrchestrationNodeType.HUMAN,
                     "等待人工确认或补充处理意见。",
                     null,
-                    new HumanNodeConfigDto("人工介入待办", "请确认是否接管，并补充处理说明。", "CONFIRM", "human-confirmed")
+                    new HumanNodeConfigDto("人工介入待办", "请确认是否接管，并补充处理说明。", "CONFIRM", "default")
                 ),
                 new OrchestrationNodeDto("handoff-close", "闭环总结", OrchestrationNodeType.AGENT, "人工处理后生成闭环答复。", "agent-coordinator", null),
                 new OrchestrationNodeDto("end", "结束", OrchestrationNodeType.END, "流程结束。", null, null)
@@ -1082,7 +1167,7 @@ public class CatalogService {
                 new OrchestrationEdgeDto("edge-policy-end", "policy", "end", "resolved", "售后自动完成", false),
                 new OrchestrationEdgeDto("edge-policy-human", "policy", "human-review", "manual_review", "售后转人工", false),
                 new OrchestrationEdgeDto("edge-policy-default", "policy", "end", "default", "默认完成", true),
-                new OrchestrationEdgeDto("edge-human-handoff", "human-review", "handoff-close", "human-confirmed", "人工确认后闭环", true),
+                new OrchestrationEdgeDto("edge-human-handoff", "human-review", "handoff-close", "default", "人工确认后闭环", true),
                 new OrchestrationEdgeDto("edge-close-end", "handoff-close", "end", "default", "闭环完成", true)
             )
         ));
@@ -1347,6 +1432,9 @@ public class CatalogService {
             if (!nodesByKey.containsKey(edge.sourceNodeKey()) || !nodesByKey.containsKey(edge.targetNodeKey())) {
                 throw new IllegalArgumentException("edge references missing nodes: " + edge.edgeKey());
             }
+            if (edge.routeKey() == null || edge.routeKey().isBlank()) {
+                throw new IllegalArgumentException("edge routeKey is required: " + edge.edgeKey());
+            }
             outgoing.computeIfAbsent(edge.sourceNodeKey(), __ -> new ArrayList<>()).add(edge);
         }
 
@@ -1355,7 +1443,31 @@ public class CatalogService {
             if (node.nodeType() != OrchestrationNodeType.END && nodeEdges.isEmpty()) {
                 throw new IllegalArgumentException("node has no outgoing edges: " + node.nodeKey());
             }
+            if (node.nodeType() == OrchestrationNodeType.START) {
+                if (nodeEdges.size() != 1) {
+                    throw new IllegalArgumentException("START node must have exactly one outgoing edge: " + node.nodeKey());
+                }
+                OrchestrationEdgeDto startEdge = nodeEdges.getFirst();
+                if (!startEdge.defaultEdge() || !"default".equals(startEdge.routeKey())) {
+                    throw new IllegalArgumentException("START node outgoing edge must be routeKey=default and defaultEdge=true: " + startEdge.edgeKey());
+                }
+            }
+            Set<String> routeKeys = new HashSet<>();
+            for (OrchestrationEdgeDto edge : nodeEdges) {
+                if (edge.defaultEdge() && !"default".equals(edge.routeKey())) {
+                    throw new IllegalArgumentException("default edge must use routeKey=default: " + edge.edgeKey());
+                }
+                if (!edge.defaultEdge() && "default".equals(edge.routeKey())) {
+                    throw new IllegalArgumentException("non-default edge cannot use routeKey=default: " + edge.edgeKey());
+                }
+                if (!routeKeys.add(edge.routeKey())) {
+                    throw new IllegalArgumentException("duplicate routeKey for node " + node.nodeKey() + ": " + edge.routeKey());
+                }
+            }
             long defaultCount = nodeEdges.stream().filter(OrchestrationEdgeDto::defaultEdge).count();
+            if (defaultCount > 1) {
+                throw new IllegalArgumentException("node has multiple default edges: " + node.nodeKey());
+            }
             if (nodeEdges.size() > 1 && defaultCount == 0) {
                 throw new IllegalArgumentException("branching node requires a default edge: " + node.nodeKey());
             }
@@ -1977,7 +2089,7 @@ public class CatalogService {
 
     private ToolConfigDto defaultToolConfig() {
         return new ToolConfigDto(
-            List.of(new ToolOperationDto("invoke", "执行通用工具动作", "{\"input\":\"string\"}", "{\"output\":\"string\"}")),
+            List.of(new ToolOperationDto("invoke", "执行通用工具动作", "{\"input\":\"string\"}", "{\"type\":\"object\",\"required\":[\"output\"],\"properties\":{\"output\":{\"type\":\"string\"}},\"additionalProperties\":false}")),
             ToolProviderType.HTTP,
             "SERVICE_ACCOUNT",
             15,

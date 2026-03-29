@@ -35,6 +35,8 @@ import type {
   Role,
   Scenario,
   TaskInstance,
+  UpdateResourcePayload,
+  UpdateResourceVersionPayload,
   UpdateAssistantPayload,
   UpdateAgentPayload,
   UpdateDomainPayload,
@@ -106,13 +108,21 @@ function nextId(prefix: string): string {
   return `${prefix}-${Math.random().toString(16).slice(2, 10)}`;
 }
 
+function emptySharedState() {
+  return {
+    facts: {},
+    artifacts: {},
+    agentScopes: {},
+  };
+}
+
 function defaultToolOperations(): ToolOperation[] {
   return [
     {
       name: 'invoke',
       description: '执行通用工具动作',
       inputSchema: '{"input":"string"}',
-      outputSchema: '{"output":"string"}',
+      outputSchema: '{"type":"object","required":["output"],"properties":{"output":{"type":"string"}},"additionalProperties":false}',
     },
   ];
 }
@@ -363,6 +373,53 @@ function findResourceVersion(resourceId: string, versionId: string): ResourceVer
   return version;
 }
 
+function applyResourceVersionUpdate(resource: Resource, versionId: string, payload: UpdateResourceVersionPayload): Resource {
+  const publishedAt = payload.status === 'PUBLISHED' ? new Date().toISOString() : null;
+  let effectiveVersion: ResourceVersion | null = resource.effectiveVersion;
+  let latestVersion: ResourceVersion | null = resource.latestVersion;
+  const versions = resource.versions.map((version) => {
+    if (payload.status === 'PUBLISHED') {
+      const updated = version.id === versionId
+        ? {
+            ...version,
+            status: 'PUBLISHED' as const,
+            summary: payload.summary,
+            publishedAt,
+            configuration: normalizeConfiguration(resource.type, payload.configuration),
+          }
+        : { ...version, status: 'DRAFT' as const, publishedAt: null as string | null };
+      if (updated.id === versionId) {
+        effectiveVersion = updated;
+        latestVersion = updated;
+      }
+      return updated;
+    }
+    if (version.id !== versionId) {
+      return version;
+    }
+    const updated = {
+      ...version,
+      status: payload.status,
+      summary: payload.summary,
+      publishedAt,
+      configuration: normalizeConfiguration(resource.type, payload.configuration),
+    };
+    if (latestVersion?.id === versionId) {
+      latestVersion = updated;
+    }
+    if (effectiveVersion?.id === versionId) {
+      effectiveVersion = null;
+    }
+    return updated;
+  });
+  return {
+    ...resource,
+    latestVersion,
+    effectiveVersion,
+    versions,
+  };
+}
+
 function findSession(sessionId: string): ConversationSession {
   const session = fallbackState.sessions.find((item) => item.id === sessionId);
   if (!session) {
@@ -405,7 +462,7 @@ function findOrchestration(assistantId: string) {
         edgeKey: 'edge-start-end',
         sourceNodeKey: 'start',
         targetNodeKey: 'end',
-        routeKey: null,
+        routeKey: 'default',
         label: '默认结束',
         defaultEdge: true,
       },
@@ -659,7 +716,13 @@ function buildResourceAnchors(assistant: Assistant) {
   return anchors;
 }
 
-function buildFallbackExecution(sessionId: string, assistant: Assistant, requester: string, message: string) {
+function buildFallbackExecution(
+  sessionId: string,
+  assistant: Assistant,
+  requester: string,
+  message: string,
+  currentSharedState = emptySharedState(),
+) {
   const lower = message.toLowerCase();
   const waitingHuman = /投诉|人工|升级|escalat/.test(message);
   const afterSales = /退款|补偿|退货|售后/.test(message);
@@ -724,6 +787,22 @@ function buildFallbackExecution(sessionId: string, assistant: Assistant, request
     { id: nextId('node-exec'), workflowInstanceId: workflowId, nodeKey: waitingHuman ? 'human-review' : afterSales ? 'policy' : 'faq', nodeName: waitingHuman ? '人工复核' : afterSales ? '售后策略' : 'FAQ 回答', status: waitingHuman ? 'WAITING_HUMAN' as const : 'COMPLETED' as const, detail: waitingHuman ? '等待人工接管。' : afterSales ? '已生成售后建议。' : '已生成 FAQ 回答。', updatedAt: now },
     ...(waitingHuman ? [] : [{ id: nextId('node-exec'), workflowInstanceId: workflowId, nodeKey: 'end', nodeName: '结束', status: 'COMPLETED' as const, detail: '流程完成。', updatedAt: now }]),
   ];
+  const sharedState = {
+    facts: {
+      ...currentSharedState.facts,
+      lastIntent: waitingHuman ? 'handoff' : afterSales ? 'after-sales' : 'faq',
+    },
+    artifacts: {
+      ...currentSharedState.artifacts,
+      latestExecution: {
+        workflowId,
+        status: waitingHuman ? 'WAITING_HUMAN' : 'COMPLETED',
+      },
+    },
+    agentScopes: {
+      ...currentSharedState.agentScopes,
+    },
+  };
   const workflow: WorkflowInstance = {
     id: workflowId,
     taskId,
@@ -746,10 +825,11 @@ function buildFallbackExecution(sessionId: string, assistant: Assistant, request
           toolResourceName: '工单协同 Tool',
           operation: 'create_ticket',
           providerType: 'MCP',
-          status: 'ACCEPTED',
-          externalReference: `TICKET-${Math.floor(10000 + Math.random() * 90000)}`,
-          recommendedAction: 'HUMAN_HANDOFF',
-          detail: '已创建人工协同工单。',
+          result: {
+            ticketId: `TICKET-${Math.floor(10000 + Math.random() * 90000)}`,
+            status: 'ACCEPTED',
+            message: '已创建人工协同工单。',
+          },
         }
       : afterSales
         ? {
@@ -757,10 +837,11 @@ function buildFallbackExecution(sessionId: string, assistant: Assistant, request
             toolResourceName: '售后策略 Tool',
             operation: 'evaluate_refund',
             providerType: 'HTTP',
-            status: 'RECORDED',
-            externalReference: '',
-            recommendedAction: 'AUTO_RESOLVE',
-            detail: '售后策略已自动执行。',
+            result: {
+              eligibility: 'APPROVED',
+              resolution: 'STANDARD_REFUND',
+              reason: '售后策略已自动执行。',
+            },
           }
         : null,
     resourceAnchors: buildResourceAnchors(assistant),
@@ -779,6 +860,7 @@ function buildFallbackExecution(sessionId: string, assistant: Assistant, request
         ]
       : [],
     loadedSkillResourceVersionIds: [],
+    sharedState,
   };
   const task: TaskInstance = {
     id: taskId,
@@ -870,6 +952,7 @@ export const api = {
           latestHumanTask: null,
           latestPauseReason: null,
           loadedSkillResourceVersionIds: [],
+          sharedState: emptySharedState(),
         };
         fallbackState.sessions.push(created);
         return clone(created);
@@ -882,7 +965,7 @@ export const api = {
       () => {
         const current = findSession(sessionId);
         const assistant = findAssistant(current.assistantId);
-        const execution = buildFallbackExecution(sessionId, assistant, payload.requester, payload.message);
+        const execution = buildFallbackExecution(sessionId, assistant, payload.requester, payload.message, current.sharedState);
         const userMessage = {
           id: nextId('msg'),
           sessionId,
@@ -921,6 +1004,7 @@ export const api = {
           latestHumanTask: execution.workflow.humanTask,
           latestPauseReason: execution.workflow.pauseReason,
           loadedSkillResourceVersionIds: execution.workflow.loadedSkillResourceVersionIds,
+          sharedState: execution.workflow.sharedState,
         };
         fallbackState.sessions = fallbackState.sessions.map((item) => item.id === sessionId ? updated : item);
         return clone(updated);
@@ -1084,7 +1168,7 @@ export const api = {
               edgeKey: 'edge-start-end',
               sourceNodeKey: 'start',
               targetNodeKey: 'end',
-              routeKey: null,
+              routeKey: 'default',
               label: '默认结束',
               defaultEdge: true,
             },
@@ -1184,7 +1268,7 @@ export const api = {
               edgeKey: `edge-start-${created.id}`,
               sourceNodeKey: 'start',
               targetNodeKey: created.id,
-              routeKey: null,
+              routeKey: 'default',
               label: '默认主链',
               defaultEdge: true,
             });
@@ -1192,7 +1276,7 @@ export const api = {
               edgeKey: `edge-${created.id}-end`,
               sourceNodeKey: created.id,
               targetNodeKey: 'end',
-              routeKey: null,
+              routeKey: 'default',
               label: '执行完成',
               defaultEdge: true,
             });
@@ -1292,6 +1376,28 @@ export const api = {
         return clone(current);
       },
     ),
+  updateResource: (resourceId: string, payload: UpdateResourcePayload) =>
+    request<Resource>(
+      `/resources/${resourceId}`,
+      { method: 'PUT', body: JSON.stringify(payload) },
+      () => {
+        const current = findResource(resourceId);
+        validateResourceOwner(current.domainId, payload.ownerType, payload.ownerId);
+        const updated: Resource = {
+          ...current,
+          name: payload.name,
+          shareScope: payload.shareScope,
+          ownerType: payload.ownerType,
+          ownerId: payload.ownerId,
+          summary: payload.summary,
+          steward: payload.steward,
+          tags: payload.tags,
+        };
+        fallbackState.catalog.resources = fallbackState.catalog.resources.map((item) => item.id === resourceId ? updated : item);
+        rebuildCatalogState();
+        return clone(updated);
+      },
+    ),
   createResourceVersion: (resourceId: string, payload: CreateResourceVersionPayload) =>
     request<ResourceVersion>(
       `/resources/${resourceId}/versions`,
@@ -1323,6 +1429,19 @@ export const api = {
         fallbackState.catalog.resources = fallbackState.catalog.resources.map((item) => item.id === resourceId ? updatedResource : item);
         rebuildCatalogState();
         return clone(created);
+      },
+    ),
+  updateResourceVersion: (resourceId: string, versionId: string, payload: UpdateResourceVersionPayload) =>
+    request<ResourceVersion>(
+      `/resources/${resourceId}/versions/${versionId}`,
+      { method: 'PUT', body: JSON.stringify(payload) },
+      () => {
+        const resource = findResource(resourceId);
+        const version = findResourceVersion(resourceId, versionId);
+        const updatedResource = applyResourceVersionUpdate(resource, versionId, payload);
+        fallbackState.catalog.resources = fallbackState.catalog.resources.map((item) => item.id === resourceId ? updatedResource : item);
+        rebuildCatalogState();
+        return clone(updatedResource.versions.find((item) => item.id === versionId) ?? version);
       },
     ),
   deleteResourceVersion: (resourceId: string, versionId: string) =>
@@ -1360,25 +1479,15 @@ export const api = {
       { method: 'PATCH' },
       () => {
         const resource = findResource(resourceId);
-        const publishedAt = new Date().toISOString();
-        let effectiveVersion: ResourceVersion | null = null;
-        const versions = resource.versions.map((version) => {
-          const updated = version.id === versionId
-            ? { ...version, status: 'PUBLISHED' as const, publishedAt }
-            : { ...version, status: 'DRAFT' as const, publishedAt: null as string | null };
-          if (updated.id === versionId) {
-            effectiveVersion = updated;
-          }
-          return updated;
+        const targetVersion = findResourceVersion(resourceId, versionId);
+        const updatedResource = applyResourceVersionUpdate(resource, versionId, {
+          summary: targetVersion.summary,
+          status: 'PUBLISHED',
+          configuration: targetVersion.configuration,
         });
-        const updatedResource: Resource = {
-          ...resource,
-          effectiveVersion,
-          versions,
-        };
         fallbackState.catalog.resources = fallbackState.catalog.resources.map((item) => item.id === resourceId ? updatedResource : item);
         rebuildCatalogState();
-        return clone(effectiveVersion ?? versions[0]);
+        return clone(updatedResource.versions.find((item) => item.id === versionId) ?? targetVersion);
       },
     ),
   createKnowledgeBase: (payload: CreateKnowledgeBasePayload) =>
@@ -1764,6 +1873,7 @@ export const api = {
             updatedAt: completedAt,
             latestHumanTask: null,
             latestPauseReason: null,
+            sharedState: updatedWorkflow.sharedState,
             messages: item.messages.concat({
               id: nextId('msg'),
               sessionId: item.id,

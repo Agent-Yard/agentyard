@@ -16,7 +16,7 @@ function baseNodes(): OrchestrationNode[] {
         title: '人工待办',
         instruction: '请人工处理',
         expectedAction: 'CONFIRM',
-        resumeRouteKey: 'confirmed',
+        resumeRouteKey: 'default',
       },
     },
     { nodeKey: 'end', nodeName: '结束', nodeType: 'END', description: '出口', agentId: null, humanNode: null },
@@ -25,9 +25,9 @@ function baseNodes(): OrchestrationNode[] {
 
 function baseEdges(): OrchestrationEdge[] {
   return [
-    { edgeKey: 'edge-start-route', sourceNodeKey: 'start', targetNodeKey: 'route', routeKey: null, label: '进入路由', defaultEdge: true },
+    { edgeKey: 'edge-start-route', sourceNodeKey: 'start', targetNodeKey: 'route', routeKey: 'default', label: '进入路由', defaultEdge: true },
     { edgeKey: 'edge-route-human', sourceNodeKey: 'route', targetNodeKey: 'human-review', routeKey: 'human_handoff', label: '转人工', defaultEdge: false },
-    { edgeKey: 'edge-human-end', sourceNodeKey: 'human-review', targetNodeKey: 'end', routeKey: 'confirmed', label: '人工完成', defaultEdge: true },
+    { edgeKey: 'edge-human-end', sourceNodeKey: 'human-review', targetNodeKey: 'end', routeKey: 'default', label: '人工完成', defaultEdge: true },
   ];
 }
 
@@ -49,7 +49,7 @@ describe('validateOrchestrationGraph', () => {
       edgeKey: 'edge-faq-end',
       sourceNodeKey: 'faq',
       targetNodeKey: 'end',
-      routeKey: null,
+      routeKey: 'default',
       label: '孤立收口',
       defaultEdge: true,
     });
@@ -65,5 +65,34 @@ describe('validateOrchestrationGraph', () => {
     );
 
     expect(validateOrchestrationGraph(nodes, baseEdges())).toContain('人工节点');
+  });
+
+  it('rejects a default edge without routeKey=default', () => {
+    const edges = baseEdges().map((edge) =>
+      edge.edgeKey === 'edge-human-end' ? { ...edge, routeKey: 'confirmed' } : edge,
+    );
+
+    expect(validateOrchestrationGraph(baseNodes(), edges)).toContain('必须使用 routeKey=default');
+  });
+
+  it('rejects start node with multiple outgoing edges', () => {
+    const edges = baseEdges().concat({
+      edgeKey: 'edge-start-extra',
+      sourceNodeKey: 'start',
+      targetNodeKey: 'end',
+      routeKey: 'another',
+      label: '额外分支',
+      defaultEdge: false,
+    });
+
+    expect(validateOrchestrationGraph(baseNodes(), edges)).toContain('START 节点必须且只能有一条出口边');
+  });
+
+  it('rejects start node without default route', () => {
+    const edges = baseEdges().map((edge) =>
+      edge.edgeKey === 'edge-start-route' ? { ...edge, routeKey: 'sales', defaultEdge: false } : edge,
+    );
+
+    expect(validateOrchestrationGraph(baseNodes(), edges)).toContain('START 节点的出口边必须是 routeKey=default 的默认边');
   });
 });

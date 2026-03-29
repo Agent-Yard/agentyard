@@ -2,6 +2,7 @@ package com.lynxus.platform.adapters;
 
 import com.lynxus.contracts.runtime.WorkflowContracts.ToolOutcomeSummary;
 import java.util.List;
+import java.util.Map;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
@@ -82,12 +83,14 @@ public final class ResourceAdapters {
                 toolName,
                 operation,
                 "MCP",
-                humanHandoff ? "ACCEPTED" : "RECORDED",
-                ticketId,
-                humanHandoff ? "HUMAN_HANDOFF" : "AUTO_CLOSE",
-                humanHandoff
-                    ? "本地工具 stub 已受理协同请求，建议人工坐席接管。"
-                    : "本地工具 stub 已记录本次处理结果，无需人工介入。"
+                Map.of(
+                    "ticketId", ticketId,
+                    "status", humanHandoff ? "ACCEPTED" : "RECORDED",
+                    "message",
+                    humanHandoff
+                        ? "本地工具 stub 已受理协同请求，建议人工坐席接管。"
+                        : "本地工具 stub 已记录本次处理结果，无需人工介入。"
+                )
             );
         }
     }
@@ -101,10 +104,11 @@ public final class ResourceAdapters {
                 toolName,
                 operation,
                 "MCP",
-                "RECORDED",
-                "mock-ticket",
-                "AUTO_CLOSE",
-                "mock-tool:" + toolName + ":" + payload
+                Map.of(
+                    "ticketId", "mock-ticket",
+                    "status", "RECORDED",
+                    "message", "mock-tool:" + toolName + ":" + payload
+                )
             );
         }
     }

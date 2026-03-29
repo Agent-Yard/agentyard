@@ -13,6 +13,8 @@ import type {
   CreateScenarioPayload,
   Role,
   TaskInstance,
+  UpdateResourcePayload,
+  UpdateResourceVersionPayload,
   UpdateAssistantPayload,
   UpdateAgentPayload,
   UpdateDomainPayload,
@@ -554,12 +556,39 @@ async function handleDeleteResource(resourceId: string) {
   }
 }
 
+async function handleUpdateResource(payload: { resourceId: string; resource: UpdateResourcePayload }) {
+  try {
+    await api.updateResource(payload.resourceId, payload.resource);
+    await refresh();
+    resourceLibraryPreferredResourceId.value = payload.resourceId;
+    void message.success('资源信息已保存');
+  } catch (error) {
+    void message.error(errorMessage(error, '保存资源信息失败'));
+  }
+}
+
 async function handleCreateResourceVersion(payload: { resourceId: string; data: CreateResourceVersionPayload }) {
   const created = await api.createResourceVersion(payload.resourceId, payload.data);
   await refresh();
   resourceLibraryPreferredResourceId.value = payload.resourceId;
   resourceLibraryPreferredVersionId.value = created.id;
   void message.success('资源版本已创建');
+}
+
+async function handleUpdateResourceVersion(payload: {
+  resourceId: string;
+  versionId: string;
+  version: UpdateResourceVersionPayload;
+}) {
+  try {
+    await api.updateResourceVersion(payload.resourceId, payload.versionId, payload.version);
+    await refresh();
+    resourceLibraryPreferredResourceId.value = payload.resourceId;
+    resourceLibraryPreferredVersionId.value = payload.versionId;
+    void message.success(payload.version.status === 'PUBLISHED' ? '草稿版本已保存并发布' : '草稿版本已保存');
+  } catch (error) {
+    void message.error(errorMessage(error, '保存资源版本失败'));
+  }
 }
 
 async function handleDeleteResourceVersion(payload: { resourceId: string; versionId: string }) {
@@ -714,12 +743,15 @@ onUnmounted(() => {
           />
           <ResourceLibraryPage
             v-else-if="activeKey === 'resource-library'"
+            :domains="catalog.domains"
             :resource-center="catalog.resourceCenter"
             :resources="catalog.resources"
             :preferred-resource-id="resourceLibraryPreferredResourceId"
             :preferred-version-id="resourceLibraryPreferredVersionId"
             @delete-resource="handleDeleteResource"
+            @update-resource="handleUpdateResource"
             @create-resource-version="handleCreateResourceVersion"
+            @update-resource-version="handleUpdateResourceVersion"
             @delete-resource-version="handleDeleteResourceVersion"
             @publish-resource-version="handlePublishResourceVersion"
           />

@@ -47,6 +47,9 @@ const currentAssistant = computed(() =>
 const assistantAgents = computed(() => currentAssistant.value?.agents ?? []);
 const selectedNode = computed(() => workingNodes.value.find((item) => item.nodeKey === selectedNodeKey.value) ?? null);
 const selectedEdge = computed(() => workingEdges.value.find((item) => item.edgeKey === selectedEdgeKey.value) ?? null);
+const startNodeKey = computed(() => workingNodes.value.find((item) => item.nodeType === 'START')?.nodeKey ?? '');
+const startOutgoingCount = computed(() => workingEdges.value.filter((item) => item.sourceNodeKey === startNodeKey.value).length);
+const selectedEdgeIsStartEdge = computed(() => !!selectedEdge.value && selectedEdge.value.sourceNodeKey === startNodeKey.value);
 
 const graphRows = computed(() =>
   workingNodes.value.map((node) => ({
@@ -110,6 +113,31 @@ watch(
     if (selectedEdgeKey.value && !edges.some((item) => item.edgeKey === selectedEdgeKey.value)) {
       selectedEdgeKey.value = edges[0]?.edgeKey ?? '';
     }
+    if (startNodeKey.value) {
+      let changed = false;
+      const normalizedEdges = edges.map((edge) => {
+        if (edge.sourceNodeKey !== startNodeKey.value) {
+          return edge;
+        }
+        const nextEdge = {
+          ...edge,
+          routeKey: 'default',
+          defaultEdge: true,
+          label: edge.label || '开始处理',
+        };
+        if (
+          nextEdge.routeKey !== edge.routeKey
+          || nextEdge.defaultEdge !== edge.defaultEdge
+          || nextEdge.label !== edge.label
+        ) {
+          changed = true;
+        }
+        return nextEdge;
+      });
+      if (changed) {
+        workingEdges.value = normalizedEdges;
+      }
+    }
   },
   { deep: true },
 );
@@ -117,6 +145,12 @@ watch(
 function nodeLabel(nodeKey: string) {
   const node = workingNodes.value.find((item) => item.nodeKey === nodeKey);
   return node?.nodeName ?? nodeKey;
+}
+
+function edgeSourceOptions(edge: OrchestrationEdge | null) {
+  return workingNodes.value
+    .filter((item) => item.nodeKey !== startNodeKey.value || edge?.sourceNodeKey === startNodeKey.value || startOutgoingCount.value === 0)
+    .map((item) => ({ label: item.nodeName, value: item.nodeKey }));
 }
 
 function resourceNamesForAgent(agentId: string | null) {
@@ -152,7 +186,7 @@ function addNode(nodeType: OrchestrationNodeType) {
           title: '人工待办',
           instruction: '请人工处理这个节点。',
           expectedAction: 'CONFIRM',
-          resumeRouteKey: 'confirmed',
+          resumeRouteKey: 'default',
         }
       : null,
   };
@@ -164,13 +198,19 @@ function addEdge() {
   if (workingNodes.value.length < 2) {
     return;
   }
+  const suffix = Math.random().toString(16).slice(2, 8);
+  const sourceNode =
+    startNodeKey.value && startOutgoingCount.value >= 1
+      ? workingNodes.value.find((item) => item.nodeKey !== startNodeKey.value) ?? workingNodes.value[0]
+      : workingNodes.value[0];
+  const targetNode = workingNodes.value.find((item) => item.nodeKey !== sourceNode?.nodeKey) ?? workingNodes.value[1];
   const created: OrchestrationEdge = {
-    edgeKey: `edge-${Math.random().toString(16).slice(2, 8)}`,
-    sourceNodeKey: workingNodes.value[0]?.nodeKey ?? '',
-    targetNodeKey: workingNodes.value[1]?.nodeKey ?? '',
-    routeKey: null,
-    label: '新分支',
-    defaultEdge: false,
+    edgeKey: `edge-${suffix}`,
+    sourceNodeKey: sourceNode?.nodeKey ?? '',
+    targetNodeKey: targetNode?.nodeKey ?? '',
+    routeKey: sourceNode?.nodeKey === startNodeKey.value ? 'default' : `route_${suffix}`,
+    label: sourceNode?.nodeKey === startNodeKey.value ? '开始处理' : '新分支',
+    defaultEdge: sourceNode?.nodeKey === startNodeKey.value,
   };
   workingEdges.value = [...workingEdges.value, created];
   selectedEdgeKey.value = created.edgeKey;
@@ -187,6 +227,10 @@ function deleteSelectedNode() {
 
 function deleteSelectedEdge() {
   if (!selectedEdge.value) {
+    return;
+  }
+  if (selectedEdge.value.sourceNodeKey === startNodeKey.value) {
+    validationError.value = 'START 节点的唯一出口边不可删除。';
     return;
   }
   workingEdges.value = workingEdges.value.filter((item) => item.edgeKey !== selectedEdge.value?.edgeKey);
@@ -378,7 +422,8 @@ function submitSave() {
                 <a-form-item label="源节点">
                   <a-select
                     v-model:value="selectedEdge.sourceNodeKey"
-                    :options="workingNodes.map((item) => ({ label: item.nodeName, value: item.nodeKey }))"
+                    :options="edgeSourceOptions(selectedEdge)"
+                    :disabled="selectedEdgeIsStartEdge"
                   />
                 </a-form-item>
                 <a-form-item label="目标节点">
@@ -391,10 +436,14 @@ function submitSave() {
                   <a-input v-model:value="selectedEdge.label" />
                 </a-form-item>
                 <a-form-item label="Route Key">
-                  <a-input v-model:value="selectedEdge.routeKey" placeholder="例如 faq / after_sales / confirmed" />
+                  <a-input
+                    v-model:value="selectedEdge.routeKey"
+                    placeholder="默认边请填写 default，其他边填写唯一业务路由键"
+                    :disabled="selectedEdgeIsStartEdge"
+                  />
                 </a-form-item>
                 <a-form-item label="默认边">
-                  <a-switch v-model:checked="selectedEdge.defaultEdge" />
+                  <a-switch v-model:checked="selectedEdge.defaultEdge" :disabled="selectedEdgeIsStartEdge" />
                 </a-form-item>
               </a-form>
             </a-card>

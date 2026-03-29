@@ -87,6 +87,17 @@ function allowedActions(actions?: HumanActionType[]) {
 function selectWorkflow(workflowId: string) {
   emit('selectWorkflow', workflowId);
 }
+
+function hasSharedState(value?: { facts: Record<string, unknown>; artifacts: Record<string, unknown>; agentScopes: Record<string, Record<string, unknown>> } | null) {
+  if (!value) {
+    return false;
+  }
+  return Object.keys(value.facts).length > 0 || Object.keys(value.artifacts).length > 0 || Object.keys(value.agentScopes).length > 0;
+}
+
+function formatSharedState(value?: { facts: Record<string, unknown>; artifacts: Record<string, unknown>; agentScopes: Record<string, Record<string, unknown>> } | null) {
+  return JSON.stringify(value ?? { facts: {}, artifacts: {}, agentScopes: {} }, null, 2);
+}
 </script>
 
 <template>
@@ -155,9 +166,8 @@ function selectWorkflow(workflowId: string) {
             <a-descriptions-item label="挂起原因">
               {{ current.pauseReason ? `${current.pauseReason.code} / ${current.pauseReason.detail}` : '无' }}
             </a-descriptions-item>
-            <a-descriptions-item label="工具外部引用">{{ current.latestToolOutcome?.externalReference || '无' }}</a-descriptions-item>
             <a-descriptions-item label="工具结果">
-              {{ current.latestToolOutcome ? `${current.latestToolOutcome.status} / ${current.latestToolOutcome.recommendedAction}` : '无' }}
+              {{ current.latestToolOutcome ? `${current.latestToolOutcome.toolResourceName} / ${current.latestToolOutcome.operation}` : '无' }}
             </a-descriptions-item>
             <a-descriptions-item label="资源锚点">
               {{ current.resourceAnchors.join(' / ') || '无' }}
@@ -184,6 +194,17 @@ function selectWorkflow(workflowId: string) {
               status: actionStatus(node.status),
             }))"
           />
+
+          <a-card size="small" title="Workflow 共享状态" style="margin-top: 16px">
+            <a-alert
+              v-if="!hasSharedState(current.sharedState)"
+              type="info"
+              show-icon
+              message="当前共享状态为空"
+              description="facts / artifacts / agentScopes 还没有可观测内容。"
+            />
+            <pre v-else style="white-space: pre-wrap; word-break: break-word; margin: 0">{{ formatSharedState(current.sharedState) }}</pre>
+          </a-card>
         </a-card>
 
         <a-empty v-else description="还没有可观测的流程" />

@@ -273,7 +273,7 @@ export interface OrchestrationEdge {
   edgeKey: string;
   sourceNodeKey: string;
   targetNodeKey: string;
-  routeKey: string | null;
+  routeKey: string;
   label: string;
   defaultEdge: boolean;
 }
@@ -426,10 +426,13 @@ export interface ToolOutcomeSummary {
   toolResourceName: string;
   operation: string;
   providerType: string;
-  status: string;
-  externalReference: string;
-  recommendedAction: string;
-  detail: string;
+  result: Record<string, unknown>;
+}
+
+export interface SharedSessionState {
+  facts: Record<string, unknown>;
+  artifacts: Record<string, unknown>;
+  agentScopes: Record<string, Record<string, unknown>>;
 }
 
 export interface ToolInvocationSnapshot {
@@ -507,6 +510,7 @@ export interface WorkflowInstance {
   toolCalls: ToolInvocationSnapshot[];
   interventions: HumanIntervention[];
   loadedSkillResourceVersionIds: string[];
+  sharedState: SharedSessionState;
 }
 
 export interface ConversationMessage {
@@ -539,6 +543,7 @@ export interface ConversationSession {
   latestHumanTask: HumanTaskSnapshot | null;
   latestPauseReason: PauseReasonSnapshot | null;
   loadedSkillResourceVersionIds: string[];
+  sharedState: SharedSessionState;
 }
 
 export interface CreateAssistantPayload {
@@ -602,6 +607,22 @@ export interface CreateResourcePayload {
 }
 
 export interface CreateResourceVersionPayload {
+  summary: string;
+  status: VersionStatus;
+  configuration: ResourceVersionConfiguration;
+}
+
+export interface UpdateResourcePayload {
+  name: string;
+  shareScope: ShareScope;
+  ownerType: ResourceOwnerType;
+  ownerId: string;
+  summary: string;
+  steward: string;
+  tags: string[];
+}
+
+export interface UpdateResourceVersionPayload {
   summary: string;
   status: VersionStatus;
   configuration: ResourceVersionConfiguration;

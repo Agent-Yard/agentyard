@@ -42,6 +42,7 @@ import com.lynxus.contracts.runtime.WorkflowContracts.ResourceConfigurationSnaps
 import com.lynxus.contracts.runtime.WorkflowContracts.ResourceVersionSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.SessionContext;
 import com.lynxus.contracts.runtime.WorkflowContracts.SessionMessageSnapshot;
+import com.lynxus.contracts.runtime.WorkflowContracts.SharedSessionState;
 import com.lynxus.contracts.runtime.WorkflowContracts.SkillConfig;
 import com.lynxus.contracts.runtime.WorkflowContracts.TaskStatus;
 import com.lynxus.contracts.runtime.WorkflowContracts.ToolConfig;
@@ -63,9 +64,12 @@ import java.util.Objects;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class RuntimeService {
+    private static final Logger log = LoggerFactory.getLogger(RuntimeService.class);
     private final AssistantRunWorkflowGateway workflowGateway;
     private final CatalogService catalogService;
     private final KnowledgeService knowledgeService;
@@ -127,7 +131,8 @@ public class RuntimeService {
             null,
             null,
             null,
-            List.of()
+            List.of(),
+            SharedSessionState.empty()
         );
         sessions.add(session);
 
@@ -165,7 +170,8 @@ public class RuntimeService {
             request.requester(),
             request.message(),
             messages,
-            existing.loadedSkillResourceVersionIds()
+            existing.loadedSkillResourceVersionIds(),
+            existing.sharedState()
         );
         messages.add(new ConversationMessageDto(
             nextId("msg"),
@@ -196,7 +202,8 @@ public class RuntimeService {
             turn.workflow().latestToolOutcome(),
             turn.workflow().humanTask(),
             turn.workflow().pauseReason(),
-            turn.workflow().loadedSkillResourceVersionIds()
+            turn.workflow().loadedSkillResourceVersionIds(),
+            turn.workflow().sharedState()
         );
         replaceSession(updated);
         return updated;
@@ -205,7 +212,16 @@ public class RuntimeService {
     public TaskInstanceDto launchTask(TaskLaunchRequest request) {
         ScenarioDto scenario = catalogService.getScenario(request.scenarioId());
         AssistantDto assistant = resolveAssistant(scenario, request.assistantId());
-        return executeTurn(null, request.scenarioId(), assistant, request.requester(), request.question(), List.of(), List.of()).task();
+        return executeTurn(
+            null,
+            request.scenarioId(),
+            assistant,
+            request.requester(),
+            request.question(),
+            List.of(),
+            List.of(),
+            SharedSessionState.empty()
+        ).task();
     }
 
     public WorkflowInstanceDto getWorkflow(String workflowId) {
@@ -246,12 +262,27 @@ public class RuntimeService {
         String requester,
         String message,
         List<ConversationMessageDto> currentMessages,
-        List<String> loadedSkillResourceVersionIds
+        List<String> loadedSkillResourceVersionIds,
+        SharedSessionState sharedState
     ) {
         String taskId = nextId("task");
         String workflowId = nextId("wf");
         Instant now = Instant.now();
         AssistantRunSnapshot assistantSnapshot = buildAssistantSnapshot(assistant);
+        log.info(
+            "runtime start workflow={} assistant={} graphEdges={}",
+            workflowId,
+            assistant.id(),
+            assistantSnapshot.graph().edges().stream()
+                .map(edge -> "%s:%s->%s routeKey=%s default=%s".formatted(
+                    edge.edgeKey(),
+                    edge.sourceNodeKey(),
+                    edge.targetNodeKey(),
+                    edge.routeKey(),
+                    edge.defaultEdge()
+                ))
+                .toList()
+        );
         List<String> resourceAnchors = assistantSnapshot.resources().stream()
             .map(item -> item.resourceName() + "@" + item.resourceVersion())
             .toList();
@@ -290,7 +321,8 @@ public class RuntimeService {
             List.of(node(workflowId, "workflow-submitted", "流程提交", NodeStatus.RUNNING, "已提交到 Temporal 工作流队列")),
             List.of(),
             List.of(),
-            List.of()
+            List.of(),
+            sharedStateOrEmpty(sharedState)
         );
         workflows.add(initialWorkflow);
 
@@ -302,7 +334,7 @@ public class RuntimeService {
                 scenarioId,
                 message,
                 requester,
-                buildSessionContext(sessionId, requester, message, currentMessages, loadedSkillResourceVersionIds),
+                buildSessionContext(sessionId, requester, message, currentMessages, loadedSkillResourceVersionIds, sharedState),
                 assistantSnapshot
             ));
         } catch (RuntimeException error) {
@@ -328,7 +360,8 @@ public class RuntimeService {
                 List.of(node(workflowId, "workflow-failed", "流程执行失败", NodeStatus.FAILED, failureDetail)),
                 List.of(),
                 List.of(),
-                List.of()
+                List.of(),
+                sharedStateOrEmpty(sharedState)
             );
             replaceWorkflow(failedWorkflow);
             TaskInstanceDto failedTask = updateTaskStatus(task, TaskStatus.FAILED);
@@ -369,7 +402,8 @@ public class RuntimeService {
                 .toList(),
             result.toolCalls(),
             interventions,
-            result.loadedSkillResourceVersionIds()
+            result.loadedSkillResourceVersionIds(),
+            sharedStateOrEmpty(result.sharedState())
         );
     }
 
@@ -432,7 +466,8 @@ public class RuntimeService {
                 workflow.latestToolOutcome(),
                 workflow.humanTask(),
                 workflow.pauseReason(),
-                workflow.loadedSkillResourceVersionIds()
+                workflow.loadedSkillResourceVersionIds(),
+                workflow.sharedState()
             );
         });
     }
@@ -468,7 +503,8 @@ public class RuntimeService {
             || !Objects.equals(previous.finalReply(), updated.finalReply())
             || !Objects.equals(session.latestHumanTask(), updated.humanTask())
             || !Objects.equals(session.latestPauseReason(), updated.pauseReason())
-            || !Objects.equals(session.latestToolOutcome(), updated.latestToolOutcome());
+            || !Objects.equals(session.latestToolOutcome(), updated.latestToolOutcome())
+            || !Objects.equals(session.sharedState(), updated.sharedState());
         if (!changed) {
             return session;
         }
@@ -488,7 +524,8 @@ public class RuntimeService {
             updated.latestToolOutcome(),
             updated.humanTask(),
             updated.pauseReason(),
-            updated.loadedSkillResourceVersionIds()
+            updated.loadedSkillResourceVersionIds(),
+            updated.sharedState()
         );
     }
 
@@ -816,7 +853,8 @@ public class RuntimeService {
         String requester,
         String latestMessage,
         List<ConversationMessageDto> currentMessages,
-        List<String> loadedSkillResourceVersionIds
+        List<String> loadedSkillResourceVersionIds,
+        SharedSessionState sharedState
     ) {
         return new SessionContext(
             sessionId == null ? "adhoc-session" : sessionId,
@@ -825,8 +863,13 @@ public class RuntimeService {
             currentMessages.stream()
                 .map(message -> new SessionMessageSnapshot(message.role(), message.senderName(), message.content(), message.createdAt()))
                 .toList(),
-            loadedSkillResourceVersionIds == null ? List.of() : List.copyOf(loadedSkillResourceVersionIds)
+            loadedSkillResourceVersionIds == null ? List.of() : List.copyOf(loadedSkillResourceVersionIds),
+            sharedStateOrEmpty(sharedState)
         );
+    }
+
+    private SharedSessionState sharedStateOrEmpty(SharedSessionState sharedState) {
+        return sharedState == null ? SharedSessionState.empty() : sharedState;
     }
 
     private TaskInstanceDto updateTaskStatus(TaskInstanceDto task, TaskStatus status) {
@@ -984,6 +1027,7 @@ public class RuntimeService {
             && Objects.equals(existing.pauseReason(), result.pauseReason())
             && Objects.equals(existing.latestToolOutcome(), result.latestToolOutcome())
             && Objects.equals(existing.loadedSkillResourceVersionIds(), result.loadedSkillResourceVersionIds())
+            && Objects.equals(existing.sharedState(), result.sharedState())
             && existing.toolCalls().equals(result.toolCalls())
             && sameNodes(existing.nodes(), result.nodes());
     }

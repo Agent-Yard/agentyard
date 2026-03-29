@@ -48,12 +48,18 @@ class RuntimeServiceTest {
                     "工单协同 Tool",
                     "create_ticket",
                     "MCP",
-                    waitingHuman ? "ACCEPTED" : "RECORDED",
-                    "TICKET-10001",
-                    waitingHuman ? "HUMAN_HANDOFF" : "AUTO_CLOSE",
-                    waitingHuman ? "需要人工介入" : "无需人工介入"
+                    Map.of(
+                        "ticketId", "TICKET-10001",
+                        "status", waitingHuman ? "ACCEPTED" : "RECORDED",
+                        "message", waitingHuman ? "需要人工介入" : "无需人工介入"
+                    )
                 ),
-                List.of()
+                List.of(),
+                new WorkflowContracts.SharedSessionState(
+                    Map.of("channel", "runtime"),
+                    Map.of("lastOutcome", Map.of("status", waitingHuman ? "WAITING" : "DONE")),
+                    Map.of()
+                )
             );
         }
 
@@ -71,8 +77,23 @@ class RuntimeServiceTest {
                 List.of(new WorkflowContracts.NodeSnapshot("end", "结束", WorkflowContracts.NodeStatus.COMPLETED, action.comment(), Instant.now())),
                 List.of(),
                 false,
-                new WorkflowContracts.ToolOutcomeSummary("resource-tool-ticket", "工单协同 Tool", "create_ticket", "MCP", "ACCEPTED", "TICKET-10001", "HUMAN_HANDOFF", "已同步工单"),
-                List.of()
+                new WorkflowContracts.ToolOutcomeSummary(
+                    "resource-tool-ticket",
+                    "工单协同 Tool",
+                    "create_ticket",
+                    "MCP",
+                    Map.of(
+                        "ticketId", "TICKET-10001",
+                        "status", "ACCEPTED",
+                        "message", "已同步工单"
+                    )
+                ),
+                List.of(),
+                new WorkflowContracts.SharedSessionState(
+                    Map.of("channel", "runtime"),
+                    Map.of("handoff", Map.of("status", "completed")),
+                    Map.of()
+                )
             );
         }
 
@@ -174,6 +195,67 @@ class RuntimeServiceTest {
     }
 
     @Test
+    void shouldCarrySharedStateAcrossSessionMessages() {
+        List<WorkflowContracts.WorkflowStartRequest> capturedRequests = new ArrayList<>();
+        RuntimeService sharedStateService = new RuntimeService(new AssistantRunWorkflowGateway() {
+            @Override
+            public WorkflowContracts.WorkflowResult startAndAwaitFirstResult(WorkflowContracts.WorkflowStartRequest request) {
+                capturedRequests.add(request);
+                int turn = capturedRequests.size();
+                return new WorkflowContracts.WorkflowResult(
+                    request.workflowInstanceId(),
+                    WorkflowContracts.WorkflowStatus.COMPLETED,
+                    "问题已自动处理完成。",
+                    "已完成处理。",
+                    "end",
+                    null,
+                    null,
+                    null,
+                    List.of(new WorkflowContracts.NodeSnapshot("end", "结束", WorkflowContracts.NodeStatus.COMPLETED, "流程结束", Instant.now())),
+                    List.of(),
+                    false,
+                    null,
+                    List.of(),
+                    new WorkflowContracts.SharedSessionState(
+                        Map.of("conversation", Map.of("marker", "turn-" + turn)),
+                        Map.of(),
+                        Map.of()
+                    )
+                );
+            }
+
+            @Override
+            public WorkflowContracts.WorkflowResult submitHumanActionAndAwaitResult(String workflowId, WorkflowContracts.HumanAction action) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public WorkflowContracts.WorkflowResult currentResult(String workflowId) {
+                return null;
+            }
+        }, catalogService());
+
+        RuntimeDtos.ConversationSessionDto created = sharedStateService.createSession(
+            new RuntimeDtos.CreateConversationSessionRequest("scenario-customer-ops", "assistant-customer-ops", "tester", "第一条消息")
+        );
+        RuntimeDtos.ConversationSessionDto updated = sharedStateService.sendMessage(
+            created.id(),
+            new RuntimeDtos.ConversationMessageRequest("tester", "第二条消息")
+        );
+
+        assertEquals(2, capturedRequests.size());
+        assertTrue(capturedRequests.getFirst().sessionContext().sharedState().facts().isEmpty());
+        assertEquals(
+            "turn-1",
+            ((Map<?, ?>) capturedRequests.get(1).sessionContext().sharedState().facts().get("conversation")).get("marker")
+        );
+        assertEquals(
+            "turn-2",
+            ((Map<?, ?>) updated.sharedState().facts().get("conversation")).get("marker")
+        );
+    }
+
+    @Test
     void shouldRefreshRunningWorkflowResultOnRead() {
         Queue<WorkflowContracts.WorkflowResult> polledResults = new ArrayDeque<>();
         RuntimeService refreshingService = new RuntimeService(new AssistantRunWorkflowGateway() {
@@ -192,7 +274,8 @@ class RuntimeServiceTest {
                     List.of(),
                     false,
                     null,
-                    List.of()
+                    List.of(),
+                    WorkflowContracts.SharedSessionState.empty()
                 );
                 polledResults.add(completed);
                 return new WorkflowContracts.WorkflowResult(
@@ -208,7 +291,8 @@ class RuntimeServiceTest {
                     List.of(),
                     false,
                     null,
-                    List.of()
+                    List.of(),
+                    WorkflowContracts.SharedSessionState.empty()
                 );
             }
 
@@ -255,7 +339,8 @@ class RuntimeServiceTest {
                     List.of(),
                     false,
                     null,
-                    List.of()
+                    List.of(),
+                    WorkflowContracts.SharedSessionState.empty()
                 );
             }
 

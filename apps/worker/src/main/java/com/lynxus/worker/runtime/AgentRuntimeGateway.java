@@ -12,6 +12,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public interface AgentRuntimeGateway {
     WorkflowResult start(WorkflowStartRequest request);
@@ -20,6 +22,7 @@ public interface AgentRuntimeGateway {
 
     @Component
     class HttpAgentRuntimeGateway implements AgentRuntimeGateway {
+        private static final Logger log = LoggerFactory.getLogger(HttpAgentRuntimeGateway.class);
         private final HttpClient httpClient = HttpClient.newHttpClient();
         private final ObjectMapper objectMapper = createObjectMapper();
         private final String agentRuntimeBaseUrl;
@@ -46,13 +49,16 @@ public interface AgentRuntimeGateway {
 
         private WorkflowResult post(String path, Object payload) {
             try {
+                String requestBody = objectMapper.writeValueAsString(payload);
+                log.info("agent-runtime request path={} payload={}", path, requestBody);
                 HttpRequest httpRequest = HttpRequest.newBuilder()
                     .uri(URI.create(agentRuntimeBaseUrl + path))
                     .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload)))
+                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                     .build();
                 HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
                 if (response.statusCode() >= 400) {
+                    log.error("agent-runtime request failed path={} status={} body={}", path, response.statusCode(), response.body());
                     throw new IllegalStateException("agent-runtime request failed: " + response.statusCode() + " " + response.body());
                 }
                 return objectMapper.readValue(response.body(), WorkflowResult.class);

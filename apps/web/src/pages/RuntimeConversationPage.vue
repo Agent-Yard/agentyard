@@ -113,6 +113,17 @@ function submitMessage() {
 function selectSession(sessionId: string) {
   emit('selectSession', sessionId);
 }
+
+function hasSharedState(value?: { facts: Record<string, unknown>; artifacts: Record<string, unknown>; agentScopes: Record<string, Record<string, unknown>> } | null) {
+  if (!value) {
+    return false;
+  }
+  return Object.keys(value.facts).length > 0 || Object.keys(value.artifacts).length > 0 || Object.keys(value.agentScopes).length > 0;
+}
+
+function formatSharedState(value?: { facts: Record<string, unknown>; artifacts: Record<string, unknown>; agentScopes: Record<string, Record<string, unknown>> } | null) {
+  return JSON.stringify(value ?? { facts: {}, artifacts: {}, agentScopes: {} }, null, 2);
+}
 </script>
 
 <template>
@@ -250,16 +261,28 @@ function selectSession(sessionId: string) {
               </a-form>
             </a-col>
             <a-col :span="8">
-              <a-card size="small" title="当前助手">
-                <a-descriptions :column="1" size="small">
-                  <a-descriptions-item label="助手名称">{{ currentSession.assistantName }}</a-descriptions-item>
-                  <a-descriptions-item label="运行版本">{{ currentSession.assistantReleaseVersion }}</a-descriptions-item>
-                  <a-descriptions-item label="所属场景">{{ currentScenario?.name }}</a-descriptions-item>
-                  <a-descriptions-item label="可用助手">
-                    {{ availableAssistants.map((item) => item.name).join(' / ') }}
-                  </a-descriptions-item>
-                </a-descriptions>
-              </a-card>
+              <a-space direction="vertical" style="width: 100%" size="middle">
+                <a-card size="small" title="当前助手">
+                  <a-descriptions :column="1" size="small">
+                    <a-descriptions-item label="助手名称">{{ currentSession.assistantName }}</a-descriptions-item>
+                    <a-descriptions-item label="运行版本">{{ currentSession.assistantReleaseVersion }}</a-descriptions-item>
+                    <a-descriptions-item label="所属场景">{{ currentScenario?.name }}</a-descriptions-item>
+                    <a-descriptions-item label="可用助手">
+                      {{ availableAssistants.map((item) => item.name).join(' / ') }}
+                    </a-descriptions-item>
+                  </a-descriptions>
+                </a-card>
+                <a-card size="small" title="Session 共享状态">
+                  <a-alert
+                    v-if="!hasSharedState(currentSession.sharedState)"
+                    type="info"
+                    show-icon
+                    message="当前共享状态为空"
+                    description="facts / artifacts / agentScopes 还没有被写入。"
+                  />
+                  <pre v-else style="white-space: pre-wrap; word-break: break-word; margin: 0">{{ formatSharedState(currentSession.sharedState) }}</pre>
+                </a-card>
+              </a-space>
             </a-col>
           </a-row>
         </a-card>
@@ -285,11 +308,9 @@ function selectSession(sessionId: string) {
                 <a-descriptions-item label="摘要">{{ latestWorkflow.summary }}</a-descriptions-item>
                 <a-descriptions-item label="最终回复">{{ latestWorkflow.finalReply ?? '尚未输出' }}</a-descriptions-item>
                 <a-descriptions-item label="工具结果">
-                  {{ currentSession?.latestToolOutcome?.externalReference
-                    ? `${currentSession.latestToolOutcome.toolResourceName} / ${currentSession.latestToolOutcome.externalReference} / ${currentSession.latestToolOutcome.recommendedAction}`
-                    : currentSession?.latestToolOutcome
-                      ? `${currentSession.latestToolOutcome.toolResourceName} / ${currentSession.latestToolOutcome.status} / ${currentSession.latestToolOutcome.recommendedAction}`
-                      : '当前无工具调用记录' }}
+                  {{ currentSession?.latestToolOutcome
+                    ? `${currentSession.latestToolOutcome.toolResourceName} / ${currentSession.latestToolOutcome.operation}`
+                    : '当前无工具调用记录' }}
                 </a-descriptions-item>
                 <a-descriptions-item label="人工待办">
                   {{ currentSession?.latestHumanTask

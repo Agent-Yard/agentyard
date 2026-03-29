@@ -165,6 +165,102 @@ class CatalogServiceTest {
         assertThrows(IllegalStateException.class, () -> service.deleteResource("resource-tool-refund"));
     }
 
+    @Test
+    void shouldUpdateResourceMetadataIncludingName() {
+        CatalogService catalogService = new CatalogService(new InMemoryCatalogRepository(), false);
+        CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("客服域", "承载客服资源"));
+        CatalogDtos.ScenarioDto scenario = catalogService.createScenario(
+            new CatalogDtos.CreateScenarioRequest(domain.id(), "客服场景", "处理客服问题")
+        );
+        CatalogDtos.AssistantDto assistant = catalogService.createAssistant(
+            new CatalogDtos.CreateAssistantRequest(scenario.id(), "客服助手", "处理客服问题", null, null, null)
+        );
+        CatalogDtos.ResourceDto resource = catalogService.createResource(
+            new CatalogDtos.CreateResourceRequest(
+                domain.id(),
+                "原始资源名",
+                ResourceType.SKILL,
+                ShareScope.DOMAIN_SHARED,
+                "DOMAIN",
+                domain.id(),
+                "原始摘要",
+                "客服运营",
+                List.of("客服"),
+                null
+            )
+        );
+
+        CatalogDtos.ResourceDto updated = catalogService.updateResource(
+            resource.id(),
+            new CatalogDtos.UpdateResourceRequest(
+                "更新后的资源名",
+                ShareScope.PRIVATE,
+                "ASSISTANT",
+                assistant.id(),
+                "更新后的摘要",
+                "客服运营二组",
+                List.of("客服", "升级")
+            )
+        );
+
+        assertEquals("更新后的资源名", updated.name());
+        assertEquals(ShareScope.PRIVATE, updated.shareScope());
+        assertEquals("ASSISTANT", updated.ownerType());
+        assertEquals(assistant.id(), updated.ownerId());
+        assertEquals("更新后的摘要", updated.summary());
+    }
+
+    @Test
+    void shouldUpdateDraftResourceVersionInPlaceAndAllowDirectPublish() {
+        CatalogService catalogService = new CatalogService(new InMemoryCatalogRepository(), false);
+        CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("运营域", "承载运营资源"));
+        CatalogDtos.ResourceDto resource = catalogService.createResource(
+            new CatalogDtos.CreateResourceRequest(
+                domain.id(),
+                "运营 Tool",
+                ResourceType.TOOL,
+                ShareScope.DOMAIN_SHARED,
+                "DOMAIN",
+                domain.id(),
+                "运营工具",
+                "运营团队",
+                List.of("运营"),
+                new CatalogDtos.CreateResourceVersionRequest("初始草稿", VersionStatus.DRAFT, null)
+            )
+        );
+        CatalogDtos.ResourceVersionDto draftVersion = resource.versions().getFirst();
+
+        CatalogDtos.ResourceVersionDto updatedDraft = catalogService.updateResourceVersion(
+            resource.id(),
+            draftVersion.id(),
+            new CatalogDtos.UpdateResourceVersionRequest(
+                "更新后的草稿",
+                VersionStatus.DRAFT,
+                draftVersion.configuration()
+            )
+        );
+        assertEquals("更新后的草稿", updatedDraft.summary());
+        assertEquals(VersionStatus.DRAFT, updatedDraft.status());
+
+        CatalogDtos.ResourceVersionDto published = catalogService.updateResourceVersion(
+            resource.id(),
+            draftVersion.id(),
+            new CatalogDtos.UpdateResourceVersionRequest(
+                "直接发布的版本",
+                VersionStatus.PUBLISHED,
+                updatedDraft.configuration()
+            )
+        );
+        assertEquals(VersionStatus.PUBLISHED, published.status());
+        assertNotNull(published.publishedAt());
+
+        CatalogDtos.ResourceDto reloaded = catalogService.listResources().stream()
+            .filter(item -> item.id().equals(resource.id()))
+            .findFirst()
+            .orElseThrow();
+        assertEquals("直接发布的版本", reloaded.effectiveVersion().summary());
+    }
+
     private static KnowledgeServiceClient readySnapshotKnowledgeClient() {
         return new KnowledgeServiceClient("http://localhost:8091") {
             @Override

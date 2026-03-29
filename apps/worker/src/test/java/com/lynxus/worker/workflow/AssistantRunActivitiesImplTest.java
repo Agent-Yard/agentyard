@@ -7,6 +7,7 @@ import com.lynxus.contracts.runtime.WorkflowContracts;
 import com.lynxus.worker.runtime.AgentRuntimeGateway;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class AssistantRunActivitiesImplTest {
@@ -34,8 +35,19 @@ class AssistantRunActivitiesImplTest {
                 ),
                 List.of(),
                 false,
-                new WorkflowContracts.ToolOutcomeSummary("resource-tool-ticket", "工单协同 Tool", "create_ticket", "MCP", "ACCEPTED", "TICKET-1", "HUMAN_HANDOFF", "test"),
-                List.of("resource-version-skill-handoff-v1")
+                new WorkflowContracts.ToolOutcomeSummary(
+                    "resource-tool-ticket",
+                    "工单协同 Tool",
+                    "create_ticket",
+                    "MCP",
+                    Map.of(
+                        "ticketId", "TICKET-1",
+                        "status", "ACCEPTED",
+                        "message", "test"
+                    )
+                ),
+                List.of("resource-version-skill-handoff-v1"),
+                WorkflowContracts.SharedSessionState.empty()
             );
         }
     });
@@ -93,8 +105,19 @@ class AssistantRunActivitiesImplTest {
             ),
             List.of(),
             true,
-            new WorkflowContracts.ToolOutcomeSummary("resource-tool-ticket", "工单协同 Tool", "create_ticket", "MCP", "ACCEPTED", "TICKET-1", "HUMAN_HANDOFF", "test"),
-            List.of("resource-version-skill-handoff-v1")
+            new WorkflowContracts.ToolOutcomeSummary(
+                "resource-tool-ticket",
+                "工单协同 Tool",
+                "create_ticket",
+                "MCP",
+                Map.of(
+                    "ticketId", "TICKET-1",
+                    "status", "ACCEPTED",
+                    "message", "test"
+                )
+            ),
+            List.of("resource-version-skill-handoff-v1"),
+            WorkflowContracts.SharedSessionState.empty()
         );
     }
 
@@ -115,7 +138,8 @@ class AssistantRunActivitiesImplTest {
             List.of(),
             false,
             null,
-            List.of()
+            List.of(),
+            WorkflowContracts.SharedSessionState.empty()
         );
     }
 
@@ -125,7 +149,8 @@ class AssistantRunActivitiesImplTest {
             "tester",
             latestMessage,
             List.of(new WorkflowContracts.SessionMessageSnapshot("USER", "tester", latestMessage, Instant.now())),
-            List.of()
+            List.of(),
+            WorkflowContracts.SharedSessionState.empty()
         );
     }
 

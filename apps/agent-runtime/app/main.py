@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 
 import httpx
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 try:
     from langgraph.graph import END, StateGraph
@@ -197,12 +197,94 @@ class SessionMessageSnapshot(BaseModel):
         raise TypeError("createdAt must be a string, timestamp, or datetime")
 
 
+class SharedSessionState(BaseModel):
+    facts: Dict[str, Any] = Field(default_factory=dict)
+    artifacts: Dict[str, Any] = Field(default_factory=dict)
+    agentScopes: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+
+    @field_validator("facts", "artifacts", mode="before")
+    @classmethod
+    def normalize_object_bucket(cls, value: Any) -> Dict[str, Any]:
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            raise TypeError("shared state buckets must be objects")
+        return value
+
+    @field_validator("agentScopes", mode="before")
+    @classmethod
+    def normalize_agent_scopes(cls, value: Any) -> Dict[str, Dict[str, Any]]:
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            raise TypeError("agentScopes must be an object")
+        normalized: Dict[str, Dict[str, Any]] = {}
+        for key, scope in value.items():
+            agent_id = str(key).strip()
+            if not agent_id:
+                raise TypeError("agentScopes keys must be non-empty strings")
+            if scope is None:
+                normalized[agent_id] = {}
+                continue
+            if not isinstance(scope, dict):
+                raise TypeError(f"agentScopes[{agent_id}] must be an object")
+            normalized[agent_id] = scope
+        return normalized
+
+
 class SessionContext(BaseModel):
     sessionId: str
     requester: str
     latestMessage: str
     history: List[SessionMessageSnapshot]
     loadedSkillResourceVersionIds: List[str] = Field(default_factory=list)
+    sharedState: SharedSessionState = Field(default_factory=SharedSessionState)
+
+
+class SessionStatePatchOp(BaseModel):
+    target: str
+    op: str
+    path: List[str]
+    value: Any = None
+
+    @field_validator("target", mode="before")
+    @classmethod
+    def normalize_target(cls, value: Any) -> str:
+        return str(value or "").strip().upper()
+
+    @field_validator("op", mode="before")
+    @classmethod
+    def normalize_op(cls, value: Any) -> str:
+        return str(value or "").strip().upper()
+
+    @field_validator("path", mode="before")
+    @classmethod
+    def normalize_path(cls, value: Any) -> List[str]:
+        if not isinstance(value, list):
+            raise TypeError("sessionStatePatch.ops.path must be a list")
+        normalized: List[str] = []
+        for item in value:
+            segment = str(item).strip()
+            if not segment:
+                raise TypeError("sessionStatePatch.ops.path items must be non-empty strings")
+            normalized.append(segment)
+        if not normalized:
+            raise TypeError("sessionStatePatch.ops.path must not be empty")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_semantics(self) -> "SessionStatePatchOp":
+        if self.target not in {"FACTS", "ARTIFACTS", "AGENT_SCOPE"}:
+            raise ValueError(f"unsupported sessionStatePatch target={self.target or '<empty>'}")
+        if self.op not in {"UPSERT", "REMOVE"}:
+            raise ValueError(f"unsupported sessionStatePatch op={self.op or '<empty>'}")
+        if self.op == "UPSERT" and "value" not in self.model_fields_set:
+            raise ValueError("sessionStatePatch UPSERT op requires value")
+        return self
+
+
+class SessionStatePatch(BaseModel):
+    ops: List[SessionStatePatchOp] = Field(default_factory=list)
 
 
 class WorkflowStartRequest(BaseModel):
@@ -271,21 +353,17 @@ class ToolOutcomeSummary(BaseModel):
     toolResourceName: str
     operation: str
     providerType: str
-    status: str
-    externalReference: str
-    recommendedAction: str
-    detail: str
+    result: Dict[str, Any] = Field(default_factory=dict)
 
 
 class ToolExecutionRecord(BaseModel):
     agentId: str
+    toolResourceId: str
     toolResourceVersionId: str
     toolResourceName: str
     operation: str
     arguments: Dict[str, Any] = Field(default_factory=dict)
-    rawResult: Dict[str, Any] = Field(default_factory=dict)
-    normalizedOutcome: ToolOutcomeSummary
-    status: str
+    result: Dict[str, Any] = Field(default_factory=dict)
     createdAt: str
 
 
@@ -308,6 +386,7 @@ class AgentStructuredResponse(BaseModel):
     skillReads: List[str] = Field(default_factory=list)
     toolRequests: List[ToolRequest] = Field(default_factory=list)
     humanRequest: Optional[HumanRequest] = None
+    sessionStatePatch: Optional[SessionStatePatch] = None
 
 
 class AgentTurnLog(BaseModel):
@@ -315,6 +394,7 @@ class AgentTurnLog(BaseModel):
     phase: str
     decisionType: Optional[str] = None
     loadedSkillsDelta: int = 0
+    sessionStateOpsDelta: int = 0
     toolCallsDelta: int = 0
     routeSource: str = ""
     failureReason: str = ""
@@ -342,6 +422,7 @@ class WorkflowResult(BaseModel):
     escalationRequired: bool
     latestToolOutcome: Optional[ToolOutcomeSummary] = None
     loadedSkillResourceVersionIds: List[str] = Field(default_factory=list)
+    sharedState: SharedSessionState = Field(default_factory=SharedSessionState)
 
 
 class AgentState(TypedDict):
@@ -398,6 +479,13 @@ AGENT_HUMAN_TASK_SOURCE = "AGENT_REQUEST"
 HUMAN_ACTION_CONFIRM = "CONFIRM"
 HUMAN_ACTION_TERMINATE = "TERMINATE"
 DEFAULT_HUMAN_ACTIONS = [HUMAN_ACTION_CONFIRM, HUMAN_ACTION_TERMINATE]
+SESSION_STATE_TARGET_FACTS = "FACTS"
+SESSION_STATE_TARGET_ARTIFACTS = "ARTIFACTS"
+SESSION_STATE_TARGET_AGENT_SCOPE = "AGENT_SCOPE"
+SESSION_STATE_OP_UPSERT = "UPSERT"
+SESSION_STATE_OP_REMOVE = "REMOVE"
+MAX_SESSION_STATE_PATCH_VALUE_BYTES = 16 * 1024
+MAX_SHARED_SESSION_STATE_BYTES = 64 * 1024
 
 
 class AgentTurnError(Exception):
@@ -529,6 +617,27 @@ def validate_graph(graph: GraphSnapshot, assistant: AssistantRunSnapshot) -> Non
         node_edges = outgoing.get(node.nodeKey, [])
         if node.nodeType != "END" and not node_edges:
             raise HTTPException(status_code=400, detail=f"node has no outgoing edges: {node.nodeKey}")
+        if node.nodeType == "START":
+            if len(node_edges) != 1:
+                raise HTTPException(status_code=400, detail=f"START node must have exactly one outgoing edge: {node.nodeKey}")
+            start_edge = node_edges[0]
+            if not start_edge.defaultEdge or start_edge.routeKey.strip() != "default":
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"START node outgoing edge must be routeKey=default and defaultEdge=true: {start_edge.edgeKey}",
+                )
+        seen_route_keys: set[str] = set()
+        for edge in node_edges:
+            route_key = edge.routeKey.strip()
+            if not route_key:
+                raise HTTPException(status_code=400, detail=f"edge routeKey is required: {edge.edgeKey}")
+            if edge.defaultEdge and route_key != "default":
+                raise HTTPException(status_code=400, detail=f"default edge must use routeKey=default: {edge.edgeKey}")
+            if not edge.defaultEdge and route_key == "default":
+                raise HTTPException(status_code=400, detail=f"non-default edge cannot use routeKey=default: {edge.edgeKey}")
+            if route_key in seen_route_keys:
+                raise HTTPException(status_code=400, detail=f"duplicate routeKey for node {node.nodeKey}: {route_key}")
+            seen_route_keys.add(route_key)
         if sum(1 for edge in node_edges if edge.defaultEdge) > 1:
             raise HTTPException(status_code=400, detail=f"node has multiple default edges: {node.nodeKey}")
         if len(node_edges) > 1 and not any(edge.defaultEdge for edge in node_edges):
@@ -694,6 +803,136 @@ def loaded_skill_details(skill_resources: List[ResourceVersionSnapshot], session
     return details
 
 
+def normalize_shared_state(data: Any) -> Dict[str, Any]:
+    try:
+        normalized = SharedSessionState.model_validate(data or {})
+    except ValidationError as exc:
+        raise AgentTurnError("MODEL_OUTPUT_INVALID", f"sharedState is invalid: {exc}") from exc
+    return normalized.model_dump(mode="json")
+
+
+def shared_state_from_session_context(session_context: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = normalize_shared_state(session_context.get("sharedState"))
+    validate_shared_state_size(normalized)
+    session_context["sharedState"] = normalized
+    return normalized
+
+
+def shared_facts(session_context: Dict[str, Any]) -> Dict[str, Any]:
+    return shared_state_from_session_context(session_context)["facts"]
+
+
+def shared_artifacts(session_context: Dict[str, Any]) -> Dict[str, Any]:
+    return shared_state_from_session_context(session_context)["artifacts"]
+
+
+def agent_scope(session_context: Dict[str, Any], agent_id: str) -> Dict[str, Any]:
+    scopes = shared_state_from_session_context(session_context)["agentScopes"]
+    scope = scopes.get(agent_id)
+    if not isinstance(scope, dict):
+        scope = {}
+        scopes[agent_id] = scope
+    return scope
+
+
+def ensure_json_compatible(value: Any, path: str = "$") -> None:
+    if value is None or isinstance(value, (str, bool, int)):
+        return
+    if isinstance(value, float):
+        if value != value or value in (float("inf"), float("-inf")):
+            raise AgentTurnError("MODEL_OUTPUT_INVALID", f"{path} must be a finite number")
+        return
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            ensure_json_compatible(item, f"{path}[{index}]")
+        return
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if not isinstance(key, str) or not key:
+                raise AgentTurnError("MODEL_OUTPUT_INVALID", f"{path} keys must be non-empty strings")
+            ensure_json_compatible(item, f"{path}.{key}")
+        return
+    raise AgentTurnError("MODEL_OUTPUT_INVALID", f"{path} must be JSON-compatible")
+
+
+def serialized_size(value: Any) -> int:
+    try:
+        return len(json.dumps(value, ensure_ascii=False).encode("utf-8"))
+    except (TypeError, ValueError) as exc:
+        raise AgentTurnError("MODEL_OUTPUT_INVALID", f"value must be JSON-serializable: {exc}") from exc
+
+
+def validate_shared_state_size(shared_state: Dict[str, Any]) -> None:
+    ensure_json_compatible(shared_state, "$.sharedState")
+    size = serialized_size(shared_state)
+    if size > MAX_SHARED_SESSION_STATE_BYTES:
+        raise AgentTurnError(
+            "MODEL_OUTPUT_INVALID",
+            f"sharedState exceeds size limit {MAX_SHARED_SESSION_STATE_BYTES} bytes",
+        )
+
+
+def patch_bucket(shared_state: Dict[str, Any], agent_id: str, target: str) -> Dict[str, Any]:
+    if target == SESSION_STATE_TARGET_FACTS:
+        return shared_state["facts"]
+    if target == SESSION_STATE_TARGET_ARTIFACTS:
+        return shared_state["artifacts"]
+    scopes = shared_state["agentScopes"]
+    if agent_id not in scopes or not isinstance(scopes[agent_id], dict):
+        scopes[agent_id] = {}
+    return scopes[agent_id]
+
+
+def upsert_path(root: Dict[str, Any], path: List[str], value: Any) -> None:
+    current = root
+    for segment in path[:-1]:
+        existing = current.get(segment)
+        if existing is None:
+            next_obj: Dict[str, Any] = {}
+            current[segment] = next_obj
+            current = next_obj
+            continue
+        if not isinstance(existing, dict):
+            raise AgentTurnError(
+                "MODEL_OUTPUT_INVALID",
+                f"sessionStatePatch path {'/'.join(path)} crosses non-object segment {segment}",
+            )
+        current = existing
+    current[path[-1]] = value
+
+
+def remove_path(root: Dict[str, Any], path: List[str]) -> None:
+    current = root
+    for segment in path[:-1]:
+        existing = current.get(segment)
+        if existing is None:
+            return
+        if not isinstance(existing, dict):
+            raise AgentTurnError(
+                "MODEL_OUTPUT_INVALID",
+                f"sessionStatePatch path {'/'.join(path)} crosses non-object segment {segment}",
+            )
+        current = existing
+    current.pop(path[-1], None)
+
+
+def apply_session_state_patch(state: AgentState, agent: AgentSnapshot, patch: SessionStatePatch) -> None:
+    shared_state = shared_state_from_session_context(state["session_context"])
+    for index, item in enumerate(patch.ops):
+        bucket = patch_bucket(shared_state, agent.agentId, item.target)
+        if item.op == SESSION_STATE_OP_UPSERT:
+            ensure_json_compatible(item.value, f"$.sessionStatePatch.ops[{index}].value")
+            if serialized_size(item.value) > MAX_SESSION_STATE_PATCH_VALUE_BYTES:
+                raise AgentTurnError(
+                    "MODEL_OUTPUT_INVALID",
+                    f"sessionStatePatch value exceeds size limit {MAX_SESSION_STATE_PATCH_VALUE_BYTES} bytes",
+                )
+            upsert_path(bucket, item.path, item.value)
+        else:
+            remove_path(bucket, item.path)
+    validate_shared_state_size(shared_state)
+
+
 def format_default_user_prompt(
     question: str,
     conversation_history: str,
@@ -702,10 +941,20 @@ def format_default_user_prompt(
     knowledge_context: List[Dict[str, Any]],
     tool_results: List[Dict[str, Any]],
     human_input: Optional[Dict[str, Any]],
+    shared_facts_payload: Dict[str, Any],
+    shared_artifacts_payload: Dict[str, Any],
+    agent_scope_payload: Dict[str, Any],
 ) -> str:
-    sections = [f"用户问题：\n{question}"]
+    cur_dt = datetime.now().strftime("%Y-%m-%d %H:%M")
+    sections = [f"用户消息[{cur_dt}]：\n{question}"]
     if conversation_history:
         sections.append(f"会话记忆：\n{conversation_history}")
+    if shared_facts_payload:
+        sections.append(f"共享事实（facts）：\n{json.dumps(shared_facts_payload, ensure_ascii=False, indent=2)}")
+    if shared_artifacts_payload:
+        sections.append(f"共享产物（artifacts）：\n{json.dumps(shared_artifacts_payload, ensure_ascii=False, indent=2)}")
+    if agent_scope_payload:
+        sections.append(f"当前智能体私有上下文（agentScope）：\n{json.dumps(agent_scope_payload, ensure_ascii=False, indent=2)}")
     if available_skills:
         sections.append(f"可用技能目录：\n{json.dumps(available_skills, ensure_ascii=False, indent=2)}")
     if loaded_skills:
@@ -768,6 +1017,9 @@ def tool_catalog_for_prompt(tool_resources: List[ResourceVersionSnapshot]) -> Li
 def build_structured_agent_prompt(
     question: str,
     conversation_history: str,
+    shared_facts_payload: Dict[str, Any],
+    shared_artifacts_payload: Dict[str, Any],
+    agent_scope_payload: Dict[str, Any],
     available_skills: List[Dict[str, str]],
     loaded_skills: List[Dict[str, str]],
     knowledge_context: List[Dict[str, Any]],
@@ -785,6 +1037,9 @@ def build_structured_agent_prompt(
         knowledge_context,
         tool_results,
         human_input,
+        shared_facts_payload,
+        shared_artifacts_payload,
+        agent_scope_payload,
     )
     tool_catalog = tool_catalog_for_prompt(tool_resources)
     response_schema = {
@@ -804,6 +1059,16 @@ def build_structured_agent_prompt(
             "instruction": "string; only when decisionType=HUMAN_HANDOFF",
             "expectedAction": "string; only when decisionType=HUMAN_HANDOFF",
         },
+        "sessionStatePatch": {
+            "ops": [
+                {
+                    "target": f"{SESSION_STATE_TARGET_FACTS} | {SESSION_STATE_TARGET_ARTIFACTS} | {SESSION_STATE_TARGET_AGENT_SCOPE}",
+                    "op": f"{SESSION_STATE_OP_UPSERT} | {SESSION_STATE_OP_REMOVE}",
+                    "path": ["string", "nestedKey"],
+                    "value": "JSON-compatible value; required only when op=UPSERT",
+                }
+            ]
+        },
     }
     guidance = {
         "loopIndex": loop_index,
@@ -822,7 +1087,11 @@ def build_structured_agent_prompt(
             },
             AGENT_DECISION_TOOL_CALL: {
                 "whenToUse": "You need one or more tool calls before you can finish.",
-                "must": ["Populate toolRequests.", "You may also include skillReads if the tool decision depends on new skill details."],
+                "must": [
+                    "Populate toolRequests.",
+                    "You may also include skillReads if the tool decision depends on new skill details.",
+                    "Treat tools as external business systems: request only business arguments that the tool contract requires.",
+                ],
                 "mustNot": ["Do not include humanRequest."],
             },
             AGENT_DECISION_HUMAN_HANDOFF: {
@@ -834,6 +1103,10 @@ def build_structured_agent_prompt(
         "outputRules": [
             "Only request tools listed in availableTools.",
             "Use skillReads to request needed skill details from the skill catalog in the prompt.",
+            "Tool results are business data only. Do not expect them to return orchestration fields such as routeKey.",
+            "After tool calls complete, inspect the returned business result and make the routeDecision yourself when needed.",
+            "Use sessionStatePatch to persist reusable session facts, artifacts, or your own agentScope.",
+            "You can read facts/artifacts and only your own agentScope from the prompt. Do not assume access to other agents' scopes.",
             f"Use {AGENT_DECISION_SKILL_READ} for skill-only continuation turns.",
             f"Use {AGENT_DECISION_TOOL_CALL} for tool continuation turns.",
             f"Use {AGENT_DECISION_FINAL} only for a completed answer.",
@@ -1006,19 +1279,26 @@ async def call_http_tool(resource: ResourceVersionSnapshot, operation: ToolOpera
         if operation.name == "evaluate_refund" and any(word in question for word in ["投诉", "争议", "人工", "升级"]):
             return {
                 "eligibility": "REQUIRES_REVIEW",
-                "routeKey": "manual_review",
-                "actionPlan": "涉及争议和投诉，需要人工复核后再决定退款策略。",
+                "reviewMode": "MANUAL",
+                "reason": "涉及争议和投诉，需要人工复核后再决定退款策略。",
             }
         if operation.name == "evaluate_refund":
             return {
                 "eligibility": "APPROVED",
-                "routeKey": "resolved",
-                "actionPlan": "订单符合规则，可直接按标准退款流程处理。",
+                "resolution": "STANDARD_REFUND",
+                "reason": "订单符合规则，可直接按标准退款流程处理。",
             }
-        return {"status": "COMPLETED", "detail": "工具执行成功。"}
+        return {"status": "COMPLETED", "message": "工具执行成功。"}
+
+    request_method = config.http.method.upper()
+    request_kwargs: Dict[str, Any] = {}
+    if request_method == "GET":
+        request_kwargs["params"] = payload
+    else:
+        request_kwargs["json"] = payload
 
     async with httpx.AsyncClient(timeout=config.timeoutSeconds) as client:
-        response = await client.request(config.http.method.upper(), config.http.endpoint, json=payload)
+        response = await client.request(request_method, config.http.endpoint, **request_kwargs)
         response.raise_for_status()
         return response.json()
 
@@ -1035,7 +1315,7 @@ async def call_mcp_tool(resource: ResourceVersionSnapshot, operation: ToolOperat
         return {
             "ticketId": ticket_id,
             "status": "ACCEPTED",
-            "detail": "已创建人工协同工单，并记录人工处理意见。",
+            "message": "已创建人工协同工单，并记录人工处理意见。",
         }
 
     async with httpx.AsyncClient(timeout=config.timeoutSeconds) as client:
@@ -1057,25 +1337,13 @@ async def call_tool(resource: ResourceVersionSnapshot, operation_name: Optional[
         raise HTTPException(status_code=500, detail=f"resource {resource.resourceId} is not a tool")
     operation = resolve_tool_operation(resource, operation_name)
     if config.providerType == "HTTP":
-        return operation, await call_http_tool(resource, operation, payload)
-    if config.providerType == "MCP":
-        return operation, await call_mcp_tool(resource, operation, payload)
-    raise HTTPException(status_code=400, detail=f"Unsupported tool provider: {config.providerType}")
-
-
-def build_tool_payload(state: AgentState, hits: List[str]) -> Dict[str, Any]:
-    human_input = state["human_input"] or {}
-    latest_tool_record = state["tool_history"][-1] if state["tool_history"] else {}
-    latest_outcome = latest_tool_record.get("normalizedOutcome", {}) if isinstance(latest_tool_record, dict) else {}
-    return {
-        "question": state["question"],
-        "knowledgeHits": hits,
-        "operator": human_input.get("operatorId", ""),
-        "comment": human_input.get("comment", ""),
-        "ticketId": latest_outcome.get("externalReference", ""),
-        "externalReference": latest_outcome.get("externalReference", ""),
-        "recommendedAction": latest_outcome.get("recommendedAction", ""),
-    }
+        result = await call_http_tool(resource, operation, payload)
+    elif config.providerType == "MCP":
+        result = await call_mcp_tool(resource, operation, payload)
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported tool provider: {config.providerType}")
+    validate_tool_result(resource, operation, result)
+    return operation, result
 
 
 def tool_history_for_prompt(state: AgentState) -> List[Dict[str, Any]]:
@@ -1083,16 +1351,14 @@ def tool_history_for_prompt(state: AgentState) -> List[Dict[str, Any]]:
     for item in state["tool_history"]:
         if not isinstance(item, dict):
             continue
-        outcome = item.get("normalizedOutcome", {})
         prompt_rows.append(
             {
+                "toolResourceId": item.get("toolResourceId", ""),
                 "toolResourceVersionId": item.get("toolResourceVersionId", ""),
                 "toolResourceName": item.get("toolResourceName", ""),
                 "operation": item.get("operation", ""),
-                "status": item.get("status", ""),
-                "externalReference": outcome.get("externalReference", ""),
-                "recommendedAction": outcome.get("recommendedAction", ""),
-                "detail": outcome.get("detail", ""),
+                "arguments": item.get("arguments", {}),
+                "result": item.get("result", {}),
             }
         )
     return prompt_rows
@@ -1103,6 +1369,93 @@ def default_route_key(graph: GraphSnapshot, node_key: str) -> Optional[str]:
     if len(defaults) == 1:
         return defaults[0]
     return None
+
+
+def validate_tool_result(resource: ResourceVersionSnapshot, operation: ToolOperationConfig, result: Any) -> None:
+    if not isinstance(result, dict):
+        raise AgentTurnError(
+            "TOOL_RESPONSE_INVALID",
+            f"tool {resource.resourceName}/{operation.name} must return a JSON object",
+        )
+    output_schema = operation.outputSchema.strip()
+    if not output_schema:
+        return
+    try:
+        schema = json.loads(output_schema)
+    except json.JSONDecodeError as exc:
+        raise AgentTurnError(
+            "TOOL_SCHEMA_INVALID",
+            f"tool {resource.resourceName}/{operation.name} has invalid outputSchema: {exc}",
+        ) from exc
+    validate_json_schema_value(result, schema, path="$")
+
+
+def validate_json_schema_value(value: Any, schema: Any, path: str = "$") -> None:
+    if not isinstance(schema, dict):
+        return
+    schema_type = schema.get("type")
+    if isinstance(schema_type, list):
+        last_error: Optional[AgentTurnError] = None
+        for candidate_type in schema_type:
+            try:
+                validate_json_schema_value(value, {**schema, "type": candidate_type}, path)
+                return
+            except AgentTurnError as exc:
+                last_error = exc
+        if last_error is not None:
+            raise last_error
+        return
+    if schema_type == "object":
+        if not isinstance(value, dict):
+            raise AgentTurnError("TOOL_RESPONSE_INVALID", f"{path} must be an object")
+        required = schema.get("required", [])
+        if isinstance(required, list):
+            for key in required:
+                if isinstance(key, str) and key not in value:
+                    raise AgentTurnError("TOOL_RESPONSE_INVALID", f"{path}.{key} is required")
+        properties = schema.get("properties", {})
+        if isinstance(properties, dict):
+            for key, property_schema in properties.items():
+                if key in value:
+                    validate_json_schema_value(value[key], property_schema, f"{path}.{key}")
+        additional_properties = schema.get("additionalProperties", True)
+        if additional_properties is False and isinstance(properties, dict):
+            extras = [key for key in value if key not in properties]
+            if extras:
+                raise AgentTurnError("TOOL_RESPONSE_INVALID", f"{path} has unexpected properties: {', '.join(sorted(extras))}")
+        if isinstance(additional_properties, dict):
+            for key, extra_value in value.items():
+                if not isinstance(properties, dict) or key not in properties:
+                    validate_json_schema_value(extra_value, additional_properties, f"{path}.{key}")
+        return
+    if schema_type == "array":
+        if not isinstance(value, list):
+            raise AgentTurnError("TOOL_RESPONSE_INVALID", f"{path} must be an array")
+        item_schema = schema.get("items")
+        if item_schema is not None:
+            for index, item in enumerate(value):
+                validate_json_schema_value(item, item_schema, f"{path}[{index}]")
+        return
+    if schema_type == "string":
+        if not isinstance(value, str):
+            raise AgentTurnError("TOOL_RESPONSE_INVALID", f"{path} must be a string")
+        return
+    if schema_type == "integer":
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise AgentTurnError("TOOL_RESPONSE_INVALID", f"{path} must be an integer")
+        return
+    if schema_type == "number":
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            raise AgentTurnError("TOOL_RESPONSE_INVALID", f"{path} must be a number")
+        return
+    if schema_type == "boolean":
+        if not isinstance(value, bool):
+            raise AgentTurnError("TOOL_RESPONSE_INVALID", f"{path} must be a boolean")
+        return
+    if schema_type == "null":
+        if value is not None:
+            raise AgentTurnError("TOOL_RESPONSE_INVALID", f"{path} must be null")
+        return
 
 
 def resolve_route_or_raise(graph: GraphSnapshot, node_key: str, route_key: Optional[str], failure_code: str) -> tuple[str, str]:
@@ -1120,7 +1473,6 @@ def resolve_route_or_raise(graph: GraphSnapshot, node_key: str, route_key: Optio
 def normalize_tool_requests(
     raw_requests: Any,
     tool_resources: List[ResourceVersionSnapshot],
-    base_payload: Dict[str, Any],
 ) -> List[ToolRequest]:
     by_version_id = {resource.resourceVersionId: resource for resource in tool_resources}
     if not isinstance(raw_requests, list):
@@ -1143,7 +1495,7 @@ def normalize_tool_requests(
             ToolRequest(
                 toolResourceVersionId=resource_version_id,
                 operation=operation,
-                arguments={**base_payload, **arguments},
+                arguments=arguments,
             )
         )
     return normalized
@@ -1171,14 +1523,9 @@ def parse_agent_structured_response(
     llm_output: str,
     graph: GraphSnapshot,
     node: GraphNodeSnapshot,
-    agent: AgentSnapshot,
     skill_resources: List[ResourceVersionSnapshot],
     tool_resources: List[ResourceVersionSnapshot],
-    state: AgentState,
-    hits: List[str],
 ) -> AgentStructuredResponse:
-    del agent
-    payload = build_tool_payload(state, hits)
     parsed = extract_json_object(llm_output)
     if parsed is None:
         raise AgentTurnError("MODEL_OUTPUT_INVALID", "model output must be a JSON object")
@@ -1195,9 +1542,14 @@ def parse_agent_structured_response(
             raise AgentTurnError("ROUTE_INVALID", f"invalid routeDecision={route_decision} for node {node.nodeKey}")
 
     skill_reads = normalize_skill_reads(parsed.get("skillReads", []), skill_resources)
-    tool_requests = normalize_tool_requests(parsed.get("toolRequests", []), tool_resources, payload)
+    tool_requests = normalize_tool_requests(parsed.get("toolRequests", []), tool_resources)
     raw_human_request = parsed.get("humanRequest")
     human_request = HumanRequest.model_validate(raw_human_request) if raw_human_request is not None else None
+    raw_session_state_patch = parsed.get("sessionStatePatch")
+    try:
+        session_state_patch = SessionStatePatch.model_validate(raw_session_state_patch) if raw_session_state_patch is not None else None
+    except ValidationError as exc:
+        raise AgentTurnError("MODEL_OUTPUT_INVALID", f"sessionStatePatch is invalid: {exc}") from exc
 
     if decision_type == AGENT_DECISION_FINAL:
         if tool_requests:
@@ -1228,6 +1580,7 @@ def parse_agent_structured_response(
         skillReads=skill_reads,
         toolRequests=tool_requests,
         humanRequest=human_request,
+        sessionStatePatch=session_state_patch,
     )
 
 
@@ -1239,7 +1592,7 @@ def store_tool_result(
     arguments: Dict[str, Any],
     result: Dict[str, Any],
 ) -> None:
-    normalized_outcome = build_tool_outcome(resource, operation, result)
+    outcome_summary = build_tool_outcome(resource, operation, result)
     state["tool_history"].append(
         {
             "agentId": agent.agentId,
@@ -1248,29 +1601,21 @@ def store_tool_result(
             "toolResourceName": resource.resourceName,
             "operation": operation.name,
             "arguments": arguments,
-            "rawResult": result,
-            "normalizedOutcome": normalized_outcome,
-            "status": normalized_outcome["status"],
+            "result": result,
             "createdAt": now_iso(),
         }
     )
-    state["latest_tool_outcome"] = normalized_outcome
+    state["latest_tool_outcome"] = outcome_summary
 
 
 def build_tool_outcome(resource: ResourceVersionSnapshot, operation: ToolOperationConfig, result: Dict[str, Any]) -> Dict[str, Any]:
     provider_type = resource.configuration.tool.providerType if resource.configuration.tool else "UNKNOWN"
-    external_reference = str(result.get("ticketId", result.get("externalReference", "")))
-    recommended_action = str(result.get("recommendedAction", result.get("routeKey", "DEFAULT")))
-    detail = str(result.get("detail", result.get("actionPlan", json.dumps(result, ensure_ascii=False))))
     return {
         "toolResourceId": resource.resourceId,
         "toolResourceName": resource.resourceName,
         "operation": operation.name,
         "providerType": provider_type,
-        "status": str(result.get("status", "COMPLETED")),
-        "externalReference": external_reference,
-        "recommendedAction": recommended_action,
-        "detail": detail,
+        "result": result,
     }
 
 
@@ -1372,6 +1717,8 @@ def turn_log_line(turn_log: Dict[str, Any]) -> str:
         parts.append(f"decision={turn_log['decisionType']}")
     if turn_log.get("loadedSkillsDelta"):
         parts.append(f"loaded_skills_delta={turn_log['loadedSkillsDelta']}")
+    if turn_log.get("sessionStateOpsDelta"):
+        parts.append(f"session_state_ops_delta={turn_log['sessionStateOpsDelta']}")
     if turn_log.get("toolCallsDelta"):
         parts.append(f"tool_calls_delta={turn_log['toolCallsDelta']}")
     if turn_log.get("routeSource"):
@@ -1492,6 +1839,9 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
         prompt = build_structured_agent_prompt(
             state["question"],
             conversation_history,
+            shared_facts(state["session_context"]),
+            shared_artifacts(state["session_context"]),
+            agent_scope(state["session_context"], agent.agentId),
             available_skills,
             loaded_skills,
             hits,
@@ -1505,7 +1855,10 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
         llm_output = await call_llm(model_resource, prompt, system_prompt)
         state["agent_turn_state"]["phase"] = "VALIDATE_RESPONSE"
         try:
-            structured = parse_agent_structured_response(llm_output, graph, node, agent, skill_resources, tool_resources, state, hits)
+            structured = parse_agent_structured_response(llm_output, graph, node, skill_resources, tool_resources)
+            if structured.sessionStatePatch is not None:
+                state["agent_turn_state"]["phase"] = "APPLY_SESSION_STATE_PATCH"
+                apply_session_state_patch(state, agent, structured.sessionStatePatch)
         except AgentTurnError as exc:
             turn_log = AgentTurnLog(
                 turnIndex=turn_index,
@@ -1546,6 +1899,8 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
             after = merge_loaded_skills(state["session_context"], structured.skillReads)
             newly_loaded = [item for item in after if item not in before]
             turn_log.loadedSkillsDelta = len(newly_loaded)
+        if structured.sessionStatePatch is not None:
+            turn_log.sessionStateOpsDelta = len(structured.sessionStatePatch.ops)
 
         if structured.decisionType == AGENT_DECISION_SKILL_READ:
             turn_log.phase = "APPLY_SKILL_READS"
@@ -1619,9 +1974,6 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
                     provider_type = tool_resource.configuration.tool.providerType if tool_resource.configuration.tool else "UNKNOWN"
                     record_tool_call(state, provider_type, tool_resource, operation.name, "COMPLETED", json.dumps(tool_result, ensure_ascii=False))
                     turn_log.toolCallsDelta += 1
-                    tool_route_key = str(tool_result.get("routeKey", "")).strip()
-                    if tool_route_key:
-                        route_key, route_source = resolve_route_or_raise(graph, node.nodeKey, tool_route_key, "ROUTE_INVALID")
                 except AgentTurnError as exc:
                     provider_type = tool_resource.configuration.tool.providerType if tool_resource.configuration.tool else "UNKNOWN"
                     record_tool_call(state, provider_type, tool_resource, tool_request.operation, "FAILED", exc.message)
@@ -1635,7 +1987,7 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
                         state,
                         node.nodeKey,
                         node.nodeName,
-                        "工具路由异常，需要人工介入",
+                        "工具结果不符合约定，需要人工介入",
                         f"{exc.code}: {exc.message}",
                         "请人工确认工具结果并继续处理",
                         AGENT_HUMAN_TASK_SOURCE,
@@ -1770,7 +2122,8 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
     message = final_message or agent.responsibility
     human_comment = state["human_input"]["comment"] if state["human_input"] else ""
     latest_outcome = state["latest_tool_outcome"] or {}
-    suggestion = str(latest_outcome.get("detail", ""))
+    latest_result = latest_outcome.get("result", {}) if isinstance(latest_outcome, dict) else {}
+    suggestion = json.dumps(latest_result, ensure_ascii=False) if latest_result else ""
     human_suffix = f"人工处理说明：{human_comment}" if human_comment else ""
     state["final_reply"] = f"{message}\n\n{human_suffix}".strip() if human_suffix and human_suffix not in message else message
     if state["final_reply"]:
@@ -1917,6 +2270,7 @@ def workflow_result_from_state(state: AgentState) -> WorkflowResult:
         escalationRequired=state["escalation_required"],
         latestToolOutcome=ToolOutcomeSummary(**state["latest_tool_outcome"]) if state["latest_tool_outcome"] else None,
         loadedSkillResourceVersionIds=loaded_skill_version_ids(state["session_context"]),
+        sharedState=SharedSessionState.model_validate(shared_state_from_session_context(state["session_context"])),
     )
 
 

@@ -22,7 +22,8 @@ class AgentRuntimeGatewayTest {
                 "tester",
                 "你好",
                 List.of(new WorkflowContracts.SessionMessageSnapshot("USER", "tester", "你好", Instant.parse("2026-03-24T08:35:20Z"))),
-                List.of()
+                List.of(),
+                WorkflowContracts.SharedSessionState.empty()
             ),
             new WorkflowContracts.AssistantRunSnapshot(
                 "assistant-customer-ops",
@@ -68,7 +69,12 @@ class AgentRuntimeGatewayTest {
               "toolCalls": [],
               "escalationRequired": true,
               "latestToolOutcome": null,
-              "loadedSkillResourceVersionIds": []
+              "loadedSkillResourceVersionIds": [],
+              "sharedState": {
+                "facts": {},
+                "artifacts": {},
+                "agentScopes": {}
+              }
             }
             """;
 

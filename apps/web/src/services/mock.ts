@@ -139,7 +139,7 @@ const resources: Resource[] = [
         type: 'SKILL',
         skill: {
           skillName: '路由技能',
-          skillDesc: '根据用户问题、知识和上下文判断路由方向。',
+          skillDesc: '根据用户消息、知识和上下文判断路由方向。',
           skillPrompt: '优先判断问题属于 FAQ、售后策略或人工协同，并输出明确路由依据。',
         },
       },
@@ -267,7 +267,7 @@ const resources: Resource[] = [
               name: 'evaluate_refund',
               description: '根据问题和知识上下文判断退款/补偿策略',
               inputSchema: '{"question":"string","knowledgeHits":["string"]}',
-              outputSchema: '{"eligibility":"string","routeKey":"string","actionPlan":"string"}',
+              outputSchema: '{"type":"object","required":["eligibility","reason"],"properties":{"eligibility":{"type":"string"},"reason":{"type":"string"},"resolution":{"type":["string","null"]},"reviewMode":{"type":["string","null"]}},"additionalProperties":false}',
             },
           ],
           providerType: 'HTTP',
@@ -312,7 +312,7 @@ const resources: Resource[] = [
               name: 'create_ticket',
               description: '创建人工协同工单',
               inputSchema: '{"question":"string","operator":"string","comment":"string"}',
-              outputSchema: '{"ticketId":"string","status":"string","detail":"string"}',
+              outputSchema: '{"type":"object","required":["ticketId","status","message"],"properties":{"ticketId":{"type":"string"},"status":{"type":"string"},"message":{"type":"string"}},"additionalProperties":false}',
             },
           ],
           providerType: 'MCP',
@@ -438,7 +438,7 @@ const orchestration: AssistantOrchestration = {
         title: '人工介入待办',
         instruction: '请确认是否接管，并补充处理说明。',
         expectedAction: 'CONFIRM',
-        resumeRouteKey: 'human-confirmed',
+        resumeRouteKey: 'default',
       },
     },
     { nodeKey: 'handoff-close', nodeName: '闭环总结', nodeType: 'AGENT', description: '人工处理后生成闭环答复。', agentId: 'agent-coordinator', humanNode: null },
@@ -454,7 +454,7 @@ const orchestration: AssistantOrchestration = {
     { edgeKey: 'edge-policy-end', sourceNodeKey: 'policy', targetNodeKey: 'end', routeKey: 'resolved', label: '售后自动完成', defaultEdge: false },
     { edgeKey: 'edge-policy-human', sourceNodeKey: 'policy', targetNodeKey: 'human-review', routeKey: 'manual_review', label: '售后转人工', defaultEdge: false },
     { edgeKey: 'edge-policy-default', sourceNodeKey: 'policy', targetNodeKey: 'end', routeKey: 'default', label: '默认完成', defaultEdge: true },
-    { edgeKey: 'edge-human-handoff', sourceNodeKey: 'human-review', targetNodeKey: 'handoff-close', routeKey: 'human-confirmed', label: '人工确认后闭环', defaultEdge: true },
+    { edgeKey: 'edge-human-handoff', sourceNodeKey: 'human-review', targetNodeKey: 'handoff-close', routeKey: 'default', label: '人工确认后闭环', defaultEdge: true },
     { edgeKey: 'edge-close-end', sourceNodeKey: 'handoff-close', targetNodeKey: 'end', routeKey: 'default', label: '闭环完成', defaultEdge: true },
   ],
 };
@@ -603,10 +603,11 @@ const waitingToolOutcome: ToolOutcomeSummary = {
   toolResourceName: '工单协同 Tool',
   operation: 'create_ticket',
   providerType: 'MCP',
-  status: 'ACCEPTED',
-  externalReference: 'TICKET-10001',
-  recommendedAction: 'HUMAN_HANDOFF',
-  detail: '已创建人工协同工单。',
+  result: {
+    ticketId: 'TICKET-10001',
+    status: 'ACCEPTED',
+    message: '已创建人工协同工单。',
+  },
 };
 
 const waitingHumanTask: HumanTaskSnapshot = {
@@ -657,6 +658,24 @@ export const mockWorkflows: WorkflowInstance[] = [
     toolCalls: [],
     interventions: [],
     loadedSkillResourceVersionIds: [],
+    sharedState: {
+      facts: {
+        complaintLevel: 'high',
+      },
+      artifacts: {
+        latestExecution: {
+          workflowId: 'wf-10001',
+          status: 'WAITING_HUMAN',
+        },
+      },
+      agentScopes: {
+        'agent-router': {
+          draft: {
+            nextStep: 'handoff',
+          },
+        },
+      },
+    },
   },
 ];
 

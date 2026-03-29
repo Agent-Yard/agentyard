@@ -1,6 +1,8 @@
 package com.lynxus.contracts.runtime;
 
 import java.time.Instant;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -177,7 +179,7 @@ public final class WorkflowContracts {
         String agentId,
         String name,
         String role,
-        String instructions,
+        String responsibility,
         AgentExecutionPolicySnapshot executionPolicy
     ) {
     }
@@ -237,12 +239,45 @@ public final class WorkflowContracts {
     ) {
     }
 
+    public record SharedSessionState(
+        Map<String, Object> facts,
+        Map<String, Object> artifacts,
+        Map<String, Map<String, Object>> agentScopes
+    ) {
+        public SharedSessionState {
+            facts = immutableObjectMap(facts);
+            artifacts = immutableObjectMap(artifacts);
+            agentScopes = immutableAgentScopes(agentScopes);
+        }
+
+        public static SharedSessionState empty() {
+            return new SharedSessionState(Map.of(), Map.of(), Map.of());
+        }
+
+        private static Map<String, Object> immutableObjectMap(Map<String, Object> source) {
+            if (source == null || source.isEmpty()) {
+                return Map.of();
+            }
+            return Collections.unmodifiableMap(new LinkedHashMap<>(source));
+        }
+
+        private static Map<String, Map<String, Object>> immutableAgentScopes(Map<String, Map<String, Object>> source) {
+            if (source == null || source.isEmpty()) {
+                return Map.of();
+            }
+            LinkedHashMap<String, Map<String, Object>> copy = new LinkedHashMap<>();
+            source.forEach((agentId, scope) -> copy.put(agentId, immutableObjectMap(scope)));
+            return Collections.unmodifiableMap(copy);
+        }
+    }
+
     public record SessionContext(
         String sessionId,
         String requester,
         String latestMessage,
         List<SessionMessageSnapshot> history,
-        List<String> loadedSkillResourceVersionIds
+        List<String> loadedSkillResourceVersionIds,
+        SharedSessionState sharedState
     ) {
     }
 
@@ -319,10 +354,7 @@ public final class WorkflowContracts {
         String toolResourceName,
         String operation,
         String providerType,
-        String status,
-        String externalReference,
-        String recommendedAction,
-        String detail
+        Map<String, Object> result
     ) {
     }
 
@@ -348,7 +380,8 @@ public final class WorkflowContracts {
         List<ToolInvocationSnapshot> toolCalls,
         boolean escalationRequired,
         ToolOutcomeSummary latestToolOutcome,
-        List<String> loadedSkillResourceVersionIds
+        List<String> loadedSkillResourceVersionIds,
+        SharedSessionState sharedState
     ) {
     }
 

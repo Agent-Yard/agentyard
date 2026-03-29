@@ -4,6 +4,7 @@ import com.lynxus.contracts.runtime.AssistantRunWorkflow;
 import com.lynxus.contracts.runtime.WorkflowContracts.HumanAction;
 import com.lynxus.contracts.runtime.WorkflowContracts.NodeSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.NodeStatus;
+import com.lynxus.contracts.runtime.WorkflowContracts.SharedSessionState;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowResumeRequest;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowResult;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowStartRequest;
@@ -141,7 +142,8 @@ public class AssistantRunWorkflowImpl implements AssistantRunWorkflow {
             List.of(),
             false,
             null,
-            List.of()
+            List.of(),
+            SharedSessionState.empty()
         );
     }
 
@@ -160,7 +162,8 @@ public class AssistantRunWorkflowImpl implements AssistantRunWorkflow {
             List.of(),
             false,
             null,
-            List.of()
+            List.of(),
+            SharedSessionState.empty()
         );
     }
 

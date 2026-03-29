@@ -15,10 +15,28 @@ export function validateOrchestrationGraph(nodes: OrchestrationNode[], edges: Or
     if (!nodeKeys.has(edge.sourceNodeKey) || !nodeKeys.has(edge.targetNodeKey)) {
       return `存在引用无效节点的边：${edge.edgeKey}`;
     }
+    if (!edge.routeKey.trim()) {
+      return `边 ${edge.edgeKey} 必须设置 routeKey。`;
+    }
+    if (edge.defaultEdge && edge.routeKey !== 'default') {
+      return `默认边 ${edge.edgeKey} 必须使用 routeKey=default。`;
+    }
+    if (!edge.defaultEdge && edge.routeKey === 'default') {
+      return `非默认边 ${edge.edgeKey} 不能使用 routeKey=default。`;
+    }
   }
 
   for (const node of nodes) {
     const outgoing = edges.filter((edge) => edge.sourceNodeKey === node.nodeKey);
+    if (node.nodeType === 'START') {
+      if (outgoing.length !== 1) {
+        return 'START 节点必须且只能有一条出口边。';
+      }
+      const [startEdge] = outgoing;
+      if (!startEdge.defaultEdge || startEdge.routeKey !== 'default') {
+        return 'START 节点的出口边必须是 routeKey=default 的默认边。';
+      }
+    }
     if (node.nodeType === 'AGENT' && !node.agentId) {
       return `智能体节点 ${node.nodeName} 必须绑定 agentId。`;
     }
@@ -29,6 +47,20 @@ export function validateOrchestrationGraph(nodes: OrchestrationNode[], edges: Or
     }
     if (node.nodeType !== 'END' && outgoing.length === 0) {
       return `节点 ${node.nodeName} 没有出口边。`;
+    }
+    const routeKeys = new Set<string>();
+    for (const edge of outgoing) {
+      if (routeKeys.has(edge.routeKey)) {
+        return `节点 ${node.nodeName} 存在重复 routeKey：${edge.routeKey}`;
+      }
+      routeKeys.add(edge.routeKey);
+    }
+    const defaultCount = outgoing.filter((edge) => edge.defaultEdge).length;
+    if (defaultCount > 1) {
+      return `节点 ${node.nodeName} 存在多条默认边。`;
+    }
+    if (outgoing.length > 1 && defaultCount === 0) {
+      return `分支节点 ${node.nodeName} 必须配置一条默认边。`;
     }
   }
 

@@ -132,9 +132,23 @@ public class CatalogController {
         return ApiResponse.ok(catalogService.listResourceVersions(resourceId));
     }
 
+    @PutMapping("/resources/{resourceId}")
+    public ApiResponse<?> updateResource(@PathVariable String resourceId, @RequestBody UpdateResourceRequest request) {
+        return ApiResponse.ok(catalogService.updateResource(resourceId, request));
+    }
+
     @PostMapping("/resources/{resourceId}/versions")
     public ApiResponse<?> createResourceVersion(@PathVariable String resourceId, @RequestBody CreateResourceVersionRequest request) {
         return ApiResponse.ok(catalogService.createResourceVersion(resourceId, request));
+    }
+
+    @PutMapping("/resources/{resourceId}/versions/{versionId}")
+    public ApiResponse<?> updateResourceVersion(
+        @PathVariable String resourceId,
+        @PathVariable String versionId,
+        @RequestBody UpdateResourceVersionRequest request
+    ) {
+        return ApiResponse.ok(catalogService.updateResourceVersion(resourceId, versionId, request));
     }
 
     @PatchMapping("/resources/{resourceId}/versions/{versionId}/publish")

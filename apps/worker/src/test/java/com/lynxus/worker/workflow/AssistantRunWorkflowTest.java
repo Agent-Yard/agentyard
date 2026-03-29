@@ -13,6 +13,7 @@ import io.temporal.client.WorkflowStub;
 import io.temporal.testing.TestWorkflowEnvironment;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -45,8 +46,19 @@ class AssistantRunWorkflowTest {
                         List.of(new WorkflowContracts.NodeSnapshot("human-review", "人工介入", WorkflowContracts.NodeStatus.WAITING_HUMAN, "等待人工", Instant.now())),
                         List.of(),
                         true,
-                        new WorkflowContracts.ToolOutcomeSummary("resource-tool-ticket", "工单协同 Tool", "create_ticket", "MCP", "ACCEPTED", "TICKET-10001", "HUMAN_HANDOFF", "stub"),
-                        List.of("resource-version-skill-handoff-v1")
+                        new WorkflowContracts.ToolOutcomeSummary(
+                            "resource-tool-ticket",
+                            "工单协同 Tool",
+                            "create_ticket",
+                            "MCP",
+                            Map.of(
+                                "ticketId", "TICKET-10001",
+                                "status", "ACCEPTED",
+                                "message", "stub"
+                            )
+                        ),
+                        List.of("resource-version-skill-handoff-v1"),
+                        WorkflowContracts.SharedSessionState.empty()
                     )
                     : new WorkflowContracts.WorkflowResult(
                         request.workflowInstanceId(),
@@ -61,7 +73,8 @@ class AssistantRunWorkflowTest {
                         List.of(),
                         false,
                         null,
-                        List.of()
+                        List.of(),
+                        WorkflowContracts.SharedSessionState.empty()
                     );
             }
 
@@ -82,8 +95,19 @@ class AssistantRunWorkflowTest {
                     List.of(new WorkflowContracts.NodeSnapshot("end", "结束", WorkflowContracts.NodeStatus.COMPLETED, "流程结束", Instant.now())),
                     List.of(),
                     false,
-                    new WorkflowContracts.ToolOutcomeSummary("resource-tool-ticket", "工单协同 Tool", "create_ticket", "MCP", "ACCEPTED", "TICKET-10001", "HUMAN_HANDOFF", "stub"),
-                    List.of("resource-version-skill-handoff-v1")
+                    new WorkflowContracts.ToolOutcomeSummary(
+                        "resource-tool-ticket",
+                        "工单协同 Tool",
+                        "create_ticket",
+                        "MCP",
+                        Map.of(
+                            "ticketId", "TICKET-10001",
+                            "status", "ACCEPTED",
+                            "message", "stub"
+                        )
+                    ),
+                    List.of("resource-version-skill-handoff-v1"),
+                    WorkflowContracts.SharedSessionState.empty()
                 );
             }
         }));
@@ -168,7 +192,8 @@ class AssistantRunWorkflowTest {
                     List.of(),
                     false,
                     null,
-                    List.of()
+                    List.of(),
+                    WorkflowContracts.SharedSessionState.empty()
                 );
             }
 
@@ -223,7 +248,8 @@ class AssistantRunWorkflowTest {
                 "tester",
                 question,
                 List.of(new WorkflowContracts.SessionMessageSnapshot("USER", "tester", question, Instant.now())),
-                List.of()
+                List.of(),
+                WorkflowContracts.SharedSessionState.empty()
             ),
             new WorkflowContracts.AssistantRunSnapshot(
                 "assistant-customer-ops",

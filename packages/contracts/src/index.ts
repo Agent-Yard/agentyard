@@ -29,7 +29,7 @@ export interface OrchestrationEdge {
   edgeKey: string;
   sourceNodeKey: string;
   targetNodeKey: string;
-  routeKey: string | null;
+  routeKey: string;
   label: string;
   defaultEdge: boolean;
 }
@@ -73,10 +73,13 @@ export interface ToolOutcomeSummary {
   toolResourceName: string;
   operation: string;
   providerType: string;
-  status: string;
-  externalReference: string;
-  recommendedAction: string;
-  detail: string;
+  result: Record<string, unknown>;
+}
+
+export interface SharedSessionState {
+  facts: Record<string, unknown>;
+  artifacts: Record<string, unknown>;
+  agentScopes: Record<string, Record<string, unknown>>;
 }
 
 export interface HumanActionRequest {
