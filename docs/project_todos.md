@@ -37,7 +37,7 @@
 
 | # | 工作项 | 来源 | 理由 |
 |---|--------|------|------|
-| **3.1** | **前端大文件拆分（App.vue 25KB, types.ts 15KB）** | review 新增 | App.vue 应拆为 router 配置 + layout 组件 + page 注册；types.ts 应按 domain 拆分（catalog.types.ts, runtime.types.ts, orchestration.types.ts）。当前不影响功能，但每次改动都要在巨型文件中定位，拖慢开发效率。 |
+| **3.1 已完成** | **前端大文件拆分（App.vue 25KB, types.ts 15KB）** | review 新增 | 已完成：`apps/web/src/types.ts` 已拆为 `catalog.types.ts`、`runtime.types.ts`、`orchestration.types.ts` 并保持 barrel re-export；`apps/web/src/App.vue` 已瘦身为薄编排层，布局、状态、轮询、catalog actions、runtime actions、page registry 已分别拆入 `layouts/`、`composables/`、`config/`。 |
 | **3.2** | **测试体系建立（关键路径优先）** | review 新增 | 不需要一步到位追求覆盖率。建议从三个最关键路径开始：(1) 图校验器单测（合法/非法图）；(2) 发布快照冻结逻辑单测；(3) workflow start/signal/resume 集成测试。这三项测试的投入产出比最高。 |
 | **3.3 已完成** | **Python 服务共享依赖管理** | review 新增 | 已完成：根目录已引入 `uv` workspace，`agent-runtime` 与 `knowledge-service` 改为各自 `pyproject.toml` + 根级共享约束，开发脚本统一走 `uv run`，旧 `requirements.txt` 安装路径已移除。 |
 | **3.4** | **CI 基础设施** | 规划文档 | 有了 §3.2 的测试后，补上 CI 流水线（lint + type check + 关键测试），防止回归。 |
@@ -83,5 +83,5 @@ P3.2 测试体系
 
 - **第一波（已完成）**：P0.2，同时并行推进 P1.1 契约对齐
 - **第二波（进行中）**：P1.2 + P1.3 已完成，继续推进 P1.4，工程化基础开始稳固
-- **第三波（持续）**：P2.x 治理能力逐项补齐，P3.x 测试/CI/依赖管理穿插进行
+- **第三波（持续）**：P2.x 治理能力逐项补齐，P3.1 与 P3.3 已完成，继续推进 P3.2 测试体系与 P3.4 CI
 - **第四波（规划）**：P4.x 根据业务需求和时间窗口选择性推进

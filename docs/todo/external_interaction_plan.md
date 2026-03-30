@@ -31,12 +31,12 @@
 - workflow 已支持 `WAITING_HUMAN` 并通过 `handleHumanAction(...)` 恢复
 - 前端 `RuntimeConversationPage.vue` 已能展示会话消息
 - 前端 `WorkflowPage.vue` 已能展示挂起中的 workflow 并触发恢复动作
-- `App.vue` 已有统一 `refresh()` 和 3 秒轮询机制，可作为 MVP 的状态传播通道
+- Web app shell 已有统一 `refresh()` 和 3 秒轮询机制（现由 `useAppState` + `useWorkflowPolling` 承载），可作为 MVP 的状态传播通道
 
 ### 2.2 当前约束
 
 - 会话消息目前只有 `content` 文本，没有结构化动作载荷
-- runtime 数据目前主要在 API 进程内存中，跨支付跳转、进程重启、异步 webhook 的可靠性不足
+- runtime 主投影已落 PostgreSQL，但 external interaction 仍缺独立任务模型与跨回跳状态机
 - web 端没有正式路由，页面切换由 `App.vue` 的 `activeKey` 管理
 - workflow 只建模了“人工恢复”，还没有“外部结果恢复”的通用契约
 
@@ -49,6 +49,7 @@
 - runtime page: `apps/web/src/pages/RuntimeConversationPage.vue`
 - workflow page: `apps/web/src/pages/WorkflowPage.vue`
 - web app shell: `apps/web/src/App.vue`
+- web app state/polling: `apps/web/src/composables/useAppState.ts`、`apps/web/src/composables/useWorkflowPolling.ts`
 
 ## 3. 设计原则
 
@@ -73,7 +74,7 @@
 
 ### 3.4 先复用现有轮询链路，再考虑推送
 
-当前 `App.vue` 已有统一轮询刷新。
+当前 Web app shell 已有统一轮询刷新。
 MVP 阶段优先复用轮询链路，不强依赖 SSE / WebSocket。
 
 ### 3.5 external interaction 必须持久化
@@ -361,7 +362,7 @@ workflow 不需要为每种外部动作单独发明状态。
 - 主按钮 `去处理`
 - 辅助文案 `返回后系统会自动确认结果`
 
-#### App.vue
+#### App Shell
 
 需要增加以下能力：
 
@@ -383,8 +384,10 @@ workflow 不需要为每种外部动作单独发明状态。
 
 - `apps/web/src/pages/RuntimeConversationPage.vue`
 - `apps/web/src/App.vue`
+- `apps/web/src/composables/useAppState.ts`
+- `apps/web/src/composables/useRuntimeActions.ts`
 - `apps/web/src/services/api.ts`
-- `apps/web/src/types.ts`
+- `apps/web/src/types/runtime.types.ts`
 
 ## 9. 持久化设计
 
