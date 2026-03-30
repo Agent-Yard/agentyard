@@ -2,6 +2,7 @@ package com.lynxus.platform.runtime;
 
 import static com.lynxus.platform.runtime.RuntimeDtos.*;
 
+import com.lynxus.contracts.runtime.WorkflowContracts.AgentTurnState;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -172,7 +173,8 @@ public class InMemoryRuntimeRepository implements RuntimeRepository {
             workflow.toolCalls(),
             workflowInterventions.getOrDefault(workflow.id(), Map.of()).values().stream().sorted(INTERVENTION_ORDER).toList(),
             workflow.loadedSkillResourceVersionIds(),
-            workflow.sharedState()
+            workflow.sharedState(),
+            workflow.agentTurnState() == null ? AgentTurnState.empty() : workflow.agentTurnState()
         );
     }
 
@@ -221,7 +223,8 @@ public class InMemoryRuntimeRepository implements RuntimeRepository {
             List.copyOf(workflow.toolCalls()),
             List.of(),
             List.copyOf(workflow.loadedSkillResourceVersionIds()),
-            workflow.sharedState()
+            workflow.sharedState(),
+            workflow.agentTurnState() == null ? AgentTurnState.empty() : workflow.agentTurnState()
         );
     }
 }

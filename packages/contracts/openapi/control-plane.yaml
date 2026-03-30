@@ -594,6 +594,15 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/ConversationMessageRequest'
+      responses:
+        '200':
+          description: Updated session state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationSession'
+        '409':
+          description: Session already has an active workflow
   /workflows:
     get:
       summary: List workflow instances
@@ -1460,6 +1469,116 @@ components:
           additionalProperties:
             type: object
             additionalProperties: true
+    DecisionType:
+      type: string
+      enum: [FINAL, TOOL_CALL, SKILL_READ, HUMAN_HANDOFF]
+    SessionStatePatchTarget:
+      type: string
+      enum: [FACTS, ARTIFACTS, AGENT_SCOPE]
+    SessionStatePatchOpType:
+      type: string
+      enum: [UPSERT, REMOVE]
+    ToolRequest:
+      type: object
+      properties:
+        toolResourceVersionId:
+          type: string
+        operation:
+          type: string
+        arguments:
+          type: object
+          additionalProperties: true
+    HumanRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        instruction:
+          type: string
+        expectedAction:
+          type: string
+    SessionStatePatchOp:
+      type: object
+      properties:
+        target:
+          $ref: '#/components/schemas/SessionStatePatchTarget'
+        op:
+          $ref: '#/components/schemas/SessionStatePatchOpType'
+        path:
+          type: array
+          items:
+            type: string
+        value:
+          nullable: true
+    SessionStatePatch:
+      type: object
+      properties:
+        ops:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionStatePatchOp'
+    StructuredAgentDecision:
+      type: object
+      properties:
+        decisionType:
+          $ref: '#/components/schemas/DecisionType'
+        message:
+          type: string
+        routeDecision:
+          type: string
+          nullable: true
+        skillReads:
+          type: array
+          items:
+            type: string
+        toolRequests:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolRequest'
+        humanRequest:
+          allOf:
+            - $ref: '#/components/schemas/HumanRequest'
+          nullable: true
+        sessionStatePatch:
+          allOf:
+            - $ref: '#/components/schemas/SessionStatePatch'
+          nullable: true
+    AgentTurnLog:
+      type: object
+      properties:
+        turnIndex:
+          type: integer
+        phase:
+          type: string
+        decisionType:
+          allOf:
+            - $ref: '#/components/schemas/DecisionType'
+          nullable: true
+        loadedSkillsDelta:
+          type: integer
+        sessionStateOpsDelta:
+          type: integer
+        toolCallsDelta:
+          type: integer
+        routeSource:
+          type: string
+        failureReason:
+          type: string
+    AgentTurnState:
+      type: object
+      properties:
+        phase:
+          type: string
+        turnIndex:
+          type: integer
+        latestDecision:
+          allOf:
+            - $ref: '#/components/schemas/StructuredAgentDecision'
+          nullable: true
+        turnLogs:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentTurnLog'
     ToolInvocationSnapshot:
       type: object
       properties:
@@ -1607,6 +1726,10 @@ components:
             type: string
         sharedState:
           $ref: '#/components/schemas/SharedSessionState'
+        agentTurnState:
+          allOf:
+            - $ref: '#/components/schemas/AgentTurnState'
+          nullable: true
     ConversationMessageRequest:
       type: object
       properties:

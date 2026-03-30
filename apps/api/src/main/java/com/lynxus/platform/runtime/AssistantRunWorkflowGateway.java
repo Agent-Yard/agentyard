@@ -10,18 +10,14 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 public interface AssistantRunWorkflowGateway {
-    WorkflowResult startAndAwaitFirstResult(WorkflowStartRequest request);
+    void start(WorkflowStartRequest request);
 
-    WorkflowResult submitHumanActionAndAwaitResult(String workflowId, HumanAction action);
+    void submitHumanAction(String workflowId, HumanAction action);
 
     WorkflowResult currentResult(String workflowId);
 
     @Component
     class TemporalAssistantRunWorkflowGateway implements AssistantRunWorkflowGateway {
-        private static final long INITIAL_RESULT_TIMEOUT_MILLIS = 30_000;
-        private static final long RESUME_RESULT_TIMEOUT_MILLIS = 30_000;
-        private static final long POLL_INTERVAL_MILLIS = 100;
-
         private final WorkflowClient workflowClient;
         private final String taskQueue;
 
@@ -34,17 +30,15 @@ public interface AssistantRunWorkflowGateway {
         }
 
         @Override
-        public WorkflowResult startAndAwaitFirstResult(WorkflowStartRequest request) {
+        public void start(WorkflowStartRequest request) {
             AssistantRunWorkflow workflow = newStartWorkflowStub(request.workflowInstanceId());
             WorkflowClient.start(workflow::run, request);
-            return pollForResult(workflow, INITIAL_RESULT_TIMEOUT_MILLIS, true);
         }
 
         @Override
-        public WorkflowResult submitHumanActionAndAwaitResult(String workflowId, HumanAction action) {
+        public void submitHumanAction(String workflowId, HumanAction action) {
             AssistantRunWorkflow workflow = existingWorkflowStub(workflowId);
             workflow.submitHumanAction(action);
-            return pollForResult(workflow, RESUME_RESULT_TIMEOUT_MILLIS, false);
         }
 
         @Override
@@ -68,43 +62,6 @@ public interface AssistantRunWorkflowGateway {
 
         private AssistantRunWorkflow existingWorkflowStub(String workflowId) {
             return workflowClient.newWorkflowStub(AssistantRunWorkflow.class, workflowId);
-        }
-
-        private WorkflowResult pollForResult(AssistantRunWorkflow workflow, long timeoutMillis, boolean allowWaitingHuman) {
-            long deadline = System.currentTimeMillis() + timeoutMillis;
-            WorkflowResult latest = null;
-            while (System.currentTimeMillis() < deadline) {
-                try {
-                    latest = workflow.currentResult();
-                } catch (RuntimeException error) {
-                    latest = null;
-                }
-                if (latest != null && isReturnable(latest, allowWaitingHuman)) {
-                    return latest;
-                }
-                sleepQuietly();
-            }
-            if (latest != null) {
-                return latest;
-            }
-            throw new IllegalStateException("workflow did not expose a result before timeout");
-        }
-
-        private void sleepQuietly() {
-            try {
-                Thread.sleep(POLL_INTERVAL_MILLIS);
-            } catch (InterruptedException error) {
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException("interrupted while polling workflow result", error);
-            }
-        }
-
-        private boolean isReturnable(WorkflowResult result, boolean allowWaitingHuman) {
-            return switch (result.status()) {
-                case DRAFT, RUNNING -> false;
-                case WAITING_HUMAN -> allowWaitingHuman;
-                default -> true;
-            };
         }
     }
 }

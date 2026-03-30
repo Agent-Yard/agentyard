@@ -47,7 +47,8 @@ class AssistantRunActivitiesImplTest {
                     )
                 ),
                 List.of("resource-version-skill-handoff-v1"),
-                WorkflowContracts.SharedSessionState.empty()
+                WorkflowContracts.SharedSessionState.empty(),
+                WorkflowContracts.AgentTurnState.empty()
             );
         }
     });
@@ -117,7 +118,8 @@ class AssistantRunActivitiesImplTest {
                 )
             ),
             List.of("resource-version-skill-handoff-v1"),
-            WorkflowContracts.SharedSessionState.empty()
+            WorkflowContracts.SharedSessionState.empty(),
+            WorkflowContracts.AgentTurnState.empty()
         );
     }
 
@@ -139,7 +141,8 @@ class AssistantRunActivitiesImplTest {
             false,
             null,
             List.of(),
-            WorkflowContracts.SharedSessionState.empty()
+            WorkflowContracts.SharedSessionState.empty(),
+            WorkflowContracts.AgentTurnState.empty()
         );
     }
 

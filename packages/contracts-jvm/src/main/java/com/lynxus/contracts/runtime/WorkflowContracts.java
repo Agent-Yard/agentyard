@@ -10,6 +10,22 @@ public final class WorkflowContracts {
     private WorkflowContracts() {
     }
 
+    private static Map<String, Object> immutableObjectMap(Map<String, Object> source) {
+        if (source == null || source.isEmpty()) {
+            return Map.of();
+        }
+        return Collections.unmodifiableMap(new LinkedHashMap<>(source));
+    }
+
+    private static Map<String, Map<String, Object>> immutableAgentScopes(Map<String, Map<String, Object>> source) {
+        if (source == null || source.isEmpty()) {
+            return Map.of();
+        }
+        LinkedHashMap<String, Map<String, Object>> copy = new LinkedHashMap<>();
+        source.forEach((agentId, scope) -> copy.put(agentId, immutableObjectMap(scope)));
+        return Collections.unmodifiableMap(copy);
+    }
+
     public enum ResourceType {
         TOOL,
         LLM_MODEL,
@@ -63,6 +79,24 @@ public final class WorkflowContracts {
         AGENT,
         HUMAN,
         END
+    }
+
+    public enum DecisionType {
+        FINAL,
+        TOOL_CALL,
+        SKILL_READ,
+        HUMAN_HANDOFF
+    }
+
+    public enum SessionStatePatchTarget {
+        FACTS,
+        ARTIFACTS,
+        AGENT_SCOPE
+    }
+
+    public enum SessionStatePatchOpType {
+        UPSERT,
+        REMOVE
     }
 
     public record KnowledgeBindingSnapshot(
@@ -253,21 +287,83 @@ public final class WorkflowContracts {
         public static SharedSessionState empty() {
             return new SharedSessionState(Map.of(), Map.of(), Map.of());
         }
+    }
 
-        private static Map<String, Object> immutableObjectMap(Map<String, Object> source) {
-            if (source == null || source.isEmpty()) {
-                return Map.of();
-            }
-            return Collections.unmodifiableMap(new LinkedHashMap<>(source));
+    public record ToolRequest(
+        String toolResourceVersionId,
+        String operation,
+        Map<String, Object> arguments
+    ) {
+        public ToolRequest {
+            arguments = immutableObjectMap(arguments);
+        }
+    }
+
+    public record HumanRequest(
+        String title,
+        String instruction,
+        String expectedAction
+    ) {
+    }
+
+    public record SessionStatePatchOp(
+        SessionStatePatchTarget target,
+        SessionStatePatchOpType op,
+        List<String> path,
+        Object value
+    ) {
+        public SessionStatePatchOp {
+            path = path == null ? List.of() : List.copyOf(path);
+        }
+    }
+
+    public record SessionStatePatch(
+        List<SessionStatePatchOp> ops
+    ) {
+        public SessionStatePatch {
+            ops = ops == null ? List.of() : List.copyOf(ops);
+        }
+    }
+
+    public record StructuredAgentDecision(
+        DecisionType decisionType,
+        String message,
+        String routeDecision,
+        List<String> skillReads,
+        List<ToolRequest> toolRequests,
+        HumanRequest humanRequest,
+        SessionStatePatch sessionStatePatch
+    ) {
+        public StructuredAgentDecision {
+            skillReads = skillReads == null ? List.of() : List.copyOf(skillReads);
+            toolRequests = toolRequests == null ? List.of() : List.copyOf(toolRequests);
+        }
+    }
+
+    public record AgentTurnLog(
+        int turnIndex,
+        String phase,
+        DecisionType decisionType,
+        int loadedSkillsDelta,
+        int sessionStateOpsDelta,
+        int toolCallsDelta,
+        String routeSource,
+        String failureReason
+    ) {
+    }
+
+    public record AgentTurnState(
+        String phase,
+        int turnIndex,
+        StructuredAgentDecision latestDecision,
+        List<AgentTurnLog> turnLogs
+    ) {
+        public AgentTurnState {
+            turnLogs = turnLogs == null ? List.of() : List.copyOf(turnLogs);
         }
 
-        private static Map<String, Map<String, Object>> immutableAgentScopes(Map<String, Map<String, Object>> source) {
-            if (source == null || source.isEmpty()) {
-                return Map.of();
-            }
-            LinkedHashMap<String, Map<String, Object>> copy = new LinkedHashMap<>();
-            source.forEach((agentId, scope) -> copy.put(agentId, immutableObjectMap(scope)));
-            return Collections.unmodifiableMap(copy);
+        public static AgentTurnState empty() {
+            return new AgentTurnState("IDLE", 0, null, List.of());
         }
     }
 
@@ -381,7 +477,8 @@ public final class WorkflowContracts {
         boolean escalationRequired,
         ToolOutcomeSummary latestToolOutcome,
         List<String> loadedSkillResourceVersionIds,
-        SharedSessionState sharedState
+        SharedSessionState sharedState,
+        AgentTurnState agentTurnState
     ) {
     }
 

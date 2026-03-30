@@ -58,7 +58,8 @@ class AssistantRunWorkflowTest {
                             )
                         ),
                         List.of("resource-version-skill-handoff-v1"),
-                        WorkflowContracts.SharedSessionState.empty()
+                        WorkflowContracts.SharedSessionState.empty(),
+                        WorkflowContracts.AgentTurnState.empty()
                     )
                     : new WorkflowContracts.WorkflowResult(
                         request.workflowInstanceId(),
@@ -74,7 +75,8 @@ class AssistantRunWorkflowTest {
                         false,
                         null,
                         List.of(),
-                        WorkflowContracts.SharedSessionState.empty()
+                        WorkflowContracts.SharedSessionState.empty(),
+                        WorkflowContracts.AgentTurnState.empty()
                     );
             }
 
@@ -107,7 +109,8 @@ class AssistantRunWorkflowTest {
                         )
                     ),
                     List.of("resource-version-skill-handoff-v1"),
-                    WorkflowContracts.SharedSessionState.empty()
+                    WorkflowContracts.SharedSessionState.empty(),
+                    WorkflowContracts.AgentTurnState.empty()
                 );
             }
         }));
@@ -193,7 +196,8 @@ class AssistantRunWorkflowTest {
                     false,
                     null,
                     List.of(),
-                    WorkflowContracts.SharedSessionState.empty()
+                    WorkflowContracts.SharedSessionState.empty(),
+                    WorkflowContracts.AgentTurnState.empty()
                 );
             }
 

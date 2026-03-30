@@ -8,6 +8,9 @@ export type NodeStatus = 'PENDING' | 'RUNNING' | 'WAITING_HUMAN' | 'COMPLETED' |
 export type OrchestrationNodeType = 'START' | 'AGENT' | 'HUMAN' | 'END';
 export type HumanTaskSource = 'GRAPH_NODE' | 'AGENT_REQUEST';
 export type HumanActionType = 'CONFIRM' | 'TERMINATE';
+export type DecisionType = 'FINAL' | 'TOOL_CALL' | 'SKILL_READ' | 'HUMAN_HANDOFF';
+export type SessionStatePatchTarget = 'FACTS' | 'ARTIFACTS' | 'AGENT_SCOPE';
+export type SessionStatePatchOpType = 'UPSERT' | 'REMOVE';
 
 export interface HumanNodeConfig {
   title: string;
@@ -80,6 +83,57 @@ export interface SharedSessionState {
   facts: Record<string, unknown>;
   artifacts: Record<string, unknown>;
   agentScopes: Record<string, Record<string, unknown>>;
+}
+
+export interface ToolRequest {
+  toolResourceVersionId: string;
+  operation: string;
+  arguments: Record<string, unknown>;
+}
+
+export interface HumanRequest {
+  title: string;
+  instruction: string;
+  expectedAction: string;
+}
+
+export interface SessionStatePatchOp {
+  target: SessionStatePatchTarget;
+  op: SessionStatePatchOpType;
+  path: string[];
+  value?: unknown;
+}
+
+export interface SessionStatePatch {
+  ops: SessionStatePatchOp[];
+}
+
+export interface StructuredAgentDecision {
+  decisionType: DecisionType;
+  message: string;
+  routeDecision: string | null;
+  skillReads: string[];
+  toolRequests: ToolRequest[];
+  humanRequest: HumanRequest | null;
+  sessionStatePatch: SessionStatePatch | null;
+}
+
+export interface AgentTurnLog {
+  turnIndex: number;
+  phase: string;
+  decisionType: DecisionType | null;
+  loadedSkillsDelta: number;
+  sessionStateOpsDelta: number;
+  toolCallsDelta: number;
+  routeSource: string;
+  failureReason: string;
+}
+
+export interface AgentTurnState {
+  phase: string;
+  turnIndex: number;
+  latestDecision: StructuredAgentDecision | null;
+  turnLogs: AgentTurnLog[];
 }
 
 export interface HumanActionRequest {
@@ -207,4 +261,111 @@ export interface TaskLaunchRequest {
   assistantId: string;
   question: string;
   requester: string;
+}
+
+export interface TaskInstance {
+  id: string;
+  scenarioId: string;
+  assistantId: string;
+  assistantName: string;
+  assistantReleaseVersion: string;
+  question: string;
+  requester: string;
+  status: TaskStatus;
+  createdAt: string;
+  workflowInstanceId: string;
+}
+
+export interface NodeExecution {
+  id: string;
+  workflowInstanceId: string;
+  nodeKey: string;
+  nodeName: string;
+  status: NodeStatus;
+  detail: string;
+  updatedAt: string;
+}
+
+export interface HumanIntervention {
+  id: string;
+  workflowInstanceId: string;
+  action: string;
+  operator: string;
+  comment: string;
+  attributes?: Record<string, string>;
+  status?: string;
+  createdAt: string;
+  appliedAt?: string | null;
+  failureReason?: string | null;
+}
+
+export interface WorkflowInstance {
+  id: string;
+  taskId: string;
+  assistantId: string;
+  assistantName: string;
+  assistantReleaseVersion: string;
+  createdAt: string;
+  updatedAt: string;
+  status: WorkflowStatus;
+  summary: string;
+  finalReply: string | null;
+  currentNodeKey: string | null;
+  escalationRequired: boolean;
+  checkpoint: ExecutionCheckpoint | null;
+  humanTask: HumanTaskSnapshot | null;
+  pauseReason: PauseReasonSnapshot | null;
+  latestToolOutcome: ToolOutcomeSummary | null;
+  resourceAnchors: string[];
+  nodes: NodeExecution[];
+  toolCalls: ToolInvocationSnapshot[];
+  interventions: HumanIntervention[];
+  loadedSkillResourceVersionIds: string[];
+  sharedState: SharedSessionState;
+  agentTurnState: AgentTurnState | null;
+}
+
+export interface ConversationMessage {
+  id: string;
+  sessionId: string;
+  role: 'USER' | 'ASSISTANT' | 'SYSTEM';
+  senderType: 'USER' | 'ASSISTANT' | 'SYSTEM';
+  senderId: string;
+  senderName: string;
+  content: string;
+  createdAt: string;
+  taskId: string | null;
+  workflowInstanceId: string | null;
+}
+
+export interface ConversationSession {
+  id: string;
+  scenarioId: string;
+  title: string;
+  requester: string;
+  assistantId: string;
+  assistantName: string;
+  assistantReleaseVersion: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: ConversationMessage[];
+  latestTaskId: string | null;
+  latestWorkflowInstanceId: string | null;
+  latestToolOutcome: ToolOutcomeSummary | null;
+  latestHumanTask: HumanTaskSnapshot | null;
+  latestPauseReason: PauseReasonSnapshot | null;
+  loadedSkillResourceVersionIds: string[];
+  sharedState: SharedSessionState;
+}
+
+export interface CreateConversationSessionRequest {
+  scenarioId: string;
+  assistantId: string;
+  requester: string;
+  openingMessage: string;
+}
+
+export interface ConversationMessageRequest {
+  requester: string;
+  message: string;
 }

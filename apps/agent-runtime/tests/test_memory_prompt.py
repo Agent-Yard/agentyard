@@ -541,7 +541,8 @@ class MemoryPromptTests(unittest.TestCase):
             {"draft": {"step": "confirm"}},
         )
 
-        self.assertIn("用户消息：\n可以帮我退款吗", prompt)
+        self.assertIn("用户消息[", prompt)
+        self.assertIn("可以帮我退款吗", prompt)
         self.assertIn("会话记忆：\n[USER] 用户: 订单号是 123", prompt)
         self.assertIn("可用技能目录：", prompt)
         self.assertIn("已加载技能详情：", prompt)

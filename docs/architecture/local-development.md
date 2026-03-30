@@ -79,7 +79,7 @@ docker compose -f docker-compose.yml -f docker-compose.dashboards.yml up -d
 - OpenSearch Dashboards：`http://localhost:5601`
 - Temporal UI：`http://localhost:8088`
 - Mock 登录通过 `/api/auth/session` 和 `/api/auth/switch-role`
-- 前端如果后端未启动，会回退到内置 mock 数据
+- 前端不再回退到内置 mock 数据；后端未启动时页面请求会直接报错
 - API 启动时可按环境变量自动写入演示 catalog seed
 - API 启动时会对数据库中的非终态 runtime workflow 主动向 Temporal 做一次对账
 - Worker 会消费同一 Temporal namespace / task queue 下的 assistant run workflow

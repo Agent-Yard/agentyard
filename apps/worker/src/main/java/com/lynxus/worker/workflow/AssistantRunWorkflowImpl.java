@@ -1,6 +1,7 @@
 package com.lynxus.worker.workflow;
 
 import com.lynxus.contracts.runtime.AssistantRunWorkflow;
+import com.lynxus.contracts.runtime.WorkflowContracts;
 import com.lynxus.contracts.runtime.WorkflowContracts.HumanAction;
 import com.lynxus.contracts.runtime.WorkflowContracts.NodeSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.NodeStatus;
@@ -143,7 +144,8 @@ public class AssistantRunWorkflowImpl implements AssistantRunWorkflow {
             false,
             null,
             List.of(),
-            SharedSessionState.empty()
+            SharedSessionState.empty(),
+            WorkflowContracts.AgentTurnState.empty()
         );
     }
 
@@ -163,7 +165,8 @@ public class AssistantRunWorkflowImpl implements AssistantRunWorkflow {
             false,
             null,
             List.of(),
-            SharedSessionState.empty()
+            SharedSessionState.empty(),
+            WorkflowContracts.AgentTurnState.empty()
         );
     }
 

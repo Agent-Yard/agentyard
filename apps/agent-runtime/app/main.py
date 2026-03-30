@@ -379,7 +379,7 @@ class HumanRequest(BaseModel):
     expectedAction: str = ""
 
 
-class AgentStructuredResponse(BaseModel):
+class StructuredAgentDecision(BaseModel):
     decisionType: str
     message: str = ""
     routeDecision: Optional[str] = None
@@ -398,6 +398,13 @@ class AgentTurnLog(BaseModel):
     toolCallsDelta: int = 0
     routeSource: str = ""
     failureReason: str = ""
+
+
+class AgentTurnState(BaseModel):
+    phase: str = "IDLE"
+    turnIndex: int = 0
+    latestDecision: Optional[StructuredAgentDecision] = None
+    turnLogs: List[AgentTurnLog] = Field(default_factory=list)
 
 
 class NodeSnapshot(BaseModel):
@@ -423,6 +430,7 @@ class WorkflowResult(BaseModel):
     latestToolOutcome: Optional[ToolOutcomeSummary] = None
     loadedSkillResourceVersionIds: List[str] = Field(default_factory=list)
     sharedState: SharedSessionState = Field(default_factory=SharedSessionState)
+    agentTurnState: AgentTurnState = Field(default_factory=AgentTurnState)
 
 
 class AgentState(TypedDict):
@@ -1525,7 +1533,7 @@ def parse_agent_structured_response(
     node: GraphNodeSnapshot,
     skill_resources: List[ResourceVersionSnapshot],
     tool_resources: List[ResourceVersionSnapshot],
-) -> AgentStructuredResponse:
+) -> StructuredAgentDecision:
     parsed = extract_json_object(llm_output)
     if parsed is None:
         raise AgentTurnError("MODEL_OUTPUT_INVALID", "model output must be a JSON object")
@@ -1573,7 +1581,7 @@ def parse_agent_structured_response(
         if skill_reads:
             raise AgentTurnError("MODEL_OUTPUT_INVALID", "HUMAN_HANDOFF decisionType must not include skillReads")
 
-    return AgentStructuredResponse(
+    return StructuredAgentDecision(
         decisionType=decision_type,
         message=str(parsed.get("message", "")).strip(),
         routeDecision=route_decision,
@@ -1666,7 +1674,7 @@ def restore_state(data: Dict[str, Any], resume_request: WorkflowResumeRequest) -
         "latest_tool_outcome": data.get("latest_tool_outcome"),
         "human_input": resume_request.action.model_dump(mode="json"),
         "resume_count": resume_request.checkpoint.resumeCount + 1,
-        "agent_turn_state": data.get("agent_turn_state", {"phase": "IDLE", "turnIndex": 0, "turnLogs": []}),
+        "agent_turn_state": data.get("agent_turn_state", {"phase": "IDLE", "turnIndex": 0, "latestDecision": None, "turnLogs": []}),
         "pause_reason": data.get("pause_reason"),
         "workflow_status": "RUNNING",
     }
@@ -1828,6 +1836,7 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
     state["agent_turn_state"] = {
         "phase": "PREPARE_CONTEXT",
         "turnIndex": 0,
+        "latestDecision": None,
         "turnLogs": turn_logs,
     }
 
@@ -1856,6 +1865,7 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
         state["agent_turn_state"]["phase"] = "VALIDATE_RESPONSE"
         try:
             structured = parse_agent_structured_response(llm_output, graph, node, skill_resources, tool_resources)
+            state["agent_turn_state"]["latestDecision"] = structured.model_dump(mode="json")
             if structured.sessionStatePatch is not None:
                 state["agent_turn_state"]["phase"] = "APPLY_SESSION_STATE_PATCH"
                 apply_session_state_patch(state, agent, structured.sessionStatePatch)
@@ -2271,6 +2281,7 @@ def workflow_result_from_state(state: AgentState) -> WorkflowResult:
         latestToolOutcome=ToolOutcomeSummary(**state["latest_tool_outcome"]) if state["latest_tool_outcome"] else None,
         loadedSkillResourceVersionIds=loaded_skill_version_ids(state["session_context"]),
         sharedState=SharedSessionState.model_validate(shared_state_from_session_context(state["session_context"])),
+        agentTurnState=AgentTurnState.model_validate(state["agent_turn_state"]),
     )
 
 
@@ -2302,7 +2313,7 @@ async def start_agent_run(request: WorkflowStartRequest) -> WorkflowResult:
         "latest_tool_outcome": None,
         "human_input": None,
         "resume_count": 0,
-        "agent_turn_state": {"phase": "IDLE", "turnIndex": 0, "turnLogs": []},
+        "agent_turn_state": {"phase": "IDLE", "turnIndex": 0, "latestDecision": None, "turnLogs": []},
         "pause_reason": None,
         "workflow_status": "RUNNING",
     }

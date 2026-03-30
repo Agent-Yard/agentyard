@@ -26,7 +26,8 @@ Orchestrate Enterprise Agents
 - 默认单租户，复杂租户治理只保留模型边界
 - 认证仍以 mock 为主
 - 运行态主投影已落 PostgreSQL，并在 API 启动时主动与 Temporal 对账
-- `sendMessage` / `launchTask` 仍同步等待 workflow 首个结果
+- `sendMessage` / `launchTask` / `human-action` 已改为启动即返回，前端通过轮询收口运行结果
+- workflow 观测页已暴露 `agentTurnState`，可查看最新结构化决策和 turn logs
 - `demo.local` provider 仍承担本地演示闭环
 - MinIO / OpenSearch 已纳入本地依赖与配置，知识服务当前默认以 OpenSearch 作为正式快照检索后端
 

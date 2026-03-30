@@ -1,6 +1,7 @@
 package com.lynxus.platform.runtime;
 
 import com.lynxus.contracts.runtime.WorkflowContracts.ExecutionCheckpoint;
+import com.lynxus.contracts.runtime.WorkflowContracts.AgentTurnState;
 import com.lynxus.contracts.runtime.WorkflowContracts.HumanTaskSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.NodeStatus;
 import com.lynxus.contracts.runtime.WorkflowContracts.PauseReasonSnapshot;
@@ -65,7 +66,8 @@ public final class RuntimeDtos {
         List<ToolInvocationSnapshot> toolCalls,
         List<HumanInterventionDto> interventions,
         List<String> loadedSkillResourceVersionIds,
-        SharedSessionState sharedState
+        SharedSessionState sharedState,
+        AgentTurnState agentTurnState
     ) {
     }
 

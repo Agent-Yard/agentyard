@@ -6,7 +6,7 @@
 | # | 工作项 | 来源 | 理由 |
 |---|--------|------|------|
 | **0.1 已完成** | **运行态持久化：session/task/workflow/humanIntervention 落库** | runtime_todo §4 | 已完成：runtime 主投影已落 PostgreSQL，API 启动会主动对账非终态 Temporal workflow，控制台不再依赖单进程内存视图。 |
-| **0.2** | **同步等待改异步 + SSE/WebSocket** | runtime_todo §1 | `startAndAwaitFirstResult` 30 秒硬超时，LLM 稍慢就废。前端已有 workflow 详情页，改为启动即返回 + 前端订阅/轮询是最小可行改动。0.1 和 0.2 有依赖——持久化落地后异步观测才有稳定数据源，建议串行推进。 |
+| **0.2 已完成** | **同步等待改异步 + 轮询观测闭环** | runtime_todo §1 | 已完成：`sendMessage / launchTask / human-action` 已改为立即返回已受理投影，前端统一依赖 workflow 轮询收口，首结果超时不再作为产品语义。 |
 
 ---
 
@@ -14,7 +14,7 @@
 
 | # | 工作项 | 来源 | 理由 |
 |---|--------|------|------|
-| **1.1** | **结构化决策契约对齐（Python → contracts → contracts-jvm → OpenAPI）** | runtime_todo §5 | 当前 `decisionType / routeDecision / toolRequests` 只在 Python runtime 内部，跨服务消费全靠隐式约定。服务越多、迭代越快，字段漂移越严重。越早对齐成本越低。 |
+| **1.1 已完成（第一波）** | **结构化决策契约对齐（Python → contracts → contracts-jvm → OpenAPI）** | runtime_todo §5 | 已完成第一波：共享契约、`agentTurnState` 和 workflow 观测页已打通，后续只剩更完整的审计/历史化能力。 |
 | **1.2** | **workflow 失败可观测性：结构化错误码 + root cause 字段** | runtime_todo §3 | 没有结构化的失败分类（timeout / provider failure / tool failure / parsing failure），排障只能靠翻日志。0.1 持久化落地后，错误信息也需要有结构化字段可以存、可以查、可以展示。 |
 | **1.3** | **JSONB catalog store 关键路径关系模型化** | review 新增 | 目录数据全量 JSONB 在当前阶段够用，但跨对象引用分析（§C1）、删除影响预览（§C2）、版本 diff 等都需要高效 JOIN 和索引。建议对核心引用关系（资源绑定、发布快照锚点、agent-resource 关联）补充关系表或物化视图，JSONB 保留灵活扩展字段。 |
 | **1.4** | **demo/seed 与真实模式隔离** | runtime_todo §2 + review | `demo.local` provider、seed 数据、mock 认证散布在主链路代码中。用 Spring Profile 或特性开关将演示路径隔离，避免每次改动都要兼顾 demo 兼容性。 |
@@ -81,7 +81,7 @@ P3.2 测试体系
 
 ### 建议执行节奏
 
-- **第一波（1-2 周）**：P0.2，同时并行推进 P1.1 契约对齐
+- **第一波（已完成）**：P0.2，同时并行推进 P1.1 契约对齐
 - **第二波（1-2 周）**：P1.2 + P1.3 + P1.4，工程化基础开始稳固
 - **第三波（持续）**：P2.x 治理能力逐项补齐，P3.x 测试/CI/依赖管理穿插进行
 - **第四波（规划）**：P4.x 根据业务需求和时间窗口选择性推进

@@ -298,37 +298,15 @@ function startWorkflowPolling() {
 async function handleCreateSession(payload: { scenarioId: string; assistantId: string; requester: string; openingMessage: string }) {
   creatingSession.value = true;
   try {
-    const openingMessage = payload.openingMessage.trim();
-    const created = await api.createConversationSession({
-      ...payload,
-      openingMessage: '',
-    });
+    const created = await api.createConversationSession(payload);
     runtimePreferredSessionId.value = created.id;
     runtimeSelectedSessionId.value = created.id;
-    if (openingMessage) {
-      try {
-        await api.sendConversationMessage(created.id, {
-          requester: payload.requester,
-          message: openingMessage,
-        });
-      } catch (error) {
-        await refresh();
-        const recoveredSession = findSessionById(created.id);
-        const recoveredWorkflow = findWorkflowById(recoveredSession?.latestWorkflowInstanceId);
-        if (recoveredWorkflow) {
-          selectedWorkflowId.value = recoveredWorkflow.id;
-          activeKey.value = recoveredWorkflow.status === 'WAITING_HUMAN' ? 'workflow' : 'runtime';
-          void message.warning(
-            recoveredWorkflow.status === 'WAITING_HUMAN'
-              ? '开场消息请求已超时，但 workflow 已进入人工等待，可在流程观测页继续恢复。'
-              : '开场消息请求已超时，但 workflow 已经启动，可继续在运行页观察结果。',
-          );
-          return;
-        }
-        throw error;
-      }
-    }
     await refresh();
+    const recoveredSession = findSessionById(created.id);
+    const recoveredWorkflow = findWorkflowById(recoveredSession?.latestWorkflowInstanceId);
+    if (recoveredWorkflow) {
+      selectedWorkflowId.value = recoveredWorkflow.id;
+    }
     activeKey.value = 'runtime';
     void message.success('会话已创建');
   } catch (error) {
@@ -342,29 +320,22 @@ async function handleSendMessage(payload: { sessionId: string; requester: string
   sendingSessionId.value = payload.sessionId;
   runtimePreferredSessionId.value = payload.sessionId;
   runtimeSelectedSessionId.value = payload.sessionId;
-  const previousWorkflowId = findSessionById(payload.sessionId)?.latestWorkflowInstanceId ?? null;
   try {
     await api.sendConversationMessage(payload.sessionId, {
       requester: payload.requester,
       message: payload.message,
     });
     await refresh();
-  } catch (error) {
-    await refresh();
     const recoveredSession = findSessionById(payload.sessionId);
     const recoveredWorkflowId = recoveredSession?.latestWorkflowInstanceId ?? null;
     const recoveredWorkflow = findWorkflowById(recoveredWorkflowId);
-    if (recoveredWorkflowId && recoveredWorkflowId !== previousWorkflowId && recoveredWorkflow) {
+    if (recoveredWorkflow) {
       selectedWorkflowId.value = recoveredWorkflow.id;
       activeKey.value = recoveredWorkflow.status === 'WAITING_HUMAN' ? 'workflow' : 'runtime';
-      void message.warning(
-        recoveredWorkflow.status === 'WAITING_HUMAN'
-          ? '请求超时，但 workflow 已进入人工等待，可直接在流程观测页提交人工动作恢复。'
-          : '请求超时，但 workflow 已经启动，页面会继续自动刷新结果。',
-      );
-    } else {
-      void message.error(errorMessage(error, '发送消息失败'));
     }
+  } catch (error) {
+    await refresh();
+    void message.error(errorMessage(error, '发送消息失败'));
   } finally {
     sendingSessionId.value = null;
   }
@@ -386,6 +357,7 @@ async function handleHumanAction(payload: { workflowId: string; action: string; 
     attributes: payload.attributes,
   });
   await refresh();
+  activeKey.value = 'workflow';
 }
 
 async function handleRoleChange(role: Role) {

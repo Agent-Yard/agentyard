@@ -3,33 +3,34 @@
 这份文档记录当前运行链路仍待补齐的工作项。
 和 `docs/develop_record/` 中的重构留档不同，这里只保留“当前仍有效”的待办。
 
-## 1. 去掉 API 同步等待首个业务结果
+## 1. 已完成：API 启动/恢复链路改为异步观测
 
-现状：
+当前状态：
 
 - `POST /api/tasks`
 - `POST /api/runtime/sessions/{sessionId}/messages`
+- `PATCH /api/workflows/{workflowId}/human-action`
 
-这两条链路当前都会通过 `AssistantRunWorkflowGateway.startAndAwaitFirstResult(...)` 同步等待 workflow 暴露第一个可返回结果。
+这些链路现在都只负责提交命令并立即返回已受理投影，不再同步等待 workflow 暴露首个业务结果。
 
 当前实现细节：
 
-- gateway 通过 `currentResult()` 轮询 Temporal workflow
-- 当前固定超时为 30 秒
-- 启动链路允许返回 `WAITING_HUMAN`
-- 人工恢复链路 `submitHumanActionAndAwaitResult(...)` 仍同步等待恢复后的结果
+- gateway 暴露 `start(...)`、`submitHumanAction(...)` 和 `currentResult()`
+- API 先落 `session/task/workflow` 初始投影，再提交 workflow 或 signal
+- 前端主入口统一依赖 workflow 列表/详情轮询收口
+- `WAITING_HUMAN / COMPLETED / FAILED / CANCELLED` 全部通过运行态观测自然传播
 
-当前缺口：
+本次交付：
 
-- LLM、Tool 或 MCP 节点稍慢时，API 仍可能先超时
-- “workflow did not expose a result before timeout” 不是稳定的产品语义
-- 前端已经有 workflow 详情页，但主入口仍依赖同步等待
+- `sendMessage` / `launchTask` 立即返回受理后的运行标识和占位消息
+- 人工恢复链路改为立即返回“恢复处理中”的 workflow 投影
+- “workflow did not expose a result before timeout” 已不再是 API 层产品语义
 
-后续目标：
+剩余相关工作：
 
-1. `sendMessage` / `launchTask` 只负责启动 workflow 并立即返回运行标识
-2. 前端统一改为轮询 workflow 详情，或升级为 SSE / WebSocket 订阅
-3. `WAITING_HUMAN / COMPLETED / FAILED` 全部通过运行态观测链路自然传播
+1. 视需要在轮询之上再补 SSE / WebSocket 实时推送
+2. 为异步观测链路补更细的失败码和恢复态可观测信息（见 §3）
+3. 视流量与体验需求决定是否把全局轮询拆成按 workflow 增量订阅
 
 ## 2. 统一 demo seed、草稿默认模型和发布快照语义
 
@@ -92,32 +93,29 @@
 
 剩余相关工作：
 
-1. 去掉同步等待首结果，改为真正的异步观测链路（见 §1）
-2. 为失败原因补齐结构化错误码、root cause 和失败资源字段（见 §3）
-3. 视需要从当前投影模型升级到更完整的事件日志 / 审计模型
+1. 为失败原因补齐结构化错误码、root cause 和失败资源字段（见 §3）
+2. 视需要从当前投影模型升级到更完整的事件日志 / 审计模型
+3. 继续评估更细粒度的 runtime 事件流，而不只依赖当前主投影
 
 ## 5. 把 agent 结构化决策升级为共享契约
 
-现状：
+当前状态：
 
 - `agent-runtime` 已经在内部使用结构化决策载荷
-- 当前核心形状包括：
-  - `decisionType`
-  - `message`
-  - `routeDecision`
-  - `skillReads`
-  - `toolRequests`
-  - `humanRequest`
-- 决策类型当前为 `FINAL / TOOL_CALL / SKILL_READ / HUMAN_HANDOFF`
-
-当前缺口：
-
-- 这套结构目前主要停留在 Python runtime 内部
-- `packages/contracts`、`packages/contracts-jvm` 和 OpenAPI 里还没有对应的共享契约
-- 跨端调试、观测和后续演进仍容易出现字段漂移
+- `packages/contracts`、`packages/contracts-jvm` 和 OpenAPI 已补齐：
+  - `DecisionType`
+  - `StructuredAgentDecision`
+  - `ToolRequest`
+  - `HumanRequest`
+  - `SessionStatePatch`
+  - `SessionStatePatchOp`
+  - `AgentTurnLog`
+  - `AgentTurnState`
+- `WorkflowResult` / `WorkflowInstance` 已增加 `agentTurnState`
+- 前端 workflow 观测页已能查看 `phase / turnIndex / latestDecision / turnLogs`
 
 后续目标：
 
-1. 在 `packages/contracts`、`packages/contracts-jvm` 和 OpenAPI 中补齐共享结构化决策模型
-2. 让 runtime、worker、API 和前端观测统一消费这套契约
-3. 为结构化决策补齐单测、集成测试和回退策略
+1. 把当前“最新 turn state”继续升级为更完整的历史审计模型
+2. 在失败观测中复用共享决策契约，统一失败码与决策上下文
+3. 为跨服务 schema 演进补版本策略和更细的集成测试

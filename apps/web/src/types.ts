@@ -1,3 +1,28 @@
+import type {
+  AgentTurnLog as ContractsAgentTurnLog,
+  AgentTurnState as ContractsAgentTurnState,
+  ConversationMessage as ContractsConversationMessage,
+  ConversationMessageRequest as ContractsConversationMessageRequest,
+  ConversationSession as ContractsConversationSession,
+  CreateConversationSessionRequest as ContractsCreateConversationSessionRequest,
+  DecisionType as ContractsDecisionType,
+  ExecutionCheckpoint as ContractsExecutionCheckpoint,
+  HumanIntervention as ContractsHumanIntervention,
+  HumanRequest as ContractsHumanRequest,
+  HumanTaskSnapshot as ContractsHumanTaskSnapshot,
+  NodeExecution as ContractsNodeExecution,
+  PauseReasonSnapshot as ContractsPauseReasonSnapshot,
+  SessionStatePatch as ContractsSessionStatePatch,
+  SessionStatePatchOp as ContractsSessionStatePatchOp,
+  SharedSessionState as ContractsSharedSessionState,
+  StructuredAgentDecision as ContractsStructuredAgentDecision,
+  TaskInstance as ContractsTaskInstance,
+  ToolInvocationSnapshot as ContractsToolInvocationSnapshot,
+  ToolOutcomeSummary as ContractsToolOutcomeSummary,
+  ToolRequest as ContractsToolRequest,
+  WorkflowInstance as ContractsWorkflowInstance,
+} from '../../../packages/contracts/src';
+
 export type Role = 'PLATFORM_ADMIN' | 'DOMAIN_ADMIN' | 'DEVELOPER' | 'BUSINESS_USER';
 export type ResourceType = 'TOOL' | 'LLM_MODEL' | 'SKILL';
 export type ToolProviderType = 'HTTP' | 'MCP';
@@ -10,6 +35,7 @@ export type NodeStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'WAITI
 export type HumanTaskSource = 'GRAPH_NODE' | 'AGENT_REQUEST';
 export type HumanActionType = 'CONFIRM' | 'TERMINATE';
 export type OrchestrationNodeType = 'START' | 'AGENT' | 'HUMAN' | 'END';
+export type DecisionType = ContractsDecisionType;
 
 export interface UserSession {
   userId: string;
@@ -408,143 +434,25 @@ export interface CatalogSummary {
   resourceBlueprints: ResourceBlueprint[];
 }
 
-export interface TaskInstance {
-  id: string;
-  scenarioId: string;
-  assistantId: string;
-  assistantName: string;
-  assistantReleaseVersion: string;
-  question: string;
-  requester: string;
-  status: TaskStatus;
-  createdAt: string;
-  workflowInstanceId: string;
-}
-
-export interface ToolOutcomeSummary {
-  toolResourceId: string;
-  toolResourceName: string;
-  operation: string;
-  providerType: string;
-  result: Record<string, unknown>;
-}
-
-export interface SharedSessionState {
-  facts: Record<string, unknown>;
-  artifacts: Record<string, unknown>;
-  agentScopes: Record<string, Record<string, unknown>>;
-}
-
-export interface ToolInvocationSnapshot {
-  id: string;
-  providerType: string;
-  resourceId: string;
-  resourceName: string;
-  operation: string;
-  status: string;
-  detail: string;
-  createdAt: string;
-}
-
-export interface ExecutionCheckpoint {
-  checkpointId: string;
-  currentNodeKey: string;
-  waitingNodeKey: string;
-  statePayload: string;
-  resumeCount: number;
-}
-
-export interface HumanTaskSnapshot {
-  nodeKey: string;
-  title: string;
-  instruction: string;
-  expectedAction: string;
-  source: HumanTaskSource;
-  allowedActions: HumanActionType[];
-}
-
-export interface PauseReasonSnapshot {
-  code: string;
-  detail: string;
-  source: HumanTaskSource;
-}
-
-export interface NodeExecution {
-  id: string;
-  workflowInstanceId: string;
-  nodeKey: string;
-  nodeName: string;
-  status: NodeStatus;
-  detail: string;
-  updatedAt: string;
-}
-
-export interface HumanIntervention {
-  id: string;
-  workflowInstanceId: string;
-  action: string;
-  operator: string;
-  comment: string;
-  createdAt: string;
-}
-
-export interface WorkflowInstance {
-  id: string;
-  taskId: string;
-  assistantId: string;
-  assistantName: string;
-  assistantReleaseVersion: string;
-  createdAt: string;
-  updatedAt: string;
-  status: WorkflowStatus;
-  summary: string;
-  finalReply: string | null;
-  currentNodeKey: string | null;
-  escalationRequired: boolean;
-  checkpoint: ExecutionCheckpoint | null;
-  humanTask: HumanTaskSnapshot | null;
-  pauseReason: PauseReasonSnapshot | null;
-  latestToolOutcome: ToolOutcomeSummary | null;
-  resourceAnchors: string[];
-  nodes: NodeExecution[];
-  toolCalls: ToolInvocationSnapshot[];
-  interventions: HumanIntervention[];
-  loadedSkillResourceVersionIds: string[];
-  sharedState: SharedSessionState;
-}
-
-export interface ConversationMessage {
-  id: string;
-  sessionId: string;
-  role: 'USER' | 'ASSISTANT' | 'SYSTEM';
-  senderType: 'USER' | 'ASSISTANT' | 'SYSTEM';
-  senderId: string;
-  senderName: string;
-  content: string;
-  createdAt: string;
-  taskId: string | null;
-  workflowInstanceId: string | null;
-}
-
-export interface ConversationSession {
-  id: string;
-  scenarioId: string;
-  title: string;
-  requester: string;
-  assistantId: string;
-  assistantName: string;
-  assistantReleaseVersion: string;
-  createdAt: string;
-  updatedAt: string;
-  messages: ConversationMessage[];
-  latestTaskId: string | null;
-  latestWorkflowInstanceId: string | null;
-  latestToolOutcome: ToolOutcomeSummary | null;
-  latestHumanTask: HumanTaskSnapshot | null;
-  latestPauseReason: PauseReasonSnapshot | null;
-  loadedSkillResourceVersionIds: string[];
-  sharedState: SharedSessionState;
-}
+export type TaskInstance = ContractsTaskInstance;
+export type ToolOutcomeSummary = ContractsToolOutcomeSummary;
+export type SharedSessionState = ContractsSharedSessionState;
+export type ToolInvocationSnapshot = ContractsToolInvocationSnapshot;
+export type ExecutionCheckpoint = ContractsExecutionCheckpoint;
+export type HumanTaskSnapshot = ContractsHumanTaskSnapshot;
+export type PauseReasonSnapshot = ContractsPauseReasonSnapshot;
+export type NodeExecution = ContractsNodeExecution;
+export type HumanIntervention = ContractsHumanIntervention;
+export type ToolRequest = ContractsToolRequest;
+export type HumanRequest = ContractsHumanRequest;
+export type SessionStatePatchOp = ContractsSessionStatePatchOp;
+export type SessionStatePatch = ContractsSessionStatePatch;
+export type StructuredAgentDecision = ContractsStructuredAgentDecision;
+export type AgentTurnLog = ContractsAgentTurnLog;
+export type AgentTurnState = ContractsAgentTurnState;
+export type WorkflowInstance = ContractsWorkflowInstance;
+export type ConversationMessage = ContractsConversationMessage;
+export type ConversationSession = ContractsConversationSession;
 
 export interface CreateAssistantPayload {
   scenarioId: string;
@@ -641,17 +549,8 @@ export interface UpdateOrchestrationPayload {
   edges: OrchestrationEdge[];
 }
 
-export interface CreateConversationSessionPayload {
-  scenarioId: string;
-  assistantId: string;
-  requester: string;
-  openingMessage: string;
-}
-
-export interface ConversationMessagePayload {
-  requester: string;
-  message: string;
-}
+export type CreateConversationSessionPayload = ContractsCreateConversationSessionRequest;
+export type ConversationMessagePayload = ContractsConversationMessageRequest;
 
 export interface CreateKnowledgeBasePayload {
   domainId: string;

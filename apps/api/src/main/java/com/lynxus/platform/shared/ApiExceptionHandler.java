@@ -15,6 +15,12 @@ public class ApiExceptionHandler {
             .body(problem(HttpStatus.NOT_FOUND, error.getMessage()));
     }
 
+    @ExceptionHandler(ConflictException.class)
+    public ResponseEntity<ProblemDetail> handleConflict(ConflictException error) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+            .body(problem(HttpStatus.CONFLICT, error.getMessage()));
+    }
+
     @ExceptionHandler({IllegalArgumentException.class, IllegalStateException.class})
     public ResponseEntity<ProblemDetail> handleBadRequest(RuntimeException error) {
         return ResponseEntity.badRequest()

@@ -98,6 +98,27 @@ function hasSharedState(value?: { facts: Record<string, unknown>; artifacts: Rec
 function formatSharedState(value?: { facts: Record<string, unknown>; artifacts: Record<string, unknown>; agentScopes: Record<string, Record<string, unknown>> } | null) {
   return JSON.stringify(value ?? { facts: {}, artifacts: {}, agentScopes: {} }, null, 2);
 }
+
+function formatDecision(value?: WorkflowInstance['agentTurnState'] | null) {
+  if (!value?.latestDecision) {
+    return '暂无';
+  }
+  const decision = value.latestDecision;
+  const parts: string[] = [decision.decisionType];
+  if (decision.routeDecision) {
+    parts.push(`route=${decision.routeDecision}`);
+  }
+  if (decision.toolRequests.length) {
+    parts.push(`tools=${decision.toolRequests.map((item) => item.operation).join(', ')}`);
+  }
+  if (decision.skillReads.length) {
+    parts.push(`skills=${decision.skillReads.length}`);
+  }
+  if (decision.message) {
+    parts.push(decision.message);
+  }
+  return parts.join(' / ');
+}
 </script>
 
 <template>
@@ -204,6 +225,50 @@ function formatSharedState(value?: { facts: Record<string, unknown>; artifacts: 
               description="facts / artifacts / agentScopes 还没有可观测内容。"
             />
             <pre v-else style="white-space: pre-wrap; word-break: break-word; margin: 0">{{ formatSharedState(current.sharedState) }}</pre>
+          </a-card>
+
+          <a-card size="small" title="结构化决策" style="margin-top: 16px">
+            <a-descriptions :column="2" size="small">
+              <a-descriptions-item label="当前阶段">{{ current.agentTurnState?.phase ?? 'IDLE' }}</a-descriptions-item>
+              <a-descriptions-item label="轮次">{{ current.agentTurnState?.turnIndex ?? 0 }}</a-descriptions-item>
+              <a-descriptions-item label="最新决策" :span="2">
+                {{ formatDecision(current.agentTurnState) }}
+              </a-descriptions-item>
+            </a-descriptions>
+            <a-alert
+              v-if="!(current.agentTurnState?.turnLogs?.length)"
+              type="info"
+              show-icon
+              message="当前还没有结构化决策日志"
+              style="margin-top: 12px"
+            />
+            <a-table
+              v-else
+              style="margin-top: 12px"
+              :data-source="current.agentTurnState?.turnLogs ?? []"
+              :pagination="false"
+              size="small"
+              row-key="turnIndex"
+            >
+              <a-table-column title="轮次" data-index="turnIndex" key="turnIndex" />
+              <a-table-column title="阶段" data-index="phase" key="phase" />
+              <a-table-column title="决策" key="decisionType">
+                <template #default="{ record }">
+                  {{ record.decisionType ?? '-' }}
+                </template>
+              </a-table-column>
+              <a-table-column title="工具调用" data-index="toolCallsDelta" key="toolCallsDelta" />
+              <a-table-column title="路由来源" key="routeSource">
+                <template #default="{ record }">
+                  {{ record.routeSource || '-' }}
+                </template>
+              </a-table-column>
+              <a-table-column title="失败原因" key="failureReason">
+                <template #default="{ record }">
+                  {{ record.failureReason || '-' }}
+                </template>
+              </a-table-column>
+            </a-table>
           </a-card>
         </a-card>
 

@@ -4,6 +4,7 @@ import static com.lynxus.platform.runtime.RuntimeDtos.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import com.lynxus.contracts.runtime.WorkflowContracts.AgentTurnState;
 import com.lynxus.contracts.runtime.WorkflowContracts.ExecutionCheckpoint;
 import com.lynxus.contracts.runtime.WorkflowContracts.HumanTaskSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.NodeStatus;
@@ -57,7 +58,8 @@ class InMemoryRuntimeRepositoryTest {
             List.of(),
             List.of(),
             List.of("skill-v1"),
-            new SharedSessionState(Map.of("fact", "value"), Map.of(), Map.of())
+            new SharedSessionState(Map.of("fact", "value"), Map.of(), Map.of()),
+            AgentTurnState.empty()
         );
         ConversationSessionDto session = new ConversationSessionDto(
             "session-1",

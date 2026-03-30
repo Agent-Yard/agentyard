@@ -197,8 +197,8 @@ function formatSharedState(value?: { facts: Record<string, unknown>; artifacts: 
                 v-if="isCurrentSessionSending"
                 type="info"
                 show-icon
-                message="消息已提交，助手正在执行 workflow。"
-                description="页面会在当前请求完成后自动刷新。"
+                message="消息已提交，助手正在后台执行 workflow。"
+                description="这次请求只负责受理，后续结果会通过页面轮询自动收口。"
                 style="margin-bottom: 16px"
               />
               <a-alert
@@ -214,7 +214,7 @@ function formatSharedState(value?: { facts: Record<string, unknown>; artifacts: 
                 type="info"
                 show-icon
                 message="workflow 正在后台继续执行"
-                :description="`当前流程 ${latestWorkflow.id} 已脱离本次页面等待，页面会自动刷新；如果浏览器之前报超时，也不代表流程丢失。`"
+                :description="`当前流程 ${latestWorkflow.id} 正在后台执行，页面会通过轮询自动刷新运行结果。`"
                 style="margin-bottom: 16px"
               />
               <a-spin :spinning="isCurrentSessionSending">
