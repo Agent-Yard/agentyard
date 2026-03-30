@@ -27,16 +27,17 @@
 - `gradle`
 - `pnpm`
 - `python3`
+- `uv`
 - Docker / Docker Compose
 
-本地开发约定在项目根目录创建一个共享 `.venv`，并安装 `apps/agent-runtime`、`apps/knowledge-service` 各自的 `requirements.txt`。
+本地开发约定使用根目录 `uv` workspace 统一管理 Python 依赖。先安装 `uv`，再在仓库根目录执行 `uv sync --all-packages`。
 
 ## 建议启动顺序
 
 1. 启动基础依赖
 2. 复制根目录 `.env.example` 为 `.env`
 3. 执行 `pnpm install`
-4. 为项目根目录 `.venv` 安装 Python 依赖
+4. 执行 `uv sync --all-packages` 安装 Python 依赖
 5. 根据需要配置真实模型服务相关环境变量
 6. 通过 `pnpm dev` 一次启动整套应用
 
@@ -62,7 +63,7 @@ docker compose -f docker-compose.yml -f docker-compose.dashboards.yml up -d
 - 各应用目录下的 `.env`
 - 各应用目录下的 `.env.local`
 
-其中 `dev-agent-runtime.sh` 和 `dev-knowledge-service.sh` 会优先使用根目录 `.venv/bin/python`；如需覆盖，可分别设置 `AGENT_RUNTIME_PYTHON_BIN`、`KNOWLEDGE_SERVICE_PYTHON_BIN`。
+其中 `dev-agent-runtime.sh` 和 `dev-knowledge-service.sh` 会直接通过 `uv run` 使用 workspace 环境；运行前需先完成 `uv sync --all-packages`。
 
 ## 默认开发约定
 
@@ -81,8 +82,8 @@ docker compose -f docker-compose.yml -f docker-compose.dashboards.yml up -d
 - 前端不再回退到内置 mock 数据；后端未启动时页面请求会直接报错
 - API 启动时会对数据库中的非终态 runtime workflow 主动向 Temporal 做一次对账
 - Worker 会消费同一 Temporal namespace / task queue 下的 assistant run workflow
-- `dev-agent-runtime.sh` 默认以 `uvicorn --reload` 启动 Python runtime
-- `dev-knowledge-service.sh` 默认以 `uvicorn --reload` 启动知识服务
+- `dev-agent-runtime.sh` 默认以 `uv run --package lynxus-agent-runtime uvicorn --reload` 启动 Python runtime
+- `dev-knowledge-service.sh` 默认以 `uv run --package lynxus-knowledge-service uvicorn --reload` 启动知识服务
 
 ## 当前开发边界
 

@@ -102,13 +102,10 @@ cp .env.example .env
 
 ```bash
 pnpm install
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r apps/agent-runtime/requirements.txt
-pip install -r apps/knowledge-service/requirements.txt
+uv sync --all-packages
 ```
 
-本地开发约定使用项目根目录 `.venv` 作为共享 Python 环境。`dev-agent-runtime.sh` 和 `dev-knowledge-service.sh` 都会优先使用 `.venv/bin/python`，也可以分别通过 `AGENT_RUNTIME_PYTHON_BIN`、`KNOWLEDGE_SERVICE_PYTHON_BIN` 显式指定 Python。
+Python 依赖统一由根目录 `uv` workspace 管理。首次使用前请先安装 `uv`，然后在仓库根目录执行 `uv sync --all-packages`，由 `uv` 负责创建和维护虚拟环境。
 
 ### 4. 启动应用
 
@@ -136,7 +133,14 @@ pnpm dev:web
 - `apps:agent-runtime`
 - `apps:web`
 
-前提是你本机已经具备 `gradle`、`pnpm` 和 `python3`。
+前提是你本机已经具备 `gradle`、`pnpm`、`python3` 和 `uv`。
+
+如果你只想单独运行或测试 Python 服务，也统一使用 `uv`：
+
+```bash
+uv run --directory apps/agent-runtime --package lynxus-agent-runtime python -m unittest tests/test_memory_prompt.py
+uv run --directory apps/knowledge-service --package lynxus-knowledge-service python -m unittest tests/test_knowledge_service.py
+```
 
 ### 5. 常用环境变量
 

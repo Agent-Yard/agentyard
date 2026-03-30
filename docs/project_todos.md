@@ -39,7 +39,7 @@
 |---|--------|------|------|
 | **3.1** | **前端大文件拆分（App.vue 25KB, types.ts 15KB）** | review 新增 | App.vue 应拆为 router 配置 + layout 组件 + page 注册；types.ts 应按 domain 拆分（catalog.types.ts, runtime.types.ts, orchestration.types.ts）。当前不影响功能，但每次改动都要在巨型文件中定位，拖慢开发效率。 |
 | **3.2** | **测试体系建立（关键路径优先）** | review 新增 | 不需要一步到位追求覆盖率。建议从三个最关键路径开始：(1) 图校验器单测（合法/非法图）；(2) 发布快照冻结逻辑单测；(3) workflow start/signal/resume 集成测试。这三项测试的投入产出比最高。 |
-| **3.3** | **Python 服务共享依赖管理** | review 新增 | `agent-runtime` 和 `knowledge-service` 各自独立 `requirements.txt`，共享依赖（httpx, pydantic 等）版本可能漂移。引入 uv workspace 或 poetry workspace 统一约束，成本很低但收益持续。 |
+| **3.3 已完成** | **Python 服务共享依赖管理** | review 新增 | 已完成：根目录已引入 `uv` workspace，`agent-runtime` 与 `knowledge-service` 改为各自 `pyproject.toml` + 根级共享约束，开发脚本统一走 `uv run`，旧 `requirements.txt` 安装路径已移除。 |
 | **3.4** | **CI 基础设施** | 规划文档 | 有了 §3.2 的测试后，补上 CI 流水线（lint + type check + 关键测试），防止回归。 |
 
 ---

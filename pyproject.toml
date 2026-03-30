@@ -1,0 +1,20 @@
+[project]
+name = "lynxus-python-workspace"
+version = "0.1.0"
+description = "Python workspace for Lynxus services"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.uv]
+package = false
+constraint-dependencies = [
+    "fastapi==0.115.12",
+    "pydantic==2.11.3",
+    "uvicorn==0.34.0",
+]
+
+[tool.uv.workspace]
+members = [
+    "apps/agent-runtime",
+    "apps/knowledge-service",
+]

@@ -26,4 +26,4 @@ docs/
 
 ## test commands
 - java and node use commands in local system
-- python uses .venv/bin/python in project root
+- python uses `uv run` from project root workspace
