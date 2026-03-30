@@ -23,3 +23,7 @@ docs/
   todo/         current backlog and next-step docs
   develop_record/ working notes and refactor records, no need to read this unless required
 ```
+
+## test commands
+- java and node use commands in local system
+- python uses .venv/bin/python in project root
