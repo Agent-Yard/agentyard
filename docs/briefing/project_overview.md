@@ -135,9 +135,9 @@ Knowledge Base、Tool、LLM Model、Skill 四类资源已经进入统一治理�
 
 - 默认单租户，复杂租户治理仅保留模型边界
 - 认证仍以 mock 为主，尚未接入真实 OIDC / IAM
-- 部分运行态对象仍在 API 内存结构中维护
+- 运行态主投影已持久化到 PostgreSQL，并在 API 启动时主动与 Temporal 对账
 - `sendMessage` / `launchTask` 仍同步等待 workflow 首个结果
-- `demo.local` provider 和 seed 数据仍承担本地演示闭环职责
+- `demo.local` provider 和 catalog seed 数据仍承担本地演示闭环职责
 - 审计、安全隔离、灰度发布、SLO、成本治理尚未形成生产级体系
 - Redis / MinIO 等基础依赖的正式职责边界仍有待进一步收敛
 
@@ -162,9 +162,8 @@ Knowledge Base、Tool、LLM Model、Skill 四类资源已经进入统一治理�
 
 ### 9.1 补齐运行态持久化与异步观测
 
-- 将当前部分内存态运行对象落入持久化存储
 - 将同步等待首结果改造为更完整的异步观测链路
-- 强化 workflow 状态查询与运行历史查询能力
+- 在已落地的 runtime 投影基础上强化 workflow 状态查询与运行历史查询能力
 
 ### 9.2 引入真实身份与权限体系
 

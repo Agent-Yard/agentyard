@@ -25,9 +25,9 @@ Orchestrate Enterprise Agents
 
 - 默认单租户，复杂租户治理只保留模型边界
 - 认证仍以 mock 为主
-- 部分运行态数据仍在 API 内存中维护
+- 运行态主投影已落 PostgreSQL，并在 API 启动时主动与 Temporal 对账
 - `sendMessage` / `launchTask` 仍同步等待 workflow 首个结果
-- `demo.local` provider 与 seed 数据仍承担本地演示闭环
+- `demo.local` provider 仍承担本地演示闭环
 - MinIO / OpenSearch 已纳入本地依赖与配置，知识服务当前默认以 OpenSearch 作为正式快照检索后端
 
 ## Monorepo Layout
@@ -140,13 +140,11 @@ pnpm dev:web
 
 ### 5. 常用环境变量
 
-默认会写入目录演示数据，也会预置两条运行态演示会话，但不会自动执行 opening message。
-如果你希望启动时就跑出演示 workflow，可以显式开启：
+默认会写入目录演示数据；运行态演示 session seed 已移除，API 启动时会自动对数据库中的非终态 workflow 做一次 Temporal 对账。
+如果你希望保留演示目录数据，可以显式开启：
 
 ```bash
 LYNXUS_CATALOG_SEED_ENABLED=true
-LYNXUS_RUNTIME_SEED_ENABLED=true
-LYNXUS_RUNTIME_SEED_EXECUTE_OPENING_MESSAGES=true
 ```
 
 其中 `LYNXUS_CATALOG_SEED_ENABLED=true` 表示 API 启动时会在 PostgreSQL 目录表为空时自动写入一套演示助手、智能体和资源；如果数据库里已经有数据，则不会重复初始化。

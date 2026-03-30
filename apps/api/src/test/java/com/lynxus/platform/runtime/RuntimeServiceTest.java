@@ -24,7 +24,7 @@ import org.junit.jupiter.api.Test;
 
 class RuntimeServiceTest {
     private final CatalogService catalogService = catalogService();
-    private final RuntimeService service = new RuntimeService(new AssistantRunWorkflowGateway() {
+    private final RuntimeService service = runtimeService(new AssistantRunWorkflowGateway() {
         @Override
         public WorkflowContracts.WorkflowResult startAndAwaitFirstResult(WorkflowContracts.WorkflowStartRequest request) {
             boolean waitingHuman = request.question().contains("投诉");
@@ -101,7 +101,7 @@ class RuntimeServiceTest {
         public WorkflowContracts.WorkflowResult currentResult(String workflowId) {
             return null;
         }
-    }, catalogService);
+    });
 
     @Test
     void shouldRouteComplaintToHumanIntervention() {
@@ -127,34 +127,32 @@ class RuntimeServiceTest {
     }
 
     @Test
-    void shouldSeedSessionsWithoutLaunchingWorkflowsByDefault() {
-        RuntimeService seededService = new RuntimeService(new AssistantRunWorkflowGateway() {
+    void shouldStartWithoutRuntimeSeedData() {
+        RuntimeService emptyService = runtimeService(new AssistantRunWorkflowGateway() {
             @Override
             public WorkflowContracts.WorkflowResult startAndAwaitFirstResult(WorkflowContracts.WorkflowStartRequest request) {
-                throw new AssertionError("seed should not launch workflow executions");
+                throw new AssertionError("unexpected workflow start");
             }
 
             @Override
             public WorkflowContracts.WorkflowResult submitHumanActionAndAwaitResult(String workflowId, WorkflowContracts.HumanAction action) {
-                throw new AssertionError("seed should not resume workflow executions");
+                throw new AssertionError("unexpected human action");
             }
 
             @Override
             public WorkflowContracts.WorkflowResult currentResult(String workflowId) {
-                throw new AssertionError("seed should not query workflow executions");
+                throw new AssertionError("unexpected workflow query");
             }
-        }, catalogService());
+        });
 
-        seededService.seedDemoData(false);
-
-        assertEquals(2, seededService.listSessions().size());
-        assertTrue(seededService.listTasks().isEmpty());
-        assertTrue(seededService.listWorkflows().isEmpty());
+        assertTrue(emptyService.listSessions().isEmpty());
+        assertTrue(emptyService.listTasks().isEmpty());
+        assertTrue(emptyService.listWorkflows().isEmpty());
     }
 
     @Test
     void shouldExposeNestedFailureReasonInWorkflowSummary() {
-        RuntimeService failingService = new RuntimeService(new AssistantRunWorkflowGateway() {
+        RuntimeService failingService = runtimeService(new AssistantRunWorkflowGateway() {
             @Override
             public WorkflowContracts.WorkflowResult startAndAwaitFirstResult(WorkflowContracts.WorkflowStartRequest request) {
                 throw new RuntimeException(
@@ -172,7 +170,7 @@ class RuntimeServiceTest {
             public WorkflowContracts.WorkflowResult currentResult(String workflowId) {
                 return null;
             }
-        }, catalogService());
+        });
 
         RuntimeDtos.TaskInstanceDto task = failingService.launchTask(
             new RuntimeDtos.TaskLaunchRequest("scenario-customer-ops", "assistant-customer-ops", "你好", "tester")
@@ -195,9 +193,248 @@ class RuntimeServiceTest {
     }
 
     @Test
+    void shouldPersistTurnStartProjectionBeforeLaunchingWorkflow() {
+        InMemoryRuntimeRepository repository = new InMemoryRuntimeRepository();
+        RuntimeService projectionService = runtimeService(new AssistantRunWorkflowGateway() {
+            @Override
+            public WorkflowContracts.WorkflowResult startAndAwaitFirstResult(WorkflowContracts.WorkflowStartRequest request) {
+                RuntimeDtos.ConversationSessionDto storedSession = repository.findSession(request.sessionContext().sessionId()).orElseThrow();
+                RuntimeDtos.TaskInstanceDto storedTask = repository.findTaskByWorkflowInstanceId(request.workflowInstanceId()).orElseThrow();
+                RuntimeDtos.WorkflowInstanceDto storedWorkflow = repository.findWorkflow(request.workflowInstanceId()).orElseThrow();
+
+                assertEquals(request.workflowInstanceId(), storedSession.latestWorkflowInstanceId());
+                assertEquals(storedTask.id(), storedSession.latestTaskId());
+                assertEquals("怎么重置密码", storedSession.messages().getLast().content());
+                assertEquals(WorkflowContracts.WorkflowStatus.RUNNING, storedWorkflow.status());
+
+                return new WorkflowContracts.WorkflowResult(
+                    request.workflowInstanceId(),
+                    WorkflowContracts.WorkflowStatus.COMPLETED,
+                    "问题已自动处理完成。",
+                    "请通过登录页的忘记密码完成密码重置。",
+                    "end",
+                    null,
+                    null,
+                    null,
+                    List.of(new WorkflowContracts.NodeSnapshot("end", "结束", WorkflowContracts.NodeStatus.COMPLETED, "流程结束", Instant.now())),
+                    List.of(),
+                    false,
+                    null,
+                    List.of(),
+                    WorkflowContracts.SharedSessionState.empty()
+                );
+            }
+
+            @Override
+            public WorkflowContracts.WorkflowResult submitHumanActionAndAwaitResult(String workflowId, WorkflowContracts.HumanAction action) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public WorkflowContracts.WorkflowResult currentResult(String workflowId) {
+                return null;
+            }
+        }, catalogService, repository);
+
+        RuntimeDtos.ConversationSessionDto session = projectionService.createSession(
+            new RuntimeDtos.CreateConversationSessionRequest("scenario-customer-ops", "assistant-customer-ops", "tester", null)
+        );
+
+        RuntimeDtos.ConversationSessionDto updated = projectionService.sendMessage(
+            session.id(),
+            new RuntimeDtos.ConversationMessageRequest("tester", "怎么重置密码")
+        );
+
+        assertEquals(2, updated.messages().size());
+        assertEquals("请通过登录页的忘记密码完成密码重置。", updated.messages().getLast().content());
+    }
+
+    @Test
+    void shouldRecordPendingInterventionBeforeSubmittingHumanAction() {
+        InMemoryRuntimeRepository repository = new InMemoryRuntimeRepository();
+        RuntimeService interventionService = runtimeService(new AssistantRunWorkflowGateway() {
+            @Override
+            public WorkflowContracts.WorkflowResult startAndAwaitFirstResult(WorkflowContracts.WorkflowStartRequest request) {
+                return new WorkflowContracts.WorkflowResult(
+                    request.workflowInstanceId(),
+                    WorkflowContracts.WorkflowStatus.WAITING_HUMAN,
+                    "已创建人工协同工单，等待人工处理。",
+                    "已进入人工协同流程。",
+                    "human-review",
+                    new WorkflowContracts.ExecutionCheckpoint("cp-1", "handoff-close", "human-review", "{}", 0),
+                    new WorkflowContracts.HumanTaskSnapshot("human-review", "人工介入待办", "请人工处理。", "补充处理意见并确认后续动作", "GRAPH_NODE", List.of("CONFIRM")),
+                    new WorkflowContracts.PauseReasonSnapshot("GRAPH_HUMAN_NODE", "请人工处理。", "GRAPH_NODE"),
+                    List.of(new WorkflowContracts.NodeSnapshot("human-review", "人工介入", WorkflowContracts.NodeStatus.WAITING_HUMAN, "等待人工接管", Instant.now())),
+                    List.of(),
+                    true,
+                    null,
+                    List.of(),
+                    WorkflowContracts.SharedSessionState.empty()
+                );
+            }
+
+            @Override
+            public WorkflowContracts.WorkflowResult submitHumanActionAndAwaitResult(String workflowId, WorkflowContracts.HumanAction action) {
+                RuntimeDtos.HumanInterventionDto pending = repository.findPendingIntervention(workflowId).orElseThrow();
+                assertEquals(RuntimeDtos.HumanInterventionStatus.PENDING, pending.status());
+                assertEquals("operator-1", pending.operator());
+                assertEquals("approved", pending.attributes().get("resolution"));
+                return new WorkflowContracts.WorkflowResult(
+                    workflowId,
+                    WorkflowContracts.WorkflowStatus.COMPLETED,
+                    "人工处理已完成。",
+                    "人工处理已完成，已同步客户。",
+                    "end",
+                    null,
+                    null,
+                    null,
+                    List.of(new WorkflowContracts.NodeSnapshot("end", "结束", WorkflowContracts.NodeStatus.COMPLETED, action.comment(), Instant.now())),
+                    List.of(),
+                    false,
+                    null,
+                    List.of(),
+                    WorkflowContracts.SharedSessionState.empty()
+                );
+            }
+
+            @Override
+            public WorkflowContracts.WorkflowResult currentResult(String workflowId) {
+                return null;
+            }
+        }, catalogService, repository);
+
+        RuntimeDtos.TaskInstanceDto task = interventionService.launchTask(
+            new RuntimeDtos.TaskLaunchRequest("scenario-customer-ops", "assistant-customer-ops", "客户投诉，需要人工处理", "tester")
+        );
+
+        RuntimeDtos.WorkflowInstanceDto updated = interventionService.handleHumanAction(
+            task.workflowInstanceId(),
+            new RuntimeDtos.HumanActionRequest("CONFIRM", "人工已处理", "operator-1", Map.of("resolution", "approved"))
+        );
+
+        assertEquals(WorkflowContracts.WorkflowStatus.COMPLETED, updated.status());
+        assertEquals(RuntimeDtos.HumanInterventionStatus.APPLIED, repository.findWorkflow(task.workflowInstanceId()).orElseThrow().interventions().getLast().status());
+    }
+
+    @Test
+    void shouldReconcilePendingInterventionOnStartup() {
+        InMemoryRuntimeRepository repository = new InMemoryRuntimeRepository();
+        Instant now = Instant.now();
+        RuntimeDtos.TaskInstanceDto task = new RuntimeDtos.TaskInstanceDto(
+            "task-1",
+            "scenario-customer-ops",
+            "assistant-customer-ops",
+            "客服助手",
+            "release-v1",
+            "客户投诉，需要人工处理",
+            "tester",
+            TaskStatus.WAITING_HUMAN,
+            now,
+            "wf-1"
+        );
+        RuntimeDtos.WorkflowInstanceDto workflow = new RuntimeDtos.WorkflowInstanceDto(
+            "wf-1",
+            "task-1",
+            "assistant-customer-ops",
+            "客服助手",
+            "release-v1",
+            now,
+            now,
+            WorkflowContracts.WorkflowStatus.WAITING_HUMAN,
+            "已创建人工协同工单，等待人工处理。",
+            "已进入人工协同流程。",
+            "human-review",
+            true,
+            new WorkflowContracts.ExecutionCheckpoint("cp-1", "handoff-close", "human-review", "{}", 0),
+            new WorkflowContracts.HumanTaskSnapshot("human-review", "人工介入待办", "请人工处理。", "补充处理意见并确认后续动作", "GRAPH_NODE", List.of("CONFIRM")),
+            new WorkflowContracts.PauseReasonSnapshot("GRAPH_HUMAN_NODE", "请人工处理。", "GRAPH_NODE"),
+            null,
+            List.of("tool@v1"),
+            List.of(new RuntimeDtos.NodeExecutionDto("node-1", "wf-1", "human-review", "人工介入", WorkflowContracts.NodeStatus.WAITING_HUMAN, "等待人工接管", now)),
+            List.of(),
+            List.of(),
+            List.of(),
+            WorkflowContracts.SharedSessionState.empty()
+        );
+        RuntimeDtos.ConversationSessionDto session = new RuntimeDtos.ConversationSessionDto(
+            "session-1",
+            "scenario-customer-ops",
+            "投诉处理",
+            "tester",
+            "assistant-customer-ops",
+            "客服助手",
+            "release-v1",
+            now,
+            now,
+            List.of(new RuntimeDtos.ConversationMessageDto("msg-1", "session-1", "ASSISTANT", "ASSISTANT", "assistant-customer-ops", "客服助手", "已进入人工协同流程。", now, "task-1", "wf-1")),
+            "task-1",
+            "wf-1",
+            null,
+            workflow.humanTask(),
+            workflow.pauseReason(),
+            List.of(),
+            WorkflowContracts.SharedSessionState.empty()
+        );
+        RuntimeDtos.HumanInterventionDto pending = new RuntimeDtos.HumanInterventionDto(
+            "human-1",
+            "wf-1",
+            "CONFIRM",
+            "operator-1",
+            "人工已处理",
+            Map.of(),
+            RuntimeDtos.HumanInterventionStatus.PENDING,
+            now,
+            null,
+            null
+        );
+        repository.persistProjection(task, workflow, session, pending);
+
+        RuntimeService reconcilingService = runtimeService(new AssistantRunWorkflowGateway() {
+            @Override
+            public WorkflowContracts.WorkflowResult startAndAwaitFirstResult(WorkflowContracts.WorkflowStartRequest request) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public WorkflowContracts.WorkflowResult submitHumanActionAndAwaitResult(String workflowId, WorkflowContracts.HumanAction action) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public WorkflowContracts.WorkflowResult currentResult(String workflowId) {
+                return new WorkflowContracts.WorkflowResult(
+                    workflowId,
+                    WorkflowContracts.WorkflowStatus.COMPLETED,
+                    "人工处理已完成。",
+                    "人工处理已完成，已同步客户。",
+                    "end",
+                    null,
+                    null,
+                    null,
+                    List.of(new WorkflowContracts.NodeSnapshot("end", "结束", WorkflowContracts.NodeStatus.COMPLETED, "流程结束", Instant.now())),
+                    List.of(),
+                    false,
+                    null,
+                    List.of(),
+                    WorkflowContracts.SharedSessionState.empty()
+                );
+            }
+        }, catalogService, repository);
+
+        reconcilingService.reconcileRunningWorkflows();
+
+        RuntimeDtos.WorkflowInstanceDto reconciledWorkflow = reconcilingService.getWorkflow("wf-1");
+        RuntimeDtos.ConversationSessionDto reconciledSession = reconcilingService.getSession("session-1");
+
+        assertEquals(WorkflowContracts.WorkflowStatus.COMPLETED, reconciledWorkflow.status());
+        assertEquals(RuntimeDtos.HumanInterventionStatus.APPLIED, reconciledWorkflow.interventions().getLast().status());
+        assertEquals("人工处理已完成，已同步客户。", reconciledSession.messages().getLast().content());
+    }
+
+    @Test
     void shouldCarrySharedStateAcrossSessionMessages() {
         List<WorkflowContracts.WorkflowStartRequest> capturedRequests = new ArrayList<>();
-        RuntimeService sharedStateService = new RuntimeService(new AssistantRunWorkflowGateway() {
+        RuntimeService sharedStateService = runtimeService(new AssistantRunWorkflowGateway() {
             @Override
             public WorkflowContracts.WorkflowResult startAndAwaitFirstResult(WorkflowContracts.WorkflowStartRequest request) {
                 capturedRequests.add(request);
@@ -233,7 +470,7 @@ class RuntimeServiceTest {
             public WorkflowContracts.WorkflowResult currentResult(String workflowId) {
                 return null;
             }
-        }, catalogService());
+        });
 
         RuntimeDtos.ConversationSessionDto created = sharedStateService.createSession(
             new RuntimeDtos.CreateConversationSessionRequest("scenario-customer-ops", "assistant-customer-ops", "tester", "第一条消息")
@@ -258,7 +495,7 @@ class RuntimeServiceTest {
     @Test
     void shouldRefreshRunningWorkflowResultOnRead() {
         Queue<WorkflowContracts.WorkflowResult> polledResults = new ArrayDeque<>();
-        RuntimeService refreshingService = new RuntimeService(new AssistantRunWorkflowGateway() {
+        RuntimeService refreshingService = runtimeService(new AssistantRunWorkflowGateway() {
             @Override
             public WorkflowContracts.WorkflowResult startAndAwaitFirstResult(WorkflowContracts.WorkflowStartRequest request) {
                 WorkflowContracts.WorkflowResult completed = new WorkflowContracts.WorkflowResult(
@@ -305,7 +542,7 @@ class RuntimeServiceTest {
             public WorkflowContracts.WorkflowResult currentResult(String workflowId) {
                 return polledResults.peek();
             }
-        }, catalogService());
+        });
 
         RuntimeDtos.ConversationSessionDto session = refreshingService.createSession(
             new RuntimeDtos.CreateConversationSessionRequest("scenario-customer-ops", "assistant-customer-ops", "tester", "怎么重置密码")
@@ -320,9 +557,72 @@ class RuntimeServiceTest {
     }
 
     @Test
+    void shouldReconcileRunningWorkflowOnStartup() {
+        Queue<WorkflowContracts.WorkflowResult> polledResults = new ArrayDeque<>();
+        RuntimeService reconcilingService = runtimeService(new AssistantRunWorkflowGateway() {
+            @Override
+            public WorkflowContracts.WorkflowResult startAndAwaitFirstResult(WorkflowContracts.WorkflowStartRequest request) {
+                WorkflowContracts.WorkflowResult completed = new WorkflowContracts.WorkflowResult(
+                    request.workflowInstanceId(),
+                    WorkflowContracts.WorkflowStatus.COMPLETED,
+                    "问题已自动处理完成。",
+                    "系统已在启动后完成对账。",
+                    "end",
+                    null,
+                    null,
+                    null,
+                    List.of(new WorkflowContracts.NodeSnapshot("end", "结束", WorkflowContracts.NodeStatus.COMPLETED, "流程结束", Instant.now())),
+                    List.of(),
+                    false,
+                    null,
+                    List.of(),
+                    WorkflowContracts.SharedSessionState.empty()
+                );
+                polledResults.add(completed);
+                return new WorkflowContracts.WorkflowResult(
+                    request.workflowInstanceId(),
+                    WorkflowContracts.WorkflowStatus.RUNNING,
+                    "流程已启动，等待后续对账。",
+                    null,
+                    "workflow-starting",
+                    null,
+                    null,
+                    null,
+                    List.of(new WorkflowContracts.NodeSnapshot("workflow-starting", "流程运行中", WorkflowContracts.NodeStatus.RUNNING, "流程已启动，等待后续对账。", Instant.now())),
+                    List.of(),
+                    false,
+                    null,
+                    List.of(),
+                    WorkflowContracts.SharedSessionState.empty()
+                );
+            }
+
+            @Override
+            public WorkflowContracts.WorkflowResult submitHumanActionAndAwaitResult(String workflowId, WorkflowContracts.HumanAction action) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public WorkflowContracts.WorkflowResult currentResult(String workflowId) {
+                return polledResults.peek();
+            }
+        });
+
+        RuntimeDtos.ConversationSessionDto session = reconcilingService.createSession(
+            new RuntimeDtos.CreateConversationSessionRequest("scenario-customer-ops", "assistant-customer-ops", "tester", "启动恢复")
+        );
+
+        reconcilingService.reconcileRunningWorkflows();
+
+        RuntimeDtos.ConversationSessionDto reconciled = reconcilingService.getSession(session.id());
+        assertEquals("系统已在启动后完成对账。", reconciled.messages().getLast().content());
+        assertEquals(WorkflowContracts.WorkflowStatus.COMPLETED, reconcilingService.getWorkflow(reconciled.latestWorkflowInstanceId()).status());
+    }
+
+    @Test
     void shouldIncludeKnowledgeDocumentsInRuntimeSnapshot() {
         List<WorkflowContracts.WorkflowStartRequest> capturedRequests = new ArrayList<>();
-        RuntimeService snapshotService = new RuntimeService(new AssistantRunWorkflowGateway() {
+        RuntimeService snapshotService = runtimeService(new AssistantRunWorkflowGateway() {
             @Override
             public WorkflowContracts.WorkflowResult startAndAwaitFirstResult(WorkflowContracts.WorkflowStartRequest request) {
                 capturedRequests.add(request);
@@ -353,7 +653,7 @@ class RuntimeServiceTest {
             public WorkflowContracts.WorkflowResult currentResult(String workflowId) {
                 return null;
             }
-        }, catalogService());
+        });
 
         snapshotService.launchTask(new RuntimeDtos.TaskLaunchRequest("scenario-customer-ops", "assistant-customer-ops", "怎么重置密码", "tester"));
 
@@ -400,7 +700,7 @@ class RuntimeServiceTest {
             )
         );
 
-        RuntimeService runtimeService = new RuntimeService(new AssistantRunWorkflowGateway() {
+        RuntimeService runtimeService = runtimeService(new AssistantRunWorkflowGateway() {
             @Override
             public WorkflowContracts.WorkflowResult startAndAwaitFirstResult(WorkflowContracts.WorkflowStartRequest request) {
                 throw new AssertionError("workflow should not start when knowledge release is missing");
@@ -465,5 +765,26 @@ class RuntimeServiceTest {
             public void startIndexBuild(String knowledgeBaseId, String indexSnapshotId) {
             }
         };
+    }
+
+    private RuntimeService runtimeService(AssistantRunWorkflowGateway workflowGateway) {
+        return runtimeService(workflowGateway, catalogService);
+    }
+
+    private static RuntimeService runtimeService(AssistantRunWorkflowGateway workflowGateway, CatalogService catalogService) {
+        return runtimeService(workflowGateway, catalogService, new InMemoryRuntimeRepository());
+    }
+
+    private static RuntimeService runtimeService(
+        AssistantRunWorkflowGateway workflowGateway,
+        CatalogService catalogService,
+        InMemoryRuntimeRepository repository
+    ) {
+        return new RuntimeService(
+            workflowGateway,
+            catalogService,
+            catalogService.knowledgeService(),
+            repository
+        );
     }
 }

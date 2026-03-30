@@ -56,7 +56,7 @@
 - `shared`：统一响应和异常处理
 - `config`：Web 跨域等基础配置
 
-目录数据当前通过 `JdbcCatalogRepository` 落到 PostgreSQL JSONB；知识服务的结构化存储使用独立数据库；运行态对象仍有一部分保存在 API 进程内存中。
+目录数据当前通过 `JdbcCatalogRepository` 落到 PostgreSQL JSONB；知识服务的结构化存储使用独立数据库；运行态 `session / message / task / workflow / humanIntervention` 投影也已落到 PostgreSQL，并在 API 启动时对账 Temporal。
 
 ## Worker 与 Runtime 分工
 
@@ -93,7 +93,7 @@
 ## 当前边界
 
 - 认证仍以 mock 方案为主，真实 OIDC 尚未接入
-- 部分运行态对象仍在 API 内存中维护，未完全持久化
+- 运行态投影已持久化到 PostgreSQL，但当前仍是投影模型而非完整 event log
 - workflow 启动链路仍同步等待首个结果，尚未改为异步订阅式观测
 - 资源执行层优先保证本地联调和演示闭环，生产级安全治理仍需补齐
 - Redis / MinIO 当前主要停留在依赖与配置层，尚未形成稳定业务承载面

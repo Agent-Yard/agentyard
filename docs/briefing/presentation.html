@@ -433,7 +433,7 @@ flowchart LR
               <ul>
                 <li>默认单租户，复杂租户治理仅保留模型边界</li>
                 <li>认证仍以 mock 为主，尚未接入真实 OIDC / IAM</li>
-                <li>部分运行态对象仍在 API 内存中维护</li>
+                <li>运行态主投影已落 PostgreSQL，并在 API 启动时与 Temporal 对账</li>
                 <li>`sendMessage` / `launchTask` 仍同步等待首个 workflow 结果</li>
                 <li>部分 provider 和 seed 逻辑仍兼顾演示闭环需求</li>
               </ul>

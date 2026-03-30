@@ -41,7 +41,7 @@
   - 否则若存在 `OPENAI_API_KEY`，选 `resource-llm-openai`
   - 否则回退到 `resource-llm-compatible`
 - assistant 发布后，runtime 实际命中的仍是 release snapshot 中冻结的资源锚点
-- runtime seed 还会额外预置两条演示 session，可选择是否自动执行 opening message
+- runtime demo session seed 已从 API 主链移除，当前只保留 catalog seed 与 `demo.local` provider 演示闭环
 
 当前缺口：
 
@@ -75,25 +75,26 @@
 2. 区分 timeout、provider failure、tool failure、runtime parsing failure 等类型
 3. 为关键失败路径补充稳定错误码和更可读的错误摘要
 
-## 4. 持久化 runtime 会话与运行观测投影
+## 4. 已完成：持久化 runtime 会话与运行观测投影
 
-现状：
+当前状态：
 
 - catalog 已经落到 PostgreSQL
-- 但 `RuntimeService` 中的 `sessions / tasks / workflows` 仍主要保存在 API 进程内存里
-- 当前页面刷新、人工恢复和超时后继续查看，仍较依赖单个 API 进程内存
+- `ConversationSession / ConversationMessage / TaskInstance / WorkflowInstance / HumanIntervention` 已落 PostgreSQL
+- `RuntimeService` 已切换为 repository 驱动，数据库投影是运行态权威数据源
+- API 启动时会读取数据库中的非终态 workflow，并主动向 Temporal 查询 `currentResult()` 做对账
 
-当前缺口：
+本次交付：
 
-- API 进程重启后，会话、任务、人工待办和失败摘要会丢失
-- Temporal workflow 可能还活着，但控制台不一定还能稳定找回对应业务视图
-- “待人工处理 workflow” 目前还不是稳定的持久化查询能力
+- workflow 启动、等待人工、恢复、完成、失败都会增量落库
+- 会话消息更新与人工处理记录会同步回写数据库
+- 控制台刷新、API 重启后仍能稳定查询 runtime 业务视图
 
-后续目标：
+剩余相关工作：
 
-1. 把 `ConversationSession / TaskInstance / WorkflowInstance / HumanIntervention` 持久化到数据库
-2. workflow 启动、等待人工、恢复、完成、失败时都做增量落库
-3. API 启动后支持从数据库恢复运行态投影，并和 Temporal 当前 execution 做对账
+1. 去掉同步等待首结果，改为真正的异步观测链路（见 §1）
+2. 为失败原因补齐结构化错误码、root cause 和失败资源字段（见 §3）
+3. 视需要从当前投影模型升级到更完整的事件日志 / 审计模型
 
 ## 5. 把 agent 结构化决策升级为共享契约
 

@@ -81,14 +81,14 @@ docker compose -f docker-compose.yml -f docker-compose.dashboards.yml up -d
 - Mock 登录通过 `/api/auth/session` 和 `/api/auth/switch-role`
 - 前端如果后端未启动，会回退到内置 mock 数据
 - API 启动时可按环境变量自动写入演示 catalog seed
-- API 运行态可自动写入两条演示 session
+- API 启动时会对数据库中的非终态 runtime workflow 主动向 Temporal 做一次对账
 - Worker 会消费同一 Temporal namespace / task queue 下的 assistant run workflow
 - `dev-agent-runtime.sh` 默认以 `uvicorn --reload` 启动 Python runtime
 - `dev-knowledge-service.sh` 默认以 `uvicorn --reload` 启动知识服务
 
 ## 当前开发边界
 
-- 目录数据已落到 PostgreSQL，但部分运行态数据仍在 API 内存结构中维护
+- 目录数据和运行态投影都已落到 PostgreSQL
 - `agent-runtime` 内仍保留 `demo.local` 的 Tool provider 演示闭环
 - 资源类型已收敛为知识库、Tool、LLM 模型和 Skill
 - 若命中真实模型资源，必须在根目录 `.env` 提供对应 API key
@@ -97,7 +97,7 @@ docker compose -f docker-compose.yml -f docker-compose.dashboards.yml up -d
 ## 后续扩展方向
 
 - 用真实 OIDC 替换 mock 认证
-- 补齐运行态持久化与异步订阅式观测
+- 补齐异步订阅式运行观测
 - 收敛知识检索的线上索引策略、生命周期治理和监控面
 - 明确 MinIO / OpenSearch 的线上职责并补齐监控与备份
 - 引入 Gradle wrapper 和 CI 校验

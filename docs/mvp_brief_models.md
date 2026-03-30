@@ -75,7 +75,7 @@
 | 审计体系 | 未完整落地 | 仅保留必要结构和记录 |
 | 异步观测 | 未完整落地 | API 仍同步等待首个 workflow 结果 |
 | 生产级 provider 治理 | 未完整落地 | 仍保留 `demo.local` 演示适配 |
-| 运行态持久化 | 未完整落地 | Session / Task / Workflow 仍部分在 API 内存中维护 |
+| 运行态持久化 | 已落地 | Session / Message / Task / Workflow / HumanIntervention 已落 PostgreSQL，并在 API 启动时对账 Temporal |
 
 ## 8. 一句话总结
 

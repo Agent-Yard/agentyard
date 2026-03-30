@@ -26,10 +26,6 @@ lynxus:
   catalog:
     seed:
       enabled: ${LYNXUS_CATALOG_SEED_ENABLED:true}
-  runtime:
-    seed:
-      enabled: ${LYNXUS_RUNTIME_SEED_ENABLED:true}
-      execute-opening-messages: ${LYNXUS_RUNTIME_SEED_EXECUTE_OPENING_MESSAGES:false}
   minio:
     endpoint: ${LYNXUS_MINIO_ENDPOINT:http://localhost:9000}
     access-key: ${LYNXUS_MINIO_ACCESS_KEY:minioadmin}

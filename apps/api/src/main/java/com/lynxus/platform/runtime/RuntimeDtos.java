@@ -80,13 +80,23 @@ public final class RuntimeDtos {
     ) {
     }
 
+    public enum HumanInterventionStatus {
+        PENDING,
+        APPLIED,
+        FAILED
+    }
+
     public record HumanInterventionDto(
         String id,
         String workflowInstanceId,
         String action,
         String operator,
         String comment,
-        Instant createdAt
+        Map<String, String> attributes,
+        HumanInterventionStatus status,
+        Instant createdAt,
+        Instant appliedAt,
+        String failureReason
     ) {
     }
 
