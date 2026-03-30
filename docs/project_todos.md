@@ -17,7 +17,7 @@
 | **1.1 已完成（第一波）** | **结构化决策契约对齐（Python → contracts → contracts-jvm → OpenAPI）** | runtime_todo §5 | 已完成第一波：共享契约、`agentTurnState` 和 workflow 观测页已打通，后续只剩更完整的审计/历史化能力。 |
 | **1.2 已完成** | **workflow 失败可观测性：结构化错误码 + root cause 字段** | runtime_todo §3 | 已完成：`latestFailure` 已贯通 agent-runtime、worker、API 投影、PostgreSQL、OpenAPI 和 Web 观测页；终态失败与“错误转人工”都能按 category/code/rootCause 查询和展示。 |
 | **1.3 已完成** | **JSONB catalog store 关键路径关系模型化** | review 新增 | 已完成：V6 migration 新增 4 张关系投影表（`catalog_ref_resource_binding`、`catalog_ref_knowledge_binding`、`catalog_ref_release_resource`、`catalog_ref_release_knowledge`），与 JSONB 同事务维护；读路径已切换到投影表查询（`CatalogService.listResourceReferences`、`KnowledgeService.listKnowledgeBaseReferences`），JSONB 保留为 source of truth；投影表引用分析单元测试已覆盖。 |
-| **1.4** | **demo/seed 与真实模式隔离** | runtime_todo §2 + review | `demo.local` provider、seed 数据、mock 认证散布在主链路代码中。用 Spring Profile 或特性开关将演示路径隔离，避免每次改动都要兼顾 demo 兼容性。 |
+| **1.4 已完成** | **主链路移除 demo/seed** | runtime_todo §2 + review | 已完成：API、knowledge-service、agent-runtime 与开发态用户会话已移除内置 demo/seed 逻辑，主链路不再耦合 `demo.local` 或应用内假响应。 |
 
 ---
 

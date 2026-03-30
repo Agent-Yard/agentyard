@@ -160,7 +160,7 @@ def make_tool_resource(
                 authType="NONE",
                 timeoutSeconds=10,
                 retryPolicy="NONE",
-                http=HttpToolProviderConfig(endpoint="https://demo.local/refund", method="POST"),
+                http=HttpToolProviderConfig(endpoint="https://tool.invalid/refund", method="POST"),
             ),
         ),
     )

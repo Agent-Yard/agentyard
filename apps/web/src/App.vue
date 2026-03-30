@@ -11,7 +11,6 @@ import type {
   CreateResourcePayload,
   CreateResourceVersionPayload,
   CreateScenarioPayload,
-  Role,
   TaskInstance,
   UpdateResourcePayload,
   UpdateResourceVersionPayload,
@@ -209,9 +208,6 @@ let workflowRefreshInFlight = false;
 const selectedKeys = computed(() => [activeKey.value]);
 const currentPageMeta = computed(() => pageMeta[activeKey.value]);
 const currentSectionMeta = computed(() => sectionMeta[currentPageMeta.value.section]);
-const roleOptions = computed(() =>
-  (session.value?.availableRoles ?? []).map((role) => ({ label: role, value: role })),
-);
 function preferredWorkflowId(workflowList: WorkflowInstance[]) {
   return workflowList.find((item) => item.status === 'WAITING_HUMAN')?.id ?? workflowList[0]?.id ?? null;
 }
@@ -358,10 +354,6 @@ async function handleHumanAction(payload: { workflowId: string; action: string; 
   });
   await refresh();
   activeKey.value = 'workflow';
-}
-
-async function handleRoleChange(role: Role) {
-  session.value = await api.switchRole(role);
 }
 
 async function handleCreateAssistant(payload: CreateAssistantPayload) {
@@ -591,10 +583,6 @@ function handleOpenChange(keys: string[]) {
   openKeys.value = keys as SectionKey[];
 }
 
-function handleRoleSelect(value: string | number) {
-  void handleRoleChange(value as Role);
-}
-
 watch(
   () => workflows.value.some((item) => item.status === 'RUNNING'),
   (hasRunningWorkflow) => {
@@ -650,12 +638,9 @@ onUnmounted(() => {
             </a-typography-text>
           </div>
 
-          <a-select
-            class="app-header__role-select"
-            :value="session.currentRole"
-            :options="roleOptions"
-            @change="handleRoleSelect"
-          />
+          <a-typography-text type="secondary">
+            {{ session.displayName }} / {{ session.currentRole }}
+          </a-typography-text>
         </a-layout-header>
 
         <a-layout-content class="app-content">

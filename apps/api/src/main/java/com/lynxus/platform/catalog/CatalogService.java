@@ -44,7 +44,6 @@ public class CatalogService {
         this(
             new InMemoryCatalogRepository(),
             new InMemoryKnowledgeRepository(),
-            true,
             new KnowledgeServiceClient("http://localhost:8091"),
             new NoOpKnowledgeWorkflowGateway()
         );
@@ -57,41 +56,17 @@ public class CatalogService {
     }
 
     public CatalogService(CatalogRepository repository, KnowledgeServiceClient knowledgeServiceClient, KnowledgeWorkflowGateway knowledgeWorkflowGateway) {
-        this(repository, new InMemoryKnowledgeRepository(), false, knowledgeServiceClient, knowledgeWorkflowGateway);
-    }
-
-    CatalogService(CatalogRepository repository, boolean seedIfEmpty) {
-        this(
-            repository,
-            new InMemoryKnowledgeRepository(),
-            seedIfEmpty,
-            new KnowledgeServiceClient("http://localhost:8091"),
-            new NoOpKnowledgeWorkflowGateway()
-        );
-    }
-
-    CatalogService(
-        CatalogRepository repository,
-        boolean seedIfEmpty,
-        KnowledgeServiceClient knowledgeServiceClient,
-        KnowledgeWorkflowGateway knowledgeWorkflowGateway
-    ) {
-        this(repository, new InMemoryKnowledgeRepository(), seedIfEmpty, knowledgeServiceClient, knowledgeWorkflowGateway);
+        this(repository, new InMemoryKnowledgeRepository(), knowledgeServiceClient, knowledgeWorkflowGateway);
     }
 
     CatalogService(
         CatalogRepository repository,
         com.lynxus.platform.knowledge.KnowledgeRepository knowledgeRepository,
-        boolean seedIfEmpty,
         KnowledgeServiceClient knowledgeServiceClient,
         KnowledgeWorkflowGateway knowledgeWorkflowGateway
     ) {
         this.repository = repository;
         this.knowledgeService = new KnowledgeService(knowledgeRepository, repository, knowledgeServiceClient, knowledgeWorkflowGateway);
-        if (seedIfEmpty) {
-            ensureLoaded();
-            initializeDemoDataIfEmpty();
-        }
     }
 
     public KnowledgeService knowledgeService() {
@@ -750,18 +725,6 @@ public class CatalogService {
         );
     }
 
-    public synchronized boolean initializeDemoDataIfEmpty() {
-        ensureLoaded();
-        boolean initializedKnowledge = knowledgeService.initializeDemoDataIfEmpty();
-        boolean initializedCatalog = false;
-        if (isCatalogEmpty()) {
-            seed();
-            persistState();
-            initializedCatalog = true;
-        }
-        return initializedCatalog || initializedKnowledge;
-    }
-
     private synchronized void ensureLoaded() {
         if (initialized) {
             return;
@@ -769,411 +732,6 @@ public class CatalogService {
         restore(repository.load());
         initialized = true;
         persistState(); // backfill reference projection tables
-    }
-
-    private void seed() {
-        BusinessDomainDto domain = new BusinessDomainDto(
-            "domain-support",
-            "智能客服域",
-            "用于多智能体客服编排的演示业务域",
-            List.of(),
-            List.of(),
-            List.of()
-        );
-        domains.add(domain);
-
-        ScenarioDto scenario = new ScenarioDto(
-            "scenario-customer-ops",
-            domain.id(),
-            "智能客服协同处理",
-            "在单助手内完成 FAQ、售后策略和人工协同闭环",
-            new VersionDto("1.0.0", VersionStatus.PUBLISHED, Instant.now()),
-            List.of()
-        );
-        scenarios.add(scenario);
-
-        String defaultLlmResourceId = defaultLlmResourceId();
-        AssistantDto assistant = new AssistantDto(
-            "assistant-customer-ops",
-            scenario.id(),
-            "客服协同助手",
-            "负责问题分诊、知识回答、售后策略和人工协同闭环。",
-            new VersionDto("1.0.0", VersionStatus.PUBLISHED, Instant.now()),
-            List.of(),
-            null,
-            List.of(),
-            new AssistantModelPolicyDto(defaultLlmResourceId),
-            new RagPolicyDto(true, "knowledge-base-support"),
-            new MemoryPolicyDto(true, 10)
-        );
-        assistants.add(assistant);
-
-        ResourceDto llmModel = new ResourceDto(
-            "resource-llm-openai",
-            domain.id(),
-            "OpenAI 主模型",
-            ResourceType.LLM_MODEL,
-            ShareScope.DOMAIN_SHARED,
-            "DOMAIN",
-            domain.id(),
-            "多智能体执行默认模型",
-            "平台 AI 团队",
-            List.of("LLM", "OpenAI"),
-            null,
-            null,
-            List.of()
-        );
-        ResourceDto compatibleLlmModel = new ResourceDto(
-            "resource-llm-compatible",
-            domain.id(),
-            "自定义兼容模型",
-            ResourceType.LLM_MODEL,
-            ShareScope.DOMAIN_SHARED,
-            "DOMAIN",
-            domain.id(),
-            "支持 OpenAI Compatible 网关",
-            "平台 AI 团队",
-            List.of("LLM", "兼容网关"),
-            null,
-            null,
-            List.of()
-        );
-        ResourceDto routerSkill = new ResourceDto(
-            "resource-skill-router",
-            domain.id(),
-            "路由 Skill",
-            ResourceType.SKILL,
-            ShareScope.PRIVATE,
-            "ASSISTANT",
-            assistant.id(),
-            "用于问题分诊和路由决策的技能",
-            "客服协同助手团队",
-            List.of("Skill", "Router"),
-            null,
-            null,
-            List.of()
-        );
-        ResourceDto faqSkill = new ResourceDto(
-            "resource-skill-faq",
-            domain.id(),
-            "FAQ Skill",
-            ResourceType.SKILL,
-            ShareScope.PRIVATE,
-            "ASSISTANT",
-            assistant.id(),
-            "用于知识问答回复的技能",
-            "客服协同助手团队",
-            List.of("Skill", "FAQ"),
-            null,
-            null,
-            List.of()
-        );
-        ResourceDto policySkill = new ResourceDto(
-            "resource-skill-policy",
-            domain.id(),
-            "售后策略 Skill",
-            ResourceType.SKILL,
-            ShareScope.PRIVATE,
-            "ASSISTANT",
-            assistant.id(),
-            "用于售后策略判定的技能",
-            "客服协同助手团队",
-            List.of("Skill", "售后"),
-            null,
-            null,
-            List.of()
-        );
-        ResourceDto handoffSkill = new ResourceDto(
-            "resource-skill-handoff",
-            domain.id(),
-            "人工协同 Skill",
-            ResourceType.SKILL,
-            ShareScope.PRIVATE,
-            "ASSISTANT",
-            assistant.id(),
-            "用于人工交接后的总结与闭环技能",
-            "客服协同助手团队",
-            List.of("Skill", "人工协同"),
-            null,
-            null,
-            List.of()
-        );
-        ResourceDto refundTool = new ResourceDto(
-            "resource-tool-refund",
-            domain.id(),
-            "售后策略 Tool",
-            ResourceType.TOOL,
-            ShareScope.PRIVATE,
-            "ASSISTANT",
-            assistant.id(),
-            "通过 HTTP provider 返回退款与补偿策略",
-            "售后策略团队",
-            List.of("Tool", "退款"),
-            null,
-            null,
-            List.of()
-        );
-        ResourceDto ticketTool = new ResourceDto(
-            "resource-tool-ticket",
-            domain.id(),
-            "工单协同 Tool",
-            ResourceType.TOOL,
-            ShareScope.DOMAIN_SHARED,
-            "DOMAIN",
-            domain.id(),
-            "通过 MCP provider 创建和同步人工协同工单",
-            "客服平台集成",
-            List.of("Tool", "工单"),
-            null,
-            null,
-            List.of()
-        );
-        resources.addAll(List.of(llmModel, compatibleLlmModel, routerSkill, faqSkill, policySkill, handoffSkill, refundTool, ticketTool));
-        seedResourceVersion(
-            llmModel.id(),
-            "1.0.0",
-            VersionStatus.PUBLISHED,
-            "OpenAI 模型基线版",
-            "digest-llm-openai-v1",
-            new ResourceVersionConfigurationDto(
-                ResourceType.LLM_MODEL,
-                null,
-                new LlmModelConfigDto("OPENAI", "gpt-4.1-mini", "https://api.openai.com/v1", "OPENAI_API_KEY", "lynxus-demo", "customer-ops", "global", 0.2, 1200),
-                null
-            )
-        );
-        seedResourceVersion(
-            compatibleLlmModel.id(),
-            "1.0.0",
-            VersionStatus.PUBLISHED,
-            "兼容网关模型基线版",
-            "digest-llm-compatible-v1",
-            new ResourceVersionConfigurationDto(
-                ResourceType.LLM_MODEL,
-                null,
-                new LlmModelConfigDto(
-                    "OPENAI_COMPATIBLE",
-                    envOrDefault("LYNXUS_OPENAI_COMPATIBLE_MODEL_ID", "demo-compatible-model"),
-                    envOrDefault("LYNXUS_OPENAI_COMPATIBLE_BASE_URL", "http://localhost:11434/v1"),
-                    envOrDefault("LYNXUS_OPENAI_COMPATIBLE_API_KEY_ENV_VAR", "OPENAI_COMPATIBLE_API_KEY"),
-                    envOrDefault("LYNXUS_OPENAI_COMPATIBLE_ORGANIZATION", "compatible-lab"),
-                    envOrDefault("LYNXUS_OPENAI_COMPATIBLE_PROJECT", "customer-ops"),
-                    envOrDefault("LYNXUS_OPENAI_COMPATIBLE_REGION", "local"),
-                    0.2,
-                    1200
-                ),
-                null
-            )
-        );
-        seedResourceVersion(
-            routerSkill.id(),
-            "1.0.0",
-            VersionStatus.PUBLISHED,
-            "路由 Skill",
-            "digest-skill-router-v1",
-            new ResourceVersionConfigurationDto(
-                ResourceType.SKILL,
-                null,
-                null,
-                new SkillConfigDto(
-                    "路由技能",
-                    "根据用户消息、知识和上下文判断路由方向。",
-                    "当你需要做问题分诊时，优先判断是否属于 FAQ、售后策略或人工协同，并输出明确路由依据。"
-                )
-            )
-        );
-        seedResourceVersion(
-            faqSkill.id(),
-            "1.0.0",
-            VersionStatus.PUBLISHED,
-            "FAQ Skill",
-            "digest-skill-faq-v1",
-            new ResourceVersionConfigurationDto(
-                ResourceType.SKILL,
-                null,
-                null,
-                new SkillConfigDto(
-                    "FAQ 技能",
-                    "基于知识召回内容提供常规问答回复。",
-                    "当问题属于 FAQ 时，优先基于召回到的知识内容直接回答，保持简洁、准确、可执行。"
-                )
-            )
-        );
-        seedResourceVersion(
-            policySkill.id(),
-            "1.0.0",
-            VersionStatus.PUBLISHED,
-            "售后策略 Skill",
-            "digest-skill-policy-v1",
-            new ResourceVersionConfigurationDto(
-                ResourceType.SKILL,
-                null,
-                null,
-                new SkillConfigDto(
-                    "售后策略技能",
-                    "结合知识和工具输出判断退款或补偿策略。",
-                    "当处理退款、补偿、退货、售后类问题时，结合规则与工具结果给出明确策略建议，并说明是否需要人工复核。"
-                )
-            )
-        );
-        seedResourceVersion(
-            handoffSkill.id(),
-            "1.0.0",
-            VersionStatus.PUBLISHED,
-            "人工协同 Skill",
-            "digest-skill-handoff-v1",
-            new ResourceVersionConfigurationDto(
-                ResourceType.SKILL,
-                null,
-                null,
-                new SkillConfigDto(
-                    "人工协同闭环技能",
-                    "根据人工动作、工具结果与上下文生成闭环说明。",
-                    "当人工已经介入时，整合人工处理说明、工单结果和当前上下文，生成对用户的最终闭环答复。"
-                )
-            )
-        );
-        ResourceVersionDto refundToolVersion = seedResourceVersion(
-            refundTool.id(),
-            "1.0.0",
-            VersionStatus.PUBLISHED,
-            "售后策略 Tool",
-            "digest-tool-refund-v1",
-            new ResourceVersionConfigurationDto(
-                ResourceType.TOOL,
-                new ToolConfigDto(
-                    List.of(new ToolOperationDto(
-                        "evaluate_refund",
-                        "根据问题和知识上下文判断退款/补偿策略",
-                        "{\"question\":\"string\",\"knowledgeHits\":[\"string\"]}",
-                        "{\"type\":\"object\",\"required\":[\"eligibility\",\"reason\"],\"properties\":{\"eligibility\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"},\"resolution\":{\"type\":[\"string\",\"null\"]},\"reviewMode\":{\"type\":[\"string\",\"null\"]}},\"additionalProperties\":false}"
-                    )),
-                    ToolProviderType.HTTP,
-                    "SERVICE_ACCOUNT",
-                    15,
-                    "NONE",
-                    new HttpToolProviderConfigDto("http://demo.local/skills/refund-policy", "POST"),
-                    null
-                ),
-                null,
-                null
-            )
-        );
-        ResourceVersionDto ticketToolVersion = seedResourceVersion(
-            ticketTool.id(),
-            "1.0.0",
-            VersionStatus.PUBLISHED,
-            "工单协同 Tool",
-            "digest-tool-ticket-v1",
-            new ResourceVersionConfigurationDto(
-                ResourceType.TOOL,
-                new ToolConfigDto(
-                    List.of(
-                        new ToolOperationDto(
-                            "create_ticket",
-                            "创建人工协同工单",
-                            "{\"question\":\"string\",\"operator\":\"string\",\"comment\":\"string\"}",
-                            "{\"type\":\"object\",\"required\":[\"ticketId\",\"status\",\"message\"],\"properties\":{\"ticketId\":{\"type\":\"string\"},\"status\":{\"type\":\"string\"},\"message\":{\"type\":\"string\"}},\"additionalProperties\":false}"
-                        ),
-                        new ToolOperationDto(
-                            "append_comment",
-                            "为协同工单追加处理备注",
-                            "{\"ticketId\":\"string\",\"comment\":\"string\"}",
-                            "{\"type\":\"object\",\"required\":[\"status\",\"message\"],\"properties\":{\"status\":{\"type\":\"string\"},\"message\":{\"type\":\"string\"}},\"additionalProperties\":false}"
-                        )
-                    ),
-                    ToolProviderType.MCP,
-                    "NONE",
-                    30,
-                    "NONE",
-                    null,
-                    new McpToolProviderConfigDto(
-                        "ticketing-server",
-                        "STREAMABLE_HTTP",
-                        "http://demo.local/mcp/ticketing",
-                        "support.ticket",
-                        30,
-                        Map.of(
-                            "create_ticket", "create_ticket",
-                            "append_comment", "append_comment"
-                        )
-                    )
-                ),
-                null,
-                null
-            )
-        );
-
-        agents.add(new AgentDto(
-            "agent-router",
-            assistant.id(),
-            "问题分诊智能体",
-            "router",
-            "识别问题类型，决定 FAQ、售后策略或人工协同分支。",
-            new AgentExecutionPolicyDto(true, null, "你是问题分诊智能体，负责判断当前问题应进入 FAQ、售后或人工协同路径。", true, true, "knowledge-base-support", 8, List.of(routerSkill.id()), List.of())
-        ));
-        agents.add(new AgentDto(
-            "agent-faq",
-            assistant.id(),
-            "FAQ 回答智能体",
-            "faq",
-            "基于知识检索结果输出最终 FAQ 回复。",
-            new AgentExecutionPolicyDto(true, defaultLlmResourceId, "你是 FAQ 回答智能体，负责基于知识库给出直接回复。", true, true, "knowledge-base-support", 8, List.of(faqSkill.id()), List.of())
-        ));
-        agents.add(new AgentDto(
-            "agent-policy",
-            assistant.id(),
-            "售后策略智能体",
-            "policy",
-            "调用售后策略 Tool，给出退款或补偿结论。",
-            new AgentExecutionPolicyDto(true, defaultLlmResourceId, "你是售后策略智能体，负责结合规则与工具结果给出处理建议。", true, true, "knowledge-base-support", 8, List.of(policySkill.id()), List.of(refundTool.id()))
-        ));
-        agents.add(new AgentDto(
-            "agent-coordinator",
-            assistant.id(),
-            "人工协同闭环智能体",
-            "handoff",
-            "在人工处理后整理摘要、调用工单 Tool，并生成闭环答复。",
-            new AgentExecutionPolicyDto(true, defaultLlmResourceId, "你是人工协同闭环智能体，负责整理人工动作并生成最终回复。", false, false, null, 12, List.of(handoffSkill.id()), List.of(ticketTool.id()))
-        ));
-
-        orchestrations.put(assistant.id(), new AssistantOrchestrationDto(
-            assistant.id(),
-            assistant.name(),
-            assistant.scenarioId(),
-            "GRAPH",
-            List.of(
-                new OrchestrationNodeDto("start", "开始", OrchestrationNodeType.START, "接收用户消息。", null, null),
-                new OrchestrationNodeDto("route", "问题分诊", OrchestrationNodeType.AGENT, "判断路由分支。", "agent-router", null),
-                new OrchestrationNodeDto("faq", "FAQ 回答", OrchestrationNodeType.AGENT, "处理常规 FAQ。", "agent-faq", null),
-                new OrchestrationNodeDto("policy", "售后策略", OrchestrationNodeType.AGENT, "处理退款与补偿策略。", "agent-policy", null),
-                new OrchestrationNodeDto(
-                    "human-review",
-                    "人工介入",
-                    OrchestrationNodeType.HUMAN,
-                    "等待人工确认或补充处理意见。",
-                    null,
-                    new HumanNodeConfigDto("人工介入待办", "请确认是否接管，并补充处理说明。", "CONFIRM", "default")
-                ),
-                new OrchestrationNodeDto("handoff-close", "闭环总结", OrchestrationNodeType.AGENT, "人工处理后生成闭环答复。", "agent-coordinator", null),
-                new OrchestrationNodeDto("end", "结束", OrchestrationNodeType.END, "流程结束。", null, null)
-            ),
-            List.of(
-                new OrchestrationEdgeDto("edge-start-route", "start", "route", "default", "开始处理", true),
-                new OrchestrationEdgeDto("edge-route-faq", "route", "faq", "faq", "进入 FAQ 分支", false),
-                new OrchestrationEdgeDto("edge-route-policy", "route", "policy", "after_sales", "进入售后分支", false),
-                new OrchestrationEdgeDto("edge-route-human", "route", "human-review", "human_handoff", "直接人工介入", false),
-                new OrchestrationEdgeDto("edge-route-fallback", "route", "faq", "default", "默认走 FAQ", true),
-                new OrchestrationEdgeDto("edge-faq-end", "faq", "end", "default", "FAQ 结束", true),
-                new OrchestrationEdgeDto("edge-policy-end", "policy", "end", "resolved", "售后自动完成", false),
-                new OrchestrationEdgeDto("edge-policy-human", "policy", "human-review", "manual_review", "售后转人工", false),
-                new OrchestrationEdgeDto("edge-policy-default", "policy", "end", "default", "默认完成", true),
-                new OrchestrationEdgeDto("edge-human-handoff", "human-review", "handoff-close", "default", "人工确认后闭环", true),
-                new OrchestrationEdgeDto("edge-close-end", "handoff-close", "end", "default", "闭环完成", true)
-            )
-        ));
-
-        createAssistantRelease(assistant.id(), "1.0.0", VersionStatus.PUBLISHED);
     }
 
     private BusinessDomainDto toDomainView(BusinessDomainDto domain) {
@@ -1763,17 +1321,6 @@ public class CatalogService {
         return edges;
     }
 
-    private boolean isCatalogEmpty() {
-        return domains.isEmpty()
-            && scenarios.isEmpty()
-            && assistants.isEmpty()
-            && agents.isEmpty()
-            && resources.isEmpty()
-            && resourceVersions.isEmpty()
-            && assistantReleases.isEmpty()
-            && orchestrations.isEmpty();
-    }
-
     private void restore(CatalogRepository.CatalogSnapshot snapshot) {
         domains.clear();
         domains.addAll(snapshot.domains());
@@ -1987,31 +1534,6 @@ public class CatalogService {
         return segments[0] + "." + segments[1] + "." + patch;
     }
 
-    private ResourceVersionDto seedResourceVersion(
-        String resourceId,
-        String version,
-        VersionStatus status,
-        String summary,
-        String configDigest,
-        ResourceVersionConfigurationDto configuration
-    ) {
-        StoredResourceVersion created = new StoredResourceVersion(
-            nextId("resource-version"),
-            resourceId,
-            version,
-            status,
-            summary,
-            configDigest,
-            Instant.now(),
-            status == VersionStatus.PUBLISHED ? Instant.now() : null,
-            configuration
-        );
-        List<StoredResourceVersion> versions = new ArrayList<>(resourceVersions.getOrDefault(resourceId, List.of()));
-        versions.add(created);
-        resourceVersions.put(resourceId, versions);
-        return toResourceVersionDto(created);
-    }
-
     private ResourceVersionConfigurationDto normalizeConfiguration(ResourceType type, ResourceVersionConfigurationDto configuration) {
         if (configuration == null) {
             return defaultConfiguration(type);
@@ -2098,7 +1620,7 @@ public class CatalogService {
             "SERVICE_ACCOUNT",
             15,
             "NONE",
-            new HttpToolProviderConfigDto("http://demo.local/tools/new-tool", "POST"),
+            new HttpToolProviderConfigDto("http://localhost:8081/tools/invoke", "POST"),
             null
         );
     }
@@ -2168,9 +1690,9 @@ public class CatalogService {
             operationMappings.put(operation.name(), normalizeOptionalText(requestedMappings.getOrDefault(operation.name(), operation.name())));
         }
         return new McpToolProviderConfigDto(
-            configuration == null || configuration.serverName() == null || configuration.serverName().isBlank() ? "demo-mcp-server" : configuration.serverName(),
+            configuration == null || configuration.serverName() == null || configuration.serverName().isBlank() ? "default-mcp-server" : configuration.serverName(),
             configuration == null || configuration.transport() == null || configuration.transport().isBlank() ? "STREAMABLE_HTTP" : configuration.transport(),
-            configuration == null || configuration.connectionUri() == null || configuration.connectionUri().isBlank() ? "http://demo.local/mcp/default" : configuration.connectionUri(),
+            configuration == null || configuration.connectionUri() == null || configuration.connectionUri().isBlank() ? "http://localhost:8081/mcp" : configuration.connectionUri(),
             configuration == null || configuration.namespace() == null || configuration.namespace().isBlank() ? "default.namespace" : configuration.namespace(),
             configuration == null || configuration.heartbeatSeconds() <= 0 ? 30 : configuration.heartbeatSeconds(),
             Map.copyOf(operationMappings)
@@ -2179,14 +1701,14 @@ public class CatalogService {
 
     private AssistantModelPolicyDto normalizeAssistantModelPolicy(AssistantModelPolicyDto policy) {
         if (policy == null) {
-            return new AssistantModelPolicyDto(resolveDefaultResourceId(ResourceType.LLM_MODEL, defaultLlmResourceId()));
+            return new AssistantModelPolicyDto(resolveDefaultResourceId(ResourceType.LLM_MODEL, null));
         }
         return new AssistantModelPolicyDto(policy.providerResourceId());
     }
 
     private RagPolicyDto normalizeRagPolicy(RagPolicyDto policy) {
         if (policy == null) {
-            String defaultKnowledgeBaseId = resolveDefaultKnowledgeBaseId("knowledge-base-support");
+            String defaultKnowledgeBaseId = resolveDefaultKnowledgeBaseId(null);
             return new RagPolicyDto(defaultKnowledgeBaseId != null, defaultKnowledgeBaseId);
         }
         return new RagPolicyDto(policy.enabled(), normalizeOptionalText(policy.knowledgeBaseId()));
@@ -2201,7 +1723,7 @@ public class CatalogService {
 
     private AgentExecutionPolicyDto normalizeAgentExecutionPolicy(AgentExecutionPolicyDto policy) {
         if (policy == null) {
-            String defaultKnowledgeBaseId = resolveDefaultKnowledgeBaseId("knowledge-base-support");
+            String defaultKnowledgeBaseId = resolveDefaultKnowledgeBaseId(null);
             return new AgentExecutionPolicyDto(true, null, "", defaultKnowledgeBaseId != null, true, defaultKnowledgeBaseId, 8, List.of(), List.of());
         }
         return new AgentExecutionPolicyDto(
@@ -2271,21 +1793,6 @@ public class CatalogService {
     private static String envOrDefault(String key, String fallback) {
         String value = System.getenv(key);
         return value == null || value.isBlank() ? fallback : value;
-    }
-
-    private static String defaultLlmResourceId() {
-        if (hasEnv("LYNXUS_OPENAI_COMPATIBLE_BASE_URL") || hasEnv("OPENAI_COMPATIBLE_API_KEY")) {
-            return "resource-llm-compatible";
-        }
-        if (hasEnv("OPENAI_API_KEY")) {
-            return "resource-llm-openai";
-        }
-        return "resource-llm-compatible";
-    }
-
-    private static boolean hasEnv(String key) {
-        String value = System.getenv(key);
-        return value != null && !value.isBlank();
     }
 
     private String resolveDefaultResourceId(ResourceType type, String preferredResourceId) {

@@ -23,9 +23,6 @@ server:
   port: ${LYNXUS_API_PORT:8080}
 
 lynxus:
-  catalog:
-    seed:
-      enabled: ${LYNXUS_CATALOG_SEED_ENABLED:true}
   minio:
     endpoint: ${LYNXUS_MINIO_ENDPOINT:http://localhost:9000}
     access-key: ${LYNXUS_MINIO_ACCESS_KEY:minioadmin}

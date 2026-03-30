@@ -14,7 +14,6 @@
 其中当前主链路最依赖的是 PostgreSQL、Temporal、MinIO、OpenSearch 和知识服务；知识快照构建与检索默认依赖 OpenSearch。
 本地 PostgreSQL 默认会准备独立的 `lynxus_api` 和 `lynxus_knowledge` 数据库，避免 API 的 Flyway 与 knowledge service 的自建表共享同一个 `public` schema。
 注意：OpenSearch 2.12+ 即使在 `plugins.security.disabled=true` 时，也会校验 `OPENSEARCH_INITIAL_ADMIN_PASSWORD` 是否为强密码；若密码不符合规则，容器会在启动阶段直接退出。
-另外 OpenSearch 首次冷启动通常比其他依赖慢，`knowledge-service` 默认会等待最多 45 秒再执行 seed；如需调整，可设置 `LYNXUS_OPENSEARCH_STARTUP_WAIT_SECONDS`。
 
 可选的观察面板单独放在 `infra/local/docker-compose.dashboards.yml`：
 
@@ -78,9 +77,8 @@ docker compose -f docker-compose.yml -f docker-compose.dashboards.yml up -d
 
 - OpenSearch Dashboards：`http://localhost:5601`
 - Temporal UI：`http://localhost:8088`
-- Mock 登录通过 `/api/auth/session` 和 `/api/auth/switch-role`
+- 开发态用户会话通过 `/api/auth/session`
 - 前端不再回退到内置 mock 数据；后端未启动时页面请求会直接报错
-- API 启动时可按环境变量自动写入演示 catalog seed
 - API 启动时会对数据库中的非终态 runtime workflow 主动向 Temporal 做一次对账
 - Worker 会消费同一 Temporal namespace / task queue 下的 assistant run workflow
 - `dev-agent-runtime.sh` 默认以 `uvicorn --reload` 启动 Python runtime
@@ -89,10 +87,9 @@ docker compose -f docker-compose.yml -f docker-compose.dashboards.yml up -d
 ## 当前开发边界
 
 - 目录数据和运行态投影都已落到 PostgreSQL
-- `agent-runtime` 内仍保留 `demo.local` 的 Tool provider 演示闭环
 - 资源类型已收敛为知识库、Tool、LLM 模型和 Skill
 - 若命中真实模型资源，必须在根目录 `.env` 提供对应 API key
-- `sendMessage` / `launchTask` 当前仍同步等待 workflow 暴露首个结果
+- `sendMessage` / `launchTask` 当前已改为异步受理后返回，由运行态观测页轮询收口
 
 ## 后续扩展方向
 

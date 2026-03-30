@@ -250,7 +250,7 @@ public class RuntimeService {
             nextId("human"),
             workflowId,
             request.action(),
-            request.operatorId() == null || request.operatorId().isBlank() ? "u-demo-operator" : request.operatorId(),
+            request.operatorId() == null || request.operatorId().isBlank() ? "system-operator" : request.operatorId(),
             request.comment(),
             request.attributes() == null ? Map.of() : Map.copyOf(request.attributes()),
             HumanInterventionStatus.PENDING,

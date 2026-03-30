@@ -21,6 +21,4 @@ public final class AuthModels {
     ) {
     }
 
-    public record SwitchRoleRequest(Role role) {
-    }
 }

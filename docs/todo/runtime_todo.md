@@ -32,28 +32,23 @@
 2. 为异步观测链路补更细的失败码和恢复态可观测信息（见 §3）
 3. 视流量与体验需求决定是否把全局轮询拆成按 workflow 增量订阅
 
-## 2. 统一 demo seed、草稿默认模型和发布快照语义
+## 2. 草稿默认模型语义收敛
 
 现状：
 
-- catalog seed 的默认模型由 `CatalogService.defaultLlmResourceId()` 动态决定
-- 规则仍然是：
-  - 存在 `LYNXUS_OPENAI_COMPATIBLE_BASE_URL` 或 `OPENAI_COMPATIBLE_API_KEY` 时优先选 `resource-llm-compatible`
-  - 否则若存在 `OPENAI_API_KEY`，选 `resource-llm-openai`
-  - 否则回退到 `resource-llm-compatible`
+- 主链路已移除应用内 demo seed、`demo.local` provider 和 demo 身份默认值
 - assistant 发布后，runtime 实际命中的仍是 release snapshot 中冻结的资源锚点
-- runtime demo session seed 已从 API 主链移除，当前只保留 catalog seed 与 `demo.local` provider 演示闭环
 
 当前缺口：
 
-- “演示默认模型”仍然是隐式环境变量策略，不够可见
+- 草稿默认模型仍是“取第一个可用 LLM 资源”的隐式策略，不够可见
 - 已有数据库中的旧 release snapshot 不会因代码默认值变化而自动回写
 - UI 还不能清楚区分草稿默认模型、当前发布冻结模型和实际 workflow 命中模型
 
 后续目标：
 
-1. 增加显式的演示模式默认模型策略，而不是继续隐含依赖环境变量优先级
-2. 为 demo seed 增加版本戳或迁移策略，必要时自动重建旧演示数据
+1. 增加显式的草稿默认模型策略，而不是继续依赖隐式回退
+2. 明确无资源时的草稿引导与初始化方式，避免继续引入隐式 demo 路径
 3. 在控制台明确展示草稿模型、发布冻结模型和运行命中模型三层语义
 
 ## 3. 已完成：增强 workflow 失败可观测性

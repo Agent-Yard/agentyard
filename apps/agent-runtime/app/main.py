@@ -1471,23 +1471,6 @@ async def call_http_tool(resource: ResourceVersionSnapshot, operation: ToolOpera
             failed_resource=resource,
         )
 
-    parsed = urlparse(config.http.endpoint)
-    if parsed.hostname == "demo.local":
-        question = payload.get("question", "")
-        if operation.name == "evaluate_refund" and any(word in question for word in ["投诉", "争议", "人工", "升级"]):
-            return {
-                "eligibility": "REQUIRES_REVIEW",
-                "reviewMode": "MANUAL",
-                "reason": "涉及争议和投诉，需要人工复核后再决定退款策略。",
-            }
-        if operation.name == "evaluate_refund":
-            return {
-                "eligibility": "APPROVED",
-                "resolution": "STANDARD_REFUND",
-                "reason": "订单符合规则，可直接按标准退款流程处理。",
-            }
-        return {"status": "COMPLETED", "message": "工具执行成功。"}
-
     request_method = config.http.method.upper()
     request_kwargs: Dict[str, Any] = {}
     if request_method == "GET":
@@ -1537,15 +1520,6 @@ async def call_mcp_tool(resource: ResourceVersionSnapshot, operation: ToolOperat
             failed_resource=resource,
         )
     remote_tool_name = config.mcp.operationMappings.get(operation.name, operation.name)
-
-    parsed = urlparse(config.mcp.connectionUri)
-    if parsed.hostname == "demo.local":
-        ticket_id = f"TICKET-{abs(hash((remote_tool_name, payload.get('question', ''), payload.get('operator', '')))) % 100000}"
-        return {
-            "ticketId": ticket_id,
-            "status": "ACCEPTED",
-            "message": "已创建人工协同工单，并记录人工处理意见。",
-        }
 
     try:
         async with httpx.AsyncClient(timeout=config.timeoutSeconds) as client:

@@ -19,7 +19,7 @@ Orchestrate Enterprise Agents
 - `START / AGENT / HUMAN / END` 显式图编排
 - 基于 Temporal 的 `start / signal / resume` 长流程托管
 - Python `agent-runtime` 按发布快照动态执行知识检索、Skill 读取、Tool 调用和模型推理
-- Mock 登录和角色切换，保留未来对接 OIDC / IAM 的边界
+- 开发态用户会话接口，保留未来对接 OIDC / IAM 的边界
 
 当前仍保留明显的原型边界：
 
@@ -28,7 +28,6 @@ Orchestrate Enterprise Agents
 - 运行态主投影已落 PostgreSQL，并在 API 启动时主动与 Temporal 对账
 - `sendMessage` / `launchTask` / `human-action` 已改为启动即返回，前端通过轮询收口运行结果
 - workflow 观测页已暴露 `agentTurnState`，可查看最新结构化决策和 turn logs
-- `demo.local` provider 仍承担本地演示闭环
 - MinIO / OpenSearch 已纳入本地依赖与配置，知识服务当前默认以 OpenSearch 作为正式快照检索后端
 
 ## Monorepo Layout
@@ -141,21 +140,8 @@ pnpm dev:web
 
 ### 5. 常用环境变量
 
-默认会写入目录演示数据；运行态演示 session seed 已移除，API 启动时会自动对数据库中的非终态 workflow 做一次 Temporal 对账。
-如果你希望保留演示目录数据，可以显式开启：
-
-```bash
-LYNXUS_CATALOG_SEED_ENABLED=true
-```
-
-其中 `LYNXUS_CATALOG_SEED_ENABLED=true` 表示 API 启动时会在 PostgreSQL 目录表为空时自动写入一套演示助手、智能体和资源；如果数据库里已经有数据，则不会重复初始化。
-
-当前默认 seed 会写入一套“智能客服协同处理”演示数据，覆盖：
-
-- FAQ 自动回答
-- 售后策略 Tool 调用
-- 投诉进入人工节点后等待恢复
-- 人工恢复后由协同智能体收口
+API 启动时会自动对数据库中的非终态 workflow 做一次 Temporal 对账。
+当前不再提供内置 demo seed 或 demo SQL 导入路径；目录、资源和知识库数据需由控制台或 API 显式创建。
 
 前端默认连接 `http://localhost:8080/api`，可通过根目录 `.env` 或 `apps/web/.env.local` 覆盖：
 
@@ -190,7 +176,7 @@ OPENAI_COMPATIBLE_API_KEY=your-token-if-needed
 LYNXUS_TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT=PT2M
 ```
 
-资源中心里会默认提供一个“自定义 OpenAI Compatible 模型”资源，可直接绑定到助手或智能体。
+资源需由控制台或 API 显式创建。
 
 ## Runtime Model
 

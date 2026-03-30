@@ -59,6 +59,5 @@ pnpm dev:agent-runtime
 
 ## 当前边界
 
-- 仍保留 `demo.local` 的 HTTP / MCP provider 演示闭环
 - 真实模型调用没有本地 fallback
 - 当前 Skill 资源承担“按需技能提示读取”职责，不再是独立 Prompt Template 资源

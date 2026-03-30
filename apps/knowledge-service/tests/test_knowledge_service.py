@@ -9,7 +9,6 @@ temp_root = tempfile.mkdtemp(prefix="lynxus-knowledge-test-")
 os.environ["LYNXUS_KNOWLEDGE_DATABASE_URL"] = f"sqlite+pysqlite:///{Path(temp_root) / 'knowledge-test.db'}"
 os.environ["LYNXUS_KNOWLEDGE_STORAGE_MODE"] = "filesystem"
 os.environ["LYNXUS_KNOWLEDGE_STORAGE_ROOT"] = temp_root
-os.environ["LYNXUS_KNOWLEDGE_SEED_ENABLED"] = "false"
 os.environ["LYNXUS_OPENSEARCH_URL"] = "http://opensearch.test"
 
 from app.main import (
@@ -36,8 +35,6 @@ from app.main import (
     retrieve,
     run_import_job,
     startup,
-    seed_demo_snapshot,
-    wait_for_opensearch_ready,
 )
 
 
@@ -231,62 +228,17 @@ class KnowledgeServiceTest(unittest.TestCase):
                 )
         self.assertIn("unsupported file type", str(ctx.exception))
 
-    def test_should_wait_for_opensearch_until_ready(self) -> None:
-        class FakeOpenSearchClient:
-            def __init__(self) -> None:
-                self.enabled = True
-                self.base_url = "http://opensearch.test"
-                self._calls = 0
-
-            def request(self, method: str, path: str) -> dict:
-                self._calls += 1
-                if self._calls < 3:
-                    raise ValueError("opensearch request failed: [Errno 61] Connection refused")
-                return {"status": "yellow"}
-
-        client = FakeOpenSearchClient()
-        wait_for_opensearch_ready(client, timeout_seconds=1, retry_interval_seconds=0)
-        self.assertEqual(client._calls, 3)
-
-    def test_should_raise_clear_error_when_opensearch_is_not_ready_in_time(self) -> None:
-        class FakeOpenSearchClient:
-            enabled = True
-            base_url = "http://opensearch.test"
-
-            def request(self, method: str, path: str) -> dict:
-                raise ValueError("opensearch request failed: [Errno 61] Connection refused")
-
-        with self.assertRaises(RuntimeError) as ctx:
-            wait_for_opensearch_ready(FakeOpenSearchClient(), timeout_seconds=0, retry_interval_seconds=0)
-        self.assertIn("was not ready", str(ctx.exception))
-        self.assertIn("Connection refused", str(ctx.exception))
-
-    def test_should_seed_demo_snapshot_after_flushing_file_records(self) -> None:
-        with (
-            patch("app.main.wait_for_opensearch_ready", return_value=None),
-            patch.object(opensearch, "bulk_index_chunks", return_value=None),
-        ):
-            with SessionLocal() as db:
-                seed_demo_snapshot(db)
-
-            with SessionLocal() as db:
-                seeded_session = db.get(UploadSessionRecord, "upload-session-kb-support")
-                seeded_file = db.get(KnowledgeFileRecord, "kb-file-support-seed")
-                seeded_document = db.get(KnowledgeDocumentRecord, "kb-document-support-seed")
-                seeded_snapshot = db.get(IndexSnapshotRecord, "snapshot-kb-support-v1")
-
-        self.assertIsNotNone(seeded_session)
-        self.assertIsNotNone(seeded_file)
-        self.assertIsNotNone(seeded_document)
-        self.assertIsNotNone(seeded_snapshot)
-        self.assertEqual(seeded_file.upload_session_id, seeded_session.id)
-        self.assertEqual(seeded_document.file_id, seeded_file.id)
-        self.assertEqual(seeded_snapshot.status, "READY")
-        self.assertEqual(seeded_file.knowledge_base_id, "knowledge-base-support")
-
-    def test_should_not_fail_startup_when_demo_seed_is_unavailable(self) -> None:
-        with patch("app.main.SEED_ENABLED", True), patch("app.main.seed_demo_snapshot", side_effect=RuntimeError("opensearch unavailable")):
-            startup()
+    def test_startup_should_only_initialize_schema(self) -> None:
+        startup()
+        with SessionLocal() as db:
+            session_count = db.query(UploadSessionRecord).count()
+            file_count = db.query(KnowledgeFileRecord).count()
+            document_count = db.query(KnowledgeDocumentRecord).count()
+            snapshot_count = db.query(IndexSnapshotRecord).count()
+        self.assertEqual(session_count, 0)
+        self.assertEqual(file_count, 0)
+        self.assertEqual(document_count, 0)
+        self.assertEqual(snapshot_count, 0)
 
 
 if __name__ == "__main__":

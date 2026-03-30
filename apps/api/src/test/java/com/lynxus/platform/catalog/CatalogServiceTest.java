@@ -16,24 +16,24 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class CatalogServiceTest {
-    private final CatalogService service = catalogService();
-
     @Test
-    void shouldExposeSeededCatalogSummaryWithIndependentKnowledgeBases() {
+    void shouldExposeEmptyCatalogSummaryWithoutSeededData() {
+        CatalogService service = new CatalogService(
+            new InMemoryCatalogRepository(),
+            readySnapshotKnowledgeClient(),
+            noopKnowledgeWorkflowGateway()
+        );
         CatalogDtos.CatalogSummaryDto summary = service.summary();
 
-        assertFalse(summary.domains().isEmpty());
-        assertFalse(summary.resources().isEmpty());
-        assertFalse(summary.knowledgeBases().isEmpty());
-        assertEquals("客服知识库", summary.knowledgeBases().getFirst().name());
-        assertTrue(summary.resources().stream().noneMatch(resource -> "客服知识库".equals(resource.name())));
+        assertTrue(summary.domains().isEmpty());
+        assertTrue(summary.resources().isEmpty());
+        assertTrue(summary.knowledgeBases().isEmpty());
     }
 
     @Test
     void shouldSupportKnowledgeBaseCrudAndReleaseLifecycle() {
         CatalogService catalogService = new CatalogService(
             new InMemoryCatalogRepository(),
-            false,
             readySnapshotKnowledgeClient(),
             noopKnowledgeWorkflowGateway()
         );
@@ -92,18 +92,19 @@ class CatalogServiceTest {
 
     @Test
     void shouldExposeKnowledgeReferencesAndBlockDeletionWhenAssistantsUseKnowledgeBase() {
-        CatalogDtos.KnowledgeBaseDto knowledgeBase = service.getKnowledgeBase("knowledge-base-support");
+        CustomerOpsFixture fixture = customerOpsFixture();
+        CatalogDtos.KnowledgeBaseDto knowledgeBase = fixture.service().getKnowledgeBase(fixture.knowledgeBaseId());
 
-        List<CatalogDtos.KnowledgeReferenceDto> references = service.listKnowledgeReferences(knowledgeBase.id());
+        List<CatalogDtos.KnowledgeReferenceDto> references = fixture.service().listKnowledgeReferences(knowledgeBase.id());
 
         assertTrue(references.stream().anyMatch(reference -> reference.referenceKind().equals("ASSISTANT_DEFAULT_KNOWLEDGE_BASE")));
         assertTrue(references.stream().anyMatch(reference -> reference.referenceKind().equals("RELEASE_ASSISTANT_KNOWLEDGE")));
-        assertThrows(IllegalStateException.class, () -> service.deleteKnowledgeBase(knowledgeBase.id()));
+        assertThrows(IllegalStateException.class, () -> fixture.service().deleteKnowledgeBase(knowledgeBase.id()));
     }
 
     @Test
     void shouldStillFreezeToolVersionsWhenPublishingAssistant() {
-        CatalogService catalogService = new CatalogService(new InMemoryCatalogRepository(), false);
+        CatalogService catalogService = new CatalogService(new InMemoryCatalogRepository(), readySnapshotKnowledgeClient(), noopKnowledgeWorkflowGateway());
         CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("交付域", "承载交付流程"));
         CatalogDtos.ScenarioDto scenario = catalogService.createScenario(
             new CatalogDtos.CreateScenarioRequest(domain.id(), "交付跟进", "跟进交付流程")
@@ -143,7 +144,7 @@ class CatalogServiceTest {
 
     @Test
     void shouldDeleteUnusedResourceAndProtectBoundResources() {
-        CatalogService catalogService = new CatalogService(new InMemoryCatalogRepository(), false);
+        CatalogService catalogService = new CatalogService(new InMemoryCatalogRepository(), readySnapshotKnowledgeClient(), noopKnowledgeWorkflowGateway());
         CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("质检域", "承载质检流程"));
         CatalogDtos.ResourceDto removable = catalogService.createResource(
             new CatalogDtos.CreateResourceRequest(
@@ -162,12 +163,13 @@ class CatalogServiceTest {
 
         CatalogDtos.ResourceDto deleted = catalogService.deleteResource(removable.id());
         assertEquals(removable.id(), deleted.id());
-        assertThrows(IllegalStateException.class, () -> service.deleteResource("resource-tool-refund"));
+        CustomerOpsFixture fixture = customerOpsFixture();
+        assertThrows(IllegalStateException.class, () -> fixture.service().deleteResource(fixture.toolResourceId()));
     }
 
     @Test
     void shouldUpdateResourceMetadataIncludingName() {
-        CatalogService catalogService = new CatalogService(new InMemoryCatalogRepository(), false);
+        CatalogService catalogService = new CatalogService(new InMemoryCatalogRepository(), readySnapshotKnowledgeClient(), noopKnowledgeWorkflowGateway());
         CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("客服域", "承载客服资源"));
         CatalogDtos.ScenarioDto scenario = catalogService.createScenario(
             new CatalogDtos.CreateScenarioRequest(domain.id(), "客服场景", "处理客服问题")
@@ -212,7 +214,7 @@ class CatalogServiceTest {
 
     @Test
     void shouldUpdateDraftResourceVersionInPlaceAndAllowDirectPublish() {
-        CatalogService catalogService = new CatalogService(new InMemoryCatalogRepository(), false);
+        CatalogService catalogService = new CatalogService(new InMemoryCatalogRepository(), readySnapshotKnowledgeClient(), noopKnowledgeWorkflowGateway());
         CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("运营域", "承载运营资源"));
         CatalogDtos.ResourceDto resource = catalogService.createResource(
             new CatalogDtos.CreateResourceRequest(
@@ -294,12 +296,86 @@ class CatalogServiceTest {
         };
     }
 
-    private static CatalogService catalogService() {
-        return new CatalogService(
+    private static CustomerOpsFixture customerOpsFixture() {
+        CatalogService service = new CatalogService(
             new InMemoryCatalogRepository(),
-            true,
             readySnapshotKnowledgeClient(),
             noopKnowledgeWorkflowGateway()
         );
+        CatalogDtos.BusinessDomainDto domain = service.createDomain(new CatalogDtos.CreateDomainRequest("客服运营域", "承载客服体验数据"));
+        CatalogDtos.ScenarioDto scenario = service.createScenario(
+            new CatalogDtos.CreateScenarioRequest(domain.id(), "客服处理", "处理用户咨询与售后问题")
+        );
+        CatalogDtos.KnowledgeBaseDto knowledgeBase = service.createKnowledgeBase(
+            new CatalogDtos.CreateKnowledgeBaseRequest(
+                domain.id(),
+                "客服知识库",
+                ShareScope.DOMAIN_SHARED,
+                "DOMAIN",
+                domain.id(),
+                "用于客服问答与流程说明",
+                "知识运营",
+                List.of("FAQ", "支持")
+            )
+        );
+        service.createKnowledgeRelease(
+            knowledgeBase.id(),
+            new CatalogDtos.CreateKnowledgeReleaseRequest(
+                "客服知识正式版",
+                VersionStatus.PUBLISHED,
+                "snapshot-kb-support-v1",
+                new CatalogDtos.KnowledgeRetrievalProfileDto(5, "HYBRID", 0.1)
+            )
+        );
+        CatalogDtos.AssistantDto assistant = service.createAssistant(
+            new CatalogDtos.CreateAssistantRequest(
+                scenario.id(),
+                "客服助手",
+                "处理客服问题",
+                null,
+                new CatalogDtos.RagPolicyDto(true, knowledgeBase.id()),
+                null
+            )
+        );
+        CatalogDtos.ResourceDto tool = service.createResource(
+            new CatalogDtos.CreateResourceRequest(
+                domain.id(),
+                "工单工具",
+                ResourceType.TOOL,
+                ShareScope.PRIVATE,
+                "ASSISTANT",
+                assistant.id(),
+                "提交客服工单",
+                "客服平台",
+                List.of("工单"),
+                null
+            )
+        );
+        service.createAgent(new CatalogDtos.CreateAgentRequest(
+            assistant.id(),
+            "客服执行智能体",
+            "support",
+            "处理客服流转",
+            new CatalogDtos.AgentExecutionPolicyDto(true, null, "", true, true, knowledgeBase.id(), 8, List.of(), List.of(tool.id()))
+        ));
+        service.updateAssistant(
+            assistant.id(),
+            new CatalogDtos.UpdateAssistantRequest(
+                assistant.name(),
+                assistant.description(),
+                VersionStatus.PUBLISHED,
+                assistant.modelPolicy(),
+                new CatalogDtos.RagPolicyDto(true, knowledgeBase.id()),
+                assistant.memoryPolicy()
+            )
+        );
+        return new CustomerOpsFixture(service, knowledgeBase.id(), tool.id());
+    }
+
+    private record CustomerOpsFixture(
+        CatalogService service,
+        String knowledgeBaseId,
+        String toolResourceId
+    ) {
     }
 }

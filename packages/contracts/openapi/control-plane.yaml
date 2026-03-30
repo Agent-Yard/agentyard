@@ -7,25 +7,10 @@ servers:
 paths:
   /auth/session:
     get:
-      summary: Get current mock session
+      summary: Get current development session
       responses:
         '200':
           description: Current session
-  /auth/switch-role:
-    patch:
-      summary: Switch current mock role
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                role:
-                  type: string
-      responses:
-        '200':
-          description: Updated session
   /catalog/summary:
     get:
       summary: Get aggregate catalog summary

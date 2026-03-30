@@ -25,7 +25,6 @@ import type {
   KnowledgeUploadSession,
   Resource,
   ResourceVersion,
-  Role,
   Scenario,
   TaskInstance,
   UpdateAssistantPayload,
@@ -84,7 +83,6 @@ function jsonOptions(method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown
 
 export const api = {
   getSession: () => request<UserSession>('/auth/session'),
-  switchRole: (role: Role) => request<UserSession>('/auth/switch-role', jsonOptions('PATCH', { role })),
   getCatalogSummary: () => request<CatalogSummary>('/catalog/summary'),
   getConversationSessions: () => request<ConversationSession[]>('/runtime/sessions'),
   createConversationSession: (payload: CreateConversationSessionPayload) =>

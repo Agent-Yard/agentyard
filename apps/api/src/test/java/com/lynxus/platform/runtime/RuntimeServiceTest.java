@@ -13,6 +13,7 @@ import com.lynxus.contracts.runtime.WorkflowContracts.AgentTurnState;
 import com.lynxus.contracts.runtime.WorkflowContracts.DecisionType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
 import com.lynxus.contracts.runtime.WorkflowContracts.TaskStatus;
+import com.lynxus.contracts.runtime.WorkflowContracts.VersionStatus;
 import com.lynxus.platform.catalog.CatalogDtos;
 import com.lynxus.platform.catalog.CatalogService;
 import com.lynxus.platform.catalog.InMemoryCatalogRepository;
@@ -27,7 +28,8 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class RuntimeServiceTest {
-    private final CatalogService catalogService = catalogService();
+    private final CatalogFixture fixture = catalogFixture();
+    private final CatalogService catalogService = fixture.service();
 
     @Test
     void shouldAcceptTaskWithoutWaitingForFirstResult() {
@@ -35,7 +37,7 @@ class RuntimeServiceTest {
         RuntimeService service = runtimeService(gateway);
 
         RuntimeDtos.TaskInstanceDto task = service.launchTask(
-            new RuntimeDtos.TaskLaunchRequest("scenario-customer-ops", "assistant-customer-ops", "怎么重置密码", "tester")
+            new RuntimeDtos.TaskLaunchRequest(fixture.scenarioId(), fixture.assistantId(), "怎么重置密码", "tester")
         );
 
         assertEquals(TaskStatus.RUNNING, task.status());
@@ -60,7 +62,7 @@ class RuntimeServiceTest {
         RuntimeService service = runtimeService(gateway, catalogService, repository);
 
         RuntimeDtos.ConversationSessionDto session = service.createSession(
-            new RuntimeDtos.CreateConversationSessionRequest("scenario-customer-ops", "assistant-customer-ops", "tester", null)
+            new RuntimeDtos.CreateConversationSessionRequest(fixture.scenarioId(), fixture.assistantId(), "tester", null)
         );
         RuntimeDtos.ConversationSessionDto updated = service.sendMessage(
             session.id(),
@@ -78,7 +80,7 @@ class RuntimeServiceTest {
         RuntimeService service = runtimeService(gateway);
 
         RuntimeDtos.ConversationSessionDto session = service.createSession(
-            new RuntimeDtos.CreateConversationSessionRequest("scenario-customer-ops", "assistant-customer-ops", "tester", null)
+            new RuntimeDtos.CreateConversationSessionRequest(fixture.scenarioId(), fixture.assistantId(), "tester", null)
         );
         RuntimeDtos.ConversationSessionDto failed = service.sendMessage(
             session.id(),
@@ -100,7 +102,7 @@ class RuntimeServiceTest {
         RuntimeService service = runtimeService(gateway);
 
         RuntimeDtos.TaskInstanceDto task = service.launchTask(
-            new RuntimeDtos.TaskLaunchRequest("scenario-customer-ops", "assistant-customer-ops", "客户投诉，需要人工处理", "tester")
+            new RuntimeDtos.TaskLaunchRequest(fixture.scenarioId(), fixture.assistantId(), "客户投诉，需要人工处理", "tester")
         );
         RuntimeDtos.WorkflowInstanceDto waiting = service.getWorkflow(task.workflowInstanceId());
         assertEquals(WorkflowContracts.WorkflowStatus.WAITING_HUMAN, waiting.status());
@@ -125,7 +127,7 @@ class RuntimeServiceTest {
         RuntimeService service = runtimeService(gateway);
 
         RuntimeDtos.TaskInstanceDto task = service.launchTask(
-            new RuntimeDtos.TaskLaunchRequest("scenario-customer-ops", "assistant-customer-ops", "客户投诉，需要人工处理", "tester")
+            new RuntimeDtos.TaskLaunchRequest(fixture.scenarioId(), fixture.assistantId(), "客户投诉，需要人工处理", "tester")
         );
 
         RuntimeException error = assertThrows(
@@ -153,9 +155,9 @@ class RuntimeServiceTest {
 
         RuntimeDtos.TaskInstanceDto task = new RuntimeDtos.TaskInstanceDto(
             "task-1",
-            "scenario-customer-ops",
-            "assistant-customer-ops",
-            "客服助手",
+            fixture.scenarioId(),
+            fixture.assistantId(),
+            fixture.assistantName(),
             "release-v1",
             "客户投诉，需要人工处理",
             "tester",
@@ -166,8 +168,8 @@ class RuntimeServiceTest {
         RuntimeDtos.WorkflowInstanceDto workflow = new RuntimeDtos.WorkflowInstanceDto(
             "wf-1",
             "task-1",
-            "assistant-customer-ops",
-            "客服助手",
+            fixture.assistantId(),
+            fixture.assistantName(),
             "release-v1",
             now,
             now,
@@ -191,15 +193,15 @@ class RuntimeServiceTest {
         );
         RuntimeDtos.ConversationSessionDto session = new RuntimeDtos.ConversationSessionDto(
             "session-1",
-            "scenario-customer-ops",
+            fixture.scenarioId(),
             "投诉处理",
             "tester",
-            "assistant-customer-ops",
-            "客服助手",
+            fixture.assistantId(),
+            fixture.assistantName(),
             "release-v1",
             now,
             now,
-            List.of(new RuntimeDtos.ConversationMessageDto("msg-1", "session-1", "ASSISTANT", "ASSISTANT", "assistant-customer-ops", "客服助手", "已进入人工协同流程。", now, "task-1", "wf-1")),
+            List.of(new RuntimeDtos.ConversationMessageDto("msg-1", "session-1", "ASSISTANT", "ASSISTANT", fixture.assistantId(), fixture.assistantName(), "已进入人工协同流程。", now, "task-1", "wf-1")),
             "task-1",
             "wf-1",
             null,
@@ -239,7 +241,7 @@ class RuntimeServiceTest {
         RuntimeService service = runtimeService(gateway);
 
         RuntimeDtos.TaskInstanceDto task = service.launchTask(
-            new RuntimeDtos.TaskLaunchRequest("scenario-customer-ops", "assistant-customer-ops", "客户投诉，需要人工处理", "tester")
+            new RuntimeDtos.TaskLaunchRequest(fixture.scenarioId(), fixture.assistantId(), "客户投诉，需要人工处理", "tester")
         );
         service.handleHumanAction(
             task.workflowInstanceId(),
@@ -262,7 +264,7 @@ class RuntimeServiceTest {
         RuntimeService service = runtimeService(gateway, catalogService, repository);
 
         RuntimeDtos.ConversationSessionDto created = service.createSession(
-            new RuntimeDtos.CreateConversationSessionRequest("scenario-customer-ops", "assistant-customer-ops", "tester", "客户投诉，需要人工处理")
+            new RuntimeDtos.CreateConversationSessionRequest(fixture.scenarioId(), fixture.assistantId(), "tester", "客户投诉，需要人工处理")
         );
 
         int taskCount = service.listTasks().size();
@@ -284,7 +286,7 @@ class RuntimeServiceTest {
         RuntimeService service = runtimeService(gateway);
 
         RuntimeDtos.ConversationSessionDto created = service.createSession(
-            new RuntimeDtos.CreateConversationSessionRequest("scenario-customer-ops", "assistant-customer-ops", "tester", "第一条消息")
+            new RuntimeDtos.CreateConversationSessionRequest(fixture.scenarioId(), fixture.assistantId(), "tester", "第一条消息")
         );
         String firstWorkflowId = created.latestWorkflowInstanceId();
         gateway.currentResults.put(firstWorkflowId, completedResult(firstWorkflowId, "已完成处理。", "turn-1"));
@@ -304,7 +306,7 @@ class RuntimeServiceTest {
         RuntimeService service = runtimeService(gateway);
 
         RuntimeDtos.ConversationSessionDto created = service.createSession(
-            new RuntimeDtos.CreateConversationSessionRequest("scenario-customer-ops", "assistant-customer-ops", "tester", "第一条消息")
+            new RuntimeDtos.CreateConversationSessionRequest(fixture.scenarioId(), fixture.assistantId(), "tester", "第一条消息")
         );
         String firstWorkflowId = created.latestWorkflowInstanceId();
         gateway.currentResults.put(firstWorkflowId, completedResult(firstWorkflowId, "已完成处理。", "turn-1"));
@@ -333,13 +335,13 @@ class RuntimeServiceTest {
         StubWorkflowGateway gateway = new StubWorkflowGateway();
         RuntimeService service = runtimeService(gateway);
 
-        service.launchTask(new RuntimeDtos.TaskLaunchRequest("scenario-customer-ops", "assistant-customer-ops", "怎么重置密码", "tester"));
+        service.launchTask(new RuntimeDtos.TaskLaunchRequest(fixture.scenarioId(), fixture.assistantId(), "怎么重置密码", "tester"));
 
         WorkflowContracts.KnowledgeBindingSnapshot assistantKnowledge = gateway.startRequests.getFirst().assistant().assistantKnowledge();
         assertNotNull(assistantKnowledge);
-        assertEquals("knowledge-base-support", assistantKnowledge.knowledgeBaseId());
-        assertEquals("knowledge-release-support-v1", assistantKnowledge.knowledgeReleaseId());
-        assertEquals("snapshot-kb-support-v1", assistantKnowledge.snapshotId());
+        assertEquals(fixture.knowledgeBaseId(), assistantKnowledge.knowledgeBaseId());
+        assertEquals(fixture.knowledgeReleaseId(), assistantKnowledge.knowledgeReleaseId());
+        assertEquals(fixture.snapshotId(), assistantKnowledge.snapshotId());
         assertEquals("HYBRID", assistantKnowledge.retrievalMode());
     }
 
@@ -475,14 +477,67 @@ class RuntimeServiceTest {
         );
     }
 
-    private static CatalogService catalogService() {
+    private static CatalogFixture catalogFixture() {
         CatalogService catalogService = new CatalogService(
             new InMemoryCatalogRepository(),
             readySnapshotKnowledgeClient(),
             noopKnowledgeWorkflowGateway()
         );
-        catalogService.initializeDemoDataIfEmpty();
-        return catalogService;
+        CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("客服运营域", "承载客服运行测试"));
+        CatalogDtos.ScenarioDto scenario = catalogService.createScenario(
+            new CatalogDtos.CreateScenarioRequest(domain.id(), "客服处理", "处理用户咨询与售后问题")
+        );
+        CatalogDtos.KnowledgeBaseDto knowledgeBase = catalogService.createKnowledgeBase(
+            new CatalogDtos.CreateKnowledgeBaseRequest(
+                domain.id(),
+                "客服知识库",
+                ShareScope.DOMAIN_SHARED,
+                "DOMAIN",
+                domain.id(),
+                "用于客服问答与流程说明",
+                "知识运营",
+                List.of("FAQ", "支持")
+            )
+        );
+        CatalogDtos.KnowledgeReleaseDto knowledgeRelease = catalogService.createKnowledgeRelease(
+            knowledgeBase.id(),
+            new CatalogDtos.CreateKnowledgeReleaseRequest(
+                "客服知识正式版",
+                VersionStatus.PUBLISHED,
+                "snapshot-kb-support-v1",
+                new CatalogDtos.KnowledgeRetrievalProfileDto(5, "HYBRID", 0.1)
+            )
+        );
+        CatalogDtos.AssistantDto assistant = catalogService.createAssistant(
+            new CatalogDtos.CreateAssistantRequest(
+                scenario.id(),
+                "客服助手",
+                "处理客服问题",
+                null,
+                new CatalogDtos.RagPolicyDto(true, knowledgeBase.id()),
+                null
+            )
+        );
+        catalogService.updateAssistant(
+            assistant.id(),
+            new CatalogDtos.UpdateAssistantRequest(
+                assistant.name(),
+                assistant.description(),
+                VersionStatus.PUBLISHED,
+                assistant.modelPolicy(),
+                new CatalogDtos.RagPolicyDto(true, knowledgeBase.id()),
+                assistant.memoryPolicy()
+            )
+        );
+        return new CatalogFixture(
+            catalogService,
+            scenario.id(),
+            assistant.id(),
+            assistant.name(),
+            knowledgeBase.id(),
+            knowledgeRelease.id(),
+            knowledgeRelease.snapshotId()
+        );
     }
 
     private static KnowledgeServiceClient readySnapshotKnowledgeClient() {
@@ -491,7 +546,7 @@ class RuntimeServiceTest {
             public CatalogDtos.KnowledgeIndexSnapshotDto getIndexSnapshot(String snapshotId) {
                 return new CatalogDtos.KnowledgeIndexSnapshotDto(
                     snapshotId,
-                    "knowledge-base-support",
+                    "knowledge-base-runtime-test",
                     "OPENSEARCH",
                     "HYBRID",
                     "READY",
@@ -537,6 +592,17 @@ class RuntimeServiceTest {
             catalogService.knowledgeService(),
             repository
         );
+    }
+
+    private record CatalogFixture(
+        CatalogService service,
+        String scenarioId,
+        String assistantId,
+        String assistantName,
+        String knowledgeBaseId,
+        String knowledgeReleaseId,
+        String snapshotId
+    ) {
     }
 
     private static final class StubWorkflowGateway implements AssistantRunWorkflowGateway {

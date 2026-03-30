@@ -8,7 +8,6 @@ import logging
 import math
 import os
 import re
-import time
 import uuid
 from collections import Counter
 from dataclasses import dataclass
@@ -67,7 +66,6 @@ MINIO_ACCESS_KEY = os.getenv("LYNXUS_MINIO_ACCESS_KEY", "minioadmin")
 MINIO_SECRET_KEY = os.getenv("LYNXUS_MINIO_SECRET_KEY", "minioadmin")
 MINIO_SECURE = os.getenv("LYNXUS_MINIO_ENDPOINT", "http://localhost:9000").startswith("https://")
 MINIO_BUCKET = os.getenv("LYNXUS_KNOWLEDGE_MINIO_BUCKET", "lynxus-knowledge")
-SEED_ENABLED = os.getenv("LYNXUS_KNOWLEDGE_SEED_ENABLED", "true").lower() == "true"
 URL_IMPORT_TIMEOUT_SECONDS = float(os.getenv("LYNXUS_KNOWLEDGE_URL_IMPORT_TIMEOUT_SECONDS", "15"))
 URL_IMPORT_USER_AGENT = os.getenv(
     "LYNXUS_KNOWLEDGE_URL_IMPORT_USER_AGENT",
@@ -78,8 +76,6 @@ OPENSEARCH_USERNAME = os.getenv("LYNXUS_OPENSEARCH_USERNAME", "")
 OPENSEARCH_PASSWORD = os.getenv("LYNXUS_OPENSEARCH_PASSWORD", "")
 OPENSEARCH_INDEX_PREFIX = os.getenv("LYNXUS_OPENSEARCH_INDEX_PREFIX", "lynxus-knowledge")
 OPENSEARCH_TIMEOUT_SECONDS = float(os.getenv("LYNXUS_OPENSEARCH_TIMEOUT_SECONDS", "10"))
-OPENSEARCH_STARTUP_WAIT_SECONDS = float(os.getenv("LYNXUS_OPENSEARCH_STARTUP_WAIT_SECONDS", "45"))
-OPENSEARCH_STARTUP_RETRY_INTERVAL_SECONDS = float(os.getenv("LYNXUS_OPENSEARCH_STARTUP_RETRY_INTERVAL_SECONDS", "1.5"))
 DEFAULT_SNAPSHOT_RETRIEVAL_MODE = os.getenv("LYNXUS_KNOWLEDGE_DEFAULT_RETRIEVAL_MODE", "HYBRID").upper()
 DEFAULT_SNAPSHOT_RETRIEVAL_BACKEND = os.getenv("LYNXUS_KNOWLEDGE_DEFAULT_RETRIEVAL_BACKEND", "OPENSEARCH").upper()
 
@@ -1131,137 +1127,6 @@ def fetch_url_payload(url: str) -> tuple[bytes, str]:
 @app.on_event("startup")
 def startup() -> None:
     Base.metadata.create_all(bind=engine)
-    if SEED_ENABLED:
-        try:
-            with SessionLocal() as db:
-                seed_demo_snapshot(db)
-        except Exception as exc:
-            logger.warning("knowledge demo seed was skipped during startup: %s", exc)
-
-
-def wait_for_opensearch_ready(
-    client: OpenSearchClient,
-    timeout_seconds: Optional[float] = None,
-    retry_interval_seconds: Optional[float] = None,
-) -> None:
-    if not client.enabled:
-        raise RuntimeError("LYNXUS_KNOWLEDGE_SEED_ENABLED=true requires LYNXUS_OPENSEARCH_URL to be configured")
-
-    timeout_budget = OPENSEARCH_STARTUP_WAIT_SECONDS if timeout_seconds is None else timeout_seconds
-    retry_delay = OPENSEARCH_STARTUP_RETRY_INTERVAL_SECONDS if retry_interval_seconds is None else retry_interval_seconds
-    timeout_budget = max(0.0, timeout_budget)
-    retry_delay = max(0.0, retry_delay)
-    deadline = time.monotonic() + timeout_budget
-    attempt = 0
-    last_error: Optional[Exception] = None
-
-    while True:
-        attempt += 1
-        try:
-            client.request("GET", "/_cluster/health?wait_for_status=yellow&timeout=1s")
-            return
-        except Exception as exc:  # pragma: no cover - verified with mocked clients in tests
-            last_error = exc
-            if time.monotonic() >= deadline:
-                break
-            if attempt == 1 or attempt % 5 == 0:
-                logger.info("waiting for opensearch at %s to become ready: %s", client.base_url, exc)
-            time.sleep(retry_delay)
-
-    detail = str(last_error) if last_error is not None else "unknown error"
-    raise RuntimeError(f"opensearch at {client.base_url} was not ready within {timeout_budget:g}s: {detail}") from last_error
-
-
-def seed_demo_snapshot(db: Session) -> None:
-    snapshot_id = "snapshot-kb-support-v1"
-    existing = db.get(IndexSnapshotRecord, snapshot_id)
-    if existing is not None:
-        return
-    wait_for_opensearch_ready(opensearch)
-
-    session_record = UploadSessionRecord(
-        id="upload-session-kb-support",
-        knowledge_base_id="knowledge-base-support",
-        status="COMPLETED",
-    )
-    db.add(session_record)
-    db.flush()
-
-    file_record = KnowledgeFileRecord(
-        id="kb-file-support-seed",
-        knowledge_base_id="knowledge-base-support",
-        upload_session_id=session_record.id,
-        file_name="customer-support-seed.md",
-        content_type="text/markdown",
-        object_key="seed/customer-support-seed.md",
-        size_bytes=0,
-        status="IMPORTED",
-    )
-    job_record = KnowledgeImportJobRecord(
-        id="kb-import-support-seed",
-        knowledge_base_id="knowledge-base-support",
-        file_id=file_record.id,
-        status="COMPLETED",
-        completed_at=now_utc(),
-    )
-    db.add_all([file_record, job_record])
-    db.flush()
-
-    body_text = "\n".join(
-        [
-            "# 密码重置流程",
-            "密码重置可以通过登录页的忘记密码完成，若邮箱不可用则需要人工验证。",
-            "# 售后退款判定",
-            "售后退款通常需要结合订单状态、支付时间和投诉原因综合判定。",
-            "# 争议升级规则",
-            "涉及争议、投诉或升级字样的请求应优先进入人工协同分支。",
-        ]
-    )
-    document_record = KnowledgeDocumentRecord(
-        id="kb-document-support-seed",
-        knowledge_base_id="knowledge-base-support",
-        file_id=file_record.id,
-        title="客服知识库演示版",
-        source_uri="manual://customer-support/seed",
-        document_type="md",
-        status="READY",
-        body_text=body_text,
-    )
-    segments = parse_markdown_segments(file_record.file_name, body_text)
-    chunks = build_chunks(document_record.knowledge_base_id, document_record.id, document_record.title, document_record.source_uri, segments)
-    snapshot = IndexSnapshotRecord(
-        id=snapshot_id,
-        knowledge_base_id="knowledge-base-support",
-        retrieval_backend="OPENSEARCH",
-        retrieval_mode="HYBRID",
-        status="READY",
-        document_count=1,
-        chunk_count=len(chunks),
-        built_at=now_utc(),
-    )
-    opensearch.bulk_index_chunks(snapshot.id, snapshot.knowledge_base_id, chunks)
-    db.add_all([document_record, *chunks, snapshot])
-    db.flush()
-    db.add_all(
-        [
-            SnapshotDocumentSelectionRecord(
-                id=f"snapshot-document-{index}",
-                snapshot_id=snapshot.id,
-                document_id=document_record.id,
-            )
-            for index in range(1, 2)
-        ]
-        + [
-            IndexSnapshotChunkRecord(
-                id=f"snapshot-chunk-{index}",
-                snapshot_id=snapshot.id,
-                chunk_id=chunk.id,
-                document_id=document_record.id,
-            )
-            for index, chunk in enumerate(chunks, start=1)
-        ]
-    )
-    db.commit()
 
 
 @app.post("/internal/upload-sessions", response_model=UploadSessionResponse)

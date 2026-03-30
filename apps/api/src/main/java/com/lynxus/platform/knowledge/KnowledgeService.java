@@ -48,16 +48,6 @@ public class KnowledgeService {
         this.knowledgeWorkflowGateway = knowledgeWorkflowGateway;
     }
 
-    public synchronized boolean initializeDemoDataIfEmpty() {
-        ensureLoaded();
-        if (!repository.isEmpty()) {
-            return false;
-        }
-        seed();
-        persistState();
-        return true;
-    }
-
     public List<KnowledgeBaseDto> listKnowledgeBases() {
         ensureLoaded();
         return knowledgeBases.stream()
@@ -369,38 +359,6 @@ public class KnowledgeService {
 
     private void persistState() {
         repository.save(new KnowledgeRepository.KnowledgeSnapshot(List.copyOf(knowledgeBases), Map.copyOf(knowledgeReleases)));
-    }
-
-    private void seed() {
-        KnowledgeBaseDto knowledgeBase = new KnowledgeBaseDto(
-            "knowledge-base-support",
-            "domain-support",
-            "客服知识库",
-            ShareScope.DOMAIN_SHARED,
-            "DOMAIN",
-            "domain-support",
-            "包含 FAQ、售后规则和人工协同说明的演示知识库",
-            "客服知识运营",
-            List.of("FAQ", "售后", "协同"),
-            null,
-            null,
-            List.of()
-        );
-        knowledgeBases.add(knowledgeBase);
-        knowledgeReleases.put(
-            knowledgeBase.id(),
-            List.of(new KnowledgeReleaseDto(
-                "knowledge-release-support-v1",
-                knowledgeBase.id(),
-                "1.0.0",
-                VersionStatus.PUBLISHED,
-                "客服知识库演示版",
-                "snapshot-kb-support-v1",
-                new KnowledgeRetrievalProfileDto(5, "HYBRID", 0.1),
-                Instant.now(),
-                Instant.now()
-            ))
-        );
     }
 
     private CatalogRepository.CatalogSnapshot catalogSnapshot() {
