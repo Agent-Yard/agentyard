@@ -58,12 +58,69 @@ public class JdbcCatalogRepository implements CatalogRepository {
         replaceMappedLists("catalog_resource_versions", "resource_id", snapshot.resourceVersions());
         replaceMappedLists("catalog_assistant_releases", "assistant_id", snapshot.assistantReleases());
         replaceMappedObjects("catalog_orchestration", "assistant_id", snapshot.orchestrations());
+
+        replaceResourceBindings(snapshot);
+        replaceKnowledgeBindings(snapshot);
+        replaceReleaseResources(snapshot);
+        replaceReleaseKnowledge(snapshot);
     }
 
     @Override
     public boolean isEmpty() {
         Integer count = jdbcTemplate.queryForObject("select count(*) from catalog_domain", Integer.class);
         return count == null || count == 0;
+    }
+
+    @Override
+    public List<ResourceBindingRef> findResourceBindings(String resourceId) {
+        return jdbcTemplate.query(
+            "select source_type, source_id, resource_id, binding_kind from catalog_ref_resource_binding where resource_id = ?",
+            (rs, rowNum) -> new ResourceBindingRef(rs.getString("source_type"), rs.getString("source_id"), rs.getString("resource_id"), rs.getString("binding_kind")),
+            resourceId
+        );
+    }
+
+    @Override
+    public List<ReleaseResourceRef> findReleaseResourceRefs(String resourceId) {
+        return jdbcTemplate.query(
+            "select release_id, assistant_id, resource_id, resource_version_id, resource_version from catalog_ref_release_resource where resource_id = ?",
+            (rs, rowNum) -> new ReleaseResourceRef(rs.getString("release_id"), rs.getString("assistant_id"), rs.getString("resource_id"), rs.getString("resource_version_id"), rs.getString("resource_version")),
+            resourceId
+        );
+    }
+
+    @Override
+    public List<KnowledgeBindingRef> findKnowledgeBindings(String knowledgeBaseId) {
+        return jdbcTemplate.query(
+            "select source_type, source_id, knowledge_base_id, binding_kind from catalog_ref_knowledge_binding where knowledge_base_id = ?",
+            (rs, rowNum) -> new KnowledgeBindingRef(rs.getString("source_type"), rs.getString("source_id"), rs.getString("knowledge_base_id"), rs.getString("binding_kind")),
+            knowledgeBaseId
+        );
+    }
+
+    @Override
+    public List<ReleaseKnowledgeRef> findReleaseKnowledgeRefs(String knowledgeBaseId) {
+        return jdbcTemplate.query(
+            "select release_id, assistant_id, knowledge_base_id, knowledge_release_id from catalog_ref_release_knowledge where knowledge_base_id = ?",
+            (rs, rowNum) -> new ReleaseKnowledgeRef(rs.getString("release_id"), rs.getString("assistant_id"), rs.getString("knowledge_base_id"), rs.getString("knowledge_release_id")),
+            knowledgeBaseId
+        );
+    }
+
+    @Override
+    public List<ResourceBindingRef> findAllResourceBindings() {
+        return jdbcTemplate.query(
+            "select source_type, source_id, resource_id, binding_kind from catalog_ref_resource_binding",
+            (rs, rowNum) -> new ResourceBindingRef(rs.getString("source_type"), rs.getString("source_id"), rs.getString("resource_id"), rs.getString("binding_kind"))
+        );
+    }
+
+    @Override
+    public List<ReleaseResourceRef> findAllReleaseResourceRefs() {
+        return jdbcTemplate.query(
+            "select release_id, assistant_id, resource_id, resource_version_id, resource_version from catalog_ref_release_resource",
+            (rs, rowNum) -> new ReleaseResourceRef(rs.getString("release_id"), rs.getString("assistant_id"), rs.getString("resource_id"), rs.getString("resource_version_id"), rs.getString("resource_version"))
+        );
     }
 
     private <T> List<T> loadList(String table, Class<T> type) {
@@ -166,5 +223,97 @@ public class JdbcCatalogRepository implements CatalogRepository {
         } catch (JsonProcessingException error) {
             throw new IllegalStateException("failed to deserialize catalog payload list", error);
         }
+    }
+
+    private void replaceResourceBindings(CatalogSnapshot snapshot) {
+        jdbcTemplate.update("delete from catalog_ref_resource_binding");
+        for (AssistantDto assistant : snapshot.assistants()) {
+            if (assistant.modelPolicy() != null && assistant.modelPolicy().providerResourceId() != null) {
+                insertResourceBinding("ASSISTANT", assistant.id(), assistant.modelPolicy().providerResourceId(), "ASSISTANT_DEFAULT_MODEL");
+            }
+        }
+        for (AgentDto agent : snapshot.agents()) {
+            AgentExecutionPolicyDto policy = agent.executionPolicy();
+            if (policy == null) continue;
+            if (policy.modelResourceId() != null) {
+                insertResourceBinding("AGENT", agent.id(), policy.modelResourceId(), "AGENT_OVERRIDE_MODEL");
+            }
+            for (String skillId : safe(policy.skillResourceIds())) {
+                insertResourceBinding("AGENT", agent.id(), skillId, "AGENT_SKILL_ENABLED");
+            }
+            for (String toolId : safe(policy.toolResourceIds())) {
+                insertResourceBinding("AGENT", agent.id(), toolId, "AGENT_TOOL_ENABLED");
+            }
+        }
+    }
+
+    private void insertResourceBinding(String sourceType, String sourceId, String resourceId, String bindingKind) {
+        jdbcTemplate.update(
+            "insert into catalog_ref_resource_binding (source_type, source_id, resource_id, binding_kind) values (?, ?, ?, ?)",
+            sourceType, sourceId, resourceId, bindingKind
+        );
+    }
+
+    private void replaceKnowledgeBindings(CatalogSnapshot snapshot) {
+        jdbcTemplate.update("delete from catalog_ref_knowledge_binding");
+        for (AssistantDto assistant : snapshot.assistants()) {
+            if (assistant.ragPolicy() != null && assistant.ragPolicy().enabled() && assistant.ragPolicy().knowledgeBaseId() != null) {
+                insertKnowledgeBinding("ASSISTANT", assistant.id(), assistant.ragPolicy().knowledgeBaseId(), "ASSISTANT_DEFAULT_KNOWLEDGE_BASE");
+            }
+        }
+        for (AgentDto agent : snapshot.agents()) {
+            AgentExecutionPolicyDto policy = agent.executionPolicy();
+            if (policy == null) continue;
+            if (policy.ragEnabled() && !policy.inheritAssistantKnowledge() && policy.knowledgeBaseId() != null) {
+                insertKnowledgeBinding("AGENT", agent.id(), policy.knowledgeBaseId(), "AGENT_OVERRIDE_KNOWLEDGE_BASE");
+            }
+        }
+    }
+
+    private void insertKnowledgeBinding(String sourceType, String sourceId, String knowledgeBaseId, String bindingKind) {
+        jdbcTemplate.update(
+            "insert into catalog_ref_knowledge_binding (source_type, source_id, knowledge_base_id, binding_kind) values (?, ?, ?, ?)",
+            sourceType, sourceId, knowledgeBaseId, bindingKind
+        );
+    }
+
+    private void replaceReleaseResources(CatalogSnapshot snapshot) {
+        jdbcTemplate.update("delete from catalog_ref_release_resource");
+        for (Map.Entry<String, List<AssistantReleaseDto>> entry : snapshot.assistantReleases().entrySet()) {
+            String assistantId = entry.getKey();
+            for (AssistantReleaseDto release : entry.getValue()) {
+                for (AssistantReleaseResourceDto res : safe(release.resources())) {
+                    jdbcTemplate.update(
+                        "insert into catalog_ref_release_resource (release_id, assistant_id, resource_id, resource_version_id, resource_version) values (?, ?, ?, ?, ?)",
+                        release.id(), assistantId, res.resourceId(), res.resourceVersionId(), res.resourceVersion()
+                    );
+                }
+            }
+        }
+    }
+
+    private void replaceReleaseKnowledge(CatalogSnapshot snapshot) {
+        jdbcTemplate.update("delete from catalog_ref_release_knowledge");
+        for (Map.Entry<String, List<AssistantReleaseDto>> entry : snapshot.assistantReleases().entrySet()) {
+            String assistantId = entry.getKey();
+            for (AssistantReleaseDto release : entry.getValue()) {
+                insertReleaseKnowledgeIfPresent(release.id(), assistantId, release.assistantKnowledge());
+                for (AssistantReleaseAgentDto agent : safe(release.agents())) {
+                    insertReleaseKnowledgeIfPresent(release.id(), assistantId, agent.knowledge());
+                }
+            }
+        }
+    }
+
+    private void insertReleaseKnowledgeIfPresent(String releaseId, String assistantId, KnowledgeBindingSnapshotDto binding) {
+        if (binding == null || binding.knowledgeBaseId() == null) return;
+        jdbcTemplate.update(
+            "insert into catalog_ref_release_knowledge (release_id, assistant_id, knowledge_base_id, knowledge_release_id) values (?, ?, ?, ?) on conflict do nothing",
+            releaseId, assistantId, binding.knowledgeBaseId(), binding.knowledgeReleaseId()
+        );
+    }
+
+    private <T> List<T> safe(List<T> list) {
+        return list == null ? List.of() : list;
     }
 }

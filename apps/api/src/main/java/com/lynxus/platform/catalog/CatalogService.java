@@ -768,6 +768,7 @@ public class CatalogService {
         }
         restore(repository.load());
         initialized = true;
+        persistState(); // backfill reference projection tables
     }
 
     private void seed() {
@@ -1628,6 +1629,10 @@ public class CatalogService {
     }
 
     private String findResourceVersionDeletionBlocker(String versionId) {
+        // Release-frozen refs are the only ones that carry resourceVersionId, but they don't block deletion.
+        // Active bindings block deletion but don't reference specific versions.
+        // So we still need to scan for the edge case where a specific version is frozen in a release
+        // that was marked as blocking (currently none are, but keep the logic correct).
         return resources.stream()
             .map(this::toResourceView)
             .flatMap(resource -> listResourceReferences(resource).stream())
@@ -1640,46 +1645,25 @@ public class CatalogService {
 
     private List<ResourceReferenceDto> listResourceReferences(ResourceDto resource) {
         List<ResourceReferenceDto> references = new ArrayList<>();
-        for (AssistantDto assistant : assistants) {
-            if (resource.id().equals(assistant.modelPolicy().providerResourceId())) {
-                references.add(toResourceReference(resource, "ASSISTANT_DEFAULT_MODEL", "ASSISTANT", assistant.id(), assistant.name(), null, null, true));
-            }
+
+        for (CatalogRepository.ResourceBindingRef ref : repository.findResourceBindings(resource.id())) {
+            String sourceName = resolveSourceName(ref.sourceType(), ref.sourceId());
+            references.add(toResourceReference(resource, ref.bindingKind(), ref.sourceType(), ref.sourceId(), sourceName, null, null, true));
         }
 
-        for (AgentDto agent : agents) {
-            if (resource.id().equals(agent.executionPolicy().modelResourceId())) {
-                references.add(toResourceReference(resource, "AGENT_OVERRIDE_MODEL", "AGENT", agent.id(), agent.name(), null, null, true));
-            }
-            if (agent.executionPolicy().skillResourceIds().contains(resource.id())) {
-                references.add(toResourceReference(resource, "AGENT_SKILL_ENABLED", "AGENT", agent.id(), agent.name(), null, null, true));
-            }
-            if (agent.executionPolicy().toolResourceIds().contains(resource.id())) {
-                references.add(toResourceReference(resource, "AGENT_TOOL_ENABLED", "AGENT", agent.id(), agent.name(), null, null, true));
-            }
-        }
-
-        for (Map.Entry<String, List<AssistantReleaseDto>> entry : assistantReleases.entrySet()) {
-            AssistantDto assistant = assistants.stream()
-                .filter(item -> item.id().equals(entry.getKey()))
-                .findFirst()
-                .orElse(null);
-            String assistantName = assistant == null ? entry.getKey() : assistant.name();
-            for (AssistantReleaseDto release : entry.getValue()) {
-                for (AssistantReleaseResourceDto releaseResource : release.resources()) {
-                    if (resource.id().equals(releaseResource.resourceId())) {
-                        references.add(toResourceReference(
-                            resource,
-                            "RELEASE_FROZEN",
-                            "ASSISTANT_RELEASE",
-                            release.id(),
-                            assistantName + "@" + release.releaseVersion(),
-                            releaseResource.resourceVersionId(),
-                            releaseResource.resourceVersion(),
-                            false
-                        ));
-                    }
-                }
-            }
+        for (CatalogRepository.ReleaseResourceRef ref : repository.findReleaseResourceRefs(resource.id())) {
+            String assistantName = resolveSourceName("ASSISTANT", ref.assistantId());
+            String releaseVersion = findReleaseVersion(ref.assistantId(), ref.releaseId());
+            references.add(toResourceReference(
+                resource,
+                "RELEASE_FROZEN",
+                "ASSISTANT_RELEASE",
+                ref.releaseId(),
+                assistantName + "@" + releaseVersion,
+                ref.resourceVersionId(),
+                ref.resourceVersion(),
+                false
+            ));
         }
 
         references.sort(Comparator
@@ -1687,6 +1671,26 @@ public class CatalogService {
             .thenComparing(ResourceReferenceDto::sourceName)
             .thenComparing(reference -> reference.resourceVersionId() == null ? "" : reference.resourceVersionId()));
         return references;
+    }
+
+    private String resolveSourceName(String sourceType, String sourceId) {
+        return switch (sourceType) {
+            case "ASSISTANT" -> assistants.stream()
+                .filter(a -> a.id().equals(sourceId)).findFirst()
+                .map(AssistantDto::name).orElse(sourceId);
+            case "AGENT" -> agents.stream()
+                .filter(a -> a.id().equals(sourceId)).findFirst()
+                .map(AgentDto::name).orElse(sourceId);
+            default -> sourceId;
+        };
+    }
+
+    private String findReleaseVersion(String assistantId, String releaseId) {
+        List<AssistantReleaseDto> releases = assistantReleases.get(assistantId);
+        if (releases == null) return releaseId;
+        return releases.stream()
+            .filter(r -> r.id().equals(releaseId)).findFirst()
+            .map(AssistantReleaseDto::releaseVersion).orElse(releaseId);
     }
 
     private ResourceReferenceDto toResourceReference(
