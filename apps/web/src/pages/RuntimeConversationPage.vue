@@ -217,6 +217,22 @@ function formatSharedState(value?: { facts: Record<string, unknown>; artifacts: 
                 :description="`当前流程 ${latestWorkflow.id} 正在后台执行，页面会通过轮询自动刷新运行结果。`"
                 style="margin-bottom: 16px"
               />
+              <a-alert
+                v-else-if="latestWorkflow?.status === 'FAILED' && latestWorkflow.latestFailure"
+                type="error"
+                show-icon
+                message="workflow 执行失败"
+                :description="`${latestWorkflow.latestFailure.category} / ${latestWorkflow.latestFailure.code} / ${latestWorkflow.latestFailure.rootCause}`"
+                style="margin-bottom: 16px"
+              />
+              <a-alert
+                v-else-if="latestWorkflow?.status === 'WAITING_HUMAN' && latestWorkflow.latestFailure"
+                type="warning"
+                show-icon
+                message="workflow 后台出错，已转人工处理"
+                :description="`${latestWorkflow.latestFailure.category} / ${latestWorkflow.latestFailure.code} / ${latestWorkflow.latestFailure.rootCause}`"
+                style="margin-bottom: 16px"
+              />
               <a-spin :spinning="isCurrentSessionSending">
                 <div class="conversation-board" :class="{ 'conversation-board--empty': currentSession.messages.length === 0 }">
                   <template v-if="currentSession.messages.length">
@@ -321,6 +337,11 @@ function formatSharedState(value?: { facts: Record<string, unknown>; artifacts: 
                   {{ currentSession?.latestPauseReason
                     ? `${currentSession.latestPauseReason.code} / ${currentSession.latestPauseReason.detail}`
                     : '当前无挂起原因' }}
+                </a-descriptions-item>
+                <a-descriptions-item label="失败诊断">
+                  {{ latestWorkflow.latestFailure
+                    ? `${latestWorkflow.latestFailure.category} / ${latestWorkflow.latestFailure.code} / ${latestWorkflow.latestFailure.rootCause}`
+                    : '当前无结构化失败信息' }}
                 </a-descriptions-item>
                 <a-descriptions-item label="资源锚点">{{ latestWorkflow.resourceAnchors.join(' / ') }}</a-descriptions-item>
               </a-descriptions>

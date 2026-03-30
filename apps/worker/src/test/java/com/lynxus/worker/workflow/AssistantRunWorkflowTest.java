@@ -43,6 +43,7 @@ class AssistantRunWorkflowTest {
                         new WorkflowContracts.ExecutionCheckpoint("cp-1", "handoff-close", "human-review", "{}", 0),
                         new WorkflowContracts.HumanTaskSnapshot("human-review", "人工介入待办", "请人工确认并补充处理意见。", "补充处理意见并确认后续动作", "GRAPH_NODE", List.of("CONFIRM", "TERMINATE")),
                         new WorkflowContracts.PauseReasonSnapshot("GRAPH_HUMAN_NODE", "请人工确认并补充处理意见。", "GRAPH_NODE"),
+                        null,
                         List.of(new WorkflowContracts.NodeSnapshot("human-review", "人工介入", WorkflowContracts.NodeStatus.WAITING_HUMAN, "等待人工", Instant.now())),
                         List.of(),
                         true,
@@ -70,6 +71,7 @@ class AssistantRunWorkflowTest {
                         null,
                         null,
                         null,
+                        null,
                         List.of(new WorkflowContracts.NodeSnapshot("end", "结束", WorkflowContracts.NodeStatus.COMPLETED, "流程结束", Instant.now())),
                         List.of(),
                         false,
@@ -91,6 +93,7 @@ class AssistantRunWorkflowTest {
                     "人工处理已完成",
                     "人工处理已完成，已同步客户。",
                     "end",
+                    null,
                     null,
                     null,
                     null,
@@ -165,6 +168,8 @@ class AssistantRunWorkflowTest {
 
         assertEquals(WorkflowStatus.FAILED, failed.status());
         assertNotNull(failed.summary());
+        assertNotNull(failed.latestFailure());
+        assertEquals("WORKFLOW_ACTIVITY_FAILURE", failed.latestFailure().code());
     }
 
     @Test
@@ -188,6 +193,7 @@ class AssistantRunWorkflowTest {
                     "问题已自动处理完成。",
                     "请通过登录页的忘记密码完成密码重置。",
                     "end",
+                    null,
                     null,
                     null,
                     null,

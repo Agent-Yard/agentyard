@@ -9,6 +9,15 @@ export type OrchestrationNodeType = 'START' | 'AGENT' | 'HUMAN' | 'END';
 export type HumanTaskSource = 'GRAPH_NODE' | 'AGENT_REQUEST';
 export type HumanActionType = 'CONFIRM' | 'TERMINATE';
 export type DecisionType = 'FINAL' | 'TOOL_CALL' | 'SKILL_READ' | 'HUMAN_HANDOFF';
+export type WorkflowFailureCategory =
+  | 'TIMEOUT'
+  | 'PROVIDER_FAILURE'
+  | 'TOOL_FAILURE'
+  | 'PARSING_FAILURE'
+  | 'VALIDATION_FAILURE'
+  | 'CONFIGURATION_FAILURE'
+  | 'RUNTIME_FAILURE'
+  | 'UNKNOWN';
 export type SessionStatePatchTarget = 'FACTS' | 'ARTIFACTS' | 'AGENT_SCOPE';
 export type SessionStatePatchOpType = 'UPSERT' | 'REMOVE';
 
@@ -58,6 +67,18 @@ export interface PauseReasonSnapshot {
   code: string;
   detail: string;
   source: HumanTaskSource;
+}
+
+export interface WorkflowFailureSnapshot {
+  category: WorkflowFailureCategory;
+  code: string;
+  rootCause: string;
+  detail: string;
+  failedNodeKey: string | null;
+  failedNodeName: string | null;
+  failedResourceId: string | null;
+  failedResourceName: string | null;
+  occurredAt: string;
 }
 
 export interface ToolInvocationSnapshot {
@@ -315,6 +336,7 @@ export interface WorkflowInstance {
   checkpoint: ExecutionCheckpoint | null;
   humanTask: HumanTaskSnapshot | null;
   pauseReason: PauseReasonSnapshot | null;
+  latestFailure: WorkflowFailureSnapshot | null;
   latestToolOutcome: ToolOutcomeSummary | null;
   resourceAnchors: string[];
   nodes: NodeExecution[];

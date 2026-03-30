@@ -52,6 +52,7 @@ class InMemoryRuntimeRepositoryTest {
             new ExecutionCheckpoint("cp-1", "resume", "human-review", "{\"step\":1}", 1),
             new HumanTaskSnapshot("human-review", "人工待办", "请审核", "填写备注", "GRAPH_NODE", List.of("CONFIRM")),
             new PauseReasonSnapshot("GRAPH_HUMAN_NODE", "需要人工审核", "GRAPH_NODE"),
+            null,
             new ToolOutcomeSummary("resource-tool", "工单工具", "create_ticket", "MCP", Map.of("ticketId", "T-1")),
             List.of("tool@v1"),
             List.of(new NodeExecutionDto("node-1", "wf-1", "human-review", "人工审核", NodeStatus.WAITING_HUMAN, "等待人工", now)),

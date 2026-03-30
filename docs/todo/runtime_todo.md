@@ -56,25 +56,36 @@
 2. 为 demo seed 增加版本戳或迁移策略，必要时自动重建旧演示数据
 3. 在控制台明确展示草稿模型、发布冻结模型和运行命中模型三层语义
 
-## 3. 增强 workflow 失败可观测性
+## 3. 已完成：增强 workflow 失败可观测性
 
-现状：
+当前状态：
 
-- workflow 失败时已经尽量写回 `FAILED`
-- `WorkflowResult` 已经能带回 `summary`、节点轨迹、`latestToolOutcome` 等信息
-- 会话页和流程页已经能看到基础运行状态
+- `WorkflowResult` / `WorkflowInstance` 已新增 `latestFailure`
+- `latestFailure` 已持久化到 `workflow_instance.latest_failure jsonb`
+- Web 流程观测页和会话页都能直接展示 `category / code / rootCause / failedNode / failedResource / occurredAt`
+- 错误转人工时同时保留：
+  - `pauseReason`：表达“为什么当前在等人工”
+  - `latestFailure`：表达“最近一次结构化失败诊断”
 
-当前缺口：
+当前规则：
 
-- 失败原因还不够结构化，root cause、失败节点和失败资源没有稳定单独字段
-- 不同失败类型还没有统一错误码体系
-- LLM / Tool / MCP / runtime 内部解析失败的展示口径还不够一致
+1. `FAILED` workflow 会保留结构化 failure snapshot
+2. 因错误进入 `WAITING_HUMAN` 的 workflow 也会保留结构化 failure snapshot
+3. 纯业务暂停不写 `latestFailure`：
+   - `GRAPH_HUMAN_NODE`
+   - `HUMAN_HANDOFF_REQUESTED`
+4. workflow 后续恢复或完成后，当前投影不会主动清空 `latestFailure`；在完整审计表出现前，它承担最近一次排障线索沉淀
 
-后续目标：
+当前覆盖的失败分类：
 
-1. 在 workflow 详情中直接展示 root cause、失败节点和失败资源
-2. 区分 timeout、provider failure、tool failure、runtime parsing failure 等类型
-3. 为关键失败路径补充稳定错误码和更可读的错误摘要
+- `TIMEOUT`
+- `PROVIDER_FAILURE`
+- `TOOL_FAILURE`
+- `PARSING_FAILURE`
+- `VALIDATION_FAILURE`
+- `CONFIGURATION_FAILURE`
+- `RUNTIME_FAILURE`
+- `UNKNOWN`
 
 ## 4. 已完成：持久化 runtime 会话与运行观测投影
 

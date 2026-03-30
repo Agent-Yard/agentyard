@@ -36,6 +36,7 @@ from app.main import (
     build_structured_agent_prompt,
     build_system_prompt,
     build_tool_outcome,
+    categorize_agent_turn_error,
     call_http_tool,
     configure_runtime_logger,
     execute_agent_node,
@@ -198,6 +199,7 @@ def make_agent_state(assistant: AssistantRunSnapshot, graph: GraphSnapshot, ques
         "resume_count": 0,
         "agent_turn_state": {"phase": "IDLE", "turnIndex": 0, "turnLogs": []},
         "pause_reason": None,
+        "latest_failure": None,
         "workflow_status": "RUNNING",
     }
 
@@ -326,6 +328,9 @@ class MemoryPromptTests(unittest.TestCase):
 
         self.assertEqual("TOOL_RESPONSE_INVALID", captured.exception.code)
         self.assertIn("$.ticketId is required", captured.exception.message)
+
+    def test_categorize_agent_turn_error_maps_tool_schema_invalid_to_configuration_failure(self) -> None:
+        self.assertEqual("CONFIGURATION_FAILURE", categorize_agent_turn_error("TOOL_SCHEMA_INVALID"))
 
     def test_should_send_get_http_tool_payload_as_query_params(self) -> None:
         tool_resource = make_tool_resource()
@@ -753,6 +758,9 @@ class MemoryPromptTests(unittest.TestCase):
 
         self.assertIsNotNone(state["human_task"])
         self.assertIn("MODEL_OUTPUT_INVALID", state["summary"])
+        self.assertIsNotNone(state["latest_failure"])
+        self.assertEqual("PARSING_FAILURE", state["latest_failure"]["category"])
+        self.assertEqual("MODEL_OUTPUT_INVALID", state["latest_failure"]["code"])
 
     def test_parse_agent_structured_response_rejects_invalid_skill_reads(self) -> None:
         skill_resource = make_skill_resource("skill-v1", "FAQ 技能", "用于 FAQ 回答", "请基于知识库直接回答 FAQ。")
@@ -1240,6 +1248,59 @@ class MemoryPromptTests(unittest.TestCase):
 
         self.assertIsNotNone(state["human_task"])
         self.assertIn("ROUTE_INVALID", state["summary"])
+        self.assertIsNotNone(state["latest_failure"])
+        self.assertEqual("RUNTIME_FAILURE", state["latest_failure"]["category"])
+        self.assertEqual("ROUTE_INVALID", state["latest_failure"]["code"])
+
+    def test_execute_agent_node_missing_model_resource_pauses_for_human(self) -> None:
+        agent = make_agent(memory_window_size=4)
+        assistant = make_assistant(True, 4).model_copy(
+            update={
+                "agents": [agent],
+                "resources": [],
+                "assistantPolicy": AssistantPolicySnapshot(
+                    providerResourceId=None,
+                    providerResourceVersionId=None,
+                    memoryEnabled=True,
+                    memoryWindowSize=4,
+                ),
+            }
+        )
+        graph = GraphSnapshot(
+            executionMode="GRAPH",
+            nodes=[
+                GraphNodeSnapshot(nodeKey="start", nodeName="开始", nodeType="START", description="开始"),
+                GraphNodeSnapshot(
+                    nodeKey="agent-node",
+                    nodeName="售后节点",
+                    nodeType="AGENT",
+                    description="售后处理",
+                    agentId=agent.agentId,
+                ),
+                GraphNodeSnapshot(nodeKey="end", nodeName="结束", nodeType="END", description="结束"),
+            ],
+            edges=[
+                GraphEdgeSnapshot(
+                    edgeKey="edge-1",
+                    sourceNodeKey="agent-node",
+                    targetNodeKey="end",
+                    routeKey="default",
+                    label="默认",
+                    defaultEdge=True,
+                )
+            ],
+        )
+        state = make_agent_state(assistant, graph, question="帮我处理")
+
+        asyncio.run(execute_agent_node(state, graph.nodes[1]))
+
+        self.assertIsNotNone(state["human_task"])
+        self.assertEqual(state["human_task"]["source"], AGENT_HUMAN_TASK_SOURCE)
+        self.assertEqual(state["next_node_key"], "__end__")
+        self.assertIsNotNone(state["latest_failure"])
+        self.assertEqual("CONFIGURATION_FAILURE", state["latest_failure"]["category"])
+        self.assertEqual("MODEL_RESOURCE_MISSING", state["latest_failure"]["code"])
+        self.assertEqual("agent-node", state["latest_failure"]["failedNodeKey"])
 
     def test_execute_agent_node_tool_failure_pauses_for_human(self) -> None:
         model_resource = make_model_resource()
@@ -1308,6 +1369,10 @@ class MemoryPromptTests(unittest.TestCase):
         self.assertIsNotNone(state["human_task"])
         self.assertEqual(state["human_task"]["source"], AGENT_HUMAN_TASK_SOURCE)
         self.assertEqual(state["next_node_key"], "__end__")
+        self.assertIsNotNone(state["latest_failure"])
+        self.assertEqual("TOOL_FAILURE", state["latest_failure"]["category"])
+        self.assertEqual("TOOL_EXECUTION_FAILED", state["latest_failure"]["code"])
+        self.assertEqual(tool_resource.resourceId, state["latest_failure"]["failedResourceId"])
 
     def test_execute_agent_node_human_request_creates_checkpoint(self) -> None:
         model_resource = make_model_resource()
@@ -1368,6 +1433,7 @@ class MemoryPromptTests(unittest.TestCase):
         checkpoint_payload = __import__("json").loads(state["checkpoint"]["statePayload"])
         self.assertEqual(checkpoint_payload["pause_reason"]["code"], "HUMAN_HANDOFF_REQUESTED")
         self.assertIn("请人工确认退款凭证", checkpoint_payload["pause_reason"]["detail"])
+        self.assertIsNone(checkpoint_payload["latest_failure"])
 
     def test_agent_handoff_resume_reenters_agent_with_human_input(self) -> None:
         model_resource = make_model_resource()
@@ -1465,6 +1531,7 @@ class MemoryPromptTests(unittest.TestCase):
         self.assertEqual(initial_state["human_task"]["source"], AGENT_HUMAN_TASK_SOURCE)
         self.assertEqual(initial_state["human_task"]["allowedActions"], ["CONFIRM", "TERMINATE"])
         self.assertEqual(initial_state["checkpoint"]["currentNodeKey"], "agent-node")
+        self.assertIsNone(initial_state["latest_failure"])
         self.assertIsNone(resumed_state["human_task"])
         self.assertFalse(resumed_state["escalation_required"])
         self.assertIn("已根据人工说明完成处理。", resumed_state["final_reply"])
@@ -1519,6 +1586,7 @@ class MemoryPromptTests(unittest.TestCase):
 
         self.assertEqual(state["human_task"]["source"], "GRAPH_NODE")
         self.assertEqual(state["checkpoint"]["currentNodeKey"], "end")
+        self.assertIsNone(state["latest_failure"])
 
         session_context = SessionContext(
             sessionId="session-1",
@@ -1544,6 +1612,7 @@ class MemoryPromptTests(unittest.TestCase):
         self.assertEqual(restored["current_node_key"], "end")
         self.assertEqual(restored["human_input"]["comment"], "审核通过")
         self.assertEqual(restored["pause_reason"]["code"], "GRAPH_HUMAN_NODE")
+        self.assertIsNone(restored["latest_failure"])
 
     def test_restore_state_prefers_resume_session_shared_state(self) -> None:
         assistant = make_assistant(True, 4)

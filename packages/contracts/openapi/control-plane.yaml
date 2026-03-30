@@ -1441,6 +1441,43 @@ components:
           enum:
             - GRAPH_NODE
             - AGENT_REQUEST
+    WorkflowFailureCategory:
+      type: string
+      enum:
+        - TIMEOUT
+        - PROVIDER_FAILURE
+        - TOOL_FAILURE
+        - PARSING_FAILURE
+        - VALIDATION_FAILURE
+        - CONFIGURATION_FAILURE
+        - RUNTIME_FAILURE
+        - UNKNOWN
+    WorkflowFailureSnapshot:
+      type: object
+      properties:
+        category:
+          $ref: '#/components/schemas/WorkflowFailureCategory'
+        code:
+          type: string
+        rootCause:
+          type: string
+        detail:
+          type: string
+        failedNodeKey:
+          type: string
+          nullable: true
+        failedNodeName:
+          type: string
+          nullable: true
+        failedResourceId:
+          type: string
+          nullable: true
+        failedResourceName:
+          type: string
+          nullable: true
+        occurredAt:
+          type: string
+          format: date-time
     ToolOutcomeSummary:
       type: object
       properties:
@@ -1699,6 +1736,10 @@ components:
         pauseReason:
           allOf:
             - $ref: '#/components/schemas/PauseReasonSnapshot'
+          nullable: true
+        latestFailure:
+          allOf:
+            - $ref: '#/components/schemas/WorkflowFailureSnapshot'
           nullable: true
         latestToolOutcome:
           allOf:

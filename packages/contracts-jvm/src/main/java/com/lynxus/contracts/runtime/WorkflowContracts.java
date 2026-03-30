@@ -88,6 +88,17 @@ public final class WorkflowContracts {
         HUMAN_HANDOFF
     }
 
+    public enum WorkflowFailureCategory {
+        TIMEOUT,
+        PROVIDER_FAILURE,
+        TOOL_FAILURE,
+        PARSING_FAILURE,
+        VALIDATION_FAILURE,
+        CONFIGURATION_FAILURE,
+        RUNTIME_FAILURE,
+        UNKNOWN
+    }
+
     public enum SessionStatePatchTarget {
         FACTS,
         ARTIFACTS,
@@ -445,6 +456,19 @@ public final class WorkflowContracts {
     ) {
     }
 
+    public record WorkflowFailureSnapshot(
+        WorkflowFailureCategory category,
+        String code,
+        String rootCause,
+        String detail,
+        String failedNodeKey,
+        String failedNodeName,
+        String failedResourceId,
+        String failedResourceName,
+        Instant occurredAt
+    ) {
+    }
+
     public record ToolOutcomeSummary(
         String toolResourceId,
         String toolResourceName,
@@ -472,6 +496,7 @@ public final class WorkflowContracts {
         ExecutionCheckpoint checkpoint,
         HumanTaskSnapshot humanTask,
         PauseReasonSnapshot pauseReason,
+        WorkflowFailureSnapshot latestFailure,
         List<NodeSnapshot> nodes,
         List<ToolInvocationSnapshot> toolCalls,
         boolean escalationRequired,

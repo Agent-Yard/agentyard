@@ -50,6 +50,8 @@ import com.lynxus.contracts.runtime.WorkflowContracts.TaskStatus;
 import com.lynxus.contracts.runtime.WorkflowContracts.ToolConfig;
 import com.lynxus.contracts.runtime.WorkflowContracts.ToolOperationConfig;
 import com.lynxus.contracts.runtime.WorkflowContracts.ToolOutcomeSummary;
+import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowFailureCategory;
+import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowFailureSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowResult;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowStartRequest;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowStatus;
@@ -216,7 +218,11 @@ public class RuntimeService {
             ));
             return startedSession;
         } catch (RuntimeException error) {
-            WorkflowInstanceDto workflow = failedWorkflow(prepared, describeFailure(error));
+            WorkflowInstanceDto workflow = failedWorkflow(
+                prepared,
+                "WORKFLOW_START_SUBMISSION_FAILED",
+                describeFailure(error)
+            );
             TaskInstanceDto task = withTaskStatus(prepared.task(), TaskStatus.FAILED);
             ConversationSessionDto failedSession = refreshSessionForWorkflow(startedSession, prepared.workflow(), workflow);
             runtimeRepository.persistProjection(task, workflow, failedSession, null);
@@ -272,7 +278,24 @@ public class RuntimeService {
             return updated;
         } catch (RuntimeException error) {
             HumanInterventionDto failedIntervention = markInterventionFailed(intervention, describeFailure(error));
+            WorkflowInstanceDto failedWorkflow = withLatestFailure(
+                existing,
+                new WorkflowFailureSnapshot(
+                    WorkflowFailureCategory.RUNTIME_FAILURE,
+                    "WORKFLOW_RESUME_SUBMISSION_FAILED",
+                    describeFailure(error),
+                    describeFailure(error),
+                    existing.currentNodeKey(),
+                    null,
+                    null,
+                    null,
+                    Instant.now()
+                )
+            );
             runtimeRepository.saveHumanIntervention(failedIntervention);
+            TaskInstanceDto task = runtimeRepository.findTaskByWorkflowInstanceId(workflowId).orElseThrow();
+            ConversationSessionDto session = findSessionByWorkflowId(workflowId).orElse(null);
+            runtimeRepository.persistProjection(task, failedWorkflow, session, failedIntervention);
             throw error;
         }
     }
@@ -293,7 +316,11 @@ public class RuntimeService {
             ));
             return new TurnExecutionResult(prepared.task(), prepared.workflow(), prepared.workflow().summary());
         } catch (RuntimeException error) {
-            WorkflowInstanceDto workflow = failedWorkflow(prepared, describeFailure(error));
+            WorkflowInstanceDto workflow = failedWorkflow(
+                prepared,
+                "WORKFLOW_START_SUBMISSION_FAILED",
+                describeFailure(error)
+            );
             TaskInstanceDto task = withTaskStatus(prepared.task(), TaskStatus.FAILED);
             runtimeRepository.persistProjection(task, workflow, null, null);
             return new TurnExecutionResult(task, workflow, firstNonBlank(workflow.finalReply(), workflow.summary()));
@@ -359,6 +386,7 @@ public class RuntimeService {
             null,
             null,
             null,
+            null,
             resourceAnchors,
             List.of(node(workflowId, "workflow-submitted", "流程提交", NodeStatus.RUNNING, "已提交到 Temporal 工作流队列")),
             List.of(),
@@ -375,6 +403,7 @@ public class RuntimeService {
         WorkflowResult result,
         List<HumanInterventionDto> interventions
     ) {
+        WorkflowFailureSnapshot latestFailure = result.latestFailure() == null ? existing.latestFailure() : result.latestFailure();
         return new WorkflowInstanceDto(
             existing.id(),
             existing.taskId(),
@@ -391,6 +420,7 @@ public class RuntimeService {
             result.checkpoint(),
             result.humanTask(),
             result.pauseReason(),
+            latestFailure,
             result.latestToolOutcome(),
             existing.resourceAnchors(),
             result.nodes().stream()
@@ -477,6 +507,7 @@ public class RuntimeService {
             || !Objects.equals(previous.finalReply(), updated.finalReply())
             || !Objects.equals(session.latestHumanTask(), updated.humanTask())
             || !Objects.equals(session.latestPauseReason(), updated.pauseReason())
+            || !Objects.equals(previous.latestFailure(), updated.latestFailure())
             || !Objects.equals(session.latestToolOutcome(), updated.latestToolOutcome())
             || !Objects.equals(session.sharedState(), updated.sharedState())
             || !Objects.equals(previous.agentTurnState(), updated.agentTurnState())
@@ -991,12 +1022,42 @@ public class RuntimeService {
             workflow.checkpoint(),
             null,
             null,
+            workflow.latestFailure(),
             workflow.latestToolOutcome(),
             workflow.resourceAnchors(),
             append(
                 workflow.nodes(),
                 node(workflow.id(), "workflow-resuming", "流程恢复", NodeStatus.RUNNING, "已收到人工动作，流程继续执行中。")
             ),
+            workflow.toolCalls(),
+            workflow.interventions(),
+            workflow.loadedSkillResourceVersionIds(),
+            workflow.sharedState(),
+            workflow.agentTurnState() == null ? AgentTurnState.empty() : workflow.agentTurnState()
+        );
+    }
+
+    private WorkflowInstanceDto withLatestFailure(WorkflowInstanceDto workflow, WorkflowFailureSnapshot latestFailure) {
+        return new WorkflowInstanceDto(
+            workflow.id(),
+            workflow.taskId(),
+            workflow.assistantId(),
+            workflow.assistantName(),
+            workflow.assistantReleaseVersion(),
+            workflow.createdAt(),
+            Instant.now(),
+            workflow.status(),
+            workflow.summary(),
+            workflow.finalReply(),
+            workflow.currentNodeKey(),
+            workflow.escalationRequired(),
+            workflow.checkpoint(),
+            workflow.humanTask(),
+            workflow.pauseReason(),
+            latestFailure,
+            workflow.latestToolOutcome(),
+            workflow.resourceAnchors(),
+            workflow.nodes(),
             workflow.toolCalls(),
             workflow.interventions(),
             workflow.loadedSkillResourceVersionIds(),
@@ -1016,7 +1077,18 @@ public class RuntimeService {
             || (latest.checkpoint() != null && latest.checkpoint().resumeCount() > 0);
     }
 
-    private WorkflowInstanceDto failedWorkflow(PreparedTurn prepared, String failureDetail) {
+    private WorkflowInstanceDto failedWorkflow(PreparedTurn prepared, String failureCode, String failureDetail) {
+        WorkflowFailureSnapshot latestFailure = new WorkflowFailureSnapshot(
+            WorkflowFailureCategory.RUNTIME_FAILURE,
+            failureCode,
+            failureDetail,
+            failureDetail,
+            null,
+            null,
+            null,
+            null,
+            Instant.now()
+        );
         return new WorkflowInstanceDto(
             prepared.workflow().id(),
             prepared.task().id(),
@@ -1033,6 +1105,7 @@ public class RuntimeService {
             null,
             null,
             null,
+            latestFailure,
             null,
             prepared.workflow().resourceAnchors(),
             List.of(node(prepared.workflow().id(), "workflow-failed", "流程执行失败", NodeStatus.FAILED, failureDetail)),
@@ -1147,6 +1220,7 @@ public class RuntimeService {
     }
 
     private static boolean matchesWorkflowResult(WorkflowInstanceDto existing, WorkflowResult result) {
+        WorkflowFailureSnapshot latestFailure = result.latestFailure() == null ? existing.latestFailure() : result.latestFailure();
         return existing.status() == result.status()
             && Objects.equals(existing.summary(), result.summary())
             && Objects.equals(existing.finalReply(), result.finalReply())
@@ -1155,6 +1229,7 @@ public class RuntimeService {
             && Objects.equals(existing.checkpoint(), result.checkpoint())
             && Objects.equals(existing.humanTask(), result.humanTask())
             && Objects.equals(existing.pauseReason(), result.pauseReason())
+            && Objects.equals(existing.latestFailure(), latestFailure)
             && Objects.equals(existing.latestToolOutcome(), result.latestToolOutcome())
             && Objects.equals(existing.loadedSkillResourceVersionIds(), result.loadedSkillResourceVersionIds())
             && Objects.equals(existing.sharedState(), result.sharedState())

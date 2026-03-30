@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue';
 import type { HumanActionType, HumanTaskSource, WorkflowInstance } from '../types';
+import { failureAlertDescription, failureAlertMessage, failureAlertType, failureSummary, hasActiveFailure } from './workflowFailure';
 
 const props = defineProps<{
   workflow?: WorkflowInstance;
@@ -33,6 +34,8 @@ const filteredWorkflows = computed(() => {
       item.id,
       item.assistantName,
       item.summary,
+      item.latestFailure?.code ?? '',
+      item.latestFailure?.rootCause ?? '',
       item.currentNodeKey ?? '',
       item.finalReply ?? '',
     ].some((value) => value.toLowerCase().includes(keyword));
@@ -119,6 +122,19 @@ function formatDecision(value?: WorkflowInstance['agentTurnState'] | null) {
   }
   return parts.join(' / ');
 }
+
+function formatFailureLocation(workflow: WorkflowInstance) {
+  if (!workflow.latestFailure) {
+    return '无';
+  }
+  const node = workflow.latestFailure.failedNodeKey
+    ? `${workflow.latestFailure.failedNodeName ?? workflow.latestFailure.failedNodeKey} / ${workflow.latestFailure.failedNodeKey}`
+    : '';
+  const resource = workflow.latestFailure.failedResourceId
+    ? `${workflow.latestFailure.failedResourceName ?? workflow.latestFailure.failedResourceId} / ${workflow.latestFailure.failedResourceId}`
+    : '';
+  return [node, resource].filter(Boolean).join(' | ') || '无';
+}
 </script>
 
 <template>
@@ -153,6 +169,7 @@ function formatDecision(value?: WorkflowInstance['agentTurnState'] | null) {
                 <template #extra>
                   <a-space direction="vertical" size="small" style="align-items: flex-end">
                     <a-tag :color="workflowTagColor(item.status)">{{ item.status }}</a-tag>
+                    <span v-if="hasActiveFailure(item)" style="max-width: 180px; text-align: right">{{ failureSummary(item) }}</span>
                     <span>{{ formatDateTime(item.updatedAt) }}</span>
                   </a-space>
                 </template>
@@ -187,6 +204,9 @@ function formatDecision(value?: WorkflowInstance['agentTurnState'] | null) {
             <a-descriptions-item label="挂起原因">
               {{ current.pauseReason ? `${current.pauseReason.code} / ${current.pauseReason.detail}` : '无' }}
             </a-descriptions-item>
+            <a-descriptions-item label="失败诊断">
+              {{ current.latestFailure ? `${current.latestFailure.category} / ${current.latestFailure.code}` : '无' }}
+            </a-descriptions-item>
             <a-descriptions-item label="工具结果">
               {{ current.latestToolOutcome ? `${current.latestToolOutcome.toolResourceName} / ${current.latestToolOutcome.operation}` : '无' }}
             </a-descriptions-item>
@@ -204,6 +224,15 @@ function formatDecision(value?: WorkflowInstance['agentTurnState'] | null) {
             show-icon
             :message="current.humanTask.title"
             :description="`${current.humanTask.instruction} 来源：${sourceLabel[current.humanTask.source]}。处理指引：${current.humanTask.expectedAction}`"
+            style="margin-top: 16px"
+          />
+
+          <a-alert
+            v-if="hasActiveFailure(current)"
+            :type="failureAlertType(current)"
+            show-icon
+            :message="failureAlertMessage(current)"
+            :description="failureAlertDescription(current)"
             style="margin-top: 16px"
           />
 
@@ -269,6 +298,23 @@ function formatDecision(value?: WorkflowInstance['agentTurnState'] | null) {
                 </template>
               </a-table-column>
             </a-table>
+          </a-card>
+
+          <a-card size="small" title="失败诊断" style="margin-top: 16px">
+            <a-alert
+              v-if="!current.latestFailure"
+              type="info"
+              show-icon
+              message="当前没有结构化失败快照"
+            />
+            <a-descriptions v-else :column="2" size="small">
+              <a-descriptions-item label="Category">{{ current.latestFailure.category }}</a-descriptions-item>
+              <a-descriptions-item label="Code">{{ current.latestFailure.code }}</a-descriptions-item>
+              <a-descriptions-item label="Root Cause" :span="2">{{ current.latestFailure.rootCause }}</a-descriptions-item>
+              <a-descriptions-item label="Detail" :span="2">{{ current.latestFailure.detail }}</a-descriptions-item>
+              <a-descriptions-item label="失败位置" :span="2">{{ formatFailureLocation(current) }}</a-descriptions-item>
+              <a-descriptions-item label="发生时间" :span="2">{{ formatDateTime(current.latestFailure.occurredAt) }}</a-descriptions-item>
+            </a-descriptions>
           </a-card>
         </a-card>
 

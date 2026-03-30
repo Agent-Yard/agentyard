@@ -348,6 +348,18 @@ class PauseReasonSnapshot(BaseModel):
     source: str
 
 
+class WorkflowFailureSnapshot(BaseModel):
+    category: str
+    code: str
+    rootCause: str
+    detail: str
+    failedNodeKey: Optional[str] = None
+    failedNodeName: Optional[str] = None
+    failedResourceId: Optional[str] = None
+    failedResourceName: Optional[str] = None
+    occurredAt: str
+
+
 class ToolOutcomeSummary(BaseModel):
     toolResourceId: str
     toolResourceName: str
@@ -424,6 +436,7 @@ class WorkflowResult(BaseModel):
     checkpoint: Optional[ExecutionCheckpoint] = None
     humanTask: Optional[HumanTaskSnapshot] = None
     pauseReason: Optional[PauseReasonSnapshot] = None
+    latestFailure: Optional[WorkflowFailureSnapshot] = None
     nodes: List[NodeSnapshot]
     toolCalls: List[ToolInvocationSnapshot]
     escalationRequired: bool
@@ -458,6 +471,7 @@ class AgentState(TypedDict):
     resume_count: int
     agent_turn_state: Dict[str, Any]
     pause_reason: Optional[Dict[str, Any]]
+    latest_failure: Optional[Dict[str, Any]]
     workflow_status: str
 
 
@@ -494,6 +508,14 @@ SESSION_STATE_OP_UPSERT = "UPSERT"
 SESSION_STATE_OP_REMOVE = "REMOVE"
 MAX_SESSION_STATE_PATCH_VALUE_BYTES = 16 * 1024
 MAX_SHARED_SESSION_STATE_BYTES = 64 * 1024
+FAILURE_CATEGORY_TIMEOUT = "TIMEOUT"
+FAILURE_CATEGORY_PROVIDER = "PROVIDER_FAILURE"
+FAILURE_CATEGORY_TOOL = "TOOL_FAILURE"
+FAILURE_CATEGORY_PARSING = "PARSING_FAILURE"
+FAILURE_CATEGORY_VALIDATION = "VALIDATION_FAILURE"
+FAILURE_CATEGORY_CONFIGURATION = "CONFIGURATION_FAILURE"
+FAILURE_CATEGORY_RUNTIME = "RUNTIME_FAILURE"
+FAILURE_CATEGORY_UNKNOWN = "UNKNOWN"
 
 
 class AgentTurnError(Exception):
@@ -503,12 +525,142 @@ class AgentTurnError(Exception):
         self.message = message
 
 
+class WorkflowFailureError(AgentTurnError):
+    def __init__(
+        self,
+        category: str,
+        code: str,
+        message: str,
+        *,
+        root_cause: Optional[str] = None,
+        failed_resource: Optional[ResourceVersionSnapshot] = None,
+    ):
+        super().__init__(code, message)
+        self.category = category
+        self.root_cause = root_cause or message
+        self.failed_resource = failed_resource
+
+
 def now_iso() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
 def next_id(prefix: str) -> str:
     return f"{prefix}-{abs(hash((prefix, time.time_ns()))) % 1_000_000:06d}"
+
+
+def build_failure_snapshot(
+    category: str,
+    code: str,
+    root_cause: str,
+    detail: str,
+    *,
+    node_key: Optional[str] = None,
+    node_name: Optional[str] = None,
+    resource: Optional[ResourceVersionSnapshot] = None,
+) -> Dict[str, Any]:
+    return WorkflowFailureSnapshot(
+        category=category,
+        code=code,
+        rootCause=root_cause,
+        detail=detail,
+        failedNodeKey=node_key,
+        failedNodeName=node_name,
+        failedResourceId=resource.resourceId if resource else None,
+        failedResourceName=resource.resourceName if resource else None,
+        occurredAt=now_iso(),
+    ).model_dump(mode="json")
+
+
+def categorize_agent_turn_error(code: str) -> str:
+    if code == "MODEL_OUTPUT_INVALID":
+        return FAILURE_CATEGORY_PARSING
+    if code == "TOOL_SCHEMA_INVALID":
+        return FAILURE_CATEGORY_CONFIGURATION
+    if code in {"TOOL_REQUEST_INVALID", "TOOL_RESPONSE_INVALID"} or code.startswith("TOOL_REQUEST_INVALID:"):
+        return FAILURE_CATEGORY_VALIDATION
+    if code in {"MAX_TURNS_EXCEEDED", "ROUTE_INVALID"}:
+        return FAILURE_CATEGORY_RUNTIME
+    return FAILURE_CATEGORY_RUNTIME
+
+
+def set_latest_failure(state: AgentState, failure: Dict[str, Any]) -> None:
+    state["latest_failure"] = failure
+
+
+def clear_latest_failure(state: AgentState) -> None:
+    state["latest_failure"] = None
+
+
+def pause_agent_node_with_workflow_failure(
+    state: AgentState,
+    node: GraphNodeSnapshot,
+    turn_logs: List[Dict[str, Any]],
+    detail_lines: List[str],
+    turn_index: int,
+    error: WorkflowFailureError,
+    title: str,
+    expected_action: str,
+    detail_key: str,
+    resource: Optional[ResourceVersionSnapshot] = None,
+) -> None:
+    state["agent_turn_state"]["phase"] = "FAIL"
+    state["agent_turn_state"]["turnIndex"] = turn_index
+    turn_log = AgentTurnLog(
+        turnIndex=turn_index,
+        phase="FAIL",
+        failureReason=error.code,
+    ).model_dump(mode="json")
+    turn_logs.append(turn_log)
+    state["agent_turn_state"]["turnLogs"] = turn_logs
+    detail_lines.append(turn_log_line(turn_log))
+    log_turn_failure(state["workflow_instance_id"], node.nodeKey, turn_index, error.code, error.message)
+    failure = build_failure_snapshot(
+        error.category,
+        error.code,
+        error.root_cause,
+        error.message,
+        node_key=node.nodeKey,
+        node_name=node.nodeName,
+        resource=resource or error.failed_resource,
+    )
+    pause_for_failure(
+        state,
+        node.nodeKey,
+        node.nodeName,
+        title,
+        f"{error.code}: {error.message}",
+        expected_action,
+        "\n".join([*detail_lines, f"{detail_key}={error.message}"]),
+        failure,
+    )
+
+
+def pause_for_failure(
+    state: AgentState,
+    node_key: str,
+    node_name: str,
+    title: str,
+    instruction: str,
+    expected_action: str,
+    detail: str,
+    failure: Dict[str, Any],
+) -> None:
+    set_latest_failure(state, failure)
+    pause_for_human(
+        state,
+        node_key,
+        node_name,
+        title,
+        instruction,
+        expected_action,
+        AGENT_HUMAN_TASK_SOURCE,
+        node_key,
+        detail,
+        allowed_actions=list(DEFAULT_HUMAN_ACTIONS),
+        reason_code=str(failure.get("code", "")),
+        reason_detail=str(failure.get("rootCause", failure.get("detail", ""))),
+    )
 
 
 def normalize_human_action(action: Optional[str]) -> str:
@@ -697,7 +849,11 @@ def resolve_model_resource(assistant: AssistantRunSnapshot, agent: AgentSnapshot
         model_version_id = agent.executionPolicy.modelResourceVersionId
     resource = resolve_resource(assistant, model_version_id or assistant.assistantPolicy.providerResourceVersionId)
     if not resource or not resource.configuration.llmModel:
-        raise HTTPException(status_code=500, detail=f"No active model resource configured for agent {agent.agentId}")
+        raise WorkflowFailureError(
+            FAILURE_CATEGORY_CONFIGURATION,
+            "MODEL_RESOURCE_MISSING",
+            f"No active model resource configured for agent {agent.agentId}",
+        )
     return resource
 
 
@@ -1160,11 +1316,21 @@ def extract_json_object(text: str) -> Optional[Dict[str, Any]]:
 async def call_llm(model_resource: ResourceVersionSnapshot, prompt: str, system_prompt: str) -> str:
     model_config = model_resource.configuration.llmModel
     if model_config is None:
-        raise HTTPException(status_code=500, detail=f"resource {model_resource.resourceId} is not an llm model")
+        raise WorkflowFailureError(
+            FAILURE_CATEGORY_CONFIGURATION,
+            "MODEL_CONFIGURATION_INVALID",
+            f"resource {model_resource.resourceId} is not an llm model",
+            failed_resource=model_resource,
+        )
 
     api_key = os.getenv(model_config.apiKeyEnvVar, "")
     if not api_key:
-        raise HTTPException(status_code=500, detail=f"Missing API key env var: {model_config.apiKeyEnvVar}")
+        raise WorkflowFailureError(
+            FAILURE_CATEGORY_CONFIGURATION,
+            "MODEL_API_KEY_MISSING",
+            f"Missing API key env var: {model_config.apiKeyEnvVar}",
+            failed_resource=model_resource,
+        )
 
     try:
         logger.info(f"llm request with sys prompt: \n{system_prompt}")
@@ -1218,23 +1384,37 @@ async def call_llm(model_resource: ResourceVersionSnapshot, prompt: str, system_
                 response.raise_for_status()
                 return response.json()["candidates"][0]["content"]["parts"][0]["text"]
     except httpx.TimeoutException as exc:
-        raise HTTPException(
-            status_code=504,
-            detail=f"LLM request timed out for {model_config.baseUrl} model={model_config.modelId}: {exc}"
+        raise WorkflowFailureError(
+            FAILURE_CATEGORY_TIMEOUT,
+            "LLM_REQUEST_TIMEOUT",
+            f"LLM request timed out for {model_config.baseUrl} model={model_config.modelId}: {exc}",
+            root_cause=str(exc),
+            failed_resource=model_resource,
         ) from exc
     except httpx.HTTPStatusError as exc:
         response_text = exc.response.text[:500] if exc.response is not None else ""
-        raise HTTPException(
-            status_code=502,
-            detail=f"LLM provider returned HTTP {exc.response.status_code if exc.response is not None else 'unknown'} for {model_config.baseUrl} model={model_config.modelId}: {response_text}"
+        raise WorkflowFailureError(
+            FAILURE_CATEGORY_PROVIDER,
+            "LLM_PROVIDER_HTTP_ERROR",
+            f"LLM provider returned HTTP {exc.response.status_code if exc.response is not None else 'unknown'} for {model_config.baseUrl} model={model_config.modelId}: {response_text}",
+            root_cause=response_text or str(exc),
+            failed_resource=model_resource,
         ) from exc
     except httpx.TransportError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=f"LLM transport error for {model_config.baseUrl} model={model_config.modelId}: {exc}"
+        raise WorkflowFailureError(
+            FAILURE_CATEGORY_PROVIDER,
+            "LLM_PROVIDER_TRANSPORT_ERROR",
+            f"LLM transport error for {model_config.baseUrl} model={model_config.modelId}: {exc}",
+            root_cause=str(exc),
+            failed_resource=model_resource,
         ) from exc
 
-    raise HTTPException(status_code=400, detail=f"Unsupported provider: {model_config.providerType}")
+    raise WorkflowFailureError(
+        FAILURE_CATEGORY_CONFIGURATION,
+        "MODEL_PROVIDER_UNSUPPORTED",
+        f"Unsupported provider: {model_config.providerType}",
+        failed_resource=model_resource,
+    )
 
 
 def tokenize(text: str) -> List[str]:
@@ -1268,7 +1448,12 @@ async def retrieve_knowledge(binding: Optional[KnowledgeBindingSnapshot], questi
 def resolve_tool_operation(resource: ResourceVersionSnapshot, operation_name: Optional[str] = None) -> ToolOperationConfig:
     config = resource.configuration.tool
     if config is None or not config.operations:
-        raise HTTPException(status_code=500, detail=f"resource {resource.resourceId} has no tool operations configured")
+        raise WorkflowFailureError(
+            FAILURE_CATEGORY_CONFIGURATION,
+            "TOOL_CONFIGURATION_INVALID",
+            f"resource {resource.resourceId} has no tool operations configured",
+            failed_resource=resource,
+        )
     if operation_name:
         for operation in config.operations:
             if operation.name == operation_name:
@@ -1279,7 +1464,12 @@ def resolve_tool_operation(resource: ResourceVersionSnapshot, operation_name: Op
 async def call_http_tool(resource: ResourceVersionSnapshot, operation: ToolOperationConfig, payload: Dict[str, Any]) -> Dict[str, Any]:
     config = resource.configuration.tool
     if config is None or config.http is None:
-        raise HTTPException(status_code=500, detail=f"resource {resource.resourceId} is not an HTTP tool")
+        raise WorkflowFailureError(
+            FAILURE_CATEGORY_CONFIGURATION,
+            "TOOL_CONFIGURATION_INVALID",
+            f"resource {resource.resourceId} is not an HTTP tool",
+            failed_resource=resource,
+        )
 
     parsed = urlparse(config.http.endpoint)
     if parsed.hostname == "demo.local":
@@ -1305,16 +1495,47 @@ async def call_http_tool(resource: ResourceVersionSnapshot, operation: ToolOpera
     else:
         request_kwargs["json"] = payload
 
-    async with httpx.AsyncClient(timeout=config.timeoutSeconds) as client:
-        response = await client.request(request_method, config.http.endpoint, **request_kwargs)
-        response.raise_for_status()
-        return response.json()
+    try:
+        async with httpx.AsyncClient(timeout=config.timeoutSeconds) as client:
+            response = await client.request(request_method, config.http.endpoint, **request_kwargs)
+            response.raise_for_status()
+            return response.json()
+    except httpx.TimeoutException as exc:
+        raise WorkflowFailureError(
+            FAILURE_CATEGORY_TOOL,
+            "TOOL_TIMEOUT",
+            f"tool request timed out for {resource.resourceId} operation={operation.name}: {exc}",
+            root_cause=str(exc),
+            failed_resource=resource,
+        ) from exc
+    except httpx.HTTPStatusError as exc:
+        response_text = exc.response.text[:500] if exc.response is not None else ""
+        raise WorkflowFailureError(
+            FAILURE_CATEGORY_TOOL,
+            "TOOL_HTTP_ERROR",
+            f"tool returned HTTP {exc.response.status_code if exc.response is not None else 'unknown'} for {resource.resourceId} operation={operation.name}: {response_text}",
+            root_cause=response_text or str(exc),
+            failed_resource=resource,
+        ) from exc
+    except httpx.TransportError as exc:
+        raise WorkflowFailureError(
+            FAILURE_CATEGORY_TOOL,
+            "TOOL_TRANSPORT_ERROR",
+            f"tool transport error for {resource.resourceId} operation={operation.name}: {exc}",
+            root_cause=str(exc),
+            failed_resource=resource,
+        ) from exc
 
 
 async def call_mcp_tool(resource: ResourceVersionSnapshot, operation: ToolOperationConfig, payload: Dict[str, Any]) -> Dict[str, Any]:
     config = resource.configuration.tool
     if config is None or config.mcp is None:
-        raise HTTPException(status_code=500, detail=f"resource {resource.resourceId} is not an MCP-backed tool")
+        raise WorkflowFailureError(
+            FAILURE_CATEGORY_CONFIGURATION,
+            "TOOL_CONFIGURATION_INVALID",
+            f"resource {resource.resourceId} is not an MCP-backed tool",
+            failed_resource=resource,
+        )
     remote_tool_name = config.mcp.operationMappings.get(operation.name, operation.name)
 
     parsed = urlparse(config.mcp.connectionUri)
@@ -1326,30 +1547,66 @@ async def call_mcp_tool(resource: ResourceVersionSnapshot, operation: ToolOperat
             "message": "已创建人工协同工单，并记录人工处理意见。",
         }
 
-    async with httpx.AsyncClient(timeout=config.timeoutSeconds) as client:
-        response = await client.post(
-            config.mcp.connectionUri,
-            json={
-                "namespace": config.mcp.namespace,
-                "tool": remote_tool_name,
-                "arguments": payload,
-            },
-        )
-        response.raise_for_status()
-        return response.json()
+    try:
+        async with httpx.AsyncClient(timeout=config.timeoutSeconds) as client:
+            response = await client.post(
+                config.mcp.connectionUri,
+                json={
+                    "namespace": config.mcp.namespace,
+                    "tool": remote_tool_name,
+                    "arguments": payload,
+                },
+            )
+            response.raise_for_status()
+            return response.json()
+    except httpx.TimeoutException as exc:
+        raise WorkflowFailureError(
+            FAILURE_CATEGORY_TOOL,
+            "TOOL_TIMEOUT",
+            f"tool request timed out for {resource.resourceId} operation={operation.name}: {exc}",
+            root_cause=str(exc),
+            failed_resource=resource,
+        ) from exc
+    except httpx.HTTPStatusError as exc:
+        response_text = exc.response.text[:500] if exc.response is not None else ""
+        raise WorkflowFailureError(
+            FAILURE_CATEGORY_TOOL,
+            "TOOL_HTTP_ERROR",
+            f"tool returned HTTP {exc.response.status_code if exc.response is not None else 'unknown'} for {resource.resourceId} operation={operation.name}: {response_text}",
+            root_cause=response_text or str(exc),
+            failed_resource=resource,
+        ) from exc
+    except httpx.TransportError as exc:
+        raise WorkflowFailureError(
+            FAILURE_CATEGORY_TOOL,
+            "TOOL_TRANSPORT_ERROR",
+            f"tool transport error for {resource.resourceId} operation={operation.name}: {exc}",
+            root_cause=str(exc),
+            failed_resource=resource,
+        ) from exc
 
 
 async def call_tool(resource: ResourceVersionSnapshot, operation_name: Optional[str], payload: Dict[str, Any]) -> tuple[ToolOperationConfig, Dict[str, Any]]:
     config = resource.configuration.tool
     if config is None:
-        raise HTTPException(status_code=500, detail=f"resource {resource.resourceId} is not a tool")
+        raise WorkflowFailureError(
+            FAILURE_CATEGORY_CONFIGURATION,
+            "TOOL_CONFIGURATION_INVALID",
+            f"resource {resource.resourceId} is not a tool",
+            failed_resource=resource,
+        )
     operation = resolve_tool_operation(resource, operation_name)
     if config.providerType == "HTTP":
         result = await call_http_tool(resource, operation, payload)
     elif config.providerType == "MCP":
         result = await call_mcp_tool(resource, operation, payload)
     else:
-        raise HTTPException(status_code=400, detail=f"Unsupported tool provider: {config.providerType}")
+        raise WorkflowFailureError(
+            FAILURE_CATEGORY_CONFIGURATION,
+            "TOOL_PROVIDER_UNSUPPORTED",
+            f"Unsupported tool provider: {config.providerType}",
+            failed_resource=resource,
+        )
     validate_tool_result(resource, operation, result)
     return operation, result
 
@@ -1646,6 +1903,7 @@ def export_state(state: AgentState) -> Dict[str, Any]:
         "resume_count": state["resume_count"],
         "agent_turn_state": state["agent_turn_state"],
         "pause_reason": state["pause_reason"],
+        "latest_failure": state["latest_failure"],
         "workflow_status": state["workflow_status"],
     }
 
@@ -1676,6 +1934,7 @@ def restore_state(data: Dict[str, Any], resume_request: WorkflowResumeRequest) -
         "resume_count": resume_request.checkpoint.resumeCount + 1,
         "agent_turn_state": data.get("agent_turn_state", {"phase": "IDLE", "turnIndex": 0, "latestDecision": None, "turnLogs": []}),
         "pause_reason": data.get("pause_reason"),
+        "latest_failure": data.get("latest_failure"),
         "workflow_status": "RUNNING",
     }
 
@@ -1825,9 +2084,6 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
     state["retrieval_hits"] = hits
     state["retrieval_cache"][agent.agentId] = hits
 
-    model_resource = resolve_model_resource(assistant, agent)
-    system_prompt = build_system_prompt(agent)
-    tool_resources = resolve_tool_resources(assistant, agent)
     detail_lines = [agent.responsibility]
     route_key: Optional[str] = None
     route_source = ""
@@ -1839,6 +2095,23 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
         "latestDecision": None,
         "turnLogs": turn_logs,
     }
+    try:
+        model_resource = resolve_model_resource(assistant, agent)
+    except WorkflowFailureError as exc:
+        pause_agent_node_with_workflow_failure(
+            state,
+            node,
+            turn_logs,
+            detail_lines,
+            1,
+            exc,
+            "模型调用失败，需要人工介入",
+            "请人工确认上下文并继续处理",
+            "failure",
+        )
+        return
+    system_prompt = build_system_prompt(agent)
+    tool_resources = resolve_tool_resources(assistant, agent)
 
     for turn_index in range(1, AGENT_MAX_TURNS + 1):
         state["agent_turn_state"]["phase"] = "PREPARE_CONTEXT"
@@ -1861,7 +2134,22 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
             turn_index - 1,
         )
         state["agent_turn_state"]["phase"] = "CALL_MODEL"
-        llm_output = await call_llm(model_resource, prompt, system_prompt)
+        try:
+            llm_output = await call_llm(model_resource, prompt, system_prompt)
+        except WorkflowFailureError as exc:
+            pause_agent_node_with_workflow_failure(
+                state,
+                node,
+                turn_logs,
+                detail_lines,
+                turn_index,
+                exc,
+                "模型调用失败，需要人工介入",
+                "请人工确认上下文并继续处理",
+                "failure",
+                model_resource,
+            )
+            return
         state["agent_turn_state"]["phase"] = "VALIDATE_RESPONSE"
         try:
             structured = parse_agent_structured_response(llm_output, graph, node, skill_resources, tool_resources)
@@ -1879,19 +2167,23 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
             state["agent_turn_state"]["turnLogs"] = turn_logs
             detail_lines.append(turn_log_line(turn_log))
             log_turn_failure(state["workflow_instance_id"], node.nodeKey, turn_index, exc.code, exc.message)
-            pause_for_human(
+            failure = build_failure_snapshot(
+                categorize_agent_turn_error(exc.code),
+                exc.code,
+                exc.message,
+                exc.message,
+                node_key=node.nodeKey,
+                node_name=node.nodeName,
+            )
+            pause_for_failure(
                 state,
                 node.nodeKey,
                 node.nodeName,
                 "需要人工介入",
                 f"{exc.code}: {exc.message}",
                 "请人工确认后继续处理",
-                AGENT_HUMAN_TASK_SOURCE,
-                node.nodeKey,
                 "\n".join([*detail_lines, f"failure={exc.code}", exc.message]),
-                allowed_actions=list(DEFAULT_HUMAN_ACTIONS),
-                reason_code=exc.code,
-                reason_detail=exc.message,
+                failure,
             )
             return
 
@@ -1925,19 +2217,23 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
                     "MAX_TURNS_EXCEEDED",
                     f"agent exceeded max turns={AGENT_MAX_TURNS}",
                 )
-                pause_for_human(
+                failure = build_failure_snapshot(
+                    FAILURE_CATEGORY_RUNTIME,
+                    "MAX_TURNS_EXCEEDED",
+                    f"agent exceeded max turns={AGENT_MAX_TURNS}",
+                    f"智能体在 {AGENT_MAX_TURNS} 轮内未完成，需要人工继续处理。",
+                    node_key=node.nodeKey,
+                    node_name=node.nodeName,
+                )
+                pause_for_failure(
                     state,
                     node.nodeKey,
                     node.nodeName,
                     "达到最大执行轮次",
                     f"智能体在 {AGENT_MAX_TURNS} 轮内未完成，需要人工继续处理。",
                     "请人工确认上下文后继续处理",
-                    AGENT_HUMAN_TASK_SOURCE,
-                    node.nodeKey,
                     "\n".join(detail_lines),
-                    allowed_actions=list(DEFAULT_HUMAN_ACTIONS),
-                    reason_code="MAX_TURNS_EXCEEDED",
-                    reason_detail=f"agent exceeded max turns={AGENT_MAX_TURNS}",
+                    failure,
                 )
                 return
             continue
@@ -1977,7 +2273,37 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
                     None,
                 )
                 if tool_resource is None:
-                    raise HTTPException(status_code=500, detail=f"tool resource not found: {tool_request.toolResourceVersionId}")
+                    turn_log.phase = "FAIL"
+                    turn_log.failureReason = "TOOL_RESOURCE_MISSING"
+                    turn_logs.append(turn_log.model_dump(mode="json"))
+                    state["agent_turn_state"]["turnLogs"] = turn_logs
+                    detail_lines.append(turn_log_line(turn_logs[-1]))
+                    log_turn_failure(
+                        state["workflow_instance_id"],
+                        node.nodeKey,
+                        turn_index,
+                        "TOOL_RESOURCE_MISSING",
+                        f"tool resource not found: {tool_request.toolResourceVersionId}",
+                    )
+                    failure = build_failure_snapshot(
+                        FAILURE_CATEGORY_CONFIGURATION,
+                        "TOOL_RESOURCE_MISSING",
+                        f"tool resource not found: {tool_request.toolResourceVersionId}",
+                        f"tool resource not found: {tool_request.toolResourceVersionId}",
+                        node_key=node.nodeKey,
+                        node_name=node.nodeName,
+                    )
+                    pause_for_failure(
+                        state,
+                        node.nodeKey,
+                        node.nodeName,
+                        "工具资源缺失，需要人工介入",
+                        f"TOOL_RESOURCE_MISSING: tool resource not found: {tool_request.toolResourceVersionId}",
+                        "请人工确认工具配置并继续处理",
+                        "\n".join([*detail_lines, f"tool_error=tool resource not found: {tool_request.toolResourceVersionId}"]),
+                        failure,
+                    )
+                    return
                 try:
                     operation, tool_result = await call_tool(tool_resource, tool_request.operation, tool_request.arguments)
                     store_tool_result(state, agent, tool_resource, operation, tool_request.arguments, tool_result)
@@ -1993,49 +2319,69 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
                     state["agent_turn_state"]["turnLogs"] = turn_logs
                     detail_lines.append(turn_log_line(turn_logs[-1]))
                     log_turn_failure(state["workflow_instance_id"], node.nodeKey, turn_index, exc.code, exc.message)
-                    pause_for_human(
+                    failure = build_failure_snapshot(
+                        categorize_agent_turn_error(exc.code),
+                        exc.code,
+                        exc.message,
+                        exc.message,
+                        node_key=node.nodeKey,
+                        node_name=node.nodeName,
+                        resource=tool_resource,
+                    )
+                    pause_for_failure(
                         state,
                         node.nodeKey,
                         node.nodeName,
                         "工具结果不符合约定，需要人工介入",
                         f"{exc.code}: {exc.message}",
                         "请人工确认工具结果并继续处理",
-                        AGENT_HUMAN_TASK_SOURCE,
-                        node.nodeKey,
                         "\n".join([*detail_lines, f"tool_error={exc.message}"]),
-                        allowed_actions=list(DEFAULT_HUMAN_ACTIONS),
-                        reason_code=exc.code,
-                        reason_detail=exc.message,
+                        failure,
+                    )
+                    return
+                except WorkflowFailureError as exc:
+                    provider_type = tool_resource.configuration.tool.providerType if tool_resource.configuration.tool else "UNKNOWN"
+                    record_tool_call(state, provider_type, tool_resource, tool_request.operation, "FAILED", exc.message)
+                    pause_agent_node_with_workflow_failure(
+                        state,
+                        node,
+                        turn_logs,
+                        detail_lines,
+                        turn_index,
+                        exc,
+                        "工具执行失败，需要人工介入",
+                        "请人工确认工具结果并继续处理",
+                        "tool_error",
+                        tool_resource,
                     )
                     return
                 except Exception as exc:
                     provider_type = tool_resource.configuration.tool.providerType if tool_resource.configuration.tool else "UNKNOWN"
                     record_tool_call(state, provider_type, tool_resource, tool_request.operation, "FAILED", str(exc))
                     turn_log.phase = "FAIL"
-                    turn_log.failureReason = f"TOOL_REQUEST_INVALID:{tool_request.operation}"
+                    turn_log.failureReason = "TOOL_EXECUTION_FAILED"
                     turn_logs.append(turn_log.model_dump(mode="json"))
                     state["agent_turn_state"]["turnLogs"] = turn_logs
                     detail_lines.append(turn_log_line(turn_logs[-1]))
-                    log_turn_failure(
-                        state["workflow_instance_id"],
-                        node.nodeKey,
-                        turn_index,
-                        "TOOL_REQUEST_INVALID",
+                    log_turn_failure(state["workflow_instance_id"], node.nodeKey, turn_index, "TOOL_EXECUTION_FAILED", str(exc))
+                    failure = build_failure_snapshot(
+                        FAILURE_CATEGORY_TOOL,
+                        "TOOL_EXECUTION_FAILED",
                         str(exc),
+                        f"工具调用失败：{exc}",
+                        node_key=node.nodeKey,
+                        node_name=node.nodeName,
+                        resource=tool_resource,
                     )
-                    pause_for_human(
+                    pause_for_failure(
                         state,
                         node.nodeKey,
                         node.nodeName,
                         "工具执行失败，需要人工介入",
                         f"工具调用失败：{exc}",
                         "请人工确认工具结果并继续处理",
-                        AGENT_HUMAN_TASK_SOURCE,
-                        node.nodeKey,
                         "\n".join([*detail_lines, f"tool_error={exc}"]),
-                        allowed_actions=list(DEFAULT_HUMAN_ACTIONS),
-                        reason_code="TOOL_REQUEST_INVALID",
-                        reason_detail=str(exc),
+                        failure,
                     )
                     return
             turn_log.phase = "EXECUTE_TOOL_REQUESTS"
@@ -2052,19 +2398,23 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
                     "MAX_TURNS_EXCEEDED",
                     f"agent exceeded max turns={AGENT_MAX_TURNS}",
                 )
-                pause_for_human(
+                failure = build_failure_snapshot(
+                    FAILURE_CATEGORY_RUNTIME,
+                    "MAX_TURNS_EXCEEDED",
+                    f"agent exceeded max turns={AGENT_MAX_TURNS}",
+                    f"智能体在 {AGENT_MAX_TURNS} 轮内未完成，需要人工继续处理。",
+                    node_key=node.nodeKey,
+                    node_name=node.nodeName,
+                )
+                pause_for_failure(
                     state,
                     node.nodeKey,
                     node.nodeName,
                     "达到最大执行轮次",
                     f"智能体在 {AGENT_MAX_TURNS} 轮内未完成，需要人工继续处理。",
                     "请人工确认上下文后继续处理",
-                    AGENT_HUMAN_TASK_SOURCE,
-                    node.nodeKey,
                     "\n".join(detail_lines),
-                    allowed_actions=list(DEFAULT_HUMAN_ACTIONS),
-                    reason_code="MAX_TURNS_EXCEEDED",
-                    reason_detail=f"agent exceeded max turns={AGENT_MAX_TURNS}",
+                    failure,
                 )
                 return
             continue
@@ -2084,19 +2434,23 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
             state["agent_turn_state"]["turnLogs"] = turn_logs
             detail_lines.append(turn_log_line(turn_logs[-1]))
             log_turn_failure(state["workflow_instance_id"], node.nodeKey, turn_index, exc.code, exc.message)
-            pause_for_human(
+            failure = build_failure_snapshot(
+                FAILURE_CATEGORY_RUNTIME,
+                exc.code,
+                exc.message,
+                exc.message,
+                node_key=node.nodeKey,
+                node_name=node.nodeName,
+            )
+            pause_for_failure(
                 state,
                 node.nodeKey,
                 node.nodeName,
                 "路由决策异常，需要人工介入",
                 f"{exc.code}: {exc.message}",
                 "请人工确认流转路由并继续处理",
-                AGENT_HUMAN_TASK_SOURCE,
-                node.nodeKey,
                 "\n".join([*detail_lines, f"route_error={exc.message}"]),
-                allowed_actions=list(DEFAULT_HUMAN_ACTIONS),
-                reason_code=exc.code,
-                reason_detail=exc.message,
+                failure,
             )
             return
         turn_log.phase = "FINALIZE"
@@ -2113,19 +2467,23 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
             "MAX_TURNS_EXCEEDED",
             f"agent exceeded max turns={AGENT_MAX_TURNS}",
         )
-        pause_for_human(
+        failure = build_failure_snapshot(
+            FAILURE_CATEGORY_RUNTIME,
+            "MAX_TURNS_EXCEEDED",
+            f"agent exceeded max turns={AGENT_MAX_TURNS}",
+            f"智能体在 {AGENT_MAX_TURNS} 轮内未完成，需要人工继续处理。",
+            node_key=node.nodeKey,
+            node_name=node.nodeName,
+        )
+        pause_for_failure(
             state,
             node.nodeKey,
             node.nodeName,
             "达到最大执行轮次",
             f"智能体在 {AGENT_MAX_TURNS} 轮内未完成，需要人工继续处理。",
             "请人工确认上下文后继续处理",
-            AGENT_HUMAN_TASK_SOURCE,
-            node.nodeKey,
             "\n".join(detail_lines),
-            allowed_actions=list(DEFAULT_HUMAN_ACTIONS),
-            reason_code="MAX_TURNS_EXCEEDED",
-            reason_detail=f"agent exceeded max turns={AGENT_MAX_TURNS}",
+            failure,
         )
         return
 
@@ -2275,6 +2633,7 @@ def workflow_result_from_state(state: AgentState) -> WorkflowResult:
         checkpoint=ExecutionCheckpoint(**state["checkpoint"]) if state["checkpoint"] else None,
         humanTask=HumanTaskSnapshot(**state["human_task"]) if state["human_task"] else None,
         pauseReason=PauseReasonSnapshot(**state["pause_reason"]) if state["pause_reason"] else None,
+        latestFailure=WorkflowFailureSnapshot(**state["latest_failure"]) if state["latest_failure"] else None,
         nodes=[NodeSnapshot(**node) for node in state["node_snapshots"]],
         toolCalls=[ToolInvocationSnapshot(**tool) for tool in state["tool_calls"]],
         escalationRequired=state["escalation_required"],
@@ -2315,6 +2674,7 @@ async def start_agent_run(request: WorkflowStartRequest) -> WorkflowResult:
         "resume_count": 0,
         "agent_turn_state": {"phase": "IDLE", "turnIndex": 0, "latestDecision": None, "turnLogs": []},
         "pause_reason": None,
+        "latest_failure": None,
         "workflow_status": "RUNNING",
     }
     graph = compile_graph(request.assistant.graph, entry_node.nodeKey)

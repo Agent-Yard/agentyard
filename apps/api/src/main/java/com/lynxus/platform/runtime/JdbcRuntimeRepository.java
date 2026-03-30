@@ -14,6 +14,7 @@ import com.lynxus.contracts.runtime.WorkflowContracts.SharedSessionState;
 import com.lynxus.contracts.runtime.WorkflowContracts.TaskStatus;
 import com.lynxus.contracts.runtime.WorkflowContracts.ToolInvocationSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.ToolOutcomeSummary;
+import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowFailureSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowStatus;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -100,8 +101,8 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         return hydrateWorkflows(jdbcTemplate.query(
             """
                 select id, task_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at, status, summary, final_reply,
-                       current_node_key, escalation_required, checkpoint, human_task, pause_reason, latest_tool_outcome, resource_anchors, nodes,
-                       tool_calls, loaded_skill_resource_version_ids, shared_state, agent_turn_state
+                       current_node_key, escalation_required, checkpoint, human_task, pause_reason, latest_failure, latest_tool_outcome,
+                       resource_anchors, nodes, tool_calls, loaded_skill_resource_version_ids, shared_state, agent_turn_state
                 from workflow_instance
                 order by updated_at desc, created_at desc, id desc
                 """,
@@ -114,8 +115,8 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         return hydrateWorkflows(jdbcTemplate.query(
             """
                 select id, task_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at, status, summary, final_reply,
-                       current_node_key, escalation_required, checkpoint, human_task, pause_reason, latest_tool_outcome, resource_anchors, nodes,
-                       tool_calls, loaded_skill_resource_version_ids, shared_state, agent_turn_state
+                       current_node_key, escalation_required, checkpoint, human_task, pause_reason, latest_failure, latest_tool_outcome,
+                       resource_anchors, nodes, tool_calls, loaded_skill_resource_version_ids, shared_state, agent_turn_state
                 from workflow_instance
                 where status not in ('COMPLETED', 'FAILED', 'CANCELLED')
                 order by updated_at desc, created_at desc, id desc
@@ -129,8 +130,8 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         return hydrateWorkflows(jdbcTemplate.query(
             """
                 select id, task_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at, status, summary, final_reply,
-                       current_node_key, escalation_required, checkpoint, human_task, pause_reason, latest_tool_outcome, resource_anchors, nodes,
-                       tool_calls, loaded_skill_resource_version_ids, shared_state, agent_turn_state
+                       current_node_key, escalation_required, checkpoint, human_task, pause_reason, latest_failure, latest_tool_outcome,
+                       resource_anchors, nodes, tool_calls, loaded_skill_resource_version_ids, shared_state, agent_turn_state
                 from workflow_instance
                 where id = ?
                 """,
@@ -305,6 +306,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             readJson(rs.getString("checkpoint"), ExecutionCheckpoint.class),
             readJson(rs.getString("human_task"), HumanTaskSnapshot.class),
             readJson(rs.getString("pause_reason"), PauseReasonSnapshot.class),
+            readJson(rs.getString("latest_failure"), WorkflowFailureSnapshot.class),
             readJson(rs.getString("latest_tool_outcome"), ToolOutcomeSummary.class),
             readJson(rs.getString("resource_anchors"), STRING_LIST),
             readJson(rs.getString("nodes"), NODE_LIST),
@@ -388,6 +390,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
                 row.checkpoint(),
                 row.humanTask(),
                 row.pauseReason(),
+                row.latestFailure(),
                 row.latestToolOutcome(),
                 normalizeStringList(row.resourceAnchors()),
                 row.nodes() == null ? List.of() : row.nodes(),
@@ -484,10 +487,11 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             """
                 insert into workflow_instance (
                     id, task_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at, status, summary, final_reply,
-                    current_node_key, escalation_required, checkpoint, human_task, pause_reason, latest_tool_outcome, resource_anchors, nodes,
-                    tool_calls, loaded_skill_resource_version_ids, shared_state, agent_turn_state
+                    current_node_key, escalation_required, checkpoint, human_task, pause_reason, latest_failure, latest_tool_outcome,
+                    resource_anchors, nodes, tool_calls, loaded_skill_resource_version_ids, shared_state, agent_turn_state
                 ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb),
-                          cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb))
+                          cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb),
+                          cast(? as jsonb))
                 on conflict (id) do update set
                     task_id = excluded.task_id,
                     assistant_id = excluded.assistant_id,
@@ -503,6 +507,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
                     checkpoint = excluded.checkpoint,
                     human_task = excluded.human_task,
                     pause_reason = excluded.pause_reason,
+                    latest_failure = excluded.latest_failure,
                     latest_tool_outcome = excluded.latest_tool_outcome,
                     resource_anchors = excluded.resource_anchors,
                     nodes = excluded.nodes,
@@ -526,6 +531,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             writeJson(workflow.checkpoint()),
             writeJson(workflow.humanTask()),
             writeJson(workflow.pauseReason()),
+            writeJson(workflow.latestFailure()),
             writeJson(workflow.latestToolOutcome()),
             writeJson(workflow.resourceAnchors()),
             writeJson(workflow.nodes()),
@@ -675,6 +681,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         ExecutionCheckpoint checkpoint,
         HumanTaskSnapshot humanTask,
         PauseReasonSnapshot pauseReason,
+        WorkflowFailureSnapshot latestFailure,
         ToolOutcomeSummary latestToolOutcome,
         List<String> resourceAnchors,
         List<NodeExecutionDto> nodes,

@@ -6,10 +6,15 @@ import com.lynxus.contracts.runtime.WorkflowContracts.HumanAction;
 import com.lynxus.contracts.runtime.WorkflowContracts.NodeSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.NodeStatus;
 import com.lynxus.contracts.runtime.WorkflowContracts.SharedSessionState;
+import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowFailureCategory;
+import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowFailureSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowResumeRequest;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowResult;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowStartRequest;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowStatus;
+import io.temporal.failure.ActivityFailure;
+import io.temporal.failure.ApplicationFailure;
+import io.temporal.failure.TimeoutFailure;
 import io.temporal.activity.ActivityOptions;
 import io.temporal.common.RetryOptions;
 import io.temporal.workflow.Workflow;
@@ -139,6 +144,7 @@ public class AssistantRunWorkflowImpl implements AssistantRunWorkflow {
             null,
             null,
             null,
+            null,
             List.of(new NodeSnapshot(nodeKey, "流程运行中", NodeStatus.RUNNING, summary, workflowNow())),
             List.of(),
             false,
@@ -151,6 +157,7 @@ public class AssistantRunWorkflowImpl implements AssistantRunWorkflow {
 
     private WorkflowResult failureResult(String workflowInstanceId, RuntimeException error) {
         String message = rootCauseMessage(error);
+        WorkflowFailureSnapshot failure = workflowFailure(error);
         return new WorkflowResult(
             workflowInstanceId,
             WorkflowStatus.FAILED,
@@ -160,6 +167,7 @@ public class AssistantRunWorkflowImpl implements AssistantRunWorkflow {
             null,
             null,
             null,
+            failure,
             List.of(new NodeSnapshot("workflow-failed", "流程失败", NodeStatus.FAILED, message, workflowNow())),
             List.of(),
             false,
@@ -178,6 +186,80 @@ public class AssistantRunWorkflowImpl implements AssistantRunWorkflow {
         return current.getMessage() == null || current.getMessage().isBlank()
             ? error.getMessage()
             : current.getMessage();
+    }
+
+    private WorkflowFailureSnapshot workflowFailure(Throwable error) {
+        if (error instanceof ActivityFailure activityFailure) {
+            Throwable cause = activityFailure.getCause();
+            if (cause instanceof TimeoutFailure timeoutFailure) {
+                return new WorkflowFailureSnapshot(
+                    WorkflowFailureCategory.TIMEOUT,
+                    "WORKFLOW_ACTIVITY_TIMEOUT",
+                    firstNonBlank(timeoutFailure.getMessage(), "activity timeout"),
+                    "workflow activity timed out: " + activityFailure.getActivityType(),
+                    null,
+                    null,
+                    null,
+                    null,
+                    workflowNow()
+                );
+            }
+            return new WorkflowFailureSnapshot(
+                WorkflowFailureCategory.RUNTIME_FAILURE,
+                "WORKFLOW_ACTIVITY_FAILURE",
+                rootCauseMessage(activityFailure),
+                "workflow activity failed: " + activityFailure.getActivityType(),
+                null,
+                null,
+                null,
+                null,
+                workflowNow()
+            );
+        }
+        if (error instanceof TimeoutFailure timeoutFailure) {
+            return new WorkflowFailureSnapshot(
+                WorkflowFailureCategory.TIMEOUT,
+                "WORKFLOW_ACTIVITY_TIMEOUT",
+                firstNonBlank(timeoutFailure.getMessage(), "timeout"),
+                "workflow activity timed out",
+                null,
+                null,
+                null,
+                null,
+                workflowNow()
+            );
+        }
+        if (error instanceof ApplicationFailure applicationFailure) {
+            return new WorkflowFailureSnapshot(
+                WorkflowFailureCategory.RUNTIME_FAILURE,
+                "WORKFLOW_RUNTIME_FAILURE",
+                firstNonBlank(applicationFailure.getOriginalMessage(), applicationFailure.getMessage()),
+                "workflow runtime failed",
+                null,
+                null,
+                null,
+                null,
+                workflowNow()
+            );
+        }
+        return new WorkflowFailureSnapshot(
+            WorkflowFailureCategory.RUNTIME_FAILURE,
+            "WORKFLOW_RUNTIME_FAILURE",
+            rootCauseMessage(error),
+            "workflow runtime failed",
+            null,
+            null,
+            null,
+            null,
+            workflowNow()
+        );
+    }
+
+    private String firstNonBlank(String primary, String fallback) {
+        if (primary != null && !primary.isBlank()) {
+            return primary;
+        }
+        return fallback == null || fallback.isBlank() ? "unknown" : fallback;
     }
 
     private Instant workflowNow() {

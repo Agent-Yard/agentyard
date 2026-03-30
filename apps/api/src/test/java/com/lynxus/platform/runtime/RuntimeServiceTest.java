@@ -88,6 +88,8 @@ class RuntimeServiceTest {
         RuntimeDtos.WorkflowInstanceDto workflow = service.getWorkflow(failed.latestWorkflowInstanceId());
         assertEquals(WorkflowContracts.WorkflowStatus.FAILED, workflow.status());
         assertTrue(workflow.summary().contains("agent-runtime unavailable"));
+        assertNotNull(workflow.latestFailure());
+        assertEquals("WORKFLOW_START_SUBMISSION_FAILED", workflow.latestFailure().code());
         assertTrue(failed.messages().getLast().content().contains("agent-runtime unavailable"));
     }
 
@@ -113,6 +115,33 @@ class RuntimeServiceTest {
         RuntimeDtos.WorkflowInstanceDto stored = service.getWorkflow(task.workflowInstanceId());
         assertEquals(RuntimeDtos.HumanInterventionStatus.PENDING, stored.interventions().getLast().status());
         assertEquals(1, gateway.submittedHumanActions.size());
+    }
+
+    @Test
+    void shouldPersistLatestFailureWhenHumanActionSubmissionFails() {
+        StubWorkflowGateway gateway = new StubWorkflowGateway();
+        gateway.defaultCurrentResultFactory = request -> waitingHumanResult(request.workflowInstanceId(), request.question());
+        gateway.submitError = new RuntimeException("temporal signal unavailable");
+        RuntimeService service = runtimeService(gateway);
+
+        RuntimeDtos.TaskInstanceDto task = service.launchTask(
+            new RuntimeDtos.TaskLaunchRequest("scenario-customer-ops", "assistant-customer-ops", "客户投诉，需要人工处理", "tester")
+        );
+
+        RuntimeException error = assertThrows(
+            RuntimeException.class,
+            () -> service.handleHumanAction(
+                task.workflowInstanceId(),
+                new RuntimeDtos.HumanActionRequest("CONFIRM", "人工已处理", "operator-1", Map.of("resolution", "approved"))
+            )
+        );
+
+        assertTrue(error.getMessage().contains("temporal signal unavailable"));
+        RuntimeDtos.WorkflowInstanceDto stored = service.getWorkflow(task.workflowInstanceId());
+        assertNotNull(stored.latestFailure());
+        assertEquals("WORKFLOW_RESUME_SUBMISSION_FAILED", stored.latestFailure().code());
+        assertEquals(WorkflowContracts.WorkflowStatus.WAITING_HUMAN, stored.status());
+        assertEquals(RuntimeDtos.HumanInterventionStatus.FAILED, stored.interventions().getLast().status());
     }
 
     @Test
@@ -150,6 +179,7 @@ class RuntimeServiceTest {
             new WorkflowContracts.ExecutionCheckpoint("cp-1", "handoff-close", "human-review", "{}", 0),
             new WorkflowContracts.HumanTaskSnapshot("human-review", "人工介入待办", "请人工处理。", "补充处理意见并确认后续动作", "GRAPH_NODE", List.of("CONFIRM")),
             new WorkflowContracts.PauseReasonSnapshot("GRAPH_HUMAN_NODE", "请人工处理。", "GRAPH_NODE"),
+            null,
             null,
             List.of("tool@v1"),
             List.of(new RuntimeDtos.NodeExecutionDto("node-1", "wf-1", "human-review", "人工介入", WorkflowContracts.NodeStatus.WAITING_HUMAN, "等待人工接管", now)),
@@ -366,6 +396,7 @@ class RuntimeServiceTest {
             new WorkflowContracts.ExecutionCheckpoint("cp-1", "handoff-close", "human-review", "{\"question\":\"" + question + "\"}", 0),
             new WorkflowContracts.HumanTaskSnapshot("human-review", "人工介入待办", "请人工处理。", "补充处理意见并确认后续动作", "GRAPH_NODE", List.of("CONFIRM", "TERMINATE")),
             new WorkflowContracts.PauseReasonSnapshot("GRAPH_HUMAN_NODE", "请人工处理。", "GRAPH_NODE"),
+            null,
             List.of(
                 new WorkflowContracts.NodeSnapshot("start", "开始", WorkflowContracts.NodeStatus.COMPLETED, question, Instant.now()),
                 new WorkflowContracts.NodeSnapshot("human-review", "人工介入", WorkflowContracts.NodeStatus.WAITING_HUMAN, "等待人工接管", Instant.now())
@@ -395,6 +426,7 @@ class RuntimeServiceTest {
             null,
             null,
             null,
+            null,
             List.of(new WorkflowContracts.NodeSnapshot("workflow-resuming", "流程恢复", WorkflowContracts.NodeStatus.RUNNING, "已收到人工动作，流程继续执行中。", Instant.now())),
             List.of(),
             false,
@@ -412,6 +444,7 @@ class RuntimeServiceTest {
             reply,
             reply,
             "end",
+            null,
             null,
             null,
             null,
