@@ -18,6 +18,7 @@ import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowFailureSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowStatus;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -478,7 +479,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             task.requester(),
             task.status().name(),
             task.workflowInstanceId(),
-            task.createdAt()
+            writeTimestamp(task.createdAt())
         );
     }
 
@@ -521,8 +522,8 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             workflow.assistantId(),
             workflow.assistantName(),
             workflow.assistantReleaseVersion(),
-            workflow.createdAt(),
-            workflow.updatedAt(),
+            writeTimestamp(workflow.createdAt()),
+            writeTimestamp(workflow.updatedAt()),
             workflow.status().name(),
             workflow.summary(),
             workflow.finalReply(),
@@ -574,8 +575,8 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             session.assistantId(),
             session.assistantName(),
             session.assistantReleaseVersion(),
-            session.createdAt(),
-            session.updatedAt(),
+            writeTimestamp(session.createdAt()),
+            writeTimestamp(session.updatedAt()),
             session.latestTaskId(),
             session.latestWorkflowInstanceId(),
             writeJson(session.latestToolOutcome()),
@@ -611,7 +612,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
                 message.senderId(),
                 message.senderName(),
                 message.content(),
-                message.createdAt(),
+                writeTimestamp(message.createdAt()),
                 message.taskId(),
                 message.workflowInstanceId()
             );
@@ -642,10 +643,14 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             intervention.comment(),
             writeJson(intervention.attributes() == null ? Map.of() : intervention.attributes()),
             intervention.status().name(),
-            intervention.createdAt(),
-            intervention.appliedAt(),
+            writeTimestamp(intervention.createdAt()),
+            writeTimestamp(intervention.appliedAt()),
             intervention.failureReason()
         );
+    }
+
+    private Timestamp writeTimestamp(Instant instant) {
+        return instant == null ? null : Timestamp.from(instant);
     }
 
     private Instant readInstant(ResultSet rs, String column) throws SQLException {
