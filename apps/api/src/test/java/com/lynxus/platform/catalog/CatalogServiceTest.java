@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.lynxus.contracts.runtime.WorkflowContracts.OrchestrationNodeType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ResourceType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
 import com.lynxus.contracts.runtime.WorkflowContracts.VersionStatus;
@@ -189,6 +190,129 @@ class CatalogServiceTest {
             .targetName();
         IllegalStateException knowledgeError = assertThrows(IllegalStateException.class, () -> fixture.service().deleteKnowledgeBase(fixture.knowledgeBaseId()));
         assertTrue(knowledgeError.getMessage().contains(knowledgeBlockerName));
+    }
+
+    @Test
+    void shouldExposeDeletionPreviewAcrossSupportedObjects() {
+        CustomerOpsFixture fixture = customerOpsFixture();
+
+        CatalogDtos.DeletionImpactPreviewDto domainPreview = fixture.service().deletionPreview("DOMAIN", fixture.domainId());
+        assertFalse(domainPreview.canDelete());
+        assertTrue(domainPreview.blockers().stream().anyMatch(relation -> relation.relationKind().equals("DOMAIN_SCENARIO")));
+        assertTrue(domainPreview.cascadeDeletes().isEmpty());
+
+        CatalogDtos.DeletionImpactPreviewDto scenarioPreview = fixture.service().deletionPreview("SCENARIO", fixture.scenarioId());
+        assertFalse(scenarioPreview.canDelete());
+        assertTrue(scenarioPreview.blockers().stream().anyMatch(relation -> relation.relationKind().equals("SCENARIO_ASSISTANT")));
+        assertTrue(scenarioPreview.cascadeDeletes().isEmpty());
+
+        CatalogDtos.DeletionImpactPreviewDto assistantPreview = fixture.service().deletionPreview("ASSISTANT", fixture.assistantId());
+        assertFalse(assistantPreview.canDelete());
+        assertTrue(assistantPreview.blockers().stream().anyMatch(relation -> relation.relationKind().equals("ASSISTANT_AGENT")));
+        assertTrue(assistantPreview.advisories().stream().anyMatch(relation -> relation.relationKind().equals("ASSISTANT_ORCHESTRATION")));
+        assertTrue(assistantPreview.cascadeDeletes().stream().anyMatch(item -> item.relationKind().equals("ASSISTANT_ORCHESTRATION")));
+        assertTrue(assistantPreview.cascadeDeletes().stream().anyMatch(item -> item.relationKind().equals("ASSISTANT_RELEASE")));
+
+        CatalogDtos.DeletionImpactPreviewDto agentPreview = fixture.service().deletionPreview("AGENT", fixture.agentId());
+        assertTrue(agentPreview.canDelete());
+        assertTrue(agentPreview.blockers().isEmpty());
+        assertTrue(agentPreview.advisories().stream().anyMatch(relation -> relation.relationKind().equals("AGENT_ORCHESTRATION_NODE")));
+        assertTrue(agentPreview.cascadeDeletes().stream().anyMatch(item -> item.relationKind().equals("AGENT_ORCHESTRATION_NODE")));
+
+        CatalogDtos.DeletionImpactPreviewDto resourcePreview = fixture.service().deletionPreview("RESOURCE", fixture.toolResourceId());
+        assertFalse(resourcePreview.canDelete());
+        assertTrue(resourcePreview.blockers().stream().anyMatch(relation -> relation.relationKind().equals("AGENT_TOOL_ENABLED")));
+        assertTrue(resourcePreview.advisories().stream().anyMatch(relation -> relation.relationKind().equals("RELEASE_FROZEN")));
+        assertTrue(resourcePreview.cascadeDeletes().stream().anyMatch(item -> item.relationKind().equals("RESOURCE_VERSION")));
+
+        CatalogDtos.DeletionImpactPreviewDto knowledgePreview = fixture.service().deletionPreview("KNOWLEDGE_BASE", fixture.knowledgeBaseId());
+        assertFalse(knowledgePreview.canDelete());
+        assertTrue(knowledgePreview.blockers().stream().anyMatch(relation -> relation.relationKind().equals("KNOWLEDGE_BASE_EFFECTIVE_RELEASE")));
+        assertTrue(knowledgePreview.blockers().stream().anyMatch(relation -> relation.relationKind().equals("RELEASE_ASSISTANT_KNOWLEDGE")));
+        assertTrue(knowledgePreview.cascadeDeletes().stream().anyMatch(item -> item.relationKind().equals("KNOWLEDGE_BASE_DRAFT_RELEASE")));
+    }
+
+    @Test
+    void shouldKeepDeletionPreviewCanDeleteAlignedWithActualDeletion() {
+        CustomerOpsFixture fixture = customerOpsFixture();
+
+        assertFalse(fixture.service().deletionPreview("DOMAIN", fixture.domainId()).canDelete());
+        assertThrows(IllegalStateException.class, () -> fixture.service().deleteDomain(fixture.domainId()));
+
+        assertFalse(fixture.service().deletionPreview("SCENARIO", fixture.scenarioId()).canDelete());
+        assertThrows(IllegalStateException.class, () -> fixture.service().deleteScenario(fixture.scenarioId()));
+
+        assertFalse(fixture.service().deletionPreview("ASSISTANT", fixture.assistantId()).canDelete());
+        assertThrows(IllegalStateException.class, () -> fixture.service().deleteAssistant(fixture.assistantId()));
+
+        assertFalse(fixture.service().deletionPreview("RESOURCE", fixture.toolResourceId()).canDelete());
+        assertThrows(IllegalStateException.class, () -> fixture.service().deleteResource(fixture.toolResourceId()));
+
+        assertFalse(fixture.service().deletionPreview("KNOWLEDGE_BASE", fixture.knowledgeBaseId()).canDelete());
+        assertThrows(IllegalStateException.class, () -> fixture.service().deleteKnowledgeBase(fixture.knowledgeBaseId()));
+
+        assertTrue(fixture.service().deletionPreview("AGENT", fixture.agentId()).canDelete());
+        CatalogDtos.AgentDto deletedAgent = fixture.service().deleteAgent(fixture.agentId());
+        assertEquals(fixture.agentId(), deletedAgent.id());
+    }
+
+    @Test
+    void shouldPreviewAgentDeletionAsOrchestrationResetWhenFallbackWillApply() {
+        CatalogService service = new CatalogService(new InMemoryCatalogRepository(), readySnapshotKnowledgeClient(), noopKnowledgeWorkflowGateway());
+        CatalogDtos.BusinessDomainDto domain = service.createDomain(new CatalogDtos.CreateDomainRequest("编排域", "测试编排回退"));
+        CatalogDtos.ScenarioDto scenario = service.createScenario(
+            new CatalogDtos.CreateScenarioRequest(domain.id(), "人工审批场景", "测试自定义编排")
+        );
+        CatalogDtos.AssistantDto assistant = service.createAssistant(
+            new CatalogDtos.CreateAssistantRequest(scenario.id(), "审批助手", "处理审批", null, null, null)
+        );
+        CatalogDtos.AgentDto firstAgent = service.createAgent(new CatalogDtos.CreateAgentRequest(
+            assistant.id(),
+            "执行智能体",
+            "executor",
+            "执行任务",
+            new CatalogDtos.AgentExecutionPolicyDto(true, null, "", false, false, null, 8, List.of(), List.of())
+        ));
+        CatalogDtos.AgentDto secondAgent = service.createAgent(new CatalogDtos.CreateAgentRequest(
+            assistant.id(),
+            "收尾智能体",
+            "closer",
+            "收尾任务",
+            new CatalogDtos.AgentExecutionPolicyDto(true, null, "", false, false, null, 8, List.of(), List.of())
+        ));
+
+        service.saveOrchestration(assistant.id(), new CatalogDtos.UpdateOrchestrationRequest(
+            "GRAPH",
+            List.of(
+                new CatalogDtos.OrchestrationNodeDto("start", "开始", OrchestrationNodeType.START, "接收请求", null, null),
+                new CatalogDtos.OrchestrationNodeDto("node-" + firstAgent.id(), firstAgent.name(), OrchestrationNodeType.AGENT, firstAgent.responsibility(), firstAgent.id(), null),
+                new CatalogDtos.OrchestrationNodeDto(
+                    "human-review",
+                    "人工审批",
+                    OrchestrationNodeType.HUMAN,
+                    "人工确认",
+                    null,
+                    new CatalogDtos.HumanNodeConfigDto("人工审批", "确认是否继续", "approve", "approved")
+                ),
+                new CatalogDtos.OrchestrationNodeDto("node-" + secondAgent.id(), secondAgent.name(), OrchestrationNodeType.AGENT, secondAgent.responsibility(), secondAgent.id(), null),
+                new CatalogDtos.OrchestrationNodeDto("end", "结束", OrchestrationNodeType.END, "完成", null, null)
+            ),
+            List.of(
+                new CatalogDtos.OrchestrationEdgeDto("edge-start-first", "start", "node-" + firstAgent.id(), "default", "进入执行", true),
+                new CatalogDtos.OrchestrationEdgeDto("edge-first-human", "node-" + firstAgent.id(), "human-review", "default", "提交审批", true),
+                new CatalogDtos.OrchestrationEdgeDto("edge-human-second", "human-review", "node-" + secondAgent.id(), "approved", "审批通过", false),
+                new CatalogDtos.OrchestrationEdgeDto("edge-second-end", "node-" + secondAgent.id(), "end", "default", "完成", true)
+            )
+        ));
+
+        CatalogDtos.DeletionImpactPreviewDto preview = service.deletionPreview("AGENT", firstAgent.id());
+        assertTrue(preview.cascadeDeletes().stream().anyMatch(item -> item.relationKind().equals("AGENT_ORCHESTRATION_RESET")));
+        assertFalse(preview.cascadeDeletes().stream().anyMatch(item -> item.relationKind().equals("AGENT_ORCHESTRATION_NODE")));
+
+        service.deleteAgent(firstAgent.id());
+        CatalogDtos.AssistantOrchestrationDto orchestration = service.getOrchestration(assistant.id());
+        assertEquals(List.of("start", "node-" + secondAgent.id(), "end"), orchestration.nodes().stream().map(CatalogDtos.OrchestrationNodeDto::nodeKey).toList());
+        assertFalse(orchestration.nodes().stream().anyMatch(node -> node.nodeType() == OrchestrationNodeType.HUMAN));
     }
 
     @Test
@@ -414,6 +538,15 @@ class CatalogServiceTest {
                 VersionStatus.PUBLISHED,
                 "snapshot-kb-support-v1",
                 new CatalogDtos.KnowledgeRetrievalProfileDto(5, "HYBRID", 0.1)
+            )
+        );
+        service.createKnowledgeRelease(
+            knowledgeBase.id(),
+            new CatalogDtos.CreateKnowledgeReleaseRequest(
+                "客服知识草稿版",
+                VersionStatus.DRAFT,
+                "snapshot-kb-support-v2",
+                new CatalogDtos.KnowledgeRetrievalProfileDto(6, "HYBRID", 0.2)
             )
         );
         CatalogDtos.AssistantDto assistant = service.createAssistant(

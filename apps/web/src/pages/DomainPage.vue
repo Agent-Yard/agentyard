@@ -164,15 +164,7 @@ function submitUpdate() {
           </a-form-item>
           <a-space>
             <a-button type="primary" html-type="submit">保存业务域</a-button>
-            <a-popconfirm
-              title="确认删除该业务域？"
-              description="如果域下仍有场景或资源，删除会被阻止。"
-              ok-text="删除"
-              cancel-text="取消"
-              @confirm="emit('deleteDomain', current.id)"
-            >
-              <a-button danger>删除业务域</a-button>
-            </a-popconfirm>
+            <a-button danger @click="emit('deleteDomain', current.id)">删除业务域</a-button>
           </a-space>
         </a-form>
       </a-card>

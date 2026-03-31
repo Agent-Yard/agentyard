@@ -49,7 +49,7 @@ public class KnowledgeController {
 
     @DeleteMapping("/{knowledgeBaseId}")
     public ApiResponse<?> deleteKnowledgeBase(@PathVariable String knowledgeBaseId) {
-        return ApiResponse.ok(knowledgeService.deleteKnowledgeBase(knowledgeBaseId));
+        return ApiResponse.ok(catalogService.deleteKnowledgeBase(knowledgeBaseId));
     }
 
     @GetMapping("/{knowledgeBaseId}/releases")

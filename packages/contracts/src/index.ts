@@ -245,6 +245,28 @@ export interface ObjectReferenceAnalysis {
   relations: ObjectReferenceRelation[];
 }
 
+export interface DeletionCascadeItem {
+  action: string;
+  relationKind: string;
+  targetType: string;
+  targetId: string;
+  targetName: string;
+  description: string;
+  releaseVersion: string | null;
+  resourceVersion: string | null;
+  knowledgeReleaseVersion: string | null;
+}
+
+export interface DeletionImpactPreview {
+  objectType: ReferenceObjectType;
+  objectId: string;
+  objectName: string;
+  canDelete: boolean;
+  blockers: ObjectReferenceRelation[];
+  advisories: ObjectReferenceRelation[];
+  cascadeDeletes: DeletionCascadeItem[];
+}
+
 export interface KnowledgeUploadSession {
   id: string;
   knowledgeBaseId: string;

@@ -459,6 +459,30 @@ public final class CatalogDtos {
     ) {
     }
 
+    public record DeletionCascadeItemDto(
+        String action,
+        String relationKind,
+        String targetType,
+        String targetId,
+        String targetName,
+        String description,
+        String releaseVersion,
+        String resourceVersion,
+        String knowledgeReleaseVersion
+    ) {
+    }
+
+    public record DeletionImpactPreviewDto(
+        String objectType,
+        String objectId,
+        String objectName,
+        boolean canDelete,
+        List<ObjectReferenceRelationDto> blockers,
+        List<ObjectReferenceRelationDto> advisories,
+        List<DeletionCascadeItemDto> cascadeDeletes
+    ) {
+    }
+
     public record ResourceCenterDto(
         int totalResources,
         int domainSharedResources,

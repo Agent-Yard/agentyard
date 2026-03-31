@@ -14,6 +14,7 @@ import type {
   CreateResourcePayload,
   CreateResourceVersionPayload,
   CreateScenarioPayload,
+  DeletionImpactPreview,
   KnowledgeBase,
   KnowledgeDocument,
   KnowledgeFile,
@@ -88,6 +89,8 @@ export const api = {
   getCatalogSummary: () => request<CatalogSummary>('/catalog/summary'),
   getObjectReferenceAnalysis: (objectType: ReferenceObjectType, objectId: string) =>
     request<ObjectReferenceAnalysis>(`/catalog/references/${objectType}/${objectId}`),
+  getDeletionImpactPreview: (objectType: ReferenceObjectType, objectId: string) =>
+    request<DeletionImpactPreview>(`/catalog/deletion-preview/${objectType}/${objectId}`),
   getConversationSessions: () => request<ConversationSession[]>('/runtime/sessions'),
   createConversationSession: (payload: CreateConversationSessionPayload) =>
     request<ConversationSession>('/runtime/sessions', jsonOptions('POST', payload)),

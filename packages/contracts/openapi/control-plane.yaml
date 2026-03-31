@@ -38,6 +38,27 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ObjectReferenceAnalysis'
+  /catalog/deletion-preview/{objectType}/{objectId}:
+    get:
+      summary: Get deletion impact preview for a catalog object
+      parameters:
+        - in: path
+          name: objectType
+          required: true
+          schema:
+            $ref: '#/components/schemas/ReferenceObjectType'
+        - in: path
+          name: objectId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deletion impact preview
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeletionImpactPreview'
   /assistants:
     get:
       summary: List assistants
@@ -1134,6 +1155,53 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ObjectReferenceRelation'
+    DeletionCascadeItem:
+      type: object
+      properties:
+        action:
+          type: string
+        relationKind:
+          type: string
+        targetType:
+          type: string
+        targetId:
+          type: string
+        targetName:
+          type: string
+        description:
+          type: string
+        releaseVersion:
+          type: string
+          nullable: true
+        resourceVersion:
+          type: string
+          nullable: true
+        knowledgeReleaseVersion:
+          type: string
+          nullable: true
+    DeletionImpactPreview:
+      type: object
+      properties:
+        objectType:
+          $ref: '#/components/schemas/ReferenceObjectType'
+        objectId:
+          type: string
+        objectName:
+          type: string
+        canDelete:
+          type: boolean
+        blockers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ObjectReferenceRelation'
+        advisories:
+          type: array
+          items:
+            $ref: '#/components/schemas/ObjectReferenceRelation'
+        cascadeDeletes:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeletionCascadeItem'
     CreateKnowledgeBaseRequest:
       type: object
       properties:

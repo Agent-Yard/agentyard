@@ -31,4 +31,33 @@ describe('api client', () => {
     ).rejects.toThrow('session has an active workflow');
     expect(fetchMock).toHaveBeenCalledOnce();
   });
+
+  it('requests deletion preview from the dedicated endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        data: {
+          objectType: 'DOMAIN',
+          objectId: 'domain-1',
+          objectName: '客服域',
+          canDelete: false,
+          blockers: [],
+          advisories: [],
+          cascadeDeletes: [],
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.getDeletionImpactPreview('DOMAIN', 'domain-1');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:8080/api/catalog/deletion-preview/DOMAIN/domain-1',
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
+      }),
+    );
+  });
 });

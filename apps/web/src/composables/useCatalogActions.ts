@@ -1,13 +1,16 @@
+import { ref } from 'vue';
 import { message } from 'ant-design-vue';
 import { api } from '../services/api';
 import type {
   CreateAssistantPayload,
   CreateAgentPayload,
+  CreateDomainPayload,
   CreateKnowledgeBasePayload,
   CreateResourcePayload,
   CreateResourceVersionPayload,
   CreateScenarioPayload,
-  CreateDomainPayload,
+  DeletionImpactPreview,
+  ReferenceObjectType,
   UpdateAgentPayload,
   UpdateAssistantPayload,
   UpdateDomainPayload,
@@ -25,11 +28,70 @@ interface CatalogActionState {
   resourceLibraryPreferredVersionId: { value: string | null };
 }
 
+interface DeletionFlowConfig {
+  objectType: ReferenceObjectType;
+  objectId: string;
+  successMessage: string;
+  failureMessage: string;
+  execute: () => Promise<void>;
+  afterSuccess?: () => void;
+}
+
 export function useCatalogActions(
   state: CatalogActionState,
   refresh: (showLoading?: boolean) => Promise<void>,
   errorMessage: (error: unknown, fallback: string) => string,
 ) {
+  const deletionPreviewOpen = ref(false);
+  const deletionPreviewConfirming = ref(false);
+  const deletionPreview = ref<DeletionImpactPreview | null>(null);
+  const pendingDeletion = ref<DeletionFlowConfig | null>(null);
+
+  function resetDeletionPreview() {
+    deletionPreviewOpen.value = false;
+    deletionPreview.value = null;
+    pendingDeletion.value = null;
+  }
+
+  async function openDeletionPreview(config: DeletionFlowConfig) {
+    try {
+      const preview = await api.getDeletionImpactPreview(config.objectType, config.objectId);
+      pendingDeletion.value = config;
+      deletionPreview.value = preview;
+      deletionPreviewOpen.value = true;
+    } catch (error) {
+      void message.error(errorMessage(error, `加载删除预览失败：${config.failureMessage}`));
+    }
+  }
+
+  async function confirmDeletionPreview() {
+    const config = pendingDeletion.value;
+    const preview = deletionPreview.value;
+    if (!config || !preview || !preview.canDelete) {
+      return;
+    }
+
+    deletionPreviewConfirming.value = true;
+    try {
+      await config.execute();
+      config.afterSuccess?.();
+      resetDeletionPreview();
+      await refresh();
+      void message.success(config.successMessage);
+    } catch (error) {
+      void message.error(errorMessage(error, config.failureMessage));
+    } finally {
+      deletionPreviewConfirming.value = false;
+    }
+  }
+
+  function closeDeletionPreview() {
+    if (deletionPreviewConfirming.value) {
+      return;
+    }
+    resetDeletionPreview();
+  }
+
   async function handleCreateAssistant(payload: CreateAssistantPayload) {
     try {
       await api.createAssistant(payload);
@@ -61,13 +123,13 @@ export function useCatalogActions(
   }
 
   async function handleDeleteDomain(domainId: string) {
-    try {
-      await api.deleteDomain(domainId);
-      await refresh();
-      void message.success('业务域已删除');
-    } catch (error) {
-      void message.error(errorMessage(error, '删除业务域失败'));
-    }
+    await openDeletionPreview({
+      objectType: 'DOMAIN',
+      objectId: domainId,
+      successMessage: '业务域已删除',
+      failureMessage: '删除业务域失败',
+      execute: () => api.deleteDomain(domainId).then(() => undefined),
+    });
   }
 
   async function handleCreateScenario(payload: CreateScenarioPayload) {
@@ -91,13 +153,13 @@ export function useCatalogActions(
   }
 
   async function handleDeleteScenario(scenarioId: string) {
-    try {
-      await api.deleteScenario(scenarioId);
-      await refresh();
-      void message.success('业务场景已删除');
-    } catch (error) {
-      void message.error(errorMessage(error, '删除业务场景失败'));
-    }
+    await openDeletionPreview({
+      objectType: 'SCENARIO',
+      objectId: scenarioId,
+      successMessage: '业务场景已删除',
+      failureMessage: '删除业务场景失败',
+      execute: () => api.deleteScenario(scenarioId).then(() => undefined),
+    });
   }
 
   async function handleUpdateAssistant(payload: { assistantId: string; data: UpdateAssistantPayload }) {
@@ -111,13 +173,13 @@ export function useCatalogActions(
   }
 
   async function handleDeleteAssistant(assistantId: string) {
-    try {
-      await api.deleteAssistant(assistantId);
-      await refresh();
-      void message.success('助手已删除');
-    } catch (error) {
-      void message.error(errorMessage(error, '删除助手失败'));
-    }
+    await openDeletionPreview({
+      objectType: 'ASSISTANT',
+      objectId: assistantId,
+      successMessage: '助手已删除',
+      failureMessage: '删除助手失败',
+      execute: () => api.deleteAssistant(assistantId).then(() => undefined),
+    });
   }
 
   async function handleCreateAgent(payload: CreateAgentPayload) {
@@ -131,13 +193,13 @@ export function useCatalogActions(
   }
 
   async function handleDeleteAgent(agentId: string) {
-    try {
-      await api.deleteAgent(agentId);
-      await refresh();
-      void message.success('智能体已删除');
-    } catch (error) {
-      void message.error(errorMessage(error, '删除智能体失败'));
-    }
+    await openDeletionPreview({
+      objectType: 'AGENT',
+      objectId: agentId,
+      successMessage: '智能体已删除',
+      failureMessage: '删除智能体失败',
+      execute: () => api.deleteAgent(agentId).then(() => undefined),
+    });
   }
 
   async function handleSaveAgent(payload: { agentId: string; agent: UpdateAgentPayload }) {
@@ -172,6 +234,19 @@ export function useCatalogActions(
     }
   }
 
+  async function handleDeleteKnowledgeBase(knowledgeBaseId: string) {
+    await openDeletionPreview({
+      objectType: 'KNOWLEDGE_BASE',
+      objectId: knowledgeBaseId,
+      successMessage: '知识库已删除',
+      failureMessage: '删除知识库失败',
+      execute: () => api.deleteKnowledgeBase(knowledgeBaseId).then(() => undefined),
+      afterSuccess: () => {
+        state.knowledgeLibraryPreferredKnowledgeBaseId.value = null;
+      },
+    });
+  }
+
   async function handleCreateResource(payload: CreateResourcePayload) {
     try {
       const created = await api.createResource(payload);
@@ -186,13 +261,17 @@ export function useCatalogActions(
   }
 
   async function handleDeleteResource(resourceId: string) {
-    try {
-      await api.deleteResource(resourceId);
-      await refresh();
-      void message.success('资源已删除');
-    } catch (error) {
-      void message.error(errorMessage(error, '删除资源失败'));
-    }
+    await openDeletionPreview({
+      objectType: 'RESOURCE',
+      objectId: resourceId,
+      successMessage: '资源已删除',
+      failureMessage: '删除资源失败',
+      execute: () => api.deleteResource(resourceId).then(() => undefined),
+      afterSuccess: () => {
+        state.resourceLibraryPreferredResourceId.value = null;
+        state.resourceLibraryPreferredVersionId.value = null;
+      },
+    });
   }
 
   async function handleUpdateResource(payload: { resourceId: string; resource: UpdateResourcePayload }) {
@@ -255,6 +334,11 @@ export function useCatalogActions(
   }
 
   return {
+    deletionPreviewOpen,
+    deletionPreviewConfirming,
+    deletionPreview,
+    confirmDeletionPreview,
+    closeDeletionPreview,
     handleCreateAssistant,
     handleCreateDomain,
     handleUpdateDomain,
@@ -269,6 +353,7 @@ export function useCatalogActions(
     handleSaveAgent,
     handleSaveOrchestration,
     handleCreateKnowledgeBase,
+    handleDeleteKnowledgeBase,
     handleCreateResource,
     handleDeleteResource,
     handleUpdateResource,

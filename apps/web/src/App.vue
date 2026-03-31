@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted } from 'vue';
 import AppLayout from './layouts/AppLayout.vue';
+import DeletionPreviewModal from './components/DeletionPreviewModal.vue';
 import type { PageKey, SectionKey } from './config/navigation';
 import { useAppState } from './composables/useAppState';
 import { useCatalogActions } from './composables/useCatalogActions';
@@ -52,5 +53,12 @@ onMounted(() => {
     >
       <component :is="currentView.component" v-bind="currentView.props.value" v-on="currentView.handlers" />
     </AppLayout>
+    <DeletionPreviewModal
+      :open="catalogActions.deletionPreviewOpen.value"
+      :preview="catalogActions.deletionPreview.value"
+      :confirming="catalogActions.deletionPreviewConfirming.value"
+      @close="catalogActions.closeDeletionPreview"
+      @confirm="catalogActions.confirmDeletionPreview"
+    />
   </a-app>
 </template>

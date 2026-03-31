@@ -197,15 +197,7 @@ function submitUpdate() {
           </a-form-item>
           <a-space>
             <a-button type="primary" html-type="submit">保存场景</a-button>
-            <a-popconfirm
-              title="确认删除该业务场景？"
-              description="如果场景下仍有关联助手，删除会被阻止。"
-              ok-text="删除"
-              cancel-text="取消"
-              @confirm="emit('deleteScenario', current.id)"
-            >
-              <a-button danger>删除场景</a-button>
-            </a-popconfirm>
+            <a-button danger @click="emit('deleteScenario', current.id)">删除场景</a-button>
           </a-space>
         </a-form>
       </a-card>

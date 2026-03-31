@@ -21,6 +21,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   refreshCatalog: [];
+  deleteKnowledgeBase: [knowledgeBaseId: string];
 }>();
 
 const selectedKnowledgeBaseId = ref('');
@@ -211,13 +212,7 @@ async function handleDeleteKnowledgeBase() {
   if (!selectedKnowledgeBase.value) {
     return;
   }
-  try {
-    await api.deleteKnowledgeBase(selectedKnowledgeBase.value.id);
-    emit('refreshCatalog');
-    void message.success('知识库已删除');
-  } catch (error) {
-    void message.error(error instanceof Error ? error.message : '删除知识库失败');
-  }
+  emit('deleteKnowledgeBase', selectedKnowledgeBase.value.id);
 }
 </script>
 

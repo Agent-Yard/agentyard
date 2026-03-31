@@ -89,7 +89,10 @@ export function useAppView(state: AppState, catalogActions: CatalogActions, runt
         preferredKnowledgeBaseId: state.knowledgeLibraryPreferredKnowledgeBaseId.value,
         catalogRevision: state.catalogRevision.value,
       })),
-      handlers: { refreshCatalog: state.refresh },
+      handlers: {
+        refreshCatalog: state.refresh,
+        deleteKnowledgeBase: catalogActions.handleDeleteKnowledgeBase,
+      },
     },
     'knowledge-create': {
       component: KnowledgeCreatePage,

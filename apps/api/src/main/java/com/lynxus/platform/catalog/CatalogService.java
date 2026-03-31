@@ -103,6 +103,23 @@ public class CatalogService {
         };
     }
 
+    public DeletionImpactPreviewDto deletionPreview(String objectType, String objectId) {
+        ensureLoaded();
+        String normalizedObjectType = normalizeReferenceObjectType(objectType);
+        ObjectReferenceAnalysisDto analysis = objectReferences(normalizedObjectType, objectId);
+        List<ObjectReferenceRelationDto> blockers = relationsByImpactLevel(analysis, "BLOCKS_DELETION");
+        List<ObjectReferenceRelationDto> advisories = relationsByImpactLevel(analysis, "ADVISORY");
+        return new DeletionImpactPreviewDto(
+            analysis.objectType(),
+            analysis.objectId(),
+            analysis.objectName(),
+            blockers.isEmpty(),
+            blockers,
+            advisories,
+            buildCascadeDeletes(normalizedObjectType, objectId)
+        );
+    }
+
     public List<BusinessDomainDto> listDomains() {
         ensureLoaded();
         return domains.stream()
@@ -921,9 +938,17 @@ public class CatalogService {
     }
 
     private void recycleOrchestrationAfterAgentDeletion(String assistantId, String agentId) {
+        AgentDeletionOrchestrationImpact impact = computeAgentDeletionOrchestrationImpact(assistantId, agentId);
+        if (impact == null) {
+            return;
+        }
+        orchestrations.put(assistantId, impact.resulting());
+    }
+
+    private AgentDeletionOrchestrationImpact computeAgentDeletionOrchestrationImpact(String assistantId, String agentId) {
         AssistantOrchestrationDto current = orchestrations.get(assistantId);
         if (current == null) {
-            return;
+            return null;
         }
 
         List<OrchestrationNodeDto> remainingNodes = current.nodes().stream()
@@ -946,9 +971,9 @@ public class CatalogService {
         ));
         try {
             validateOrchestration(candidate);
-            orchestrations.put(assistantId, candidate);
+            return new AgentDeletionOrchestrationImpact(current, candidate, false);
         } catch (IllegalArgumentException ignored) {
-            orchestrations.put(assistantId, buildDefaultOrchestration(assistantId));
+            return new AgentDeletionOrchestrationImpact(current, buildDefaultOrchestration(assistantId), true);
         }
     }
 
@@ -1243,10 +1268,149 @@ public class CatalogService {
         );
     }
 
+    private List<ObjectReferenceRelationDto> relationsByImpactLevel(ObjectReferenceAnalysisDto analysis, String impactLevel) {
+        return analysis.relations().stream()
+            .filter(relation -> impactLevel.equals(relation.impactLevel()))
+            .toList();
+    }
+
+    private record AgentDeletionOrchestrationImpact(
+        AssistantOrchestrationDto current,
+        AssistantOrchestrationDto resulting,
+        boolean resetToDefault
+    ) {
+    }
+
+    private List<DeletionCascadeItemDto> buildCascadeDeletes(String objectType, String objectId) {
+        return switch (objectType) {
+            case "DOMAIN", "SCENARIO" -> List.of();
+            case "ASSISTANT" -> buildAssistantCascadeDeletes(objectId);
+            case "AGENT" -> buildAgentCascadeDeletes(objectId);
+            case "RESOURCE" -> buildResourceCascadeDeletes(objectId);
+            case "KNOWLEDGE_BASE" -> buildKnowledgeBaseCascadeDeletes(objectId);
+            default -> throw new IllegalArgumentException("unsupported reference object type: " + objectType);
+        };
+    }
+
+    private List<DeletionCascadeItemDto> buildAssistantCascadeDeletes(String assistantId) {
+        List<DeletionCascadeItemDto> cascadeDeletes = new ArrayList<>();
+        AssistantDto assistant = toAssistantView(findAssistant(assistantId));
+        AssistantOrchestrationDto orchestration = orchestrations.get(assistantId);
+        if (orchestration != null) {
+            cascadeDeletes.add(new DeletionCascadeItemDto(
+                "DELETE",
+                "ASSISTANT_ORCHESTRATION",
+                "ORCHESTRATION",
+                orchestration.assistantId(),
+                orchestration.assistantName() + " 编排",
+                "删除助手后会同步删除该助手的编排定义。",
+                null,
+                null,
+                null
+            ));
+        }
+        assistantReleases.getOrDefault(assistantId, List.of()).stream()
+            .sorted(Comparator.comparing(AssistantReleaseDto::createdAt).reversed())
+            .forEach(release -> cascadeDeletes.add(new DeletionCascadeItemDto(
+                "DELETE",
+                "ASSISTANT_RELEASE",
+                "ASSISTANT_RELEASE",
+                release.id(),
+                assistant.name() + "@" + release.releaseVersion(),
+                "删除助手后会同步删除该助手的发布快照。",
+                release.releaseVersion(),
+                null,
+                null
+            )));
+        return cascadeDeletes;
+    }
+
+    private List<DeletionCascadeItemDto> buildAgentCascadeDeletes(String agentId) {
+        AgentDto agent = findAgent(agentId);
+        AgentDeletionOrchestrationImpact impact = computeAgentDeletionOrchestrationImpact(agent.assistantId(), agentId);
+        if (impact == null) {
+            return List.of();
+        }
+
+        if (impact.resetToDefault()) {
+            long removedNodeCount = impact.current().nodes().stream()
+                .filter(node -> impact.resulting().nodes().stream().noneMatch(result -> result.nodeKey().equals(node.nodeKey())))
+                .count();
+            long removedEdgeCount = impact.current().edges().stream()
+                .filter(edge -> impact.resulting().edges().stream().noneMatch(result -> result.edgeKey().equals(edge.edgeKey())))
+                .count();
+            return List.of(new DeletionCascadeItemDto(
+                "REMOVE",
+                "AGENT_ORCHESTRATION_RESET",
+                "ORCHESTRATION",
+                impact.current().assistantId(),
+                impact.current().assistantName() + " 编排",
+                "删除智能体后当前编排将回退为默认顺序编排，并替换 " + removedNodeCount + " 个节点与 " + removedEdgeCount + " 条连线。",
+                null,
+                null,
+                null
+            ));
+        }
+
+        return impact.current().nodes().stream()
+            .filter(node -> agentId.equals(node.agentId()))
+            .map(node -> {
+                long affectedEdges = impact.current().edges().stream()
+                    .filter(edge -> node.nodeKey().equals(edge.sourceNodeKey()) || node.nodeKey().equals(edge.targetNodeKey()))
+                    .count();
+                return new DeletionCascadeItemDto(
+                    "REMOVE",
+                    "AGENT_ORCHESTRATION_NODE",
+                    "ORCHESTRATION_NODE",
+                    node.nodeKey(),
+                    impact.current().assistantName() + " / " + node.nodeName(),
+                    "删除智能体后会自动回收编排节点，并移除 " + affectedEdges + " 条关联连线。",
+                    null,
+                    null,
+                    null
+                );
+            })
+            .toList();
+    }
+
+    private List<DeletionCascadeItemDto> buildResourceCascadeDeletes(String resourceId) {
+        ResourceDto resource = toResourceView(findResource(resourceId));
+        return versionsFor(resourceId).stream()
+            .map(version -> new DeletionCascadeItemDto(
+                "DELETE",
+                "RESOURCE_VERSION",
+                "RESOURCE_VERSION",
+                version.id(),
+                resource.name() + "@" + version.version(),
+                "删除资源后会同步删除该资源的全部版本记录。",
+                null,
+                version.version(),
+                null
+            ))
+            .toList();
+    }
+
+    private List<DeletionCascadeItemDto> buildKnowledgeBaseCascadeDeletes(String knowledgeBaseId) {
+        KnowledgeBaseDto knowledgeBase = getKnowledgeBase(knowledgeBaseId);
+        return knowledgeBase.releases().stream()
+            .filter(release -> release.status() == VersionStatus.DRAFT)
+            .map(release -> new DeletionCascadeItemDto(
+                "DELETE",
+                "KNOWLEDGE_BASE_DRAFT_RELEASE",
+                "KNOWLEDGE_RELEASE",
+                release.id(),
+                knowledgeBase.name() + "@" + release.version(),
+                "删除知识库后会同步删除未发布的知识发布版本。",
+                null,
+                null,
+                release.version()
+            ))
+            .toList();
+    }
+
     private String findObjectDeletionBlocker(String objectType, String objectId) {
         ObjectReferenceAnalysisDto analysis = objectReferences(objectType, objectId);
-        return analysis.relations().stream()
-            .filter(relation -> "BLOCKS_DELETION".equals(relation.impactLevel()))
+        return relationsByImpactLevel(analysis, "BLOCKS_DELETION").stream()
             .map(relation -> toDeletionMessage(analysis.objectType(), relation))
             .findFirst()
             .orElse(null);

@@ -32,6 +32,11 @@ public class CatalogController {
         return ApiResponse.ok(catalogService.objectReferences(objectType, objectId));
     }
 
+    @GetMapping("/catalog/deletion-preview/{objectType}/{objectId}")
+    public ApiResponse<?> deletionPreview(@PathVariable String objectType, @PathVariable String objectId) {
+        return ApiResponse.ok(catalogService.deletionPreview(objectType, objectId));
+    }
+
     @GetMapping("/domains")
     public ApiResponse<?> domains() {
         return ApiResponse.ok(catalogService.listDomains());
