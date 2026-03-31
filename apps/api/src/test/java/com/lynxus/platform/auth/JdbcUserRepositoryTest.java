@@ -81,6 +81,7 @@ class JdbcUserRepositoryTest {
             "Alice",
             "alice@example.com",
             AuthSource.EXTERNAL,
+            "https://issuer.example.com",
             "ext-subject-1",
             UserStatus.ACTIVE,
             now,
@@ -89,11 +90,12 @@ class JdbcUserRepositoryTest {
             List.of(Role.BUSINESS_USER, Role.DEVELOPER)
         ));
 
-        PlatformUser loaded = repository.findByExternalSubject("ext-subject-1").orElseThrow();
+        PlatformUser loaded = repository.findByExternalIdentity("https://issuer.example.com", "ext-subject-1").orElseThrow();
 
         assertEquals("user-ext-1", saved.id());
         assertEquals("alice", loaded.username());
         assertEquals("alice@example.com", loaded.email());
+        assertEquals("https://issuer.example.com", loaded.externalIssuer());
         assertEquals(List.of(Role.DEVELOPER, Role.BUSINESS_USER), loaded.roles());
         assertTrue(loaded.createdAt().isBefore(loaded.updatedAt()) || loaded.createdAt().equals(loaded.updatedAt()));
     }

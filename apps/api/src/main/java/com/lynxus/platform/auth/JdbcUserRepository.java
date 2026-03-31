@@ -26,7 +26,7 @@ public class JdbcUserRepository implements UserRepository {
     public Optional<PlatformUser> findByUsername(String username) {
         return jdbcTemplate.query(
             """
-                select id, username, display_name, email, auth_source, external_subject, status, created_at, updated_at, last_login_at
+                select id, username, display_name, email, auth_source, external_issuer, external_subject, status, created_at, updated_at, last_login_at
                 from platform_user
                 where username = ?
                 """,
@@ -36,14 +36,15 @@ public class JdbcUserRepository implements UserRepository {
     }
 
     @Override
-    public Optional<PlatformUser> findByExternalSubject(String externalSubject) {
+    public Optional<PlatformUser> findByExternalIdentity(String externalIssuer, String externalSubject) {
         return jdbcTemplate.query(
             """
-                select id, username, display_name, email, auth_source, external_subject, status, created_at, updated_at, last_login_at
+                select id, username, display_name, email, auth_source, external_issuer, external_subject, status, created_at, updated_at, last_login_at
                 from platform_user
-                where external_subject = ?
+                where external_issuer = ? and external_subject = ?
                 """,
             (rs, rowNum) -> mapUser(rs),
+            externalIssuer,
             externalSubject
         ).stream().findFirst().map(this::withRoles);
     }
@@ -52,7 +53,7 @@ public class JdbcUserRepository implements UserRepository {
     public Optional<PlatformUser> findById(String userId) {
         return jdbcTemplate.query(
             """
-                select id, username, display_name, email, auth_source, external_subject, status, created_at, updated_at, last_login_at
+                select id, username, display_name, email, auth_source, external_issuer, external_subject, status, created_at, updated_at, last_login_at
                 from platform_user
                 where id = ?
                 """,
@@ -67,13 +68,14 @@ public class JdbcUserRepository implements UserRepository {
         jdbcTemplate.update(
             """
                 insert into platform_user (
-                    id, username, display_name, email, auth_source, external_subject, status, created_at, updated_at, last_login_at
-                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    id, username, display_name, email, auth_source, external_issuer, external_subject, status, created_at, updated_at, last_login_at
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 on conflict (id) do update set
                     username = excluded.username,
                     display_name = excluded.display_name,
                     email = excluded.email,
                     auth_source = excluded.auth_source,
+                    external_issuer = excluded.external_issuer,
                     external_subject = excluded.external_subject,
                     status = excluded.status,
                     updated_at = excluded.updated_at,
@@ -84,6 +86,7 @@ public class JdbcUserRepository implements UserRepository {
             user.displayName(),
             user.email(),
             user.authSource().name(),
+            user.externalIssuer(),
             user.externalSubject(),
             user.status().name(),
             writeTimestamp(user.createdAt()),
@@ -108,6 +111,7 @@ public class JdbcUserRepository implements UserRepository {
             user.displayName(),
             user.email(),
             user.authSource(),
+            user.externalIssuer(),
             user.externalSubject(),
             user.status(),
             user.createdAt(),
@@ -136,6 +140,7 @@ public class JdbcUserRepository implements UserRepository {
             rs.getString("display_name"),
             rs.getString("email"),
             AuthSource.valueOf(rs.getString("auth_source")),
+            rs.getString("external_issuer"),
             rs.getString("external_subject"),
             UserStatus.valueOf(rs.getString("status")),
             readInstant(rs, "created_at"),

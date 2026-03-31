@@ -50,6 +50,7 @@ public class BootstrapAdminUserSynchronizer implements ApplicationRunner {
                 null,
                 AuthSource.LOCAL_BOOTSTRAP,
                 null,
+                null,
                 UserStatus.ACTIVE,
                 now,
                 now,
@@ -67,6 +68,7 @@ public class BootstrapAdminUserSynchronizer implements ApplicationRunner {
             : existing.displayName();
         boolean unchanged = existing.username().equals(configuredUsername)
             && existing.authSource() == AuthSource.LOCAL_BOOTSTRAP
+            && existing.externalIssuer() == null
             && existing.externalSubject() == null
             && displayName.equals(existing.displayName())
             && synchronizedRoles.equals(AuthModels.orderedRoles(existing.roles()));
@@ -80,6 +82,7 @@ public class BootstrapAdminUserSynchronizer implements ApplicationRunner {
             displayName,
             existing.email(),
             AuthSource.LOCAL_BOOTSTRAP,
+            null,
             null,
             existing.status(),
             existing.createdAt(),

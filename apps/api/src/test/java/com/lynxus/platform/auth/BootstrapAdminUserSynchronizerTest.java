@@ -20,7 +20,7 @@ class BootstrapAdminUserSynchronizerTest {
         InMemoryUserRepository repository = new InMemoryUserRepository();
         BootstrapAdminUserSynchronizer synchronizer = new BootstrapAdminUserSynchronizer(
             repository,
-            new AuthProperties(new AuthProperties.Bootstrap("root"), Role.BUSINESS_USER)
+            new AuthProperties(new AuthProperties.Bootstrap("root"), Role.BUSINESS_USER, true, "/")
         );
 
         synchronizer.synchronizeBootstrapUser();
@@ -43,6 +43,7 @@ class BootstrapAdminUserSynchronizerTest {
             null,
             AuthSource.LOCAL_BOOTSTRAP,
             null,
+            null,
             UserStatus.DISABLED,
             now,
             now,
@@ -51,7 +52,7 @@ class BootstrapAdminUserSynchronizerTest {
         ));
         BootstrapAdminUserSynchronizer synchronizer = new BootstrapAdminUserSynchronizer(
             repository,
-            new AuthProperties(new AuthProperties.Bootstrap("root"), Role.BUSINESS_USER)
+            new AuthProperties(new AuthProperties.Bootstrap("root"), Role.BUSINESS_USER, true, "/")
         );
 
         synchronizer.synchronizeBootstrapUser();
@@ -72,6 +73,7 @@ class BootstrapAdminUserSynchronizerTest {
             "Other User",
             null,
             AuthSource.EXTERNAL,
+            "https://issuer.example.com",
             "ext-001",
             UserStatus.ACTIVE,
             now,
@@ -81,7 +83,7 @@ class BootstrapAdminUserSynchronizerTest {
         ));
         BootstrapAdminUserSynchronizer synchronizer = new BootstrapAdminUserSynchronizer(
             repository,
-            new AuthProperties(new AuthProperties.Bootstrap("root"), Role.BUSINESS_USER)
+            new AuthProperties(new AuthProperties.Bootstrap("root"), Role.BUSINESS_USER, true, "/")
         );
 
         IllegalStateException error = assertThrows(IllegalStateException.class, synchronizer::synchronizeBootstrapUser);
@@ -98,8 +100,9 @@ class BootstrapAdminUserSynchronizerTest {
         }
 
         @Override
-        public Optional<PlatformUser> findByExternalSubject(String externalSubject) {
+        public Optional<PlatformUser> findByExternalIdentity(String externalIssuer, String externalSubject) {
             return usersById.values().stream()
+                .filter(user -> externalIssuer != null && externalIssuer.equals(user.externalIssuer()))
                 .filter(user -> externalSubject != null && externalSubject.equals(user.externalSubject()))
                 .findFirst();
         }
@@ -117,6 +120,7 @@ class BootstrapAdminUserSynchronizerTest {
                 user.displayName(),
                 user.email(),
                 user.authSource(),
+                user.externalIssuer(),
                 user.externalSubject(),
                 user.status(),
                 user.createdAt(),

@@ -26,6 +26,7 @@ import type {
   KnowledgeRelease,
   KnowledgeUploadCompletion,
   KnowledgeUploadSession,
+  LogoutResponse,
   ObjectReferenceAnalysis,
   Resource,
   ResourceVersion,
@@ -44,7 +45,28 @@ import type {
   WorkflowInstance,
 } from '../types';
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://localhost:8080/api';
+export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api';
+export const AUTH_LOGIN_PATH = `${API_BASE}/auth/login`;
+export const AUTH_DEV_BOOTSTRAP_LOGIN_PATH = `${API_BASE}/auth/dev-bootstrap-login`;
+
+let unauthorizedHandler: (() => void) | null = null;
+
+export class UnauthorizedError extends Error {
+  readonly status = 401;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'UnauthorizedError';
+  }
+}
+
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  unauthorizedHandler = handler;
+}
+
+export function isUnauthorizedError(error: unknown): error is UnauthorizedError {
+  return error instanceof UnauthorizedError;
+}
 
 async function parseError(response: Response): Promise<never> {
   const rawText = await response.text();
@@ -56,6 +78,10 @@ async function parseError(response: Response): Promise<never> {
     } catch {
       detail = rawText;
     }
+  }
+  if (response.status === 401) {
+    unauthorizedHandler?.();
+    throw new UnauthorizedError(detail);
   }
   throw new Error(detail);
 }
@@ -70,6 +96,7 @@ async function readResponseData<T>(response: Response): Promise<T> {
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...(options?.headers ?? {}),
@@ -148,6 +175,7 @@ export const api = {
     const formData = new FormData();
     formData.append('file', file);
     const response = await fetch(`${API_BASE}/knowledge-bases/${knowledgeBaseId}/upload-sessions/${uploadSessionId}/complete`, {
+      credentials: 'include',
       method: 'POST',
       body: formData,
     });
@@ -176,6 +204,7 @@ export const api = {
   getTasks: () => request<TaskInstance[]>('/tasks'),
   getWorkflows: () => request<WorkflowInstance[]>('/workflows'),
   getWorkflow: (workflowId: string) => request<WorkflowInstance>(`/workflows/${workflowId}`),
+  logout: () => request<LogoutResponse>('/auth/logout', jsonOptions('POST')),
   launchTask: (payload: { scenarioId: string; assistantId: string; question: string; requester: string }) =>
     request<TaskInstance>('/tasks', jsonOptions('POST', payload)),
   completeHumanAction: (workflowId: string, payload: { action: string; comment: string; operatorId: string; attributes: Record<string, string> }) =>

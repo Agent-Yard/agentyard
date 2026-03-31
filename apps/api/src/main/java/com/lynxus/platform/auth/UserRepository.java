@@ -6,7 +6,7 @@ import java.util.Optional;
 public interface UserRepository {
     Optional<PlatformUser> findByUsername(String username);
 
-    Optional<PlatformUser> findByExternalSubject(String externalSubject);
+    Optional<PlatformUser> findByExternalIdentity(String externalIssuer, String externalSubject);
 
     Optional<PlatformUser> findById(String userId);
 

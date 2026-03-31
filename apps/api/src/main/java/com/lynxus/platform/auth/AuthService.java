@@ -9,23 +9,19 @@ import org.springframework.stereotype.Service;
 @Service
 public class AuthService {
     private final CurrentUserResolver currentUserResolver;
-    private final UserRepository userRepository;
 
-    public AuthService(CurrentUserResolver currentUserResolver, UserRepository userRepository) {
+    public AuthService(CurrentUserResolver currentUserResolver) {
         this.currentUserResolver = currentUserResolver;
-        this.userRepository = userRepository;
     }
 
     public UserSession currentSession() {
-        String username = currentUserResolver.resolveCurrentUsername();
-        PlatformUser user = userRepository.findByUsername(username)
-            .orElseThrow(() -> new IllegalStateException("current user not found: " + username));
+        PlatformUser user = currentUserResolver.resolveCurrentUser();
         if (!user.isActive()) {
-            throw new IllegalStateException("current user is disabled: " + username);
+            throw new IllegalStateException("current user is disabled: " + user.username());
         }
         List<Role> roles = AuthModels.orderedRoles(user.roles());
         if (roles.isEmpty()) {
-            throw new IllegalStateException("current user has no roles: " + username);
+            throw new IllegalStateException("current user has no roles: " + user.username());
         }
         return new UserSession(
             user.id(),

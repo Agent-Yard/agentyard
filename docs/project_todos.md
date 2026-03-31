@@ -11,15 +11,15 @@
 
 ### 1.1 真实身份与请求级鉴权
 
-现状：Phase 1 已引入 `platform_user` 模型和 bootstrap admin，但没有真实登录流和请求级鉴权。
+现状：已完成 OIDC-first 登录流首版、API 请求级鉴权、前端登录页与 API 托管会话；当前剩余跨服务 internal token 与细粒度授权补齐。
 
 目标：
 
-1. 引入 OIDC 登录流（推荐 Keycloak / Casdoor 作为开发期 IdP）
-2. API 层统一 auth filter：校验 session / JWT，注入 `SecurityContext`
-3. 前端补登录页、token 存储、401 拦截与自动跳转
-4. Agent Runtime 与 Knowledge Service 的服务间调用引入 internal token 校验（不走 OIDC，走共享密钥或 service account）
-5. 预留 RBAC 注解，但首版只做 `admin / member` 两个角色，不做细粒度
+1. [x] 引入标准化 OIDC 登录流；Lynxus 核心只依赖 OIDC 协议，不内置 Keycloak / Casdoor 等特定 IdP
+2. [x] API 层统一 auth filter：校验 session / JWT，注入 `SecurityContext`
+3. [x] 前端补登录页、API 托管会话、401 拦截与自动跳转
+4. [ ] Agent Runtime 与 Knowledge Service 的服务间调用引入 internal token 校验（不走 OIDC，走共享密钥或 service account）
+5. [ ] 预留 RBAC 注解，但首版只做 `admin / member` 两个角色，不做细粒度
 
 为什么排最前：没有 auth 的系统不能交给任何真实用户，也无法做审计。
 
@@ -346,7 +346,7 @@
 
 ---
 
-## 已完成工作回顾
+## 已完成工作回顾（本块仅作旧记录参考，不再改动）
 
 以下工作项已在前序开发中完成，不再列为 TODO（详见 `docs/develop_record/2026-03-project_todos_snapshot.md`）：
 

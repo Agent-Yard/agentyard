@@ -25,11 +25,14 @@ public class DefaultUserProvisioningService implements UserProvisioningService {
 
     @Override
     public PlatformUser provisionExternalUser(ExternalIdentity identity) {
-        if (identity == null || identity.subject() == null || identity.subject().isBlank()) {
+        if (identity == null || identity.issuer() == null || identity.issuer().isBlank()) {
+            throw new IllegalArgumentException("external identity issuer must not be blank");
+        }
+        if (identity.subject() == null || identity.subject().isBlank()) {
             throw new IllegalArgumentException("external identity subject must not be blank");
         }
 
-        return userRepository.findByExternalSubject(identity.subject())
+        return userRepository.findByExternalIdentity(identity.issuer(), identity.subject())
             .map(existing -> updateExistingUser(existing, identity))
             .orElseGet(() -> createUser(identity));
     }
@@ -45,6 +48,7 @@ public class DefaultUserProvisioningService implements UserProvisioningService {
             preferredDisplayName(identity.displayName(), existing.displayName()),
             firstNonBlank(identity.email(), existing.email()),
             AuthSource.EXTERNAL,
+            identity.issuer(),
             identity.subject(),
             existing.status(),
             existing.createdAt(),
@@ -63,6 +67,7 @@ public class DefaultUserProvisioningService implements UserProvisioningService {
             preferredDisplayName(identity.displayName(), username),
             emptyToNull(identity.email()),
             AuthSource.EXTERNAL,
+            identity.issuer(),
             identity.subject(),
             UserStatus.ACTIVE,
             now,

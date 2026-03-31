@@ -7,6 +7,10 @@ body {
     #f5f7fb;
 }
 
+#root {
+  min-height: 100vh;
+}
+
 .brand-block {
   padding: 24px 20px;
 }
@@ -73,6 +77,12 @@ body {
   color: #0f172a !important;
 }
 
+.app-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .app-header .ant-select-selector {
   background: #ffffff !important;
   border-color: rgba(15, 23, 42, 0.14) !important;
@@ -89,6 +99,49 @@ body {
   min-height: 100vh;
   display: grid;
   place-items: center;
+}
+
+.login-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.login-card {
+  width: min(480px, 100%);
+  padding: 32px;
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top left, rgba(24, 144, 255, 0.16), transparent 38%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.98));
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.08);
+}
+
+.login-card__eyebrow {
+  display: inline-flex;
+  margin-bottom: 12px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(24, 144, 255, 0.08);
+  color: #1677ff;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.login-card__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.login-card__meta {
+  display: block;
+  margin-top: 16px;
+  line-height: 1.6;
 }
 
 .clickable-item {

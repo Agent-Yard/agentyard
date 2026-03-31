@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { api } from './api';
+import { api, setUnauthorizedHandler, UnauthorizedError } from './api';
 
 describe('api client', () => {
   afterEach(() => {
+    setUnauthorizedHandler(null);
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
@@ -12,6 +13,21 @@ describe('api client', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(api.getSession()).rejects.toThrow('network down');
+  });
+
+  it('redirects unauthorized responses through the registered handler', async () => {
+    const onUnauthorized = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ detail: 'Authentication is required' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/problem+json' },
+      }),
+    );
+    setUnauthorizedHandler(onUnauthorized);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(api.getSession()).rejects.toBeInstanceOf(UnauthorizedError);
+    expect(onUnauthorized).toHaveBeenCalledOnce();
   });
 
   it('surfaces conflict details for concurrent session turns', async () => {
@@ -32,7 +48,7 @@ describe('api client', () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
-  it('requests deletion preview from the dedicated endpoint', async () => {
+  it('sends browser credentials for authenticated API requests', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({
         data: {
@@ -54,8 +70,9 @@ describe('api client', () => {
     await api.getDeletionImpactPreview('DOMAIN', 'domain-1');
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://localhost:8080/api/catalog/deletion-preview/DOMAIN/domain-1',
+      '/api/catalog/deletion-preview/DOMAIN/domain-1',
       expect.objectContaining({
+        credentials: 'include',
         headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
       }),
     );
@@ -82,14 +99,39 @@ describe('api client', () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://localhost:8080/api/knowledge-bases/knowledge-1/retrieval-preview',
+      '/api/knowledge-bases/knowledge-1/retrieval-preview',
       expect.objectContaining({
+        credentials: 'include',
         method: 'POST',
         body: JSON.stringify({
           snapshotId: 'snapshot-1',
           query: '支付失败怎么办',
           topK: 5,
         }),
+      }),
+    );
+  });
+
+  it('posts logout through the authenticated session endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        data: {
+          postLogoutRedirectUrl: '/login',
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.logout();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/auth/logout',
+      expect.objectContaining({
+        credentials: 'include',
+        method: 'POST',
       }),
     );
   });

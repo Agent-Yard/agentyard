@@ -33,7 +33,6 @@ declare module 'vue' {
     AListItemMeta: typeof import('ant-design-vue/es')['ListItemMeta']
     AMenu: typeof import('ant-design-vue/es')['Menu']
     AModal: typeof import('ant-design-vue/es')['Modal']
-    APopconfirm: typeof import('ant-design-vue/es')['Popconfirm']
     AProgress: typeof import('ant-design-vue/es')['Progress']
     ARow: typeof import('ant-design-vue/es')['Row']
     ASegmented: typeof import('ant-design-vue/es')['Segmented']
@@ -59,5 +58,7 @@ declare module 'vue' {
     PageHeaderCard: typeof import('./src/components/PageHeaderCard.vue')['default']
     ResourceVersionConfigEditor: typeof import('./src/components/ResourceVersionConfigEditor.vue')['default']
     ResourceVersionConfigSummary: typeof import('./src/components/ResourceVersionConfigSummary.vue')['default']
+    RouterLink: typeof import('vue-router')['RouterLink']
+    RouterView: typeof import('vue-router')['RouterView']
   }
 }

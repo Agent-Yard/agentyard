@@ -21,10 +21,11 @@ class DefaultUserProvisioningServiceTest {
         InMemoryUserRepository repository = new InMemoryUserRepository();
         DefaultUserProvisioningService service = new DefaultUserProvisioningService(
             repository,
-            new AuthProperties(new AuthProperties.Bootstrap("admin"), Role.BUSINESS_USER)
+            new AuthProperties(new AuthProperties.Bootstrap("admin"), Role.BUSINESS_USER, true, "/")
         );
 
         PlatformUser user = service.provisionExternalUser(new ExternalIdentity(
+            "https://issuer.example.com",
             "ext-001",
             "alice",
             "Alice",
@@ -35,6 +36,7 @@ class DefaultUserProvisioningServiceTest {
         assertEquals("alice", user.username());
         assertEquals("Alice", user.displayName());
         assertEquals(AuthSource.EXTERNAL, user.authSource());
+        assertEquals("https://issuer.example.com", user.externalIssuer());
         assertEquals(UserStatus.ACTIVE, user.status());
         assertEquals(List.of(Role.BUSINESS_USER), user.roles());
     }
@@ -49,6 +51,7 @@ class DefaultUserProvisioningServiceTest {
             "Alice Old",
             null,
             AuthSource.EXTERNAL,
+            "https://issuer.example.com",
             "ext-001",
             UserStatus.ACTIVE,
             now,
@@ -58,10 +61,11 @@ class DefaultUserProvisioningServiceTest {
         ));
         DefaultUserProvisioningService service = new DefaultUserProvisioningService(
             repository,
-            new AuthProperties(new AuthProperties.Bootstrap("admin"), Role.BUSINESS_USER)
+            new AuthProperties(new AuthProperties.Bootstrap("admin"), Role.BUSINESS_USER, true, "/")
         );
 
         PlatformUser user = service.provisionExternalUser(new ExternalIdentity(
+            "https://issuer.example.com",
             "ext-001",
             "alice",
             "Alice New",
@@ -84,6 +88,7 @@ class DefaultUserProvisioningServiceTest {
             "Alice Old",
             null,
             AuthSource.EXTERNAL,
+            "https://issuer.example.com",
             "ext-001",
             UserStatus.DISABLED,
             now,
@@ -93,10 +98,11 @@ class DefaultUserProvisioningServiceTest {
         ));
         DefaultUserProvisioningService service = new DefaultUserProvisioningService(
             repository,
-            new AuthProperties(new AuthProperties.Bootstrap("admin"), Role.BUSINESS_USER)
+            new AuthProperties(new AuthProperties.Bootstrap("admin"), Role.BUSINESS_USER, true, "/")
         );
 
         PlatformUser user = service.provisionExternalUser(new ExternalIdentity(
+            "https://issuer.example.com",
             "ext-001",
             "alice",
             "Alice New",
@@ -116,8 +122,9 @@ class DefaultUserProvisioningServiceTest {
         }
 
         @Override
-        public Optional<PlatformUser> findByExternalSubject(String externalSubject) {
+        public Optional<PlatformUser> findByExternalIdentity(String externalIssuer, String externalSubject) {
             return usersById.values().stream()
+                .filter(user -> externalIssuer != null && externalIssuer.equals(user.externalIssuer()))
                 .filter(user -> externalSubject != null && externalSubject.equals(user.externalSubject()))
                 .findFirst();
         }
@@ -135,6 +142,7 @@ class DefaultUserProvisioningServiceTest {
                 user.displayName(),
                 user.email(),
                 user.authSource(),
+                user.externalIssuer(),
                 user.externalSubject(),
                 user.status(),
                 user.createdAt(),

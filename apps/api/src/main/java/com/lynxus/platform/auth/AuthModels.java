@@ -44,6 +44,7 @@ public final class AuthModels {
         String displayName,
         String email,
         AuthSource authSource,
+        String externalIssuer,
         String externalSubject,
         UserStatus status,
         Instant createdAt,
@@ -72,10 +73,16 @@ public final class AuthModels {
     }
 
     public record ExternalIdentity(
+        String issuer,
         String subject,
         String preferredUsername,
         String displayName,
         String email
+    ) {
+    }
+
+    public record LogoutResponse(
+        String postLogoutRedirectUrl
     ) {
     }
 

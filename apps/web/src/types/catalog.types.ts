@@ -23,6 +23,10 @@ export interface UserSession {
   availableRoles: Role[];
 }
 
+export interface LogoutResponse {
+  postLogoutRedirectUrl: string;
+}
+
 export interface Version {
   version: string;
   status: VersionStatus;

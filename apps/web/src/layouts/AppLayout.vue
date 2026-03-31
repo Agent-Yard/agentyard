@@ -14,6 +14,7 @@ defineProps<{
 const emit = defineEmits<{
   menuClick: [info: { key: string | number }];
   openChange: [keys: string[]];
+  logout: [];
 }>();
 </script>
 
@@ -46,9 +47,12 @@ const emit = defineEmits<{
           </a-typography-text>
         </div>
 
-        <a-typography-text type="secondary">
-          {{ session.displayName }} / {{ session.currentRole }}
-        </a-typography-text>
+        <div class="app-header__actions">
+          <a-typography-text type="secondary">
+            {{ session.displayName }} / {{ session.currentRole }}
+          </a-typography-text>
+          <a-button type="default" @click="emit('logout')">退出登录</a-button>
+        </div>
       </a-layout-header>
 
       <a-layout-content class="app-content">

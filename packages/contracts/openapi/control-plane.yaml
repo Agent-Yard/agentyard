@@ -5,6 +5,22 @@ info:
 servers:
   - url: http://localhost:8080/api
 paths:
+  /auth/login:
+    get:
+      summary: Start OIDC login flow
+      responses:
+        '302':
+          description: Redirect to the configured OIDC authorization endpoint
+  /auth/logout:
+    post:
+      summary: Logout current platform session
+      responses:
+        '200':
+          description: Logout completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseLogoutResponse'
   /auth/session:
     get:
       summary: Get current platform user session
@@ -15,6 +31,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiResponseUserSession'
+        '401':
+          description: Authentication required
   /catalog/summary:
     get:
       summary: Get aggregate catalog summary
@@ -769,6 +787,23 @@ components:
           type: boolean
         data:
           $ref: '#/components/schemas/UserSession'
+        timestamp:
+          type: string
+          format: date-time
+    LogoutResponse:
+      type: object
+      required: [postLogoutRedirectUrl]
+      properties:
+        postLogoutRedirectUrl:
+          type: string
+    ApiResponseLogoutResponse:
+      type: object
+      required: [success, data, timestamp]
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/LogoutResponse'
         timestamp:
           type: string
           format: date-time

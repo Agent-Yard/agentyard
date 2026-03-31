@@ -10,15 +10,13 @@ import com.lynxus.platform.auth.AuthModels.UserSession;
 import com.lynxus.platform.auth.AuthModels.UserStatus;
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class AuthServiceTest {
     @Test
-    void shouldReturnCurrentSessionFromRepository() {
+    void shouldReturnCurrentSessionFromResolver() {
         AuthService authService = new AuthService(
-            () -> "admin",
-            new StubUserRepository(platformUser("user-admin", "admin", UserStatus.ACTIVE, List.of(Role.PLATFORM_ADMIN, Role.DEVELOPER)))
+            () -> platformUser("user-admin", "admin", UserStatus.ACTIVE, List.of(Role.PLATFORM_ADMIN, Role.DEVELOPER))
         );
 
         UserSession session = authService.currentSession();
@@ -30,8 +28,10 @@ class AuthServiceTest {
     }
 
     @Test
-    void shouldRejectMissingBootstrapUser() {
-        AuthService authService = new AuthService(() -> "admin", new StubUserRepository(null));
+    void shouldRejectMissingUser() {
+        AuthService authService = new AuthService(() -> {
+            throw new IllegalStateException("current user not found: admin");
+        });
 
         IllegalStateException error = assertThrows(IllegalStateException.class, authService::currentSession);
 
@@ -39,10 +39,9 @@ class AuthServiceTest {
     }
 
     @Test
-    void shouldRejectDisabledBootstrapUser() {
+    void shouldRejectDisabledUser() {
         AuthService authService = new AuthService(
-            () -> "admin",
-            new StubUserRepository(platformUser("user-admin", "admin", UserStatus.DISABLED, List.of(Role.PLATFORM_ADMIN)))
+            () -> platformUser("user-admin", "admin", UserStatus.DISABLED, List.of(Role.PLATFORM_ADMIN))
         );
 
         IllegalStateException error = assertThrows(IllegalStateException.class, authService::currentSession);
@@ -51,10 +50,9 @@ class AuthServiceTest {
     }
 
     @Test
-    void shouldRejectBootstrapUserWithoutRoles() {
+    void shouldRejectUserWithoutRoles() {
         AuthService authService = new AuthService(
-            () -> "admin",
-            new StubUserRepository(platformUser("user-admin", "admin", UserStatus.ACTIVE, List.of()))
+            () -> platformUser("user-admin", "admin", UserStatus.ACTIVE, List.of())
         );
 
         IllegalStateException error = assertThrows(IllegalStateException.class, authService::currentSession);
@@ -71,39 +69,12 @@ class AuthServiceTest {
             null,
             AuthSource.LOCAL_BOOTSTRAP,
             null,
+            null,
             status,
             now,
             now,
             null,
             roles
         );
-    }
-
-    private static final class StubUserRepository implements UserRepository {
-        private final PlatformUser user;
-
-        private StubUserRepository(PlatformUser user) {
-            this.user = user;
-        }
-
-        @Override
-        public Optional<PlatformUser> findByUsername(String username) {
-            return user != null && user.username().equals(username) ? Optional.of(user) : Optional.empty();
-        }
-
-        @Override
-        public Optional<PlatformUser> findByExternalSubject(String externalSubject) {
-            return Optional.empty();
-        }
-
-        @Override
-        public Optional<PlatformUser> findById(String userId) {
-            return user != null && user.id().equals(userId) ? Optional.of(user) : Optional.empty();
-        }
-
-        @Override
-        public PlatformUser save(PlatformUser user) {
-            throw new UnsupportedOperationException();
-        }
     }
 }

@@ -27,6 +27,8 @@ lynxus:
     bootstrap:
       username: ${LYNXUS_AUTH_BOOTSTRAP_USERNAME:admin}
     default-role: ${LYNXUS_AUTH_DEFAULT_ROLE:BUSINESS_USER}
+    dev-bootstrap-enabled: ${LYNXUS_AUTH_DEV_BOOTSTRAP_ENABLED:false}
+    login-success-path: ${LYNXUS_AUTH_LOGIN_SUCCESS_PATH:/}
   minio:
     endpoint: ${LYNXUS_MINIO_ENDPOINT:http://localhost:9000}
     access-key: ${LYNXUS_MINIO_ACCESS_KEY:minioadmin}

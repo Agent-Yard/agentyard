@@ -78,7 +78,9 @@ docker compose -f docker-compose.yml -f docker-compose.dashboards.yml up -d
 
 - OpenSearch Dashboards：`http://localhost:5601`
 - Temporal UI：`http://localhost:8088`
-- 开发态用户会话通过 `/api/auth/session`
+- `pnpm dev:api` 会默认启用 `local` profile，并打开开发态 bootstrap 登录旁路
+- 前端开发服务通过 Vite 代理将 `/api` 转发到 `http://localhost:8080`
+- 控制台未登录时会跳转 `/login`；开发态可通过 `/api/auth/dev-bootstrap-login` 建立本地 bootstrap 会话
 - 前端不再回退到内置 mock 数据；后端未启动时页面请求会直接报错
 - API 启动时会对数据库中的非终态 runtime workflow 主动向 Temporal 做一次对账
 - Worker 会消费同一 Temporal namespace / task queue 下的 assistant run workflow
@@ -96,7 +98,7 @@ docker compose -f docker-compose.yml -f docker-compose.dashboards.yml up -d
 
 ## 后续扩展方向
 
-- 用真实 OIDC 替换 mock 认证
+- 接入真实企业 OIDC 提供方，并按环境关闭开发态 bootstrap 登录旁路
 - 补齐异步订阅式运行观测
 - 收敛知识检索的线上索引策略、生命周期治理和监控面
 - 明确 MinIO / OpenSearch 的线上职责并补齐监控与备份

@@ -1,0 +1,3 @@
+lynxus:
+  auth:
+    dev-bootstrap-enabled: true
