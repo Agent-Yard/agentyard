@@ -24,7 +24,7 @@
 
 建议本机具备：
 
-- `gradle`
+- Java 25
 - `pnpm`
 - `python3`
 - `uv`
@@ -98,4 +98,4 @@ docker compose -f docker-compose.yml -f docker-compose.dashboards.yml up -d
 - 补齐异步订阅式运行观测
 - 收敛知识检索的线上索引策略、生命周期治理和监控面
 - 明确 MinIO / OpenSearch 的线上职责并补齐监控与备份
-- 引入 Gradle wrapper 和 CI 校验
+- 基于 Gradle wrapper 补齐 CI 校验

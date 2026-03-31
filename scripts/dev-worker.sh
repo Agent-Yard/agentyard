@@ -8,4 +8,4 @@ source "$ROOT_DIR/scripts/common-env.sh"
 load_lynxus_env "apps/worker"
 
 cd "$ROOT_DIR"
-exec gradle --no-daemon --console=plain :apps:worker:bootRun
+exec ./gradlew --console=plain :apps:worker:bootRun

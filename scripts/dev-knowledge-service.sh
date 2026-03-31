@@ -3,7 +3,6 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-KNOWLEDGE_SERVICE_DIR="$ROOT_DIR/apps/knowledge-service"
 
 source "$ROOT_DIR/scripts/common-env.sh"
 load_lynxus_env "apps/knowledge-service"
@@ -15,5 +14,5 @@ fi
 HOST="${LYNXUS_KNOWLEDGE_SERVICE_HOST:-0.0.0.0}"
 PORT="${LYNXUS_KNOWLEDGE_SERVICE_PORT:-8091}"
 
-cd "$KNOWLEDGE_SERVICE_DIR"
+cd "$ROOT_DIR/apps/knowledge-service"
 exec uv run --package lynxus-knowledge-service uvicorn app.main:app --host "$HOST" --port "$PORT" --reload
