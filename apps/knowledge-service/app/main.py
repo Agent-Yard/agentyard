@@ -21,7 +21,7 @@ from urllib.request import Request, urlopen
 from fastapi import Depends, FastAPI, HTTPException
 from minio import Minio
 from pydantic import BaseModel, Field
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, create_engine, select
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, create_engine, select
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
@@ -112,10 +112,12 @@ class KnowledgeFileRecord(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     knowledge_base_id: Mapped[str] = mapped_column(String(64), index=True)
     upload_session_id: Mapped[str] = mapped_column(String(64), ForeignKey("knowledge_upload_session.id"))
+    source_type: Mapped[str] = mapped_column(String(32), default="FILE_UPLOAD")
+    source_uri: Mapped[str] = mapped_column(String(1024), default="")
     file_name: Mapped[str] = mapped_column(String(255))
     content_type: Mapped[str] = mapped_column(String(128))
-    object_key: Mapped[str] = mapped_column(String(255))
-    size_bytes: Mapped[int] = mapped_column(Integer)
+    object_key: Mapped[str] = mapped_column(String(255), default="")
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(32), default="UPLOADED")
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
@@ -130,8 +132,13 @@ class KnowledgeImportJobRecord(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     knowledge_base_id: Mapped[str] = mapped_column(String(64), index=True)
     file_id: Mapped[str] = mapped_column(String(64), ForeignKey("knowledge_file.id"))
-    status: Mapped[str] = mapped_column(String(32), default="PENDING")
+    status: Mapped[str] = mapped_column(String(32), default="QUEUED")
+    stage: Mapped[str] = mapped_column(String(64), default="QUEUED")
+    progress_percent: Mapped[int] = mapped_column(Integer, default=0)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    retryable: Mapped[bool] = mapped_column(Boolean, default=False)
     failure_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -185,10 +192,15 @@ class IndexSnapshotRecord(Base):
     knowledge_base_id: Mapped[str] = mapped_column(String(64), index=True)
     retrieval_backend: Mapped[str] = mapped_column(String(64), default=DEFAULT_SNAPSHOT_RETRIEVAL_BACKEND)
     retrieval_mode: Mapped[str] = mapped_column(String(32), default=DEFAULT_SNAPSHOT_RETRIEVAL_MODE)
-    status: Mapped[str] = mapped_column(String(32), default="PENDING")
+    status: Mapped[str] = mapped_column(String(32), default="QUEUED")
+    stage: Mapped[str] = mapped_column(String(64), default="QUEUED")
+    progress_percent: Mapped[int] = mapped_column(Integer, default=0)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    retryable: Mapped[bool] = mapped_column(Boolean, default=False)
     document_count: Mapped[int] = mapped_column(Integer, default=0)
     chunk_count: Mapped[int] = mapped_column(Integer, default=0)
     failure_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     built_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
@@ -247,6 +259,8 @@ class KnowledgeFileResponse(BaseModel):
     id: str
     knowledgeBaseId: str
     uploadSessionId: str
+    sourceType: str
+    sourceUri: str
     fileName: str
     contentType: str
     sizeBytes: int
@@ -260,8 +274,16 @@ class ImportJobResponse(BaseModel):
     id: str
     knowledgeBaseId: str
     fileId: str
+    sourceType: str
+    sourceUri: str
+    fileName: str
     status: str
+    stage: str
+    progressPercent: int
+    retryCount: int
+    retryable: bool
     failureReason: Optional[str] = None
+    startedAt: Optional[datetime] = None
     createdAt: datetime
     updatedAt: datetime
     completedAt: Optional[datetime] = None
@@ -292,9 +314,14 @@ class IndexSnapshotResponse(BaseModel):
     retrievalBackend: str
     retrievalMode: str
     status: str
+    stage: str
+    progressPercent: int
+    retryCount: int
+    retryable: bool
     documentCount: int
     chunkCount: int
     failureReason: Optional[str] = None
+    startedAt: Optional[datetime] = None
     builtAt: Optional[datetime] = None
     createdAt: datetime
     updatedAt: datetime
@@ -983,6 +1010,8 @@ def normalize_retrieval_mode(value: Optional[str]) -> str:
 
 
 def infer_source_uri(file_record: KnowledgeFileRecord) -> str:
+    if file_record.source_uri:
+        return file_record.source_uri
     if re.match(r"^https?://", file_record.file_name):
         return file_record.file_name
     return f"upload://{file_record.knowledge_base_id}/{file_record.file_name}"
@@ -993,6 +1022,8 @@ def file_response(record: KnowledgeFileRecord) -> KnowledgeFileResponse:
         id=record.id,
         knowledgeBaseId=record.knowledge_base_id,
         uploadSessionId=record.upload_session_id,
+        sourceType=record.source_type,
+        sourceUri=infer_source_uri(record),
         fileName=record.file_name,
         contentType=record.content_type,
         sizeBytes=record.size_bytes,
@@ -1004,12 +1035,21 @@ def file_response(record: KnowledgeFileRecord) -> KnowledgeFileResponse:
 
 
 def import_job_response(record: KnowledgeImportJobRecord) -> ImportJobResponse:
+    file_record = record.knowledge_file
     return ImportJobResponse(
         id=record.id,
         knowledgeBaseId=record.knowledge_base_id,
         fileId=record.file_id,
+        sourceType=file_record.source_type,
+        sourceUri=infer_source_uri(file_record),
+        fileName=file_record.file_name,
         status=record.status,
+        stage=record.stage,
+        progressPercent=record.progress_percent,
+        retryCount=record.retry_count,
+        retryable=record.retryable,
         failureReason=record.failure_reason,
+        startedAt=record.started_at,
         createdAt=record.created_at,
         updatedAt=record.updated_at,
         completedAt=record.completed_at,
@@ -1041,54 +1081,49 @@ def snapshot_response(record: IndexSnapshotRecord) -> IndexSnapshotResponse:
         retrievalBackend=record.retrieval_backend,
         retrievalMode=record.retrieval_mode,
         status=record.status,
+        stage=record.stage,
+        progressPercent=record.progress_percent,
+        retryCount=record.retry_count,
+        retryable=record.retryable,
         documentCount=record.document_count,
         chunkCount=record.chunk_count,
         failureReason=record.failure_reason,
+        startedAt=record.started_at,
         builtAt=record.built_at,
         createdAt=record.created_at,
         updatedAt=record.updated_at,
     )
 
-
-def make_import_job(db: Session, knowledge_base_id: str, file_name: str, content_type: str, payload: bytes) -> dict:
-    try:
-        ensure_supported_document_type(file_name, content_type)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    upload_session = UploadSessionRecord(
-        id=f"upload-session-{uuid.uuid4().hex[:10]}",
-        knowledge_base_id=knowledge_base_id,
-        status="COMPLETED",
-    )
-    object_key = f"{knowledge_base_id}/{uuid.uuid4().hex[:12]}-{sanitize_object_name(file_name)}"
-    storage.put_bytes(object_key, payload, content_type)
-    file_record = KnowledgeFileRecord(
-        id=f"kb-file-{uuid.uuid4().hex[:12]}",
-        knowledge_base_id=knowledge_base_id,
-        upload_session_id=upload_session.id,
-        file_name=file_name,
-        content_type=content_type or "application/octet-stream",
-        object_key=object_key,
-        size_bytes=len(payload),
-        status="UPLOADED",
-    )
+def create_import_job_attempt(db: Session, file_record: KnowledgeFileRecord, retry_count: int) -> KnowledgeImportJobRecord:
     import_job = KnowledgeImportJobRecord(
         id=f"kb-import-{uuid.uuid4().hex[:12]}",
-        knowledge_base_id=knowledge_base_id,
+        knowledge_base_id=file_record.knowledge_base_id,
         file_id=file_record.id,
-        status="PENDING",
+        status="QUEUED",
+        stage="QUEUED",
+        progress_percent=0,
+        retry_count=retry_count,
+        retryable=False,
     )
-    db.add_all([upload_session, file_record, import_job])
-    db.commit()
-    return {
-        "file": file_response(file_record).model_dump(mode="json"),
-        "importJob": import_job_response(import_job).model_dump(mode="json"),
-    }
+    file_record.status = "UPLOADED"
+    file_record.error_message = None
+    file_record.updated_at = now_utc()
+    db.add(import_job)
+    return import_job
 
 
 def sanitize_object_name(value: str) -> str:
     cleaned = re.sub(r"[^a-zA-Z0-9._-]+", "-", value).strip("-")
     return cleaned or "document.bin"
+
+
+def infer_initial_url_file_name(url: str, title: Optional[str]) -> str:
+    parsed = urlparse(url)
+    leaf = Path(parsed.path).name or parsed.netloc or "page"
+    leaf = leaf.split("?")[0]
+    base = title.strip() if title and title.strip() else leaf
+    base = sanitize_object_name(base)
+    return base or "page.txt"
 
 
 def infer_url_file_name(url: str, title: Optional[str], content_type: str) -> str:
@@ -1122,6 +1157,62 @@ def fetch_url_payload(url: str) -> tuple[bytes, str]:
         raise HTTPException(status_code=400, detail=f"url import failed with http {exc.code}: {url}") from exc
     except URLError as exc:
         raise HTTPException(status_code=400, detail=f"url import failed: {exc.reason}") from exc
+
+
+def update_import_job(
+    import_job: KnowledgeImportJobRecord,
+    *,
+    status: Optional[str] = None,
+    stage: Optional[str] = None,
+    progress_percent: Optional[int] = None,
+    failure_reason: Optional[str] = None,
+    retryable: Optional[bool] = None,
+    started_at: Optional[datetime] = None,
+    completed_at: Optional[datetime] = None,
+) -> None:
+    if status is not None:
+        import_job.status = status
+    if stage is not None:
+        import_job.stage = stage
+    if progress_percent is not None:
+        import_job.progress_percent = max(0, min(100, progress_percent))
+    if failure_reason is not None:
+        import_job.failure_reason = failure_reason
+    if retryable is not None:
+        import_job.retryable = retryable
+    if started_at is not None:
+        import_job.started_at = started_at
+    if completed_at is not None:
+        import_job.completed_at = completed_at
+    import_job.updated_at = now_utc()
+
+
+def update_snapshot(
+    snapshot: IndexSnapshotRecord,
+    *,
+    status: Optional[str] = None,
+    stage: Optional[str] = None,
+    progress_percent: Optional[int] = None,
+    failure_reason: Optional[str] = None,
+    retryable: Optional[bool] = None,
+    started_at: Optional[datetime] = None,
+    built_at: Optional[datetime] = None,
+) -> None:
+    if status is not None:
+        snapshot.status = status
+    if stage is not None:
+        snapshot.stage = stage
+    if progress_percent is not None:
+        snapshot.progress_percent = max(0, min(100, progress_percent))
+    if failure_reason is not None:
+        snapshot.failure_reason = failure_reason
+    if retryable is not None:
+        snapshot.retryable = retryable
+    if started_at is not None:
+        snapshot.started_at = started_at
+    if built_at is not None:
+        snapshot.built_at = built_at
+    snapshot.updated_at = now_utc()
 
 
 @app.on_event("startup")
@@ -1166,19 +1257,16 @@ def complete_upload(request: CompleteUploadRequest, db: Session = Depends(get_db
         id=f"kb-file-{uuid.uuid4().hex[:12]}",
         knowledge_base_id=request.knowledgeBaseId,
         upload_session_id=request.uploadSessionId,
+        source_type="FILE_UPLOAD",
+        source_uri=f"upload://{request.knowledgeBaseId}/{request.fileName}",
         file_name=request.fileName,
         content_type=request.contentType or "application/octet-stream",
         object_key=object_key,
         size_bytes=len(payload),
         status="UPLOADED",
     )
-    import_job = KnowledgeImportJobRecord(
-        id=f"kb-import-{uuid.uuid4().hex[:12]}",
-        knowledge_base_id=request.knowledgeBaseId,
-        file_id=file_record.id,
-        status="PENDING",
-    )
-    db.add_all([file_record, import_job])
+    db.add(file_record)
+    import_job = create_import_job_attempt(db, file_record, 0)
     db.commit()
     return {
         "file": file_response(file_record).model_dump(mode="json"),
@@ -1188,13 +1276,30 @@ def complete_upload(request: CompleteUploadRequest, db: Session = Depends(get_db
 
 @app.post("/internal/url-imports")
 def create_url_import(request: CreateUrlImportRequest, db: Session = Depends(get_db)) -> dict:
-    payload, content_type = fetch_url_payload(request.url)
-    file_name = infer_url_file_name(request.url, request.title, content_type)
-    try:
-        ensure_supported_document_type(file_name, content_type)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return make_import_job(db, request.knowledgeBaseId, request.url if request.url else file_name, content_type, payload)
+    upload_session = UploadSessionRecord(
+        id=f"upload-session-{uuid.uuid4().hex[:10]}",
+        knowledge_base_id=request.knowledgeBaseId,
+        status="COMPLETED",
+    )
+    file_record = KnowledgeFileRecord(
+        id=f"kb-file-{uuid.uuid4().hex[:12]}",
+        knowledge_base_id=request.knowledgeBaseId,
+        upload_session_id=upload_session.id,
+        source_type="URL",
+        source_uri=request.url,
+        file_name=infer_initial_url_file_name(request.url, request.title),
+        content_type="application/octet-stream",
+        object_key="",
+        size_bytes=0,
+        status="UPLOADED",
+    )
+    db.add_all([upload_session, file_record])
+    import_job = create_import_job_attempt(db, file_record, 0)
+    db.commit()
+    return {
+        "file": file_response(file_record).model_dump(mode="json"),
+        "importJob": import_job_response(import_job).model_dump(mode="json"),
+    }
 
 
 @app.get("/internal/knowledge-bases/{knowledge_base_id}/files", response_model=List[KnowledgeFileResponse])
@@ -1217,6 +1322,21 @@ def list_import_jobs(knowledge_base_id: str, db: Session = Depends(get_db)) -> L
     return [import_job_response(record) for record in records]
 
 
+@app.post("/internal/import-jobs/{job_id}/retry", response_model=ImportJobResponse)
+def retry_import_job(job_id: str, db: Session = Depends(get_db)) -> ImportJobResponse:
+    failed_job = db.get(KnowledgeImportJobRecord, job_id)
+    if failed_job is None:
+        raise HTTPException(status_code=404, detail="import job not found")
+    if failed_job.status != "FAILED":
+        raise HTTPException(status_code=409, detail="only failed import jobs can be retried")
+    file_record = db.get(KnowledgeFileRecord, failed_job.file_id)
+    if file_record is None:
+        raise HTTPException(status_code=404, detail="knowledge file not found")
+    retry_job = create_import_job_attempt(db, file_record, failed_job.retry_count + 1)
+    db.commit()
+    return import_job_response(retry_job)
+
+
 @app.get("/internal/knowledge-bases/{knowledge_base_id}/documents", response_model=List[DocumentResponse])
 def list_documents(knowledge_base_id: str, db: Session = Depends(get_db)) -> List[DocumentResponse]:
     records = db.scalars(
@@ -1234,7 +1354,11 @@ def create_index_snapshot(knowledge_base_id: str, request: CreateIndexSnapshotRe
         knowledge_base_id=knowledge_base_id,
         retrieval_backend="OPENSEARCH",
         retrieval_mode=normalize_retrieval_mode(request.retrievalMode),
-        status="PENDING",
+        status="QUEUED",
+        stage="QUEUED",
+        progress_percent=0,
+        retry_count=0,
+        retryable=False,
     )
     db.add(snapshot)
     db.flush()
@@ -1264,26 +1388,87 @@ def list_index_snapshots(knowledge_base_id: str, db: Session = Depends(get_db)) 
     return [snapshot_response(record) for record in records]
 
 
+@app.post("/internal/index-snapshots/{snapshot_id}/retry", response_model=IndexSnapshotResponse)
+def retry_index_snapshot(snapshot_id: str, db: Session = Depends(get_db)) -> IndexSnapshotResponse:
+    failed_snapshot = db.get(IndexSnapshotRecord, snapshot_id)
+    if failed_snapshot is None:
+        raise HTTPException(status_code=404, detail="index snapshot not found")
+    if failed_snapshot.status != "FAILED":
+        raise HTTPException(status_code=409, detail="only failed index snapshots can be retried")
+    retry_snapshot = IndexSnapshotRecord(
+        id=f"snapshot-{uuid.uuid4().hex[:12]}",
+        knowledge_base_id=failed_snapshot.knowledge_base_id,
+        retrieval_backend=failed_snapshot.retrieval_backend,
+        retrieval_mode=failed_snapshot.retrieval_mode,
+        status="QUEUED",
+        stage="QUEUED",
+        progress_percent=0,
+        retry_count=failed_snapshot.retry_count + 1,
+        retryable=False,
+    )
+    db.add(retry_snapshot)
+    selected_document_ids = [
+        selection.document_id
+        for selection in db.scalars(
+            select(SnapshotDocumentSelectionRecord).where(SnapshotDocumentSelectionRecord.snapshot_id == failed_snapshot.id)
+        ).all()
+    ]
+    if selected_document_ids:
+        db.add_all(
+            [
+                SnapshotDocumentSelectionRecord(
+                    id=f"snapshot-document-{uuid.uuid4().hex[:12]}",
+                    snapshot_id=retry_snapshot.id,
+                    document_id=document_id,
+                )
+                for document_id in selected_document_ids
+            ]
+        )
+    db.commit()
+    return snapshot_response(retry_snapshot)
+
+
 @app.post("/internal/import-jobs/{job_id}/run", response_model=ImportJobResponse)
 def run_import_job(job_id: str, db: Session = Depends(get_db)) -> ImportJobResponse:
     import_job = db.get(KnowledgeImportJobRecord, job_id)
     if import_job is None:
         raise HTTPException(status_code=404, detail="import job not found")
+    if import_job.status != "QUEUED":
+        raise HTTPException(status_code=409, detail="only queued import jobs can be run")
     file_record = db.get(KnowledgeFileRecord, import_job.file_id)
     if file_record is None:
         raise HTTPException(status_code=404, detail="knowledge file not found")
 
-    import_job.status = "RUNNING"
-    import_job.updated_at = now_utc()
+    update_import_job(import_job, status="RUNNING", stage="FETCHING_SOURCE", progress_percent=10, retryable=False, started_at=import_job.started_at or now_utc())
     file_record.status = "IMPORTING"
     file_record.updated_at = now_utc()
     db.commit()
 
     try:
-        payload = storage.get_bytes(file_record.object_key)
+        if file_record.source_type == "URL":
+            try:
+                payload, content_type = fetch_url_payload(file_record.source_uri)
+            except HTTPException as exc:
+                raise ValueError(exc.detail) from exc
+            resolved_file_name = infer_url_file_name(file_record.source_uri, file_record.file_name, content_type)
+            ensure_supported_document_type(resolved_file_name, content_type)
+            object_key = f"{file_record.knowledge_base_id}/{uuid.uuid4().hex[:12]}-{sanitize_object_name(resolved_file_name)}"
+            storage.put_bytes(object_key, payload, content_type)
+            file_record.file_name = resolved_file_name
+            file_record.content_type = content_type or "application/octet-stream"
+            file_record.object_key = object_key
+            file_record.size_bytes = len(payload)
+        else:
+            try:
+                payload = storage.get_bytes(file_record.object_key)
+            except Exception as exc:
+                raise ValueError(f"source fetch failed: {exc}") from exc
+
+        update_import_job(import_job, stage="PARSING", progress_percent=35)
+        db.commit()
         parsed = parse_document(file_record, payload)
         if not parsed.body_text.strip():
-            raise ValueError("no extractable text found")
+            raise ValueError("document parsing failed: no extractable text found")
 
         existing_documents = db.scalars(
             select(KnowledgeDocumentRecord).where(KnowledgeDocumentRecord.file_id == file_record.id)
@@ -1293,6 +1478,8 @@ def run_import_job(job_id: str, db: Session = Depends(get_db)) -> ImportJobRespo
             db.delete(existing_document)
         db.flush()
 
+        update_import_job(import_job, stage="CHUNKING", progress_percent=65)
+        db.commit()
         document = KnowledgeDocumentRecord(
             id=f"kb-document-{uuid.uuid4().hex[:12]}",
             knowledge_base_id=file_record.knowledge_base_id,
@@ -1305,22 +1492,34 @@ def run_import_job(job_id: str, db: Session = Depends(get_db)) -> ImportJobRespo
         )
         chunks = build_chunks(file_record.knowledge_base_id, document.id, document.title, document.source_uri, parsed.segments)
         if not chunks:
-            raise ValueError("no chunks generated from document")
+            raise ValueError("chunk generation failed: no chunks generated from document")
 
+        update_import_job(import_job, stage="PERSISTING", progress_percent=90)
         db.add(document)
         db.add_all(chunks)
-        import_job.status = "COMPLETED"
-        import_job.completed_at = now_utc()
         import_job.failure_reason = None
+        update_import_job(
+            import_job,
+            status="SUCCEEDED",
+            stage="SUCCEEDED",
+            progress_percent=100,
+            retryable=False,
+            completed_at=now_utc(),
+        )
         file_record.status = "IMPORTED"
         file_record.error_message = None
     except Exception as exc:
-        import_job.status = "FAILED"
-        import_job.failure_reason = str(exc)
+        update_import_job(
+            import_job,
+            status="FAILED",
+            stage="FAILED",
+            failure_reason=str(exc),
+            retryable=True,
+            completed_at=now_utc(),
+        )
         file_record.status = "FAILED"
         file_record.error_message = str(exc)
     finally:
-        import_job.updated_at = now_utc()
         file_record.updated_at = now_utc()
         db.commit()
     return import_job_response(import_job)
@@ -1331,15 +1530,16 @@ def build_index_snapshot(snapshot_id: str, db: Session = Depends(get_db)) -> Ind
     snapshot = db.get(IndexSnapshotRecord, snapshot_id)
     if snapshot is None:
         raise HTTPException(status_code=404, detail="index snapshot not found")
-    if not opensearch.enabled:
-        raise HTTPException(status_code=500, detail="opensearch is not configured for knowledge snapshot builds")
+    if snapshot.status != "QUEUED":
+        raise HTTPException(status_code=409, detail="only queued index snapshots can be built")
 
-    snapshot.status = "BUILDING"
-    snapshot.updated_at = now_utc()
+    update_snapshot(snapshot, status="RUNNING", stage="COLLECTING_DOCUMENTS", progress_percent=10, retryable=False, started_at=snapshot.started_at or now_utc())
     db.query(IndexSnapshotChunkRecord).filter(IndexSnapshotChunkRecord.snapshot_id == snapshot_id).delete()
     db.commit()
 
     try:
+        if not opensearch.enabled:
+            raise ValueError("retrieval backend unavailable: opensearch is not configured for knowledge snapshot builds")
         selected_document_ids = [
             selection.document_id
             for selection in db.scalars(
@@ -1356,6 +1556,8 @@ def build_index_snapshot(snapshot_id: str, db: Session = Depends(get_db)) -> Ind
         if not documents:
             raise ValueError("no ready documents available for snapshot")
 
+        update_snapshot(snapshot, stage="INDEXING", progress_percent=60)
+        db.commit()
         all_chunks: List[KnowledgeChunkRecord] = []
         chunk_records: List[IndexSnapshotChunkRecord] = []
         chunk_count = 0
@@ -1382,20 +1584,29 @@ def build_index_snapshot(snapshot_id: str, db: Session = Depends(get_db)) -> Ind
 
         opensearch.bulk_index_chunks(snapshot.id, snapshot.knowledge_base_id, all_chunks)
         db.add_all(chunk_records)
-        snapshot.status = "READY"
+        snapshot.failure_reason = None
+        update_snapshot(
+            snapshot,
+            status="READY",
+            stage="READY",
+            progress_percent=100,
+            retryable=False,
+            built_at=now_utc(),
+        )
         snapshot.document_count = len(documents)
         snapshot.chunk_count = chunk_count
         snapshot.retrieval_backend = "OPENSEARCH"
-        snapshot.failure_reason = None
-        snapshot.built_at = now_utc()
     except Exception as exc:
-        snapshot.status = "FAILED"
-        snapshot.failure_reason = str(exc)
+        update_snapshot(
+            snapshot,
+            status="FAILED",
+            stage="FAILED",
+            failure_reason=str(exc),
+            retryable=True,
+        )
         snapshot.document_count = 0
         snapshot.chunk_count = 0
-    finally:
-        snapshot.updated_at = now_utc()
-        db.commit()
+    db.commit()
     return snapshot_response(snapshot)
 
 

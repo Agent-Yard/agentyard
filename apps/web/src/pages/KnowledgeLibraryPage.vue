@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { message } from 'ant-design-vue';
 import ObjectReferencePanel from '../components/ObjectReferencePanel.vue';
+import { hasActiveKnowledgeOperations, knowledgeSourceLabel, knowledgeStatusColor } from './knowledgeWorkspace';
 import { api } from '../services/api';
 import type {
   CreateKnowledgeReleasePayload,
@@ -10,6 +11,7 @@ import type {
   KnowledgeFile,
   KnowledgeImportJob,
   KnowledgeIndexSnapshot,
+  KnowledgeRetrievalPreviewResult,
   KnowledgeRelease,
 } from '../types';
 
@@ -33,6 +35,11 @@ const snapshots = ref<KnowledgeIndexSnapshot[]>([]);
 const releases = ref<KnowledgeRelease[]>([]);
 const uploading = ref(false);
 const creatingSnapshot = ref(false);
+const previewingRetrieval = ref(false);
+const retrievalPreviewSnapshotId = ref('');
+const retrievalPreviewQuery = ref('');
+const retrievalPreviewResult = ref<KnowledgeRetrievalPreviewResult | null>(null);
+let workspacePollingTimer: number | null = null;
 const releaseForm = reactive<CreateKnowledgeReleasePayload>({
   summary: '',
   status: 'DRAFT',
@@ -52,6 +59,7 @@ const selectedKnowledgeBase = computed(() =>
   props.knowledgeBases.find((item) => item.id === selectedKnowledgeBaseId.value) ?? props.knowledgeBases[0] ?? null,
 );
 const readySnapshots = computed(() => snapshots.value.filter((item) => item.status === 'READY'));
+const hasPendingOperations = computed(() => hasActiveKnowledgeOperations(importJobs.value, snapshots.value));
 
 async function loadWorkspace() {
   if (!selectedKnowledgeBase.value) {
@@ -60,6 +68,8 @@ async function loadWorkspace() {
     documents.value = [];
     snapshots.value = [];
     releases.value = [];
+    retrievalPreviewResult.value = null;
+    retrievalPreviewSnapshotId.value = '';
     return;
   }
   loadingWorkspace.value = true;
@@ -80,9 +90,41 @@ async function loadWorkspace() {
     if (!readySnapshots.value.some((item) => item.id === releaseForm.snapshotId)) {
       releaseForm.snapshotId = readySnapshots.value[0]?.id ?? '';
     }
+    if (!readySnapshots.value.some((item) => item.id === retrievalPreviewSnapshotId.value)) {
+      retrievalPreviewSnapshotId.value = readySnapshots.value[0]?.id ?? '';
+    }
   } finally {
     loadingWorkspace.value = false;
   }
+}
+
+function startWorkspacePolling() {
+  if (typeof window === 'undefined' || workspacePollingTimer !== null) {
+    return;
+  }
+  workspacePollingTimer = window.setInterval(() => {
+    if (!selectedKnowledgeBase.value || !hasPendingOperations.value || loadingWorkspace.value) {
+      return;
+    }
+    void loadWorkspace();
+  }, 3000);
+}
+
+function stopWorkspacePolling() {
+  if (workspacePollingTimer !== null && typeof window !== 'undefined') {
+    window.clearInterval(workspacePollingTimer);
+    workspacePollingTimer = null;
+  }
+}
+
+function formatBytes(sizeBytes: number): string {
+  if (sizeBytes < 1024) {
+    return `${sizeBytes} B`;
+  }
+  if (sizeBytes < 1024 * 1024) {
+    return `${(sizeBytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 watch(
@@ -104,11 +146,17 @@ watch(
 );
 
 watch(selectedKnowledgeBaseId, () => {
+  retrievalPreviewResult.value = null;
   void loadWorkspace();
 });
 
 onMounted(() => {
+  startWorkspacePolling();
   void loadWorkspace();
+});
+
+onBeforeUnmount(() => {
+  stopWorkspacePolling();
 });
 
 async function handleUpload(file: File) {
@@ -121,7 +169,7 @@ async function handleUpload(file: File) {
     await api.completeKnowledgeUpload(selectedKnowledgeBase.value.id, session.id, file);
     await loadWorkspace();
     emit('refreshCatalog');
-    void message.success('文件已提交导入');
+    void message.success('文件已提交导入，后台处理中');
   } catch (error) {
     void message.error(error instanceof Error ? error.message : '文件导入失败');
   } finally {
@@ -139,7 +187,7 @@ async function handleImportUrl() {
     urlImportForm.url = '';
     urlImportForm.title = '';
     await loadWorkspace();
-    void message.success('URL 已提交导入');
+    void message.success('URL 已提交导入，后台处理中');
   } catch (error) {
     void message.error(error instanceof Error ? error.message : 'URL 导入失败');
   }
@@ -156,7 +204,7 @@ async function handleCreateSnapshot() {
       documents.value.filter((item) => item.status === 'READY').map((item) => item.id),
     );
     await loadWorkspace();
-    void message.success('索引快照构建已触发');
+    void message.success('索引快照已提交构建');
   } catch (error) {
     void message.error(error instanceof Error ? error.message : '创建索引快照失败');
   } finally {
@@ -214,6 +262,51 @@ async function handleDeleteKnowledgeBase() {
   }
   emit('deleteKnowledgeBase', selectedKnowledgeBase.value.id);
 }
+
+async function handleRetryImportJob(jobId: string) {
+  if (!selectedKnowledgeBase.value) {
+    return;
+  }
+  try {
+    await api.retryKnowledgeImportJob(selectedKnowledgeBase.value.id, jobId);
+    await loadWorkspace();
+    void message.success('导入任务已重新排队');
+  } catch (error) {
+    void message.error(error instanceof Error ? error.message : '重试导入任务失败');
+  }
+}
+
+async function handleRetrySnapshot(snapshotId: string) {
+  if (!selectedKnowledgeBase.value) {
+    return;
+  }
+  try {
+    await api.retryKnowledgeIndexSnapshot(selectedKnowledgeBase.value.id, snapshotId);
+    await loadWorkspace();
+    void message.success('索引快照已重新排队构建');
+  } catch (error) {
+    void message.error(error instanceof Error ? error.message : '重试索引快照失败');
+  }
+}
+
+async function handlePreviewRetrieval() {
+  if (!selectedKnowledgeBase.value || !retrievalPreviewSnapshotId.value || !retrievalPreviewQuery.value.trim()) {
+    return;
+  }
+  previewingRetrieval.value = true;
+  try {
+    retrievalPreviewResult.value = await api.previewKnowledgeRetrieval(selectedKnowledgeBase.value.id, {
+      snapshotId: retrievalPreviewSnapshotId.value,
+      query: retrievalPreviewQuery.value.trim(),
+      topK: 5,
+    });
+  } catch (error) {
+    retrievalPreviewResult.value = null;
+    void message.error(error instanceof Error ? error.message : '检索验证失败');
+  } finally {
+    previewingRetrieval.value = false;
+  }
+}
 </script>
 
 <template>
@@ -244,6 +337,7 @@ async function handleDeleteKnowledgeBase() {
         <template #extra>
           <a-space>
             <a-tag>{{ selectedKnowledgeBase.shareScope }}</a-tag>
+            <a-tag v-if="hasPendingOperations" color="processing">后台任务运行中</a-tag>
             <a-button danger ghost @click="handleDeleteKnowledgeBase">删除知识库</a-button>
           </a-space>
         </template>
@@ -261,20 +355,45 @@ async function handleDeleteKnowledgeBase() {
 
           <a-tab-pane key="imports" tab="内容导入">
             <a-space direction="vertical" style="width: 100%" size="large">
-              <a-upload :before-upload="handleUpload" :show-upload-list="false">
-                <a-button type="primary" :loading="uploading">上传文件并导入</a-button>
-              </a-upload>
+              <a-row :gutter="[16, 16]">
+                <a-col :span="12">
+                  <a-card size="small" title="文件上传">
+                    <a-space direction="vertical" style="width: 100%">
+                      <a-upload :before-upload="handleUpload" :show-upload-list="false">
+                        <a-button type="primary" :loading="uploading">上传文件并导入</a-button>
+                      </a-upload>
+                      <a-typography-text type="secondary">提交后立即返回，后台异步解析并更新状态。</a-typography-text>
+                    </a-space>
+                  </a-card>
+                </a-col>
+                <a-col :span="12">
+                  <a-card size="small" title="URL 导入">
+                    <a-form layout="vertical" :model="urlImportForm" @finish="handleImportUrl">
+                      <a-form-item label="URL">
+                        <a-input v-model:value="urlImportForm.url" placeholder="https://example.com/faq" />
+                      </a-form-item>
+                      <a-form-item label="标题">
+                        <a-input v-model:value="urlImportForm.title" placeholder="可选" />
+                      </a-form-item>
+                      <a-button type="primary" html-type="submit">提交 URL 导入</a-button>
+                    </a-form>
+                  </a-card>
+                </a-col>
+              </a-row>
 
-              <a-card size="small" title="URL 导入">
-                <a-form layout="vertical" :model="urlImportForm" @finish="handleImportUrl">
-                  <a-form-item label="URL">
-                    <a-input v-model:value="urlImportForm.url" placeholder="https://example.com/faq" />
-                  </a-form-item>
-                  <a-form-item label="标题">
-                    <a-input v-model:value="urlImportForm.title" placeholder="可选" />
-                  </a-form-item>
-                  <a-button type="primary" html-type="submit">提交 URL 导入</a-button>
-                </a-form>
+              <a-card size="small" title="源对象">
+                <a-list :data-source="fileList" size="small">
+                  <template #renderItem="{ item }">
+                    <a-list-item>
+                      <a-list-item-meta :title="item.fileName" :description="item.sourceUri" />
+                      <a-space>
+                        <a-tag>{{ knowledgeSourceLabel(item.sourceType) }}</a-tag>
+                        <a-tag :color="knowledgeStatusColor(item.status)">{{ item.status }}</a-tag>
+                        <a-tag>{{ formatBytes(item.sizeBytes) }}</a-tag>
+                      </a-space>
+                    </a-list-item>
+                  </template>
+                </a-list>
               </a-card>
 
               <a-card size="small" title="导入任务">
@@ -282,11 +401,28 @@ async function handleDeleteKnowledgeBase() {
                   <template #renderItem="{ item }">
                     <a-list-item>
                       <a-space direction="vertical" style="width: 100%">
-                        <a-space>
-                          <a-typography-text strong>{{ item.id }}</a-typography-text>
-                          <a-tag>{{ item.status }}</a-tag>
+                        <a-space align="start" style="justify-content: space-between; width: 100%">
+                          <a-space wrap>
+                            <a-typography-text strong>{{ item.fileName }}</a-typography-text>
+                            <a-tag>{{ knowledgeSourceLabel(item.sourceType) }}</a-tag>
+                            <a-tag :color="knowledgeStatusColor(item.status)">{{ item.status }}</a-tag>
+                            <a-tag>{{ item.stage }}</a-tag>
+                            <a-tag>retry {{ item.retryCount }}</a-tag>
+                          </a-space>
+                          <a-button
+                            v-if="item.status === 'FAILED' && item.retryable"
+                            type="primary"
+                            ghost
+                            size="small"
+                            @click="handleRetryImportJob(item.id)"
+                          >
+                            重试
+                          </a-button>
                         </a-space>
-                        <a-typography-text type="secondary">{{ item.failureReason || '等待知识服务处理。' }}</a-typography-text>
+                        <a-progress :percent="item.progressPercent" size="small" />
+                        <a-typography-text type="secondary">
+                          {{ item.failureReason || item.sourceUri }}
+                        </a-typography-text>
                       </a-space>
                     </a-list-item>
                   </template>
@@ -315,15 +451,88 @@ async function handleDeleteKnowledgeBase() {
               <a-list :data-source="snapshots">
                 <template #renderItem="{ item }">
                   <a-list-item>
-                    <a-list-item-meta :title="item.id" :description="`${item.retrievalBackend} / ${item.retrievalMode}`" />
-                    <a-space>
-                      <a-tag :color="item.status === 'READY' ? 'green' : item.status === 'FAILED' ? 'red' : 'gold'">{{ item.status }}</a-tag>
-                      <a-tag>{{ item.documentCount }} docs</a-tag>
-                      <a-tag>{{ item.chunkCount }} chunks</a-tag>
+                    <a-space direction="vertical" style="width: 100%">
+                      <a-space align="start" style="justify-content: space-between; width: 100%">
+                        <a-list-item-meta :title="item.id" :description="`${item.retrievalBackend} / ${item.retrievalMode}`" />
+                        <a-space>
+                          <a-tag :color="knowledgeStatusColor(item.status)">{{ item.status }}</a-tag>
+                          <a-tag>{{ item.stage }}</a-tag>
+                          <a-tag>{{ item.documentCount }} docs</a-tag>
+                          <a-tag>{{ item.chunkCount }} chunks</a-tag>
+                          <a-tag>retry {{ item.retryCount }}</a-tag>
+                          <a-button
+                            v-if="item.status === 'FAILED' && item.retryable"
+                            type="primary"
+                            ghost
+                            size="small"
+                            @click="handleRetrySnapshot(item.id)"
+                          >
+                            重试
+                          </a-button>
+                        </a-space>
+                      </a-space>
+                      <a-progress :percent="item.progressPercent" size="small" />
+                      <a-typography-text type="secondary">{{ item.failureReason || '索引快照已受理，后台持续推进。' }}</a-typography-text>
                     </a-space>
                   </a-list-item>
                 </template>
               </a-list>
+            </a-space>
+          </a-tab-pane>
+
+          <a-tab-pane key="retrieval-preview" tab="检索验证">
+            <a-space direction="vertical" style="width: 100%" size="large">
+              <a-card size="small" title="预览查询">
+                <a-form layout="vertical" @finish="handlePreviewRetrieval">
+                  <a-row :gutter="[16, 16]">
+                    <a-col :span="10">
+                      <a-form-item label="READY 快照">
+                        <a-select
+                          v-model:value="retrievalPreviewSnapshotId"
+                          :options="readySnapshots.map((item) => ({ label: `${item.id} · ${item.documentCount} docs`, value: item.id }))"
+                        />
+                      </a-form-item>
+                    </a-col>
+                    <a-col :span="14">
+                      <a-form-item label="查询词">
+                        <a-input v-model:value="retrievalPreviewQuery" placeholder="例如：支付失败怎么办" />
+                      </a-form-item>
+                    </a-col>
+                  </a-row>
+                  <a-button type="primary" html-type="submit" :loading="previewingRetrieval">执行检索验证</a-button>
+                </a-form>
+              </a-card>
+
+              <a-alert
+                v-if="retrievalPreviewResult?.lowConfidence"
+                type="warning"
+                show-icon
+                message="本次检索结果置信度较低"
+                description="没有命中高置信内容，请检查查询词、导入结果或目标快照。"
+              />
+
+              <a-list v-if="retrievalPreviewResult && retrievalPreviewResult.hits.length" :data-source="retrievalPreviewResult.hits">
+                <template #renderItem="{ item }">
+                  <a-list-item>
+                    <a-space direction="vertical" style="width: 100%">
+                      <a-space wrap>
+                        <a-typography-text strong>{{ item.documentTitle }}</a-typography-text>
+                        <a-tag color="blue">{{ item.score.toFixed(2) }}</a-tag>
+                        <a-tag v-if="item.headingPath">{{ item.headingPath }}</a-tag>
+                      </a-space>
+                      <a-typography-paragraph :ellipsis="{ rows: 3 }" style="margin-bottom: 0">
+                        {{ item.snippet }}
+                      </a-typography-paragraph>
+                      <a-typography-text type="secondary">{{ item.sourceUri }}</a-typography-text>
+                    </a-space>
+                  </a-list-item>
+                </template>
+              </a-list>
+
+              <a-empty
+                v-else-if="retrievalPreviewResult"
+                description="当前没有可展示的检索命中。"
+              />
             </a-space>
           </a-tab-pane>
 

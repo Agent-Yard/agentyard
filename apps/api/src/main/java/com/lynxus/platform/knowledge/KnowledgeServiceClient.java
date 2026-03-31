@@ -70,6 +70,13 @@ public class KnowledgeServiceClient {
             .body(KNOWLEDGE_IMPORT_JOB_LIST);
     }
 
+    public KnowledgeImportJobDto retryImportJob(String jobId) {
+        return restClient.post()
+            .uri("/internal/import-jobs/{jobId}/retry", jobId)
+            .retrieve()
+            .body(KnowledgeImportJobDto.class);
+    }
+
     public List<KnowledgeDocumentDto> listDocuments(String knowledgeBaseId) {
         return restClient.get()
             .uri("/internal/knowledge-bases/{knowledgeBaseId}/documents", knowledgeBaseId)
@@ -81,6 +88,13 @@ public class KnowledgeServiceClient {
         return restClient.post()
             .uri("/internal/knowledge-bases/{knowledgeBaseId}/index-snapshots", knowledgeBaseId)
             .body(new CreateKnowledgeIndexSnapshotRequest(documentIds))
+            .retrieve()
+            .body(KnowledgeIndexSnapshotDto.class);
+    }
+
+    public KnowledgeIndexSnapshotDto retryIndexSnapshot(String snapshotId) {
+        return restClient.post()
+            .uri("/internal/index-snapshots/{snapshotId}/retry", snapshotId)
             .retrieve()
             .body(KnowledgeIndexSnapshotDto.class);
     }
@@ -99,6 +113,20 @@ public class KnowledgeServiceClient {
             .body(KnowledgeIndexSnapshotDto.class);
     }
 
+    public KnowledgeRetrievalPreviewResultDto previewRetrieval(KnowledgeRetrievalPreviewRequest request) {
+        return restClient.post()
+            .uri("/internal/retrieve")
+            .body(new InternalRetrievePreviewRequest(
+                request.snapshotId(),
+                request.query(),
+                request.topK(),
+                request.minScore(),
+                request.retrievalMode()
+            ))
+            .retrieve()
+            .body(KnowledgeRetrievalPreviewResultDto.class);
+    }
+
     record InternalCompleteUploadRequest(
         String knowledgeBaseId,
         String uploadSessionId,
@@ -112,6 +140,15 @@ public class KnowledgeServiceClient {
         String knowledgeBaseId,
         String url,
         String title
+    ) {
+    }
+
+    record InternalRetrievePreviewRequest(
+        String indexSnapshotId,
+        String query,
+        Integer topK,
+        Double minScore,
+        String retrievalMode
     ) {
     }
 }

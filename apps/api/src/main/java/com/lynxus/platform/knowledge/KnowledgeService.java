@@ -277,6 +277,21 @@ public class KnowledgeService {
         return knowledgeServiceClient.listImportJobs(knowledgeBaseId);
     }
 
+    public KnowledgeUploadCompletionDto retryImportJob(String knowledgeBaseId, String jobId) {
+        ensureLoaded();
+        requireKnowledgeBase(knowledgeBaseId);
+        KnowledgeImportJobDto importJob = knowledgeServiceClient.retryImportJob(jobId);
+        if (!knowledgeBaseId.equals(importJob.knowledgeBaseId())) {
+            throw new IllegalArgumentException("import job does not belong to the requested knowledge base");
+        }
+        KnowledgeFileDto file = listFiles(knowledgeBaseId).stream()
+            .filter(item -> item.id().equals(importJob.fileId()))
+            .findFirst()
+            .orElseThrow(() -> new NoSuchElementException("knowledge file not found: " + importJob.fileId()));
+        knowledgeWorkflowGateway.startImport(knowledgeBaseId, importJob.id());
+        return new KnowledgeUploadCompletionDto(file, importJob);
+    }
+
     public List<KnowledgeDocumentDto> listDocuments(String knowledgeBaseId) {
         ensureLoaded();
         requireKnowledgeBase(knowledgeBaseId);
@@ -298,6 +313,44 @@ public class KnowledgeService {
         ensureLoaded();
         requireKnowledgeBase(knowledgeBaseId);
         return knowledgeServiceClient.listIndexSnapshots(knowledgeBaseId);
+    }
+
+    public KnowledgeIndexSnapshotDto retryIndexSnapshot(String knowledgeBaseId, String snapshotId) {
+        ensureLoaded();
+        requireKnowledgeBase(knowledgeBaseId);
+        KnowledgeIndexSnapshotDto snapshot = knowledgeServiceClient.retryIndexSnapshot(snapshotId);
+        if (!knowledgeBaseId.equals(snapshot.knowledgeBaseId())) {
+            throw new IllegalArgumentException("snapshot does not belong to the requested knowledge base");
+        }
+        knowledgeWorkflowGateway.startIndexBuild(knowledgeBaseId, snapshot.id());
+        return snapshot;
+    }
+
+    public KnowledgeRetrievalPreviewResultDto previewRetrieval(String knowledgeBaseId, KnowledgeRetrievalPreviewRequest request) {
+        ensureLoaded();
+        requireKnowledgeBase(knowledgeBaseId);
+        if (request == null || request.snapshotId() == null || request.snapshotId().isBlank()) {
+            throw new IllegalArgumentException("knowledge retrieval preview requires a snapshotId");
+        }
+        if (request.query() == null || request.query().isBlank()) {
+            throw new IllegalArgumentException("knowledge retrieval preview requires a query");
+        }
+        KnowledgeIndexSnapshotDto snapshot = knowledgeServiceClient.getIndexSnapshot(request.snapshotId().trim());
+        if (!knowledgeBaseId.equals(snapshot.knowledgeBaseId())) {
+            throw new IllegalArgumentException("snapshot does not belong to the requested knowledge base");
+        }
+        if (!"READY".equalsIgnoreCase(snapshot.status())) {
+            throw new IllegalStateException("knowledge snapshot is not ready: " + snapshot.id());
+        }
+        return knowledgeServiceClient.previewRetrieval(
+            new KnowledgeRetrievalPreviewRequest(
+                snapshot.id(),
+                request.query().trim(),
+                request.topK(),
+                request.minScore(),
+                request.retrievalMode()
+            )
+        );
     }
 
     public KnowledgeBindingSnapshotDto resolveKnowledgeBinding(String knowledgeBaseId) {

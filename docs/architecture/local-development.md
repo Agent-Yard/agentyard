@@ -89,6 +89,8 @@ docker compose -f docker-compose.yml -f docker-compose.dashboards.yml up -d
 
 - 目录数据和运行态投影都已落到 PostgreSQL
 - 资源类型已收敛为知识库、Tool、LLM 模型和 Skill
+- 知识库支持文件上传和 URL 导入；导入任务与索引快照都通过知识服务异步推进
+- Web 知识库工作台会轮询展示导入 / 快照状态，并支持失败重试与检索验证
 - 若命中真实模型资源，必须在根目录 `.env` 提供对应 API key
 - `sendMessage` / `launchTask` 当前已改为异步受理后返回，由运行态观测页轮询收口
 

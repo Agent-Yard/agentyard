@@ -208,6 +208,8 @@ public final class CatalogDtos {
         String id,
         String knowledgeBaseId,
         String uploadSessionId,
+        String sourceType,
+        String sourceUri,
         String fileName,
         String contentType,
         int sizeBytes,
@@ -222,8 +224,16 @@ public final class CatalogDtos {
         String id,
         String knowledgeBaseId,
         String fileId,
+        String sourceType,
+        String sourceUri,
+        String fileName,
         String status,
+        String stage,
+        int progressPercent,
+        int retryCount,
+        boolean retryable,
         String failureReason,
+        Instant startedAt,
         Instant createdAt,
         Instant updatedAt,
         Instant completedAt
@@ -250,9 +260,14 @@ public final class CatalogDtos {
         String retrievalBackend,
         String retrievalMode,
         String status,
+        String stage,
+        int progressPercent,
+        int retryCount,
+        boolean retryable,
         int documentCount,
         int chunkCount,
         String failureReason,
+        Instant startedAt,
         Instant builtAt,
         Instant createdAt,
         Instant updatedAt
@@ -274,6 +289,33 @@ public final class CatalogDtos {
     public record KnowledgeUploadCompletionDto(
         KnowledgeFileDto file,
         KnowledgeImportJobDto importJob
+    ) {
+    }
+
+    public record KnowledgeRetrievalPreviewRequest(
+        String snapshotId,
+        String query,
+        Integer topK,
+        Double minScore,
+        String retrievalMode
+    ) {
+    }
+
+    public record KnowledgeRetrievalPreviewHitDto(
+        String chunkId,
+        String documentId,
+        String documentTitle,
+        String sourceUri,
+        String snippet,
+        double score,
+        Integer pageNumber,
+        String headingPath
+    ) {
+    }
+
+    public record KnowledgeRetrievalPreviewResultDto(
+        List<KnowledgeRetrievalPreviewHitDto> hits,
+        boolean lowConfidence
     ) {
     }
 

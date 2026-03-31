@@ -478,6 +478,27 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/KnowledgeImportJob'
+  /knowledge-bases/{knowledgeBaseId}/import-jobs/{jobId}/retry:
+    post:
+      summary: Retry a failed knowledge import job
+      parameters:
+        - in: path
+          name: knowledgeBaseId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: jobId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Retry queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeUploadCompletion'
   /knowledge-bases/{knowledgeBaseId}/documents:
     get:
       summary: List parsed knowledge documents
@@ -535,6 +556,49 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/KnowledgeIndexSnapshot'
+  /knowledge-bases/{knowledgeBaseId}/snapshots/{snapshotId}/retry:
+    post:
+      summary: Retry a failed knowledge snapshot build
+      parameters:
+        - in: path
+          name: knowledgeBaseId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: snapshotId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Snapshot retry queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeIndexSnapshot'
+  /knowledge-bases/{knowledgeBaseId}/retrieval-preview:
+    post:
+      summary: Preview retrieval hits against a ready knowledge snapshot
+      parameters:
+        - in: path
+          name: knowledgeBaseId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KnowledgeRetrievalPreviewRequest'
+      responses:
+        '200':
+          description: Retrieval preview result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeRetrievalPreviewResult'
   /orchestrations:
     get:
       summary: List assistant orchestration graphs
@@ -1275,6 +1339,10 @@ components:
           type: string
         uploadSessionId:
           type: string
+        sourceType:
+          $ref: '#/components/schemas/KnowledgeImportSourceType'
+        sourceUri:
+          type: string
         fileName:
           type: string
         contentType:
@@ -1282,7 +1350,7 @@ components:
         sizeBytes:
           type: integer
         status:
-          type: string
+          $ref: '#/components/schemas/KnowledgeFileStatus'
         errorMessage:
           type: string
           nullable: true
@@ -1301,10 +1369,28 @@ components:
           type: string
         fileId:
           type: string
-        status:
+        sourceType:
+          $ref: '#/components/schemas/KnowledgeImportSourceType'
+        sourceUri:
           type: string
+        fileName:
+          type: string
+        status:
+          $ref: '#/components/schemas/KnowledgeImportJobStatus'
+        stage:
+          $ref: '#/components/schemas/KnowledgeImportJobStage'
+        progressPercent:
+          type: integer
+        retryCount:
+          type: integer
+        retryable:
+          type: boolean
         failureReason:
           type: string
+          nullable: true
+        startedAt:
+          type: string
+          format: date-time
           nullable: true
         createdAt:
           type: string
@@ -1355,13 +1441,25 @@ components:
           type: string
           enum: [LEXICAL, VECTOR, HYBRID]
         status:
-          type: string
+          $ref: '#/components/schemas/KnowledgeIndexSnapshotStatus'
+        stage:
+          $ref: '#/components/schemas/KnowledgeIndexSnapshotStage'
+        progressPercent:
+          type: integer
+        retryCount:
+          type: integer
+        retryable:
+          type: boolean
         documentCount:
           type: integer
         chunkCount:
           type: integer
         failureReason:
           type: string
+          nullable: true
+        startedAt:
+          type: string
+          format: date-time
           nullable: true
         builtAt:
           type: string
@@ -1380,6 +1478,71 @@ components:
           $ref: '#/components/schemas/KnowledgeFile'
         importJob:
           $ref: '#/components/schemas/KnowledgeImportJob'
+    KnowledgeRetrievalPreviewRequest:
+      type: object
+      required: [snapshotId, query]
+      properties:
+        snapshotId:
+          type: string
+        query:
+          type: string
+        topK:
+          type: integer
+        minScore:
+          type: number
+          format: double
+        retrievalMode:
+          type: string
+          enum: [LEXICAL, VECTOR, HYBRID]
+          nullable: true
+    KnowledgeRetrievalPreviewHit:
+      type: object
+      properties:
+        chunkId:
+          type: string
+        documentId:
+          type: string
+        documentTitle:
+          type: string
+        sourceUri:
+          type: string
+        snippet:
+          type: string
+        score:
+          type: number
+          format: double
+        pageNumber:
+          type: integer
+          nullable: true
+        headingPath:
+          type: string
+    KnowledgeRetrievalPreviewResult:
+      type: object
+      properties:
+        hits:
+          type: array
+          items:
+            $ref: '#/components/schemas/KnowledgeRetrievalPreviewHit'
+        lowConfidence:
+          type: boolean
+    KnowledgeFileStatus:
+      type: string
+      enum: [UPLOADED, IMPORTING, IMPORTED, FAILED]
+    KnowledgeImportJobStatus:
+      type: string
+      enum: [QUEUED, RUNNING, SUCCEEDED, FAILED]
+    KnowledgeImportSourceType:
+      type: string
+      enum: [FILE_UPLOAD, URL]
+    KnowledgeIndexSnapshotStatus:
+      type: string
+      enum: [QUEUED, RUNNING, READY, FAILED]
+    KnowledgeImportJobStage:
+      type: string
+      enum: [QUEUED, FETCHING_SOURCE, PARSING, CHUNKING, PERSISTING, SUCCEEDED, FAILED]
+    KnowledgeIndexSnapshotStage:
+      type: string
+      enum: [QUEUED, COLLECTING_DOCUMENTS, INDEXING, READY, FAILED]
     CreateKnowledgeUrlImportRequest:
       type: object
       required: [url]

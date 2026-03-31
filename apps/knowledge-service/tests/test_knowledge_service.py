@@ -20,6 +20,7 @@ from app.main import (
     IndexSnapshotRecord,
     KnowledgeDocumentRecord,
     KnowledgeFileRecord,
+    KnowledgeImportJobRecord,
     RetrieveRequest,
     UploadSessionRecord,
     SessionLocal,
@@ -32,6 +33,8 @@ from app.main import (
     engine,
     list_documents,
     opensearch,
+    retry_import_job,
+    retry_index_snapshot,
     retrieve,
     run_import_job,
     startup,
@@ -106,7 +109,9 @@ class KnowledgeServiceTest(unittest.TestCase):
             import_job_id = completed["importJob"]["id"]
         with SessionLocal() as db:
             imported = run_import_job(import_job_id, db)
-        self.assertEqual(imported.status, "COMPLETED")
+        self.assertEqual(imported.status, "SUCCEEDED")
+        self.assertEqual(imported.stage, "SUCCEEDED")
+        self.assertEqual(imported.progressPercent, 100)
         return completed["file"]["id"]
 
     def test_should_upload_import_build_and_hybrid_retrieve_markdown_file(self) -> None:
@@ -159,9 +164,12 @@ class KnowledgeServiceTest(unittest.TestCase):
                     db,
                 )
         import_job_id = created["importJob"]["id"]
-        with SessionLocal() as db:
-            imported = run_import_job(import_job_id, db)
-        self.assertEqual(imported.status, "COMPLETED")
+        with patch("app.main.urlopen", return_value=FakeUrlResponse(html.encode("utf-8"), "text/html")):
+            with SessionLocal() as db:
+                imported = run_import_job(import_job_id, db)
+        self.assertEqual(imported.status, "SUCCEEDED")
+        self.assertEqual(imported.stage, "SUCCEEDED")
+        self.assertEqual(imported.sourceType, "URL")
 
         with SessionLocal() as db:
             documents = list_documents("resource-kb-web", db)
@@ -227,6 +235,54 @@ class KnowledgeServiceTest(unittest.TestCase):
                     db,
                 )
         self.assertIn("unsupported file type", str(ctx.exception))
+
+    def test_should_retry_failed_import_job_with_new_attempt(self) -> None:
+        with SessionLocal() as db:
+            upload = create_upload_session(CreateUploadSessionRequest(knowledgeBaseId="resource-kb-retry"), db)
+            completed = complete_upload(
+                CompleteUploadRequest(
+                    knowledgeBaseId="resource-kb-retry",
+                    uploadSessionId=upload.id,
+                    fileName="empty.md",
+                    contentType="text/markdown",
+                    contentBase64=base64.b64encode(b"").decode("ascii"),
+                ),
+                db,
+            )
+        with SessionLocal() as db:
+            failed = run_import_job(completed["importJob"]["id"], db)
+        self.assertEqual(failed.status, "FAILED")
+        self.assertTrue(failed.retryable)
+        self.assertEqual(failed.stage, "FAILED")
+
+        with SessionLocal() as db:
+            retried = retry_import_job(completed["importJob"]["id"], db)
+        self.assertEqual(retried.status, "QUEUED")
+        self.assertEqual(retried.retryCount, 1)
+        self.assertEqual(retried.progressPercent, 0)
+
+        with SessionLocal() as db:
+            job_count = db.query(KnowledgeImportJobRecord).filter(KnowledgeImportJobRecord.knowledge_base_id == "resource-kb-retry").count()
+        self.assertEqual(job_count, 2)
+
+    def test_should_retry_failed_snapshot_with_new_attempt(self) -> None:
+        with SessionLocal() as db:
+            created = create_index_snapshot(
+                "resource-kb-snapshot-retry",
+                CreateIndexSnapshotRequest(documentIds=[], retrievalMode="HYBRID"),
+                db,
+            )
+        with SessionLocal() as db:
+            failed = build_index_snapshot(created.id, db)
+        self.assertEqual(failed.status, "FAILED")
+        self.assertTrue(failed.retryable)
+        self.assertEqual(failed.stage, "FAILED")
+
+        with SessionLocal() as db:
+            retried = retry_index_snapshot(created.id, db)
+        self.assertEqual(retried.status, "QUEUED")
+        self.assertEqual(retried.retryCount, 1)
+        self.assertEqual(retried.progressPercent, 0)
 
     def test_startup_should_only_initialize_schema(self) -> None:
         startup()

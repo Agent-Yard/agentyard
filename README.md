@@ -13,6 +13,7 @@ Orchestrate Enterprise Agents
 
 - 业务域、业务场景、助手、智能体、知识库和能力资源的配置管理
 - 知识库工作台、资源目录、版本发布、引用分析和结构化新建
+- 知识库导入任务状态机、失败重试、索引快照构建和检索验证工作台
 - 能力资源类型 `TOOL / LLM_MODEL / SKILL`，知识库作为独立一级域治理
 - 助手发布时冻结资源版本、知识绑定、智能体执行策略和编排图快照
 - 单助手会话、任务、工作流、节点轨迹和人工介入观测
@@ -29,6 +30,7 @@ Orchestrate Enterprise Agents
 - `sendMessage` / `launchTask` / `human-action` 已改为启动即返回，前端通过轮询收口运行结果
 - workflow 观测页已暴露 `agentTurnState`，可查看最新结构化决策和 turn logs
 - MinIO / OpenSearch 已纳入本地依赖与配置，知识服务当前默认以 OpenSearch 作为正式快照检索后端
+- 知识库导入与快照构建已改为异步后台任务；控制台会轮询展示进度、失败原因与手动重试入口
 
 ## Monorepo Layout
 
@@ -146,6 +148,7 @@ uv run --directory apps/knowledge-service --package lynxus-knowledge-service pyt
 
 API 启动时会自动对数据库中的非终态 workflow 做一次 Temporal 对账。
 当前不再提供内置 demo seed 或 demo SQL 导入路径；目录、资源和知识库数据需由控制台或 API 显式创建。
+知识库当前支持文件上传与 URL 导入；运行态只消费已发布知识版本绑定的 `READY` snapshot。
 
 前端默认连接 `http://localhost:8080/api`，可通过根目录 `.env` 或 `apps/web/.env.local` 覆盖：
 

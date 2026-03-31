@@ -530,4 +530,48 @@ public final class WorkflowContracts {
         Instant updatedAt
     ) {
     }
+
+    public enum KnowledgeFileStatus {
+        UPLOADED,
+        IMPORTING,
+        IMPORTED,
+        FAILED
+    }
+
+    public enum KnowledgeImportJobStatus {
+        QUEUED,
+        RUNNING,
+        SUCCEEDED,
+        FAILED
+    }
+
+    public enum KnowledgeImportSourceType {
+        FILE_UPLOAD,
+        URL
+    }
+
+    public enum KnowledgeIndexSnapshotStatus {
+        QUEUED,
+        RUNNING,
+        READY,
+        FAILED
+    }
+
+    public record KnowledgeRetrievalPreviewHit(
+        String chunkId,
+        String documentId,
+        String documentTitle,
+        String sourceUri,
+        String snippet,
+        double score,
+        Integer pageNumber,
+        String headingPath
+    ) {
+    }
+
+    public record KnowledgeRetrievalPreviewResult(
+        java.util.List<KnowledgeRetrievalPreviewHit> hits,
+        boolean lowConfidence
+    ) {
+    }
 }

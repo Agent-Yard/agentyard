@@ -20,6 +20,8 @@ import type {
   KnowledgeFile,
   KnowledgeImportJob,
   KnowledgeIndexSnapshot,
+  KnowledgeRetrievalPreviewRequest,
+  KnowledgeRetrievalPreviewResult,
   KnowledgeReference,
   KnowledgeRelease,
   KnowledgeUploadCompletion,
@@ -158,11 +160,17 @@ export const api = {
     ),
   listKnowledgeFiles: (knowledgeBaseId: string) => request<KnowledgeFile[]>(`/knowledge-bases/${knowledgeBaseId}/files`),
   listKnowledgeImportJobs: (knowledgeBaseId: string) => request<KnowledgeImportJob[]>(`/knowledge-bases/${knowledgeBaseId}/import-jobs`),
+  retryKnowledgeImportJob: (knowledgeBaseId: string, jobId: string) =>
+    request<KnowledgeUploadCompletion>(`/knowledge-bases/${knowledgeBaseId}/import-jobs/${jobId}/retry`, jsonOptions('POST')),
   listKnowledgeDocuments: (knowledgeBaseId: string) => request<KnowledgeDocument[]>(`/knowledge-bases/${knowledgeBaseId}/documents`),
   createKnowledgeIndexSnapshot: (knowledgeBaseId: string, documentIds: string[]) =>
     request<KnowledgeIndexSnapshot>(`/knowledge-bases/${knowledgeBaseId}/snapshots`, jsonOptions('POST', { documentIds })),
   listKnowledgeIndexSnapshots: (knowledgeBaseId: string) =>
     request<KnowledgeIndexSnapshot[]>(`/knowledge-bases/${knowledgeBaseId}/snapshots`),
+  retryKnowledgeIndexSnapshot: (knowledgeBaseId: string, snapshotId: string) =>
+    request<KnowledgeIndexSnapshot>(`/knowledge-bases/${knowledgeBaseId}/snapshots/${snapshotId}/retry`, jsonOptions('POST')),
+  previewKnowledgeRetrieval: (knowledgeBaseId: string, payload: KnowledgeRetrievalPreviewRequest) =>
+    request<KnowledgeRetrievalPreviewResult>(`/knowledge-bases/${knowledgeBaseId}/retrieval-preview`, jsonOptions('POST', payload)),
   saveOrchestration: (assistantId: string, payload: UpdateOrchestrationPayload) =>
     request(`/orchestrations/${assistantId}`, jsonOptions('PUT', payload)),
   getTasks: () => request<TaskInstance[]>('/tasks'),

@@ -23,6 +23,12 @@ export type SessionStatePatchOpType = 'UPSERT' | 'REMOVE';
 export type ReferenceObjectType = 'DOMAIN' | 'SCENARIO' | 'ASSISTANT' | 'AGENT' | 'RESOURCE' | 'KNOWLEDGE_BASE';
 export type ReferenceRelationMode = 'DIRECT' | 'INDIRECT';
 export type ReferenceImpactLevel = 'BLOCKS_DELETION' | 'ADVISORY';
+export type KnowledgeFileStatus = 'UPLOADED' | 'IMPORTING' | 'IMPORTED' | 'FAILED';
+export type KnowledgeImportJobStatus = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED';
+export type KnowledgeImportSourceType = 'FILE_UPLOAD' | 'URL';
+export type KnowledgeIndexSnapshotStatus = 'QUEUED' | 'RUNNING' | 'READY' | 'FAILED';
+export type KnowledgeImportJobStage = 'QUEUED' | 'FETCHING_SOURCE' | 'PARSING' | 'CHUNKING' | 'PERSISTING' | 'SUCCEEDED' | 'FAILED';
+export type KnowledgeIndexSnapshotStage = 'QUEUED' | 'COLLECTING_DOCUMENTS' | 'INDEXING' | 'READY' | 'FAILED';
 
 export interface HumanNodeConfig {
   title: string;
@@ -278,10 +284,12 @@ export interface KnowledgeFile {
   id: string;
   knowledgeBaseId: string;
   uploadSessionId: string;
+  sourceType: KnowledgeImportSourceType;
+  sourceUri: string;
   fileName: string;
   contentType: string;
   sizeBytes: number;
-  status: string;
+  status: KnowledgeFileStatus;
   errorMessage: string | null;
   createdAt: string;
   updatedAt: string;
@@ -291,8 +299,16 @@ export interface KnowledgeImportJob {
   id: string;
   knowledgeBaseId: string;
   fileId: string;
-  status: string;
+  sourceType: KnowledgeImportSourceType;
+  sourceUri: string;
+  fileName: string;
+  status: KnowledgeImportJobStatus;
+  stage: KnowledgeImportJobStage;
+  progressPercent: number;
+  retryCount: number;
+  retryable: boolean;
   failureReason: string | null;
+  startedAt: string | null;
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
@@ -316,13 +332,42 @@ export interface KnowledgeSnapshot {
   knowledgeBaseId: string;
   retrievalBackend: string;
   retrievalMode: string;
-  status: string;
+  status: KnowledgeIndexSnapshotStatus;
+  stage: KnowledgeIndexSnapshotStage;
+  progressPercent: number;
+  retryCount: number;
+  retryable: boolean;
   documentCount: number;
   chunkCount: number;
   failureReason: string | null;
+  startedAt: string | null;
   builtAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface KnowledgeRetrievalPreviewRequest {
+  snapshotId: string;
+  query: string;
+  topK?: number;
+  minScore?: number;
+  retrievalMode?: 'LEXICAL' | 'VECTOR' | 'HYBRID' | null;
+}
+
+export interface KnowledgeRetrievalPreviewHit {
+  chunkId: string;
+  documentId: string;
+  documentTitle: string;
+  sourceUri: string;
+  snippet: string;
+  score: number;
+  pageNumber: number | null;
+  headingPath: string;
+}
+
+export interface KnowledgeRetrievalPreviewResult {
+  hits: KnowledgeRetrievalPreviewHit[];
+  lowConfidence: boolean;
 }
 
 export interface TaskLaunchRequest {

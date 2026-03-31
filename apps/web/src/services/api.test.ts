@@ -60,4 +60,37 @@ describe('api client', () => {
       }),
     );
   });
+
+  it('posts retrieval preview requests to the dedicated knowledge endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        data: {
+          hits: [],
+          lowConfidence: true,
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.previewKnowledgeRetrieval('knowledge-1', {
+      snapshotId: 'snapshot-1',
+      query: '支付失败怎么办',
+      topK: 5,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:8080/api/knowledge-bases/knowledge-1/retrieval-preview',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          snapshotId: 'snapshot-1',
+          query: '支付失败怎么办',
+          topK: 5,
+        }),
+      }),
+    );
+  });
 });

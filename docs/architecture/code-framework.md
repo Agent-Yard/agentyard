@@ -24,7 +24,7 @@
 - `apps/api`：Spring Boot 控制面 API，负责目录、发布、会话和运行实例聚合
 - `apps/worker`：Temporal workflow worker，负责长流程托管与人工恢复
 - `apps/agent-runtime`：Python 执行运行时，负责图编排、资源调用和节点推进
-- `apps/knowledge-service`：Python 知识服务，负责知识文件、切片、索引快照与检索数据
+- `apps/knowledge-service`：Python 知识服务，负责知识源对象、导入任务、文档切片、索引快照与检索数据
 - `packages/contracts-jvm`：JVM 侧共享 workflow / runtime 契约
 - `packages/contracts`：TypeScript 合同类型与 OpenAPI 文档
 - `scripts`：本地开发启动脚本与环境变量装载
@@ -78,6 +78,7 @@
 ## 当前实现策略
 
 - LLM、知识库、Tool provider 采用轻量 adapter，运行时只走真实 provider 调用
+- 知识库治理采用显式异步任务模型：文件 / URL 导入、解析切片、索引快照构建、失败重试与检索验证分层治理
 - 资源按“资源头 + 版本”建模，智能体绑定时必须显式锚定资源版本
 - 助手切换到 `PUBLISHED` 时会冻结资源版本、agent 执行配置和编排图快照，作为后续运行和审计的稳定锚点
 - 前端资源区拆分为“资源目录”和“资源新建”两页
@@ -94,9 +95,9 @@
 
 - 认证仍以 mock 方案为主，真实 OIDC 尚未接入
 - 运行态投影已持久化到 PostgreSQL，但当前仍是投影模型而非完整 event log
-- workflow 启动链路仍同步等待首个结果，尚未改为异步订阅式观测
+- workflow 启动链路已改为异步受理后返回，由控制台轮询收口运行结果
 - 资源执行层优先保证本地联调和演示闭环，生产级安全治理仍需补齐
-- Redis / MinIO 当前主要停留在依赖与配置层，尚未形成稳定业务承载面
+- MinIO / OpenSearch 已进入知识导入与检索正式链路，但线上职责、备份与监控仍需继续补齐
 
 ## 版本基线
 

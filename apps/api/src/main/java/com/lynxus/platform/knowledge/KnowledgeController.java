@@ -112,6 +112,11 @@ public class KnowledgeController {
         return ApiResponse.ok(knowledgeService.listImportJobs(knowledgeBaseId));
     }
 
+    @PostMapping("/{knowledgeBaseId}/import-jobs/{jobId}/retry")
+    public ApiResponse<?> retryImportJob(@PathVariable String knowledgeBaseId, @PathVariable String jobId) {
+        return ApiResponse.ok(knowledgeService.retryImportJob(knowledgeBaseId, jobId));
+    }
+
     @GetMapping("/{knowledgeBaseId}/documents")
     public ApiResponse<?> documents(@PathVariable String knowledgeBaseId) {
         return ApiResponse.ok(knowledgeService.listDocuments(knowledgeBaseId));
@@ -125,5 +130,15 @@ public class KnowledgeController {
     @PostMapping("/{knowledgeBaseId}/snapshots")
     public ApiResponse<?> createSnapshot(@PathVariable String knowledgeBaseId, @RequestBody CreateKnowledgeIndexSnapshotRequest request) {
         return ApiResponse.ok(knowledgeService.createIndexSnapshot(knowledgeBaseId, request));
+    }
+
+    @PostMapping("/{knowledgeBaseId}/snapshots/{snapshotId}/retry")
+    public ApiResponse<?> retrySnapshot(@PathVariable String knowledgeBaseId, @PathVariable String snapshotId) {
+        return ApiResponse.ok(knowledgeService.retryIndexSnapshot(knowledgeBaseId, snapshotId));
+    }
+
+    @PostMapping("/{knowledgeBaseId}/retrieval-preview")
+    public ApiResponse<?> previewRetrieval(@PathVariable String knowledgeBaseId, @RequestBody KnowledgeRetrievalPreviewRequest request) {
+        return ApiResponse.ok(knowledgeService.previewRetrieval(knowledgeBaseId, request));
     }
 }
