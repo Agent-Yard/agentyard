@@ -434,6 +434,31 @@ public final class CatalogDtos {
     ) {
     }
 
+    public record ObjectReferenceRelationDto(
+        String relationKind,
+        String relationRole,
+        String relationMode,
+        String impactLevel,
+        String targetType,
+        String targetId,
+        String targetName,
+        String releaseId,
+        String releaseVersion,
+        String resourceVersionId,
+        String resourceVersion,
+        String knowledgeReleaseId,
+        String knowledgeReleaseVersion
+    ) {
+    }
+
+    public record ObjectReferenceAnalysisDto(
+        String objectType,
+        String objectId,
+        String objectName,
+        List<ObjectReferenceRelationDto> relations
+    ) {
+    }
+
     public record ResourceCenterDto(
         int totalResources,
         int domainSharedResources,

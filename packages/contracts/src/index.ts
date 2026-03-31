@@ -20,6 +20,9 @@ export type WorkflowFailureCategory =
   | 'UNKNOWN';
 export type SessionStatePatchTarget = 'FACTS' | 'ARTIFACTS' | 'AGENT_SCOPE';
 export type SessionStatePatchOpType = 'UPSERT' | 'REMOVE';
+export type ReferenceObjectType = 'DOMAIN' | 'SCENARIO' | 'ASSISTANT' | 'AGENT' | 'RESOURCE' | 'KNOWLEDGE_BASE';
+export type ReferenceRelationMode = 'DIRECT' | 'INDIRECT';
+export type ReferenceImpactLevel = 'BLOCKS_DELETION' | 'ADVISORY';
 
 export interface HumanNodeConfig {
   title: string;
@@ -217,6 +220,29 @@ export interface KnowledgeReference {
   knowledgeReleaseId: string | null;
   knowledgeReleaseVersion: string | null;
   blocksDeletion: boolean;
+}
+
+export interface ObjectReferenceRelation {
+  relationKind: string;
+  relationRole: string;
+  relationMode: ReferenceRelationMode;
+  impactLevel: ReferenceImpactLevel;
+  targetType: string;
+  targetId: string;
+  targetName: string;
+  releaseId: string | null;
+  releaseVersion: string | null;
+  resourceVersionId: string | null;
+  resourceVersion: string | null;
+  knowledgeReleaseId: string | null;
+  knowledgeReleaseVersion: string | null;
+}
+
+export interface ObjectReferenceAnalysis {
+  objectType: ReferenceObjectType;
+  objectId: string;
+  objectName: string;
+  relations: ObjectReferenceRelation[];
 }
 
 export interface KnowledgeUploadSession {

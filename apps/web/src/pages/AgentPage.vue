@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
+import ObjectReferencePanel from '../components/ObjectReferencePanel.vue';
 import type {
   Agent,
   Assistant,
@@ -14,6 +15,7 @@ const props = defineProps<{
   agents: Agent[];
   resources: Resource[];
   knowledgeBases: KnowledgeBase[];
+  catalogRevision: number;
 }>();
 
 const emit = defineEmits<{
@@ -412,6 +414,14 @@ function submitSave() {
           </a-space>
         </a-form>
       </a-card>
+
+      <ObjectReferencePanel
+        v-if="currentAgent"
+        style="margin-top: 16px"
+        object-type="AGENT"
+        :object-id="currentAgent.id"
+        :reload-key="catalogRevision"
+      />
     </a-col>
   </a-row>
 </template>

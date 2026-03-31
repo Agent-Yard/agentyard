@@ -23,8 +23,10 @@ import type {
   KnowledgeRelease,
   KnowledgeUploadCompletion,
   KnowledgeUploadSession,
+  ObjectReferenceAnalysis,
   Resource,
   ResourceVersion,
+  ReferenceObjectType,
   Scenario,
   TaskInstance,
   UpdateAssistantPayload,
@@ -84,6 +86,8 @@ function jsonOptions(method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown
 export const api = {
   getSession: () => request<UserSession>('/auth/session'),
   getCatalogSummary: () => request<CatalogSummary>('/catalog/summary'),
+  getObjectReferenceAnalysis: (objectType: ReferenceObjectType, objectId: string) =>
+    request<ObjectReferenceAnalysis>(`/catalog/references/${objectType}/${objectId}`),
   getConversationSessions: () => request<ConversationSession[]>('/runtime/sessions'),
   createConversationSession: (payload: CreateConversationSessionPayload) =>
     request<ConversationSession>('/runtime/sessions', jsonOptions('POST', payload)),

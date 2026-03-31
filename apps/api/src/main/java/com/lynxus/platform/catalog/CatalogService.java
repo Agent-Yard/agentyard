@@ -18,6 +18,7 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
@@ -88,6 +89,20 @@ public class CatalogService {
         );
     }
 
+    public ObjectReferenceAnalysisDto objectReferences(String objectType, String objectId) {
+        ensureLoaded();
+        String normalizedObjectType = normalizeReferenceObjectType(objectType);
+        return switch (normalizedObjectType) {
+            case "DOMAIN" -> analyzeDomainReferences(findDomain(objectId));
+            case "SCENARIO" -> analyzeScenarioReferences(findScenario(objectId));
+            case "ASSISTANT" -> analyzeAssistantReferences(findAssistant(objectId));
+            case "AGENT" -> analyzeAgentReferences(findAgent(objectId));
+            case "RESOURCE" -> analyzeResourceReferences(toResourceView(findResource(objectId)));
+            case "KNOWLEDGE_BASE" -> analyzeKnowledgeBaseReferences(getKnowledgeBase(objectId));
+            default -> throw new IllegalArgumentException("unsupported reference object type: " + objectType);
+        };
+    }
+
     public List<BusinessDomainDto> listDomains() {
         ensureLoaded();
         return domains.stream()
@@ -139,14 +154,9 @@ public class CatalogService {
     public BusinessDomainDto deleteDomain(String domainId) {
         ensureLoaded();
         BusinessDomainDto existing = findDomain(domainId);
-        if (scenarios.stream().anyMatch(item -> item.domainId().equals(domainId))) {
-            throw new IllegalStateException("business domain still contains scenarios: " + domainId);
-        }
-        if (resources.stream().anyMatch(item -> item.domainId().equals(domainId))) {
-            throw new IllegalStateException("business domain still contains resources: " + domainId);
-        }
-        if (knowledgeService.hasKnowledgeBasesInDomain(domainId)) {
-            throw new IllegalStateException("business domain still contains knowledge bases: " + domainId);
+        String blocker = findObjectDeletionBlocker("DOMAIN", domainId);
+        if (blocker != null) {
+            throw new IllegalStateException(blocker);
         }
         domains.removeIf(item -> item.id().equals(domainId));
         persistState();
@@ -206,8 +216,9 @@ public class CatalogService {
     public ScenarioDto deleteScenario(String scenarioId) {
         ensureLoaded();
         ScenarioDto existing = findScenario(scenarioId);
-        if (assistants.stream().anyMatch(item -> item.scenarioId().equals(scenarioId))) {
-            throw new IllegalStateException("scenario still contains assistants: " + scenarioId);
+        String blocker = findObjectDeletionBlocker("SCENARIO", scenarioId);
+        if (blocker != null) {
+            throw new IllegalStateException(blocker);
         }
         scenarios.removeIf(item -> item.id().equals(scenarioId));
         persistState();
@@ -266,14 +277,9 @@ public class CatalogService {
     public AssistantDto deleteAssistant(String assistantId) {
         ensureLoaded();
         AssistantDto existing = findAssistant(assistantId);
-        if (agents.stream().anyMatch(item -> item.assistantId().equals(assistantId))) {
-            throw new IllegalStateException("assistant still contains agents: " + assistantId);
-        }
-        if (resources.stream().anyMatch(item -> "ASSISTANT".equals(item.ownerType()) && assistantId.equals(item.ownerId()))) {
-            throw new IllegalStateException("assistant still owns resources: " + assistantId);
-        }
-        if (knowledgeService.hasAssistantOwnedKnowledgeBases(assistantId)) {
-            throw new IllegalStateException("assistant still owns knowledge bases: " + assistantId);
+        String blocker = findObjectDeletionBlocker("ASSISTANT", assistantId);
+        if (blocker != null) {
+            throw new IllegalStateException(blocker);
         }
 
         AssistantDto deleted = toAssistantView(existing);
@@ -326,6 +332,10 @@ public class CatalogService {
     public AgentDto deleteAgent(String agentId) {
         ensureLoaded();
         AgentDto existing = findAgent(agentId);
+        String blocker = findObjectDeletionBlocker("AGENT", agentId);
+        if (blocker != null) {
+            throw new IllegalStateException(blocker);
+        }
         agents.removeIf(item -> item.id().equals(agentId));
         recycleOrchestrationAfterAgentDeletion(existing.assistantId(), agentId);
         persistState();
@@ -543,7 +553,7 @@ public class CatalogService {
             throw new IllegalStateException("resource must keep at least one version: " + resourceId);
         }
 
-        String versionPinBlocker = findResourceVersionDeletionBlocker(versionId);
+        String versionPinBlocker = findResourceVersionDeletionBlocker(resourceId, versionId);
         if (versionPinBlocker != null) {
             throw new IllegalStateException(versionPinBlocker);
         }
@@ -581,7 +591,11 @@ public class CatalogService {
     }
 
     public KnowledgeBaseDto deleteKnowledgeBase(String knowledgeBaseId) {
-        return knowledgeService.deleteKnowledgeBase(knowledgeBaseId);
+        String blocker = findObjectDeletionBlocker("KNOWLEDGE_BASE", knowledgeBaseId);
+        if (blocker != null) {
+            throw new IllegalStateException(blocker);
+        }
+        return knowledgeService.deleteKnowledgeBaseUnchecked(knowledgeBaseId);
     }
 
     public List<KnowledgeReleaseDto> listKnowledgeReleases(String knowledgeBaseId) {
@@ -601,13 +615,13 @@ public class CatalogService {
     }
 
     public List<KnowledgeReferenceDto> listKnowledgeReferences(String knowledgeBaseId) {
-        return knowledgeService.listKnowledgeReferences(knowledgeBaseId);
+        return toKnowledgeReferences(objectReferences("KNOWLEDGE_BASE", knowledgeBaseId));
     }
 
     public ResourceDto deleteResource(String resourceId) {
         ensureLoaded();
         ResourceDto deleted = toResourceView(findResource(resourceId));
-        String referenceBlocker = findResourceDeletionBlocker(resourceId);
+        String referenceBlocker = findObjectDeletionBlocker("RESOURCE", resourceId);
         if (referenceBlocker != null) {
             throw new IllegalStateException(referenceBlocker);
         }
@@ -692,7 +706,7 @@ public class CatalogService {
         List<ResourceReferenceDto> references = resources.stream()
             .sorted(Comparator.comparing(ResourceDto::name))
             .map(this::toResourceView)
-            .flatMap(resource -> listResourceReferences(resource).stream())
+            .flatMap(resource -> toResourceReferences(resource, analyzeResourceReferences(resource)).stream())
             .toList();
         long domainShared = resources.stream().filter(item -> item.shareScope() == ShareScope.DOMAIN_SHARED).count();
         long privateCount = resources.stream().filter(item -> item.shareScope() == ShareScope.PRIVATE).count();
@@ -1177,58 +1191,118 @@ public class CatalogService {
         }
     }
 
-    private String findResourceDeletionBlocker(String resourceId) {
-        ResourceDto resource = toResourceView(findResource(resourceId));
-        return listResourceReferences(resource).stream()
-            .filter(ResourceReferenceDto::blocksDeletion)
-            .map(this::toResourceDeletionMessage)
+    private ObjectReferenceAnalysisDto analyzeDomainReferences(BusinessDomainDto domain) {
+        return ObjectReferenceAnalyzer.analyzeDomain(domain, scenarios, resources, listKnowledgeBases());
+    }
+
+    private ObjectReferenceAnalysisDto analyzeScenarioReferences(ScenarioDto scenario) {
+        return ObjectReferenceAnalyzer.analyzeScenario(scenario, assistants);
+    }
+
+    private ObjectReferenceAnalysisDto analyzeAssistantReferences(AssistantDto assistant) {
+        return ObjectReferenceAnalyzer.analyzeAssistant(
+            toAssistantView(assistant),
+            agents,
+            listResources(),
+            listKnowledgeBases(),
+            orchestrations.get(assistant.id()),
+            assistantReleases.getOrDefault(assistant.id(), List.of())
+        );
+    }
+
+    private ObjectReferenceAnalysisDto analyzeAgentReferences(AgentDto agent) {
+        AssistantDto assistant = toAssistantView(findAssistant(agent.assistantId()));
+        return ObjectReferenceAnalyzer.analyzeAgent(
+            agent,
+            assistant.name(),
+            listResources(),
+            listKnowledgeBases(),
+            orchestrations.get(agent.assistantId()),
+            assistantReleases.getOrDefault(agent.assistantId(), List.of())
+        );
+    }
+
+    private ObjectReferenceAnalysisDto analyzeResourceReferences(ResourceDto resource) {
+        return ObjectReferenceAnalyzer.analyzeResource(
+            resource,
+            repository.findResourceBindings(resource.id()),
+            repository.findReleaseResourceRefs(resource.id()),
+            this::resolveSourceName,
+            this::resolveAssistantReleaseName
+        );
+    }
+
+    private ObjectReferenceAnalysisDto analyzeKnowledgeBaseReferences(KnowledgeBaseDto knowledgeBase) {
+        return ObjectReferenceAnalyzer.analyzeKnowledgeBase(
+            knowledgeBase,
+            repository.findKnowledgeBindings(knowledgeBase.id()),
+            repository.findReleaseKnowledgeRefs(knowledgeBase.id()),
+            this::resolveSourceName,
+            this::resolveAssistantReleaseName,
+            this::findAssistantReleaseById
+        );
+    }
+
+    private String findObjectDeletionBlocker(String objectType, String objectId) {
+        ObjectReferenceAnalysisDto analysis = objectReferences(objectType, objectId);
+        return analysis.relations().stream()
+            .filter(relation -> "BLOCKS_DELETION".equals(relation.impactLevel()))
+            .map(relation -> toDeletionMessage(analysis.objectType(), relation))
             .findFirst()
             .orElse(null);
     }
 
-    private String findResourceVersionDeletionBlocker(String versionId) {
-        // Release-frozen refs are the only ones that carry resourceVersionId, but they don't block deletion.
-        // Active bindings block deletion but don't reference specific versions.
-        // So we still need to scan for the edge case where a specific version is frozen in a release
-        // that was marked as blocking (currently none are, but keep the logic correct).
-        return resources.stream()
-            .map(this::toResourceView)
-            .flatMap(resource -> listResourceReferences(resource).stream())
-            .filter(ResourceReferenceDto::blocksDeletion)
-            .filter(reference -> versionId.equals(reference.resourceVersionId()))
+    private String findResourceVersionDeletionBlocker(String resourceId, String versionId) {
+        return objectReferences("RESOURCE", resourceId).relations().stream()
+            .filter(relation -> "BLOCKS_DELETION".equals(relation.impactLevel()))
+            .filter(relation -> versionId.equals(relation.resourceVersionId()))
             .map(this::toResourceVersionDeletionMessage)
             .findFirst()
             .orElse(null);
     }
 
-    private List<ResourceReferenceDto> listResourceReferences(ResourceDto resource) {
-        List<ResourceReferenceDto> references = new ArrayList<>();
+    private List<ResourceReferenceDto> toResourceReferences(ResourceDto resource, ObjectReferenceAnalysisDto analysis) {
+        return analysis.relations().stream()
+            .map(relation -> new ResourceReferenceDto(
+                resource.id(),
+                resource.name(),
+                resource.type(),
+                resource.shareScope(),
+                resource.ownerType() + ":" + resource.ownerId(),
+                resource.latestVersion() == null ? null : resource.latestVersion().version(),
+                resource.effectiveVersion() == null ? null : resource.effectiveVersion().version(),
+                relation.relationKind(),
+                relation.targetType(),
+                relation.targetId(),
+                relation.targetName(),
+                relation.resourceVersionId(),
+                relation.resourceVersion(),
+                "BLOCKS_DELETION".equals(relation.impactLevel())
+            ))
+            .toList();
+    }
 
-        for (CatalogRepository.ResourceBindingRef ref : repository.findResourceBindings(resource.id())) {
-            String sourceName = resolveSourceName(ref.sourceType(), ref.sourceId());
-            references.add(toResourceReference(resource, ref.bindingKind(), ref.sourceType(), ref.sourceId(), sourceName, null, null, true));
+    private List<KnowledgeReferenceDto> toKnowledgeReferences(ObjectReferenceAnalysisDto analysis) {
+        return analysis.relations().stream()
+            .map(relation -> new KnowledgeReferenceDto(
+                analysis.objectId(),
+                relation.relationKind(),
+                relation.targetType(),
+                relation.targetId(),
+                relation.targetName(),
+                relation.knowledgeReleaseId(),
+                relation.knowledgeReleaseVersion(),
+                "BLOCKS_DELETION".equals(relation.impactLevel())
+            ))
+            .toList();
+    }
+
+    private String resolveSourceName(String sourceKey) {
+        int separatorIndex = sourceKey.indexOf(':');
+        if (separatorIndex < 0) {
+            return sourceKey;
         }
-
-        for (CatalogRepository.ReleaseResourceRef ref : repository.findReleaseResourceRefs(resource.id())) {
-            String assistantName = resolveSourceName("ASSISTANT", ref.assistantId());
-            String releaseVersion = findReleaseVersion(ref.assistantId(), ref.releaseId());
-            references.add(toResourceReference(
-                resource,
-                "RELEASE_FROZEN",
-                "ASSISTANT_RELEASE",
-                ref.releaseId(),
-                assistantName + "@" + releaseVersion,
-                ref.resourceVersionId(),
-                ref.resourceVersion(),
-                false
-            ));
-        }
-
-        references.sort(Comparator
-            .comparing(ResourceReferenceDto::referenceKind)
-            .thenComparing(ResourceReferenceDto::sourceName)
-            .thenComparing(reference -> reference.resourceVersionId() == null ? "" : reference.resourceVersionId()));
-        return references;
+        return resolveSourceName(sourceKey.substring(0, separatorIndex), sourceKey.substring(separatorIndex + 1));
     }
 
     private String resolveSourceName(String sourceType, String sourceId) {
@@ -1243,6 +1317,28 @@ public class CatalogService {
         };
     }
 
+    private AssistantReleaseDto findAssistantReleaseById(String releaseId) {
+        return assistantReleases.values().stream()
+            .flatMap(List::stream)
+            .filter(release -> release.id().equals(releaseId))
+            .findFirst()
+            .orElse(null);
+    }
+
+    private String resolveAssistantReleaseName(CatalogRepository.ReleaseResourceRef ref) {
+        AssistantDto assistant = toAssistantView(findAssistant(ref.assistantId()));
+        return assistant.name() + "@" + findReleaseVersion(ref.assistantId(), ref.releaseId());
+    }
+
+    private String resolveAssistantReleaseName(String releaseId) {
+        AssistantReleaseDto release = findAssistantReleaseById(releaseId);
+        if (release == null) {
+            return releaseId;
+        }
+        AssistantDto assistant = toAssistantView(findAssistant(release.assistantId()));
+        return assistant.name() + "@" + release.releaseVersion();
+    }
+
     private String findReleaseVersion(String assistantId, String releaseId) {
         List<AssistantReleaseDto> releases = assistantReleases.get(assistantId);
         if (releases == null) return releaseId;
@@ -1251,46 +1347,46 @@ public class CatalogService {
             .map(AssistantReleaseDto::releaseVersion).orElse(releaseId);
     }
 
-    private ResourceReferenceDto toResourceReference(
-        ResourceDto resource,
-        String referenceKind,
-        String sourceType,
-        String sourceId,
-        String sourceName,
-        String resourceVersionId,
-        String resourceVersion,
-        boolean blocksDeletion
-    ) {
-        return new ResourceReferenceDto(
-            resource.id(),
-            resource.name(),
-            resource.type(),
-            resource.shareScope(),
-            resource.ownerType() + ":" + resource.ownerId(),
-            resource.latestVersion() == null ? null : resource.latestVersion().version(),
-            resource.effectiveVersion() == null ? null : resource.effectiveVersion().version(),
-            referenceKind,
-            sourceType,
-            sourceId,
-            sourceName,
-            resourceVersionId,
-            resourceVersion,
-            blocksDeletion
-        );
-    }
-
-    private String toResourceDeletionMessage(ResourceReferenceDto reference) {
-        return switch (reference.referenceKind()) {
-            case "ASSISTANT_DEFAULT_MODEL" -> "resource is used as assistant default model: " + reference.sourceName();
-            case "AGENT_OVERRIDE_MODEL" -> "resource is used as agent override model: " + reference.sourceName();
-            case "AGENT_SKILL_ENABLED" -> "resource is used as agent skill: " + reference.sourceName();
-            case "AGENT_TOOL_ENABLED" -> "resource is used as agent tool: " + reference.sourceName();
-            default -> "resource is still referenced: " + reference.sourceName();
+    private String toDeletionMessage(String objectType, ObjectReferenceRelationDto relation) {
+        return switch (objectType) {
+            case "DOMAIN" -> switch (relation.relationKind()) {
+                case "DOMAIN_SCENARIO" -> "business domain still contains scenario: " + relation.targetName();
+                case "DOMAIN_RESOURCE" -> "business domain still contains resource: " + relation.targetName();
+                case "DOMAIN_KNOWLEDGE_BASE" -> "business domain still contains knowledge base: " + relation.targetName();
+                default -> "business domain is still referenced: " + relation.targetName();
+            };
+            case "SCENARIO" -> "scenario still contains assistant: " + relation.targetName();
+            case "ASSISTANT" -> switch (relation.relationKind()) {
+                case "ASSISTANT_AGENT" -> "assistant still contains agent: " + relation.targetName();
+                case "ASSISTANT_PRIVATE_RESOURCE" -> "assistant still owns resource: " + relation.targetName();
+                case "ASSISTANT_PRIVATE_KNOWLEDGE_BASE" -> "assistant still owns knowledge base: " + relation.targetName();
+                default -> "assistant is still referenced: " + relation.targetName();
+            };
+            case "RESOURCE" -> switch (relation.relationKind()) {
+                case "ASSISTANT_DEFAULT_MODEL" -> "resource is used as assistant default model: " + relation.targetName();
+                case "AGENT_OVERRIDE_MODEL" -> "resource is used as agent override model: " + relation.targetName();
+                case "AGENT_SKILL_ENABLED" -> "resource is used as agent skill: " + relation.targetName();
+                case "AGENT_TOOL_ENABLED" -> "resource is used as agent tool: " + relation.targetName();
+                default -> "resource is still referenced: " + relation.targetName();
+            };
+            case "KNOWLEDGE_BASE" -> switch (relation.relationKind()) {
+                case "KNOWLEDGE_BASE_EFFECTIVE_RELEASE" -> "knowledge base has a published release: " + relation.targetName();
+                default -> "knowledge base is still referenced: " + relation.targetName();
+            };
+            default -> null;
         };
     }
 
-    private String toResourceVersionDeletionMessage(ResourceReferenceDto reference) {
-        return "resource version is still referenced: " + reference.sourceName();
+    private String toResourceVersionDeletionMessage(ObjectReferenceRelationDto relation) {
+        return "resource version is still referenced: " + relation.targetName();
+    }
+
+    private String normalizeReferenceObjectType(String objectType) {
+        String normalized = objectType == null ? "" : objectType.trim().toUpperCase(Locale.ROOT);
+        return switch (normalized) {
+            case "DOMAIN", "SCENARIO", "ASSISTANT", "AGENT", "RESOURCE", "KNOWLEDGE_BASE" -> normalized;
+            default -> throw new IllegalArgumentException("unsupported reference object type: " + objectType);
+        };
     }
 
     private OrchestrationNodeDto toNode(AgentDto agent) {

@@ -3,6 +3,7 @@ package com.lynxus.platform.knowledge;
 import static com.lynxus.platform.catalog.CatalogDtos.*;
 
 import com.lynxus.platform.catalog.CatalogRepository;
+import com.lynxus.platform.catalog.ObjectReferenceAnalyzer;
 import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
 import com.lynxus.contracts.runtime.WorkflowContracts.VersionStatus;
 import java.time.Instant;
@@ -124,6 +125,15 @@ public class KnowledgeService {
         if (blocker != null) {
             throw new IllegalStateException(blocker);
         }
+        knowledgeBases.removeIf(item -> item.id().equals(knowledgeBaseId));
+        knowledgeReleases.remove(knowledgeBaseId);
+        persistState();
+        return existing;
+    }
+
+    public KnowledgeBaseDto deleteKnowledgeBaseUnchecked(String knowledgeBaseId) {
+        ensureLoaded();
+        KnowledgeBaseDto existing = toKnowledgeBaseView(findKnowledgeBase(knowledgeBaseId));
         knowledgeBases.removeIf(item -> item.id().equals(knowledgeBaseId));
         knowledgeReleases.remove(knowledgeBaseId);
         persistState();
@@ -398,61 +408,19 @@ public class KnowledgeService {
     }
 
     private List<KnowledgeReferenceDto> listKnowledgeBaseReferences(KnowledgeBaseDto knowledgeBase) {
-        CatalogRepository.CatalogSnapshot catalog = catalogSnapshot();
-        List<KnowledgeReferenceDto> references = new ArrayList<>();
-
-        // Active bindings from projection table
-        for (CatalogRepository.KnowledgeBindingRef ref : catalogRepository.findKnowledgeBindings(knowledgeBase.id())) {
-            String sourceName = resolveSourceName(catalog, ref.sourceType(), ref.sourceId());
-            references.add(new KnowledgeReferenceDto(
-                knowledgeBase.id(), ref.bindingKind(), ref.sourceType(), ref.sourceId(), sourceName, null, null, true
-            ));
-        }
-
-        // Release-frozen bindings from projection table, enriched with version info from in-memory
-        for (CatalogRepository.ReleaseKnowledgeRef ref : catalogRepository.findReleaseKnowledgeRefs(knowledgeBase.id())) {
-            enrichReleaseKnowledgeRefs(catalog, knowledgeBase.id(), ref, references);
-        }
-
-        references.sort(Comparator.comparing(KnowledgeReferenceDto::referenceKind).thenComparing(KnowledgeReferenceDto::sourceName));
-        return references;
-    }
-
-    private void enrichReleaseKnowledgeRefs(
-        CatalogRepository.CatalogSnapshot catalog,
-        String knowledgeBaseId,
-        CatalogRepository.ReleaseKnowledgeRef ref,
-        List<KnowledgeReferenceDto> references
-    ) {
-        String assistantName = catalog.assistants().stream()
-            .filter(a -> a.id().equals(ref.assistantId())).findFirst()
-            .map(AssistantDto::name).orElse(ref.assistantId());
-
-        List<AssistantReleaseDto> releases = catalog.assistantReleases().getOrDefault(ref.assistantId(), List.of());
-        AssistantReleaseDto release = releases.stream()
-            .filter(r -> r.id().equals(ref.releaseId())).findFirst().orElse(null);
-        if (release == null) return;
-
-        // Assistant-level knowledge binding
-        if (release.assistantKnowledge() != null && knowledgeBaseId.equals(release.assistantKnowledge().knowledgeBaseId())) {
-            references.add(new KnowledgeReferenceDto(
-                knowledgeBaseId, "RELEASE_ASSISTANT_KNOWLEDGE", "ASSISTANT_RELEASE",
-                release.id(), assistantName + "@" + release.releaseVersion(),
-                release.assistantKnowledge().knowledgeReleaseId(),
-                release.assistantKnowledge().knowledgeReleaseVersion(), true
-            ));
-        }
-        // Agent-level knowledge bindings
-        for (AssistantReleaseAgentDto releaseAgent : release.agents()) {
-            if (releaseAgent.knowledge() != null && knowledgeBaseId.equals(releaseAgent.knowledge().knowledgeBaseId())) {
-                references.add(new KnowledgeReferenceDto(
-                    knowledgeBaseId, "RELEASE_AGENT_KNOWLEDGE", "ASSISTANT_RELEASE_AGENT",
-                    releaseAgent.agentId(), assistantName + "/" + releaseAgent.name(),
-                    releaseAgent.knowledge().knowledgeReleaseId(),
-                    releaseAgent.knowledge().knowledgeReleaseVersion(), true
-                ));
-            }
-        }
+        ObjectReferenceAnalysisDto analysis = analyzeKnowledgeBaseReferences(knowledgeBase);
+        return analysis.relations().stream()
+            .map(relation -> new KnowledgeReferenceDto(
+                analysis.objectId(),
+                relation.relationKind(),
+                relation.targetType(),
+                relation.targetId(),
+                relation.targetName(),
+                relation.knowledgeReleaseId(),
+                relation.knowledgeReleaseVersion(),
+                "BLOCKS_DELETION".equals(relation.impactLevel())
+            ))
+            .toList();
     }
 
     private String resolveSourceName(CatalogRepository.CatalogSnapshot catalog, String sourceType, String sourceId) {
@@ -468,13 +436,10 @@ public class KnowledgeService {
     }
 
     private String findKnowledgeBaseDeletionBlocker(String knowledgeBaseId) {
-        KnowledgeBaseDto knowledgeBase = toKnowledgeBaseView(findKnowledgeBase(knowledgeBaseId));
-        if (knowledgeBase.effectiveRelease() != null) {
-            return "knowledge base has a published release: " + knowledgeBase.name();
-        }
-        return listKnowledgeBaseReferences(knowledgeBase).stream()
-            .filter(KnowledgeReferenceDto::blocksDeletion)
-            .map(reference -> "knowledge base is still referenced: " + reference.sourceName())
+        ObjectReferenceAnalysisDto analysis = analyzeKnowledgeBaseReferences(toKnowledgeBaseView(findKnowledgeBase(knowledgeBaseId)));
+        return analysis.relations().stream()
+            .filter(relation -> "BLOCKS_DELETION".equals(relation.impactLevel()))
+            .map(this::toKnowledgeBaseDeletionMessage)
             .findFirst()
             .orElse(null);
     }
@@ -484,23 +449,61 @@ public class KnowledgeService {
         if (release.status() == VersionStatus.PUBLISHED) {
             return "published knowledge release cannot be deleted";
         }
-        return catalogSnapshot().assistantReleases().values().stream()
-            .flatMap(List::stream)
-            .flatMap(assistantRelease -> {
-                List<KnowledgeBindingSnapshotDto> bindings = new ArrayList<>();
-                if (assistantRelease.assistantKnowledge() != null) {
-                    bindings.add(assistantRelease.assistantKnowledge());
-                }
-                assistantRelease.agents().stream()
-                    .map(AssistantReleaseAgentDto::knowledge)
-                    .filter(item -> item != null)
-                    .forEach(bindings::add);
-                return bindings.stream();
-            })
-            .filter(binding -> release.id().equals(binding.knowledgeReleaseId()))
-            .map(binding -> "knowledge release is still referenced: " + binding.knowledgeReleaseVersion())
+        return analyzeKnowledgeBaseReferences(toKnowledgeBaseView(findKnowledgeBase(knowledgeBaseId))).relations().stream()
+            .filter(relation -> "BLOCKS_DELETION".equals(relation.impactLevel()))
+            .filter(relation -> releaseId.equals(relation.knowledgeReleaseId()))
+            .map(relation -> "knowledge release is still referenced: " + relation.targetName())
             .findFirst()
             .orElse(null);
+    }
+
+    private ObjectReferenceAnalysisDto analyzeKnowledgeBaseReferences(KnowledgeBaseDto knowledgeBase) {
+        CatalogRepository.CatalogSnapshot catalog = catalogSnapshot();
+        return ObjectReferenceAnalyzer.analyzeKnowledgeBase(
+            knowledgeBase,
+            catalogRepository.findKnowledgeBindings(knowledgeBase.id()),
+            catalogRepository.findReleaseKnowledgeRefs(knowledgeBase.id()),
+            sourceKey -> resolveSourceName(catalog, sourceKey),
+            this::resolveAssistantReleaseName,
+            this::findAssistantReleaseById
+        );
+    }
+
+    private String resolveSourceName(CatalogRepository.CatalogSnapshot catalog, String sourceKey) {
+        int separatorIndex = sourceKey.indexOf(':');
+        if (separatorIndex < 0) {
+            return sourceKey;
+        }
+        return resolveSourceName(catalog, sourceKey.substring(0, separatorIndex), sourceKey.substring(separatorIndex + 1));
+    }
+
+    private AssistantReleaseDto findAssistantReleaseById(String releaseId) {
+        return catalogSnapshot().assistantReleases().values().stream()
+            .flatMap(List::stream)
+            .filter(release -> release.id().equals(releaseId))
+            .findFirst()
+            .orElse(null);
+    }
+
+    private String resolveAssistantReleaseName(String releaseId) {
+        AssistantReleaseDto release = findAssistantReleaseById(releaseId);
+        if (release == null) {
+            return releaseId;
+        }
+        CatalogRepository.CatalogSnapshot catalog = catalogSnapshot();
+        String assistantName = catalog.assistants().stream()
+            .filter(item -> item.id().equals(release.assistantId()))
+            .findFirst()
+            .map(AssistantDto::name)
+            .orElse(release.assistantId());
+        return assistantName + "@" + release.releaseVersion();
+    }
+
+    private String toKnowledgeBaseDeletionMessage(ObjectReferenceRelationDto relation) {
+        return switch (relation.relationKind()) {
+            case "KNOWLEDGE_BASE_EFFECTIVE_RELEASE" -> "knowledge base has a published release: " + relation.targetName();
+            default -> "knowledge base is still referenced: " + relation.targetName();
+        };
     }
 
     private KnowledgeBaseDto toKnowledgeBaseView(KnowledgeBaseDto knowledgeBase) {

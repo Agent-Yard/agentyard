@@ -2,6 +2,7 @@ package com.lynxus.platform.knowledge;
 
 import static com.lynxus.platform.catalog.CatalogDtos.*;
 
+import com.lynxus.platform.catalog.CatalogService;
 import com.lynxus.platform.shared.ApiResponse;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,9 +20,11 @@ import org.springframework.web.multipart.MultipartFile;
 @RequestMapping("/api/knowledge-bases")
 public class KnowledgeController {
     private final KnowledgeService knowledgeService;
+    private final CatalogService catalogService;
 
-    public KnowledgeController(KnowledgeService knowledgeService) {
+    public KnowledgeController(KnowledgeService knowledgeService, CatalogService catalogService) {
         this.knowledgeService = knowledgeService;
+        this.catalogService = catalogService;
     }
 
     @GetMapping
@@ -71,7 +74,7 @@ public class KnowledgeController {
 
     @GetMapping("/{knowledgeBaseId}/references")
     public ApiResponse<?> knowledgeReferences(@PathVariable String knowledgeBaseId) {
-        return ApiResponse.ok(knowledgeService.listKnowledgeReferences(knowledgeBaseId));
+        return ApiResponse.ok(catalogService.listKnowledgeReferences(knowledgeBaseId));
     }
 
     @PostMapping("/{knowledgeBaseId}/upload-sessions")

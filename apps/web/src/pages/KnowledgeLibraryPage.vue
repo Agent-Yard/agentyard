@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { message } from 'ant-design-vue';
+import ObjectReferencePanel from '../components/ObjectReferencePanel.vue';
 import { api } from '../services/api';
 import type {
   CreateKnowledgeReleasePayload,
@@ -9,13 +10,13 @@ import type {
   KnowledgeFile,
   KnowledgeImportJob,
   KnowledgeIndexSnapshot,
-  KnowledgeReference,
   KnowledgeRelease,
 } from '../types';
 
 const props = defineProps<{
   knowledgeBases: KnowledgeBase[];
   preferredKnowledgeBaseId?: string | null;
+  catalogRevision: number;
 }>();
 
 const emit = defineEmits<{
@@ -29,7 +30,6 @@ const importJobs = ref<KnowledgeImportJob[]>([]);
 const documents = ref<KnowledgeDocument[]>([]);
 const snapshots = ref<KnowledgeIndexSnapshot[]>([]);
 const releases = ref<KnowledgeRelease[]>([]);
-const references = ref<KnowledgeReference[]>([]);
 const uploading = ref(false);
 const creatingSnapshot = ref(false);
 const releaseForm = reactive<CreateKnowledgeReleasePayload>({
@@ -59,26 +59,23 @@ async function loadWorkspace() {
     documents.value = [];
     snapshots.value = [];
     releases.value = [];
-    references.value = [];
     return;
   }
   loadingWorkspace.value = true;
   try {
     const knowledgeBaseId = selectedKnowledgeBase.value.id;
-    const [files, jobs, docs, snapshotList, releaseList, referenceList] = await Promise.all([
+    const [files, jobs, docs, snapshotList, releaseList] = await Promise.all([
       api.listKnowledgeFiles(knowledgeBaseId),
       api.listKnowledgeImportJobs(knowledgeBaseId),
       api.listKnowledgeDocuments(knowledgeBaseId),
       api.listKnowledgeIndexSnapshots(knowledgeBaseId),
       api.listKnowledgeReleases(knowledgeBaseId),
-      api.listKnowledgeReferences(knowledgeBaseId),
     ]);
     fileList.value = files;
     importJobs.value = jobs;
     documents.value = docs;
     snapshots.value = snapshotList;
     releases.value = releaseList;
-    references.value = referenceList;
     if (!readySnapshots.value.some((item) => item.id === releaseForm.snapshotId)) {
       releaseForm.snapshotId = readySnapshots.value[0]?.id ?? '';
     }
@@ -407,21 +404,11 @@ async function handleDeleteKnowledgeBase() {
           </a-tab-pane>
 
           <a-tab-pane key="references" tab="引用分析">
-            <a-list :data-source="references">
-              <template #renderItem="{ item }">
-                <a-list-item>
-                  <a-space direction="vertical" style="width: 100%">
-                    <a-space>
-                      <a-typography-text strong>{{ item.referenceKind }}</a-typography-text>
-                      <a-tag :color="item.blocksDeletion ? 'red' : 'default'">{{ item.blocksDeletion ? '阻断删除' : '只读引用' }}</a-tag>
-                    </a-space>
-                    <a-typography-text type="secondary">
-                      {{ item.sourceType }} / {{ item.sourceName }}
-                    </a-typography-text>
-                  </a-space>
-                </a-list-item>
-              </template>
-            </a-list>
+            <ObjectReferencePanel
+              :object-id="selectedKnowledgeBase?.id"
+              object-type="KNOWLEDGE_BASE"
+              :reload-key="catalogRevision"
+            />
           </a-tab-pane>
         </a-tabs>
       </a-card>

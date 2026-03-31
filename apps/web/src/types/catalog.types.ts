@@ -6,6 +6,9 @@ export type ToolProviderType = 'HTTP' | 'MCP';
 export type ShareScope = 'PRIVATE' | 'DOMAIN_SHARED';
 export type ResourceOwnerType = 'DOMAIN' | 'ASSISTANT';
 export type VersionStatus = 'DRAFT' | 'PUBLISHED';
+export type ReferenceObjectType = 'DOMAIN' | 'SCENARIO' | 'ASSISTANT' | 'AGENT' | 'RESOURCE' | 'KNOWLEDGE_BASE';
+export type ReferenceRelationMode = 'DIRECT' | 'INDIRECT';
+export type ReferenceImpactLevel = 'BLOCKS_DELETION' | 'ADVISORY';
 
 export interface UserSession {
   userId: string;
@@ -137,6 +140,29 @@ export interface KnowledgeReference {
   knowledgeReleaseId: string | null;
   knowledgeReleaseVersion: string | null;
   blocksDeletion: boolean;
+}
+
+export interface ObjectReferenceRelation {
+  relationKind: string;
+  relationRole: string;
+  relationMode: ReferenceRelationMode;
+  impactLevel: ReferenceImpactLevel;
+  targetType: string;
+  targetId: string;
+  targetName: string;
+  releaseId: string | null;
+  releaseVersion: string | null;
+  resourceVersionId: string | null;
+  resourceVersion: string | null;
+  knowledgeReleaseId: string | null;
+  knowledgeReleaseVersion: string | null;
+}
+
+export interface ObjectReferenceAnalysis {
+  objectType: ReferenceObjectType;
+  objectId: string;
+  objectName: string;
+  relations: ObjectReferenceRelation[];
 }
 
 export interface ToolOperation {

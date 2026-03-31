@@ -103,6 +103,95 @@ class CatalogServiceTest {
     }
 
     @Test
+    void shouldExposeUnifiedObjectReferenceAnalysisAcrossCatalogObjects() {
+        CustomerOpsFixture fixture = customerOpsFixture();
+
+        CatalogDtos.ObjectReferenceAnalysisDto domainAnalysis = fixture.service().objectReferences("DOMAIN", fixture.domainId());
+        assertTrue(domainAnalysis.relations().stream().anyMatch(relation -> relation.relationKind().equals("DOMAIN_SCENARIO")));
+        assertTrue(domainAnalysis.relations().stream().anyMatch(relation -> relation.relationKind().equals("DOMAIN_RESOURCE")));
+        assertTrue(domainAnalysis.relations().stream().anyMatch(relation -> relation.relationKind().equals("DOMAIN_KNOWLEDGE_BASE")));
+
+        CatalogDtos.ObjectReferenceAnalysisDto scenarioAnalysis = fixture.service().objectReferences("SCENARIO", fixture.scenarioId());
+        assertTrue(scenarioAnalysis.relations().stream().anyMatch(relation -> relation.relationKind().equals("SCENARIO_ASSISTANT")));
+
+        CatalogDtos.ObjectReferenceAnalysisDto assistantAnalysis = fixture.service().objectReferences("ASSISTANT", fixture.assistantId());
+        assertTrue(assistantAnalysis.relations().stream().anyMatch(relation -> relation.relationKind().equals("ASSISTANT_AGENT")));
+        assertTrue(assistantAnalysis.relations().stream().anyMatch(relation -> relation.relationKind().equals("ASSISTANT_PRIVATE_RESOURCE")));
+        assertTrue(assistantAnalysis.relations().stream().anyMatch(relation -> relation.relationKind().equals("ASSISTANT_RELEASE")));
+
+        CatalogDtos.ObjectReferenceAnalysisDto agentAnalysis = fixture.service().objectReferences("AGENT", fixture.agentId());
+        assertTrue(agentAnalysis.relations().stream().anyMatch(relation -> relation.relationKind().equals("AGENT_TOOL_ENABLED")));
+        assertTrue(agentAnalysis.relations().stream().anyMatch(relation -> relation.relationKind().equals("AGENT_ORCHESTRATION_NODE")));
+        assertTrue(agentAnalysis.relations().stream().anyMatch(relation -> relation.relationKind().equals("AGENT_RELEASE_FROZEN")));
+
+        CatalogDtos.ObjectReferenceAnalysisDto resourceAnalysis = fixture.service().objectReferences("RESOURCE", fixture.toolResourceId());
+        assertTrue(resourceAnalysis.relations().stream().anyMatch(relation -> relation.relationKind().equals("AGENT_TOOL_ENABLED")));
+        assertTrue(resourceAnalysis.relations().stream().anyMatch(relation -> relation.relationKind().equals("RELEASE_FROZEN")));
+
+        CatalogDtos.ObjectReferenceAnalysisDto knowledgeAnalysis = fixture.service().objectReferences("KNOWLEDGE_BASE", fixture.knowledgeBaseId());
+        assertTrue(knowledgeAnalysis.relations().stream().anyMatch(relation -> relation.relationKind().equals("ASSISTANT_DEFAULT_KNOWLEDGE_BASE")));
+        assertTrue(knowledgeAnalysis.relations().stream().anyMatch(relation -> relation.relationKind().equals("KNOWLEDGE_BASE_EFFECTIVE_RELEASE")));
+        assertTrue(knowledgeAnalysis.relations().stream().anyMatch(relation -> relation.relationKind().equals("RELEASE_ASSISTANT_KNOWLEDGE")));
+    }
+
+    @Test
+    void shouldKeepLegacyKnowledgeReferencesAlignedWithUnifiedAnalysis() {
+        CustomerOpsFixture fixture = customerOpsFixture();
+
+        List<CatalogDtos.KnowledgeReferenceDto> legacyReferences = fixture.service().listKnowledgeReferences(fixture.knowledgeBaseId());
+        CatalogDtos.ObjectReferenceAnalysisDto unifiedAnalysis = fixture.service().objectReferences("KNOWLEDGE_BASE", fixture.knowledgeBaseId());
+
+        assertEquals(unifiedAnalysis.relations().size(), legacyReferences.size());
+        assertTrue(legacyReferences.stream().anyMatch(reference -> reference.referenceKind().equals("KNOWLEDGE_BASE_EFFECTIVE_RELEASE")));
+        assertTrue(legacyReferences.stream().anyMatch(reference -> reference.referenceKind().equals("RELEASE_ASSISTANT_KNOWLEDGE")));
+    }
+
+    @Test
+    void shouldKeepDeletionBlockersConsistentWithUnifiedReferenceAnalysis() {
+        CustomerOpsFixture fixture = customerOpsFixture();
+
+        String domainBlockerName = fixture.service().objectReferences("DOMAIN", fixture.domainId()).relations().stream()
+            .filter(relation -> relation.impactLevel().equals("BLOCKS_DELETION"))
+            .findFirst()
+            .orElseThrow()
+            .targetName();
+        IllegalStateException domainError = assertThrows(IllegalStateException.class, () -> fixture.service().deleteDomain(fixture.domainId()));
+        assertTrue(domainError.getMessage().contains(domainBlockerName));
+
+        String scenarioBlockerName = fixture.service().objectReferences("SCENARIO", fixture.scenarioId()).relations().stream()
+            .filter(relation -> relation.impactLevel().equals("BLOCKS_DELETION"))
+            .findFirst()
+            .orElseThrow()
+            .targetName();
+        IllegalStateException scenarioError = assertThrows(IllegalStateException.class, () -> fixture.service().deleteScenario(fixture.scenarioId()));
+        assertTrue(scenarioError.getMessage().contains(scenarioBlockerName));
+
+        String assistantBlockerName = fixture.service().objectReferences("ASSISTANT", fixture.assistantId()).relations().stream()
+            .filter(relation -> relation.impactLevel().equals("BLOCKS_DELETION"))
+            .findFirst()
+            .orElseThrow()
+            .targetName();
+        IllegalStateException assistantError = assertThrows(IllegalStateException.class, () -> fixture.service().deleteAssistant(fixture.assistantId()));
+        assertTrue(assistantError.getMessage().contains(assistantBlockerName));
+
+        String resourceBlockerName = fixture.service().objectReferences("RESOURCE", fixture.toolResourceId()).relations().stream()
+            .filter(relation -> relation.impactLevel().equals("BLOCKS_DELETION"))
+            .findFirst()
+            .orElseThrow()
+            .targetName();
+        IllegalStateException resourceError = assertThrows(IllegalStateException.class, () -> fixture.service().deleteResource(fixture.toolResourceId()));
+        assertTrue(resourceError.getMessage().contains(resourceBlockerName));
+
+        String knowledgeBlockerName = fixture.service().objectReferences("KNOWLEDGE_BASE", fixture.knowledgeBaseId()).relations().stream()
+            .filter(relation -> relation.impactLevel().equals("BLOCKS_DELETION"))
+            .findFirst()
+            .orElseThrow()
+            .targetName();
+        IllegalStateException knowledgeError = assertThrows(IllegalStateException.class, () -> fixture.service().deleteKnowledgeBase(fixture.knowledgeBaseId()));
+        assertTrue(knowledgeError.getMessage().contains(knowledgeBlockerName));
+    }
+
+    @Test
     void shouldStillFreezeToolVersionsWhenPublishingAssistant() {
         CatalogService catalogService = new CatalogService(new InMemoryCatalogRepository(), readySnapshotKnowledgeClient(), noopKnowledgeWorkflowGateway());
         CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("交付域", "承载交付流程"));
@@ -351,7 +440,7 @@ class CatalogServiceTest {
                 null
             )
         );
-        service.createAgent(new CatalogDtos.CreateAgentRequest(
+        CatalogDtos.AgentDto agent = service.createAgent(new CatalogDtos.CreateAgentRequest(
             assistant.id(),
             "客服执行智能体",
             "support",
@@ -369,11 +458,15 @@ class CatalogServiceTest {
                 assistant.memoryPolicy()
             )
         );
-        return new CustomerOpsFixture(service, knowledgeBase.id(), tool.id());
+        return new CustomerOpsFixture(service, domain.id(), scenario.id(), assistant.id(), agent.id(), knowledgeBase.id(), tool.id());
     }
 
     private record CustomerOpsFixture(
         CatalogService service,
+        String domainId,
+        String scenarioId,
+        String assistantId,
+        String agentId,
         String knowledgeBaseId,
         String toolResourceId
     ) {

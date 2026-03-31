@@ -7,22 +7,17 @@
 
 现状：
 
-- 资源侧已经有 `GET /api/resource-center`，可以返回资源引用关系和 `blocksDeletion` 标记
-- 删除约束已经覆盖业务域、场景、助手、智能体、资源和资源版本
-- 但这些删除约束主要还是在执行删除时做同步拦截
-- 目前还没有面向 `domain / scenario / assistant / agent / resource` 的统一引用分析接口
+- 已新增统一对象引用分析接口 `GET /api/catalog/references/{objectType}/{objectId}`
+- 已覆盖 `domain / scenario / assistant / agent / resource / knowledge_base`
+- 已明确 `DIRECT / INDIRECT` 与 `BLOCKS_DELETION / ADVISORY` 两组治理语义
+- 资源中心和知识库旧引用接口已复用同一分析结果，删除阻断文案也改为从统一分析派生
+- Web 端 `Domain / Scenario / Assistant / Agent / Resource / Knowledge Library` 详情页都已接入统一引用分析面板
 
-当前缺口：
+对后续工作的意义：
 
-- 非资源对象还不能在删除前拿到完整下游影响面
-- 资源中心偏“资源治理视角”，还不是通用对象依赖图
-- 前端无法复用一套统一协议做治理分析、批量操作和删除预检
-
-后续目标：
-
-1. 提供统一的对象引用分析接口，至少覆盖 `domain / scenario / assistant / agent / resource`
-2. 明确直接引用、间接引用和“仅提示 / 阻断删除”三种关系语义
-3. 为批量分析预留同一套返回结构，避免后续重复设计
+1. `P2.2` 删除前影响预览可以直接复用该协议，不需要再重新设计对象关系模型
+2. `P2.5` 资源治理视图增强可以继续沿用同一关系语义和上下文字段
+3. 后续若补批量分析，只需要在同一返回结构上扩展批量入口，而不需要推翻当前接口
 
 ## 2. 删除前影响预览
 

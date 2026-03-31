@@ -17,6 +17,27 @@ paths:
       responses:
         '200':
           description: Aggregate catalog state with assistants, agents, resources, and orchestrations
+  /catalog/references/{objectType}/{objectId}:
+    get:
+      summary: Get unified object reference analysis
+      parameters:
+        - in: path
+          name: objectType
+          required: true
+          schema:
+            $ref: '#/components/schemas/ReferenceObjectType'
+        - in: path
+          name: objectId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Unified reference analysis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObjectReferenceAnalysis'
   /assistants:
     get:
       summary: List assistants
@@ -1046,6 +1067,73 @@ components:
           nullable: true
         blocksDeletion:
           type: boolean
+    ReferenceObjectType:
+      type: string
+      enum:
+        - DOMAIN
+        - SCENARIO
+        - ASSISTANT
+        - AGENT
+        - RESOURCE
+        - KNOWLEDGE_BASE
+    ReferenceRelationMode:
+      type: string
+      enum:
+        - DIRECT
+        - INDIRECT
+    ReferenceImpactLevel:
+      type: string
+      enum:
+        - BLOCKS_DELETION
+        - ADVISORY
+    ObjectReferenceRelation:
+      type: object
+      properties:
+        relationKind:
+          type: string
+        relationRole:
+          type: string
+        relationMode:
+          $ref: '#/components/schemas/ReferenceRelationMode'
+        impactLevel:
+          $ref: '#/components/schemas/ReferenceImpactLevel'
+        targetType:
+          type: string
+        targetId:
+          type: string
+        targetName:
+          type: string
+        releaseId:
+          type: string
+          nullable: true
+        releaseVersion:
+          type: string
+          nullable: true
+        resourceVersionId:
+          type: string
+          nullable: true
+        resourceVersion:
+          type: string
+          nullable: true
+        knowledgeReleaseId:
+          type: string
+          nullable: true
+        knowledgeReleaseVersion:
+          type: string
+          nullable: true
+    ObjectReferenceAnalysis:
+      type: object
+      properties:
+        objectType:
+          $ref: '#/components/schemas/ReferenceObjectType'
+        objectId:
+          type: string
+        objectName:
+          type: string
+        relations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ObjectReferenceRelation'
     CreateKnowledgeBaseRequest:
       type: object
       properties:

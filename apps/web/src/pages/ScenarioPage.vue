@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
+import ObjectReferencePanel from '../components/ObjectReferencePanel.vue';
 import type {
   BusinessDomain,
   CreateScenarioPayload,
@@ -10,6 +11,7 @@ import type {
 const props = defineProps<{
   domains: BusinessDomain[];
   scenarios: Scenario[];
+  catalogRevision: number;
 }>();
 
 const emit = defineEmits<{
@@ -220,6 +222,14 @@ function submitUpdate() {
           </template>
         </a-list>
       </a-card>
+
+      <ObjectReferencePanel
+        v-if="current"
+        style="margin-top: 16px"
+        object-type="SCENARIO"
+        :object-id="current.id"
+        :reload-key="catalogRevision"
+      />
 
       <a-empty v-else description="暂无业务场景，请先创建" />
     </a-col>

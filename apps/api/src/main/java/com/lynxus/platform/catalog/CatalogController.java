@@ -27,6 +27,11 @@ public class CatalogController {
         return ApiResponse.ok(catalogService.summary());
     }
 
+    @GetMapping("/catalog/references/{objectType}/{objectId}")
+    public ApiResponse<?> objectReferences(@PathVariable String objectType, @PathVariable String objectId) {
+        return ApiResponse.ok(catalogService.objectReferences(objectType, objectId));
+    }
+
     @GetMapping("/domains")
     public ApiResponse<?> domains() {
         return ApiResponse.ok(catalogService.listDomains());

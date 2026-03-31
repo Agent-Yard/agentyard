@@ -23,7 +23,7 @@ export function useAppView(state: AppState, catalogActions: CatalogActions, runt
   const pageRegistry = {
     domain: {
       component: DomainPage,
-      props: computed(() => ({ domains: state.catalog.value!.domains })),
+      props: computed(() => ({ domains: state.catalog.value!.domains, catalogRevision: state.catalogRevision.value })),
       handlers: {
         createDomain: catalogActions.handleCreateDomain,
         updateDomain: catalogActions.handleUpdateDomain,
@@ -32,7 +32,11 @@ export function useAppView(state: AppState, catalogActions: CatalogActions, runt
     },
     scenario: {
       component: ScenarioPage,
-      props: computed(() => ({ domains: state.catalog.value!.domains, scenarios: state.catalog.value!.scenarios })),
+      props: computed(() => ({
+        domains: state.catalog.value!.domains,
+        scenarios: state.catalog.value!.scenarios,
+        catalogRevision: state.catalogRevision.value,
+      })),
       handlers: {
         createScenario: catalogActions.handleCreateScenario,
         updateScenario: catalogActions.handleUpdateScenario,
@@ -46,6 +50,7 @@ export function useAppView(state: AppState, catalogActions: CatalogActions, runt
         scenarios: state.catalog.value!.scenarios,
         resources: state.catalog.value!.resources,
         knowledgeBases: state.catalog.value!.knowledgeBases,
+        catalogRevision: state.catalogRevision.value,
       })),
       handlers: {
         createAssistant: catalogActions.handleCreateAssistant,
@@ -60,6 +65,7 @@ export function useAppView(state: AppState, catalogActions: CatalogActions, runt
         agents: state.catalog.value!.agents,
         resources: state.catalog.value!.resources,
         knowledgeBases: state.catalog.value!.knowledgeBases,
+        catalogRevision: state.catalogRevision.value,
       })),
       handlers: {
         createAgent: catalogActions.handleCreateAgent,
@@ -81,6 +87,7 @@ export function useAppView(state: AppState, catalogActions: CatalogActions, runt
       props: computed(() => ({
         knowledgeBases: state.catalog.value!.knowledgeBases,
         preferredKnowledgeBaseId: state.knowledgeLibraryPreferredKnowledgeBaseId.value,
+        catalogRevision: state.catalogRevision.value,
       })),
       handlers: { refreshCatalog: state.refresh },
     },
@@ -100,6 +107,7 @@ export function useAppView(state: AppState, catalogActions: CatalogActions, runt
         resources: state.catalog.value!.resources,
         preferredResourceId: state.resourceLibraryPreferredResourceId.value,
         preferredVersionId: state.resourceLibraryPreferredVersionId.value,
+        catalogRevision: state.catalogRevision.value,
       })),
       handlers: {
         deleteResource: catalogActions.handleDeleteResource,

@@ -20,6 +20,7 @@ export function useAppState() {
   const knowledgeLibraryPreferredKnowledgeBaseId = ref<string | null>(null);
   const resourceLibraryPreferredResourceId = ref<string | null>(null);
   const resourceLibraryPreferredVersionId = ref<string | null>(null);
+  const catalogRevision = ref(0);
   const activeKey = ref<PageKey>('domain');
   const openKeys = ref<SectionKey[]>(['design', 'build', 'knowledge', 'resource', 'runtime-observe']);
   const session = ref<UserSession | null>(null);
@@ -75,6 +76,7 @@ export function useAppState() {
       ]);
       session.value = sessionData;
       catalog.value = catalogData;
+      catalogRevision.value += 1;
       conversationSessions.value = sessionList;
       tasks.value = tasksData;
       workflows.value = workflowData;
@@ -108,6 +110,7 @@ export function useAppState() {
     knowledgeLibraryPreferredKnowledgeBaseId,
     resourceLibraryPreferredResourceId,
     resourceLibraryPreferredVersionId,
+    catalogRevision,
     activeKey,
     openKeys,
     session,

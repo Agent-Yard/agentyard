@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
+import ObjectReferencePanel from '../components/ObjectReferencePanel.vue';
 import type {
   Assistant,
   CreateAssistantPayload,
@@ -14,6 +15,7 @@ const props = defineProps<{
   scenarios: Scenario[];
   resources: Resource[];
   knowledgeBases: KnowledgeBase[];
+  catalogRevision: number;
 }>();
 
 const emit = defineEmits<{
@@ -319,6 +321,14 @@ function submitUpdate() {
           </a-space>
         </a-form>
       </a-card>
+
+      <ObjectReferencePanel
+        v-if="current"
+        style="margin-top: 16px"
+        object-type="ASSISTANT"
+        :object-id="current.id"
+        :reload-key="catalogRevision"
+      />
     </a-col>
   </a-row>
 </template>

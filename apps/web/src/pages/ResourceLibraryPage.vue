@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
+import ObjectReferencePanel from '../components/ObjectReferencePanel.vue';
 import ResourceVersionConfigEditor from '../components/ResourceVersionConfigEditor.vue';
 import ResourceVersionConfigSummary from '../components/ResourceVersionConfigSummary.vue';
 import type {
@@ -18,6 +19,7 @@ const props = defineProps<{
   resources: Resource[];
   preferredResourceId?: string | null;
   preferredVersionId?: string | null;
+  catalogRevision: number;
 }>();
 
 const emit = defineEmits<{
@@ -64,12 +66,6 @@ const selectedVersion = computed(() =>
   ?? selectedResource.value?.latestVersion
   ?? null,
 );
-const references = computed(() =>
-  selectedResource.value
-    ? props.resourceCenter.references.filter((item) => item.resourceId === selectedResource.value?.id)
-    : [],
-);
-
 const domainOptions = computed(() => {
   return props.domains.map((item) => ({ label: item.name, value: item.id }));
 });
@@ -327,19 +323,13 @@ function submitUpdateDraftVersion() {
               </a-list>
             </a-card>
 
-            <a-card size="small" title="引用分析" style="margin-top: 16px">
-              <a-empty v-if="!references.length" description="当前没有引用" />
-              <a-list v-else :data-source="references" size="small">
-                <template #renderItem="{ item }">
-                  <a-list-item>
-                    <a-space direction="vertical" style="width: 100%">
-                      <a-typography-text strong>{{ item.referenceKind }}</a-typography-text>
-                      <a-typography-text type="secondary">{{ item.sourceName }}</a-typography-text>
-                    </a-space>
-                  </a-list-item>
-                </template>
-              </a-list>
-            </a-card>
+            <ObjectReferencePanel
+              v-if="selectedResource"
+              style="margin-top: 16px"
+              object-type="RESOURCE"
+              :object-id="selectedResource.id"
+              :reload-key="catalogRevision"
+            />
           </a-col>
 
           <a-col :span="13">

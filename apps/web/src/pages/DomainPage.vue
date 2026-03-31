@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
+import ObjectReferencePanel from '../components/ObjectReferencePanel.vue';
 import type { BusinessDomain, CreateDomainPayload, UpdateDomainPayload } from '../types';
 
 const props = defineProps<{
   domains: BusinessDomain[];
+  catalogRevision: number;
 }>();
 
 const emit = defineEmits<{
@@ -199,6 +201,14 @@ function submitUpdate() {
           </a-col>
         </a-row>
       </a-card>
+
+      <ObjectReferencePanel
+        v-if="current"
+        style="margin-top: 16px"
+        object-type="DOMAIN"
+        :object-id="current.id"
+        :reload-key="catalogRevision"
+      />
 
       <a-empty v-else description="暂无业务域，请先创建" />
     </a-col>
