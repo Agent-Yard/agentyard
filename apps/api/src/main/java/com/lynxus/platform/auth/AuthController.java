@@ -1,5 +1,6 @@
 package com.lynxus.platform.auth;
 
+import com.lynxus.platform.auth.AuthModels.UserSession;
 import com.lynxus.platform.shared.ApiResponse;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -15,7 +16,7 @@ public class AuthController {
     }
 
     @GetMapping("/session")
-    public ApiResponse<?> session() {
+    public ApiResponse<UserSession> session() {
         return ApiResponse.ok(authService.currentSession());
     }
 }

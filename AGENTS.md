@@ -1,5 +1,5 @@
 ## Rules for this project
-- DO NOT CONSIDER COMPATIBILITY WHEN CODING (this project is under development and not released yet).
+- DO NOT CONSIDER COMPATIBILITY WHEN CODING, INCLUDING DATABASE (this project is under development and not released yet).
 - ANY MODIFICATIONS MUST BE CONSIDERED FROM A GLOBAL PERSPECTIVE, TAKING INTO ACCOUNT THE ENTIRE PROJECT, ALL MODULES, AND THE ASSOCIATED IMPACTS ON DOCUMENTATION.
 
 ## Monorepo Layout
@@ -25,5 +25,6 @@ docs/
 ```
 
 ## test commands
-- java and node use commands in local system
+- java uses ./gradlew
+- node uses command in local system
 - python uses `uv run` from project root workspace

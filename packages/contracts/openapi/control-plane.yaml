@@ -7,10 +7,14 @@ servers:
 paths:
   /auth/session:
     get:
-      summary: Get current development session
+      summary: Get current platform user session
       responses:
         '200':
           description: Current session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseUserSession'
   /catalog/summary:
     get:
       summary: Get aggregate catalog summary
@@ -740,6 +744,34 @@ paths:
                 $ref: '#/components/schemas/WorkflowInstance'
 components:
   schemas:
+    PlatformRole:
+      type: string
+      enum: [PLATFORM_ADMIN, DOMAIN_ADMIN, DEVELOPER, BUSINESS_USER]
+    UserSession:
+      type: object
+      required: [userId, displayName, currentRole, availableRoles]
+      properties:
+        userId:
+          type: string
+        displayName:
+          type: string
+        currentRole:
+          $ref: '#/components/schemas/PlatformRole'
+        availableRoles:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformRole'
+    ApiResponseUserSession:
+      type: object
+      required: [success, data, timestamp]
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/UserSession'
+        timestamp:
+          type: string
+          format: date-time
     VersionStatus:
       type: string
       enum: [DRAFT, PUBLISHED]
