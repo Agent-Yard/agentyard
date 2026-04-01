@@ -43,7 +43,7 @@ class AssistantRunWorkflowGatewayTest {
 
         gateway.submitHumanAction(
             "wf-123",
-            new HumanAction("CONFIRM", "人工已处理", "operator-1", Map.of())
+            new HumanAction("CONFIRM", "人工已处理", "user-1", Map.of())
         );
 
         verify(workflowClient).newWorkflowStub(AssistantRunWorkflow.class, "wf-123");
@@ -59,7 +59,14 @@ class AssistantRunWorkflowGatewayTest {
             "怎么重置密码",
             "tester",
             null,
-            null
+            null,
+            new WorkflowContracts.LogContext(
+                "0123456789abcdef0123456789abcdef",
+                "session-" + workflowId,
+                workflowId,
+                "customer-1",
+                "user-1"
+            )
         );
     }
 }

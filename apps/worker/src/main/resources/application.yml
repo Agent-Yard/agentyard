@@ -2,6 +2,17 @@ spring:
   application:
     name: lynxus-worker
 
+logging:
+  structured:
+    format:
+      console: logstash
+    json:
+      context:
+        include: true
+        prefix: ""
+      add:
+        service: ${spring.application.name}
+
 server:
   port: ${LYNXUS_WORKER_PORT:8081}
 

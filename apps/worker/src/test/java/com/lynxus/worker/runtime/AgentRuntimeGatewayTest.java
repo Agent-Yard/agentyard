@@ -3,6 +3,7 @@ package com.lynxus.worker.runtime;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.lynxus.contracts.runtime.LogContextHeaders;
 import com.lynxus.contracts.runtime.WorkflowContracts;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -40,7 +41,8 @@ class AgentRuntimeGatewayTest {
                 List.of(),
                 List.of(),
                 new WorkflowContracts.GraphSnapshot("GRAPH", List.of(), List.of())
-            )
+            ),
+            sampleLogContext("session-1", "wf-1")
         );
 
         String json = AgentRuntimeGateway.HttpAgentRuntimeGateway.createObjectMapper().writeValueAsString(payload);
@@ -93,9 +95,17 @@ class AgentRuntimeGatewayTest {
     @Test
     void shouldSendInternalBearerToken() throws Exception {
         AtomicReference<String> authorization = new AtomicReference<>();
+        AtomicReference<String> traceparent = new AtomicReference<>();
+        AtomicReference<String> workflowId = new AtomicReference<>();
+        AtomicReference<String> customerId = new AtomicReference<>();
+        AtomicReference<String> userId = new AtomicReference<>();
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
         server.createContext("/agent-runs/start", exchange -> {
             authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            traceparent.set(exchange.getRequestHeaders().getFirst(LogContextHeaders.TRACEPARENT));
+            workflowId.set(exchange.getRequestHeaders().getFirst(LogContextHeaders.WORKFLOW_ID));
+            customerId.set(exchange.getRequestHeaders().getFirst(LogContextHeaders.CUSTOMER_ID));
+            userId.set(exchange.getRequestHeaders().getFirst(LogContextHeaders.USER_ID));
             writeJson(
                 exchange,
                 """
@@ -134,7 +144,8 @@ class AgentRuntimeGatewayTest {
         try {
             AgentRuntimeGateway gateway = new AgentRuntimeGateway.HttpAgentRuntimeGateway(
                 "http://localhost:" + server.getAddress().getPort(),
-                "internal-token"
+                "internal-token",
+                AgentRuntimeGateway.HttpAgentRuntimeGateway.createObjectMapper()
             );
 
             gateway.start(new WorkflowContracts.WorkflowStartRequest(
@@ -160,10 +171,15 @@ class AgentRuntimeGatewayTest {
                     List.of(),
                     List.of(),
                     new WorkflowContracts.GraphSnapshot("GRAPH", List.of(), List.of())
-                )
+                ),
+                sampleLogContext("session-1", "wf-1")
             ));
 
             assertEquals("Bearer internal-token", authorization.get());
+            assertTrue(traceparent.get().startsWith("00-0123456789abcdef0123456789abcdef-"));
+            assertEquals("wf-1", workflowId.get());
+            assertEquals("customer-1", customerId.get());
+            assertEquals("user-1", userId.get());
         } finally {
             server.stop(0);
         }
@@ -176,5 +192,15 @@ class AgentRuntimeGatewayTest {
         try (OutputStream outputStream = exchange.getResponseBody()) {
             outputStream.write(body);
         }
+    }
+
+    private static WorkflowContracts.LogContext sampleLogContext(String sessionId, String workflowId) {
+        return new WorkflowContracts.LogContext(
+            "0123456789abcdef0123456789abcdef",
+            sessionId,
+            workflowId,
+            "customer-1",
+            "user-1"
+        );
     }
 }

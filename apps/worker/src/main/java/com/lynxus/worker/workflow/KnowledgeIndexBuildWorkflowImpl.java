@@ -3,6 +3,7 @@ package com.lynxus.worker.workflow;
 import com.lynxus.contracts.runtime.KnowledgeIndexBuildWorkflow;
 import com.lynxus.contracts.runtime.WorkflowContracts.KnowledgeIndexBuildRequest;
 import com.lynxus.contracts.runtime.WorkflowContracts.KnowledgeJobResult;
+import com.lynxus.worker.logging.WorkerLogContext;
 import io.temporal.activity.ActivityOptions;
 import io.temporal.common.RetryOptions;
 import io.temporal.workflow.Workflow;
@@ -24,8 +25,10 @@ public class KnowledgeIndexBuildWorkflowImpl implements KnowledgeIndexBuildWorkf
 
     @Override
     public KnowledgeJobResult run(KnowledgeIndexBuildRequest request) {
-        currentResult = activities.buildIndex(request);
-        return currentResult;
+        try (WorkerLogContext.Scope ignored = WorkerLogContext.open(request.logContext())) {
+            currentResult = activities.buildIndex(request);
+            return currentResult;
+        }
     }
 
     @Override

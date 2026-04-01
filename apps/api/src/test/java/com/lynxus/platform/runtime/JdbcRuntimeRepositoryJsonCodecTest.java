@@ -3,16 +3,18 @@ package com.lynxus.platform.runtime;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.lynxus.contracts.runtime.WorkflowContracts.ExecutionCheckpoint;
 import com.lynxus.contracts.runtime.WorkflowContracts.SharedSessionState;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 class JdbcRuntimeRepositoryJsonCodecTest {
-    private final JdbcRuntimeRepository repository = new JdbcRuntimeRepository(new JdbcTemplate());
+    private final JdbcRuntimeRepository repository = new JdbcRuntimeRepository(new JdbcTemplate(), mapper());
 
     @Test
     void shouldRoundTripComplexJsonPayloads() {
@@ -43,5 +45,11 @@ class JdbcRuntimeRepositoryJsonCodecTest {
 
         assertEquals(2, restored.size());
         assertEquals("node-b", restored.getLast().waitingNodeKey());
+    }
+
+    private static ObjectMapper mapper() {
+        return JsonMapper.builder()
+            .findAndAddModules()
+            .build();
     }
 }

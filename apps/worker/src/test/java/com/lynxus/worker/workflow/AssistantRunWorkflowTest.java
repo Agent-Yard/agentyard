@@ -323,6 +323,13 @@ class AssistantRunWorkflowTest {
                         new WorkflowContracts.GraphEdgeSnapshot("edge-human-end", "human-review", "end", "default", "继续", true)
                     )
                 )
+            ),
+            new WorkflowContracts.LogContext(
+                "0123456789abcdef0123456789abcdef",
+                "session-" + workflowId,
+                workflowId,
+                "customer-1",
+                "user-1"
             )
         );
     }

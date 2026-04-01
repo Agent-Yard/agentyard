@@ -1739,7 +1739,7 @@ components:
           $ref: '#/components/schemas/AgentExecutionPolicy'
     TaskLaunchRequest:
       type: object
-      required: [scenarioId, assistantId, question, requester]
+      required: [scenarioId, assistantId, question, customerId]
       properties:
         scenarioId:
           type: string
@@ -1747,18 +1747,18 @@ components:
           type: string
         question:
           type: string
-        requester:
+        customerId:
           type: string
     HumanActionRequest:
       type: object
-      required: [action, comment, operatorId, attributes]
+      required: [action, comment, userId, attributes]
       properties:
         action:
           type: string
           enum: [CONFIRM, TERMINATE]
         comment:
           type: string
-        operatorId:
+        userId:
           type: string
         attributes:
           type: object
@@ -2034,7 +2034,7 @@ components:
           type: string
         action:
           type: string
-        operator:
+        userId:
           type: string
         comment:
           type: string
@@ -2056,7 +2056,7 @@ components:
           type: string
         question:
           type: string
-        requester:
+        customerId:
           type: string
         status:
           $ref: '#/components/schemas/TaskStatus'
@@ -2145,7 +2145,7 @@ components:
     ConversationMessageRequest:
       type: object
       properties:
-        requester:
+        customerId:
           type: string
         message:
           type: string
@@ -2156,7 +2156,7 @@ components:
           type: string
         assistantId:
           type: string
-        requester:
+        customerId:
           type: string
         openingMessage:
           type: string
@@ -2195,7 +2195,7 @@ components:
           type: string
         title:
           type: string
-        requester:
+        customerId:
           type: string
         assistantId:
           type: string

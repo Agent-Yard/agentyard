@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import type { HumanActionType, HumanTaskSource, WorkflowInstance } from '../types';
 import { failureAlertDescription, failureAlertMessage, failureAlertType, failureSummary, hasActiveFailure } from './workflowFailure';
 
@@ -7,19 +7,30 @@ const props = defineProps<{
   workflow?: WorkflowInstance;
   workflows: WorkflowInstance[];
   selectedWorkflowId: string | null;
+  currentUserId: string | null;
 }>();
 
 const emit = defineEmits<{
   selectWorkflow: [workflowId: string];
-  humanAction: [payload: { workflowId: string; action: string; comment: string; operatorId: string; attributes: Record<string, string> }];
+  humanAction: [payload: { workflowId: string; action: string; comment: string; userId: string; attributes: Record<string, string> }];
 }>();
 
 const statusFilter = ref<'ALL' | 'WAITING_HUMAN' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED'>('ALL');
 const searchKeyword = ref('');
 const humanForm = reactive({
-  operatorId: 'operator-demo',
+  userId: props.currentUserId ?? '',
   comment: '人工已完成处理并同步客户',
 });
+
+watch(
+  () => props.currentUserId,
+  (userId) => {
+    if (!humanForm.userId && userId) {
+      humanForm.userId = userId;
+    }
+  },
+  { immediate: true },
+);
 
 const sourceLabel: Record<HumanTaskSource, string> = {
   GRAPH_NODE: '编排人工节点',
@@ -78,7 +89,7 @@ function submitAction(action: HumanActionType) {
     workflowId: current.value.id,
     action,
     comment: humanForm.comment,
-    operatorId: humanForm.operatorId,
+    userId: humanForm.userId,
     attributes: {},
   });
 }
@@ -354,7 +365,7 @@ function formatFailureLocation(workflow: WorkflowInstance) {
                 <template #renderItem="{ item }">
                   <a-list-item>
                     <a-list-item-meta
-                      :title="`${item.action} · ${item.operator}`"
+                      :title="`${item.action} · ${item.userId}`"
                       :description="item.comment"
                     />
                   </a-list-item>
@@ -362,8 +373,8 @@ function formatFailureLocation(workflow: WorkflowInstance) {
               </a-list>
 
               <a-form v-if="current.status === 'WAITING_HUMAN'" layout="vertical" style="margin-top: 16px">
-                <a-form-item label="处理人">
-                  <a-input v-model:value="humanForm.operatorId" />
+                <a-form-item label="处理用户 ID">
+                  <a-input v-model:value="humanForm.userId" disabled />
                 </a-form-item>
                 <a-form-item label="处理备注">
                   <a-textarea v-model:value="humanForm.comment" :rows="3" />

@@ -14,6 +14,7 @@ dependencies {
     implementation(project(":packages:contracts-jvm"))
 
     implementation("org.springframework.boot:spring-boot-starter")
+    implementation("org.springframework.boot:spring-boot-starter-jackson")
     implementation("org.springframework:spring-web")
     implementation("io.temporal:temporal-sdk:1.32.1")
 

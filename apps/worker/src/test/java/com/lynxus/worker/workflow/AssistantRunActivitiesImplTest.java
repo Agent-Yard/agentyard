@@ -9,17 +9,26 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.slf4j.MDC;
 
 class AssistantRunActivitiesImplTest {
     private final AssistantRunActivitiesImpl activities = new AssistantRunActivitiesImpl(new AgentRuntimeGateway() {
         @Override
         public WorkflowContracts.WorkflowResult start(WorkflowContracts.WorkflowStartRequest request) {
+            assertEquals(request.logContext().traceId(), MDC.get("traceId"));
+            assertEquals(request.logContext().workflowId(), MDC.get("workflowId"));
+            assertEquals(request.logContext().customerId(), MDC.get("customerId"));
+            assertEquals(request.logContext().userId(), MDC.get("userId"));
             boolean waitingHuman = request.question().contains("投诉");
             return waitingHuman ? waitingHumanResult(request.workflowInstanceId(), request.question()) : completedResult(request.workflowInstanceId(), request.question());
         }
 
         @Override
         public WorkflowContracts.WorkflowResult resume(WorkflowContracts.WorkflowResumeRequest request) {
+            assertEquals(request.logContext().traceId(), MDC.get("traceId"));
+            assertEquals(request.logContext().workflowId(), MDC.get("workflowId"));
+            assertEquals(request.logContext().customerId(), MDC.get("customerId"));
+            assertEquals(request.logContext().userId(), MDC.get("userId"));
             return new WorkflowContracts.WorkflowResult(
                 request.workflowInstanceId(),
                 WorkflowContracts.WorkflowStatus.COMPLETED,
@@ -69,10 +78,11 @@ class AssistantRunActivitiesImplTest {
             "task-2",
             "wf-2",
             "scenario-customer-ops",
-            new WorkflowContracts.HumanAction("CONFIRM", "人工已处理", "operator-1", java.util.Map.of()),
+            new WorkflowContracts.HumanAction("CONFIRM", "人工已处理", "user-1", java.util.Map.of()),
             sampleSessionContext("客户投诉"),
             sampleAssistantSnapshot(),
-            new WorkflowContracts.ExecutionCheckpoint("cp-1", "handoff-close", "human-review", "{}", 0)
+            new WorkflowContracts.ExecutionCheckpoint("cp-1", "handoff-close", "human-review", "{}", 0),
+            sampleLogContext("session-1", "wf-2")
         ));
 
         assertEquals(WorkflowContracts.WorkflowStatus.COMPLETED, result.status());
@@ -87,7 +97,18 @@ class AssistantRunActivitiesImplTest {
             question,
             "tester",
             sampleSessionContext(question),
-            sampleAssistantSnapshot()
+            sampleAssistantSnapshot(),
+            sampleLogContext("session-1", "wf-1")
+        );
+    }
+
+    private WorkflowContracts.LogContext sampleLogContext(String sessionId, String workflowId) {
+        return new WorkflowContracts.LogContext(
+            "0123456789abcdef0123456789abcdef",
+            sessionId,
+            workflowId,
+            "customer-1",
+            "user-1"
         );
     }
 

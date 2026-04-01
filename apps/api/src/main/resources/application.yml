@@ -19,6 +19,17 @@ management:
       exposure:
         include: health,info
 
+logging:
+  structured:
+    format:
+      console: logstash
+    json:
+      context:
+        include: true
+        prefix: ""
+      add:
+        service: ${spring.application.name}
+
 server:
   port: ${LYNXUS_API_PORT:8080}
 

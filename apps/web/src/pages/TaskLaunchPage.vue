@@ -1,26 +1,37 @@
 <script setup lang="ts">
-import { reactive } from 'vue';
+import { reactive, watch } from 'vue';
 import type { Scenario, TaskInstance } from '../types';
 
 const props = defineProps<{
   scenarios: Scenario[];
   tasks: TaskInstance[];
+  currentCustomerId?: string | null;
 }>();
 
 const emit = defineEmits<{
-  launch: [payload: { scenarioId: string; question: string; requester: string }];
+  launch: [payload: { scenarioId: string; question: string; customerId: string }];
 }>();
 
 const formState = reactive({
   scenarioId: props.scenarios[0]?.id ?? '',
-  requester: '业务用户A',
+  customerId: '',
   question: '',
 });
+
+watch(
+  () => props.currentCustomerId,
+  (customerId) => {
+    if (!formState.customerId && customerId) {
+      formState.customerId = customerId;
+    }
+  },
+  { immediate: true },
+);
 
 const columns = [
   { title: '任务 ID', dataIndex: 'id', key: 'id' },
   { title: '问题', dataIndex: 'question', key: 'question' },
-  { title: '发起人', dataIndex: 'requester', key: 'requester' },
+  { title: '客户 ID', dataIndex: 'customerId', key: 'customerId' },
   { title: '状态', dataIndex: 'status', key: 'status' },
   { title: '流程 ID', dataIndex: 'workflowInstanceId', key: 'workflowInstanceId' },
 ];
@@ -40,8 +51,8 @@ function submit() {
           :options="scenarios.map((item) => ({ label: item.name, value: item.id }))"
         />
       </a-form-item>
-      <a-form-item label="发起人" name="requester">
-        <a-input v-model:value="formState.requester" />
+      <a-form-item label="客户 ID" name="customerId">
+        <a-input v-model:value="formState.customerId" disabled />
       </a-form-item>
       <a-form-item label="业务问题" name="question">
         <a-textarea v-model:value="formState.question" :rows="4" placeholder="例如：客户投诉未收到退款，需要人工介入" />

@@ -2,10 +2,6 @@ package com.lynxus.platform.knowledge;
 
 import static com.lynxus.platform.catalog.CatalogDtos.*;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.LinkedHashMap;
@@ -15,6 +11,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.ObjectMapper;
 
 @Repository
 public class JdbcKnowledgeRepository implements KnowledgeRepository {
@@ -24,11 +24,11 @@ public class JdbcKnowledgeRepository implements KnowledgeRepository {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
 
-    public JdbcKnowledgeRepository(JdbcTemplate jdbcTemplate) {
+    public JdbcKnowledgeRepository(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
         this.jdbcTemplate = jdbcTemplate;
-        this.objectMapper = new ObjectMapper()
-            .findAndRegisterModules()
-            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        this.objectMapper = objectMapper.rebuild()
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+            .build();
     }
 
     @Override
@@ -107,7 +107,7 @@ public class JdbcKnowledgeRepository implements KnowledgeRepository {
     private String writeValue(Object value) {
         try {
             return objectMapper.writeValueAsString(value);
-        } catch (JsonProcessingException error) {
+        } catch (JacksonException error) {
             throw new IllegalStateException("failed to serialize knowledge payload", error);
         }
     }
@@ -115,7 +115,7 @@ public class JdbcKnowledgeRepository implements KnowledgeRepository {
     private <T> T readValue(String payload, Class<T> type) {
         try {
             return objectMapper.readValue(payload, type);
-        } catch (JsonProcessingException error) {
+        } catch (JacksonException error) {
             throw new IllegalStateException("failed to deserialize knowledge payload", error);
         }
     }
@@ -123,7 +123,7 @@ public class JdbcKnowledgeRepository implements KnowledgeRepository {
     private <T> List<T> readValue(String payload, TypeReference<List<T>> type) {
         try {
             return objectMapper.readValue(payload, type);
-        } catch (JsonProcessingException error) {
+        } catch (JacksonException error) {
             throw new IllegalStateException("failed to deserialize knowledge payload list", error);
         }
     }

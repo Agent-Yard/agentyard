@@ -41,7 +41,7 @@ describe('api client', () => {
 
     await expect(
       api.sendConversationMessage('session-1', {
-        requester: 'tester',
+        customerId: 'customer-1',
         message: '第二条消息',
       }),
     ).rejects.toThrow('session has an active workflow');

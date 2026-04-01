@@ -52,14 +52,22 @@
 
 ### 1.4 结构化日志统一
 
-现状：各服务日志格式不统一，不利于排障。
+现状：已完成四个后端服务的结构化日志统一。Java 服务在默认 profile 下输出结构化 JSON，本地 `local` profile 保留可读文本；Python 服务统一切到 `structlog` + `contextvars`，默认本地 `console`、非本地 `json`。
 
 目标：
 
-1. Java 服务统一 JSON 日志格式（Logback JSON encoder），包含 `traceId / spanId / service / level / message`
-2. Python 服务统一 structlog 或 python-json-logger
-3. 约定公共字段：`service`、`traceId`、`sessionId`、`workflowId`、`userId`
-4. 本地开发仍输出可读格式，通过 profile 切换
+1. [x] Java 服务统一结构化日志输出，包含 `service / traceId / spanId / sessionId / workflowId / customerId / userId / level / message`
+2. [x] Python 服务统一采用 `structlog`，通过共享初始化模块与 `contextvars` 注入上下文
+3. [x] API、Worker、Agent Runtime、Knowledge Service 统一透传 `traceparent`、`X-Lynxus-Session-Id`、`X-Lynxus-Workflow-Id`、`X-Lynxus-Customer-Id`、`X-Lynxus-User-Id`
+4. [x] Workflow 输入上下文扩展 `traceId / sessionId / workflowId / customerId / userId`，由 API 显式传给 Worker，不依赖线程黑盒传播
+5. [x] 本地开发保留可读格式：Java 通过 `local` profile，Python 通过 `LYNXUS_LOG_FORMAT=console|json`
+
+落地说明：
+
+- `customerId` 表示业务客户或外部终端用户，允许为空；`userId` 表示平台系统用户，仅在存在平台认证上下文时写入
+- API 请求入口会绑定日志上下文，Worker 在 workflow/activity 边界恢复上下文，Python 服务在 FastAPI middleware 中绑定并清理上下文
+- Web 运行态表单语义已对齐：会话对话使用 `customerId`，流程观测里的人工恢复使用 `userId`
+- Agent Runtime 与 Knowledge Service 已移除高噪音 prompt/response 整段日志，改为摘要型结构化日志，降低敏感信息暴露风险
 
 为什么放基座：后续 OTel、审计、排障全部依赖结构化日志。
 

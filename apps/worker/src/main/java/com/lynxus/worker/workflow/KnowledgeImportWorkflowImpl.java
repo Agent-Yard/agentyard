@@ -3,6 +3,7 @@ package com.lynxus.worker.workflow;
 import com.lynxus.contracts.runtime.KnowledgeImportWorkflow;
 import com.lynxus.contracts.runtime.WorkflowContracts.KnowledgeImportRequest;
 import com.lynxus.contracts.runtime.WorkflowContracts.KnowledgeJobResult;
+import com.lynxus.worker.logging.WorkerLogContext;
 import io.temporal.activity.ActivityOptions;
 import io.temporal.common.RetryOptions;
 import io.temporal.workflow.Workflow;
@@ -24,8 +25,10 @@ public class KnowledgeImportWorkflowImpl implements KnowledgeImportWorkflow {
 
     @Override
     public KnowledgeJobResult run(KnowledgeImportRequest request) {
-        currentResult = activities.runImport(request);
-        return currentResult;
+        try (WorkerLogContext.Scope ignored = WorkerLogContext.open(request.logContext())) {
+            currentResult = activities.runImport(request);
+            return currentResult;
+        }
     }
 
     @Override

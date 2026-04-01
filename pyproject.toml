@@ -17,4 +17,8 @@ constraint-dependencies = [
 members = [
     "apps/agent-runtime",
     "apps/knowledge-service",
+    "packages/python-common",
 ]
+
+[tool.uv.sources]
+lynxus-python-common = { workspace = true }

@@ -88,7 +88,7 @@ class InMemoryRuntimeRepositoryTest {
             "human-1",
             "wf-1",
             "CONFIRM",
-            "operator-1",
+            "user-1",
             "已处理",
             Map.of("ticketId", "T-1"),
             HumanInterventionStatus.APPLIED,

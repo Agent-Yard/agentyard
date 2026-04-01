@@ -19,16 +19,16 @@ public final class RuntimeDtos {
     private RuntimeDtos() {
     }
 
-    public record TaskLaunchRequest(String scenarioId, String assistantId, String question, String requester) {
+    public record TaskLaunchRequest(String scenarioId, String assistantId, String question, String customerId) {
     }
 
-    public record HumanActionRequest(String action, String comment, String operatorId, Map<String, String> attributes) {
+    public record HumanActionRequest(String action, String comment, String userId, Map<String, String> attributes) {
     }
 
-    public record CreateConversationSessionRequest(String scenarioId, String assistantId, String requester, String openingMessage) {
+    public record CreateConversationSessionRequest(String scenarioId, String assistantId, String customerId, String openingMessage) {
     }
 
-    public record ConversationMessageRequest(String requester, String message) {
+    public record ConversationMessageRequest(String customerId, String message) {
     }
 
     public record TaskInstanceDto(
@@ -38,7 +38,7 @@ public final class RuntimeDtos {
         String assistantName,
         String assistantReleaseVersion,
         String question,
-        String requester,
+        String customerId,
         TaskStatus status,
         Instant createdAt,
         String workflowInstanceId
@@ -94,7 +94,7 @@ public final class RuntimeDtos {
         String id,
         String workflowInstanceId,
         String action,
-        String operator,
+        String userId,
         String comment,
         Map<String, String> attributes,
         HumanInterventionStatus status,
@@ -122,7 +122,7 @@ public final class RuntimeDtos {
         String id,
         String scenarioId,
         String title,
-        String requester,
+        String customerId,
         String assistantId,
         String assistantName,
         String assistantReleaseVersion,

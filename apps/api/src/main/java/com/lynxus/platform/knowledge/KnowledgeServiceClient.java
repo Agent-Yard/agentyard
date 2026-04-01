@@ -2,6 +2,7 @@ package com.lynxus.platform.knowledge;
 
 import static com.lynxus.platform.catalog.CatalogDtos.*;
 
+import com.lynxus.platform.shared.logging.PlatformLogContext;
 import java.util.Base64;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,6 +31,11 @@ public class KnowledgeServiceClient {
         this.restClient = RestClient.builder()
             .baseUrl(baseUrl)
             .defaultHeader("Authorization", "Bearer " + sanitizedToken)
+            .requestInterceptor((request, body, execution) -> {
+                PlatformLogContext.outboundHeaders(null, null, null, null)
+                    .forEach((headerName, headerValue) -> request.getHeaders().set(headerName, headerValue));
+                return execution.execute(request, body);
+            })
             .build();
     }
 

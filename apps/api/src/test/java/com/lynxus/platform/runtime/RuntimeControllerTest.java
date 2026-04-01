@@ -29,7 +29,7 @@ class RuntimeControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
                     {
-                      "requester": "tester",
+                      "customerId": "customer-1",
                       "message": "第二条消息"
                     }
                     """))

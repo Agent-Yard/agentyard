@@ -12,7 +12,7 @@ class KnowledgeActivitiesImplTest {
         KnowledgeActivitiesImpl activities = new KnowledgeActivitiesImpl(new StubKnowledgeServiceGateway("COMPLETED", "READY"));
 
         WorkflowContracts.KnowledgeJobResult result = activities.runImport(
-            new WorkflowContracts.KnowledgeImportRequest("wf-import", "knowledge-base-support", "import-job-1")
+            new WorkflowContracts.KnowledgeImportRequest("wf-import", "knowledge-base-support", "import-job-1", sampleLogContext("wf-import"))
         );
 
         assertEquals("knowledge-base-support", result.knowledgeBaseId());
@@ -24,7 +24,7 @@ class KnowledgeActivitiesImplTest {
         KnowledgeActivitiesImpl activities = new KnowledgeActivitiesImpl(new StubKnowledgeServiceGateway("COMPLETED", "READY"));
 
         WorkflowContracts.KnowledgeJobResult result = activities.buildIndex(
-            new WorkflowContracts.KnowledgeIndexBuildRequest("wf-index", "knowledge-base-support", "snapshot-1")
+            new WorkflowContracts.KnowledgeIndexBuildRequest("wf-index", "knowledge-base-support", "snapshot-1", sampleLogContext("wf-index"))
         );
 
         assertEquals("knowledge-base-support", result.knowledgeBaseId());
@@ -41,5 +41,15 @@ class KnowledgeActivitiesImplTest {
         public String buildIndexSnapshot(String indexSnapshotId) {
             return snapshotStatus;
         }
+    }
+
+    private static WorkflowContracts.LogContext sampleLogContext(String workflowId) {
+        return new WorkflowContracts.LogContext(
+            "0123456789abcdef0123456789abcdef",
+            null,
+            workflowId,
+            null,
+            "user-1"
+        );
     }
 }

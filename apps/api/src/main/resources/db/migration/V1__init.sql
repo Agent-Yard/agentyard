@@ -51,7 +51,7 @@ create table if not exists task_instance (
     id varchar(64) primary key,
     scenario_id varchar(64) not null,
     question text not null,
-    requester varchar(255) not null,
+    customer_id varchar(255) not null,
     status varchar(32) not null,
     workflow_instance_id varchar(64) not null,
     created_at timestamp not null default current_timestamp

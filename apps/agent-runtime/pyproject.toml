@@ -7,6 +7,8 @@ dependencies = [
     "fastapi",
     "httpx==0.28.1",
     "langgraph==0.2.53",
+    "lynxus-python-common",
     "pydantic",
+    "structlog",
     "uvicorn",
 ]

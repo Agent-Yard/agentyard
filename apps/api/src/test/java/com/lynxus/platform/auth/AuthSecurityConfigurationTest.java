@@ -9,10 +9,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lynxus.platform.auth.AuthModels.AuthSource;
+import com.lynxus.platform.auth.AuthModels.PlatformUser;
 import com.lynxus.platform.auth.AuthModels.Role;
+import com.lynxus.platform.auth.AuthModels.UserStatus;
+import com.lynxus.platform.shared.logging.ApiLogContextFilter;
 import com.lynxus.platform.auth.AuthModels.UserSession;
 import com.lynxus.platform.shared.ApiExceptionHandler;
+import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
@@ -24,6 +28,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import tools.jackson.databind.ObjectMapper;
 
 class AuthSecurityConfigurationTest {
     @Test
@@ -118,6 +123,30 @@ class AuthSecurityConfigurationTest {
         @Bean
         OidcProvisioningSuccessHandler oidcProvisioningSuccessHandler() {
             return mock(OidcProvisioningSuccessHandler.class);
+        }
+
+        @Bean
+        CurrentUserResolver currentUserResolver() {
+            Instant now = Instant.parse("2026-04-01T00:00:00Z");
+            return () -> new PlatformUser(
+                "user-admin",
+                "admin",
+                "平台管理员",
+                "admin@lynxus.local",
+                AuthSource.LOCAL_BOOTSTRAP,
+                null,
+                null,
+                UserStatus.ACTIVE,
+                now,
+                now,
+                now,
+                List.of(Role.PLATFORM_ADMIN)
+            );
+        }
+
+        @Bean
+        ApiLogContextFilter apiLogContextFilter(CurrentUserResolver currentUserResolver, ObjectMapper objectMapper) {
+            return new ApiLogContextFilter(currentUserResolver, objectMapper);
         }
 
         @Bean

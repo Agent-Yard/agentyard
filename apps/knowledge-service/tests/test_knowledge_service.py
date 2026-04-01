@@ -279,12 +279,16 @@ class KnowledgeServiceTest(unittest.TestCase):
             valid = client.post(
                 "/internal/upload-sessions",
                 json={"knowledgeBaseId": "resource-kb-auth"},
-                headers={"Authorization": "Bearer test-internal-token"},
+                headers={
+                    "Authorization": "Bearer test-internal-token",
+                    "traceparent": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01",
+                },
             )
 
         self.assertEqual(missing.status_code, 401)
         self.assertEqual(invalid.status_code, 401)
         self.assertEqual(valid.status_code, 200)
+        self.assertTrue(valid.headers["traceparent"].startswith("00-0123456789abcdef0123456789abcdef-"))
 
     def test_should_retry_failed_snapshot_with_new_attempt(self) -> None:
         with SessionLocal() as db:

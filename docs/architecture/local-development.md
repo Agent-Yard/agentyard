@@ -65,6 +65,31 @@ docker compose -f docker-compose.yml -f docker-compose.dashboards.yml up -d
 
 其中 `dev-agent-runtime.sh` 和 `dev-knowledge-service.sh` 会直接通过 `uv run` 使用 workspace 环境；运行前需先完成 `uv sync --all-packages`。
 
+## 日志与链路上下文
+
+当前四个后端服务已经统一结构化日志约定：
+
+- 公共字段：`service`、`traceId`、`spanId`、`sessionId`、`workflowId`、`customerId`、`userId`
+- 字段语义：`customerId` 表示业务客户或外部终端用户；`userId` 表示平台系统用户
+- 跨服务透传头：`traceparent`、`X-Lynxus-Session-Id`、`X-Lynxus-Workflow-Id`、`X-Lynxus-Customer-Id`、`X-Lynxus-User-Id`
+- Web 运行态语义：会话对话页默认把当前登录用户当作 `customerId`；流程观测页的人工恢复默认把当前登录用户当作 `userId`
+
+本地开发日志格式切换约定：
+
+- API 与 Worker 默认使用 Spring `local` profile，输出可读文本日志；非 `local` profile 输出结构化 JSON
+- Agent Runtime 与 Knowledge Service 使用 `LYNXUS_LOG_FORMAT=console|json`
+- `dev-agent-runtime.sh` 与 `dev-knowledge-service.sh` 默认会设置 `LYNXUS_LOG_FORMAT=console`
+- `dev-worker.sh` 默认会设置 `SPRING_PROFILES_ACTIVE=local`
+
+如果需要在本地排查结构化日志链路，可以临时改用：
+
+```bash
+LYNXUS_LOG_FORMAT=json pnpm dev:agent-runtime
+LYNXUS_LOG_FORMAT=json pnpm dev:knowledge-service
+SPRING_PROFILES_ACTIVE=default pnpm dev:api
+SPRING_PROFILES_ACTIVE=default pnpm dev:worker
+```
+
 ## 默认开发约定
 
 - 后端 API：`http://localhost:8080/api`
@@ -74,12 +99,15 @@ docker compose -f docker-compose.yml -f docker-compose.dashboards.yml up -d
 - MinIO Console：`http://localhost:9001`
 - OpenSearch：`http://localhost:9200`
 - Python 内部服务鉴权：`LYNXUS_INTERNAL_AUTH_TOKEN`，API / Worker / Agent Runtime / Knowledge Service 必须保持一致
+- Java 结构化日志：默认非 `local` profile 输出 JSON，本地开发默认文本
+- Python 结构化日志：`LYNXUS_LOG_FORMAT` 默认开发态 `console`
 
 启用可选 dashboard 后：
 
 - OpenSearch Dashboards：`http://localhost:5601`
 - Temporal UI：`http://localhost:8088`
 - `pnpm dev:api` 会默认启用 `local` profile，并打开开发态 bootstrap 登录旁路
+- `pnpm dev:worker` 会默认启用 `local` profile，便于直接阅读 workflow/activity 日志
 - 前端开发服务通过 Vite 代理将 `/api` 转发到 `http://localhost:8080`
 - 控制台未登录时会跳转 `/login`；开发态可通过 `/api/auth/dev-bootstrap-login` 建立本地 bootstrap 会话
 - 前端不再回退到内置 mock 数据；后端未启动时页面请求会直接报错
@@ -88,6 +116,7 @@ docker compose -f docker-compose.yml -f docker-compose.dashboards.yml up -d
 - `dev-agent-runtime.sh` 默认以 `uv run --package lynxus-agent-runtime uvicorn --reload` 启动 Python runtime
 - `dev-knowledge-service.sh` 默认以 `uv run --package lynxus-knowledge-service uvicorn --reload` 启动知识服务
 - `Agent Runtime` 与 `Knowledge Service` 的 HTTP 入口不接浏览器 OIDC 会话，只接受共享 internal token
+- API -> Worker -> Python 服务已经统一透传 `traceparent` 与 Lynxus 日志上下文头，跨服务排障时应优先按 `traceId` 聚合日志
 
 ## 当前开发边界
 

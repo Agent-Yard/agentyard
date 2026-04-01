@@ -17,9 +17,15 @@ from pathlib import Path
 from typing import Generator, List, Optional, Union
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlparse
-from urllib.request import Request, urlopen
+from urllib.request import Request as UrlRequest, urlopen
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request as FastAPIRequest
+from lynxus_common import (
+    TRACEPARENT_HEADER,
+    bind_request_log_context,
+    clear_log_context,
+    configure_structured_logging,
+)
 from minio import Minio
 from pydantic import BaseModel, Field
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, create_engine, select
@@ -86,6 +92,7 @@ if STORAGE_MODE == "filesystem":
 
 engine = create_engine(DATABASE_URL, future=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+configure_structured_logging("lynxus-knowledge-service", "LYNXUS_KNOWLEDGE_SERVICE_LOG_LEVEL")
 logger = logging.getLogger(__name__)
 
 SUPPORTED_FILE_TYPES = ["pdf", "docx", "md", "txt", "html", "csv"]
@@ -598,6 +605,17 @@ app = FastAPI(
     version="2.0.0",
     dependencies=[Depends(require_internal_bearer)],
 )
+
+
+@app.middleware("http")
+async def inject_log_context(request: FastAPIRequest, call_next):
+    traceparent = bind_request_log_context(request.headers)
+    try:
+        response = await call_next(request)
+    finally:
+        clear_log_context()
+    response.headers[TRACEPARENT_HEADER] = traceparent
+    return response
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -1168,7 +1186,7 @@ def infer_url_file_name(url: str, title: Optional[str], content_type: str) -> st
 
 
 def fetch_url_payload(url: str) -> tuple[bytes, str]:
-    request = Request(url, headers={"User-Agent": URL_IMPORT_USER_AGENT})
+    request = UrlRequest(url, headers={"User-Agent": URL_IMPORT_USER_AGENT})
     try:
         with urlopen(request, timeout=URL_IMPORT_TIMEOUT_SECONDS) as response:
             content_type = response.headers.get("Content-Type", "text/html")
@@ -1244,6 +1262,7 @@ def startup() -> None:
 
 @app.post("/internal/upload-sessions", response_model=UploadSessionResponse)
 def create_upload_session(request: CreateUploadSessionRequest, db: Session = Depends(get_db)) -> UploadSessionResponse:
+    logger.info("create upload session knowledgeBaseId=%s", request.knowledgeBaseId)
     session_record = UploadSessionRecord(
         id=f"upload-session-{uuid.uuid4().hex[:10]}",
         knowledge_base_id=request.knowledgeBaseId,
@@ -1261,6 +1280,7 @@ def create_upload_session(request: CreateUploadSessionRequest, db: Session = Dep
 
 @app.post("/internal/uploads")
 def complete_upload(request: CompleteUploadRequest, db: Session = Depends(get_db)) -> dict:
+    logger.info("complete upload knowledgeBaseId=%s uploadSessionId=%s fileName=%s", request.knowledgeBaseId, request.uploadSessionId, request.fileName)
     upload_session = db.get(UploadSessionRecord, request.uploadSessionId)
     if upload_session is None or upload_session.knowledge_base_id != request.knowledgeBaseId:
         raise HTTPException(status_code=404, detail="upload session not found")
@@ -1298,6 +1318,7 @@ def complete_upload(request: CompleteUploadRequest, db: Session = Depends(get_db
 
 @app.post("/internal/url-imports")
 def create_url_import(request: CreateUrlImportRequest, db: Session = Depends(get_db)) -> dict:
+    logger.info("create url import knowledgeBaseId=%s sourceUri=%s", request.knowledgeBaseId, request.url)
     upload_session = UploadSessionRecord(
         id=f"upload-session-{uuid.uuid4().hex[:10]}",
         knowledge_base_id=request.knowledgeBaseId,
@@ -1452,6 +1473,7 @@ def retry_index_snapshot(snapshot_id: str, db: Session = Depends(get_db)) -> Ind
 
 @app.post("/internal/import-jobs/{job_id}/run", response_model=ImportJobResponse)
 def run_import_job(job_id: str, db: Session = Depends(get_db)) -> ImportJobResponse:
+    logger.info("run import job importJobId=%s", job_id)
     import_job = db.get(KnowledgeImportJobRecord, job_id)
     if import_job is None:
         raise HTTPException(status_code=404, detail="import job not found")
@@ -1544,11 +1566,13 @@ def run_import_job(job_id: str, db: Session = Depends(get_db)) -> ImportJobRespo
     finally:
         file_record.updated_at = now_utc()
         db.commit()
+    logger.info("import job completed importJobId=%s status=%s stage=%s", job_id, import_job.status, import_job.stage)
     return import_job_response(import_job)
 
 
 @app.post("/internal/index-snapshots/{snapshot_id}/build", response_model=IndexSnapshotResponse)
 def build_index_snapshot(snapshot_id: str, db: Session = Depends(get_db)) -> IndexSnapshotResponse:
+    logger.info("build index snapshot snapshotId=%s", snapshot_id)
     snapshot = db.get(IndexSnapshotRecord, snapshot_id)
     if snapshot is None:
         raise HTTPException(status_code=404, detail="index snapshot not found")
@@ -1629,6 +1653,7 @@ def build_index_snapshot(snapshot_id: str, db: Session = Depends(get_db)) -> Ind
         snapshot.document_count = 0
         snapshot.chunk_count = 0
     db.commit()
+    logger.info("index snapshot completed snapshotId=%s status=%s stage=%s", snapshot_id, snapshot.status, snapshot.stage)
     return snapshot_response(snapshot)
 
 
@@ -1642,6 +1667,7 @@ def get_index_snapshot(snapshot_id: str, db: Session = Depends(get_db)) -> Index
 
 @app.post("/internal/retrieve", response_model=RetrieveResponse)
 def retrieve(request: RetrieveRequest, db: Session = Depends(get_db)) -> RetrieveResponse:
+    logger.info("retrieve knowledge snapshotId=%s topK=%s", request.indexSnapshotId, request.topK)
     snapshot = db.get(IndexSnapshotRecord, request.indexSnapshotId)
     if snapshot is None or snapshot.status != "READY":
         raise HTTPException(status_code=404, detail="index snapshot is not ready")
@@ -1688,4 +1714,5 @@ def retrieve(request: RetrieveRequest, db: Session = Depends(get_db)) -> Retriev
         )
     candidates.sort(key=lambda item: item.score, reverse=True)
     hits = candidates[: max(1, min(request.topK, MAX_RERANK_CANDIDATES))]
+    logger.info("retrieve knowledge completed snapshotId=%s hitCount=%s", request.indexSnapshotId, len(hits))
     return RetrieveResponse(hits=hits, lowConfidence=not hits)

@@ -13,6 +13,7 @@ import com.lynxus.platform.auth.AuthModels.AuthSource;
 import com.lynxus.platform.auth.AuthModels.PlatformUser;
 import com.lynxus.platform.auth.AuthModels.Role;
 import com.lynxus.platform.auth.AuthModels.UserStatus;
+import com.lynxus.platform.shared.logging.ApiLogContextFilter;
 import com.lynxus.platform.catalog.CatalogController;
 import com.lynxus.platform.catalog.CatalogDtos;
 import com.lynxus.platform.catalog.CatalogService;
@@ -130,7 +131,7 @@ class ApiAuthorizationTest {
                         {
                           "scenarioId": "scenario-1",
                           "assistantId": "assistant-1",
-                          "requester": "tester",
+                          "customerId": "customer-1",
                           "openingMessage": "你好"
                         }
                         """))
@@ -174,6 +175,16 @@ class ApiAuthorizationTest {
         @Bean
         CurrentUserResolver currentUserResolver() {
             return () -> platformUser(SecurityContextHolder.getContext().getAuthentication().getName());
+        }
+
+        @Bean
+        tools.jackson.databind.ObjectMapper objectMapper() {
+            return new tools.jackson.databind.ObjectMapper();
+        }
+
+        @Bean
+        ApiLogContextFilter apiLogContextFilter(CurrentUserResolver currentUserResolver, tools.jackson.databind.ObjectMapper objectMapper) {
+            return new ApiLogContextFilter(currentUserResolver, objectMapper);
         }
 
         @Bean

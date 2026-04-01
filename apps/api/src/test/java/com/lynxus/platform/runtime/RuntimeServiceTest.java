@@ -37,7 +37,7 @@ class RuntimeServiceTest {
         RuntimeService service = runtimeService(gateway);
 
         RuntimeDtos.TaskInstanceDto task = service.launchTask(
-            new RuntimeDtos.TaskLaunchRequest(fixture.scenarioId(), fixture.assistantId(), "怎么重置密码", "tester")
+            new RuntimeDtos.TaskLaunchRequest(fixture.scenarioId(), fixture.assistantId(), "怎么重置密码", "customer-1")
         );
 
         assertEquals(TaskStatus.RUNNING, task.status());
@@ -62,11 +62,11 @@ class RuntimeServiceTest {
         RuntimeService service = runtimeService(gateway, catalogService, repository);
 
         RuntimeDtos.ConversationSessionDto session = service.createSession(
-            new RuntimeDtos.CreateConversationSessionRequest(fixture.scenarioId(), fixture.assistantId(), "tester", null)
+            new RuntimeDtos.CreateConversationSessionRequest(fixture.scenarioId(), fixture.assistantId(), "customer-1", null)
         );
         RuntimeDtos.ConversationSessionDto updated = service.sendMessage(
             session.id(),
-            new RuntimeDtos.ConversationMessageRequest("tester", "怎么重置密码")
+            new RuntimeDtos.ConversationMessageRequest("customer-1", "怎么重置密码")
         );
 
         assertEquals(2, updated.messages().size());
@@ -80,11 +80,11 @@ class RuntimeServiceTest {
         RuntimeService service = runtimeService(gateway);
 
         RuntimeDtos.ConversationSessionDto session = service.createSession(
-            new RuntimeDtos.CreateConversationSessionRequest(fixture.scenarioId(), fixture.assistantId(), "tester", null)
+            new RuntimeDtos.CreateConversationSessionRequest(fixture.scenarioId(), fixture.assistantId(), "customer-1", null)
         );
         RuntimeDtos.ConversationSessionDto failed = service.sendMessage(
             session.id(),
-            new RuntimeDtos.ConversationMessageRequest("tester", "你好")
+            new RuntimeDtos.ConversationMessageRequest("customer-1", "你好")
         );
 
         RuntimeDtos.WorkflowInstanceDto workflow = service.getWorkflow(failed.latestWorkflowInstanceId());
@@ -102,14 +102,14 @@ class RuntimeServiceTest {
         RuntimeService service = runtimeService(gateway);
 
         RuntimeDtos.TaskInstanceDto task = service.launchTask(
-            new RuntimeDtos.TaskLaunchRequest(fixture.scenarioId(), fixture.assistantId(), "客户投诉，需要人工处理", "tester")
+            new RuntimeDtos.TaskLaunchRequest(fixture.scenarioId(), fixture.assistantId(), "客户投诉，需要人工处理", "customer-1")
         );
         RuntimeDtos.WorkflowInstanceDto waiting = service.getWorkflow(task.workflowInstanceId());
         assertEquals(WorkflowContracts.WorkflowStatus.WAITING_HUMAN, waiting.status());
 
         RuntimeDtos.WorkflowInstanceDto resumed = service.handleHumanAction(
             task.workflowInstanceId(),
-            new RuntimeDtos.HumanActionRequest("CONFIRM", "人工已处理", "operator-1", Map.of("resolution", "approved"))
+            new RuntimeDtos.HumanActionRequest("CONFIRM", "人工已处理", "user-1", Map.of("resolution", "approved"))
         );
 
         assertEquals(WorkflowContracts.WorkflowStatus.RUNNING, resumed.status());
@@ -127,14 +127,14 @@ class RuntimeServiceTest {
         RuntimeService service = runtimeService(gateway);
 
         RuntimeDtos.TaskInstanceDto task = service.launchTask(
-            new RuntimeDtos.TaskLaunchRequest(fixture.scenarioId(), fixture.assistantId(), "客户投诉，需要人工处理", "tester")
+            new RuntimeDtos.TaskLaunchRequest(fixture.scenarioId(), fixture.assistantId(), "客户投诉，需要人工处理", "customer-1")
         );
 
         RuntimeException error = assertThrows(
             RuntimeException.class,
             () -> service.handleHumanAction(
                 task.workflowInstanceId(),
-                new RuntimeDtos.HumanActionRequest("CONFIRM", "人工已处理", "operator-1", Map.of("resolution", "approved"))
+                new RuntimeDtos.HumanActionRequest("CONFIRM", "人工已处理", "user-1", Map.of("resolution", "approved"))
             )
         );
 
@@ -160,7 +160,7 @@ class RuntimeServiceTest {
             fixture.assistantName(),
             "release-v1",
             "客户投诉，需要人工处理",
-            "tester",
+            "customer-1",
             TaskStatus.WAITING_HUMAN,
             now,
             "wf-1"
@@ -195,7 +195,7 @@ class RuntimeServiceTest {
             "session-1",
             fixture.scenarioId(),
             "投诉处理",
-            "tester",
+            "customer-1",
             fixture.assistantId(),
             fixture.assistantName(),
             "release-v1",
@@ -214,7 +214,7 @@ class RuntimeServiceTest {
             "human-1",
             "wf-1",
             "CONFIRM",
-            "operator-1",
+            "user-1",
             "人工已处理",
             Map.of(),
             RuntimeDtos.HumanInterventionStatus.PENDING,
@@ -241,11 +241,11 @@ class RuntimeServiceTest {
         RuntimeService service = runtimeService(gateway);
 
         RuntimeDtos.TaskInstanceDto task = service.launchTask(
-            new RuntimeDtos.TaskLaunchRequest(fixture.scenarioId(), fixture.assistantId(), "客户投诉，需要人工处理", "tester")
+            new RuntimeDtos.TaskLaunchRequest(fixture.scenarioId(), fixture.assistantId(), "客户投诉，需要人工处理", "customer-1")
         );
         service.handleHumanAction(
             task.workflowInstanceId(),
-            new RuntimeDtos.HumanActionRequest("CONFIRM", "人工已处理", "operator-1", Map.of())
+            new RuntimeDtos.HumanActionRequest("CONFIRM", "人工已处理", "user-1", Map.of())
         );
         gateway.currentResults.put(task.workflowInstanceId(), runningResult(task.workflowInstanceId(), "human-review"));
 
@@ -264,14 +264,14 @@ class RuntimeServiceTest {
         RuntimeService service = runtimeService(gateway, catalogService, repository);
 
         RuntimeDtos.ConversationSessionDto created = service.createSession(
-            new RuntimeDtos.CreateConversationSessionRequest(fixture.scenarioId(), fixture.assistantId(), "tester", "客户投诉，需要人工处理")
+            new RuntimeDtos.CreateConversationSessionRequest(fixture.scenarioId(), fixture.assistantId(), "customer-1", "客户投诉，需要人工处理")
         );
 
         int taskCount = service.listTasks().size();
         int workflowCount = service.listWorkflows().size();
         ConflictException error = assertThrows(
             ConflictException.class,
-            () -> service.sendMessage(created.id(), new RuntimeDtos.ConversationMessageRequest("tester", "第二条消息"))
+            () -> service.sendMessage(created.id(), new RuntimeDtos.ConversationMessageRequest("customer-1", "第二条消息"))
         );
 
         assertTrue(error.getMessage().contains("active workflow"));
@@ -286,14 +286,14 @@ class RuntimeServiceTest {
         RuntimeService service = runtimeService(gateway);
 
         RuntimeDtos.ConversationSessionDto created = service.createSession(
-            new RuntimeDtos.CreateConversationSessionRequest(fixture.scenarioId(), fixture.assistantId(), "tester", "第一条消息")
+            new RuntimeDtos.CreateConversationSessionRequest(fixture.scenarioId(), fixture.assistantId(), "customer-1", "第一条消息")
         );
         String firstWorkflowId = created.latestWorkflowInstanceId();
         gateway.currentResults.put(firstWorkflowId, completedResult(firstWorkflowId, "已完成处理。", "turn-1"));
 
         RuntimeDtos.ConversationSessionDto secondTurn = service.sendMessage(
             created.id(),
-            new RuntimeDtos.ConversationMessageRequest("tester", "第二条消息")
+            new RuntimeDtos.ConversationMessageRequest("customer-1", "第二条消息")
         );
 
         assertNotEquals(firstWorkflowId, secondTurn.latestWorkflowInstanceId());
@@ -306,7 +306,7 @@ class RuntimeServiceTest {
         RuntimeService service = runtimeService(gateway);
 
         RuntimeDtos.ConversationSessionDto created = service.createSession(
-            new RuntimeDtos.CreateConversationSessionRequest(fixture.scenarioId(), fixture.assistantId(), "tester", "第一条消息")
+            new RuntimeDtos.CreateConversationSessionRequest(fixture.scenarioId(), fixture.assistantId(), "customer-1", "第一条消息")
         );
         String firstWorkflowId = created.latestWorkflowInstanceId();
         gateway.currentResults.put(firstWorkflowId, completedResult(firstWorkflowId, "已完成处理。", "turn-1"));
@@ -320,7 +320,7 @@ class RuntimeServiceTest {
 
         service.sendMessage(
             created.id(),
-            new RuntimeDtos.ConversationMessageRequest("tester", "第二条消息")
+            new RuntimeDtos.ConversationMessageRequest("customer-1", "第二条消息")
         );
 
         WorkflowContracts.WorkflowStartRequest secondRequest = gateway.startRequests.getLast();
@@ -335,7 +335,7 @@ class RuntimeServiceTest {
         StubWorkflowGateway gateway = new StubWorkflowGateway();
         RuntimeService service = runtimeService(gateway);
 
-        service.launchTask(new RuntimeDtos.TaskLaunchRequest(fixture.scenarioId(), fixture.assistantId(), "怎么重置密码", "tester"));
+        service.launchTask(new RuntimeDtos.TaskLaunchRequest(fixture.scenarioId(), fixture.assistantId(), "怎么重置密码", "customer-1"));
 
         WorkflowContracts.KnowledgeBindingSnapshot assistantKnowledge = gateway.startRequests.getFirst().assistant().assistantKnowledge();
         assertNotNull(assistantKnowledge);
@@ -383,7 +383,7 @@ class RuntimeServiceTest {
 
         IllegalStateException error = assertThrows(
             IllegalStateException.class,
-            () -> runtimeService.launchTask(new RuntimeDtos.TaskLaunchRequest(scenario.id(), assistant.id(), "怎么重置密码", "tester"))
+            () -> runtimeService.launchTask(new RuntimeDtos.TaskLaunchRequest(scenario.id(), assistant.id(), "怎么重置密码", "customer-1"))
         );
         assertTrue(error.getMessage().contains("published knowledge release not found"));
     }

@@ -12,17 +12,18 @@ const props = defineProps<{
   sendingSessionId: string | null;
   preferredSessionId: string | null;
   selectedSessionId: string | null;
+  currentCustomerId: string | null;
 }>();
 
 const emit = defineEmits<{
   selectSession: [sessionId: string];
-  createSession: [payload: { scenarioId: string; assistantId: string; requester: string; openingMessage: string }];
-  sendMessage: [payload: { sessionId: string; requester: string; message: string }];
+  createSession: [payload: { scenarioId: string; assistantId: string; customerId: string; openingMessage: string }];
+  sendMessage: [payload: { sessionId: string; customerId: string; message: string }];
 }>();
 const createForm = reactive({
   scenarioId: '',
   assistantId: '',
-  requester: '业务用户A',
+  customerId: '',
   openingMessage: '',
 });
 const messageDraft = ref('');
@@ -83,6 +84,16 @@ watch(
   { immediate: true },
 );
 watch(
+  () => props.currentCustomerId,
+  (customerId) => {
+    if (!createForm.customerId && customerId) {
+      createForm.customerId = customerId;
+    }
+  },
+  { immediate: true },
+);
+
+watch(
   () => createForm.scenarioId,
   (scenarioId) => {
     const scenario = props.scenarios.find((item) => item.id === scenarioId);
@@ -105,7 +116,7 @@ function submitMessage() {
 
   emit('sendMessage', {
     sessionId: currentSession.value.id,
-    requester: currentSession.value.requester,
+    customerId: currentSession.value.customerId,
     message: messageDraft.value.trim(),
   });
 }
@@ -145,8 +156,8 @@ function formatSharedState(value?: { facts: Record<string, unknown>; artifacts: 
               :options="(scenarios.find((item) => item.id === createForm.scenarioId)?.assistants ?? []).map((item) => ({ label: item.name, value: item.id }))"
             />
           </a-form-item>
-          <a-form-item label="发起人">
-            <a-input v-model:value="createForm.requester" :disabled="creatingSession" />
+          <a-form-item label="客户 ID">
+            <a-input v-model:value="createForm.customerId" disabled />
           </a-form-item>
           <a-form-item label="开场问题">
             <a-textarea v-model:value="createForm.openingMessage" :rows="4" :disabled="creatingSession" />
@@ -154,7 +165,7 @@ function formatSharedState(value?: { facts: Record<string, unknown>; artifacts: 
           <a-button
             type="primary"
             :loading="creatingSession"
-            :disabled="!createForm.scenarioId || !createForm.assistantId"
+            :disabled="!createForm.scenarioId || !createForm.assistantId || !createForm.customerId"
             @click="submitCreate"
           >
             {{ creatingSession ? '正在创建会话...' : '创建并开始对话' }}

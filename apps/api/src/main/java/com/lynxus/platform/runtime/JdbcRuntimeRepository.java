@@ -2,10 +2,6 @@ package com.lynxus.platform.runtime;
 
 import static com.lynxus.platform.runtime.RuntimeDtos.*;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lynxus.contracts.runtime.WorkflowContracts.AgentTurnState;
 import com.lynxus.contracts.runtime.WorkflowContracts.ExecutionCheckpoint;
 import com.lynxus.contracts.runtime.WorkflowContracts.HumanTaskSnapshot;
@@ -28,6 +24,10 @@ import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.ObjectMapper;
 
 @Repository
 public class JdbcRuntimeRepository implements RuntimeRepository {
@@ -43,18 +43,18 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
 
-    public JdbcRuntimeRepository(JdbcTemplate jdbcTemplate) {
+    public JdbcRuntimeRepository(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
         this.jdbcTemplate = jdbcTemplate;
-        this.objectMapper = new ObjectMapper()
-            .findAndRegisterModules()
-            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        this.objectMapper = objectMapper.rebuild()
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+            .build();
     }
 
     @Override
     public List<TaskInstanceDto> listTasks() {
         return jdbcTemplate.query(
             """
-                select id, scenario_id, assistant_id, assistant_name, assistant_release_version, question, requester, status, created_at, workflow_instance_id
+                select id, scenario_id, assistant_id, assistant_name, assistant_release_version, question, customer_id, status, created_at, workflow_instance_id
                 from task_instance
                 order by created_at desc, id desc
                 """,
@@ -66,7 +66,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
     public Optional<TaskInstanceDto> findTask(String taskId) {
         return jdbcTemplate.query(
             """
-                select id, scenario_id, assistant_id, assistant_name, assistant_release_version, question, requester, status, created_at, workflow_instance_id
+                select id, scenario_id, assistant_id, assistant_name, assistant_release_version, question, customer_id, status, created_at, workflow_instance_id
                 from task_instance
                 where id = ?
                 """,
@@ -88,7 +88,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
     public Optional<TaskInstanceDto> findTaskByWorkflowInstanceId(String workflowInstanceId) {
         return jdbcTemplate.query(
             """
-                select id, scenario_id, assistant_id, assistant_name, assistant_release_version, question, requester, status, created_at, workflow_instance_id
+                select id, scenario_id, assistant_id, assistant_name, assistant_release_version, question, customer_id, status, created_at, workflow_instance_id
                 from task_instance
                 where workflow_instance_id = ?
                 """,
@@ -152,7 +152,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
     public List<ConversationSessionDto> listSessions() {
         return hydrateSessions(jdbcTemplate.query(
             """
-                select id, scenario_id, title, requester, assistant_id, assistant_name, assistant_release_version, created_at, updated_at,
+                select id, scenario_id, title, customer_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at,
                        latest_task_id, latest_workflow_instance_id, latest_tool_outcome, latest_human_task, latest_pause_reason,
                        loaded_skill_resource_version_ids, shared_state
                 from conversation_session
@@ -166,7 +166,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
     public Optional<ConversationSessionDto> findSession(String sessionId) {
         return hydrateSessions(jdbcTemplate.query(
             """
-                select id, scenario_id, title, requester, assistant_id, assistant_name, assistant_release_version, created_at, updated_at,
+                select id, scenario_id, title, customer_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at,
                        latest_task_id, latest_workflow_instance_id, latest_tool_outcome, latest_human_task, latest_pause_reason,
                        loaded_skill_resource_version_ids, shared_state
                 from conversation_session
@@ -181,7 +181,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
     public Optional<HumanInterventionDto> findPendingIntervention(String workflowInstanceId) {
         return jdbcTemplate.query(
             """
-                select id, workflow_instance_id, action, operator_id, comment, attributes, status, created_at, applied_at, failure_reason
+                select id, workflow_instance_id, action, user_id, comment, attributes, status, created_at, applied_at, failure_reason
                 from human_intervention
                 where workflow_instance_id = ? and status = 'PENDING'
                 order by created_at desc, id desc
@@ -196,7 +196,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
     public List<HumanInterventionDto> listPendingInterventions() {
         return jdbcTemplate.query(
             """
-                select id, workflow_instance_id, action, operator_id, comment, attributes, status, created_at, applied_at, failure_reason
+                select id, workflow_instance_id, action, user_id, comment, attributes, status, created_at, applied_at, failure_reason
                 from human_intervention
                 where status = 'PENDING'
                 order by created_at asc, id asc
@@ -233,7 +233,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
     String writeJson(Object value) {
         try {
             return objectMapper.writeValueAsString(value);
-        } catch (JsonProcessingException error) {
+        } catch (JacksonException error) {
             throw new IllegalStateException("failed to serialize runtime payload", error);
         }
     }
@@ -244,7 +244,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         }
         try {
             return objectMapper.readValue(payload, type);
-        } catch (JsonProcessingException error) {
+        } catch (JacksonException error) {
             throw new IllegalStateException("failed to deserialize runtime payload", error);
         }
     }
@@ -255,7 +255,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         }
         try {
             return objectMapper.readValue(payload, type);
-        } catch (JsonProcessingException error) {
+        } catch (JacksonException error) {
             throw new IllegalStateException("failed to deserialize runtime payload", error);
         }
     }
@@ -268,7 +268,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             rs.getString("assistant_name"),
             rs.getString("assistant_release_version"),
             rs.getString("question"),
-            rs.getString("requester"),
+            rs.getString("customer_id"),
             TaskStatus.valueOf(rs.getString("status")),
             readInstant(rs, "created_at"),
             rs.getString("workflow_instance_id")
@@ -280,7 +280,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             rs.getString("id"),
             rs.getString("workflow_instance_id"),
             rs.getString("action"),
-            rs.getString("operator_id"),
+            rs.getString("user_id"),
             rs.getString("comment"),
             readJson(rs.getString("attributes"), STRING_MAP),
             HumanInterventionStatus.valueOf(rs.getString("status")),
@@ -323,7 +323,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             rs.getString("id"),
             rs.getString("scenario_id"),
             rs.getString("title"),
-            rs.getString("requester"),
+            rs.getString("customer_id"),
             rs.getString("assistant_id"),
             rs.getString("assistant_name"),
             rs.getString("assistant_release_version"),
@@ -350,7 +350,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
                 row.id(),
                 row.scenarioId(),
                 row.title(),
-                row.requester(),
+                row.customerId(),
                 row.assistantId(),
                 row.assistantName(),
                 row.assistantReleaseVersion(),
@@ -437,7 +437,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         Map<String, List<HumanInterventionDto>> interventionsByWorkflow = new LinkedHashMap<>();
         jdbcTemplate.query(
             """
-                select id, workflow_instance_id, action, operator_id, comment, attributes, status, created_at, applied_at, failure_reason
+                select id, workflow_instance_id, action, user_id, comment, attributes, status, created_at, applied_at, failure_reason
                 from human_intervention
                 where workflow_instance_id in (%s)
                 order by workflow_instance_id, created_at asc, id asc
@@ -455,7 +455,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         jdbcTemplate.update(
             """
                 insert into task_instance (
-                    id, session_id, scenario_id, assistant_id, assistant_name, assistant_release_version, question, requester, status, workflow_instance_id, created_at
+                    id, session_id, scenario_id, assistant_id, assistant_name, assistant_release_version, question, customer_id, status, workflow_instance_id, created_at
                 ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 on conflict (id) do update set
                     session_id = excluded.session_id,
@@ -464,7 +464,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
                     assistant_name = excluded.assistant_name,
                     assistant_release_version = excluded.assistant_release_version,
                     question = excluded.question,
-                    requester = excluded.requester,
+                    customer_id = excluded.customer_id,
                     status = excluded.status,
                     workflow_instance_id = excluded.workflow_instance_id,
                     created_at = excluded.created_at
@@ -476,7 +476,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             task.assistantName(),
             task.assistantReleaseVersion(),
             task.question(),
-            task.requester(),
+            task.customerId(),
             task.status().name(),
             task.workflowInstanceId(),
             writeTimestamp(task.createdAt())
@@ -547,14 +547,14 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         jdbcTemplate.update(
             """
                 insert into conversation_session (
-                    id, scenario_id, title, requester, assistant_id, assistant_name, assistant_release_version, created_at, updated_at,
+                    id, scenario_id, title, customer_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at,
                     latest_task_id, latest_workflow_instance_id, latest_tool_outcome, latest_human_task, latest_pause_reason,
                     loaded_skill_resource_version_ids, shared_state
                 ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb))
                 on conflict (id) do update set
                     scenario_id = excluded.scenario_id,
                     title = excluded.title,
-                    requester = excluded.requester,
+                    customer_id = excluded.customer_id,
                     assistant_id = excluded.assistant_id,
                     assistant_name = excluded.assistant_name,
                     assistant_release_version = excluded.assistant_release_version,
@@ -571,7 +571,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             session.id(),
             session.scenarioId(),
             session.title(),
-            session.requester(),
+            session.customerId(),
             session.assistantId(),
             session.assistantName(),
             session.assistantReleaseVersion(),
@@ -623,12 +623,12 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         jdbcTemplate.update(
             """
                 insert into human_intervention (
-                    id, workflow_instance_id, action, operator_id, comment, attributes, status, created_at, applied_at, failure_reason
+                    id, workflow_instance_id, action, user_id, comment, attributes, status, created_at, applied_at, failure_reason
                 ) values (?, ?, ?, ?, ?, cast(? as jsonb), ?, ?, ?, ?)
                 on conflict (id) do update set
                     workflow_instance_id = excluded.workflow_instance_id,
                     action = excluded.action,
-                    operator_id = excluded.operator_id,
+                    user_id = excluded.user_id,
                     comment = excluded.comment,
                     attributes = excluded.attributes,
                     status = excluded.status,
@@ -639,7 +639,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             intervention.id(),
             intervention.workflowInstanceId(),
             intervention.action(),
-            intervention.operator(),
+            intervention.userId(),
             intervention.comment(),
             writeJson(intervention.attributes() == null ? Map.of() : intervention.attributes()),
             intervention.status().name(),
@@ -701,7 +701,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         String id,
         String scenarioId,
         String title,
-        String requester,
+        String customerId,
         String assistantId,
         String assistantName,
         String assistantReleaseVersion,

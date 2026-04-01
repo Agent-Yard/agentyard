@@ -1,9 +1,8 @@
 package com.lynxus.platform.auth;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lynxus.platform.shared.logging.ApiLogContextFilter;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.util.function.Supplier;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -20,7 +19,9 @@ import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.context.SecurityContextRepository;
+import tools.jackson.databind.ObjectMapper;
 
 @Configuration
 @EnableWebSecurity
@@ -36,13 +37,15 @@ public class AuthSecurityConfiguration {
         HttpSecurity http,
         ObjectProvider<ClientRegistrationRepository> clientRegistrationRepositoryProvider,
         OidcProvisioningSuccessHandler oidcProvisioningSuccessHandler,
-        SecurityContextRepository securityContextRepository
+        SecurityContextRepository securityContextRepository,
+        ApiLogContextFilter apiLogContextFilter,
+        ObjectMapper objectMapper
     ) throws Exception {
-        Supplier<ObjectMapper> objectMapperSupplier = ObjectMapper::new;
         http
             .csrf(AbstractHttpConfigurer::disable)
             .securityContext(context -> context.securityContextRepository(securityContextRepository))
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+            .addFilterAfter(apiLogContextFilter, SecurityContextHolderFilter.class)
             .authorizeHttpRequests(authorize -> authorize
                 .requestMatchers(
                     "/api/system/health",
@@ -57,11 +60,11 @@ public class AuthSecurityConfiguration {
             )
             .exceptionHandling(exceptionHandling -> exceptionHandling
                 .defaultAuthenticationEntryPointFor(
-                    problemAuthenticationEntryPoint(objectMapperSupplier),
+                    problemAuthenticationEntryPoint(objectMapper),
                     request -> request.getRequestURI().startsWith("/api/")
                 )
                 .defaultAccessDeniedHandlerFor(
-                    problemAccessDeniedHandler(objectMapperSupplier),
+                    problemAccessDeniedHandler(objectMapper),
                     request -> request.getRequestURI().startsWith("/api/")
                 )
             );
@@ -73,21 +76,21 @@ public class AuthSecurityConfiguration {
         return http.build();
     }
 
-    private AuthenticationEntryPoint problemAuthenticationEntryPoint(Supplier<ObjectMapper> objectMapperSupplier) {
+    private AuthenticationEntryPoint problemAuthenticationEntryPoint(ObjectMapper objectMapper) {
         return (request, response, authException) -> writeProblem(
             response,
             HttpStatus.UNAUTHORIZED,
             "Authentication is required",
-            objectMapperSupplier.get()
+            objectMapper
         );
     }
 
-    private AccessDeniedHandler problemAccessDeniedHandler(Supplier<ObjectMapper> objectMapperSupplier) {
+    private AccessDeniedHandler problemAccessDeniedHandler(ObjectMapper objectMapper) {
         return (request, response, accessDeniedException) -> writeProblem(
             response,
             HttpStatus.FORBIDDEN,
             "Access is denied",
-            objectMapperSupplier.get()
+            objectMapper
         );
     }
 

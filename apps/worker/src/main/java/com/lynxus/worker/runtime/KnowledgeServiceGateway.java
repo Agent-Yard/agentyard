@@ -3,6 +3,7 @@ package com.lynxus.worker.runtime;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import com.lynxus.worker.logging.WorkerLogContext;
 
 public interface KnowledgeServiceGateway {
     String runImportJob(String importJobId);
@@ -21,6 +22,11 @@ public interface KnowledgeServiceGateway {
             this.restClient = RestClient.builder()
                 .baseUrl(baseUrl)
                 .defaultHeader("Authorization", "Bearer " + sanitizedToken)
+                .requestInterceptor((request, body, execution) -> {
+                    WorkerLogContext.outboundHeaders(null)
+                        .forEach((headerName, headerValue) -> request.getHeaders().set(headerName, headerValue));
+                    return execution.execute(request, body);
+                })
                 .build();
         }
 

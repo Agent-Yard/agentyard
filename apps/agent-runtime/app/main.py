@@ -11,7 +11,14 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, TypedDict
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from lynxus_common import (
+    TRACEPARENT_HEADER,
+    bind_log_context,
+    bind_request_log_context,
+    clear_log_context,
+    configure_structured_logging,
+)
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 try:
@@ -235,7 +242,7 @@ class SharedSessionState(BaseModel):
 
 class SessionContext(BaseModel):
     sessionId: str
-    requester: str
+    customerId: str
     latestMessage: str
     history: List[SessionMessageSnapshot]
     loadedSkillResourceVersionIds: List[str] = Field(default_factory=list)
@@ -288,20 +295,29 @@ class SessionStatePatch(BaseModel):
     ops: List[SessionStatePatchOp] = Field(default_factory=list)
 
 
+class LogContext(BaseModel):
+    traceId: Optional[str] = None
+    sessionId: Optional[str] = None
+    workflowId: Optional[str] = None
+    customerId: Optional[str] = None
+    userId: Optional[str] = None
+
+
 class WorkflowStartRequest(BaseModel):
     taskId: str
     workflowInstanceId: str
     scenarioId: str
     question: str
-    operatorId: str
+    customerId: str
     sessionContext: SessionContext
     assistant: AssistantRunSnapshot
+    logContext: Optional[LogContext] = None
 
 
 class HumanAction(BaseModel):
     action: str
     comment: str
-    operatorId: str
+    userId: str
     attributes: Dict[str, str] = Field(default_factory=dict)
 
 
@@ -321,6 +337,7 @@ class WorkflowResumeRequest(BaseModel):
     sessionContext: SessionContext
     assistant: AssistantRunSnapshot
     checkpoint: ExecutionCheckpoint
+    logContext: Optional[LogContext] = None
 
 
 class ToolInvocationSnapshot(BaseModel):
@@ -477,16 +494,11 @@ class AgentState(TypedDict):
 
 
 def configure_runtime_logger() -> logging.Logger:
-    logger = logging.getLogger("lynxus.agent_runtime")
-    level_name = os.getenv("LYNXUS_AGENT_RUNTIME_LOG_LEVEL", "INFO").upper()
-    level = getattr(logging, level_name, logging.INFO)
-    logger.setLevel(level)
-    if not logger.handlers:
-        handler = logging.StreamHandler()
-        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s"))
-        logger.addHandler(handler)
-    logger.propagate = False
-    return logger
+    return configure_structured_logging(
+        service_name="lynxus-agent-runtime",
+        level_env_var="LYNXUS_AGENT_RUNTIME_LOG_LEVEL",
+        logger_name="lynxus.agent_runtime",
+    )
 
 
 app = FastAPI(title="lynxus-agent-runtime", version="1.0.0")
@@ -517,6 +529,17 @@ FAILURE_CATEGORY_VALIDATION = "VALIDATION_FAILURE"
 FAILURE_CATEGORY_CONFIGURATION = "CONFIGURATION_FAILURE"
 FAILURE_CATEGORY_RUNTIME = "RUNTIME_FAILURE"
 FAILURE_CATEGORY_UNKNOWN = "UNKNOWN"
+
+
+@app.middleware("http")
+async def inject_log_context(request: Request, call_next):
+    traceparent = bind_request_log_context(request.headers)
+    try:
+        response = await call_next(request)
+    finally:
+        clear_log_context()
+    response.headers[TRACEPARENT_HEADER] = traceparent
+    return response
 
 
 def internal_auth_token() -> str:
@@ -1355,8 +1378,13 @@ async def call_llm(model_resource: ResourceVersionSnapshot, prompt: str, system_
         )
 
     try:
-        logger.info(f"llm request with sys prompt: \n{system_prompt}")
-        logger.info(f"user prompt:\n{prompt}")
+        logger.info(
+            "llm request prepared provider=%s model=%s systemPromptChars=%s userPromptChars=%s",
+            model_config.providerType,
+            model_config.modelId,
+            len(system_prompt),
+            len(prompt),
+        )
         async with httpx.AsyncClient(timeout=LLM_REQUEST_TIMEOUT_SECONDS) as client:
             if model_config.providerType in {"OPENAI", "OPENAI_COMPATIBLE"}:
                 response = await client.post(
@@ -1375,7 +1403,12 @@ async def call_llm(model_resource: ResourceVersionSnapshot, prompt: str, system_
                 )
                 response.raise_for_status()
                 reponse_json = response.json()
-                logger.info(f"llm reponse:\n{json.dumps(reponse_json, indent=2)}")
+                logger.info(
+                    "llm response received provider=%s model=%s choiceCount=%s",
+                    model_config.providerType,
+                    model_config.modelId,
+                    len(reponse_json.get("choices", [])),
+                )
                 return reponse_json["choices"][0]["message"]["content"]
 
             if model_config.providerType == "ANTHROPIC":
@@ -2644,6 +2677,12 @@ def workflow_result_from_state(state: AgentState) -> WorkflowResult:
 
 @app.post("/agent-runs/start", response_model=WorkflowResult)
 async def start_agent_run(request: WorkflowStartRequest, _: None = Depends(require_internal_bearer)) -> WorkflowResult:
+    bind_log_context(
+        sessionId=request.sessionContext.sessionId,
+        workflowId=request.workflowInstanceId,
+        customerId=request.logContext.customerId if request.logContext else request.customerId,
+        userId=request.logContext.userId if request.logContext else None,
+    )
     logger.info("workflow %s start request received", request.workflowInstanceId)
     validate_graph(request.assistant.graph, request.assistant)
     entry_node = find_start_node(request.assistant.graph)
@@ -2690,11 +2729,17 @@ async def start_agent_run(request: WorkflowStartRequest, _: None = Depends(requi
 
 @app.post("/agent-runs/resume", response_model=WorkflowResult)
 async def resume_agent_run(request: WorkflowResumeRequest, _: None = Depends(require_internal_bearer)) -> WorkflowResult:
+    bind_log_context(
+        sessionId=request.sessionContext.sessionId,
+        workflowId=request.workflowInstanceId,
+        customerId=request.logContext.customerId if request.logContext else request.sessionContext.customerId,
+        userId=request.logContext.userId if request.logContext and request.logContext.userId else request.action.userId,
+    )
     logger.info(
-        "workflow %s resume request received action=%s operator=%s",
+        "workflow %s resume request received action=%s userId=%s",
         request.workflowInstanceId,
         request.action.action,
-        request.action.operatorId,
+        request.action.userId,
     )
     validate_graph(request.assistant.graph, request.assistant)
     payload = json.loads(request.checkpoint.statePayload or "{}")

@@ -154,6 +154,7 @@ export function useAppView(state: AppState, catalogActions: CatalogActions, runt
         sendingSessionId: state.sendingSessionId.value,
         preferredSessionId: state.runtimePreferredSessionId.value,
         selectedSessionId: state.runtimeSelectedSessionId.value,
+        currentCustomerId: state.session.value?.userId ?? null,
       })),
       handlers: {
         selectSession: runtimeActions.handleSelectRuntimeSession,
@@ -167,6 +168,7 @@ export function useAppView(state: AppState, catalogActions: CatalogActions, runt
         workflow: state.currentWorkflow.value,
         workflows: state.workflows.value,
         selectedWorkflowId: state.selectedWorkflowId.value,
+        currentUserId: state.session.value?.userId ?? null,
       })),
       handlers: {
         selectWorkflow: runtimeActions.handleSelectWorkflow,

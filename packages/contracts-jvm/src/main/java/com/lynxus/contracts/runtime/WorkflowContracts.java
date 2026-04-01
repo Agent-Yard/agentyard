@@ -380,11 +380,20 @@ public final class WorkflowContracts {
 
     public record SessionContext(
         String sessionId,
-        String requester,
+        String customerId,
         String latestMessage,
         List<SessionMessageSnapshot> history,
         List<String> loadedSkillResourceVersionIds,
         SharedSessionState sharedState
+    ) {
+    }
+
+    public record LogContext(
+        String traceId,
+        String sessionId,
+        String workflowId,
+        String customerId,
+        String userId
     ) {
     }
 
@@ -393,16 +402,17 @@ public final class WorkflowContracts {
         String workflowInstanceId,
         String scenarioId,
         String question,
-        String operatorId,
+        String customerId,
         SessionContext sessionContext,
-        AssistantRunSnapshot assistant
+        AssistantRunSnapshot assistant,
+        LogContext logContext
     ) {
     }
 
     public record HumanAction(
         String action,
         String comment,
-        String operatorId,
+        String userId,
         Map<String, String> attributes
     ) {
     }
@@ -423,7 +433,8 @@ public final class WorkflowContracts {
         HumanAction action,
         SessionContext sessionContext,
         AssistantRunSnapshot assistant,
-        ExecutionCheckpoint checkpoint
+        ExecutionCheckpoint checkpoint,
+        LogContext logContext
     ) {
     }
 
@@ -510,14 +521,16 @@ public final class WorkflowContracts {
     public record KnowledgeImportRequest(
         String workflowId,
         String knowledgeBaseId,
-        String importJobId
+        String importJobId,
+        LogContext logContext
     ) {
     }
 
     public record KnowledgeIndexBuildRequest(
         String workflowId,
         String knowledgeBaseId,
-        String indexSnapshotId
+        String indexSnapshotId,
+        LogContext logContext
     ) {
     }
 

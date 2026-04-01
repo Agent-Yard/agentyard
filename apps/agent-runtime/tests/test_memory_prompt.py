@@ -174,7 +174,7 @@ def make_agent_state(assistant: AssistantRunSnapshot, graph: GraphSnapshot, ques
         "question": question,
         "session_context": {
             "sessionId": "session-1",
-            "requester": "u-1",
+            "customerId": "u-1",
             "latestMessage": question,
             "history": [],
             "loadedSkillResourceVersionIds": [],
@@ -1488,7 +1488,7 @@ class MemoryPromptTests(unittest.TestCase):
         )
         session_context = SessionContext(
             sessionId="session-1",
-            requester="u-1",
+            customerId="u-1",
             latestMessage="帮我处理退款",
             history=[],
             loadedSkillResourceVersionIds=[],
@@ -1520,7 +1520,7 @@ class MemoryPromptTests(unittest.TestCase):
                 taskId="task-1",
                 workflowInstanceId="wf-resume-agent",
                 scenarioId="scenario-1",
-                action=HumanAction(action="CONFIRM", comment="订单已签收，可退款", operatorId="operator-2"),
+                action=HumanAction(action="CONFIRM", comment="订单已签收，可退款", userId="user-2"),
                 sessionContext=session_context,
                 assistant=assistant,
                 checkpoint=ExecutionCheckpoint(**initial_state["checkpoint"]),
@@ -1593,7 +1593,7 @@ class MemoryPromptTests(unittest.TestCase):
 
         session_context = SessionContext(
             sessionId="session-1",
-            requester="u-1",
+            customerId="u-1",
             latestMessage="请审核订单",
             history=[],
             loadedSkillResourceVersionIds=[],
@@ -1602,7 +1602,7 @@ class MemoryPromptTests(unittest.TestCase):
             taskId="task-1",
             workflowInstanceId="wf-human",
             scenarioId="scenario-1",
-            action=HumanAction(action="CONFIRM", comment="审核通过", operatorId="operator-2"),
+            action=HumanAction(action="CONFIRM", comment="审核通过", userId="user-2"),
             sessionContext=session_context,
             assistant=assistant,
             checkpoint=ExecutionCheckpoint(**state["checkpoint"]),
@@ -1653,7 +1653,7 @@ class MemoryPromptTests(unittest.TestCase):
         }
         session_context = SessionContext(
             sessionId="session-1",
-            requester="u-1",
+            customerId="u-1",
             latestMessage="继续处理",
             history=[],
             loadedSkillResourceVersionIds=[],
@@ -1663,7 +1663,7 @@ class MemoryPromptTests(unittest.TestCase):
             taskId="task-1",
             workflowInstanceId="wf-restore",
             scenarioId="scenario-1",
-            action=HumanAction(action="CONFIRM", comment="继续", operatorId="operator-2"),
+            action=HumanAction(action="CONFIRM", comment="继续", userId="user-2"),
             sessionContext=session_context,
             assistant=assistant.model_copy(update={"graph": graph}),
             checkpoint=ExecutionCheckpoint(
@@ -1729,7 +1729,7 @@ class MemoryPromptTests(unittest.TestCase):
         )
         session_context = SessionContext(
             sessionId="session-1",
-            requester="u-1",
+            customerId="u-1",
             latestMessage="帮我处理退款",
             history=[],
             loadedSkillResourceVersionIds=[],
@@ -1757,7 +1757,7 @@ class MemoryPromptTests(unittest.TestCase):
                 taskId="task-1",
                 workflowInstanceId="wf-cancel",
                 scenarioId="scenario-1",
-                action=HumanAction(action="TERMINATE", comment="无需继续，直接关闭", operatorId="operator-2"),
+                action=HumanAction(action="TERMINATE", comment="无需继续，直接关闭", userId="user-2"),
                 sessionContext=session_context,
                 assistant=assistant,
                 checkpoint=ExecutionCheckpoint(**initial_state["checkpoint"]),

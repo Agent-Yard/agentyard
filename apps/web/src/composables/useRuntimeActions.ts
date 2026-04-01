@@ -25,7 +25,7 @@ export function useRuntimeActions(
   async function handleCreateSession(payload: {
     scenarioId: string;
     assistantId: string;
-    requester: string;
+    customerId: string;
     openingMessage: string;
   }) {
     state.creatingSession.value = true;
@@ -48,13 +48,13 @@ export function useRuntimeActions(
     }
   }
 
-  async function handleSendMessage(payload: { sessionId: string; requester: string; message: string }) {
+  async function handleSendMessage(payload: { sessionId: string; customerId: string; message: string }) {
     state.sendingSessionId.value = payload.sessionId;
     state.runtimePreferredSessionId.value = payload.sessionId;
     state.runtimeSelectedSessionId.value = payload.sessionId;
     try {
       await api.sendConversationMessage(payload.sessionId, {
-        requester: payload.requester,
+        customerId: payload.customerId,
         message: payload.message,
       });
       await refresh();
@@ -84,14 +84,14 @@ export function useRuntimeActions(
     workflowId: string;
     action: string;
     comment: string;
-    operatorId: string;
+    userId: string;
     attributes: Record<string, string>;
   }) {
     try {
       await api.completeHumanAction(payload.workflowId, {
         action: payload.action,
         comment: payload.comment,
-        operatorId: payload.operatorId,
+        userId: payload.userId,
         attributes: payload.attributes,
       });
       await refresh();

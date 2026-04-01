@@ -36,3 +36,17 @@ class AgentRuntimeInternalAuthTest(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 422)
+
+    def test_should_return_traceparent_header_for_valid_internal_request(self) -> None:
+        with TestClient(app) as client:
+            response = client.post(
+                "/agent-runs/start",
+                json={},
+                headers={
+                    "Authorization": "Bearer test-internal-token",
+                    "traceparent": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01",
+                },
+            )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertTrue(response.headers["traceparent"].startswith("00-0123456789abcdef0123456789abcdef-"))

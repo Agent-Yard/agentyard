@@ -4,6 +4,7 @@ import com.lynxus.contracts.runtime.KnowledgeImportWorkflow;
 import com.lynxus.contracts.runtime.KnowledgeIndexBuildWorkflow;
 import com.lynxus.contracts.runtime.WorkflowContracts.KnowledgeImportRequest;
 import com.lynxus.contracts.runtime.WorkflowContracts.KnowledgeIndexBuildRequest;
+import com.lynxus.platform.shared.logging.PlatformLogContext;
 import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowOptions;
 import org.springframework.beans.factory.annotation.Value;
@@ -29,26 +30,34 @@ public interface KnowledgeWorkflowGateway {
 
         @Override
         public void startImport(String knowledgeBaseId, String importJobId) {
+            String workflowId = "knowledge-import-" + importJobId;
             KnowledgeImportWorkflow workflow = workflowClient.newWorkflowStub(
                 KnowledgeImportWorkflow.class,
                 WorkflowOptions.newBuilder()
                     .setTaskQueue(taskQueue)
-                    .setWorkflowId("knowledge-import-" + importJobId)
+                    .setWorkflowId(workflowId)
                     .build()
             );
-            WorkflowClient.start(workflow::run, new KnowledgeImportRequest("knowledge-import-" + importJobId, knowledgeBaseId, importJobId));
+            WorkflowClient.start(
+                workflow::run,
+                new KnowledgeImportRequest(workflowId, knowledgeBaseId, importJobId, PlatformLogContext.capture(null, workflowId, null))
+            );
         }
 
         @Override
         public void startIndexBuild(String knowledgeBaseId, String indexSnapshotId) {
+            String workflowId = "knowledge-index-" + indexSnapshotId;
             KnowledgeIndexBuildWorkflow workflow = workflowClient.newWorkflowStub(
                 KnowledgeIndexBuildWorkflow.class,
                 WorkflowOptions.newBuilder()
                     .setTaskQueue(taskQueue)
-                    .setWorkflowId("knowledge-index-" + indexSnapshotId)
+                    .setWorkflowId(workflowId)
                     .build()
             );
-            WorkflowClient.start(workflow::run, new KnowledgeIndexBuildRequest("knowledge-index-" + indexSnapshotId, knowledgeBaseId, indexSnapshotId));
+            WorkflowClient.start(
+                workflow::run,
+                new KnowledgeIndexBuildRequest(workflowId, knowledgeBaseId, indexSnapshotId, PlatformLogContext.capture(null, workflowId, null))
+            );
         }
     }
 }

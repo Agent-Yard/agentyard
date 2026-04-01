@@ -169,7 +169,7 @@ export interface AgentTurnState {
 export interface HumanActionRequest {
   action: HumanActionType;
   comment: string;
-  operatorId: string;
+  userId: string;
   attributes: Record<string, string>;
 }
 
@@ -374,7 +374,7 @@ export interface TaskLaunchRequest {
   scenarioId: string;
   assistantId: string;
   question: string;
-  requester: string;
+  customerId: string;
 }
 
 export interface TaskInstance {
@@ -384,7 +384,7 @@ export interface TaskInstance {
   assistantName: string;
   assistantReleaseVersion: string;
   question: string;
-  requester: string;
+  customerId: string;
   status: TaskStatus;
   createdAt: string;
   workflowInstanceId: string;
@@ -404,7 +404,7 @@ export interface HumanIntervention {
   id: string;
   workflowInstanceId: string;
   action: string;
-  operator: string;
+  userId: string;
   comment: string;
   attributes?: Record<string, string>;
   status?: string;
@@ -457,7 +457,7 @@ export interface ConversationSession {
   id: string;
   scenarioId: string;
   title: string;
-  requester: string;
+  customerId: string;
   assistantId: string;
   assistantName: string;
   assistantReleaseVersion: string;
@@ -476,11 +476,11 @@ export interface ConversationSession {
 export interface CreateConversationSessionRequest {
   scenarioId: string;
   assistantId: string;
-  requester: string;
+  customerId: string;
   openingMessage: string;
 }
 
 export interface ConversationMessageRequest {
-  requester: string;
+  customerId: string;
   message: string;
 }

@@ -21,6 +21,7 @@ import com.lynxus.platform.catalog.CatalogDtos.ResourceVersionConfigurationDto;
 import com.lynxus.platform.catalog.CatalogDtos.ScenarioDto;
 import com.lynxus.platform.catalog.CatalogService;
 import com.lynxus.platform.knowledge.KnowledgeService;
+import com.lynxus.platform.shared.logging.PlatformLogContext;
 import com.lynxus.platform.shared.ConflictException;
 import com.lynxus.contracts.runtime.WorkflowContracts;
 import com.lynxus.contracts.runtime.WorkflowContracts.AgentExecutionPolicySnapshot;
@@ -125,115 +126,122 @@ public class RuntimeService {
     }
 
     public ConversationSessionDto createSession(CreateConversationSessionRequest request) {
-        ScenarioDto scenario = catalogService.getScenario(request.scenarioId());
-        AssistantDto assistant = resolveAssistant(scenario, request.assistantId());
-        Instant now = Instant.now();
-        ConversationSessionDto session = new ConversationSessionDto(
-            nextId("session"),
-            scenario.id(),
-            summarizeTitle(request.openingMessage()),
-            request.requester(),
-            assistant.id(),
-            assistant.name(),
-            runtimeReleaseVersion(assistant),
-            now,
-            now,
-            new ArrayList<>(),
-            null,
-            null,
-            null,
-            null,
-            null,
-            List.of(),
-            SharedSessionState.empty()
-        );
-        persistSession(session);
+        try (PlatformLogContext.Scope ignored = PlatformLogContext.openBusiness(null, null, request.customerId())) {
+            ScenarioDto scenario = catalogService.getScenario(request.scenarioId());
+            AssistantDto assistant = resolveAssistant(scenario, request.assistantId());
+            Instant now = Instant.now();
+            ConversationSessionDto session = new ConversationSessionDto(
+                nextId("session"),
+                scenario.id(),
+                summarizeTitle(request.openingMessage()),
+                request.customerId(),
+                assistant.id(),
+                assistant.name(),
+                runtimeReleaseVersion(assistant),
+                now,
+                now,
+                new ArrayList<>(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                List.of(),
+                SharedSessionState.empty()
+            );
+            persistSession(session);
 
-        if (request.openingMessage() != null && !request.openingMessage().isBlank()) {
-            return sendMessage(session.id(), new ConversationMessageRequest(request.requester(), request.openingMessage()));
+            if (request.openingMessage() != null && !request.openingMessage().isBlank()) {
+                return sendMessage(session.id(), new ConversationMessageRequest(request.customerId(), request.openingMessage()));
+            }
+
+            return session;
         }
-
-        return session;
     }
 
     public ConversationSessionDto sendMessage(String sessionId, ConversationMessageRequest request) {
-        ConversationSessionDto existing = getSession(sessionId);
-        ensureSessionReadyForNewTurn(existing);
-        ScenarioDto scenario = catalogService.getScenario(existing.scenarioId());
-        AssistantDto assistant = resolveAssistant(scenario, existing.assistantId());
+        try (PlatformLogContext.Scope ignored = PlatformLogContext.openBusiness(sessionId, null, request.customerId())) {
+            ConversationSessionDto existing = getSession(sessionId);
+            ensureSessionReadyForNewTurn(existing);
+            ScenarioDto scenario = catalogService.getScenario(existing.scenarioId());
+            AssistantDto assistant = resolveAssistant(scenario, existing.assistantId());
 
-        List<ConversationMessageDto> messages = new ArrayList<>(existing.messages());
-        ConversationMessageDto userMessage = new ConversationMessageDto(
-            nextId("msg"),
-            sessionId,
-            "USER",
-            "USER",
-            "user",
-            request.requester(),
-            request.message(),
-            Instant.now(),
-            null,
-            null
-        );
-        messages.add(userMessage);
-        PreparedTurn prepared = prepareTurn(sessionId, scenario.id(), assistant, request.requester(), request.message(), existing.sharedState());
-        messages.add(placeholderAssistantMessage(sessionId, assistant, prepared.task(), prepared.workflow()));
-        ConversationSessionDto startedSession = new ConversationSessionDto(
-            existing.id(),
-            existing.scenarioId(),
-            existing.title(),
-            existing.requester(),
-            assistant.id(),
-            assistant.name(),
-            runtimeReleaseVersion(assistant),
-            existing.createdAt(),
-            Instant.now(),
-            messages,
-            prepared.task().id(),
-            prepared.workflow().id(),
-            prepared.workflow().latestToolOutcome(),
-            prepared.workflow().humanTask(),
-            prepared.workflow().pauseReason(),
-            existing.loadedSkillResourceVersionIds(),
-            existing.sharedState()
-        );
-        runtimeRepository.persistProjection(prepared.task(), prepared.workflow(), startedSession, null);
-
-        try {
-            workflowGateway.start(new WorkflowStartRequest(
+            List<ConversationMessageDto> messages = new ArrayList<>(existing.messages());
+            ConversationMessageDto userMessage = new ConversationMessageDto(
+                nextId("msg"),
+                sessionId,
+                "USER",
+                "USER",
+                "user",
+                request.customerId(),
+                request.message(),
+                Instant.now(),
+                null,
+                null
+            );
+            messages.add(userMessage);
+            PreparedTurn prepared = prepareTurn(sessionId, scenario.id(), assistant, request.customerId(), request.message(), existing.sharedState());
+            messages.add(placeholderAssistantMessage(sessionId, assistant, prepared.task(), prepared.workflow()));
+            ConversationSessionDto startedSession = new ConversationSessionDto(
+                existing.id(),
+                existing.scenarioId(),
+                existing.title(),
+                existing.customerId(),
+                assistant.id(),
+                assistant.name(),
+                runtimeReleaseVersion(assistant),
+                existing.createdAt(),
+                Instant.now(),
+                messages,
                 prepared.task().id(),
                 prepared.workflow().id(),
-                scenario.id(),
-                request.message(),
-                request.requester(),
-                buildSessionContext(
-                    sessionId,
-                    request.requester(),
-                    request.message(),
-                    messages,
-                    existing.loadedSkillResourceVersionIds(),
-                    existing.sharedState()
-                ),
-                prepared.assistantSnapshot()
-            ));
-            return startedSession;
-        } catch (RuntimeException error) {
-            WorkflowInstanceDto workflow = failedWorkflow(
-                prepared,
-                "WORKFLOW_START_SUBMISSION_FAILED",
-                describeFailure(error)
+                prepared.workflow().latestToolOutcome(),
+                prepared.workflow().humanTask(),
+                prepared.workflow().pauseReason(),
+                existing.loadedSkillResourceVersionIds(),
+                existing.sharedState()
             );
-            TaskInstanceDto task = withTaskStatus(prepared.task(), TaskStatus.FAILED);
-            ConversationSessionDto failedSession = refreshSessionForWorkflow(startedSession, prepared.workflow(), workflow);
-            runtimeRepository.persistProjection(task, workflow, failedSession, null);
-            return failedSession;
+            runtimeRepository.persistProjection(prepared.task(), prepared.workflow(), startedSession, null);
+
+            try {
+                workflowGateway.start(new WorkflowStartRequest(
+                    prepared.task().id(),
+                    prepared.workflow().id(),
+                    scenario.id(),
+                    request.message(),
+                    request.customerId(),
+                    buildSessionContext(
+                        sessionId,
+                        request.customerId(),
+                        request.message(),
+                        messages,
+                        existing.loadedSkillResourceVersionIds(),
+                        existing.sharedState()
+                    ),
+                    prepared.assistantSnapshot(),
+                    PlatformLogContext.capture(sessionId, prepared.workflow().id(), request.customerId())
+                ));
+                return startedSession;
+            } catch (RuntimeException error) {
+                WorkflowInstanceDto workflow = failedWorkflow(
+                    prepared,
+                    "WORKFLOW_START_SUBMISSION_FAILED",
+                    describeFailure(error)
+                );
+                TaskInstanceDto task = withTaskStatus(prepared.task(), TaskStatus.FAILED);
+                ConversationSessionDto failedSession = refreshSessionForWorkflow(startedSession, prepared.workflow(), workflow);
+                runtimeRepository.persistProjection(task, workflow, failedSession, null);
+                return failedSession;
+            }
         }
     }
 
     public TaskInstanceDto launchTask(TaskLaunchRequest request) {
-        ScenarioDto scenario = catalogService.getScenario(request.scenarioId());
-        AssistantDto assistant = resolveAssistant(scenario, request.assistantId());
-        return executeTurn(request.scenarioId(), assistant, request.requester(), request.question()).task();
+        try (PlatformLogContext.Scope ignored = PlatformLogContext.openBusiness(null, null, request.customerId())) {
+            ScenarioDto scenario = catalogService.getScenario(request.scenarioId());
+            AssistantDto assistant = resolveAssistant(scenario, request.assistantId());
+            return executeTurn(request.scenarioId(), assistant, request.customerId(), request.question()).task();
+        }
     }
 
     public WorkflowInstanceDto getWorkflow(String workflowId) {
@@ -242,66 +250,73 @@ public class RuntimeService {
     }
 
     public WorkflowInstanceDto handleHumanAction(String workflowId, HumanActionRequest request) {
-        WorkflowInstanceDto existing = getWorkflow(workflowId);
-        if (runtimeRepository.findPendingIntervention(workflowId).isPresent()) {
-            throw new IllegalStateException("workflow has a pending human intervention awaiting reconciliation: " + workflowId);
-        }
-        HumanInterventionDto intervention = new HumanInterventionDto(
-            nextId("human"),
+        ConversationSessionDto sessionForContext = findSessionByWorkflowId(workflowId).orElse(null);
+        try (PlatformLogContext.Scope ignored = PlatformLogContext.openBusiness(
+            sessionForContext == null ? null : sessionForContext.id(),
             workflowId,
-            request.action(),
-            request.operatorId() == null || request.operatorId().isBlank() ? "system-operator" : request.operatorId(),
-            request.comment(),
-            request.attributes() == null ? Map.of() : Map.copyOf(request.attributes()),
-            HumanInterventionStatus.PENDING,
-            Instant.now(),
-            null,
-            null
-        );
-        runtimeRepository.saveHumanIntervention(intervention);
-        try {
-            workflowGateway.submitHumanAction(
+            sessionForContext == null ? null : sessionForContext.customerId()
+        )) {
+            WorkflowInstanceDto existing = getWorkflow(workflowId);
+            if (runtimeRepository.findPendingIntervention(workflowId).isPresent()) {
+                throw new IllegalStateException("workflow has a pending human intervention awaiting reconciliation: " + workflowId);
+            }
+            HumanInterventionDto intervention = new HumanInterventionDto(
+                nextId("human"),
                 workflowId,
-                new HumanAction(
-                    request.action(),
-                    request.comment(),
-                    intervention.operator(),
-                    intervention.attributes()
-                )
+                request.action(),
+                request.userId() == null || request.userId().isBlank() ? "system-user" : request.userId(),
+                request.comment(),
+                request.attributes() == null ? Map.of() : Map.copyOf(request.attributes()),
+                HumanInterventionStatus.PENDING,
+                Instant.now(),
+                null,
+                null
             );
-            WorkflowInstanceDto updated = workflowResuming(existing);
-            TaskInstanceDto task = runtimeRepository.findTaskByWorkflowInstanceId(workflowId).orElseThrow();
-            TaskInstanceDto updatedTask = withTaskStatus(task, TaskStatus.RUNNING);
-            ConversationSessionDto session = findSessionByWorkflowId(workflowId).orElse(null);
-            ConversationSessionDto updatedSession = session == null ? null : refreshSessionAfterHumanAction(session, updated);
-            runtimeRepository.persistProjection(updatedTask, updated, updatedSession, intervention);
-            return updated;
-        } catch (RuntimeException error) {
-            HumanInterventionDto failedIntervention = markInterventionFailed(intervention, describeFailure(error));
-            WorkflowInstanceDto failedWorkflow = withLatestFailure(
-                existing,
-                new WorkflowFailureSnapshot(
-                    WorkflowFailureCategory.RUNTIME_FAILURE,
-                    "WORKFLOW_RESUME_SUBMISSION_FAILED",
-                    describeFailure(error),
-                    describeFailure(error),
-                    existing.currentNodeKey(),
-                    null,
-                    null,
-                    null,
-                    Instant.now()
-                )
-            );
-            runtimeRepository.saveHumanIntervention(failedIntervention);
-            TaskInstanceDto task = runtimeRepository.findTaskByWorkflowInstanceId(workflowId).orElseThrow();
-            ConversationSessionDto session = findSessionByWorkflowId(workflowId).orElse(null);
-            runtimeRepository.persistProjection(task, failedWorkflow, session, failedIntervention);
-            throw error;
+            runtimeRepository.saveHumanIntervention(intervention);
+            try {
+                workflowGateway.submitHumanAction(
+                    workflowId,
+                    new HumanAction(
+                        request.action(),
+                        request.comment(),
+                        intervention.userId(),
+                        intervention.attributes()
+                    )
+                );
+                WorkflowInstanceDto updated = workflowResuming(existing);
+                TaskInstanceDto task = runtimeRepository.findTaskByWorkflowInstanceId(workflowId).orElseThrow();
+                TaskInstanceDto updatedTask = withTaskStatus(task, TaskStatus.RUNNING);
+                ConversationSessionDto session = findSessionByWorkflowId(workflowId).orElse(null);
+                ConversationSessionDto updatedSession = session == null ? null : refreshSessionAfterHumanAction(session, updated);
+                runtimeRepository.persistProjection(updatedTask, updated, updatedSession, intervention);
+                return updated;
+            } catch (RuntimeException error) {
+                HumanInterventionDto failedIntervention = markInterventionFailed(intervention, describeFailure(error));
+                WorkflowInstanceDto failedWorkflow = withLatestFailure(
+                    existing,
+                    new WorkflowFailureSnapshot(
+                        WorkflowFailureCategory.RUNTIME_FAILURE,
+                        "WORKFLOW_RESUME_SUBMISSION_FAILED",
+                        describeFailure(error),
+                        describeFailure(error),
+                        existing.currentNodeKey(),
+                        null,
+                        null,
+                        null,
+                        Instant.now()
+                    )
+                );
+                runtimeRepository.saveHumanIntervention(failedIntervention);
+                TaskInstanceDto task = runtimeRepository.findTaskByWorkflowInstanceId(workflowId).orElseThrow();
+                ConversationSessionDto session = findSessionByWorkflowId(workflowId).orElse(null);
+                runtimeRepository.persistProjection(task, failedWorkflow, session, failedIntervention);
+                throw error;
+            }
         }
     }
 
-    private TurnExecutionResult executeTurn(String scenarioId, AssistantDto assistant, String requester, String message) {
-        PreparedTurn prepared = prepareTurn(null, scenarioId, assistant, requester, message, SharedSessionState.empty());
+    private TurnExecutionResult executeTurn(String scenarioId, AssistantDto assistant, String customerId, String message) {
+        PreparedTurn prepared = prepareTurn(null, scenarioId, assistant, customerId, message, SharedSessionState.empty());
         runtimeRepository.persistProjection(prepared.task(), prepared.workflow(), null, null);
 
         try {
@@ -310,9 +325,10 @@ public class RuntimeService {
                 prepared.workflow().id(),
                 scenarioId,
                 message,
-                requester,
-                buildSessionContext(null, requester, message, List.of(), List.of(), SharedSessionState.empty()),
-                prepared.assistantSnapshot()
+                customerId,
+                buildSessionContext(null, customerId, message, List.of(), List.of(), SharedSessionState.empty()),
+                prepared.assistantSnapshot(),
+                PlatformLogContext.capture(null, prepared.workflow().id(), customerId)
             ));
             return new TurnExecutionResult(prepared.task(), prepared.workflow(), prepared.workflow().summary());
         } catch (RuntimeException error) {
@@ -331,7 +347,7 @@ public class RuntimeService {
         String sessionId,
         String scenarioId,
         AssistantDto assistant,
-        String requester,
+        String customerId,
         String message,
         SharedSessionState sharedState
     ) {
@@ -363,7 +379,7 @@ public class RuntimeService {
             assistant.name(),
             assistantSnapshot.assistantReleaseVersion(),
             message,
-            requester,
+            customerId,
             TaskStatus.RUNNING,
             Instant.now(),
             workflowId
@@ -519,7 +535,7 @@ public class RuntimeService {
             session.id(),
             session.scenarioId(),
             session.title(),
-            session.requester(),
+            session.customerId(),
             session.assistantId(),
             session.assistantName(),
             session.assistantReleaseVersion(),
@@ -867,7 +883,7 @@ public class RuntimeService {
 
     private SessionContext buildSessionContext(
         String sessionId,
-        String requester,
+        String customerId,
         String latestMessage,
         List<ConversationMessageDto> currentMessages,
         List<String> loadedSkillResourceVersionIds,
@@ -875,7 +891,7 @@ public class RuntimeService {
     ) {
         return new SessionContext(
             sessionId == null ? "adhoc-session" : sessionId,
-            requester,
+            customerId,
             latestMessage,
             currentMessages.stream()
                 .map(message -> new SessionMessageSnapshot(message.role(), message.senderName(), message.content(), message.createdAt()))
@@ -897,7 +913,7 @@ public class RuntimeService {
             task.assistantName(),
             task.assistantReleaseVersion(),
             task.question(),
-            task.requester(),
+            task.customerId(),
             status,
             task.createdAt(),
             task.workflowInstanceId()
@@ -988,7 +1004,7 @@ public class RuntimeService {
             session.id(),
             session.scenarioId(),
             session.title(),
-            session.requester(),
+            session.customerId(),
             session.assistantId(),
             session.assistantName(),
             session.assistantReleaseVersion(),
@@ -1122,7 +1138,7 @@ public class RuntimeService {
             intervention.id(),
             intervention.workflowInstanceId(),
             intervention.action(),
-            intervention.operator(),
+            intervention.userId(),
             intervention.comment(),
             intervention.attributes(),
             HumanInterventionStatus.APPLIED,
@@ -1137,7 +1153,7 @@ public class RuntimeService {
             intervention.id(),
             intervention.workflowInstanceId(),
             intervention.action(),
-            intervention.operator(),
+            intervention.userId(),
             intervention.comment(),
             intervention.attributes(),
             HumanInterventionStatus.FAILED,
