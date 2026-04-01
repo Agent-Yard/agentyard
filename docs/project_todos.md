@@ -121,14 +121,19 @@
 
 ### 2.4 草稿默认模型策略收敛
 
-现状：草稿默认模型是"取第一个可用 LLM"的隐式策略。
+现状：已完成。草稿默认模型不再使用“取第一个可用 LLM”的隐式策略。
 
-目标：
+完成内容：
 
-1. Assistant 草稿增加显式 `defaultModelResourceId` 字段
-2. 无默认模型时，控制台给出明确引导而非静默回退
-3. 发布快照中区分：草稿配置的模型 vs 冻结时实际绑定的模型 vs 运行时命中的模型
-4. 控制台在助手详情页明确展示三层模型语义
+1. Assistant 草稿模型策略统一改为显式 `defaultModelResourceId`，Catalog / OpenAPI / Web 类型与引用分析同步收敛
+2. `CatalogService` 不再自动选择第一个 `LLM_MODEL`；草稿未配置默认模型时保持 `null`
+3. 发布前新增阻断校验：未配置 `defaultModelResourceId` 的 Assistant 不能发布
+4. 发布快照新增 `defaultModelBinding`，显式冻结发布时实际绑定的模型资源、版本、provider 和 modelId
+5. Runtime 预检改为：
+   `currentRelease` 存在时继续按冻结发布版运行；只有“未发布草稿且未配置默认模型”才阻断 `launchTask / sendMessage`
+6. `WorkflowResult / WorkflowInstance` 新增 `modelHits`，agent-runtime 在真实发起 LLM 调用前记录模型命中快照
+7. 控制台已拆开展示三层语义：
+   草稿默认模型、当前发布冻结模型、最近一次运行命中模型；Workflow 页也可查看本次运行的完整模型命中明细
 
 ### 2.5 External Interaction 一等能力
 

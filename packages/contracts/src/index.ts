@@ -425,6 +425,24 @@ export interface ResumeIntervention {
   failureReason?: string | null;
 }
 
+export type ModelSelectionSource = 'ASSISTANT_DEFAULT' | 'AGENT_OVERRIDE';
+
+export interface ModelHitSnapshot {
+  agentId: string;
+  agentName: string;
+  nodeKey: string;
+  nodeName: string;
+  source: ModelSelectionSource;
+  resourceId: string;
+  resourceName: string;
+  resourceVersionId: string;
+  resourceVersion: string;
+  providerType: string;
+  modelId: string;
+  turnIndex: number;
+  capturedAt: string;
+}
+
 export interface WorkflowInstance {
   id: string;
   taskId: string;
@@ -446,6 +464,7 @@ export interface WorkflowInstance {
   resourceAnchors: string[];
   nodes: NodeExecution[];
   toolCalls: ToolInvocationSnapshot[];
+  modelHits: ModelHitSnapshot[];
   resumeInterventions: ResumeIntervention[];
   loadedSkillResourceVersionIds: string[];
   sharedState: SharedSessionState;

@@ -52,6 +52,7 @@ from app.main import (
     restore_state,
     validate_graph,
     validate_tool_result,
+    workflow_result_from_state,
 )
 
 
@@ -203,6 +204,7 @@ def make_agent_state(assistant: AssistantRunSnapshot, graph: GraphSnapshot, ques
         "pause_reason": None,
         "latest_failure": None,
         "workflow_status": "RUNNING",
+        "model_hits": [],
     }
 
 
@@ -705,6 +707,100 @@ class MemoryPromptTests(unittest.TestCase):
         self.assertEqual(shared_state["facts"]["entities"]["ticketRef"], "T-001")
         self.assertEqual(shared_state["artifacts"]["refund"]["status"], "approved")
         self.assertEqual(shared_state["agentScopes"][agent.agentId]["draft"]["nextStep"], "notify-user")
+
+    def test_execute_agent_node_records_assistant_default_model_hit(self) -> None:
+        model_resource = make_model_resource()
+        agent = make_agent(memory_window_size=4)
+        graph = GraphSnapshot(
+            executionMode="GRAPH",
+            nodes=[
+                GraphNodeSnapshot(nodeKey="start", nodeName="开始", nodeType="START", description="开始"),
+                GraphNodeSnapshot(nodeKey="agent-node", nodeName="节点", nodeType="AGENT", description="说明", agentId=agent.agentId),
+                GraphNodeSnapshot(nodeKey="end", nodeName="结束", nodeType="END", description="结束"),
+            ],
+            edges=[
+                GraphEdgeSnapshot(edgeKey="edge-1", sourceNodeKey="agent-node", targetNodeKey="end", routeKey="default", label="默认", defaultEdge=True),
+            ],
+        )
+        assistant = make_assistant(True, 4).model_copy(
+            update={
+                "agents": [agent],
+                "resources": [model_resource],
+                "graph": graph,
+                "assistantPolicy": AssistantPolicySnapshot(
+                    providerResourceId=model_resource.resourceId,
+                    providerResourceVersionId=model_resource.resourceVersionId,
+                    memoryEnabled=True,
+                    memoryWindowSize=4,
+                ),
+            }
+        )
+        state = make_agent_state(assistant, graph)
+
+        with patch(
+            "app.main.call_llm",
+            AsyncMock(return_value='{"decisionType":"FINAL","message":"处理完成","routeDecision":"default"}'),
+        ):
+            asyncio.run(execute_agent_node(state, graph.nodes[1]))
+
+        self.assertEqual(len(state["model_hits"]), 1)
+        self.assertEqual(state["model_hits"][0]["source"], "ASSISTANT_DEFAULT")
+        self.assertEqual(state["model_hits"][0]["resourceVersionId"], model_resource.resourceVersionId)
+        self.assertEqual(state["model_hits"][0]["turnIndex"], 1)
+
+    def test_execute_agent_node_records_agent_override_model_hit_in_workflow_result(self) -> None:
+        default_model_resource = make_model_resource("model-default-v1")
+        override_model_resource = make_model_resource("model-override-v1").model_copy(
+            update={"resourceId": "resource-model-override", "resourceName": "覆盖模型"}
+        )
+        agent = make_agent(memory_window_size=4).model_copy(
+            update={
+                "executionPolicy": make_agent(memory_window_size=4).executionPolicy.model_copy(
+                    update={
+                        "inheritAssistantDefaults": False,
+                        "modelResourceId": override_model_resource.resourceId,
+                        "modelResourceVersionId": override_model_resource.resourceVersionId,
+                    }
+                )
+            }
+        )
+        graph = GraphSnapshot(
+            executionMode="GRAPH",
+            nodes=[
+                GraphNodeSnapshot(nodeKey="start", nodeName="开始", nodeType="START", description="开始"),
+                GraphNodeSnapshot(nodeKey="agent-node", nodeName="节点", nodeType="AGENT", description="说明", agentId=agent.agentId),
+                GraphNodeSnapshot(nodeKey="end", nodeName="结束", nodeType="END", description="结束"),
+            ],
+            edges=[
+                GraphEdgeSnapshot(edgeKey="edge-1", sourceNodeKey="agent-node", targetNodeKey="end", routeKey="default", label="默认", defaultEdge=True),
+            ],
+        )
+        assistant = make_assistant(True, 4).model_copy(
+            update={
+                "agents": [agent],
+                "resources": [default_model_resource, override_model_resource],
+                "graph": graph,
+                "assistantPolicy": AssistantPolicySnapshot(
+                    providerResourceId=default_model_resource.resourceId,
+                    providerResourceVersionId=default_model_resource.resourceVersionId,
+                    memoryEnabled=True,
+                    memoryWindowSize=4,
+                ),
+            }
+        )
+        state = make_agent_state(assistant, graph)
+
+        with patch(
+            "app.main.call_llm",
+            AsyncMock(return_value='{"decisionType":"FINAL","message":"处理完成","routeDecision":"default"}'),
+        ):
+            asyncio.run(execute_agent_node(state, graph.nodes[1]))
+
+        result = workflow_result_from_state(state)
+        self.assertEqual(len(result.modelHits), 1)
+        self.assertEqual(result.modelHits[0].source, "AGENT_OVERRIDE")
+        self.assertEqual(result.modelHits[0].resourceId, override_model_resource.resourceId)
+        self.assertEqual(result.modelHits[0].resourceVersionId, override_model_resource.resourceVersionId)
 
     def test_execute_agent_node_pauses_for_invalid_session_state_patch(self) -> None:
         model_resource = make_model_resource()

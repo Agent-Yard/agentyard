@@ -24,7 +24,7 @@ public interface CatalogRepository {
         CatalogSnapshot snapshot = load();
         List<ResourceBindingRef> refs = new java.util.ArrayList<>();
         for (AssistantDto a : snapshot.assistants()) {
-            if (a.modelPolicy() != null && resourceId.equals(a.modelPolicy().providerResourceId())) {
+            if (a.modelPolicy() != null && resourceId.equals(a.modelPolicy().defaultModelResourceId())) {
                 refs.add(new ResourceBindingRef("ASSISTANT", a.id(), resourceId, "ASSISTANT_DEFAULT_MODEL"));
             }
         }
@@ -106,8 +106,8 @@ public interface CatalogRepository {
         CatalogSnapshot snapshot = load();
         List<ResourceBindingRef> refs = new java.util.ArrayList<>();
         for (AssistantDto a : snapshot.assistants()) {
-            if (a.modelPolicy() != null && a.modelPolicy().providerResourceId() != null) {
-                refs.add(new ResourceBindingRef("ASSISTANT", a.id(), a.modelPolicy().providerResourceId(), "ASSISTANT_DEFAULT_MODEL"));
+            if (a.modelPolicy() != null && a.modelPolicy().defaultModelResourceId() != null) {
+                refs.add(new ResourceBindingRef("ASSISTANT", a.id(), a.modelPolicy().defaultModelResourceId(), "ASSISTANT_DEFAULT_MODEL"));
             }
         }
         for (AgentDto a : snapshot.agents()) {

@@ -244,6 +244,8 @@ public class CatalogService {
 
     public AssistantDto createAssistant(CreateAssistantRequest request) {
         ensureLoaded();
+        AssistantModelPolicyDto normalizedModelPolicy = normalizeAssistantModelPolicy(request.modelPolicy());
+        validateAssistantModelPolicy(normalizedModelPolicy);
         AssistantDto assistant = new AssistantDto(
             nextId("assistant"),
             request.scenarioId(),
@@ -253,7 +255,7 @@ public class CatalogService {
             List.of(),
             null,
             List.of(),
-            normalizeAssistantModelPolicy(request.modelPolicy()),
+            normalizedModelPolicy,
             normalizeRagPolicy(request.ragPolicy()),
             normalizeMemoryPolicy(request.memoryPolicy())
         );
@@ -265,9 +267,15 @@ public class CatalogService {
     public AssistantDto updateAssistant(String assistantId, UpdateAssistantRequest request) {
         ensureLoaded();
         AssistantDto existing = findAssistant(assistantId);
+        VersionStatus effectiveStatus = request.status() == null ? existing.version().status() : request.status();
+        AssistantModelPolicyDto normalizedModelPolicy = normalizeAssistantModelPolicy(request.modelPolicy());
+        validateAssistantModelPolicy(normalizedModelPolicy);
+        if (effectiveStatus == VersionStatus.PUBLISHED) {
+            ensureAssistantReadyForPublication(normalizedModelPolicy);
+        }
         VersionDto version = new VersionDto(
-            request.status() == VersionStatus.PUBLISHED ? nextAssistantReleaseVersion(existing.id()) : existing.version().version(),
-            request.status() == null ? existing.version().status() : request.status(),
+            effectiveStatus == VersionStatus.PUBLISHED ? nextAssistantReleaseVersion(existing.id()) : existing.version().version(),
+            effectiveStatus,
             Instant.now()
         );
         AssistantDto updated = new AssistantDto(
@@ -279,7 +287,7 @@ public class CatalogService {
             existing.agents(),
             existing.currentRelease(),
             existing.releases(),
-            normalizeAssistantModelPolicy(request.modelPolicy()),
+            normalizedModelPolicy,
             normalizeRagPolicy(request.ragPolicy()),
             normalizeMemoryPolicy(request.memoryPolicy())
         );
@@ -1091,7 +1099,8 @@ public class CatalogService {
     private AssistantReleaseDto createAssistantRelease(String assistantId, String releaseVersion, VersionStatus status) {
         AssistantDto assistant = findAssistant(assistantId);
         Map<String, AssistantReleaseResourceDto> snapshotMap = new LinkedHashMap<>();
-        captureEffectiveResource(snapshotMap, assistant.modelPolicy().providerResourceId(), "ASSISTANT_DEFAULT_MODEL");
+        DefaultModelBindingDto defaultModelBinding = resolveDefaultModelBinding(assistant);
+        captureEffectiveResource(snapshotMap, assistant.modelPolicy().defaultModelResourceId(), "ASSISTANT_DEFAULT_MODEL");
         KnowledgeBindingSnapshotDto assistantKnowledge = resolveAssistantKnowledgeBinding(assistant);
 
         List<AssistantReleaseAgentDto> releaseAgents = new ArrayList<>();
@@ -1138,6 +1147,7 @@ public class CatalogService {
             Instant.now(),
             status == VersionStatus.PUBLISHED ? Instant.now() : null,
             assistantKnowledge,
+            defaultModelBinding,
             List.copyOf(snapshotMap.values()),
             List.copyOf(releaseAgents),
             getOrCreateOrchestration(assistantId),
@@ -1645,6 +1655,7 @@ public class CatalogService {
                     release.createdAt(),
                     release.publishedAt(),
                     normalizeKnowledgeBindingSnapshot(release.assistantKnowledge()),
+                    normalizeDefaultModelBinding(release.defaultModelBinding()),
                     release.resources().stream()
                         .map(resource -> new AssistantReleaseResourceDto(
                             resource.resourceId(),
@@ -1961,9 +1972,13 @@ public class CatalogService {
 
     private AssistantModelPolicyDto normalizeAssistantModelPolicy(AssistantModelPolicyDto policy) {
         if (policy == null) {
-            return new AssistantModelPolicyDto(resolveDefaultResourceId(ResourceType.LLM_MODEL, null));
+            return new AssistantModelPolicyDto(null);
         }
-        return new AssistantModelPolicyDto(policy.providerResourceId());
+        String defaultModelResourceId = policy.defaultModelResourceId();
+        if (defaultModelResourceId == null || defaultModelResourceId.isBlank()) {
+            return new AssistantModelPolicyDto(null);
+        }
+        return new AssistantModelPolicyDto(defaultModelResourceId.trim());
     }
 
     private RagPolicyDto normalizeRagPolicy(RagPolicyDto policy) {
@@ -2055,19 +2070,59 @@ public class CatalogService {
         return value == null || value.isBlank() ? fallback : value;
     }
 
-    private String resolveDefaultResourceId(ResourceType type, String preferredResourceId) {
-        if (preferredResourceId != null && resources.stream().anyMatch(resource -> resource.id().equals(preferredResourceId))) {
-            return preferredResourceId;
-        }
-        return resources.stream()
-            .filter(resource -> resource.type() == type)
-            .map(ResourceDto::id)
-            .findFirst()
-            .orElse(null);
-    }
-
     private String resolveDefaultKnowledgeBaseId(String preferredKnowledgeBaseId) {
         return knowledgeService.resolveDefaultKnowledgeBaseId(preferredKnowledgeBaseId);
+    }
+
+    private void validateAssistantModelPolicy(AssistantModelPolicyDto policy) {
+        if (policy == null || policy.defaultModelResourceId() == null || policy.defaultModelResourceId().isBlank()) {
+            return;
+        }
+        ResourceDto resource = findResource(policy.defaultModelResourceId());
+        if (resource.type() != ResourceType.LLM_MODEL) {
+            throw new IllegalArgumentException("assistant default model must reference an LLM_MODEL resource");
+        }
+    }
+
+    private void ensureAssistantReadyForPublication(AssistantModelPolicyDto policy) {
+        if (policy == null || policy.defaultModelResourceId() == null || policy.defaultModelResourceId().isBlank()) {
+            throw new IllegalStateException("assistant default model must be configured before publishing");
+        }
+    }
+
+    private DefaultModelBindingDto resolveDefaultModelBinding(AssistantDto assistant) {
+        String resourceId = assistant.modelPolicy().defaultModelResourceId();
+        if (resourceId == null || resourceId.isBlank()) {
+            throw new IllegalStateException("assistant default model must be configured before publishing");
+        }
+        ResourceDto resource = toResourceView(findResource(resourceId));
+        if (resource.type() != ResourceType.LLM_MODEL) {
+            throw new IllegalArgumentException("assistant default model must reference an LLM_MODEL resource");
+        }
+        ResourceVersionDto version = effectiveVersion(resource);
+        LlmModelConfigDto modelConfig = version.configuration() == null ? null : version.configuration().llmModel();
+        return new DefaultModelBindingDto(
+            resource.id(),
+            resource.name(),
+            version.id(),
+            version.version(),
+            modelConfig == null ? null : modelConfig.providerType(),
+            modelConfig == null ? null : modelConfig.modelId()
+        );
+    }
+
+    private DefaultModelBindingDto normalizeDefaultModelBinding(DefaultModelBindingDto binding) {
+        if (binding == null) {
+            return null;
+        }
+        return new DefaultModelBindingDto(
+            normalizeOptionalText(binding.resourceId()),
+            normalizeOptionalText(binding.resourceName()),
+            normalizeOptionalText(binding.resourceVersionId()),
+            normalizeOptionalText(binding.resourceVersion()),
+            normalizeOptionalText(binding.providerType()),
+            normalizeOptionalText(binding.modelId())
+        );
     }
 
     private KnowledgeBindingSnapshotDto normalizeKnowledgeBindingSnapshot(KnowledgeBindingSnapshotDto binding) {

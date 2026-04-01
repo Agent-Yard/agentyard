@@ -8,6 +8,7 @@ import type {
   Resource,
   Scenario,
   UpdateAssistantPayload,
+  WorkflowInstance,
 } from '../types';
 
 const props = defineProps<{
@@ -15,6 +16,7 @@ const props = defineProps<{
   scenarios: Scenario[];
   resources: Resource[];
   knowledgeBases: KnowledgeBase[];
+  workflows: WorkflowInstance[];
   catalogRevision: number;
   canManageGovernance: boolean;
 }>();
@@ -23,6 +25,7 @@ const emit = defineEmits<{
   createAssistant: [payload: CreateAssistantPayload];
   updateAssistant: [payload: { assistantId: string; data: UpdateAssistantPayload }];
   deleteAssistant: [assistantId: string];
+  openWorkflow: [workflowId: string];
 }>();
 
 const selectedAssistantId = ref('');
@@ -31,7 +34,7 @@ const createForm = reactive<CreateAssistantPayload>({
   name: '',
   description: '',
   modelPolicy: {
-    providerResourceId: null,
+    defaultModelResourceId: null,
   },
   ragPolicy: {
     enabled: false,
@@ -47,7 +50,7 @@ const editForm = reactive<UpdateAssistantPayload>({
   description: '',
   status: 'DRAFT',
   modelPolicy: {
-    providerResourceId: null,
+    defaultModelResourceId: null,
   },
   ragPolicy: {
     enabled: false,
@@ -65,15 +68,69 @@ const current = computed(() =>
 const modelResources = computed(() => props.resources.filter((item) => item.type === 'LLM_MODEL'));
 const knowledgeBaseOptions = computed(() => props.knowledgeBases.map((item) => ({ label: item.name, value: item.id })));
 
-function syncCreateDefaults() {
-  if (!modelResources.value.some((item) => item.id === createForm.modelPolicy.providerResourceId)) {
-    createForm.modelPolicy.providerResourceId = modelResources.value[0]?.id ?? null;
+const currentDraftModelResource = computed(() =>
+  props.resources.find((item) => item.id === current.value?.modelPolicy.defaultModelResourceId) ?? null,
+);
+const latestWorkflowWithModelHits = computed(() =>
+  props.workflows.find((workflow) => workflow.assistantId === current.value?.id && workflow.modelHits.length > 0) ?? null,
+);
+const latestRuntimeModelHit = computed(() => latestWorkflowWithModelHits.value?.modelHits.at(-1) ?? null);
+
+const createModelHint = computed(() => {
+  if (!modelResources.value.length) {
+    return { type: 'warning' as const, message: '当前没有可用 LLM 资源，无法配置默认模型。' };
   }
-  if (!props.knowledgeBases.some((item) => item.id === createForm.ragPolicy.knowledgeBaseId)) {
-    createForm.ragPolicy.knowledgeBaseId = props.knowledgeBases[0]?.id ?? null;
+  if (!createForm.modelPolicy.defaultModelResourceId) {
+    return { type: 'info' as const, message: '未选择默认模型。可以先保存草稿，但发布和运行会被阻止。' };
   }
-  createForm.ragPolicy.enabled = createForm.ragPolicy.enabled && createForm.ragPolicy.knowledgeBaseId !== null;
+  return null;
+});
+
+const editModelHint = computed(() => {
+  if (!modelResources.value.length) {
+    return { type: 'warning' as const, message: '当前没有可用 LLM 资源，无法配置默认模型。' };
+  }
+  if (!editForm.modelPolicy.defaultModelResourceId) {
+    return { type: 'info' as const, message: '未选择默认模型。可以继续保存草稿，但发布和运行会被阻止。' };
+  }
+  return null;
+});
+
+function resourceVersionLabel(resource: Resource | null | undefined) {
+  if (!resource) {
+    return '未配置';
+  }
+  const version = resource.effectiveVersion?.version ?? resource.latestVersion?.version ?? '-';
+  return `${resource.name} @ ${version}`;
 }
+
+function sourceLabel(source: string) {
+  return source === 'AGENT_OVERRIDE' ? 'Agent Override' : 'Assistant Default';
+}
+
+const draftModelDescription = computed(() => {
+  if (!current.value?.modelPolicy.defaultModelResourceId) {
+    return '未配置';
+  }
+  return resourceVersionLabel(currentDraftModelResource.value);
+});
+
+const releaseModelDescription = computed(() => {
+  const binding = current.value?.currentRelease?.defaultModelBinding;
+  if (!binding) {
+    return '尚未发布';
+  }
+  const provider = binding.providerType && binding.modelId ? `${binding.providerType} / ${binding.modelId}` : '模型配置未记录';
+  return `${binding.resourceName} @ ${binding.resourceVersion} · ${provider}`;
+});
+
+const runtimeModelDescription = computed(() => {
+  const hit = latestRuntimeModelHit.value;
+  if (!hit || !latestWorkflowWithModelHits.value) {
+    return '暂无运行命中';
+  }
+  return `${hit.resourceName} @ ${hit.resourceVersion} · ${hit.providerType} / ${hit.modelId} · ${sourceLabel(hit.source)} · ${hit.nodeName}`;
+});
 
 watch(
   () => props.assistants,
@@ -115,7 +172,28 @@ watch(
   { immediate: true },
 );
 
-watch([modelResources, () => props.knowledgeBases], syncCreateDefaults, { immediate: true });
+watch(
+  modelResources,
+  (resources) => {
+    if (!resources.some((item) => item.id === createForm.modelPolicy.defaultModelResourceId)) {
+      createForm.modelPolicy.defaultModelResourceId = null;
+    }
+    if (!resources.some((item) => item.id === editForm.modelPolicy.defaultModelResourceId)) {
+      editForm.modelPolicy.defaultModelResourceId = null;
+    }
+  },
+  { immediate: true },
+);
+
+watch(
+  () => props.knowledgeBases,
+  (knowledgeBases) => {
+    if (!knowledgeBases.some((item) => item.id === createForm.ragPolicy.knowledgeBaseId)) {
+      createForm.ragPolicy.knowledgeBaseId = knowledgeBases[0]?.id ?? null;
+    }
+  },
+  { immediate: true },
+);
 
 watch(
   () => createForm.ragPolicy.enabled,
@@ -191,12 +269,22 @@ function submitUpdate() {
               placeholder="说明该助手负责的业务目标和协作方式"
             />
           </a-form-item>
-          <a-form-item label="默认模型">
+          <a-form-item label="草稿默认模型">
             <a-select
-              v-model:value="createForm.modelPolicy.providerResourceId"
+              v-model:value="createForm.modelPolicy.defaultModelResourceId"
+              allow-clear
+              :disabled="!modelResources.length"
               :options="modelResources.map((item) => ({ label: item.name, value: item.id }))"
+              placeholder="选择默认模型资源"
             />
           </a-form-item>
+          <a-alert
+            v-if="createModelHint"
+            :type="createModelHint.type"
+            show-icon
+            :message="createModelHint.message"
+            style="margin-bottom: 16px"
+          />
           <a-row :gutter="[16, 16]">
             <a-col :span="12">
               <a-form-item label="记忆窗口">
@@ -248,6 +336,18 @@ function submitUpdate() {
           </a-space>
         </template>
 
+        <a-card size="small" title="模型语义" style="margin-bottom: 16px">
+          <a-descriptions :column="1" size="small">
+            <a-descriptions-item label="草稿默认模型">{{ draftModelDescription }}</a-descriptions-item>
+            <a-descriptions-item label="当前发布冻结模型">{{ releaseModelDescription }}</a-descriptions-item>
+            <a-descriptions-item label="最近一次运行命中模型">{{ runtimeModelDescription }}</a-descriptions-item>
+          </a-descriptions>
+          <a-space v-if="latestWorkflowWithModelHits" style="margin-top: 12px">
+            <a-tag color="processing">Workflow {{ latestWorkflowWithModelHits.id }}</a-tag>
+            <a-button size="small" @click="emit('openWorkflow', latestWorkflowWithModelHits.id)">查看 Workflow 命中详情</a-button>
+          </a-space>
+        </a-card>
+
         <a-form layout="vertical" :model="editForm" @finish="submitUpdate">
           <a-form-item label="助手名称" name="name">
             <a-input v-model:value="editForm.name" />
@@ -278,12 +378,22 @@ function submitUpdate() {
             </a-col>
           </a-row>
 
-          <a-form-item label="默认模型">
+          <a-form-item label="草稿默认模型">
             <a-select
-              v-model:value="editForm.modelPolicy.providerResourceId"
+              v-model:value="editForm.modelPolicy.defaultModelResourceId"
+              allow-clear
+              :disabled="!modelResources.length"
               :options="modelResources.map((item) => ({ label: item.name, value: item.id }))"
+              placeholder="选择默认模型资源"
             />
           </a-form-item>
+          <a-alert
+            v-if="editModelHint"
+            :type="editModelHint.type"
+            show-icon
+            :message="editModelHint.message"
+            style="margin-bottom: 16px"
+          />
 
           <a-row :gutter="[16, 16]">
             <a-col :span="12">
@@ -313,7 +423,7 @@ function submitUpdate() {
             type="info"
             show-icon
             style="margin-bottom: 16px"
-            :message="`当前发布冻结：${current.currentRelease.assistantKnowledge.knowledgeBaseName} @ ${current.currentRelease.assistantKnowledge.knowledgeReleaseVersion}`"
+            :message="`当前发布冻结知识：${current.currentRelease.assistantKnowledge.knowledgeBaseName} @ ${current.currentRelease.assistantKnowledge.knowledgeReleaseVersion}`"
             :description="`运行时快照 ${current.currentRelease.assistantKnowledge.snapshotId} · ${current.currentRelease.assistantKnowledge.retrievalMode} · topK ${current.currentRelease.assistantKnowledge.defaultTopK}`"
           />
 

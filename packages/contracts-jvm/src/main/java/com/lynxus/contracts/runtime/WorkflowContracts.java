@@ -214,6 +214,28 @@ public final class WorkflowContracts {
     ) {
     }
 
+    public enum ModelSelectionSource {
+        ASSISTANT_DEFAULT,
+        AGENT_OVERRIDE
+    }
+
+    public record ModelHitSnapshot(
+        String agentId,
+        String agentName,
+        String nodeKey,
+        String nodeName,
+        ModelSelectionSource source,
+        String resourceId,
+        String resourceName,
+        String resourceVersionId,
+        String resourceVersion,
+        String providerType,
+        String modelId,
+        int turnIndex,
+        Instant capturedAt
+    ) {
+    }
+
     public record AssistantPolicySnapshot(
         String providerResourceId,
         String providerResourceVersionId,
@@ -541,6 +563,7 @@ public final class WorkflowContracts {
         List<ToolInvocationSnapshot> toolCalls,
         boolean escalationRequired,
         ToolOutcomeSummary latestToolOutcome,
+        List<ModelHitSnapshot> modelHits,
         List<String> loadedSkillResourceVersionIds,
         SharedSessionState sharedState,
         AgentTurnState agentTurnState

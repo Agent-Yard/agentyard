@@ -4,6 +4,7 @@ import static com.lynxus.platform.runtime.RuntimeDtos.*;
 
 import com.lynxus.contracts.runtime.WorkflowContracts.AgentTurnState;
 import com.lynxus.contracts.runtime.WorkflowContracts.ExecutionCheckpoint;
+import com.lynxus.contracts.runtime.WorkflowContracts.ModelHitSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.ResumeTaskSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.PauseReasonSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.SharedSessionState;
@@ -38,6 +39,8 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
     private static final TypeReference<List<NodeExecutionDto>> NODE_LIST = new TypeReference<>() {
     };
     private static final TypeReference<List<ToolInvocationSnapshot>> TOOL_CALL_LIST = new TypeReference<>() {
+    };
+    private static final TypeReference<List<ModelHitSnapshot>> MODEL_HIT_LIST = new TypeReference<>() {
     };
 
     private final JdbcTemplate jdbcTemplate;
@@ -103,7 +106,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             """
                 select id, task_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at, status, summary, final_reply,
                        current_node_key, escalation_required, checkpoint, resume_task, pause_reason, latest_failure, latest_tool_outcome,
-                       resource_anchors, nodes, tool_calls, loaded_skill_resource_version_ids, shared_state, agent_turn_state
+                       resource_anchors, nodes, tool_calls, model_hits, loaded_skill_resource_version_ids, shared_state, agent_turn_state
                 from workflow_instance
                 order by updated_at desc, created_at desc, id desc
                 """,
@@ -117,7 +120,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             """
                 select id, task_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at, status, summary, final_reply,
                        current_node_key, escalation_required, checkpoint, resume_task, pause_reason, latest_failure, latest_tool_outcome,
-                       resource_anchors, nodes, tool_calls, loaded_skill_resource_version_ids, shared_state, agent_turn_state
+                       resource_anchors, nodes, tool_calls, model_hits, loaded_skill_resource_version_ids, shared_state, agent_turn_state
                 from workflow_instance
                 where status not in ('COMPLETED', 'FAILED', 'CANCELLED')
                 order by updated_at desc, created_at desc, id desc
@@ -132,7 +135,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             """
                 select id, task_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at, status, summary, final_reply,
                        current_node_key, escalation_required, checkpoint, resume_task, pause_reason, latest_failure, latest_tool_outcome,
-                       resource_anchors, nodes, tool_calls, loaded_skill_resource_version_ids, shared_state, agent_turn_state
+                       resource_anchors, nodes, tool_calls, model_hits, loaded_skill_resource_version_ids, shared_state, agent_turn_state
                 from workflow_instance
                 where id = ?
                 """,
@@ -313,6 +316,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             readJson(rs.getString("resource_anchors"), STRING_LIST),
             readJson(rs.getString("nodes"), NODE_LIST),
             readJson(rs.getString("tool_calls"), TOOL_CALL_LIST),
+            readJson(rs.getString("model_hits"), MODEL_HIT_LIST),
             readJson(rs.getString("loaded_skill_resource_version_ids"), STRING_LIST),
             readJson(rs.getString("shared_state"), SharedSessionState.class),
             readJson(rs.getString("agent_turn_state"), AgentTurnState.class)
@@ -397,6 +401,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
                 normalizeStringList(row.resourceAnchors()),
                 row.nodes() == null ? List.of() : row.nodes(),
                 row.toolCalls() == null ? List.of() : row.toolCalls(),
+                row.modelHits() == null ? List.of() : row.modelHits(),
                 interventionsByWorkflow.getOrDefault(row.id(), List.of()),
                 normalizeStringList(row.loadedSkillResourceVersionIds()),
                 row.sharedState() == null ? SharedSessionState.empty() : row.sharedState(),
@@ -490,7 +495,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
                 insert into workflow_instance (
                     id, task_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at, status, summary, final_reply,
                     current_node_key, escalation_required, checkpoint, resume_task, pause_reason, latest_failure, latest_tool_outcome,
-                    resource_anchors, nodes, tool_calls, loaded_skill_resource_version_ids, shared_state, agent_turn_state
+                    resource_anchors, nodes, tool_calls, model_hits, loaded_skill_resource_version_ids, shared_state, agent_turn_state
                 ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb),
                           cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb),
                           cast(? as jsonb))
@@ -514,6 +519,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
                     resource_anchors = excluded.resource_anchors,
                     nodes = excluded.nodes,
                     tool_calls = excluded.tool_calls,
+                    model_hits = excluded.model_hits,
                     loaded_skill_resource_version_ids = excluded.loaded_skill_resource_version_ids,
                     shared_state = excluded.shared_state,
                     agent_turn_state = excluded.agent_turn_state
@@ -538,6 +544,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             writeJson(workflow.resourceAnchors()),
             writeJson(workflow.nodes()),
             writeJson(workflow.toolCalls()),
+            writeJson(workflow.modelHits()),
             writeJson(workflow.loadedSkillResourceVersionIds()),
             writeJson(workflow.sharedState()),
             writeJson(workflow.agentTurnState())
@@ -694,6 +701,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         List<String> resourceAnchors,
         List<NodeExecutionDto> nodes,
         List<ToolInvocationSnapshot> toolCalls,
+        List<ModelHitSnapshot> modelHits,
         List<String> loadedSkillResourceVersionIds,
         SharedSessionState sharedState,
         AgentTurnState agentTurnState

@@ -65,6 +65,7 @@ class AssistantRunWorkflowTest {
                                 "message", "stub"
                             )
                         ),
+                        List.of(),
                         List.of("resource-version-skill-handoff-v1"),
                         WorkflowContracts.SharedSessionState.empty(),
                         WorkflowContracts.AgentTurnState.empty()
@@ -83,6 +84,7 @@ class AssistantRunWorkflowTest {
                         List.of(),
                         false,
                         null,
+                        List.of(),
                         List.of(),
                         WorkflowContracts.SharedSessionState.empty(),
                         WorkflowContracts.AgentTurnState.empty()
@@ -118,6 +120,7 @@ class AssistantRunWorkflowTest {
                             "message", "stub"
                         )
                     ),
+                    List.of(),
                     List.of("resource-version-skill-handoff-v1"),
                     WorkflowContracts.SharedSessionState.empty(),
                     WorkflowContracts.AgentTurnState.empty()
@@ -216,6 +219,7 @@ class AssistantRunWorkflowTest {
                     List.of(),
                     false,
                     null,
+                    List.of(),
                     List.of(),
                     WorkflowContracts.SharedSessionState.empty(),
                     WorkflowContracts.AgentTurnState.empty()

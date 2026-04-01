@@ -837,13 +837,9 @@ components:
     AssistantModelPolicy:
       type: object
       properties:
-        providerResourceId:
+        defaultModelResourceId:
           type: string
           nullable: true
-        temperature:
-          type: number
-        maxTokens:
-          type: integer
     RagPolicy:
       type: object
       properties:
@@ -2078,6 +2074,39 @@ components:
         failureReason:
           type: string
           nullable: true
+    ModelSelectionSource:
+      type: string
+      enum: [ASSISTANT_DEFAULT, AGENT_OVERRIDE]
+    ModelHitSnapshot:
+      type: object
+      properties:
+        agentId:
+          type: string
+        agentName:
+          type: string
+        nodeKey:
+          type: string
+        nodeName:
+          type: string
+        source:
+          $ref: '#/components/schemas/ModelSelectionSource'
+        resourceId:
+          type: string
+        resourceName:
+          type: string
+        resourceVersionId:
+          type: string
+        resourceVersion:
+          type: string
+        providerType:
+          type: string
+        modelId:
+          type: string
+        turnIndex:
+          type: integer
+        capturedAt:
+          type: string
+          format: date-time
     TaskInstance:
       type: object
       properties:
@@ -2165,6 +2194,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ToolInvocationSnapshot'
+        modelHits:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelHitSnapshot'
         resumeInterventions:
           type: array
           items:

@@ -32,24 +32,24 @@
 2. 为异步观测链路补更细的失败码和恢复态可观测信息（见 §3）
 3. 视流量与体验需求决定是否把全局轮询拆成按 workflow 增量订阅
 
-## 2. 草稿默认模型语义收敛
+## 2. 已完成：草稿默认模型语义收敛
 
-现状：
+当前状态：
 
-- 主链路已移除应用内 demo seed、`demo.local` provider 和 demo 身份默认值
-- assistant 发布后，runtime 实际命中的仍是 release snapshot 中冻结的资源锚点
+- Assistant 草稿默认模型已显式收敛为 `defaultModelResourceId`，主链路不再自动挑选第一个可用 `LLM_MODEL`
+- 发布前会强制校验默认模型是否已配置；未配置时直接阻断发布
+- Runtime 只在“无 `currentRelease` 的草稿助手且未配置默认模型”时阻断运行；已有发布版时继续使用发布快照里的冻结模型绑定
+- `AssistantRelease` 已新增 `defaultModelBinding`，明确保存发布时冻结的模型资源与版本信息
+- `WorkflowResult / WorkflowInstance` 已新增 `modelHits`，agent-runtime 会在真实发起模型调用前记录命中快照
+- 控制台已能分别展示：
+  - 草稿默认模型
+  - 当前发布冻结模型
+  - 最近一次 / 当前 workflow 的实际模型命中
 
-当前缺口：
+说明：
 
-- 草稿默认模型仍是“取第一个可用 LLM 资源”的隐式策略，不够可见
-- 已有数据库中的旧 release snapshot 不会因代码默认值变化而自动回写
-- UI 还不能清楚区分草稿默认模型、当前发布冻结模型和实际 workflow 命中模型
-
-后续目标：
-
-1. 增加显式的草稿默认模型策略，而不是继续依赖隐式回退
-2. 明确无资源时的草稿引导与初始化方式，避免继续引入隐式 demo 路径
-3. 在控制台明确展示草稿模型、发布冻结模型和运行命中模型三层语义
+1. 本轮按项目规则不对旧 `providerResourceId` 数据或旧 release snapshot 做兼容与回填
+2. 旧库若仍保留历史快照，需要通过重建本地/开发数据来获得新语义
 
 ## 3. 已完成：增强 workflow 失败可观测性
 

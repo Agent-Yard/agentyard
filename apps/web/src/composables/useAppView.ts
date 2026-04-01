@@ -55,6 +55,7 @@ export function useAppView(state: AppState, catalogActions: CatalogActions, runt
         scenarios: state.catalog.value!.scenarios,
         resources: state.catalog.value!.resources,
         knowledgeBases: state.catalog.value!.knowledgeBases,
+        workflows: state.workflows.value,
         catalogRevision: state.catalogRevision.value,
         canManageGovernance: state.canManageGovernance.value,
       })),
@@ -62,6 +63,10 @@ export function useAppView(state: AppState, catalogActions: CatalogActions, runt
         createAssistant: catalogActions.handleCreateAssistant,
         updateAssistant: catalogActions.handleUpdateAssistant,
         deleteAssistant: catalogActions.handleDeleteAssistant,
+        openWorkflow: (workflowId: string) => {
+          state.selectedWorkflowId.value = workflowId;
+          state.activeKey.value = 'workflow';
+        },
       },
     },
     agent: {

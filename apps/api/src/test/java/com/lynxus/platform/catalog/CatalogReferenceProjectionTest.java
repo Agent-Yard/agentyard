@@ -45,6 +45,7 @@ class CatalogReferenceProjectionTest {
             "rel-1", "ast-1", "1.0.0", VersionStatus.PUBLISHED,
             Instant.now(), Instant.now(),
             new KnowledgeBindingSnapshotDto("kb-1", "知识库", "kr-1", "1.0.0", "snap-1", 5, "HYBRID", 0.5),
+            new DefaultModelBindingDto("res-llm-1", "LLM Model", "rv-llm-1", "1.0.0", "OPENAI_COMPATIBLE", "gpt-test"),
             List.of(
                 new AssistantReleaseResourceDto("res-llm-1", "LLM Model", ResourceType.LLM_MODEL, "rv-llm-1", "1.0.0", List.of(), null),
                 new AssistantReleaseResourceDto("res-tool-1", "Tool", ResourceType.TOOL, "rv-tool-1", "1.0.0", List.of("agt-1"), null)

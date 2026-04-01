@@ -455,6 +455,22 @@ class NodeSnapshot(BaseModel):
     updatedAt: str
 
 
+class ModelHitSnapshot(BaseModel):
+    agentId: str
+    agentName: str
+    nodeKey: str
+    nodeName: str
+    source: str
+    resourceId: str
+    resourceName: str
+    resourceVersionId: str
+    resourceVersion: str
+    providerType: str
+    modelId: str
+    turnIndex: int
+    capturedAt: str
+
+
 class WorkflowResult(BaseModel):
     workflowInstanceId: str
     status: str
@@ -469,6 +485,7 @@ class WorkflowResult(BaseModel):
     toolCalls: List[ToolInvocationSnapshot]
     escalationRequired: bool
     latestToolOutcome: Optional[ToolOutcomeSummary] = None
+    modelHits: List[ModelHitSnapshot] = Field(default_factory=list)
     loadedSkillResourceVersionIds: List[str] = Field(default_factory=list)
     sharedState: SharedSessionState = Field(default_factory=SharedSessionState)
     agentTurnState: AgentTurnState = Field(default_factory=AgentTurnState)
@@ -490,6 +507,7 @@ class AgentState(TypedDict):
     retrieval_cache: Dict[str, List[Dict[str, Any]]]
     tool_history: List[Dict[str, Any]]
     tool_calls: List[Dict[str, Any]]
+    model_hits: List[Dict[str, Any]]
     node_snapshots: List[Dict[str, Any]]
     resume_task: Optional[Dict[str, Any]]
     checkpoint: Optional[Dict[str, Any]]
@@ -903,22 +921,45 @@ def resolve_resource(assistant: AssistantRunSnapshot, resource_version_id: Optio
     return None
 
 
-def resolve_model_resource(assistant: AssistantRunSnapshot, agent: AgentSnapshot) -> ResourceVersionSnapshot:
-    model_version_id = (
-        agent.executionPolicy.modelResourceVersionId
-        if not agent.executionPolicy.inheritAssistantDefaults
-        else assistant.assistantPolicy.providerResourceVersionId
-    )
-    if not model_version_id and agent.executionPolicy.modelResourceVersionId:
-        model_version_id = agent.executionPolicy.modelResourceVersionId
-    resource = resolve_resource(assistant, model_version_id or assistant.assistantPolicy.providerResourceVersionId)
+def resolve_model_resource(assistant: AssistantRunSnapshot, agent: AgentSnapshot) -> tuple[ResourceVersionSnapshot, str]:
+    override_version_id = agent.executionPolicy.modelResourceVersionId if not agent.executionPolicy.inheritAssistantDefaults else None
+    source = "AGENT_OVERRIDE" if override_version_id else "ASSISTANT_DEFAULT"
+    resource = resolve_resource(assistant, override_version_id or assistant.assistantPolicy.providerResourceVersionId)
     if not resource or not resource.configuration.llmModel:
         raise WorkflowFailureError(
             FAILURE_CATEGORY_CONFIGURATION,
             "MODEL_RESOURCE_MISSING",
             f"No active model resource configured for agent {agent.agentId}",
         )
-    return resource
+    return resource, source
+
+
+def append_model_hit(
+    state: AgentState,
+    node: GraphNodeSnapshot,
+    agent: AgentSnapshot,
+    model_resource: ResourceVersionSnapshot,
+    source: str,
+    turn_index: int,
+) -> None:
+    model_config = model_resource.configuration.llmModel
+    state["model_hits"].append(
+        ModelHitSnapshot(
+            agentId=agent.agentId,
+            agentName=agent.name,
+            nodeKey=node.nodeKey,
+            nodeName=node.nodeName,
+            source=source,
+            resourceId=model_resource.resourceId,
+            resourceName=model_resource.resourceName,
+            resourceVersionId=model_resource.resourceVersionId,
+            resourceVersion=model_resource.resourceVersion,
+            providerType=model_config.providerType if model_config else "UNKNOWN",
+            modelId=model_config.modelId if model_config else "",
+            turnIndex=turn_index,
+            capturedAt=now_iso(),
+        ).model_dump(mode="json")
+    )
 
 
 def resolve_knowledge_binding(assistant: AssistantRunSnapshot, agent: AgentSnapshot) -> Optional[KnowledgeBindingSnapshot]:
@@ -1946,6 +1987,7 @@ def export_state(state: AgentState) -> Dict[str, Any]:
         "retrieval_cache": state["retrieval_cache"],
         "tool_history": state["tool_history"],
         "tool_calls": state["tool_calls"],
+        "model_hits": state["model_hits"],
         "node_snapshots": state["node_snapshots"],
         "resume_task": state["resume_task"],
         "latest_tool_outcome": state["latest_tool_outcome"],
@@ -1975,6 +2017,7 @@ def restore_state(data: Dict[str, Any], resume_request: WorkflowResumeRequest) -
         "retrieval_cache": data.get("retrieval_cache", {}),
         "tool_history": data.get("tool_history", []),
         "tool_calls": data.get("tool_calls", []),
+        "model_hits": data.get("model_hits", []),
         "node_snapshots": data.get("node_snapshots", []),
         "resume_task": None,
         "checkpoint": None,
@@ -2157,7 +2200,7 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
         "turnLogs": turn_logs,
     }
     try:
-        model_resource = resolve_model_resource(assistant, agent)
+        model_resource, model_source = resolve_model_resource(assistant, agent)
     except WorkflowFailureError as exc:
         pause_agent_node_with_workflow_failure(
             state,
@@ -2196,6 +2239,7 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
         )
         state["agent_turn_state"]["phase"] = "CALL_MODEL"
         try:
+            append_model_hit(state, node, agent, model_resource, model_source, turn_index)
             llm_output = await call_llm(model_resource, prompt, system_prompt)
         except WorkflowFailureError as exc:
             pause_agent_node_with_workflow_failure(
@@ -2699,6 +2743,7 @@ def workflow_result_from_state(state: AgentState) -> WorkflowResult:
         toolCalls=[ToolInvocationSnapshot(**tool) for tool in state["tool_calls"]],
         escalationRequired=state["escalation_required"],
         latestToolOutcome=ToolOutcomeSummary(**state["latest_tool_outcome"]) if state["latest_tool_outcome"] else None,
+        modelHits=[ModelHitSnapshot(**hit) for hit in state["model_hits"]],
         loadedSkillResourceVersionIds=loaded_skill_version_ids(state["session_context"]),
         sharedState=SharedSessionState.model_validate(shared_state_from_session_context(state["session_context"])),
         agentTurnState=AgentTurnState.model_validate(state["agent_turn_state"]),
@@ -2732,6 +2777,7 @@ async def start_agent_run(request: WorkflowStartRequest, _: None = Depends(requi
         "retrieval_cache": {},
         "tool_history": [],
         "tool_calls": [],
+        "model_hits": [],
         "node_snapshots": [],
         "resume_task": None,
         "checkpoint": None,

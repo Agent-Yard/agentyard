@@ -56,6 +56,7 @@ public final class CatalogDtos {
         Instant createdAt,
         Instant publishedAt,
         KnowledgeBindingSnapshotDto assistantKnowledge,
+        DefaultModelBindingDto defaultModelBinding,
         List<AssistantReleaseResourceDto> resources,
         List<AssistantReleaseAgentDto> agents,
         AssistantOrchestrationDto orchestration,
@@ -73,6 +74,16 @@ public final class CatalogDtos {
         String resourceVersion,
         List<String> boundAgents,
         ResourceVersionConfigurationDto configuration
+    ) {
+    }
+
+    public record DefaultModelBindingDto(
+        String resourceId,
+        String resourceName,
+        String resourceVersionId,
+        String resourceVersion,
+        String providerType,
+        String modelId
     ) {
     }
 
@@ -375,7 +386,7 @@ public final class CatalogDtos {
     }
 
     public record AssistantModelPolicyDto(
-        String providerResourceId
+        String defaultModelResourceId
     ) {
     }
 

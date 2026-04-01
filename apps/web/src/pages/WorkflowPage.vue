@@ -148,6 +148,18 @@ function formatFailureLocation(workflow: WorkflowInstance) {
     : '';
   return [node, resource].filter(Boolean).join(' | ') || '无';
 }
+
+function modelSourceLabel(source: string) {
+  return source === 'AGENT_OVERRIDE' ? 'Agent Override' : 'Assistant Default';
+}
+
+function formatLatestModelHit(workflow?: WorkflowInstance | null) {
+  const hit = workflow?.modelHits.at(-1);
+  if (!hit) {
+    return '无';
+  }
+  return `${hit.resourceName} @ ${hit.resourceVersion} · ${hit.providerType} / ${hit.modelId} · ${modelSourceLabel(hit.source)}`;
+}
 </script>
 
 <template>
@@ -222,6 +234,9 @@ function formatFailureLocation(workflow: WorkflowInstance) {
             </a-descriptions-item>
             <a-descriptions-item label="工具结果">
               {{ current.latestToolOutcome ? `${current.latestToolOutcome.toolResourceName} / ${current.latestToolOutcome.operation}` : '无' }}
+            </a-descriptions-item>
+            <a-descriptions-item label="最新模型命中">
+              {{ formatLatestModelHit(current) }}
             </a-descriptions-item>
             <a-descriptions-item label="资源锚点">
               {{ current.resourceAnchors.join(' / ') || '无' }}
@@ -308,6 +323,50 @@ function formatFailureLocation(workflow: WorkflowInstance) {
               <a-table-column title="失败原因" key="failureReason">
                 <template #default="{ record }">
                   {{ record.failureReason || '-' }}
+                </template>
+              </a-table-column>
+            </a-table>
+          </a-card>
+
+          <a-card size="small" title="模型命中" style="margin-top: 16px">
+            <a-alert
+              v-if="!current.modelHits.length"
+              type="info"
+              show-icon
+              message="当前还没有记录到模型命中"
+              description="只有 agent 节点真正准备发起模型请求时，才会写入运行时命中记录。"
+            />
+            <a-table
+              v-else
+              :data-source="current.modelHits"
+              :pagination="false"
+              size="small"
+              row-key="capturedAt"
+            >
+              <a-table-column title="轮次" data-index="turnIndex" key="turnIndex" />
+              <a-table-column title="Agent / 节点" key="agentNode">
+                <template #default="{ record }">
+                  {{ record.agentName }} / {{ record.nodeName }}
+                </template>
+              </a-table-column>
+              <a-table-column title="来源" key="source">
+                <template #default="{ record }">
+                  {{ modelSourceLabel(record.source) }}
+                </template>
+              </a-table-column>
+              <a-table-column title="模型" key="model">
+                <template #default="{ record }">
+                  {{ record.providerType }} / {{ record.modelId }}
+                </template>
+              </a-table-column>
+              <a-table-column title="资源版本" key="resource">
+                <template #default="{ record }">
+                  {{ record.resourceName }} @ {{ record.resourceVersion }}
+                </template>
+              </a-table-column>
+              <a-table-column title="记录时间" key="capturedAt">
+                <template #default="{ record }">
+                  {{ formatDateTime(record.capturedAt) }}
                 </template>
               </a-table-column>
             </a-table>

@@ -11,6 +11,7 @@ import com.lynxus.contracts.runtime.WorkflowContracts;
 import com.lynxus.contracts.runtime.WorkflowContracts.AgentTurnLog;
 import com.lynxus.contracts.runtime.WorkflowContracts.AgentTurnState;
 import com.lynxus.contracts.runtime.WorkflowContracts.DecisionType;
+import com.lynxus.contracts.runtime.WorkflowContracts.ResourceType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
 import com.lynxus.contracts.runtime.WorkflowContracts.TaskStatus;
 import com.lynxus.contracts.runtime.WorkflowContracts.VersionStatus;
@@ -219,6 +220,7 @@ class RuntimeServiceTest {
             List.of(),
             List.of(),
             List.of(),
+            List.of(),
             WorkflowContracts.SharedSessionState.empty(),
             AgentTurnState.empty()
         );
@@ -400,12 +402,26 @@ class RuntimeServiceTest {
                 List.of("FAQ")
             )
         );
+        CatalogDtos.ResourceDto defaultModel = catalogService.createResource(
+            new CatalogDtos.CreateResourceRequest(
+                domain.id(),
+                "知识助手默认模型",
+                ResourceType.LLM_MODEL,
+                ShareScope.DOMAIN_SHARED,
+                "DOMAIN",
+                domain.id(),
+                "运行态测试默认模型",
+                "平台模型团队",
+                List.of("LLM"),
+                null
+            )
+        );
         CatalogDtos.AssistantDto assistant = catalogService.createAssistant(
             new CatalogDtos.CreateAssistantRequest(
                 scenario.id(),
                 "知识助手",
                 "依赖知识库回答问题",
-                null,
+                new CatalogDtos.AssistantModelPolicyDto(defaultModel.id()),
                 new CatalogDtos.RagPolicyDto(true, knowledgeBase.id()),
                 null
             )
@@ -418,6 +434,126 @@ class RuntimeServiceTest {
             () -> runtimeService.launchTask(new RuntimeDtos.TaskLaunchRequest(scenario.id(), assistant.id(), "怎么重置密码", "customer-1"))
         );
         assertTrue(error.getMessage().contains("published knowledge release not found"));
+    }
+
+    @Test
+    void shouldFailFastWhenLaunchingUnpublishedDraftWithoutDefaultModel() {
+        CatalogService catalogService = new CatalogService(
+            new InMemoryCatalogRepository(),
+            readySnapshotKnowledgeClient(),
+            noopKnowledgeWorkflowGateway()
+        );
+        CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("运行域", "验证未发布草稿运行前置校验"));
+        CatalogDtos.ScenarioDto scenario = catalogService.createScenario(
+            new CatalogDtos.CreateScenarioRequest(domain.id(), "草稿运行场景", "测试 launchTask 校验")
+        );
+        CatalogDtos.AssistantDto assistant = catalogService.createAssistant(
+            new CatalogDtos.CreateAssistantRequest(scenario.id(), "未发布草稿助手", "未配置默认模型", null, null, null)
+        );
+        StubWorkflowGateway gateway = new StubWorkflowGateway();
+        RuntimeService runtimeService = runtimeService(gateway, catalogService);
+
+        IllegalStateException error = assertThrows(
+            IllegalStateException.class,
+            () -> runtimeService.launchTask(new RuntimeDtos.TaskLaunchRequest(scenario.id(), assistant.id(), "怎么处理", "customer-1"))
+        );
+
+        assertTrue(error.getMessage().contains("assistant default model must be configured before running an unpublished draft"));
+        assertTrue(gateway.startRequests.isEmpty());
+    }
+
+    @Test
+    void shouldFailFastWhenSendingMessageToUnpublishedDraftWithoutDefaultModel() {
+        CatalogService catalogService = new CatalogService(
+            new InMemoryCatalogRepository(),
+            readySnapshotKnowledgeClient(),
+            noopKnowledgeWorkflowGateway()
+        );
+        CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("会话域", "验证 sendMessage 校验"));
+        CatalogDtos.ScenarioDto scenario = catalogService.createScenario(
+            new CatalogDtos.CreateScenarioRequest(domain.id(), "会话场景", "测试 sendMessage 校验")
+        );
+        CatalogDtos.AssistantDto assistant = catalogService.createAssistant(
+            new CatalogDtos.CreateAssistantRequest(scenario.id(), "草稿会话助手", "未配置默认模型", null, null, null)
+        );
+        StubWorkflowGateway gateway = new StubWorkflowGateway();
+        RuntimeService runtimeService = runtimeService(gateway, catalogService);
+        RuntimeDtos.ConversationSessionDto session = runtimeService.createSession(
+            new RuntimeDtos.CreateConversationSessionRequest(scenario.id(), assistant.id(), "customer-1", null)
+        );
+
+        IllegalStateException error = assertThrows(
+            IllegalStateException.class,
+            () -> runtimeService.sendMessage(session.id(), new RuntimeDtos.ConversationMessageRequest("customer-1", "继续处理"))
+        );
+
+        assertTrue(error.getMessage().contains("assistant default model must be configured before running an unpublished draft"));
+        assertTrue(gateway.startRequests.isEmpty());
+    }
+
+    @Test
+    void shouldStillRunPublishedReleaseAfterDraftDefaultModelIsCleared() {
+        StubWorkflowGateway gateway = new StubWorkflowGateway();
+        CatalogDtos.AssistantDto publishedAssistant = catalogService.listAssistants().stream()
+            .filter(item -> item.id().equals(fixture.assistantId()))
+            .findFirst()
+            .orElseThrow();
+        catalogService.updateAssistant(
+            fixture.assistantId(),
+            new CatalogDtos.UpdateAssistantRequest(
+                publishedAssistant.name(),
+                publishedAssistant.description(),
+                VersionStatus.DRAFT,
+                new CatalogDtos.AssistantModelPolicyDto(null),
+                publishedAssistant.ragPolicy(),
+                publishedAssistant.memoryPolicy()
+            )
+        );
+        RuntimeService service = runtimeService(gateway);
+
+        RuntimeDtos.TaskInstanceDto task = service.launchTask(
+            new RuntimeDtos.TaskLaunchRequest(fixture.scenarioId(), fixture.assistantId(), "继续处理已发布助手", "customer-1")
+        );
+
+        assertEquals(TaskStatus.RUNNING, task.status());
+        assertEquals(1, gateway.startRequests.size());
+        WorkflowContracts.AssistantRunSnapshot snapshot = gateway.startRequests.getFirst().assistant();
+        assertEquals("0.1.0", snapshot.assistantReleaseVersion());
+        assertNotNull(snapshot.assistantPolicy().providerResourceVersionId());
+    }
+
+    @Test
+    void shouldPersistModelHitsFromWorkflowResult() {
+        StubWorkflowGateway gateway = new StubWorkflowGateway();
+        RuntimeService service = runtimeService(gateway);
+
+        RuntimeDtos.TaskInstanceDto task = service.launchTask(
+            new RuntimeDtos.TaskLaunchRequest(fixture.scenarioId(), fixture.assistantId(), "怎么重置密码", "customer-1")
+        );
+        List<WorkflowContracts.ModelHitSnapshot> modelHits = List.of(
+            new WorkflowContracts.ModelHitSnapshot(
+                "agent-1",
+                "客服执行智能体",
+                "agent-node",
+                "客服节点",
+                WorkflowContracts.ModelSelectionSource.ASSISTANT_DEFAULT,
+                "resource-model",
+                "客服运行默认模型",
+                "resource-version-model",
+                "0.1.0",
+                "OPENAI_COMPATIBLE",
+                "custom-compatible-model",
+                1,
+                Instant.now()
+            )
+        );
+        gateway.currentResults.put(task.workflowInstanceId(), completedResult(task.workflowInstanceId(), "已完成处理。", "turn-1", modelHits));
+
+        RuntimeDtos.WorkflowInstanceDto workflow = service.getWorkflow(task.workflowInstanceId());
+
+        assertEquals(1, workflow.modelHits().size());
+        assertEquals(WorkflowContracts.ModelSelectionSource.ASSISTANT_DEFAULT, workflow.modelHits().getFirst().source());
+        assertEquals("resource-model", workflow.modelHits().getFirst().resourceId());
     }
 
     private static WorkflowContracts.WorkflowResult waitingHumanResult(String workflowId, String question) {
@@ -467,6 +603,7 @@ class RuntimeServiceTest {
                 Map.of("ticketId", "TICKET-10001", "status", "ACCEPTED")
             ),
             List.of(),
+            List.of(),
             WorkflowContracts.SharedSessionState.empty(),
             AgentTurnState.empty()
         );
@@ -488,12 +625,22 @@ class RuntimeServiceTest {
             false,
             null,
             List.of(),
+            List.of(),
             WorkflowContracts.SharedSessionState.empty(),
             AgentTurnState.empty()
         );
     }
 
     private static WorkflowContracts.WorkflowResult completedResult(String workflowId, String reply, String marker) {
+        return completedResult(workflowId, reply, marker, List.of());
+    }
+
+    private static WorkflowContracts.WorkflowResult completedResult(
+        String workflowId,
+        String reply,
+        String marker,
+        List<WorkflowContracts.ModelHitSnapshot> modelHits
+    ) {
         return new WorkflowContracts.WorkflowResult(
             workflowId,
             WorkflowContracts.WorkflowStatus.COMPLETED,
@@ -508,6 +655,7 @@ class RuntimeServiceTest {
             List.of(),
             false,
             null,
+            modelHits,
             List.of(),
             new WorkflowContracts.SharedSessionState(
                 Map.of("conversation", Map.of("marker", marker)),
@@ -562,12 +710,26 @@ class RuntimeServiceTest {
                 new CatalogDtos.KnowledgeRetrievalProfileDto(5, "HYBRID", 0.1)
             )
         );
+        CatalogDtos.ResourceDto defaultModel = catalogService.createResource(
+            new CatalogDtos.CreateResourceRequest(
+                domain.id(),
+                "客服运行默认模型",
+                ResourceType.LLM_MODEL,
+                ShareScope.DOMAIN_SHARED,
+                "DOMAIN",
+                domain.id(),
+                "运行态默认模型",
+                "平台模型团队",
+                List.of("LLM"),
+                null
+            )
+        );
         CatalogDtos.AssistantDto assistant = catalogService.createAssistant(
             new CatalogDtos.CreateAssistantRequest(
                 scenario.id(),
                 "客服助手",
                 "处理客服问题",
-                null,
+                new CatalogDtos.AssistantModelPolicyDto(defaultModel.id()),
                 new CatalogDtos.RagPolicyDto(true, knowledgeBase.id()),
                 null
             )

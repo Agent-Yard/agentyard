@@ -160,6 +160,7 @@ public class AssistantRunWorkflowImpl implements AssistantRunWorkflow {
             false,
             null,
             List.of(),
+            List.of(),
             SharedSessionState.empty(),
             WorkflowContracts.AgentTurnState.empty()
         );
@@ -182,6 +183,7 @@ public class AssistantRunWorkflowImpl implements AssistantRunWorkflow {
             List.of(),
             false,
             null,
+            List.of(),
             List.of(),
             SharedSessionState.empty(),
             WorkflowContracts.AgentTurnState.empty()

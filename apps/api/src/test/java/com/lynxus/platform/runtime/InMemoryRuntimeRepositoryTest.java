@@ -59,6 +59,7 @@ class InMemoryRuntimeRepositoryTest {
             List.of(new NodeExecutionDto("node-1", "wf-1", "human-review", "人工审核", NodeStatus.WAITING_RESUME, "等待人工", now)),
             List.of(),
             List.of(),
+            List.of(),
             List.of("skill-v1"),
             new SharedSessionState(Map.of("fact", "value"), Map.of(), Map.of()),
             AgentTurnState.empty()

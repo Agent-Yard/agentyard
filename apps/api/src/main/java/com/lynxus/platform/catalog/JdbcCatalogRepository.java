@@ -228,8 +228,8 @@ public class JdbcCatalogRepository implements CatalogRepository {
     private void replaceResourceBindings(CatalogSnapshot snapshot) {
         jdbcTemplate.update("delete from catalog_ref_resource_binding");
         for (AssistantDto assistant : snapshot.assistants()) {
-            if (assistant.modelPolicy() != null && assistant.modelPolicy().providerResourceId() != null) {
-                insertResourceBinding("ASSISTANT", assistant.id(), assistant.modelPolicy().providerResourceId(), "ASSISTANT_DEFAULT_MODEL");
+            if (assistant.modelPolicy() != null && assistant.modelPolicy().defaultModelResourceId() != null) {
+                insertResourceBinding("ASSISTANT", assistant.id(), assistant.modelPolicy().defaultModelResourceId(), "ASSISTANT_DEFAULT_MODEL");
             }
         }
         for (AgentDto agent : snapshot.agents()) {

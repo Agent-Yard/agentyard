@@ -10,6 +10,7 @@ import type {
   ResumeIntervention as ContractsResumeIntervention,
   ResumeContextSnapshot as ContractsResumeContextSnapshot,
   HumanRequest as ContractsHumanRequest,
+  ModelHitSnapshot as ContractsModelHitSnapshot,
   ResumeTaskSnapshot as ContractsResumeTaskSnapshot,
   NodeExecution as ContractsNodeExecution,
   PauseReasonSnapshot as ContractsPauseReasonSnapshot,
@@ -45,6 +46,7 @@ export type NodeExecution = ContractsNodeExecution;
 export type ResumeIntervention = ContractsResumeIntervention;
 export type ToolRequest = ContractsToolRequest;
 export type HumanRequest = ContractsHumanRequest;
+export type ModelHitSnapshot = ContractsModelHitSnapshot;
 export type SessionStatePatchOp = ContractsSessionStatePatchOp;
 export type SessionStatePatch = ContractsSessionStatePatch;
 export type StructuredAgentDecision = ContractsStructuredAgentDecision;

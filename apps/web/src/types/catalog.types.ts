@@ -312,7 +312,7 @@ export interface ResourceBlueprint {
 }
 
 export interface AssistantModelPolicy {
-  providerResourceId: string | null;
+  defaultModelResourceId: string | null;
 }
 
 export interface RagPolicy {
@@ -356,6 +356,15 @@ export interface AssistantReleaseResource {
   configuration: ResourceVersionConfiguration;
 }
 
+export interface DefaultModelBinding {
+  resourceId: string;
+  resourceName: string;
+  resourceVersionId: string;
+  resourceVersion: string;
+  providerType: string | null;
+  modelId: string | null;
+}
+
 export interface AssistantReleaseAgent {
   agentId: string;
   name: string;
@@ -375,6 +384,7 @@ export interface AssistantRelease {
   createdAt: string;
   publishedAt: string | null;
   assistantKnowledge: KnowledgeBindingSnapshot | null;
+  defaultModelBinding: DefaultModelBinding | null;
   resources: AssistantReleaseResource[];
   agents: AssistantReleaseAgent[];
   orchestration: AssistantOrchestration;

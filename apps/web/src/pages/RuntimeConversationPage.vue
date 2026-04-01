@@ -38,12 +38,41 @@ const currentScenario = computed(() =>
 const isCurrentSessionSending = computed(() => props.sendingSessionId === currentSession.value?.id);
 
 const availableAssistants = computed(() => currentScenario.value?.assistants ?? []);
+const createSelectedAssistant = computed(() =>
+  props.scenarios
+    .find((item) => item.id === createForm.scenarioId)
+    ?.assistants.find((item) => item.id === createForm.assistantId) ?? null,
+);
+const currentSessionAssistant = computed(() =>
+  props.assistants.find((item) => item.id === currentSession.value?.assistantId) ?? null,
+);
 const latestWorkflow = computed(() =>
   props.workflows.find((item) => item.id === currentSession.value?.latestWorkflowInstanceId),
 );
 const latestTask = computed(() =>
   props.tasks.find((item) => item.id === currentSession.value?.latestTaskId),
 );
+
+function canRunAssistant(assistant?: Scenario['assistants'][number] | null) {
+  if (!assistant) {
+    return false;
+  }
+  return !!assistant.currentRelease || !!assistant.modelPolicy.defaultModelResourceId;
+}
+
+const createAssistantBlockingMessage = computed(() => {
+  if (!createSelectedAssistant.value || canRunAssistant(createSelectedAssistant.value)) {
+    return null;
+  }
+  return '该助手尚未发布，且草稿默认模型未配置，当前不能创建并启动对话。';
+});
+
+const currentSessionBlockingMessage = computed(() => {
+  if (!currentSessionAssistant.value || canRunAssistant(currentSessionAssistant.value)) {
+    return null;
+  }
+  return '该助手没有已发布版本，且草稿默认模型未配置，当前不能继续发送消息。';
+});
 
 const sourceLabel: Record<PauseSource, string> = {
   GRAPH_NODE: '编排人工节点',
@@ -104,7 +133,7 @@ watch(
 );
 
 function submitCreate() {
-  if (!createForm.scenarioId || !createForm.assistantId || props.creatingSession) {
+  if (!createForm.scenarioId || !createForm.assistantId || props.creatingSession || createAssistantBlockingMessage.value) {
     return;
   }
   emit('createSession', { ...createForm });
@@ -112,7 +141,7 @@ function submitCreate() {
 }
 
 function submitMessage() {
-  if (!currentSession.value || !messageDraft.value.trim() || isCurrentSessionSending.value) {
+  if (!currentSession.value || !messageDraft.value.trim() || isCurrentSessionSending.value || currentSessionBlockingMessage.value) {
     return;
   }
 
@@ -164,10 +193,17 @@ function formatSharedState(value?: { facts: Record<string, unknown>; artifacts: 
           <a-form-item label="开场问题">
             <a-textarea v-model:value="createForm.openingMessage" :rows="4" :disabled="creatingSession" />
           </a-form-item>
+          <a-alert
+            v-if="createAssistantBlockingMessage"
+            type="warning"
+            show-icon
+            :message="createAssistantBlockingMessage"
+            style="margin-bottom: 16px"
+          />
           <a-button
             type="primary"
             :loading="creatingSession"
-            :disabled="!createForm.scenarioId || !createForm.assistantId || !createForm.customerId"
+            :disabled="!createForm.scenarioId || !createForm.assistantId || !createForm.customerId || !!createAssistantBlockingMessage"
             @click="submitCreate"
           >
             {{ creatingSession ? '正在创建会话...' : '创建并开始对话' }}
@@ -246,6 +282,13 @@ function formatSharedState(value?: { facts: Record<string, unknown>; artifacts: 
                 :description="`${latestWorkflow.latestFailure.category} / ${latestWorkflow.latestFailure.code} / ${latestWorkflow.latestFailure.rootCause}`"
                 style="margin-bottom: 16px"
               />
+              <a-alert
+                v-if="currentSessionBlockingMessage"
+                type="warning"
+                show-icon
+                :message="currentSessionBlockingMessage"
+                style="margin-bottom: 16px"
+              />
               <a-spin :spinning="isCurrentSessionSending">
                 <div class="conversation-board" :class="{ 'conversation-board--empty': currentSession.messages.length === 0 }">
                   <template v-if="currentSession.messages.length">
@@ -275,14 +318,14 @@ function formatSharedState(value?: { facts: Record<string, unknown>; artifacts: 
                   <a-textarea
                     v-model:value="messageDraft"
                     :rows="4"
-                    :disabled="isCurrentSessionSending"
+                    :disabled="isCurrentSessionSending || !!currentSessionBlockingMessage"
                     placeholder="继续输入问题，消息会持续交给当前会话选择的助手处理"
                   />
                 </a-form-item>
                 <a-button
                   type="primary"
                   :loading="isCurrentSessionSending"
-                  :disabled="!currentSession || !messageDraft.trim()"
+                  :disabled="!currentSession || !messageDraft.trim() || !!currentSessionBlockingMessage"
                   @click="submitMessage"
                 >
                   {{ isCurrentSessionSending ? '正在发送...' : '发送消息' }}

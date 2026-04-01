@@ -40,6 +40,7 @@ import com.lynxus.contracts.runtime.WorkflowContracts.HttpToolProviderConfig;
 import com.lynxus.contracts.runtime.WorkflowContracts.KnowledgeBindingSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.LlmModelConfig;
 import com.lynxus.contracts.runtime.WorkflowContracts.McpToolProviderConfig;
+import com.lynxus.contracts.runtime.WorkflowContracts.ModelHitSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.NodeStatus;
 import com.lynxus.contracts.runtime.WorkflowContracts.ResourceConfigurationSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.ResourceVersionSnapshot;
@@ -363,6 +364,7 @@ public class RuntimeService {
         String taskId = nextId("task");
         String workflowId = nextId("wf");
         Instant now = Instant.now();
+        ensureAssistantReadyForRuntime(assistant);
         AssistantRunSnapshot assistantSnapshot = buildAssistantSnapshot(assistant);
         log.info(
             "runtime start workflow={} assistant={} graphEdges={}",
@@ -417,6 +419,7 @@ public class RuntimeService {
             List.of(),
             List.of(),
             List.of(),
+            List.of(),
             sharedStateOrEmpty(sharedState),
             AgentTurnState.empty()
         );
@@ -452,6 +455,7 @@ public class RuntimeService {
                 .map(node -> new NodeExecutionDto(nextId("node"), existing.id(), node.nodeKey(), node.nodeName(), node.status(), node.detail(), node.updatedAt()))
                 .toList(),
             result.toolCalls(),
+            result.modelHits(),
             resumeInterventions,
             result.loadedSkillResourceVersionIds(),
             sharedStateOrEmpty(result.sharedState()),
@@ -617,8 +621,8 @@ public class RuntimeService {
         List<AssistantReleaseResourceDto> resources
     ) {
         return new AssistantPolicySnapshot(
-            modelPolicy.providerResourceId(),
-            resolveReleasedVersionId(resources, modelPolicy.providerResourceId()),
+            modelPolicy.defaultModelResourceId(),
+            resolveReleasedVersionId(resources, modelPolicy.defaultModelResourceId()),
             memoryPolicy.enabled(),
             memoryPolicy.windowSize()
         );
@@ -675,7 +679,7 @@ public class RuntimeService {
 
     private List<AssistantReleaseResourceDto> collectAdHocResources(AssistantDto assistant, List<ResourceDto> resourceViews) {
         Map<String, AssistantReleaseResourceDto> resolved = new java.util.LinkedHashMap<>();
-        captureAdHocEffectiveResource(resolved, resourceViews, assistant.modelPolicy().providerResourceId(), "ASSISTANT_DEFAULT_MODEL");
+        captureAdHocEffectiveResource(resolved, resourceViews, assistant.modelPolicy().defaultModelResourceId(), "ASSISTANT_DEFAULT_MODEL");
 
         for (AgentDto agent : assistant.agents()) {
             captureAdHocEffectiveResource(resolved, resourceViews, agent.executionPolicy().modelResourceId(), agent.name());
@@ -694,6 +698,17 @@ public class RuntimeService {
             return null;
         }
         return resolveKnowledgeBinding(assistant.ragPolicy().knowledgeBaseId());
+    }
+
+    private void ensureAssistantReadyForRuntime(AssistantDto assistant) {
+        if (assistant.currentRelease() != null) {
+            return;
+        }
+        if (assistant.modelPolicy() == null
+            || assistant.modelPolicy().defaultModelResourceId() == null
+            || assistant.modelPolicy().defaultModelResourceId().isBlank()) {
+            throw new IllegalStateException("assistant default model must be configured before running an unpublished draft");
+        }
     }
 
     private KnowledgeBindingSnapshotDto resolveAgentKnowledgeBinding(AssistantDto assistant, AgentDto agent) {
@@ -1055,6 +1070,7 @@ public class RuntimeService {
                 node(workflow.id(), "workflow-resuming", "流程恢复", NodeStatus.RUNNING, "已收到恢复动作，流程继续执行中。")
             ),
             workflow.toolCalls(),
+            workflow.modelHits(),
             workflow.resumeInterventions(),
             workflow.loadedSkillResourceVersionIds(),
             workflow.sharedState(),
@@ -1084,6 +1100,7 @@ public class RuntimeService {
             workflow.resourceAnchors(),
             workflow.nodes(),
             workflow.toolCalls(),
+            workflow.modelHits(),
             workflow.resumeInterventions(),
             workflow.loadedSkillResourceVersionIds(),
             workflow.sharedState(),
@@ -1134,6 +1151,7 @@ public class RuntimeService {
             null,
             prepared.workflow().resourceAnchors(),
             List.of(node(prepared.workflow().id(), "workflow-failed", "流程执行失败", NodeStatus.FAILED, failureDetail)),
+            List.of(),
             List.of(),
             List.of(),
             List.of(),
@@ -1269,11 +1287,16 @@ public class RuntimeService {
             && Objects.equals(existing.pauseReason(), result.pauseReason())
             && Objects.equals(existing.latestFailure(), latestFailure)
             && Objects.equals(existing.latestToolOutcome(), result.latestToolOutcome())
+            && Objects.equals(existing.modelHits(), normalizeModelHits(result.modelHits()))
             && Objects.equals(existing.loadedSkillResourceVersionIds(), result.loadedSkillResourceVersionIds())
             && Objects.equals(existing.sharedState(), result.sharedState())
             && Objects.equals(existing.agentTurnState(), result.agentTurnState())
             && existing.toolCalls().equals(result.toolCalls())
             && sameNodes(existing.nodes(), result.nodes());
+    }
+
+    private static List<ModelHitSnapshot> normalizeModelHits(List<ModelHitSnapshot> modelHits) {
+        return modelHits == null ? List.of() : modelHits;
     }
 
     private static boolean isWorkflowActive(WorkflowStatus status) {

@@ -316,14 +316,232 @@ class CatalogServiceTest {
     }
 
     @Test
+    void shouldKeepDraftDefaultModelUnsetWhenAssistantCreatedAndUpdated() {
+        CatalogService catalogService = new CatalogService(new InMemoryCatalogRepository(), readySnapshotKnowledgeClient(), noopKnowledgeWorkflowGateway());
+        CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("草稿域", "验证默认模型不再隐式回填"));
+        CatalogDtos.ScenarioDto scenario = catalogService.createScenario(
+            new CatalogDtos.CreateScenarioRequest(domain.id(), "草稿场景", "测试草稿助手")
+        );
+        catalogService.createResource(
+            new CatalogDtos.CreateResourceRequest(
+                domain.id(),
+                "可用默认模型",
+                ResourceType.LLM_MODEL,
+                ShareScope.DOMAIN_SHARED,
+                "DOMAIN",
+                domain.id(),
+                "存在可用 LLM，也不应自动选中",
+                "平台模型团队",
+                List.of("LLM"),
+                null
+            )
+        );
+
+        CatalogDtos.AssistantDto created = catalogService.createAssistant(
+            new CatalogDtos.CreateAssistantRequest(scenario.id(), "草稿助手", "保持未配置默认模型", null, null, null)
+        );
+        CatalogDtos.AssistantDto updated = catalogService.updateAssistant(
+            created.id(),
+            new CatalogDtos.UpdateAssistantRequest(
+                created.name(),
+                created.description(),
+                VersionStatus.DRAFT,
+                new CatalogDtos.AssistantModelPolicyDto(null),
+                created.ragPolicy(),
+                created.memoryPolicy()
+            )
+        );
+
+        assertEquals(null, created.modelPolicy().defaultModelResourceId());
+        assertEquals(null, updated.modelPolicy().defaultModelResourceId());
+    }
+
+    @Test
+    void shouldRejectPublishingAssistantWithoutDefaultModel() {
+        CatalogService catalogService = new CatalogService(new InMemoryCatalogRepository(), readySnapshotKnowledgeClient(), noopKnowledgeWorkflowGateway());
+        CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("发布域", "验证发布前默认模型校验"));
+        CatalogDtos.ScenarioDto scenario = catalogService.createScenario(
+            new CatalogDtos.CreateScenarioRequest(domain.id(), "发布场景", "测试发布校验")
+        );
+        CatalogDtos.AssistantDto assistant = catalogService.createAssistant(
+            new CatalogDtos.CreateAssistantRequest(scenario.id(), "发布助手", "缺省模型未配置", null, null, null)
+        );
+
+        IllegalStateException error = assertThrows(
+            IllegalStateException.class,
+            () -> catalogService.updateAssistant(
+                assistant.id(),
+                new CatalogDtos.UpdateAssistantRequest(
+                    assistant.name(),
+                    assistant.description(),
+                    VersionStatus.PUBLISHED,
+                    assistant.modelPolicy(),
+                    assistant.ragPolicy(),
+                    assistant.memoryPolicy()
+                )
+            )
+        );
+
+        assertTrue(error.getMessage().contains("assistant default model must be configured before publishing"));
+        CatalogDtos.AssistantDto reloaded = catalogService.listAssistants().stream()
+            .filter(item -> item.id().equals(assistant.id()))
+            .findFirst()
+            .orElseThrow();
+        assertEquals(VersionStatus.DRAFT, reloaded.version().status());
+        assertEquals(null, reloaded.currentRelease());
+    }
+
+    @Test
+    void shouldRejectClearingDefaultModelWhenPublishedAssistantOmitsStatus() {
+        CatalogService catalogService = new CatalogService(new InMemoryCatalogRepository(), readySnapshotKnowledgeClient(), noopKnowledgeWorkflowGateway());
+        CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("已发布域", "验证省略状态时仍要校验发布约束"));
+        CatalogDtos.ScenarioDto scenario = catalogService.createScenario(
+            new CatalogDtos.CreateScenarioRequest(domain.id(), "已发布场景", "测试已发布助手更新")
+        );
+        CatalogDtos.ResourceDto defaultModel = catalogService.createResource(
+            new CatalogDtos.CreateResourceRequest(
+                domain.id(),
+                "已发布默认模型",
+                ResourceType.LLM_MODEL,
+                ShareScope.DOMAIN_SHARED,
+                "DOMAIN",
+                domain.id(),
+                "用于发布助手",
+                "平台模型团队",
+                List.of("LLM"),
+                null
+            )
+        );
+        CatalogDtos.AssistantDto assistant = catalogService.createAssistant(
+            new CatalogDtos.CreateAssistantRequest(
+                scenario.id(),
+                "已发布助手",
+                "先发布再尝试清空默认模型",
+                new CatalogDtos.AssistantModelPolicyDto(defaultModel.id()),
+                null,
+                null
+            )
+        );
+        CatalogDtos.AssistantDto published = catalogService.updateAssistant(
+            assistant.id(),
+            new CatalogDtos.UpdateAssistantRequest(
+                assistant.name(),
+                assistant.description(),
+                VersionStatus.PUBLISHED,
+                assistant.modelPolicy(),
+                assistant.ragPolicy(),
+                assistant.memoryPolicy()
+            )
+        );
+
+        IllegalStateException error = assertThrows(
+            IllegalStateException.class,
+            () -> catalogService.updateAssistant(
+                published.id(),
+                new CatalogDtos.UpdateAssistantRequest(
+                    published.name(),
+                    published.description(),
+                    null,
+                    new CatalogDtos.AssistantModelPolicyDto(null),
+                    published.ragPolicy(),
+                    published.memoryPolicy()
+                )
+            )
+        );
+
+        assertTrue(error.getMessage().contains("assistant default model must be configured before publishing"));
+        CatalogDtos.AssistantDto reloaded = catalogService.listAssistants().stream()
+            .filter(item -> item.id().equals(published.id()))
+            .findFirst()
+            .orElseThrow();
+        assertEquals(VersionStatus.PUBLISHED, reloaded.version().status());
+        assertEquals(defaultModel.id(), reloaded.modelPolicy().defaultModelResourceId());
+    }
+
+    @Test
+    void shouldFreezeDefaultModelBindingWhenPublishingAssistant() {
+        CatalogService catalogService = new CatalogService(new InMemoryCatalogRepository(), readySnapshotKnowledgeClient(), noopKnowledgeWorkflowGateway());
+        CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("模型域", "验证发布冻结模型绑定"));
+        CatalogDtos.ScenarioDto scenario = catalogService.createScenario(
+            new CatalogDtos.CreateScenarioRequest(domain.id(), "模型场景", "测试默认模型冻结")
+        );
+        CatalogDtos.ResourceDto defaultModel = catalogService.createResource(
+            new CatalogDtos.CreateResourceRequest(
+                domain.id(),
+                "冻结默认模型",
+                ResourceType.LLM_MODEL,
+                ShareScope.DOMAIN_SHARED,
+                "DOMAIN",
+                domain.id(),
+                "发布时冻结默认模型资源",
+                "平台模型团队",
+                List.of("LLM"),
+                new CatalogDtos.CreateResourceVersionRequest("正式模型", VersionStatus.PUBLISHED, null)
+            )
+        );
+        CatalogDtos.AssistantDto assistant = catalogService.createAssistant(
+            new CatalogDtos.CreateAssistantRequest(
+                scenario.id(),
+                "模型助手",
+                "发布后应保存冻结模型信息",
+                new CatalogDtos.AssistantModelPolicyDto(defaultModel.id()),
+                null,
+                null
+            )
+        );
+
+        CatalogDtos.AssistantDto published = catalogService.updateAssistant(
+            assistant.id(),
+            new CatalogDtos.UpdateAssistantRequest(
+                assistant.name(),
+                assistant.description(),
+                VersionStatus.PUBLISHED,
+                assistant.modelPolicy(),
+                assistant.ragPolicy(),
+                assistant.memoryPolicy()
+            )
+        );
+
+        CatalogDtos.DefaultModelBindingDto binding = published.currentRelease().defaultModelBinding();
+        assertNotNull(binding);
+        assertEquals(defaultModel.id(), binding.resourceId());
+        assertEquals(defaultModel.name(), binding.resourceName());
+        assertEquals(defaultModel.effectiveVersion().id(), binding.resourceVersionId());
+        assertEquals(defaultModel.effectiveVersion().version(), binding.resourceVersion());
+        assertEquals(defaultModel.effectiveVersion().configuration().llmModel().providerType(), binding.providerType());
+        assertEquals(defaultModel.effectiveVersion().configuration().llmModel().modelId(), binding.modelId());
+    }
+
+    @Test
     void shouldStillFreezeToolVersionsWhenPublishingAssistant() {
         CatalogService catalogService = new CatalogService(new InMemoryCatalogRepository(), readySnapshotKnowledgeClient(), noopKnowledgeWorkflowGateway());
         CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("交付域", "承载交付流程"));
         CatalogDtos.ScenarioDto scenario = catalogService.createScenario(
             new CatalogDtos.CreateScenarioRequest(domain.id(), "交付跟进", "跟进交付流程")
         );
+        CatalogDtos.ResourceDto defaultModel = catalogService.createResource(
+            new CatalogDtos.CreateResourceRequest(
+                domain.id(),
+                "交付默认模型",
+                ResourceType.LLM_MODEL,
+                ShareScope.DOMAIN_SHARED,
+                "DOMAIN",
+                domain.id(),
+                "交付助手默认模型",
+                "交付团队",
+                List.of("LLM"),
+                null
+            )
+        );
         CatalogDtos.AssistantDto assistant = catalogService.createAssistant(
-            new CatalogDtos.CreateAssistantRequest(scenario.id(), "交付助手", "处理交付跟进", null, null, null)
+            new CatalogDtos.CreateAssistantRequest(
+                scenario.id(),
+                "交付助手",
+                "处理交付跟进",
+                new CatalogDtos.AssistantModelPolicyDto(defaultModel.id()),
+                null,
+                null
+            )
         );
         CatalogDtos.ResourceDto tool = catalogService.createResource(
             new CatalogDtos.CreateResourceRequest(
@@ -554,12 +772,26 @@ class CatalogServiceTest {
                 new CatalogDtos.KnowledgeRetrievalProfileDto(6, "HYBRID", 0.2)
             )
         );
+        CatalogDtos.ResourceDto defaultModel = service.createResource(
+            new CatalogDtos.CreateResourceRequest(
+                domain.id(),
+                "客服默认模型",
+                ResourceType.LLM_MODEL,
+                ShareScope.DOMAIN_SHARED,
+                "DOMAIN",
+                domain.id(),
+                "客服助手默认模型",
+                "平台模型团队",
+                List.of("LLM"),
+                null
+            )
+        );
         CatalogDtos.AssistantDto assistant = service.createAssistant(
             new CatalogDtos.CreateAssistantRequest(
                 scenario.id(),
                 "客服助手",
                 "处理客服问题",
-                null,
+                new CatalogDtos.AssistantModelPolicyDto(defaultModel.id()),
                 new CatalogDtos.RagPolicyDto(true, knowledgeBase.id()),
                 null
             )
