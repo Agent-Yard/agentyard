@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
-import type { HumanActionType, HumanTaskSource, WorkflowInstance } from '../types';
+import type { PauseSource, ResumeActionType, WorkflowInstance } from '../types';
 import { failureAlertDescription, failureAlertMessage, failureAlertType, failureSummary, hasActiveFailure } from './workflowFailure';
 
 const props = defineProps<{
@@ -12,10 +12,10 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   selectWorkflow: [workflowId: string];
-  humanAction: [payload: { workflowId: string; action: string; comment: string; userId: string; attributes: Record<string, string> }];
+  resumeAction: [payload: { workflowId: string; type: string; comment: string; userId: string; attributes: Record<string, string> }];
 }>();
 
-const statusFilter = ref<'ALL' | 'WAITING_HUMAN' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED'>('ALL');
+const statusFilter = ref<'ALL' | 'WAITING_RESUME' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED'>('ALL');
 const searchKeyword = ref('');
 const humanForm = reactive({
   userId: props.currentUserId ?? '',
@@ -32,9 +32,11 @@ watch(
   { immediate: true },
 );
 
-const sourceLabel: Record<HumanTaskSource, string> = {
+const sourceLabel: Record<PauseSource, string> = {
   GRAPH_NODE: '编排人工节点',
   AGENT_REQUEST: '智能体主动求助',
+  EXTERNAL_INTERACTION: '外部交互',
+  TIMEOUT_POLICY: '超时策略',
 };
 
 const filteredWorkflows = computed(() => {
@@ -64,13 +66,13 @@ const current = computed(() =>
 
 function actionStatus(status: string) {
   if (status === 'COMPLETED') return 'finish';
-  if (status === 'WAITING_HUMAN') return 'process';
+  if (status === 'WAITING_RESUME') return 'process';
   if (status === 'FAILED' || status === 'CANCELLED') return 'error';
   return 'wait';
 }
 
 function workflowTagColor(status: string) {
-  if (status === 'WAITING_HUMAN') return 'orange';
+  if (status === 'WAITING_RESUME') return 'orange';
   if (status === 'RUNNING') return 'processing';
   if (status === 'COMPLETED') return 'green';
   if (status === 'FAILED' || status === 'CANCELLED') return 'red';
@@ -81,21 +83,21 @@ function formatDateTime(value: string) {
   return new Date(value).toLocaleString();
 }
 
-function submitAction(action: HumanActionType) {
+function submitAction(action: ResumeActionType) {
   if (!current.value) {
     return;
   }
-  emit('humanAction', {
+  emit('resumeAction', {
     workflowId: current.value.id,
-    action,
+    type: action,
     comment: humanForm.comment,
     userId: humanForm.userId,
     attributes: {},
   });
 }
 
-function allowedActions(actions?: HumanActionType[]) {
-  return actions ?? ['CONFIRM', 'TERMINATE'];
+function allowedActions(actions?: ResumeActionType[]) {
+  return actions ?? ['CONTINUE', 'TERMINATE'];
 }
 
 function selectWorkflow(workflowId: string) {
@@ -158,7 +160,7 @@ function formatFailureLocation(workflow: WorkflowInstance) {
             v-model:value="statusFilter"
             :options="[
               { label: '全部状态', value: 'ALL' },
-              { label: '待人工', value: 'WAITING_HUMAN' },
+              { label: '待恢复', value: 'WAITING_RESUME' },
               { label: '运行中', value: 'RUNNING' },
               { label: '已完成', value: 'COMPLETED' },
               { label: '失败', value: 'FAILED' },
@@ -205,10 +207,10 @@ function formatFailureLocation(workflow: WorkflowInstance) {
             <a-descriptions-item label="创建时间">{{ formatDateTime(current.createdAt) }}</a-descriptions-item>
             <a-descriptions-item label="最近更新">{{ formatDateTime(current.updatedAt) }}</a-descriptions-item>
             <a-descriptions-item label="当前节点">{{ current.currentNodeKey ?? '无' }}</a-descriptions-item>
-            <a-descriptions-item label="是否待人工">{{ current.escalationRequired ? '是' : '否' }}</a-descriptions-item>
+            <a-descriptions-item label="是否待恢复">{{ current.escalationRequired ? '是' : '否' }}</a-descriptions-item>
             <a-descriptions-item label="摘要">{{ current.summary }}</a-descriptions-item>
             <a-descriptions-item label="最终回复">{{ current.finalReply ?? '尚未形成最终回复' }}</a-descriptions-item>
-            <a-descriptions-item label="人工记录">{{ current.interventions.length }}</a-descriptions-item>
+            <a-descriptions-item label="恢复记录">{{ current.resumeInterventions.length }}</a-descriptions-item>
             <a-descriptions-item label="Checkpoint">
               {{ current.checkpoint ? `${current.checkpoint.checkpointId} / resume=${current.checkpoint.resumeCount}` : '无' }}
             </a-descriptions-item>
@@ -230,11 +232,11 @@ function formatFailureLocation(workflow: WorkflowInstance) {
           </a-descriptions>
 
           <a-alert
-            v-if="current.humanTask"
+            v-if="current.resumeTask"
             type="warning"
             show-icon
-            :message="current.humanTask.title"
-            :description="`${current.humanTask.instruction} 来源：${sourceLabel[current.humanTask.source]}。处理指引：${current.humanTask.expectedAction}`"
+            :message="current.resumeTask.title"
+                :description="`${current.resumeTask.instruction} 来源：${sourceLabel[current.resumeTask.source]}。处理指引：${current.resumeTask.expectedAction}`"
             style="margin-top: 16px"
           />
 
@@ -347,7 +349,7 @@ function formatFailureLocation(workflow: WorkflowInstance) {
           </a-col>
 
           <a-col :span="12">
-            <a-card title="工具与人工处理">
+            <a-card title="工具与恢复记录">
               <a-list :data-source="current.toolCalls" size="small">
                 <template #renderItem="{ item }">
                   <a-list-item>
@@ -361,34 +363,34 @@ function formatFailureLocation(workflow: WorkflowInstance) {
 
               <a-divider />
 
-              <a-list :data-source="current.interventions" size="small">
+              <a-list :data-source="current.resumeInterventions" size="small">
                 <template #renderItem="{ item }">
                   <a-list-item>
                     <a-list-item-meta
-                      :title="`${item.action} · ${item.userId}`"
+                      :title="`${item.type} / ${item.source} · ${item.userId}`"
                       :description="item.comment"
                     />
                   </a-list-item>
                 </template>
               </a-list>
 
-              <a-form v-if="current.status === 'WAITING_HUMAN'" layout="vertical" style="margin-top: 16px">
-                <a-form-item label="处理用户 ID">
+              <a-form v-if="current.status === 'WAITING_RESUME'" layout="vertical" style="margin-top: 16px">
+                <a-form-item label="恢复用户 ID">
                   <a-input v-model:value="humanForm.userId" disabled />
                 </a-form-item>
-                <a-form-item label="处理备注">
+                <a-form-item label="恢复备注">
                   <a-textarea v-model:value="humanForm.comment" :rows="3" />
                 </a-form-item>
                 <a-space>
                   <a-button
-                    v-if="allowedActions(current.humanTask?.allowedActions).includes('CONFIRM')"
+                    v-if="allowedActions(current.resumeTask?.allowedActions).includes('CONTINUE')"
                     type="primary"
-                    @click="submitAction('CONFIRM')"
+                    @click="submitAction('CONTINUE')"
                   >
                     确认并恢复流程
                   </a-button>
                   <a-button
-                    v-if="allowedActions(current.humanTask?.allowedActions).includes('TERMINATE')"
+                    v-if="allowedActions(current.resumeTask?.allowedActions).includes('TERMINATE')"
                     danger
                     @click="submitAction('TERMINATE')"
                   >

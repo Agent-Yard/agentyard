@@ -1,7 +1,7 @@
 package com.lynxus.platform.runtime;
 
 import com.lynxus.contracts.runtime.AssistantRunWorkflow;
-import com.lynxus.contracts.runtime.WorkflowContracts.HumanAction;
+import com.lynxus.contracts.runtime.WorkflowContracts.ResumeAction;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowResult;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowStartRequest;
 import io.temporal.client.WorkflowClient;
@@ -12,7 +12,7 @@ import org.springframework.stereotype.Component;
 public interface AssistantRunWorkflowGateway {
     void start(WorkflowStartRequest request);
 
-    void submitHumanAction(String workflowId, HumanAction action);
+    void submitResumeAction(String workflowId, ResumeAction action);
 
     WorkflowResult currentResult(String workflowId);
 
@@ -36,9 +36,9 @@ public interface AssistantRunWorkflowGateway {
         }
 
         @Override
-        public void submitHumanAction(String workflowId, HumanAction action) {
+        public void submitResumeAction(String workflowId, ResumeAction action) {
             AssistantRunWorkflow workflow = existingWorkflowStub(workflowId);
-            workflow.submitHumanAction(action);
+            workflow.submitResumeAction(action);
         }
 
         @Override

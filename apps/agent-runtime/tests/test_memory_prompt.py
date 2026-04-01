@@ -20,7 +20,7 @@ from app.main import (
     GraphEdgeSnapshot,
     GraphNodeSnapshot,
     GraphSnapshot,
-    HumanAction,
+    ResumeAction,
     HttpToolProviderConfig,
     HumanNodeConfig,
     KnowledgeBindingSnapshot,
@@ -193,11 +193,11 @@ def make_agent_state(assistant: AssistantRunSnapshot, graph: GraphSnapshot, ques
         "tool_history": [],
         "tool_calls": [],
         "node_snapshots": [],
-        "human_task": None,
+        "resume_task": None,
         "checkpoint": None,
         "escalation_required": False,
         "latest_tool_outcome": None,
-        "human_input": None,
+        "resume_input": None,
         "resume_count": 0,
         "agent_turn_state": {"phase": "IDLE", "turnIndex": 0, "turnLogs": []},
         "pause_reason": None,
@@ -759,7 +759,7 @@ class MemoryPromptTests(unittest.TestCase):
         ):
             asyncio.run(execute_agent_node(state, graph.nodes[1]))
 
-        self.assertIsNotNone(state["human_task"])
+        self.assertIsNotNone(state["resume_task"])
         self.assertIn("MODEL_OUTPUT_INVALID", state["summary"])
         self.assertIsNotNone(state["latest_failure"])
         self.assertEqual("PARSING_FAILURE", state["latest_failure"]["category"])
@@ -1191,8 +1191,8 @@ class MemoryPromptTests(unittest.TestCase):
         with patch("app.main.call_llm", AsyncMock(return_value="not json")):
             asyncio.run(execute_agent_node(state, graph.nodes[1]))
 
-        self.assertIsNotNone(state["human_task"])
-        self.assertEqual(state["human_task"]["source"], AGENT_HUMAN_TASK_SOURCE)
+        self.assertIsNotNone(state["resume_task"])
+        self.assertEqual(state["resume_task"]["source"], AGENT_HUMAN_TASK_SOURCE)
         self.assertEqual(state["next_node_key"], "__end__")
         self.assertIn("MODEL_OUTPUT_INVALID", state["summary"])
         self.assertEqual(state["checkpoint"]["currentNodeKey"], "agent-node")
@@ -1249,7 +1249,7 @@ class MemoryPromptTests(unittest.TestCase):
         ):
             asyncio.run(execute_agent_node(state, graph.nodes[1]))
 
-        self.assertIsNotNone(state["human_task"])
+        self.assertIsNotNone(state["resume_task"])
         self.assertIn("ROUTE_INVALID", state["summary"])
         self.assertIsNotNone(state["latest_failure"])
         self.assertEqual("RUNTIME_FAILURE", state["latest_failure"]["category"])
@@ -1297,8 +1297,8 @@ class MemoryPromptTests(unittest.TestCase):
 
         asyncio.run(execute_agent_node(state, graph.nodes[1]))
 
-        self.assertIsNotNone(state["human_task"])
-        self.assertEqual(state["human_task"]["source"], AGENT_HUMAN_TASK_SOURCE)
+        self.assertIsNotNone(state["resume_task"])
+        self.assertEqual(state["resume_task"]["source"], AGENT_HUMAN_TASK_SOURCE)
         self.assertEqual(state["next_node_key"], "__end__")
         self.assertIsNotNone(state["latest_failure"])
         self.assertEqual("CONFIGURATION_FAILURE", state["latest_failure"]["category"])
@@ -1369,8 +1369,8 @@ class MemoryPromptTests(unittest.TestCase):
         ):
             asyncio.run(execute_agent_node(state, graph.nodes[1]))
 
-        self.assertIsNotNone(state["human_task"])
-        self.assertEqual(state["human_task"]["source"], AGENT_HUMAN_TASK_SOURCE)
+        self.assertIsNotNone(state["resume_task"])
+        self.assertEqual(state["resume_task"]["source"], AGENT_HUMAN_TASK_SOURCE)
         self.assertEqual(state["next_node_key"], "__end__")
         self.assertIsNotNone(state["latest_failure"])
         self.assertEqual("TOOL_FAILURE", state["latest_failure"]["category"])
@@ -1430,15 +1430,15 @@ class MemoryPromptTests(unittest.TestCase):
         with patch("app.main.call_llm", AsyncMock(return_value=llm_output)):
             asyncio.run(execute_agent_node(state, graph.nodes[1]))
 
-        self.assertEqual(state["human_task"]["title"], "人工核查")
-        self.assertEqual(state["human_task"]["source"], AGENT_HUMAN_TASK_SOURCE)
+        self.assertEqual(state["resume_task"]["title"], "人工核查")
+        self.assertEqual(state["resume_task"]["source"], AGENT_HUMAN_TASK_SOURCE)
         self.assertEqual(state["checkpoint"]["currentNodeKey"], "agent-node")
         checkpoint_payload = __import__("json").loads(state["checkpoint"]["statePayload"])
         self.assertEqual(checkpoint_payload["pause_reason"]["code"], "HUMAN_HANDOFF_REQUESTED")
         self.assertIn("请人工确认退款凭证", checkpoint_payload["pause_reason"]["detail"])
         self.assertIsNone(checkpoint_payload["latest_failure"])
 
-    def test_agent_handoff_resume_reenters_agent_with_human_input(self) -> None:
+    def test_agent_handoff_resume_reenters_agent_with_resume_input(self) -> None:
         model_resource = make_model_resource()
         agent = make_agent(memory_window_size=4)
         graph = GraphSnapshot(
@@ -1520,7 +1520,7 @@ class MemoryPromptTests(unittest.TestCase):
                 taskId="task-1",
                 workflowInstanceId="wf-resume-agent",
                 scenarioId="scenario-1",
-                action=HumanAction(action="CONFIRM", comment="订单已签收，可退款", userId="user-2"),
+                action=ResumeAction(type="CONTINUE", source="HUMAN", comment="订单已签收，可退款", userId="user-2"),
                 sessionContext=session_context,
                 assistant=assistant,
                 checkpoint=ExecutionCheckpoint(**initial_state["checkpoint"]),
@@ -1531,15 +1531,15 @@ class MemoryPromptTests(unittest.TestCase):
             )
             asyncio.run(execute_agent_node(resumed_state, graph.nodes[1]))
 
-        self.assertEqual(initial_state["human_task"]["source"], AGENT_HUMAN_TASK_SOURCE)
-        self.assertEqual(initial_state["human_task"]["allowedActions"], ["CONFIRM", "TERMINATE"])
+        self.assertEqual(initial_state["resume_task"]["source"], AGENT_HUMAN_TASK_SOURCE)
+        self.assertEqual(initial_state["resume_task"]["allowedActions"], ["CONTINUE", "TERMINATE"])
         self.assertEqual(initial_state["checkpoint"]["currentNodeKey"], "agent-node")
         self.assertIsNone(initial_state["latest_failure"])
-        self.assertIsNone(resumed_state["human_task"])
+        self.assertIsNone(resumed_state["resume_task"])
         self.assertFalse(resumed_state["escalation_required"])
         self.assertIn("已根据人工说明完成处理。", resumed_state["final_reply"])
         second_prompt = mock_llm.await_args_list[1].args[1]
-        self.assertIn("人工输入：", second_prompt)
+        self.assertIn("恢复输入：", second_prompt)
         self.assertIn("订单已签收，可退款", second_prompt)
 
     def test_graph_human_node_checkpoint_and_resume_state_still_work(self) -> None:
@@ -1587,7 +1587,7 @@ class MemoryPromptTests(unittest.TestCase):
 
         execute_human_node(state, graph.nodes[1])
 
-        self.assertEqual(state["human_task"]["source"], "GRAPH_NODE")
+        self.assertEqual(state["resume_task"]["source"], "GRAPH_NODE")
         self.assertEqual(state["checkpoint"]["currentNodeKey"], "end")
         self.assertIsNone(state["latest_failure"])
 
@@ -1602,7 +1602,7 @@ class MemoryPromptTests(unittest.TestCase):
             taskId="task-1",
             workflowInstanceId="wf-human",
             scenarioId="scenario-1",
-            action=HumanAction(action="CONFIRM", comment="审核通过", userId="user-2"),
+            action=ResumeAction(type="CONTINUE", source="HUMAN", comment="审核通过", userId="user-2"),
             sessionContext=session_context,
             assistant=assistant,
             checkpoint=ExecutionCheckpoint(**state["checkpoint"]),
@@ -1613,7 +1613,7 @@ class MemoryPromptTests(unittest.TestCase):
         )
 
         self.assertEqual(restored["current_node_key"], "end")
-        self.assertEqual(restored["human_input"]["comment"], "审核通过")
+        self.assertEqual(restored["resume_input"]["comment"], "审核通过")
         self.assertEqual(restored["pause_reason"]["code"], "GRAPH_HUMAN_NODE")
         self.assertIsNone(restored["latest_failure"])
 
@@ -1643,7 +1643,7 @@ class MemoryPromptTests(unittest.TestCase):
             "tool_history": [],
             "tool_calls": [],
             "node_snapshots": [],
-            "human_task": None,
+            "resume_task": None,
             "latest_tool_outcome": None,
             "escalation_required": False,
             "resume_count": 0,
@@ -1663,7 +1663,7 @@ class MemoryPromptTests(unittest.TestCase):
             taskId="task-1",
             workflowInstanceId="wf-restore",
             scenarioId="scenario-1",
-            action=HumanAction(action="CONFIRM", comment="继续", userId="user-2"),
+            action=ResumeAction(type="CONTINUE", source="HUMAN", comment="继续", userId="user-2"),
             sessionContext=session_context,
             assistant=assistant.model_copy(update={"graph": graph}),
             checkpoint=ExecutionCheckpoint(
@@ -1757,7 +1757,7 @@ class MemoryPromptTests(unittest.TestCase):
                 taskId="task-1",
                 workflowInstanceId="wf-cancel",
                 scenarioId="scenario-1",
-                action=HumanAction(action="TERMINATE", comment="无需继续，直接关闭", userId="user-2"),
+                action=ResumeAction(type="TERMINATE", source="HUMAN", comment="无需继续，直接关闭", userId="user-2"),
                 sessionContext=session_context,
                 assistant=assistant,
                 checkpoint=ExecutionCheckpoint(**initial_state["checkpoint"]),
@@ -1767,7 +1767,7 @@ class MemoryPromptTests(unittest.TestCase):
             result = asyncio.run(resume_agent_run(resume_request))
 
         self.assertEqual(result.status, "CANCELLED")
-        self.assertIsNone(result.humanTask)
+        self.assertIsNone(result.resumeTask)
         self.assertIsNone(result.pauseReason)
         self.assertEqual(result.finalReply, "当前流程已由人工终止。")
 

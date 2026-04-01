@@ -62,8 +62,8 @@ public class RuntimeController {
         return ApiResponse.ok(runtimeService.getWorkflow(workflowId));
     }
 
-    @PatchMapping("/workflows/{workflowId}/human-action")
-    public ApiResponse<?> humanAction(@PathVariable String workflowId, @RequestBody HumanActionRequest request) {
-        return ApiResponse.ok(runtimeService.handleHumanAction(workflowId, request));
+    @PatchMapping("/workflows/{workflowId}/resume")
+    public ApiResponse<?> resume(@PathVariable String workflowId, @RequestBody ResumeActionRequest request) {
+        return ApiResponse.ok(runtimeService.handleResumeAction(workflowId, request));
     }
 }

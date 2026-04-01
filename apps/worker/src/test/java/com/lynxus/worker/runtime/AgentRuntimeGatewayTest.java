@@ -55,18 +55,18 @@ class AgentRuntimeGatewayTest {
         String payload = """
             {
               "workflowInstanceId": "wf-1",
-              "status": "WAITING_HUMAN",
+              "status": "WAITING_RESUME",
               "summary": "等待人工处理",
               "finalReply": "已进入人工协同流程。",
               "currentNodeKey": "human-review",
               "checkpoint": null,
-              "humanTask": {
+              "resumeTask": {
                 "nodeKey": "human-review",
                 "title": "人工介入待办",
                 "instruction": "请人工确认并补充处理意见。",
-                "expectedAction": "CONFIRM",
+                "expectedAction": "CONTINUE",
                 "source": "AGENT_REQUEST",
-                "allowedActions": ["CONFIRM", "TERMINATE"]
+                "allowedActions": ["CONTINUE", "TERMINATE"]
               },
               "pauseReason": {
                 "code": "HUMAN_HANDOFF_REQUESTED",
@@ -89,7 +89,7 @@ class AgentRuntimeGatewayTest {
         WorkflowContracts.WorkflowResult result = AgentRuntimeGateway.HttpAgentRuntimeGateway.createObjectMapper()
             .readValue(payload, WorkflowContracts.WorkflowResult.class);
 
-        assertEquals("AGENT_REQUEST", result.humanTask().source());
+        assertEquals(WorkflowContracts.PauseSource.AGENT_REQUEST, result.resumeTask().source());
     }
 
     @Test
@@ -116,7 +116,7 @@ class AgentRuntimeGatewayTest {
                       "finalReply": "完成",
                       "currentNodeKey": "end",
                       "checkpoint": null,
-                      "humanTask": null,
+                      "resumeTask": null,
                       "pauseReason": null,
                       "latestFailure": null,
                       "nodes": [],

@@ -67,21 +67,27 @@ class AssistantRunActivitiesImplTest {
     void shouldCreateHumanCheckpointForComplaint() {
         var result = activities.startExecution(sampleRequest("这是投诉，需要人工处理"));
 
-        assertEquals(WorkflowContracts.WorkflowStatus.WAITING_HUMAN, result.status());
+        assertEquals(WorkflowContracts.WorkflowStatus.WAITING_RESUME, result.status());
         assertTrue(result.checkpoint() != null);
-        assertEquals("人工介入待办", result.humanTask().title());
+        assertEquals("人工介入待办", result.resumeTask().title());
     }
 
     @Test
-    void shouldResumeExecutionAfterHumanAction() {
+    void shouldResumeExecutionAfterResumeAction() {
         var result = activities.resumeExecution(new WorkflowContracts.WorkflowResumeRequest(
             "task-2",
             "wf-2",
             "scenario-customer-ops",
-            new WorkflowContracts.HumanAction("CONFIRM", "人工已处理", "user-1", java.util.Map.of()),
+            new WorkflowContracts.ResumeAction(
+                WorkflowContracts.ResumeActionType.CONTINUE,
+                WorkflowContracts.ResumeSource.HUMAN,
+                "人工已处理",
+                "user-1",
+                java.util.Map.of()
+            ),
             sampleSessionContext("客户投诉"),
             sampleAssistantSnapshot(),
-            new WorkflowContracts.ExecutionCheckpoint("cp-1", "handoff-close", "human-review", "{}", 0),
+            new WorkflowContracts.ExecutionCheckpoint("cp-1", "handoff-close", "human-review", "{}", null, 0),
             sampleLogContext("session-1", "wf-2")
         ));
 
@@ -115,17 +121,24 @@ class AssistantRunActivitiesImplTest {
     private static WorkflowContracts.WorkflowResult waitingHumanResult(String workflowId, String question) {
         return new WorkflowContracts.WorkflowResult(
             workflowId,
-            WorkflowContracts.WorkflowStatus.WAITING_HUMAN,
+            WorkflowContracts.WorkflowStatus.WAITING_RESUME,
             "等待人工处理",
             "已进入人工协同流程。",
             "human-review",
-            new WorkflowContracts.ExecutionCheckpoint("cp-1", "handoff-close", "human-review", "{\"question\":\"" + question + "\"}", 0),
-            new WorkflowContracts.HumanTaskSnapshot("human-review", "人工介入待办", "请人工确认并补充处理意见。", "补充处理意见并确认后续动作", "GRAPH_NODE", List.of("CONFIRM", "TERMINATE")),
-            new WorkflowContracts.PauseReasonSnapshot("GRAPH_HUMAN_NODE", "请人工确认并补充处理意见。", "GRAPH_NODE"),
+            new WorkflowContracts.ExecutionCheckpoint("cp-1", "handoff-close", "human-review", "{\"question\":\"" + question + "\"}", null, 0),
+            new WorkflowContracts.ResumeTaskSnapshot(
+                "human-review",
+                "人工介入待办",
+                "请人工确认并补充处理意见。",
+                "补充处理意见并确认后续动作",
+                WorkflowContracts.PauseSource.GRAPH_NODE,
+                List.of(WorkflowContracts.ResumeActionType.CONTINUE, WorkflowContracts.ResumeActionType.TERMINATE)
+            ),
+            new WorkflowContracts.PauseReasonSnapshot("GRAPH_HUMAN_NODE", "请人工确认并补充处理意见。", WorkflowContracts.PauseSource.GRAPH_NODE),
             null,
             List.of(
                 new WorkflowContracts.NodeSnapshot("start", "开始", WorkflowContracts.NodeStatus.COMPLETED, question, Instant.now()),
-                new WorkflowContracts.NodeSnapshot("human-review", "人工介入", WorkflowContracts.NodeStatus.WAITING_HUMAN, "等待人工处理", Instant.now())
+                new WorkflowContracts.NodeSnapshot("human-review", "人工介入", WorkflowContracts.NodeStatus.WAITING_RESUME, "等待人工处理", Instant.now())
             ),
             List.of(),
             true,

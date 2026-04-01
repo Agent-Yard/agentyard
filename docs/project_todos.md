@@ -107,14 +107,15 @@
 
 ### 2.3 Workflow 恢复模型泛化
 
-现状：`HumanAction` 是唯一的恢复信号，external interaction 需要伪装成人工操作。
+现状：已完成全链路恢复模型泛化。共享契约、API、Worker、Agent Runtime、Web 统一采用 `ResumeAction` / `WAITING_RESUME` 语义，并在 checkpoint 中显式记录 `resumeContext`。
 
-目标：
+完成内容：
 
-1. 将 `HumanAction` 泛化为 `ResumeAction`，包含 `source`（`HUMAN / EXTERNAL_SYSTEM / TIMEOUT_POLICY`）
-2. `PauseReason` 扩展 `EXTERNAL_INTERACTION_REQUIRED`
-3. Workflow checkpoint 记录 `resumeContext`（包含 interactionTaskId 等）
-4. 保持向后兼容：纯人工恢复仍可用原有接口，内部映射为 `ResumeAction(source=HUMAN)`
+1. [x] `ResumeAction` 统一包含 `type + source`，支持 `HUMAN / EXTERNAL_SYSTEM / TIMEOUT_POLICY`
+2. [x] `PauseReason` / `ResumeTask` 的 `source` 统一改为通用挂起来源枚举，并预留 `EXTERNAL_INTERACTION_REQUIRED`
+3. [x] Workflow checkpoint 显式记录 `resumeContext`（包含 interactionTaskId / interactionType / timeoutPolicyKey 等）
+4. [x] API 恢复入口统一为 `/workflows/{workflowId}/resume`，移除旧 `human-action` 语义
+5. [x] 运行态主状态统一改为 `WAITING_RESUME`，前后端观测与恢复表单同步更新
 
 为什么提前做：这是 external interaction（§2.5）的前置依赖，也让 workflow 模型更准确。
 

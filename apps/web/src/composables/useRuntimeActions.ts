@@ -62,7 +62,7 @@ export function useRuntimeActions(
       const recoveredWorkflow = helpers.findWorkflowById(recoveredSession?.latestWorkflowInstanceId ?? null);
       if (recoveredWorkflow) {
         state.selectedWorkflowId.value = recoveredWorkflow.id;
-        state.activeKey.value = recoveredWorkflow.status === 'WAITING_HUMAN' ? 'workflow' : 'runtime';
+        state.activeKey.value = recoveredWorkflow.status === 'WAITING_RESUME' ? 'workflow' : 'runtime';
       }
     } catch (error) {
       await refresh();
@@ -80,16 +80,16 @@ export function useRuntimeActions(
     state.selectedWorkflowId.value = workflowId;
   }
 
-  async function handleHumanAction(payload: {
+  async function handleResumeAction(payload: {
     workflowId: string;
-    action: string;
+    type: string;
     comment: string;
     userId: string;
     attributes: Record<string, string>;
   }) {
     try {
-      await api.completeHumanAction(payload.workflowId, {
-        action: payload.action,
+      await api.completeResumeAction(payload.workflowId, {
+        type: payload.type,
         comment: payload.comment,
         userId: payload.userId,
         attributes: payload.attributes,
@@ -97,7 +97,7 @@ export function useRuntimeActions(
       await refresh();
       state.activeKey.value = 'workflow';
     } catch (error) {
-      void message.error(errorMessage(error, '提交流程人工处理失败'));
+      void message.error(errorMessage(error, '提交流程恢复动作失败'));
     }
   }
 
@@ -106,6 +106,6 @@ export function useRuntimeActions(
     handleSendMessage,
     handleSelectRuntimeSession,
     handleSelectWorkflow,
-    handleHumanAction,
+    handleResumeAction,
   };
 }

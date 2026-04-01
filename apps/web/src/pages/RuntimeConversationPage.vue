@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
-import type { ConversationSession, HumanTaskSource, Scenario, TaskInstance, WorkflowInstance } from '../types';
+import type { ConversationSession, PauseSource, Scenario, TaskInstance, WorkflowInstance } from '../types';
 
 const props = defineProps<{
   scenarios: Scenario[];
@@ -45,9 +45,11 @@ const latestTask = computed(() =>
   props.tasks.find((item) => item.id === currentSession.value?.latestTaskId),
 );
 
-const sourceLabel: Record<HumanTaskSource, string> = {
+const sourceLabel: Record<PauseSource, string> = {
   GRAPH_NODE: '编排人工节点',
   AGENT_REQUEST: '智能体主动求助',
+  EXTERNAL_INTERACTION: '外部交互',
+  TIMEOUT_POLICY: '超时策略',
 };
 
 watch(
@@ -213,11 +215,11 @@ function formatSharedState(value?: { facts: Record<string, unknown>; artifacts: 
                 style="margin-bottom: 16px"
               />
               <a-alert
-                v-if="currentSession.latestHumanTask"
+                v-if="currentSession.latestResumeTask"
                 type="warning"
                 show-icon
-                :message="currentSession.latestHumanTask.title"
-                :description="`${currentSession.latestHumanTask.instruction} 来源：${sourceLabel[currentSession.latestHumanTask.source]}。处理指引：${currentSession.latestHumanTask.expectedAction}${currentSession.latestPauseReason ? `。挂起原因：${currentSession.latestPauseReason.code}` : ''}。如果之前操作页已超时，也可以直接去流程观测页继续恢复这个 workflow。`"
+                :message="currentSession.latestResumeTask.title"
+                :description="`${currentSession.latestResumeTask.instruction} 来源：${sourceLabel[currentSession.latestResumeTask.source]}。处理指引：${currentSession.latestResumeTask.expectedAction}${currentSession.latestPauseReason ? `。挂起原因：${currentSession.latestPauseReason.code}` : ''}。如果之前操作页已超时，也可以直接去流程观测页继续恢复这个 workflow。`"
                 style="margin-bottom: 16px"
               />
               <a-alert
@@ -237,10 +239,10 @@ function formatSharedState(value?: { facts: Record<string, unknown>; artifacts: 
                 style="margin-bottom: 16px"
               />
               <a-alert
-                v-else-if="latestWorkflow?.status === 'WAITING_HUMAN' && latestWorkflow.latestFailure"
+                v-else-if="latestWorkflow?.status === 'WAITING_RESUME' && latestWorkflow.latestFailure"
                 type="warning"
                 show-icon
-                message="workflow 后台出错，已转人工处理"
+                message="workflow 后台出错，已进入待恢复状态"
                 :description="`${latestWorkflow.latestFailure.category} / ${latestWorkflow.latestFailure.code} / ${latestWorkflow.latestFailure.rootCause}`"
                 style="margin-bottom: 16px"
               />
@@ -340,8 +342,8 @@ function formatSharedState(value?: { facts: Record<string, unknown>; artifacts: 
                     : '当前无工具调用记录' }}
                 </a-descriptions-item>
                 <a-descriptions-item label="人工待办">
-                  {{ currentSession?.latestHumanTask
-                    ? `${currentSession.latestHumanTask.title} / ${sourceLabel[currentSession.latestHumanTask.source]} / ${currentSession.latestHumanTask.expectedAction}`
+                  {{ currentSession?.latestResumeTask
+                    ? `${currentSession.latestResumeTask.title} / ${sourceLabel[currentSession.latestResumeTask.source]} / ${currentSession.latestResumeTask.expectedAction}`
                     : '当前无人工待办' }}
                 </a-descriptions-item>
                 <a-descriptions-item label="挂起原因">

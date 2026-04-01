@@ -33,9 +33,9 @@ import com.lynxus.contracts.runtime.WorkflowContracts.ExecutionCheckpoint;
 import com.lynxus.contracts.runtime.WorkflowContracts.GraphEdgeSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.GraphNodeSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.GraphSnapshot;
-import com.lynxus.contracts.runtime.WorkflowContracts.HumanAction;
+import com.lynxus.contracts.runtime.WorkflowContracts.ResumeAction;
 import com.lynxus.contracts.runtime.WorkflowContracts.HumanNodeConfig;
-import com.lynxus.contracts.runtime.WorkflowContracts.HumanTaskSnapshot;
+import com.lynxus.contracts.runtime.WorkflowContracts.ResumeTaskSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.HttpToolProviderConfig;
 import com.lynxus.contracts.runtime.WorkflowContracts.KnowledgeBindingSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.LlmModelConfig;
@@ -43,6 +43,8 @@ import com.lynxus.contracts.runtime.WorkflowContracts.McpToolProviderConfig;
 import com.lynxus.contracts.runtime.WorkflowContracts.NodeStatus;
 import com.lynxus.contracts.runtime.WorkflowContracts.ResourceConfigurationSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.ResourceVersionSnapshot;
+import com.lynxus.contracts.runtime.WorkflowContracts.ResumeActionType;
+import com.lynxus.contracts.runtime.WorkflowContracts.ResumeSource;
 import com.lynxus.contracts.runtime.WorkflowContracts.SessionContext;
 import com.lynxus.contracts.runtime.WorkflowContracts.SessionMessageSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.SharedSessionState;
@@ -196,7 +198,7 @@ public class RuntimeService {
                 prepared.task().id(),
                 prepared.workflow().id(),
                 prepared.workflow().latestToolOutcome(),
-                prepared.workflow().humanTask(),
+                prepared.workflow().resumeTask(),
                 prepared.workflow().pauseReason(),
                 existing.loadedSkillResourceVersionIds(),
                 existing.sharedState()
@@ -249,7 +251,7 @@ public class RuntimeService {
         return runtimeRepository.findWorkflow(workflowId).orElseThrow();
     }
 
-    public WorkflowInstanceDto handleHumanAction(String workflowId, HumanActionRequest request) {
+    public WorkflowInstanceDto handleResumeAction(String workflowId, ResumeActionRequest request) {
         ConversationSessionDto sessionForContext = findSessionByWorkflowId(workflowId).orElse(null);
         try (PlatformLogContext.Scope ignored = PlatformLogContext.openBusiness(
             sessionForContext == null ? null : sessionForContext.id(),
@@ -257,27 +259,34 @@ public class RuntimeService {
             sessionForContext == null ? null : sessionForContext.customerId()
         )) {
             WorkflowInstanceDto existing = getWorkflow(workflowId);
-            if (runtimeRepository.findPendingIntervention(workflowId).isPresent()) {
-                throw new IllegalStateException("workflow has a pending human intervention awaiting reconciliation: " + workflowId);
+            if (runtimeRepository.findPendingResumeIntervention(workflowId).isPresent()) {
+                throw new IllegalStateException("workflow has a pending resume intervention awaiting reconciliation: " + workflowId);
             }
-            HumanInterventionDto intervention = new HumanInterventionDto(
-                nextId("human"),
+            ResumeActionType actionType = parseResumeActionType(request.type());
+            ResumeSource resumeSource = resolveResumeSource(existing);
+            if (actionType == ResumeActionType.TERMINATE && resumeSource != ResumeSource.HUMAN) {
+                throw new IllegalArgumentException("TERMINATE is only supported for HUMAN resume actions");
+            }
+            ResumeInterventionDto intervention = new ResumeInterventionDto(
+                nextId("resume"),
                 workflowId,
-                request.action(),
+                actionType.name(),
+                resumeSource.name(),
                 request.userId() == null || request.userId().isBlank() ? "system-user" : request.userId(),
                 request.comment(),
                 request.attributes() == null ? Map.of() : Map.copyOf(request.attributes()),
-                HumanInterventionStatus.PENDING,
+                ResumeInterventionStatus.PENDING,
                 Instant.now(),
                 null,
                 null
             );
-            runtimeRepository.saveHumanIntervention(intervention);
+            runtimeRepository.saveResumeIntervention(intervention);
             try {
-                workflowGateway.submitHumanAction(
+                workflowGateway.submitResumeAction(
                     workflowId,
-                    new HumanAction(
-                        request.action(),
+                    new ResumeAction(
+                        actionType,
+                        resumeSource,
                         request.comment(),
                         intervention.userId(),
                         intervention.attributes()
@@ -287,11 +296,11 @@ public class RuntimeService {
                 TaskInstanceDto task = runtimeRepository.findTaskByWorkflowInstanceId(workflowId).orElseThrow();
                 TaskInstanceDto updatedTask = withTaskStatus(task, TaskStatus.RUNNING);
                 ConversationSessionDto session = findSessionByWorkflowId(workflowId).orElse(null);
-                ConversationSessionDto updatedSession = session == null ? null : refreshSessionAfterHumanAction(session, updated);
+                ConversationSessionDto updatedSession = session == null ? null : refreshSessionAfterResumeAction(session, updated);
                 runtimeRepository.persistProjection(updatedTask, updated, updatedSession, intervention);
                 return updated;
             } catch (RuntimeException error) {
-                HumanInterventionDto failedIntervention = markInterventionFailed(intervention, describeFailure(error));
+                ResumeInterventionDto failedIntervention = markInterventionFailed(intervention, describeFailure(error));
                 WorkflowInstanceDto failedWorkflow = withLatestFailure(
                     existing,
                     new WorkflowFailureSnapshot(
@@ -306,7 +315,7 @@ public class RuntimeService {
                         Instant.now()
                     )
                 );
-                runtimeRepository.saveHumanIntervention(failedIntervention);
+                runtimeRepository.saveResumeIntervention(failedIntervention);
                 TaskInstanceDto task = runtimeRepository.findTaskByWorkflowInstanceId(workflowId).orElseThrow();
                 ConversationSessionDto session = findSessionByWorkflowId(workflowId).orElse(null);
                 runtimeRepository.persistProjection(task, failedWorkflow, session, failedIntervention);
@@ -417,7 +426,7 @@ public class RuntimeService {
     private WorkflowInstanceDto mergeWorkflowResult(
         WorkflowInstanceDto existing,
         WorkflowResult result,
-        List<HumanInterventionDto> interventions
+        List<ResumeInterventionDto> resumeInterventions
     ) {
         WorkflowFailureSnapshot latestFailure = result.latestFailure() == null ? existing.latestFailure() : result.latestFailure();
         return new WorkflowInstanceDto(
@@ -434,7 +443,7 @@ public class RuntimeService {
             result.currentNodeKey(),
             result.escalationRequired(),
             result.checkpoint(),
-            result.humanTask(),
+            result.resumeTask(),
             result.pauseReason(),
             latestFailure,
             result.latestToolOutcome(),
@@ -443,7 +452,7 @@ public class RuntimeService {
                 .map(node -> new NodeExecutionDto(nextId("node"), existing.id(), node.nodeKey(), node.nodeName(), node.status(), node.detail(), node.updatedAt()))
                 .toList(),
             result.toolCalls(),
-            interventions,
+            resumeInterventions,
             result.loadedSkillResourceVersionIds(),
             sharedStateOrEmpty(result.sharedState()),
             result.agentTurnState() == null ? AgentTurnState.empty() : result.agentTurnState()
@@ -451,17 +460,17 @@ public class RuntimeService {
     }
 
     private void refreshRunningWorkflows() {
-        reconcilePendingHumanInterventions();
+        reconcilePendingResumeInterventions();
         List<WorkflowInstanceDto> runningWorkflows = runtimeRepository.listActiveWorkflows();
         for (WorkflowInstanceDto workflow : runningWorkflows) {
-            if (runtimeRepository.findPendingIntervention(workflow.id()).isPresent()) {
+            if (runtimeRepository.findPendingResumeIntervention(workflow.id()).isPresent()) {
                 continue;
             }
             WorkflowResult latest = workflowGateway.currentResult(workflow.id());
             if (latest == null || matchesWorkflowResult(workflow, latest)) {
                 continue;
             }
-            WorkflowInstanceDto updated = mergeWorkflowResult(workflow, latest, workflow.interventions());
+            WorkflowInstanceDto updated = mergeWorkflowResult(workflow, latest, workflow.resumeInterventions());
             TaskInstanceDto task = runtimeRepository.findTaskByWorkflowInstanceId(workflow.id()).orElseThrow();
             TaskInstanceDto updatedTask = withTaskStatus(task, toTaskStatus(updated.status()));
             ConversationSessionDto session = findSessionByWorkflowId(workflow.id()).orElse(null);
@@ -470,8 +479,8 @@ public class RuntimeService {
         }
     }
 
-    private void reconcilePendingHumanInterventions() {
-        for (HumanInterventionDto intervention : runtimeRepository.listPendingInterventions()) {
+    private void reconcilePendingResumeInterventions() {
+        for (ResumeInterventionDto intervention : runtimeRepository.listPendingResumeInterventions()) {
             WorkflowInstanceDto workflow = runtimeRepository.findWorkflow(intervention.workflowInstanceId()).orElse(null);
             if (workflow == null) {
                 continue;
@@ -480,8 +489,8 @@ public class RuntimeService {
             if (!shouldApplyPendingIntervention(workflow, latest)) {
                 continue;
             }
-            HumanInterventionDto appliedIntervention = markInterventionApplied(intervention);
-            WorkflowInstanceDto updated = mergeWorkflowResult(workflow, latest, replaceIntervention(workflow.interventions(), appliedIntervention));
+            ResumeInterventionDto appliedIntervention = markInterventionApplied(intervention);
+            WorkflowInstanceDto updated = mergeWorkflowResult(workflow, latest, replaceIntervention(workflow.resumeInterventions(), appliedIntervention));
             TaskInstanceDto task = runtimeRepository.findTaskByWorkflowInstanceId(workflow.id()).orElseThrow();
             TaskInstanceDto updatedTask = withTaskStatus(task, toTaskStatus(updated.status()));
             ConversationSessionDto session = findSessionByWorkflowId(workflow.id()).orElse(null);
@@ -521,7 +530,7 @@ public class RuntimeService {
         boolean changed = previous.status() != updated.status()
             || !Objects.equals(previous.summary(), updated.summary())
             || !Objects.equals(previous.finalReply(), updated.finalReply())
-            || !Objects.equals(session.latestHumanTask(), updated.humanTask())
+            || !Objects.equals(session.latestResumeTask(), updated.resumeTask())
             || !Objects.equals(session.latestPauseReason(), updated.pauseReason())
             || !Objects.equals(previous.latestFailure(), updated.latestFailure())
             || !Objects.equals(session.latestToolOutcome(), updated.latestToolOutcome())
@@ -545,7 +554,7 @@ public class RuntimeService {
             session.latestTaskId(),
             session.latestWorkflowInstanceId(),
             updated.latestToolOutcome(),
-            updated.humanTask(),
+            updated.resumeTask(),
             updated.pauseReason(),
             updated.loadedSkillResourceVersionIds(),
             updated.sharedState()
@@ -922,7 +931,7 @@ public class RuntimeService {
 
     private static TaskStatus toTaskStatus(WorkflowStatus status) {
         return switch (status) {
-            case WAITING_HUMAN -> TaskStatus.WAITING_HUMAN;
+            case WAITING_RESUME -> TaskStatus.WAITING_RESUME;
             case COMPLETED -> TaskStatus.COMPLETED;
             case FAILED -> TaskStatus.FAILED;
             case CANCELLED -> TaskStatus.CANCELLED;
@@ -999,7 +1008,7 @@ public class RuntimeService {
             .findFirst();
     }
 
-    private ConversationSessionDto refreshSessionAfterHumanAction(ConversationSessionDto session, WorkflowInstanceDto workflow) {
+    private ConversationSessionDto refreshSessionAfterResumeAction(ConversationSessionDto session, WorkflowInstanceDto workflow) {
         return new ConversationSessionDto(
             session.id(),
             session.scenarioId(),
@@ -1014,7 +1023,7 @@ public class RuntimeService {
             session.latestTaskId(),
             session.latestWorkflowInstanceId(),
             workflow.latestToolOutcome(),
-            workflow.humanTask(),
+            workflow.resumeTask(),
             workflow.pauseReason(),
             workflow.loadedSkillResourceVersionIds(),
             workflow.sharedState()
@@ -1031,7 +1040,7 @@ public class RuntimeService {
             workflow.createdAt(),
             Instant.now(),
             WorkflowStatus.RUNNING,
-            "已收到人工动作，流程继续执行中。",
+            "已收到恢复动作，流程继续执行中。",
             null,
             workflow.currentNodeKey(),
             false,
@@ -1043,10 +1052,10 @@ public class RuntimeService {
             workflow.resourceAnchors(),
             append(
                 workflow.nodes(),
-                node(workflow.id(), "workflow-resuming", "流程恢复", NodeStatus.RUNNING, "已收到人工动作，流程继续执行中。")
+                node(workflow.id(), "workflow-resuming", "流程恢复", NodeStatus.RUNNING, "已收到恢复动作，流程继续执行中。")
             ),
             workflow.toolCalls(),
-            workflow.interventions(),
+            workflow.resumeInterventions(),
             workflow.loadedSkillResourceVersionIds(),
             workflow.sharedState(),
             workflow.agentTurnState() == null ? AgentTurnState.empty() : workflow.agentTurnState()
@@ -1068,14 +1077,14 @@ public class RuntimeService {
             workflow.currentNodeKey(),
             workflow.escalationRequired(),
             workflow.checkpoint(),
-            workflow.humanTask(),
+            workflow.resumeTask(),
             workflow.pauseReason(),
             latestFailure,
             workflow.latestToolOutcome(),
             workflow.resourceAnchors(),
             workflow.nodes(),
             workflow.toolCalls(),
-            workflow.interventions(),
+            workflow.resumeInterventions(),
             workflow.loadedSkillResourceVersionIds(),
             workflow.sharedState(),
             workflow.agentTurnState() == null ? AgentTurnState.empty() : workflow.agentTurnState()
@@ -1089,7 +1098,7 @@ public class RuntimeService {
         if (latest.status() == WorkflowStatus.RUNNING) {
             return false;
         }
-        return latest.status() != WorkflowStatus.WAITING_HUMAN
+        return latest.status() != WorkflowStatus.WAITING_RESUME
             || (latest.checkpoint() != null && latest.checkpoint().resumeCount() > 0);
     }
 
@@ -1133,40 +1142,42 @@ public class RuntimeService {
         );
     }
 
-    private HumanInterventionDto markInterventionApplied(HumanInterventionDto intervention) {
-        return new HumanInterventionDto(
+    private ResumeInterventionDto markInterventionApplied(ResumeInterventionDto intervention) {
+        return new ResumeInterventionDto(
             intervention.id(),
             intervention.workflowInstanceId(),
-            intervention.action(),
+            intervention.type(),
+            intervention.source(),
             intervention.userId(),
             intervention.comment(),
             intervention.attributes(),
-            HumanInterventionStatus.APPLIED,
+            ResumeInterventionStatus.APPLIED,
             intervention.createdAt(),
             Instant.now(),
             null
         );
     }
 
-    private HumanInterventionDto markInterventionFailed(HumanInterventionDto intervention, String failureReason) {
-        return new HumanInterventionDto(
+    private ResumeInterventionDto markInterventionFailed(ResumeInterventionDto intervention, String failureReason) {
+        return new ResumeInterventionDto(
             intervention.id(),
             intervention.workflowInstanceId(),
-            intervention.action(),
+            intervention.type(),
+            intervention.source(),
             intervention.userId(),
             intervention.comment(),
             intervention.attributes(),
-            HumanInterventionStatus.FAILED,
+            ResumeInterventionStatus.FAILED,
             intervention.createdAt(),
             null,
             failureReason
         );
     }
 
-    private static List<HumanInterventionDto> replaceIntervention(List<HumanInterventionDto> items, HumanInterventionDto updated) {
-        List<HumanInterventionDto> next = new ArrayList<>();
+    private static List<ResumeInterventionDto> replaceIntervention(List<ResumeInterventionDto> items, ResumeInterventionDto updated) {
+        List<ResumeInterventionDto> next = new ArrayList<>();
         boolean replaced = false;
-        for (HumanInterventionDto item : items) {
+        for (ResumeInterventionDto item : items) {
             if (item.id().equals(updated.id())) {
                 next.add(updated);
                 replaced = true;
@@ -1235,6 +1246,17 @@ public class RuntimeService {
         return fallback == null || fallback.isBlank() ? "未知错误" : fallback;
     }
 
+    private static ResumeActionType parseResumeActionType(String value) {
+        return ResumeActionType.valueOf(firstNonBlank(value, "CONTINUE").trim().toUpperCase());
+    }
+
+    private static ResumeSource resolveResumeSource(WorkflowInstanceDto workflow) {
+        return Optional.ofNullable(workflow.checkpoint())
+            .map(ExecutionCheckpoint::resumeContext)
+            .map(WorkflowContracts.ResumeContextSnapshot::source)
+            .orElseThrow(() -> new IllegalStateException("workflow checkpoint is missing resume context source: " + workflow.id()));
+    }
+
     private static boolean matchesWorkflowResult(WorkflowInstanceDto existing, WorkflowResult result) {
         WorkflowFailureSnapshot latestFailure = result.latestFailure() == null ? existing.latestFailure() : result.latestFailure();
         return existing.status() == result.status()
@@ -1243,7 +1265,7 @@ public class RuntimeService {
             && Objects.equals(existing.currentNodeKey(), result.currentNodeKey())
             && existing.escalationRequired() == result.escalationRequired()
             && Objects.equals(existing.checkpoint(), result.checkpoint())
-            && Objects.equals(existing.humanTask(), result.humanTask())
+            && Objects.equals(existing.resumeTask(), result.resumeTask())
             && Objects.equals(existing.pauseReason(), result.pauseReason())
             && Objects.equals(existing.latestFailure(), latestFailure)
             && Objects.equals(existing.latestToolOutcome(), result.latestToolOutcome())
@@ -1256,7 +1278,7 @@ public class RuntimeService {
 
     private static boolean isWorkflowActive(WorkflowStatus status) {
         return switch (status) {
-            case DRAFT, RUNNING, WAITING_HUMAN -> true;
+            case DRAFT, RUNNING, WAITING_RESUME -> true;
             case COMPLETED, FAILED, CANCELLED -> false;
         };
     }

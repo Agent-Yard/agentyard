@@ -33,12 +33,12 @@ describe('workflowFailure helpers', () => {
     expect(failureAlertDescription(workflow)).toContain('WORKFLOW_RUNTIME_FAILURE');
   });
 
-  it('treats WAITING_HUMAN workflows with latestFailure as active failures', () => {
-    const workflow = makeWorkflow('WAITING_HUMAN', makeFailure('TOOL_HTTP_ERROR'));
+  it('treats WAITING_RESUME workflows with latestFailure as active failures', () => {
+    const workflow = makeWorkflow('WAITING_RESUME', makeFailure('TOOL_HTTP_ERROR'));
 
     expect(hasActiveFailure(workflow)).toBe(true);
-    expect(failureSummary(workflow)).toBe('错误转人工 / TOOL_HTTP_ERROR');
-    expect(failureAlertMessage(workflow)).toBe('Workflow 发生错误并转人工处理');
+    expect(failureSummary(workflow)).toBe('错误转恢复 / TOOL_HTTP_ERROR');
+    expect(failureAlertMessage(workflow)).toBe('Workflow 发生错误并进入待恢复状态');
   });
 
   it('does not treat COMPLETED workflows with retained latestFailure as active failures', () => {

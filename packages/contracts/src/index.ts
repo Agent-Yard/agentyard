@@ -2,12 +2,14 @@ export type ResourceType = 'TOOL' | 'LLM_MODEL' | 'SKILL';
 export type ToolProviderType = 'HTTP' | 'MCP';
 export type ShareScope = 'PRIVATE' | 'DOMAIN_SHARED';
 export type VersionStatus = 'DRAFT' | 'PUBLISHED';
-export type TaskStatus = 'PENDING' | 'RUNNING' | 'WAITING_HUMAN' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
-export type WorkflowStatus = 'DRAFT' | 'RUNNING' | 'WAITING_HUMAN' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
-export type NodeStatus = 'PENDING' | 'RUNNING' | 'WAITING_HUMAN' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+export type TaskStatus = 'PENDING' | 'RUNNING' | 'WAITING_RESUME' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+export type WorkflowStatus = 'DRAFT' | 'RUNNING' | 'WAITING_RESUME' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+export type NodeStatus = 'PENDING' | 'RUNNING' | 'WAITING_RESUME' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 export type OrchestrationNodeType = 'START' | 'AGENT' | 'HUMAN' | 'END';
-export type HumanTaskSource = 'GRAPH_NODE' | 'AGENT_REQUEST';
-export type HumanActionType = 'CONFIRM' | 'TERMINATE';
+export type PauseSource = 'GRAPH_NODE' | 'AGENT_REQUEST' | 'EXTERNAL_INTERACTION' | 'TIMEOUT_POLICY';
+export type ResumeSource = 'HUMAN' | 'EXTERNAL_SYSTEM' | 'TIMEOUT_POLICY';
+export type ResumeActionType = 'CONTINUE' | 'TERMINATE';
+export type ResumeInterventionStatus = 'PENDING' | 'APPLIED' | 'FAILED';
 export type DecisionType = 'FINAL' | 'TOOL_CALL' | 'SKILL_READ' | 'HUMAN_HANDOFF';
 export type WorkflowFailureCategory =
   | 'TIMEOUT'
@@ -60,22 +62,31 @@ export interface ExecutionCheckpoint {
   currentNodeKey: string;
   waitingNodeKey: string;
   statePayload: string;
+  resumeContext: ResumeContextSnapshot | null;
   resumeCount: number;
 }
 
-export interface HumanTaskSnapshot {
+export interface ResumeContextSnapshot {
+  source: ResumeSource;
+  reasonCode: string;
+  interactionTaskId: string | null;
+  interactionType: string | null;
+  timeoutPolicyKey: string | null;
+}
+
+export interface ResumeTaskSnapshot {
   nodeKey: string;
   title: string;
   instruction: string;
   expectedAction: string;
-  source: HumanTaskSource;
-  allowedActions: HumanActionType[];
+  source: PauseSource;
+  allowedActions: ResumeActionType[];
 }
 
 export interface PauseReasonSnapshot {
   code: string;
   detail: string;
-  source: HumanTaskSource;
+  source: PauseSource;
 }
 
 export interface WorkflowFailureSnapshot {
@@ -166,8 +177,8 @@ export interface AgentTurnState {
   turnLogs: AgentTurnLog[];
 }
 
-export interface HumanActionRequest {
-  action: HumanActionType;
+export interface ResumeActionRequest {
+  type: ResumeActionType;
   comment: string;
   userId: string;
   attributes: Record<string, string>;
@@ -400,14 +411,15 @@ export interface NodeExecution {
   updatedAt: string;
 }
 
-export interface HumanIntervention {
+export interface ResumeIntervention {
   id: string;
   workflowInstanceId: string;
-  action: string;
+  type: ResumeActionType;
+  source: ResumeSource;
   userId: string;
   comment: string;
   attributes?: Record<string, string>;
-  status?: string;
+  status?: ResumeInterventionStatus;
   createdAt: string;
   appliedAt?: string | null;
   failureReason?: string | null;
@@ -427,14 +439,14 @@ export interface WorkflowInstance {
   currentNodeKey: string | null;
   escalationRequired: boolean;
   checkpoint: ExecutionCheckpoint | null;
-  humanTask: HumanTaskSnapshot | null;
+  resumeTask: ResumeTaskSnapshot | null;
   pauseReason: PauseReasonSnapshot | null;
   latestFailure: WorkflowFailureSnapshot | null;
   latestToolOutcome: ToolOutcomeSummary | null;
   resourceAnchors: string[];
   nodes: NodeExecution[];
   toolCalls: ToolInvocationSnapshot[];
-  interventions: HumanIntervention[];
+  resumeInterventions: ResumeIntervention[];
   loadedSkillResourceVersionIds: string[];
   sharedState: SharedSessionState;
   agentTurnState: AgentTurnState | null;
@@ -467,7 +479,7 @@ export interface ConversationSession {
   latestTaskId: string | null;
   latestWorkflowInstanceId: string | null;
   latestToolOutcome: ToolOutcomeSummary | null;
-  latestHumanTask: HumanTaskSnapshot | null;
+  latestResumeTask: ResumeTaskSnapshot | null;
   latestPauseReason: PauseReasonSnapshot | null;
   loadedSkillResourceVersionIds: string[];
   sharedState: SharedSessionState;

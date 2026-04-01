@@ -9,7 +9,7 @@ import static org.mockito.Mockito.when;
 
 import com.lynxus.contracts.runtime.AssistantRunWorkflow;
 import com.lynxus.contracts.runtime.WorkflowContracts;
-import com.lynxus.contracts.runtime.WorkflowContracts.HumanAction;
+import com.lynxus.contracts.runtime.WorkflowContracts.ResumeAction;
 import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowOptions;
 import java.util.Map;
@@ -33,7 +33,7 @@ class AssistantRunWorkflowGatewayTest {
     }
 
     @Test
-    void shouldUseExistingWorkflowStubWhenSubmittingHumanAction() {
+    void shouldUseExistingWorkflowStubWhenSubmittingResumeAction() {
         WorkflowClient workflowClient = mock(WorkflowClient.class);
         AssistantRunWorkflow existingWorkflow = mock(AssistantRunWorkflow.class);
         when(workflowClient.newWorkflowStub(AssistantRunWorkflow.class, "wf-123")).thenReturn(existingWorkflow);
@@ -41,14 +41,14 @@ class AssistantRunWorkflowGatewayTest {
         AssistantRunWorkflowGateway.TemporalAssistantRunWorkflowGateway gateway =
             new AssistantRunWorkflowGateway.TemporalAssistantRunWorkflowGateway(workflowClient, "lynxus-task-queue");
 
-        gateway.submitHumanAction(
+        gateway.submitResumeAction(
             "wf-123",
-            new HumanAction("CONFIRM", "人工已处理", "user-1", Map.of())
+            new ResumeAction(WorkflowContracts.ResumeActionType.CONTINUE, WorkflowContracts.ResumeSource.HUMAN, "人工已处理", "user-1", Map.of())
         );
 
         verify(workflowClient).newWorkflowStub(AssistantRunWorkflow.class, "wf-123");
         verify(workflowClient, never()).newWorkflowStub(eq(AssistantRunWorkflow.class), any(WorkflowOptions.class));
-        verify(existingWorkflow).submitHumanAction(any(HumanAction.class));
+        verify(existingWorkflow).submitResumeAction(any(ResumeAction.class));
     }
 
     private WorkflowContracts.WorkflowStartRequest sampleRequest(String workflowId) {

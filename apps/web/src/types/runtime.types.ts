@@ -6,11 +6,15 @@ import type {
   ConversationSession as ContractsConversationSession,
   CreateConversationSessionRequest as ContractsCreateConversationSessionRequest,
   ExecutionCheckpoint as ContractsExecutionCheckpoint,
-  HumanIntervention as ContractsHumanIntervention,
+  ResumeActionRequest as ContractsResumeActionRequest,
+  ResumeIntervention as ContractsResumeIntervention,
+  ResumeContextSnapshot as ContractsResumeContextSnapshot,
   HumanRequest as ContractsHumanRequest,
-  HumanTaskSnapshot as ContractsHumanTaskSnapshot,
+  ResumeTaskSnapshot as ContractsResumeTaskSnapshot,
   NodeExecution as ContractsNodeExecution,
   PauseReasonSnapshot as ContractsPauseReasonSnapshot,
+  PauseSource as ContractsPauseSource,
+  ResumeSource as ContractsResumeSource,
   SessionStatePatch as ContractsSessionStatePatch,
   SessionStatePatchOp as ContractsSessionStatePatchOp,
   SharedSessionState as ContractsSharedSessionState,
@@ -22,21 +26,23 @@ import type {
   WorkflowInstance as ContractsWorkflowInstance,
 } from '../../../../packages/contracts/src';
 
-export type TaskStatus = 'PENDING' | 'RUNNING' | 'WAITING_HUMAN' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
-export type WorkflowStatus = 'DRAFT' | 'RUNNING' | 'WAITING_HUMAN' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
-export type NodeStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'WAITING_HUMAN' | 'CANCELLED';
-export type HumanTaskSource = 'GRAPH_NODE' | 'AGENT_REQUEST';
-export type HumanActionType = 'CONFIRM' | 'TERMINATE';
+export type TaskStatus = 'PENDING' | 'RUNNING' | 'WAITING_RESUME' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+export type WorkflowStatus = 'DRAFT' | 'RUNNING' | 'WAITING_RESUME' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+export type NodeStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'WAITING_RESUME' | 'CANCELLED';
+export type PauseSource = ContractsPauseSource;
+export type ResumeSource = ContractsResumeSource;
+export type ResumeActionType = 'CONTINUE' | 'TERMINATE';
 
 export type TaskInstance = ContractsTaskInstance;
 export type ToolOutcomeSummary = ContractsToolOutcomeSummary;
 export type SharedSessionState = ContractsSharedSessionState;
 export type ToolInvocationSnapshot = ContractsToolInvocationSnapshot;
 export type ExecutionCheckpoint = ContractsExecutionCheckpoint;
-export type HumanTaskSnapshot = ContractsHumanTaskSnapshot;
+export type ResumeContextSnapshot = ContractsResumeContextSnapshot;
+export type ResumeTaskSnapshot = ContractsResumeTaskSnapshot;
 export type PauseReasonSnapshot = ContractsPauseReasonSnapshot;
 export type NodeExecution = ContractsNodeExecution;
-export type HumanIntervention = ContractsHumanIntervention;
+export type ResumeIntervention = ContractsResumeIntervention;
 export type ToolRequest = ContractsToolRequest;
 export type HumanRequest = ContractsHumanRequest;
 export type SessionStatePatchOp = ContractsSessionStatePatchOp;
@@ -50,3 +56,4 @@ export type ConversationSession = ContractsConversationSession;
 
 export type CreateConversationSessionPayload = ContractsCreateConversationSessionRequest;
 export type ConversationMessagePayload = ContractsConversationMessageRequest;
+export type ResumeActionPayload = ContractsResumeActionRequest;

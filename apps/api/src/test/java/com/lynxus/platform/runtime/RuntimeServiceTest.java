@@ -96,7 +96,7 @@ class RuntimeServiceTest {
     }
 
     @Test
-    void shouldSubmitHumanActionWithoutWaitingForResumeResult() {
+    void shouldSubmitResumeActionWithoutWaitingForResumeResult() {
         StubWorkflowGateway gateway = new StubWorkflowGateway();
         gateway.defaultCurrentResultFactory = request -> waitingHumanResult(request.workflowInstanceId(), request.question());
         RuntimeService service = runtimeService(gateway);
@@ -105,22 +105,46 @@ class RuntimeServiceTest {
             new RuntimeDtos.TaskLaunchRequest(fixture.scenarioId(), fixture.assistantId(), "客户投诉，需要人工处理", "customer-1")
         );
         RuntimeDtos.WorkflowInstanceDto waiting = service.getWorkflow(task.workflowInstanceId());
-        assertEquals(WorkflowContracts.WorkflowStatus.WAITING_HUMAN, waiting.status());
+        assertEquals(WorkflowContracts.WorkflowStatus.WAITING_RESUME, waiting.status());
 
-        RuntimeDtos.WorkflowInstanceDto resumed = service.handleHumanAction(
+        RuntimeDtos.WorkflowInstanceDto resumed = service.handleResumeAction(
             task.workflowInstanceId(),
-            new RuntimeDtos.HumanActionRequest("CONFIRM", "人工已处理", "user-1", Map.of("resolution", "approved"))
+            new RuntimeDtos.ResumeActionRequest("CONTINUE", "人工已处理", "user-1", Map.of("resolution", "approved"))
         );
 
         assertEquals(WorkflowContracts.WorkflowStatus.RUNNING, resumed.status());
         assertEquals(TaskStatus.RUNNING, service.listTasks().stream().filter(item -> item.id().equals(task.id())).findFirst().orElseThrow().status());
         RuntimeDtos.WorkflowInstanceDto stored = service.getWorkflow(task.workflowInstanceId());
-        assertEquals(RuntimeDtos.HumanInterventionStatus.PENDING, stored.interventions().getLast().status());
-        assertEquals(1, gateway.submittedHumanActions.size());
+        assertEquals(RuntimeDtos.ResumeInterventionStatus.PENDING, stored.resumeInterventions().getLast().status());
+        assertEquals(1, gateway.submittedResumeActions.size());
     }
 
     @Test
-    void shouldPersistLatestFailureWhenHumanActionSubmissionFails() {
+    void shouldUseCheckpointResumeSourceFromWorkflowState() {
+        StubWorkflowGateway gateway = new StubWorkflowGateway();
+        gateway.defaultCurrentResultFactory = request -> waitingResult(
+            request.workflowInstanceId(),
+            request.question(),
+            WorkflowContracts.ResumeSource.EXTERNAL_SYSTEM
+        );
+        RuntimeService service = runtimeService(gateway);
+
+        RuntimeDtos.TaskInstanceDto task = service.launchTask(
+            new RuntimeDtos.TaskLaunchRequest(fixture.scenarioId(), fixture.assistantId(), "客户投诉，需要外部系统处理", "customer-1")
+        );
+
+        service.handleResumeAction(
+            task.workflowInstanceId(),
+            new RuntimeDtos.ResumeActionRequest("CONTINUE", "外部系统已处理", "system-user", Map.of())
+        );
+
+        assertEquals(WorkflowContracts.ResumeSource.EXTERNAL_SYSTEM, gateway.submittedResumeActions.getLast().source());
+        RuntimeDtos.WorkflowInstanceDto stored = service.getWorkflow(task.workflowInstanceId());
+        assertEquals("EXTERNAL_SYSTEM", stored.resumeInterventions().getLast().source());
+    }
+
+    @Test
+    void shouldPersistLatestFailureWhenResumeActionSubmissionFails() {
         StubWorkflowGateway gateway = new StubWorkflowGateway();
         gateway.defaultCurrentResultFactory = request -> waitingHumanResult(request.workflowInstanceId(), request.question());
         gateway.submitError = new RuntimeException("temporal signal unavailable");
@@ -132,9 +156,9 @@ class RuntimeServiceTest {
 
         RuntimeException error = assertThrows(
             RuntimeException.class,
-            () -> service.handleHumanAction(
+            () -> service.handleResumeAction(
                 task.workflowInstanceId(),
-                new RuntimeDtos.HumanActionRequest("CONFIRM", "人工已处理", "user-1", Map.of("resolution", "approved"))
+                new RuntimeDtos.ResumeActionRequest("CONTINUE", "人工已处理", "user-1", Map.of("resolution", "approved"))
             )
         );
 
@@ -142,8 +166,8 @@ class RuntimeServiceTest {
         RuntimeDtos.WorkflowInstanceDto stored = service.getWorkflow(task.workflowInstanceId());
         assertNotNull(stored.latestFailure());
         assertEquals("WORKFLOW_RESUME_SUBMISSION_FAILED", stored.latestFailure().code());
-        assertEquals(WorkflowContracts.WorkflowStatus.WAITING_HUMAN, stored.status());
-        assertEquals(RuntimeDtos.HumanInterventionStatus.FAILED, stored.interventions().getLast().status());
+        assertEquals(WorkflowContracts.WorkflowStatus.WAITING_RESUME, stored.status());
+        assertEquals(RuntimeDtos.ResumeInterventionStatus.FAILED, stored.resumeInterventions().getLast().status());
     }
 
     @Test
@@ -161,7 +185,7 @@ class RuntimeServiceTest {
             "release-v1",
             "客户投诉，需要人工处理",
             "customer-1",
-            TaskStatus.WAITING_HUMAN,
+            TaskStatus.WAITING_RESUME,
             now,
             "wf-1"
         );
@@ -173,18 +197,25 @@ class RuntimeServiceTest {
             "release-v1",
             now,
             now,
-            WorkflowContracts.WorkflowStatus.WAITING_HUMAN,
+            WorkflowContracts.WorkflowStatus.WAITING_RESUME,
             "已创建人工协同工单，等待人工处理。",
             null,
             "human-review",
             true,
-            new WorkflowContracts.ExecutionCheckpoint("cp-1", "handoff-close", "human-review", "{}", 0),
-            new WorkflowContracts.HumanTaskSnapshot("human-review", "人工介入待办", "请人工处理。", "补充处理意见并确认后续动作", "GRAPH_NODE", List.of("CONFIRM")),
-            new WorkflowContracts.PauseReasonSnapshot("GRAPH_HUMAN_NODE", "请人工处理。", "GRAPH_NODE"),
+            new WorkflowContracts.ExecutionCheckpoint("cp-1", "handoff-close", "human-review", "{}", null, 0),
+            new WorkflowContracts.ResumeTaskSnapshot(
+                "human-review",
+                "人工介入待办",
+                "请人工处理。",
+                "补充处理意见并确认后续动作",
+                WorkflowContracts.PauseSource.GRAPH_NODE,
+                List.of(WorkflowContracts.ResumeActionType.CONTINUE)
+            ),
+            new WorkflowContracts.PauseReasonSnapshot("GRAPH_HUMAN_NODE", "请人工处理。", WorkflowContracts.PauseSource.GRAPH_NODE),
             null,
             null,
             List.of("tool@v1"),
-            List.of(new RuntimeDtos.NodeExecutionDto("node-1", "wf-1", "human-review", "人工介入", WorkflowContracts.NodeStatus.WAITING_HUMAN, "等待人工接管", now)),
+            List.of(new RuntimeDtos.NodeExecutionDto("node-1", "wf-1", "human-review", "人工介入", WorkflowContracts.NodeStatus.WAITING_RESUME, "等待人工接管", now)),
             List.of(),
             List.of(),
             List.of(),
@@ -205,19 +236,20 @@ class RuntimeServiceTest {
             "task-1",
             "wf-1",
             null,
-            workflow.humanTask(),
+            workflow.resumeTask(),
             workflow.pauseReason(),
             List.of(),
             WorkflowContracts.SharedSessionState.empty()
         );
-        RuntimeDtos.HumanInterventionDto pending = new RuntimeDtos.HumanInterventionDto(
+        RuntimeDtos.ResumeInterventionDto pending = new RuntimeDtos.ResumeInterventionDto(
             "human-1",
             "wf-1",
-            "CONFIRM",
+            "CONTINUE",
+            "HUMAN",
             "user-1",
             "人工已处理",
             Map.of(),
-            RuntimeDtos.HumanInterventionStatus.PENDING,
+            RuntimeDtos.ResumeInterventionStatus.PENDING,
             now,
             null,
             null
@@ -230,7 +262,7 @@ class RuntimeServiceTest {
         RuntimeDtos.WorkflowInstanceDto reconciledWorkflow = service.getWorkflow("wf-1");
         RuntimeDtos.ConversationSessionDto reconciledSession = service.getSession("session-1");
         assertEquals(WorkflowContracts.WorkflowStatus.COMPLETED, reconciledWorkflow.status());
-        assertEquals(RuntimeDtos.HumanInterventionStatus.APPLIED, reconciledWorkflow.interventions().getLast().status());
+        assertEquals(RuntimeDtos.ResumeInterventionStatus.APPLIED, reconciledWorkflow.resumeInterventions().getLast().status());
         assertEquals("人工处理已完成，已同步客户。", reconciledSession.messages().getLast().content());
     }
 
@@ -243,9 +275,9 @@ class RuntimeServiceTest {
         RuntimeDtos.TaskInstanceDto task = service.launchTask(
             new RuntimeDtos.TaskLaunchRequest(fixture.scenarioId(), fixture.assistantId(), "客户投诉，需要人工处理", "customer-1")
         );
-        service.handleHumanAction(
+        service.handleResumeAction(
             task.workflowInstanceId(),
-            new RuntimeDtos.HumanActionRequest("CONFIRM", "人工已处理", "user-1", Map.of())
+            new RuntimeDtos.ResumeActionRequest("CONTINUE", "人工已处理", "user-1", Map.of())
         );
         gateway.currentResults.put(task.workflowInstanceId(), runningResult(task.workflowInstanceId(), "human-review"));
 
@@ -253,7 +285,7 @@ class RuntimeServiceTest {
 
         RuntimeDtos.WorkflowInstanceDto stored = service.getWorkflow(task.workflowInstanceId());
         assertEquals(WorkflowContracts.WorkflowStatus.RUNNING, stored.status());
-        assertEquals(RuntimeDtos.HumanInterventionStatus.PENDING, stored.interventions().getLast().status());
+        assertEquals(RuntimeDtos.ResumeInterventionStatus.PENDING, stored.resumeInterventions().getLast().status());
     }
 
     @Test
@@ -389,19 +421,41 @@ class RuntimeServiceTest {
     }
 
     private static WorkflowContracts.WorkflowResult waitingHumanResult(String workflowId, String question) {
+        return waitingResult(workflowId, question, WorkflowContracts.ResumeSource.HUMAN);
+    }
+
+    private static WorkflowContracts.WorkflowResult waitingResult(
+        String workflowId,
+        String question,
+        WorkflowContracts.ResumeSource resumeSource
+    ) {
         return new WorkflowContracts.WorkflowResult(
             workflowId,
-            WorkflowContracts.WorkflowStatus.WAITING_HUMAN,
+            WorkflowContracts.WorkflowStatus.WAITING_RESUME,
             "已创建人工协同工单，等待人工处理。",
             null,
             "human-review",
-            new WorkflowContracts.ExecutionCheckpoint("cp-1", "handoff-close", "human-review", "{\"question\":\"" + question + "\"}", 0),
-            new WorkflowContracts.HumanTaskSnapshot("human-review", "人工介入待办", "请人工处理。", "补充处理意见并确认后续动作", "GRAPH_NODE", List.of("CONFIRM", "TERMINATE")),
-            new WorkflowContracts.PauseReasonSnapshot("GRAPH_HUMAN_NODE", "请人工处理。", "GRAPH_NODE"),
+            new WorkflowContracts.ExecutionCheckpoint(
+                "cp-1",
+                "handoff-close",
+                "human-review",
+                "{\"question\":\"" + question + "\"}",
+                new WorkflowContracts.ResumeContextSnapshot(resumeSource, "GRAPH_HUMAN_NODE", null, null, null),
+                0
+            ),
+            new WorkflowContracts.ResumeTaskSnapshot(
+                "human-review",
+                "人工介入待办",
+                "请人工处理。",
+                "补充处理意见并确认后续动作",
+                WorkflowContracts.PauseSource.GRAPH_NODE,
+                List.of(WorkflowContracts.ResumeActionType.CONTINUE, WorkflowContracts.ResumeActionType.TERMINATE)
+            ),
+            new WorkflowContracts.PauseReasonSnapshot("GRAPH_HUMAN_NODE", "请人工处理。", WorkflowContracts.PauseSource.GRAPH_NODE),
             null,
             List.of(
                 new WorkflowContracts.NodeSnapshot("start", "开始", WorkflowContracts.NodeStatus.COMPLETED, question, Instant.now()),
-                new WorkflowContracts.NodeSnapshot("human-review", "人工介入", WorkflowContracts.NodeStatus.WAITING_HUMAN, "等待人工接管", Instant.now())
+                new WorkflowContracts.NodeSnapshot("human-review", "人工介入", WorkflowContracts.NodeStatus.WAITING_RESUME, "等待人工接管", Instant.now())
             ),
             List.of(),
             true,
@@ -422,14 +476,14 @@ class RuntimeServiceTest {
         return new WorkflowContracts.WorkflowResult(
             workflowId,
             WorkflowContracts.WorkflowStatus.RUNNING,
-            "已收到人工动作，流程继续执行中。",
+            "已收到恢复动作，流程继续执行中。",
             null,
             currentNodeKey,
             null,
             null,
             null,
             null,
-            List.of(new WorkflowContracts.NodeSnapshot("workflow-resuming", "流程恢复", WorkflowContracts.NodeStatus.RUNNING, "已收到人工动作，流程继续执行中。", Instant.now())),
+            List.of(new WorkflowContracts.NodeSnapshot("workflow-resuming", "流程恢复", WorkflowContracts.NodeStatus.RUNNING, "已收到恢复动作，流程继续执行中。", Instant.now())),
             List.of(),
             false,
             null,
@@ -612,7 +666,7 @@ class RuntimeServiceTest {
 
     private static final class StubWorkflowGateway implements AssistantRunWorkflowGateway {
         private final List<WorkflowContracts.WorkflowStartRequest> startRequests = new ArrayList<>();
-        private final List<WorkflowContracts.HumanAction> submittedHumanActions = new ArrayList<>();
+        private final List<WorkflowContracts.ResumeAction> submittedResumeActions = new ArrayList<>();
         private final Map<String, WorkflowContracts.WorkflowResult> currentResults = new LinkedHashMap<>();
         private java.util.function.Consumer<WorkflowContracts.WorkflowStartRequest> onStart;
         private java.util.function.Function<WorkflowContracts.WorkflowStartRequest, WorkflowContracts.WorkflowResult> defaultCurrentResultFactory;
@@ -634,11 +688,11 @@ class RuntimeServiceTest {
         }
 
         @Override
-        public void submitHumanAction(String workflowId, WorkflowContracts.HumanAction action) {
+        public void submitResumeAction(String workflowId, WorkflowContracts.ResumeAction action) {
             if (submitError != null) {
                 throw submitError;
             }
-            submittedHumanActions.add(action);
+            submittedResumeActions.add(action);
             currentResults.remove(workflowId);
         }
 

@@ -13,15 +13,15 @@ import java.util.Optional;
 public class InMemoryRuntimeRepository implements RuntimeRepository {
     private static final Comparator<ConversationMessageDto> MESSAGE_ORDER =
         Comparator.comparing(ConversationMessageDto::createdAt).thenComparing(ConversationMessageDto::id);
-    private static final Comparator<HumanInterventionDto> INTERVENTION_ORDER =
-        Comparator.comparing(HumanInterventionDto::createdAt).thenComparing(HumanInterventionDto::id);
+    private static final Comparator<ResumeInterventionDto> INTERVENTION_ORDER =
+        Comparator.comparing(ResumeInterventionDto::createdAt).thenComparing(ResumeInterventionDto::id);
 
     private final Map<String, TaskInstanceDto> tasks = new LinkedHashMap<>();
     private final Map<String, String> taskSessions = new LinkedHashMap<>();
     private final Map<String, WorkflowInstanceDto> workflows = new LinkedHashMap<>();
     private final Map<String, ConversationSessionDto> sessions = new LinkedHashMap<>();
     private final Map<String, Map<String, ConversationMessageDto>> sessionMessages = new LinkedHashMap<>();
-    private final Map<String, Map<String, HumanInterventionDto>> workflowInterventions = new LinkedHashMap<>();
+    private final Map<String, Map<String, ResumeInterventionDto>> workflowResumeInterventions = new LinkedHashMap<>();
 
     @Override
     public List<TaskInstanceDto> listTasks() {
@@ -85,18 +85,18 @@ public class InMemoryRuntimeRepository implements RuntimeRepository {
     }
 
     @Override
-    public Optional<HumanInterventionDto> findPendingIntervention(String workflowInstanceId) {
-        return workflowInterventions.getOrDefault(workflowInstanceId, Map.of()).values().stream()
-            .filter(intervention -> intervention.status() == HumanInterventionStatus.PENDING)
+    public Optional<ResumeInterventionDto> findPendingResumeIntervention(String workflowInstanceId) {
+        return workflowResumeInterventions.getOrDefault(workflowInstanceId, Map.of()).values().stream()
+            .filter(intervention -> intervention.status() == ResumeInterventionStatus.PENDING)
             .sorted(INTERVENTION_ORDER.reversed())
             .findFirst();
     }
 
     @Override
-    public List<HumanInterventionDto> listPendingInterventions() {
-        return workflowInterventions.values().stream()
+    public List<ResumeInterventionDto> listPendingResumeInterventions() {
+        return workflowResumeInterventions.values().stream()
             .flatMap(items -> items.values().stream())
-            .filter(intervention -> intervention.status() == HumanInterventionStatus.PENDING)
+            .filter(intervention -> intervention.status() == ResumeInterventionStatus.PENDING)
             .sorted(INTERVENTION_ORDER)
             .toList();
     }
@@ -106,7 +106,7 @@ public class InMemoryRuntimeRepository implements RuntimeRepository {
         TaskInstanceDto task,
         WorkflowInstanceDto workflow,
         ConversationSessionDto session,
-        HumanInterventionDto intervention
+        ResumeInterventionDto intervention
     ) {
         tasks.put(task.id(), task);
         if (session != null) {
@@ -117,13 +117,13 @@ public class InMemoryRuntimeRepository implements RuntimeRepository {
         }
         workflows.put(workflow.id(), stripInterventions(workflow));
         if (intervention != null) {
-            saveHumanIntervention(intervention);
+            saveResumeIntervention(intervention);
         }
     }
 
     @Override
-    public void saveHumanIntervention(HumanInterventionDto intervention) {
-        workflowInterventions
+    public void saveResumeIntervention(ResumeInterventionDto intervention) {
+        workflowResumeInterventions
             .computeIfAbsent(intervention.workflowInstanceId(), ignored -> new LinkedHashMap<>())
             .put(intervention.id(), intervention);
     }
@@ -143,7 +143,7 @@ public class InMemoryRuntimeRepository implements RuntimeRepository {
             session.latestTaskId(),
             session.latestWorkflowInstanceId(),
             session.latestToolOutcome(),
-            session.latestHumanTask(),
+            session.latestResumeTask(),
             session.latestPauseReason(),
             session.loadedSkillResourceVersionIds(),
             session.sharedState()
@@ -165,14 +165,14 @@ public class InMemoryRuntimeRepository implements RuntimeRepository {
             workflow.currentNodeKey(),
             workflow.escalationRequired(),
             workflow.checkpoint(),
-            workflow.humanTask(),
+            workflow.resumeTask(),
             workflow.pauseReason(),
             workflow.latestFailure(),
             workflow.latestToolOutcome(),
             workflow.resourceAnchors(),
             workflow.nodes(),
             workflow.toolCalls(),
-            workflowInterventions.getOrDefault(workflow.id(), Map.of()).values().stream().sorted(INTERVENTION_ORDER).toList(),
+            workflowResumeInterventions.getOrDefault(workflow.id(), Map.of()).values().stream().sorted(INTERVENTION_ORDER).toList(),
             workflow.loadedSkillResourceVersionIds(),
             workflow.sharedState(),
             workflow.agentTurnState() == null ? AgentTurnState.empty() : workflow.agentTurnState()
@@ -194,7 +194,7 @@ public class InMemoryRuntimeRepository implements RuntimeRepository {
             session.latestTaskId(),
             session.latestWorkflowInstanceId(),
             session.latestToolOutcome(),
-            session.latestHumanTask(),
+            session.latestResumeTask(),
             session.latestPauseReason(),
             session.loadedSkillResourceVersionIds(),
             session.sharedState()
@@ -216,7 +216,7 @@ public class InMemoryRuntimeRepository implements RuntimeRepository {
             workflow.currentNodeKey(),
             workflow.escalationRequired(),
             workflow.checkpoint(),
-            workflow.humanTask(),
+            workflow.resumeTask(),
             workflow.pauseReason(),
             workflow.latestFailure(),
             workflow.latestToolOutcome(),

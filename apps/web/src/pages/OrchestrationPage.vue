@@ -186,7 +186,7 @@ function addNode(nodeType: OrchestrationNodeType) {
       ? {
           title: '人工待办',
           instruction: '请人工处理这个节点。',
-          expectedAction: 'CONFIRM',
+          expectedAction: '填写处理意见并恢复流程',
           resumeRouteKey: 'default',
         }
       : null,

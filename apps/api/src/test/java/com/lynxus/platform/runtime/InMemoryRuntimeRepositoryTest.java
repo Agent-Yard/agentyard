@@ -4,9 +4,10 @@ import static com.lynxus.platform.runtime.RuntimeDtos.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import com.lynxus.contracts.runtime.WorkflowContracts;
 import com.lynxus.contracts.runtime.WorkflowContracts.AgentTurnState;
 import com.lynxus.contracts.runtime.WorkflowContracts.ExecutionCheckpoint;
-import com.lynxus.contracts.runtime.WorkflowContracts.HumanTaskSnapshot;
+import com.lynxus.contracts.runtime.WorkflowContracts.ResumeTaskSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.NodeStatus;
 import com.lynxus.contracts.runtime.WorkflowContracts.PauseReasonSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.SharedSessionState;
@@ -32,7 +33,7 @@ class InMemoryRuntimeRepositoryTest {
             "release-v1",
             "用户问题",
             "tester",
-            TaskStatus.WAITING_HUMAN,
+            TaskStatus.WAITING_RESUME,
             now,
             "wf-1"
         );
@@ -44,18 +45,18 @@ class InMemoryRuntimeRepositoryTest {
             "release-v1",
             now,
             now,
-            WorkflowStatus.WAITING_HUMAN,
+            WorkflowStatus.WAITING_RESUME,
             "等待人工",
             null,
             "human-review",
             true,
-            new ExecutionCheckpoint("cp-1", "resume", "human-review", "{\"step\":1}", 1),
-            new HumanTaskSnapshot("human-review", "人工待办", "请审核", "填写备注", "GRAPH_NODE", List.of("CONFIRM")),
-            new PauseReasonSnapshot("GRAPH_HUMAN_NODE", "需要人工审核", "GRAPH_NODE"),
+            new ExecutionCheckpoint("cp-1", "resume", "human-review", "{\"step\":1}", null, 1),
+            new ResumeTaskSnapshot("human-review", "人工待办", "请审核", "填写备注", WorkflowContracts.PauseSource.GRAPH_NODE, List.of(WorkflowContracts.ResumeActionType.CONTINUE)),
+            new PauseReasonSnapshot("GRAPH_HUMAN_NODE", "需要人工审核", WorkflowContracts.PauseSource.GRAPH_NODE),
             null,
             new ToolOutcomeSummary("resource-tool", "工单工具", "create_ticket", "MCP", Map.of("ticketId", "T-1")),
             List.of("tool@v1"),
-            List.of(new NodeExecutionDto("node-1", "wf-1", "human-review", "人工审核", NodeStatus.WAITING_HUMAN, "等待人工", now)),
+            List.of(new NodeExecutionDto("node-1", "wf-1", "human-review", "人工审核", NodeStatus.WAITING_RESUME, "等待人工", now)),
             List.of(),
             List.of(),
             List.of("skill-v1"),
@@ -79,19 +80,20 @@ class InMemoryRuntimeRepositoryTest {
             "task-1",
             "wf-1",
             workflow.latestToolOutcome(),
-            workflow.humanTask(),
+            workflow.resumeTask(),
             workflow.pauseReason(),
             workflow.loadedSkillResourceVersionIds(),
             workflow.sharedState()
         );
-        HumanInterventionDto intervention = new HumanInterventionDto(
+        ResumeInterventionDto intervention = new ResumeInterventionDto(
             "human-1",
             "wf-1",
-            "CONFIRM",
+            "CONTINUE",
+            "HUMAN",
             "user-1",
             "已处理",
             Map.of("ticketId", "T-1"),
-            HumanInterventionStatus.APPLIED,
+            ResumeInterventionStatus.APPLIED,
             now,
             now,
             null
@@ -105,9 +107,10 @@ class InMemoryRuntimeRepositoryTest {
         assertEquals(2, storedSession.messages().size());
         assertEquals("已进入人工流程", storedSession.messages().getLast().content());
         assertEquals("session-1", repository.findTaskSessionId("task-1").orElseThrow());
-        assertEquals(1, storedWorkflow.interventions().size());
-        assertEquals("CONFIRM", storedWorkflow.interventions().getFirst().action());
-        assertEquals(HumanInterventionStatus.APPLIED, storedWorkflow.interventions().getFirst().status());
+        assertEquals(1, storedWorkflow.resumeInterventions().size());
+        assertEquals("CONTINUE", storedWorkflow.resumeInterventions().getFirst().type());
+        assertEquals("HUMAN", storedWorkflow.resumeInterventions().getFirst().source());
+        assertEquals(ResumeInterventionStatus.APPLIED, storedWorkflow.resumeInterventions().getFirst().status());
         assertNotNull(storedWorkflow.checkpoint());
         assertEquals("value", storedWorkflow.sharedState().facts().get("fact"));
     }

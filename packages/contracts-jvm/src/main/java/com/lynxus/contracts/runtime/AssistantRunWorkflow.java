@@ -1,6 +1,6 @@
 package com.lynxus.contracts.runtime;
 
-import com.lynxus.contracts.runtime.WorkflowContracts.HumanAction;
+import com.lynxus.contracts.runtime.WorkflowContracts.ResumeAction;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowResult;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowStartRequest;
 import io.temporal.workflow.QueryMethod;
@@ -14,7 +14,7 @@ public interface AssistantRunWorkflow {
     WorkflowResult run(WorkflowStartRequest request);
 
     @SignalMethod
-    void submitHumanAction(HumanAction action);
+    void submitResumeAction(ResumeAction action);
 
     @QueryMethod
     WorkflowResult currentResult();

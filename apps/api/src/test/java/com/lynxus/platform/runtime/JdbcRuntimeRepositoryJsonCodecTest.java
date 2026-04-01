@@ -35,8 +35,8 @@ class JdbcRuntimeRepositoryJsonCodecTest {
     @Test
     void shouldRoundTripJsonCollections() {
         List<ExecutionCheckpoint> checkpoints = List.of(
-            new ExecutionCheckpoint("cp-1", "resume", "node-a", "{\"cursor\":1}", 1),
-            new ExecutionCheckpoint("cp-2", "resume", "node-b", "{\"cursor\":2}", 2)
+            new ExecutionCheckpoint("cp-1", "resume", "node-a", "{\"cursor\":1}", null, 1),
+            new ExecutionCheckpoint("cp-2", "resume", "node-b", "{\"cursor\":2}", null, 2)
         );
         String payload = repository.writeJson(checkpoints);
 

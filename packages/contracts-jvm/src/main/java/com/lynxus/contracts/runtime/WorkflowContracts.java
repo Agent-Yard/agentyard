@@ -50,7 +50,7 @@ public final class WorkflowContracts {
     public enum TaskStatus {
         PENDING,
         RUNNING,
-        WAITING_HUMAN,
+        WAITING_RESUME,
         COMPLETED,
         FAILED,
         CANCELLED
@@ -59,7 +59,7 @@ public final class WorkflowContracts {
     public enum WorkflowStatus {
         DRAFT,
         RUNNING,
-        WAITING_HUMAN,
+        WAITING_RESUME,
         COMPLETED,
         FAILED,
         CANCELLED
@@ -70,7 +70,7 @@ public final class WorkflowContracts {
         RUNNING,
         COMPLETED,
         FAILED,
-        WAITING_HUMAN,
+        WAITING_RESUME,
         CANCELLED
     }
 
@@ -108,6 +108,24 @@ public final class WorkflowContracts {
     public enum SessionStatePatchOpType {
         UPSERT,
         REMOVE
+    }
+
+    public enum PauseSource {
+        GRAPH_NODE,
+        AGENT_REQUEST,
+        EXTERNAL_INTERACTION,
+        TIMEOUT_POLICY
+    }
+
+    public enum ResumeSource {
+        HUMAN,
+        EXTERNAL_SYSTEM,
+        TIMEOUT_POLICY
+    }
+
+    public enum ResumeActionType {
+        CONTINUE,
+        TERMINATE
     }
 
     public record KnowledgeBindingSnapshot(
@@ -409,11 +427,21 @@ public final class WorkflowContracts {
     ) {
     }
 
-    public record HumanAction(
-        String action,
+    public record ResumeAction(
+        ResumeActionType type,
+        ResumeSource source,
         String comment,
         String userId,
         Map<String, String> attributes
+    ) {
+    }
+
+    public record ResumeContextSnapshot(
+        ResumeSource source,
+        String reasonCode,
+        String interactionTaskId,
+        String interactionType,
+        String timeoutPolicyKey
     ) {
     }
 
@@ -422,6 +450,7 @@ public final class WorkflowContracts {
         String currentNodeKey,
         String waitingNodeKey,
         String statePayload,
+        ResumeContextSnapshot resumeContext,
         int resumeCount
     ) {
     }
@@ -430,7 +459,7 @@ public final class WorkflowContracts {
         String taskId,
         String workflowInstanceId,
         String scenarioId,
-        HumanAction action,
+        ResumeAction action,
         SessionContext sessionContext,
         AssistantRunSnapshot assistant,
         ExecutionCheckpoint checkpoint,
@@ -450,20 +479,20 @@ public final class WorkflowContracts {
     ) {
     }
 
-    public record HumanTaskSnapshot(
+    public record ResumeTaskSnapshot(
         String nodeKey,
         String title,
         String instruction,
         String expectedAction,
-        String source,
-        List<String> allowedActions
+        PauseSource source,
+        List<ResumeActionType> allowedActions
     ) {
     }
 
     public record PauseReasonSnapshot(
         String code,
         String detail,
-        String source
+        PauseSource source
     ) {
     }
 
@@ -505,7 +534,7 @@ public final class WorkflowContracts {
         String finalReply,
         String currentNodeKey,
         ExecutionCheckpoint checkpoint,
-        HumanTaskSnapshot humanTask,
+        ResumeTaskSnapshot resumeTask,
         PauseReasonSnapshot pauseReason,
         WorkflowFailureSnapshot latestFailure,
         List<NodeSnapshot> nodes,

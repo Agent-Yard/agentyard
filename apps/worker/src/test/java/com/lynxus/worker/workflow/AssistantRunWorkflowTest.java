@@ -36,15 +36,22 @@ class AssistantRunWorkflowTest {
                 return waitingHuman
                     ? new WorkflowContracts.WorkflowResult(
                         request.workflowInstanceId(),
-                        WorkflowContracts.WorkflowStatus.WAITING_HUMAN,
+                        WorkflowContracts.WorkflowStatus.WAITING_RESUME,
                         "等待人工处理",
                         "已进入人工协同流程。",
                         "human-review",
-                        new WorkflowContracts.ExecutionCheckpoint("cp-1", "handoff-close", "human-review", "{}", 0),
-                        new WorkflowContracts.HumanTaskSnapshot("human-review", "人工介入待办", "请人工确认并补充处理意见。", "补充处理意见并确认后续动作", "GRAPH_NODE", List.of("CONFIRM", "TERMINATE")),
-                        new WorkflowContracts.PauseReasonSnapshot("GRAPH_HUMAN_NODE", "请人工确认并补充处理意见。", "GRAPH_NODE"),
+                        new WorkflowContracts.ExecutionCheckpoint("cp-1", "handoff-close", "human-review", "{}", null, 0),
+                        new WorkflowContracts.ResumeTaskSnapshot(
+                            "human-review",
+                            "人工介入待办",
+                            "请人工确认并补充处理意见。",
+                            "补充处理意见并确认后续动作",
+                            WorkflowContracts.PauseSource.GRAPH_NODE,
+                            List.of(WorkflowContracts.ResumeActionType.CONTINUE, WorkflowContracts.ResumeActionType.TERMINATE)
+                        ),
+                        new WorkflowContracts.PauseReasonSnapshot("GRAPH_HUMAN_NODE", "请人工确认并补充处理意见。", WorkflowContracts.PauseSource.GRAPH_NODE),
                         null,
-                        List.of(new WorkflowContracts.NodeSnapshot("human-review", "人工介入", WorkflowContracts.NodeStatus.WAITING_HUMAN, "等待人工", Instant.now())),
+                        List.of(new WorkflowContracts.NodeSnapshot("human-review", "人工介入", WorkflowContracts.NodeStatus.WAITING_RESUME, "等待人工", Instant.now())),
                         List.of(),
                         true,
                         new WorkflowContracts.ToolOutcomeSummary(
@@ -139,18 +146,26 @@ class AssistantRunWorkflowTest {
     }
 
     @Test
-    void shouldWaitAndResumeForHumanAction() throws Exception {
+    void shouldWaitAndResumeForResumeAction() throws Exception {
         AssistantRunWorkflow workflow = environment.getWorkflowClient().newWorkflowStub(
             AssistantRunWorkflow.class,
             io.temporal.client.WorkflowOptions.newBuilder().setTaskQueue("test-assistant-run").setWorkflowId("wf-2").build()
         );
 
         WorkflowClient.start(workflow::run, sampleRequest("这是一个客户投诉，需要人工处理", "wf-2"));
-        WorkflowContracts.WorkflowResult waiting = waitForResult(workflow, result -> result.status() == WorkflowStatus.WAITING_HUMAN);
-        assertEquals(WorkflowStatus.WAITING_HUMAN, waiting.status());
-        assertNotNull(waiting.humanTask());
+        WorkflowContracts.WorkflowResult waiting = waitForResult(workflow, result -> result.status() == WorkflowStatus.WAITING_RESUME);
+        assertEquals(WorkflowStatus.WAITING_RESUME, waiting.status());
+        assertNotNull(waiting.resumeTask());
 
-        workflow.submitHumanAction(new WorkflowContracts.HumanAction("CONFIRM", "人工已确认处理", "tester", java.util.Map.of()));
+        workflow.submitResumeAction(
+            new WorkflowContracts.ResumeAction(
+                WorkflowContracts.ResumeActionType.CONTINUE,
+                WorkflowContracts.ResumeSource.HUMAN,
+                "人工已确认处理",
+                "tester",
+                java.util.Map.of()
+            )
+        );
         WorkflowStub untyped = WorkflowStub.fromTyped(workflow);
         WorkflowContracts.WorkflowResult finalResult = untyped.getResult(WorkflowContracts.WorkflowResult.class);
         assertEquals(WorkflowStatus.COMPLETED, finalResult.status());
@@ -314,7 +329,7 @@ class AssistantRunWorkflowTest {
                             WorkflowContracts.OrchestrationNodeType.HUMAN,
                             "人工介入",
                             null,
-                            new WorkflowContracts.HumanNodeConfig("人工介入待办", "请人工确认并补充处理意见。", "CONFIRM", "default")
+                            new WorkflowContracts.HumanNodeConfig("人工介入待办", "请人工确认并补充处理意见。", "CONTINUE", "default")
                         ),
                         new WorkflowContracts.GraphNodeSnapshot("end", "结束", WorkflowContracts.OrchestrationNodeType.END, "结束", null, null)
                     ),

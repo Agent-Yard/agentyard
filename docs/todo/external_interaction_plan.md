@@ -28,7 +28,7 @@
 ### 2.1 已有能力
 
 - `RuntimeService` 已维护 `ConversationSession / TaskInstance / WorkflowInstance` 三类运行态对象
-- workflow 已支持 `WAITING_HUMAN` 并通过 `handleHumanAction(...)` 恢复
+- workflow 已支持 `WAITING_RESUME` 并通过 `handleResumeAction(...)` 恢复
 - 前端 `RuntimeConversationPage.vue` 已能展示会话消息
 - 前端 `WorkflowPage.vue` 已能展示挂起中的 workflow 并触发恢复动作
 - Web app shell 已有统一 `refresh()` 和 3 秒轮询机制（现由 `useAppState` + `useWorkflowPolling` 承载），可作为 MVP 的状态传播通道
@@ -185,19 +185,19 @@ workflow 不需要为每种外部动作单独发明状态。
 建议继续沿用主状态：
 
 - `RUNNING`
-- `WAITING_HUMAN` 或后续扩展为 `WAITING_EXTERNAL`
+- `WAITING_RESUME` 或后续扩展为 `WAITING_EXTERNAL`
 - `COMPLETED`
 - `FAILED`
 - `CANCELLED`
 
 如果短期内不改主枚举，建议先通过：
 
-- `status = WAITING_HUMAN`
+- `status = WAITING_RESUME`
 - `pauseReason.code = EXTERNAL_INTERACTION_REQUIRED`
 
 来表达“不是人工审批，而是在等待站外动作完成”。
 
-后续如果 external interaction 明显增多，再考虑把 `WAITING_HUMAN` 泛化为 `WAITING_EXTERNAL`。
+后续如果 external interaction 明显增多，再考虑把 `WAITING_RESUME` 泛化为 `WAITING_EXTERNAL`。
 
 ## 6. 交互类型设计
 
@@ -323,18 +323,13 @@ workflow 不需要为每种外部动作单独发明状态。
 
 ### 8.4 Workflow 层
 
-当前 worker 里只有 `submitHumanAction(...)` 这条恢复信号。
+当前 worker 已统一为 `submitResumeAction(...)` 这条恢复信号，`ResumeAction` 已具备 `type + source`，checkpoint 也已显式携带 `resumeContext`。
 
 更通用的设计应该是把恢复抽象成“外部结果恢复”，而不是只能提交人工动作。
 
-建议引入：
-
-- `ExternalResumeAction`
-- 或扩展 `HumanAction` 为更通用的 `ResumeAction`
-
 推荐方向：
 
-- 不再让支付结果伪装成人工点击 `CONFIRM`
+- 不再让支付结果伪装成人工点击 `CONTINUE`
 - workflow checkpoint 中明确记录 `interactionTaskId`
 - 恢复时把标准化 external result 送入 workflow
 
@@ -552,7 +547,7 @@ workflow 不需要为每种外部动作单独发明状态。
 
 1. 先扩共享契约和前端消息模型
 2. 再引入 `ExternalInteractionTask`
-3. 再把 workflow 恢复从 `HumanAction` 泛化
+3. 再把 workflow 恢复从 `ResumeAction` 泛化
 4. 再补回跳上下文恢复
 5. 再做持久化
 6. 最后接真实支付 provider
@@ -584,11 +579,10 @@ workflow 不需要为每种外部动作单独发明状态。
 
 以下问题在正式开发前需要明确：
 
-1. `WAITING_HUMAN` 是否立即改名为更通用的 `WAITING_EXTERNAL`
-2. `HumanAction` 是继续兼容还是直接抽象成 `ResumeAction`
-3. 当前 runtime 持久化是先最小落库，还是直接建立完整 event log
-4. web 回跳路径是走 query 参数、hash 参数，还是后续补正式 router
-5. interaction card 是否允许一条消息绑定多个动作
+1. external interaction 是否需要在后续阶段引入独立主状态（如 `WAITING_EXTERNAL`），还是继续复用 `WAITING_RESUME`
+2. 当前 runtime 持久化是先最小落库，还是直接建立完整 event log
+3. web 回跳路径是走 query 参数、hash 参数，还是后续补正式 router
+4. interaction card 是否允许一条消息绑定多个动作
 
 ## 16. 结论
 

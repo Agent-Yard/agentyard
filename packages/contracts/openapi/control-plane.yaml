@@ -738,9 +738,9 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WorkflowInstance'
-  /workflows/{workflowId}/human-action:
+  /workflows/{workflowId}/resume:
     patch:
-      summary: Submit structured human action and resume or terminate the workflow
+      summary: Submit a structured resume action and continue or terminate the workflow
       parameters:
         - in: path
           name: workflowId
@@ -752,7 +752,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/HumanActionRequest'
+              $ref: '#/components/schemas/ResumeActionRequest'
       responses:
         '200':
           description: Updated workflow state
@@ -812,13 +812,25 @@ components:
       enum: [DRAFT, PUBLISHED]
     TaskStatus:
       type: string
-      enum: [PENDING, RUNNING, WAITING_HUMAN, COMPLETED, FAILED, CANCELLED]
+      enum: [PENDING, RUNNING, WAITING_RESUME, COMPLETED, FAILED, CANCELLED]
     WorkflowStatus:
       type: string
-      enum: [DRAFT, RUNNING, WAITING_HUMAN, COMPLETED, FAILED, CANCELLED]
+      enum: [DRAFT, RUNNING, WAITING_RESUME, COMPLETED, FAILED, CANCELLED]
     NodeStatus:
       type: string
-      enum: [PENDING, RUNNING, WAITING_HUMAN, COMPLETED, FAILED, CANCELLED]
+      enum: [PENDING, RUNNING, WAITING_RESUME, COMPLETED, FAILED, CANCELLED]
+    PauseSource:
+      type: string
+      enum: [GRAPH_NODE, AGENT_REQUEST, EXTERNAL_INTERACTION, TIMEOUT_POLICY]
+    ResumeSource:
+      type: string
+      enum: [HUMAN, EXTERNAL_SYSTEM, TIMEOUT_POLICY]
+    ResumeActionType:
+      type: string
+      enum: [CONTINUE, TERMINATE]
+    ResumeInterventionStatus:
+      type: string
+      enum: [PENDING, APPLIED, FAILED]
     OrchestrationNodeType:
       type: string
       enum: [START, AGENT, HUMAN, END]
@@ -1749,13 +1761,12 @@ components:
           type: string
         customerId:
           type: string
-    HumanActionRequest:
+    ResumeActionRequest:
       type: object
-      required: [action, comment, userId, attributes]
+      required: [type, comment, userId, attributes]
       properties:
-        action:
-          type: string
-          enum: [CONFIRM, TERMINATE]
+        type:
+          $ref: '#/components/schemas/ResumeActionType'
         comment:
           type: string
         userId:
@@ -1764,6 +1775,22 @@ components:
           type: object
           additionalProperties:
             type: string
+    ResumeContextSnapshot:
+      type: object
+      properties:
+        source:
+          $ref: '#/components/schemas/ResumeSource'
+        reasonCode:
+          type: string
+        interactionTaskId:
+          type: string
+          nullable: true
+        interactionType:
+          type: string
+          nullable: true
+        timeoutPolicyKey:
+          type: string
+          nullable: true
     ExecutionCheckpoint:
       type: object
       properties:
@@ -1775,9 +1802,13 @@ components:
           type: string
         statePayload:
           type: string
+        resumeContext:
+          allOf:
+            - $ref: '#/components/schemas/ResumeContextSnapshot'
+          nullable: true
         resumeCount:
           type: integer
-    HumanTaskSnapshot:
+    ResumeTaskSnapshot:
       type: object
       properties:
         nodeKey:
@@ -1789,17 +1820,11 @@ components:
         expectedAction:
           type: string
         source:
-          type: string
-          enum:
-            - GRAPH_NODE
-            - AGENT_REQUEST
+          $ref: '#/components/schemas/PauseSource'
         allowedActions:
           type: array
           items:
-            type: string
-            enum:
-              - CONFIRM
-              - TERMINATE
+            $ref: '#/components/schemas/ResumeActionType'
     PauseReasonSnapshot:
       type: object
       properties:
@@ -1808,10 +1833,7 @@ components:
         detail:
           type: string
         source:
-          type: string
-          enum:
-            - GRAPH_NODE
-            - AGENT_REQUEST
+          $ref: '#/components/schemas/PauseSource'
     WorkflowFailureCategory:
       type: string
       enum:
@@ -2025,22 +2047,37 @@ components:
         updatedAt:
           type: string
           format: date-time
-    HumanIntervention:
+    ResumeIntervention:
       type: object
       properties:
         id:
           type: string
         workflowInstanceId:
           type: string
-        action:
-          type: string
+        type:
+          $ref: '#/components/schemas/ResumeActionType'
+        source:
+          $ref: '#/components/schemas/ResumeSource'
         userId:
           type: string
         comment:
           type: string
+        attributes:
+          type: object
+          additionalProperties:
+            type: string
+        status:
+          $ref: '#/components/schemas/ResumeInterventionStatus'
         createdAt:
           type: string
           format: date-time
+        appliedAt:
+          type: string
+          format: date-time
+          nullable: true
+        failureReason:
+          type: string
+          nullable: true
     TaskInstance:
       type: object
       properties:
@@ -2100,9 +2137,9 @@ components:
           allOf:
             - $ref: '#/components/schemas/ExecutionCheckpoint'
           nullable: true
-        humanTask:
+        resumeTask:
           allOf:
-            - $ref: '#/components/schemas/HumanTaskSnapshot'
+            - $ref: '#/components/schemas/ResumeTaskSnapshot'
           nullable: true
         pauseReason:
           allOf:
@@ -2128,10 +2165,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ToolInvocationSnapshot'
-        interventions:
+        resumeInterventions:
           type: array
           items:
-            $ref: '#/components/schemas/HumanIntervention'
+            $ref: '#/components/schemas/ResumeIntervention'
         loadedSkillResourceVersionIds:
           type: array
           items:
@@ -2223,9 +2260,9 @@ components:
           allOf:
             - $ref: '#/components/schemas/ToolOutcomeSummary'
           nullable: true
-        latestHumanTask:
+        latestResumeTask:
           allOf:
-            - $ref: '#/components/schemas/HumanTaskSnapshot'
+            - $ref: '#/components/schemas/ResumeTaskSnapshot'
           nullable: true
         latestPauseReason:
           allOf:

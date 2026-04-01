@@ -314,11 +314,20 @@ class WorkflowStartRequest(BaseModel):
     logContext: Optional[LogContext] = None
 
 
-class HumanAction(BaseModel):
-    action: str
+class ResumeAction(BaseModel):
+    type: str
+    source: str
     comment: str
     userId: str
     attributes: Dict[str, str] = Field(default_factory=dict)
+
+
+class ResumeContextSnapshot(BaseModel):
+    source: str
+    reasonCode: str
+    interactionTaskId: Optional[str] = None
+    interactionType: Optional[str] = None
+    timeoutPolicyKey: Optional[str] = None
 
 
 class ExecutionCheckpoint(BaseModel):
@@ -326,6 +335,7 @@ class ExecutionCheckpoint(BaseModel):
     currentNodeKey: Optional[str] = None
     waitingNodeKey: Optional[str] = None
     statePayload: str
+    resumeContext: Optional[ResumeContextSnapshot] = None
     resumeCount: int
 
 
@@ -333,7 +343,7 @@ class WorkflowResumeRequest(BaseModel):
     taskId: str
     workflowInstanceId: str
     scenarioId: str
-    action: HumanAction
+    action: ResumeAction
     sessionContext: SessionContext
     assistant: AssistantRunSnapshot
     checkpoint: ExecutionCheckpoint
@@ -351,7 +361,7 @@ class ToolInvocationSnapshot(BaseModel):
     createdAt: str
 
 
-class HumanTaskSnapshot(BaseModel):
+class ResumeTaskSnapshot(BaseModel):
     nodeKey: str
     title: str
     instruction: str
@@ -452,7 +462,7 @@ class WorkflowResult(BaseModel):
     finalReply: Optional[str] = None
     currentNodeKey: Optional[str] = None
     checkpoint: Optional[ExecutionCheckpoint] = None
-    humanTask: Optional[HumanTaskSnapshot] = None
+    resumeTask: Optional[ResumeTaskSnapshot] = None
     pauseReason: Optional[PauseReasonSnapshot] = None
     latestFailure: Optional[WorkflowFailureSnapshot] = None
     nodes: List[NodeSnapshot]
@@ -481,11 +491,11 @@ class AgentState(TypedDict):
     tool_history: List[Dict[str, Any]]
     tool_calls: List[Dict[str, Any]]
     node_snapshots: List[Dict[str, Any]]
-    human_task: Optional[Dict[str, Any]]
+    resume_task: Optional[Dict[str, Any]]
     checkpoint: Optional[Dict[str, Any]]
     escalation_required: bool
     latest_tool_outcome: Optional[Dict[str, Any]]
-    human_input: Optional[Dict[str, Any]]
+    resume_input: Optional[Dict[str, Any]]
     resume_count: int
     agent_turn_state: Dict[str, Any]
     pause_reason: Optional[Dict[str, Any]]
@@ -511,9 +521,14 @@ AGENT_DECISION_SKILL_READ = "SKILL_READ"
 AGENT_DECISION_HUMAN_HANDOFF = "HUMAN_HANDOFF"
 GRAPH_HUMAN_TASK_SOURCE = "GRAPH_NODE"
 AGENT_HUMAN_TASK_SOURCE = "AGENT_REQUEST"
-HUMAN_ACTION_CONFIRM = "CONFIRM"
-HUMAN_ACTION_TERMINATE = "TERMINATE"
-DEFAULT_HUMAN_ACTIONS = [HUMAN_ACTION_CONFIRM, HUMAN_ACTION_TERMINATE]
+PAUSE_SOURCE_EXTERNAL_INTERACTION = "EXTERNAL_INTERACTION"
+PAUSE_SOURCE_TIMEOUT_POLICY = "TIMEOUT_POLICY"
+RESUME_SOURCE_HUMAN = "HUMAN"
+RESUME_SOURCE_EXTERNAL_SYSTEM = "EXTERNAL_SYSTEM"
+RESUME_SOURCE_TIMEOUT_POLICY = "TIMEOUT_POLICY"
+RESUME_ACTION_CONTINUE = "CONTINUE"
+RESUME_ACTION_TERMINATE = "TERMINATE"
+DEFAULT_RESUME_ACTIONS = [RESUME_ACTION_CONTINUE, RESUME_ACTION_TERMINATE]
 SESSION_STATE_TARGET_FACTS = "FACTS"
 SESSION_STATE_TARGET_ARTIFACTS = "ARTIFACTS"
 SESSION_STATE_TARGET_AGENT_SCOPE = "AGENT_SCOPE"
@@ -692,7 +707,7 @@ def pause_for_failure(
     failure: Dict[str, Any],
 ) -> None:
     set_latest_failure(state, failure)
-    pause_for_human(
+    pause_for_resume(
         state,
         node_key,
         node_name,
@@ -702,23 +717,27 @@ def pause_for_failure(
         AGENT_HUMAN_TASK_SOURCE,
         node_key,
         detail,
-        allowed_actions=list(DEFAULT_HUMAN_ACTIONS),
+        allowed_actions=list(DEFAULT_RESUME_ACTIONS),
         reason_code=str(failure.get("code", "")),
         reason_detail=str(failure.get("rootCause", failure.get("detail", ""))),
     )
 
 
-def normalize_human_action(action: Optional[str]) -> str:
+def normalize_resume_action(action: Optional[str]) -> str:
     return (action or "").strip().upper()
 
 
-def allowed_human_actions(task: Optional[Dict[str, Any]]) -> List[str]:
+def normalize_resume_source(source: Optional[str]) -> str:
+    return (source or "").strip().upper()
+
+
+def allowed_resume_actions(task: Optional[Dict[str, Any]]) -> List[str]:
     if not isinstance(task, dict):
-        return list(DEFAULT_HUMAN_ACTIONS)
+        return list(DEFAULT_RESUME_ACTIONS)
     actions = task.get("allowedActions")
     if not isinstance(actions, list) or not actions:
-        return list(DEFAULT_HUMAN_ACTIONS)
-    return [normalize_human_action(item) for item in actions if str(item).strip()]
+        return list(DEFAULT_RESUME_ACTIONS)
+    return [normalize_resume_action(item) for item in actions if str(item).strip()]
 
 
 def find_node_name(graph: GraphSnapshot, node_key: Optional[str]) -> str:
@@ -1149,7 +1168,7 @@ def format_default_user_prompt(
     loaded_skills: List[Dict[str, str]],
     knowledge_context: List[Dict[str, Any]],
     tool_results: List[Dict[str, Any]],
-    human_input: Optional[Dict[str, Any]],
+    resume_input: Optional[Dict[str, Any]],
     shared_facts_payload: Dict[str, Any],
     shared_artifacts_payload: Dict[str, Any],
     agent_scope_payload: Dict[str, Any],
@@ -1172,8 +1191,8 @@ def format_default_user_prompt(
         sections.append(f"知识召回结果：\n{json.dumps(knowledge_context, ensure_ascii=False, indent=2)}")
     if tool_results:
         sections.append(f"工具结果：\n{json.dumps(tool_results, ensure_ascii=False, indent=2)}")
-    if human_input:
-        sections.append(f"人工输入：\n{json.dumps(human_input, ensure_ascii=False, indent=2)}")
+    if resume_input:
+        sections.append(f"恢复输入：\n{json.dumps(resume_input, ensure_ascii=False, indent=2)}")
     return "\n\n".join(sections)
 
 
@@ -1233,7 +1252,7 @@ def build_structured_agent_prompt(
     loaded_skills: List[Dict[str, str]],
     knowledge_context: List[Dict[str, Any]],
     tool_results: List[Dict[str, Any]],
-    human_input: Optional[Dict[str, Any]],
+    resume_input: Optional[Dict[str, Any]],
     tool_resources: List[ResourceVersionSnapshot],
     routes: List[Dict[str, Any]],
     loop_index: int,
@@ -1245,7 +1264,7 @@ def build_structured_agent_prompt(
         loaded_skills,
         knowledge_context,
         tool_results,
-        human_input,
+        resume_input,
         shared_facts_payload,
         shared_artifacts_payload,
         agent_scope_payload,
@@ -1928,7 +1947,7 @@ def export_state(state: AgentState) -> Dict[str, Any]:
         "tool_history": state["tool_history"],
         "tool_calls": state["tool_calls"],
         "node_snapshots": state["node_snapshots"],
-        "human_task": state["human_task"],
+        "resume_task": state["resume_task"],
         "latest_tool_outcome": state["latest_tool_outcome"],
         "escalation_required": state["escalation_required"],
         "resume_count": state["resume_count"],
@@ -1957,11 +1976,11 @@ def restore_state(data: Dict[str, Any], resume_request: WorkflowResumeRequest) -
         "tool_history": data.get("tool_history", []),
         "tool_calls": data.get("tool_calls", []),
         "node_snapshots": data.get("node_snapshots", []),
-        "human_task": None,
+        "resume_task": None,
         "checkpoint": None,
         "escalation_required": data.get("escalation_required", False),
         "latest_tool_outcome": data.get("latest_tool_outcome"),
-        "human_input": resume_request.action.model_dump(mode="json"),
+        "resume_input": resume_request.action.model_dump(mode="json"),
         "resume_count": resume_request.checkpoint.resumeCount + 1,
         "agent_turn_state": data.get("agent_turn_state", {"phase": "IDLE", "turnIndex": 0, "latestDecision": None, "turnLogs": []}),
         "pause_reason": data.get("pause_reason"),
@@ -2037,7 +2056,7 @@ def log_turn_failure(workflow_instance_id: str, node_key: str, turn_index: int, 
     )
 
 
-def pause_for_human(
+def pause_for_resume(
     state: AgentState,
     node_key: str,
     node_name: str,
@@ -2050,19 +2069,23 @@ def pause_for_human(
     allowed_actions: Optional[List[str]] = None,
     reason_code: str = "",
     reason_detail: str = "",
+    resume_source: str = RESUME_SOURCE_HUMAN,
+    interaction_task_id: Optional[str] = None,
+    interaction_type: Optional[str] = None,
+    timeout_policy_key: Optional[str] = None,
 ) -> None:
     state["current_node_key"] = node_key
-    state["human_task"] = {
+    state["resume_task"] = {
         "nodeKey": node_key,
         "title": title,
         "instruction": instruction,
         "expectedAction": expected_action,
         "source": source,
-        "allowedActions": allowed_actions or list(DEFAULT_HUMAN_ACTIONS),
+        "allowedActions": allowed_actions or list(DEFAULT_RESUME_ACTIONS),
     }
     state["escalation_required"] = True
-    state["workflow_status"] = "WAITING_HUMAN"
-    state["summary"] = instruction or state["summary"] or "等待人工处理。"
+    state["workflow_status"] = "WAITING_RESUME"
+    state["summary"] = instruction or state["summary"] or "等待恢复处理。"
     state["pause_reason"] = {
         "code": reason_code,
         "detail": reason_detail or instruction or detail,
@@ -2073,24 +2096,31 @@ def pause_for_human(
         "currentNodeKey": resume_node_key,
         "waitingNodeKey": node_key,
         "statePayload": json.dumps(export_state(state), ensure_ascii=False),
+        "resumeContext": {
+            "source": resume_source,
+            "reasonCode": reason_code,
+            "interactionTaskId": interaction_task_id,
+            "interactionType": interaction_type,
+            "timeoutPolicyKey": timeout_policy_key,
+        },
         "resumeCount": state["resume_count"],
     }
     state["next_node_key"] = "__end__"
-    append_node(state, node_key, node_name, detail or state["summary"], status="WAITING_HUMAN")
+    append_node(state, node_key, node_name, detail or state["summary"], status="WAITING_RESUME")
 
 
-def cancel_workflow_from_human_action(
+def cancel_workflow_from_resume_action(
     state: AgentState,
     graph: GraphSnapshot,
     waiting_node_key: Optional[str],
-    action: HumanAction,
+    action: ResumeAction,
 ) -> None:
     node_key = waiting_node_key or state["current_node_key"] or "workflow-cancelled"
     node_name = find_node_name(graph, node_key)
     detail = action.comment or "人工终止了当前流程。"
     state["current_node_key"] = node_key
     state["next_node_key"] = "__end__"
-    state["human_task"] = None
+    state["resume_task"] = None
     state["checkpoint"] = None
     state["pause_reason"] = None
     state["escalation_required"] = False
@@ -2159,7 +2189,7 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
             loaded_skills,
             hits,
             tool_history_for_prompt(state),
-            state["human_input"],
+            state["resume_input"],
             tool_resources,
             available_routes_for_prompt(graph, node.nodeKey),
             turn_index - 1,
@@ -2280,7 +2310,7 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
                 instruction="请人工继续处理当前会话",
                 expectedAction="补充处理意见",
             )
-            pause_for_human(
+            pause_for_resume(
                 state,
                 node.nodeKey,
                 node.nodeName,
@@ -2290,7 +2320,7 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
                 AGENT_HUMAN_TASK_SOURCE,
                 node.nodeKey,
                 "\n".join(detail_lines),
-                allowed_actions=list(DEFAULT_HUMAN_ACTIONS),
+                allowed_actions=list(DEFAULT_RESUME_ACTIONS),
                 reason_code="HUMAN_HANDOFF_REQUESTED",
                 reason_detail=human_request.instruction or structured.message,
             )
@@ -2519,11 +2549,11 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
         return
 
     message = final_message or agent.responsibility
-    human_comment = state["human_input"]["comment"] if state["human_input"] else ""
+    human_comment = state["resume_input"]["comment"] if state["resume_input"] else ""
     latest_outcome = state["latest_tool_outcome"] or {}
     latest_result = latest_outcome.get("result", {}) if isinstance(latest_outcome, dict) else {}
     suggestion = json.dumps(latest_result, ensure_ascii=False) if latest_result else ""
-    human_suffix = f"人工处理说明：{human_comment}" if human_comment else ""
+    human_suffix = f"恢复说明：{human_comment}" if human_comment else ""
     state["final_reply"] = f"{message}\n\n{human_suffix}".strip() if human_suffix and human_suffix not in message else message
     if state["final_reply"]:
         state["summary"] = state["final_reply"]
@@ -2561,7 +2591,7 @@ def execute_human_node(state: AgentState, node: GraphNodeSnapshot) -> None:
     if node.humanNode is None:
         raise HTTPException(status_code=500, detail=f"human node missing config: {node.nodeKey}")
     next_node_key = resolve_next_node(graph_from_state(state), node.nodeKey, node.humanNode.resumeRouteKey)
-    pause_for_human(
+    pause_for_resume(
         state,
         node.nodeKey,
         node.nodeName,
@@ -2571,7 +2601,7 @@ def execute_human_node(state: AgentState, node: GraphNodeSnapshot) -> None:
         GRAPH_HUMAN_TASK_SOURCE,
         next_node_key or "end",
         f"等待人工处理：{node.humanNode.instruction}",
-        allowed_actions=list(DEFAULT_HUMAN_ACTIONS),
+        allowed_actions=list(DEFAULT_RESUME_ACTIONS),
         reason_code="GRAPH_HUMAN_NODE",
         reason_detail=node.humanNode.instruction,
     )
@@ -2654,7 +2684,7 @@ def compile_graph(graph_snapshot: GraphSnapshot, entry_node_key: str):
 
 
 def workflow_result_from_state(state: AgentState) -> WorkflowResult:
-    status = state.get("workflow_status") or ("WAITING_HUMAN" if state["human_task"] else "COMPLETED")
+    status = state.get("workflow_status") or ("WAITING_RESUME" if state["resume_task"] else "COMPLETED")
     return WorkflowResult(
         workflowInstanceId=state["workflow_instance_id"],
         status=status,
@@ -2662,7 +2692,7 @@ def workflow_result_from_state(state: AgentState) -> WorkflowResult:
         finalReply=state["final_reply"] or None,
         currentNodeKey=state["current_node_key"],
         checkpoint=ExecutionCheckpoint(**state["checkpoint"]) if state["checkpoint"] else None,
-        humanTask=HumanTaskSnapshot(**state["human_task"]) if state["human_task"] else None,
+        resumeTask=ResumeTaskSnapshot(**state["resume_task"]) if state["resume_task"] else None,
         pauseReason=PauseReasonSnapshot(**state["pause_reason"]) if state["pause_reason"] else None,
         latestFailure=WorkflowFailureSnapshot(**state["latest_failure"]) if state["latest_failure"] else None,
         nodes=[NodeSnapshot(**node) for node in state["node_snapshots"]],
@@ -2703,11 +2733,11 @@ async def start_agent_run(request: WorkflowStartRequest, _: None = Depends(requi
         "tool_history": [],
         "tool_calls": [],
         "node_snapshots": [],
-        "human_task": None,
+        "resume_task": None,
         "checkpoint": None,
         "escalation_required": False,
         "latest_tool_outcome": None,
-        "human_input": None,
+        "resume_input": None,
         "resume_count": 0,
         "agent_turn_state": {"phase": "IDLE", "turnIndex": 0, "latestDecision": None, "turnLogs": []},
         "pause_reason": None,
@@ -2736,25 +2766,32 @@ async def resume_agent_run(request: WorkflowResumeRequest, _: None = Depends(req
         userId=request.logContext.userId if request.logContext and request.logContext.userId else request.action.userId,
     )
     logger.info(
-        "workflow %s resume request received action=%s userId=%s",
+        "workflow %s resume request received type=%s source=%s userId=%s",
         request.workflowInstanceId,
-        request.action.action,
+        request.action.type,
+        request.action.source,
         request.action.userId,
     )
     validate_graph(request.assistant.graph, request.assistant)
     payload = json.loads(request.checkpoint.statePayload or "{}")
-    saved_human_task = payload.get("human_task")
-    action = normalize_human_action(request.action.action)
-    if action not in allowed_human_actions(saved_human_task):
-        raise HTTPException(status_code=400, detail=f"unsupported human action: {request.action.action}")
+    saved_resume_task = payload.get("resume_task")
+    action = normalize_resume_action(request.action.type)
+    action_source = normalize_resume_source(request.action.source)
+    if action not in allowed_resume_actions(saved_resume_task):
+        raise HTTPException(status_code=400, detail=f"unsupported resume action: {request.action.type}")
+    if action_source not in {RESUME_SOURCE_HUMAN, RESUME_SOURCE_EXTERNAL_SYSTEM, RESUME_SOURCE_TIMEOUT_POLICY}:
+        raise HTTPException(status_code=400, detail=f"unsupported resume source: {request.action.source}")
     state = restore_state(payload, request)
-    state["human_input"]["action"] = action
-    if action == HUMAN_ACTION_TERMINATE:
-        cancel_workflow_from_human_action(
+    state["resume_input"]["type"] = action
+    state["resume_input"]["source"] = action_source
+    if action == RESUME_ACTION_TERMINATE and action_source != RESUME_SOURCE_HUMAN:
+        raise HTTPException(status_code=400, detail="TERMINATE is only supported for HUMAN resume actions")
+    if action == RESUME_ACTION_TERMINATE:
+        cancel_workflow_from_resume_action(
             state,
             GraphSnapshot(**state["graph"]),
             request.checkpoint.waitingNodeKey,
-            request.action.model_copy(update={"action": action}),
+            request.action.model_copy(update={"type": action, "source": action_source}),
         )
         result = workflow_result_from_state(state)
         logger.info(
@@ -2776,6 +2813,6 @@ async def resume_agent_run(request: WorkflowResumeRequest, _: None = Depends(req
         result.currentNodeKey,
         result.summary,
     )
-    if result.status == "WAITING_HUMAN":
+    if result.status == "WAITING_RESUME":
         return result
     return result.model_copy(update={"escalationRequired": False})

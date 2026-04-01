@@ -36,12 +36,12 @@ export function useAppState() {
   const canManageGovernance = computed(() => session.value?.currentRole !== 'BUSINESS_USER');
   const currentWorkflow = computed(
     () => workflows.value.find((item) => item.id === selectedWorkflowId.value)
-      ?? workflows.value.find((item) => item.status === 'WAITING_HUMAN')
+      ?? workflows.value.find((item) => item.status === 'WAITING_RESUME')
       ?? workflows.value[0],
   );
 
   function preferredWorkflowId(workflowList: WorkflowInstance[]) {
-    return workflowList.find((item) => item.status === 'WAITING_HUMAN')?.id ?? workflowList[0]?.id ?? null;
+    return workflowList.find((item) => item.status === 'WAITING_RESUME')?.id ?? workflowList[0]?.id ?? null;
   }
 
   function errorMessage(error: unknown, fallback: string) {

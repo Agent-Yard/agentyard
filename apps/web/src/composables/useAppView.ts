@@ -172,7 +172,7 @@ export function useAppView(state: AppState, catalogActions: CatalogActions, runt
       })),
       handlers: {
         selectWorkflow: runtimeActions.handleSelectWorkflow,
-        humanAction: runtimeActions.handleHumanAction,
+        resumeAction: runtimeActions.handleResumeAction,
       },
     },
   } satisfies Record<PageKey, { component: object; props: ComputedRef<object>; handlers: Record<string, (...args: any[]) => any> }>;

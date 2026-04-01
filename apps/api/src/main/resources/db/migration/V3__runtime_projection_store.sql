@@ -1,4 +1,4 @@
-drop table if exists human_intervention;
+drop table if exists resume_intervention;
 drop table if exists conversation_message;
 drop table if exists conversation_session;
 drop table if exists workflow_instance;
@@ -32,7 +32,7 @@ create table workflow_instance (
     current_node_key varchar(255),
     escalation_required boolean not null default false,
     checkpoint jsonb,
-    human_task jsonb,
+    resume_task jsonb,
     pause_reason jsonb,
     latest_tool_outcome jsonb,
     resource_anchors jsonb not null,
@@ -55,7 +55,7 @@ create table conversation_session (
     latest_task_id varchar(64),
     latest_workflow_instance_id varchar(64),
     latest_tool_outcome jsonb,
-    latest_human_task jsonb,
+    latest_resume_task jsonb,
     latest_pause_reason jsonb,
     loaded_skill_resource_version_ids jsonb not null,
     shared_state jsonb not null
@@ -74,10 +74,11 @@ create table conversation_message (
     workflow_instance_id varchar(64)
 );
 
-create table human_intervention (
+create table resume_intervention (
     id varchar(64) primary key,
     workflow_instance_id varchar(64) not null,
-    action varchar(64) not null,
+    action_type varchar(64) not null,
+    action_source varchar(64) not null,
     user_id varchar(255) not null,
     comment text,
     attributes jsonb not null,
@@ -93,4 +94,4 @@ create index idx_workflow_instance_status on workflow_instance (status, updated_
 create index idx_conversation_session_updated on conversation_session (updated_at desc);
 create index idx_conversation_session_latest_workflow on conversation_session (latest_workflow_instance_id);
 create index idx_conversation_message_session on conversation_message (session_id, created_at asc, id asc);
-create index idx_human_intervention_workflow on human_intervention (workflow_instance_id, created_at asc, id asc);
+create index idx_resume_intervention_workflow on resume_intervention (workflow_instance_id, created_at asc, id asc);

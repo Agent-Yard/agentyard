@@ -2,7 +2,7 @@ package com.lynxus.platform.runtime;
 
 import com.lynxus.contracts.runtime.WorkflowContracts.ExecutionCheckpoint;
 import com.lynxus.contracts.runtime.WorkflowContracts.AgentTurnState;
-import com.lynxus.contracts.runtime.WorkflowContracts.HumanTaskSnapshot;
+import com.lynxus.contracts.runtime.WorkflowContracts.ResumeTaskSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.NodeStatus;
 import com.lynxus.contracts.runtime.WorkflowContracts.PauseReasonSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.SharedSessionState;
@@ -22,7 +22,7 @@ public final class RuntimeDtos {
     public record TaskLaunchRequest(String scenarioId, String assistantId, String question, String customerId) {
     }
 
-    public record HumanActionRequest(String action, String comment, String userId, Map<String, String> attributes) {
+    public record ResumeActionRequest(String type, String comment, String userId, Map<String, String> attributes) {
     }
 
     public record CreateConversationSessionRequest(String scenarioId, String assistantId, String customerId, String openingMessage) {
@@ -59,14 +59,14 @@ public final class RuntimeDtos {
         String currentNodeKey,
         boolean escalationRequired,
         ExecutionCheckpoint checkpoint,
-        HumanTaskSnapshot humanTask,
+        ResumeTaskSnapshot resumeTask,
         PauseReasonSnapshot pauseReason,
         WorkflowFailureSnapshot latestFailure,
         ToolOutcomeSummary latestToolOutcome,
         List<String> resourceAnchors,
         List<NodeExecutionDto> nodes,
         List<ToolInvocationSnapshot> toolCalls,
-        List<HumanInterventionDto> interventions,
+        List<ResumeInterventionDto> resumeInterventions,
         List<String> loadedSkillResourceVersionIds,
         SharedSessionState sharedState,
         AgentTurnState agentTurnState
@@ -84,20 +84,21 @@ public final class RuntimeDtos {
     ) {
     }
 
-    public enum HumanInterventionStatus {
+    public enum ResumeInterventionStatus {
         PENDING,
         APPLIED,
         FAILED
     }
 
-    public record HumanInterventionDto(
+    public record ResumeInterventionDto(
         String id,
         String workflowInstanceId,
-        String action,
+        String type,
+        String source,
         String userId,
         String comment,
         Map<String, String> attributes,
-        HumanInterventionStatus status,
+        ResumeInterventionStatus status,
         Instant createdAt,
         Instant appliedAt,
         String failureReason
@@ -132,7 +133,7 @@ public final class RuntimeDtos {
         String latestTaskId,
         String latestWorkflowInstanceId,
         ToolOutcomeSummary latestToolOutcome,
-        HumanTaskSnapshot latestHumanTask,
+        ResumeTaskSnapshot latestResumeTask,
         PauseReasonSnapshot latestPauseReason,
         List<String> loadedSkillResourceVersionIds,
         SharedSessionState sharedState

@@ -207,6 +207,6 @@ export const api = {
   logout: () => request<LogoutResponse>('/auth/logout', jsonOptions('POST')),
   launchTask: (payload: { scenarioId: string; assistantId: string; question: string; customerId: string }) =>
     request<TaskInstance>('/tasks', jsonOptions('POST', payload)),
-  completeHumanAction: (workflowId: string, payload: { action: string; comment: string; userId: string; attributes: Record<string, string> }) =>
-    request<WorkflowInstance>(`/workflows/${workflowId}/human-action`, jsonOptions('PATCH', payload)),
+  completeResumeAction: (workflowId: string, payload: { type: string; comment: string; userId: string; attributes: Record<string, string> }) =>
+    request<WorkflowInstance>(`/workflows/${workflowId}/resume`, jsonOptions('PATCH', payload)),
 };

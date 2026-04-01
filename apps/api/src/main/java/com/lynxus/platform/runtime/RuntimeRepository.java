@@ -26,11 +26,11 @@ public interface RuntimeRepository {
 
     void saveSession(ConversationSessionDto session);
 
-    Optional<HumanInterventionDto> findPendingIntervention(String workflowInstanceId);
+    Optional<ResumeInterventionDto> findPendingResumeIntervention(String workflowInstanceId);
 
-    List<HumanInterventionDto> listPendingInterventions();
+    List<ResumeInterventionDto> listPendingResumeInterventions();
 
-    void persistProjection(TaskInstanceDto task, WorkflowInstanceDto workflow, ConversationSessionDto session, HumanInterventionDto intervention);
+    void persistProjection(TaskInstanceDto task, WorkflowInstanceDto workflow, ConversationSessionDto session, ResumeInterventionDto intervention);
 
-    void saveHumanIntervention(HumanInterventionDto intervention);
+    void saveResumeIntervention(ResumeInterventionDto intervention);
 }

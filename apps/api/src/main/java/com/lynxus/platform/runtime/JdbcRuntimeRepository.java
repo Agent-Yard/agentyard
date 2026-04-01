@@ -4,7 +4,7 @@ import static com.lynxus.platform.runtime.RuntimeDtos.*;
 
 import com.lynxus.contracts.runtime.WorkflowContracts.AgentTurnState;
 import com.lynxus.contracts.runtime.WorkflowContracts.ExecutionCheckpoint;
-import com.lynxus.contracts.runtime.WorkflowContracts.HumanTaskSnapshot;
+import com.lynxus.contracts.runtime.WorkflowContracts.ResumeTaskSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.PauseReasonSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.SharedSessionState;
 import com.lynxus.contracts.runtime.WorkflowContracts.TaskStatus;
@@ -102,7 +102,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         return hydrateWorkflows(jdbcTemplate.query(
             """
                 select id, task_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at, status, summary, final_reply,
-                       current_node_key, escalation_required, checkpoint, human_task, pause_reason, latest_failure, latest_tool_outcome,
+                       current_node_key, escalation_required, checkpoint, resume_task, pause_reason, latest_failure, latest_tool_outcome,
                        resource_anchors, nodes, tool_calls, loaded_skill_resource_version_ids, shared_state, agent_turn_state
                 from workflow_instance
                 order by updated_at desc, created_at desc, id desc
@@ -116,7 +116,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         return hydrateWorkflows(jdbcTemplate.query(
             """
                 select id, task_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at, status, summary, final_reply,
-                       current_node_key, escalation_required, checkpoint, human_task, pause_reason, latest_failure, latest_tool_outcome,
+                       current_node_key, escalation_required, checkpoint, resume_task, pause_reason, latest_failure, latest_tool_outcome,
                        resource_anchors, nodes, tool_calls, loaded_skill_resource_version_ids, shared_state, agent_turn_state
                 from workflow_instance
                 where status not in ('COMPLETED', 'FAILED', 'CANCELLED')
@@ -131,7 +131,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         return hydrateWorkflows(jdbcTemplate.query(
             """
                 select id, task_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at, status, summary, final_reply,
-                       current_node_key, escalation_required, checkpoint, human_task, pause_reason, latest_failure, latest_tool_outcome,
+                       current_node_key, escalation_required, checkpoint, resume_task, pause_reason, latest_failure, latest_tool_outcome,
                        resource_anchors, nodes, tool_calls, loaded_skill_resource_version_ids, shared_state, agent_turn_state
                 from workflow_instance
                 where id = ?
@@ -153,7 +153,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         return hydrateSessions(jdbcTemplate.query(
             """
                 select id, scenario_id, title, customer_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at,
-                       latest_task_id, latest_workflow_instance_id, latest_tool_outcome, latest_human_task, latest_pause_reason,
+                       latest_task_id, latest_workflow_instance_id, latest_tool_outcome, latest_resume_task, latest_pause_reason,
                        loaded_skill_resource_version_ids, shared_state
                 from conversation_session
                 order by updated_at desc, id desc
@@ -167,7 +167,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         return hydrateSessions(jdbcTemplate.query(
             """
                 select id, scenario_id, title, customer_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at,
-                       latest_task_id, latest_workflow_instance_id, latest_tool_outcome, latest_human_task, latest_pause_reason,
+                       latest_task_id, latest_workflow_instance_id, latest_tool_outcome, latest_resume_task, latest_pause_reason,
                        loaded_skill_resource_version_ids, shared_state
                 from conversation_session
                 where id = ?
@@ -178,30 +178,30 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
     }
 
     @Override
-    public Optional<HumanInterventionDto> findPendingIntervention(String workflowInstanceId) {
+    public Optional<ResumeInterventionDto> findPendingResumeIntervention(String workflowInstanceId) {
         return jdbcTemplate.query(
             """
-                select id, workflow_instance_id, action, user_id, comment, attributes, status, created_at, applied_at, failure_reason
-                from human_intervention
+                select id, workflow_instance_id, action_type, action_source, user_id, comment, attributes, status, created_at, applied_at, failure_reason
+                from resume_intervention
                 where workflow_instance_id = ? and status = 'PENDING'
                 order by created_at desc, id desc
                 limit 1
                 """,
-            (rs, rowNum) -> mapHumanIntervention(rs),
+            (rs, rowNum) -> mapResumeIntervention(rs),
             workflowInstanceId
         ).stream().findFirst();
     }
 
     @Override
-    public List<HumanInterventionDto> listPendingInterventions() {
+    public List<ResumeInterventionDto> listPendingResumeInterventions() {
         return jdbcTemplate.query(
             """
-                select id, workflow_instance_id, action, user_id, comment, attributes, status, created_at, applied_at, failure_reason
-                from human_intervention
+                select id, workflow_instance_id, action_type, action_source, user_id, comment, attributes, status, created_at, applied_at, failure_reason
+                from resume_intervention
                 where status = 'PENDING'
                 order by created_at asc, id asc
                 """,
-            (rs, rowNum) -> mapHumanIntervention(rs)
+            (rs, rowNum) -> mapResumeIntervention(rs)
         );
     }
 
@@ -211,7 +211,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         TaskInstanceDto task,
         WorkflowInstanceDto workflow,
         ConversationSessionDto session,
-        HumanInterventionDto intervention
+        ResumeInterventionDto intervention
     ) {
         upsertTask(task, session == null ? findTaskSessionId(task.id()).orElse(null) : session.id());
         upsertWorkflow(workflow);
@@ -220,14 +220,14 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             upsertMessages(session.messages());
         }
         if (intervention != null) {
-            upsertHumanIntervention(intervention);
+            upsertResumeIntervention(intervention);
         }
     }
 
     @Override
     @Transactional
-    public void saveHumanIntervention(HumanInterventionDto intervention) {
-        upsertHumanIntervention(intervention);
+    public void saveResumeIntervention(ResumeInterventionDto intervention) {
+        upsertResumeIntervention(intervention);
     }
 
     String writeJson(Object value) {
@@ -275,15 +275,16 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         );
     }
 
-    private HumanInterventionDto mapHumanIntervention(ResultSet rs) throws SQLException {
-        return new HumanInterventionDto(
+    private ResumeInterventionDto mapResumeIntervention(ResultSet rs) throws SQLException {
+        return new ResumeInterventionDto(
             rs.getString("id"),
             rs.getString("workflow_instance_id"),
-            rs.getString("action"),
+            rs.getString("action_type"),
+            rs.getString("action_source"),
             rs.getString("user_id"),
             rs.getString("comment"),
             readJson(rs.getString("attributes"), STRING_MAP),
-            HumanInterventionStatus.valueOf(rs.getString("status")),
+            ResumeInterventionStatus.valueOf(rs.getString("status")),
             readInstant(rs, "created_at"),
             readNullableInstant(rs, "applied_at"),
             rs.getString("failure_reason")
@@ -305,7 +306,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             rs.getString("current_node_key"),
             rs.getBoolean("escalation_required"),
             readJson(rs.getString("checkpoint"), ExecutionCheckpoint.class),
-            readJson(rs.getString("human_task"), HumanTaskSnapshot.class),
+            readJson(rs.getString("resume_task"), ResumeTaskSnapshot.class),
             readJson(rs.getString("pause_reason"), PauseReasonSnapshot.class),
             readJson(rs.getString("latest_failure"), WorkflowFailureSnapshot.class),
             readJson(rs.getString("latest_tool_outcome"), ToolOutcomeSummary.class),
@@ -332,7 +333,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             rs.getString("latest_task_id"),
             rs.getString("latest_workflow_instance_id"),
             readJson(rs.getString("latest_tool_outcome"), ToolOutcomeSummary.class),
-            readJson(rs.getString("latest_human_task"), HumanTaskSnapshot.class),
+            readJson(rs.getString("latest_resume_task"), ResumeTaskSnapshot.class),
             readJson(rs.getString("latest_pause_reason"), PauseReasonSnapshot.class),
             readJson(rs.getString("loaded_skill_resource_version_ids"), STRING_LIST),
             readJson(rs.getString("shared_state"), SharedSessionState.class)
@@ -360,7 +361,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
                 row.latestTaskId(),
                 row.latestWorkflowInstanceId(),
                 row.latestToolOutcome(),
-                row.latestHumanTask(),
+                row.latestResumeTask(),
                 row.latestPauseReason(),
                 normalizeStringList(row.loadedSkillResourceVersionIds()),
                 row.sharedState() == null ? SharedSessionState.empty() : row.sharedState()
@@ -373,7 +374,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             return List.of();
         }
         List<String> workflowIds = rows.stream().map(StoredWorkflowRow::id).toList();
-        Map<String, List<HumanInterventionDto>> interventionsByWorkflow = loadInterventionsByWorkflow(workflowIds);
+        Map<String, List<ResumeInterventionDto>> interventionsByWorkflow = loadInterventionsByWorkflow(workflowIds);
         return rows.stream()
             .map(row -> new WorkflowInstanceDto(
                 row.id(),
@@ -389,7 +390,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
                 row.currentNodeKey(),
                 row.escalationRequired(),
                 row.checkpoint(),
-                row.humanTask(),
+                row.resumeTask(),
                 row.pauseReason(),
                 row.latestFailure(),
                 row.latestToolOutcome(),
@@ -433,18 +434,18 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         return messagesBySession;
     }
 
-    private Map<String, List<HumanInterventionDto>> loadInterventionsByWorkflow(List<String> workflowIds) {
-        Map<String, List<HumanInterventionDto>> interventionsByWorkflow = new LinkedHashMap<>();
+    private Map<String, List<ResumeInterventionDto>> loadInterventionsByWorkflow(List<String> workflowIds) {
+        Map<String, List<ResumeInterventionDto>> interventionsByWorkflow = new LinkedHashMap<>();
         jdbcTemplate.query(
             """
-                select id, workflow_instance_id, action, user_id, comment, attributes, status, created_at, applied_at, failure_reason
-                from human_intervention
+                select id, workflow_instance_id, action_type, action_source, user_id, comment, attributes, status, created_at, applied_at, failure_reason
+                from resume_intervention
                 where workflow_instance_id in (%s)
                 order by workflow_instance_id, created_at asc, id asc
                 """.formatted(placeholders(workflowIds.size())),
             rs -> {
                 String workflowId = rs.getString("workflow_instance_id");
-                interventionsByWorkflow.computeIfAbsent(workflowId, ignored -> new ArrayList<>()).add(mapHumanIntervention(rs));
+                interventionsByWorkflow.computeIfAbsent(workflowId, ignored -> new ArrayList<>()).add(mapResumeIntervention(rs));
             },
             workflowIds.toArray()
         );
@@ -488,7 +489,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             """
                 insert into workflow_instance (
                     id, task_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at, status, summary, final_reply,
-                    current_node_key, escalation_required, checkpoint, human_task, pause_reason, latest_failure, latest_tool_outcome,
+                    current_node_key, escalation_required, checkpoint, resume_task, pause_reason, latest_failure, latest_tool_outcome,
                     resource_anchors, nodes, tool_calls, loaded_skill_resource_version_ids, shared_state, agent_turn_state
                 ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb),
                           cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb),
@@ -506,7 +507,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
                     current_node_key = excluded.current_node_key,
                     escalation_required = excluded.escalation_required,
                     checkpoint = excluded.checkpoint,
-                    human_task = excluded.human_task,
+                    resume_task = excluded.resume_task,
                     pause_reason = excluded.pause_reason,
                     latest_failure = excluded.latest_failure,
                     latest_tool_outcome = excluded.latest_tool_outcome,
@@ -530,7 +531,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             workflow.currentNodeKey(),
             workflow.escalationRequired(),
             writeJson(workflow.checkpoint()),
-            writeJson(workflow.humanTask()),
+            writeJson(workflow.resumeTask()),
             writeJson(workflow.pauseReason()),
             writeJson(workflow.latestFailure()),
             writeJson(workflow.latestToolOutcome()),
@@ -548,7 +549,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             """
                 insert into conversation_session (
                     id, scenario_id, title, customer_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at,
-                    latest_task_id, latest_workflow_instance_id, latest_tool_outcome, latest_human_task, latest_pause_reason,
+                    latest_task_id, latest_workflow_instance_id, latest_tool_outcome, latest_resume_task, latest_pause_reason,
                     loaded_skill_resource_version_ids, shared_state
                 ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb))
                 on conflict (id) do update set
@@ -563,7 +564,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
                     latest_task_id = excluded.latest_task_id,
                     latest_workflow_instance_id = excluded.latest_workflow_instance_id,
                     latest_tool_outcome = excluded.latest_tool_outcome,
-                    latest_human_task = excluded.latest_human_task,
+                    latest_resume_task = excluded.latest_resume_task,
                     latest_pause_reason = excluded.latest_pause_reason,
                     loaded_skill_resource_version_ids = excluded.loaded_skill_resource_version_ids,
                     shared_state = excluded.shared_state
@@ -580,7 +581,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             session.latestTaskId(),
             session.latestWorkflowInstanceId(),
             writeJson(session.latestToolOutcome()),
-            writeJson(session.latestHumanTask()),
+            writeJson(session.latestResumeTask()),
             writeJson(session.latestPauseReason()),
             writeJson(session.loadedSkillResourceVersionIds()),
             writeJson(session.sharedState())
@@ -619,15 +620,16 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         }
     }
 
-    private void upsertHumanIntervention(HumanInterventionDto intervention) {
+    private void upsertResumeIntervention(ResumeInterventionDto intervention) {
         jdbcTemplate.update(
             """
-                insert into human_intervention (
-                    id, workflow_instance_id, action, user_id, comment, attributes, status, created_at, applied_at, failure_reason
-                ) values (?, ?, ?, ?, ?, cast(? as jsonb), ?, ?, ?, ?)
+                insert into resume_intervention (
+                    id, workflow_instance_id, action_type, action_source, user_id, comment, attributes, status, created_at, applied_at, failure_reason
+                ) values (?, ?, ?, ?, ?, ?, cast(? as jsonb), ?, ?, ?, ?)
                 on conflict (id) do update set
                     workflow_instance_id = excluded.workflow_instance_id,
-                    action = excluded.action,
+                    action_type = excluded.action_type,
+                    action_source = excluded.action_source,
                     user_id = excluded.user_id,
                     comment = excluded.comment,
                     attributes = excluded.attributes,
@@ -638,7 +640,8 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
                 """,
             intervention.id(),
             intervention.workflowInstanceId(),
-            intervention.action(),
+            intervention.type(),
+            intervention.source(),
             intervention.userId(),
             intervention.comment(),
             writeJson(intervention.attributes() == null ? Map.of() : intervention.attributes()),
@@ -684,7 +687,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         String currentNodeKey,
         boolean escalationRequired,
         ExecutionCheckpoint checkpoint,
-        HumanTaskSnapshot humanTask,
+        ResumeTaskSnapshot resumeTask,
         PauseReasonSnapshot pauseReason,
         WorkflowFailureSnapshot latestFailure,
         ToolOutcomeSummary latestToolOutcome,
@@ -710,7 +713,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         String latestTaskId,
         String latestWorkflowInstanceId,
         ToolOutcomeSummary latestToolOutcome,
-        HumanTaskSnapshot latestHumanTask,
+        ResumeTaskSnapshot latestResumeTask,
         PauseReasonSnapshot latestPauseReason,
         List<String> loadedSkillResourceVersionIds,
         SharedSessionState sharedState

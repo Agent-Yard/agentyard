@@ -2,7 +2,7 @@ package com.lynxus.worker.workflow;
 
 import com.lynxus.contracts.runtime.AssistantRunWorkflow;
 import com.lynxus.contracts.runtime.WorkflowContracts;
-import com.lynxus.contracts.runtime.WorkflowContracts.HumanAction;
+import com.lynxus.contracts.runtime.WorkflowContracts.ResumeAction;
 import com.lynxus.contracts.runtime.WorkflowContracts.NodeSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.NodeStatus;
 import com.lynxus.contracts.runtime.WorkflowContracts.SharedSessionState;
@@ -30,7 +30,7 @@ public class AssistantRunWorkflowImpl implements AssistantRunWorkflow {
     private final AssistantRunActivities activities;
     private WorkflowStartRequest startRequest;
     private WorkflowResult currentResult;
-    private HumanAction pendingHumanAction;
+    private ResumeAction pendingResumeAction;
 
     public AssistantRunWorkflowImpl() {
         this(DEFAULT_ACTIVITY_START_TO_CLOSE_TIMEOUT);
@@ -66,23 +66,28 @@ public class AssistantRunWorkflowImpl implements AssistantRunWorkflow {
                     currentResult.currentNodeKey(),
                     currentResult.summary()
                 );
-                while (currentResult != null && currentResult.status() == WorkflowStatus.WAITING_HUMAN) {
+                while (currentResult != null && currentResult.status() == WorkflowStatus.WAITING_RESUME) {
                     WorkflowResult waitingResult = currentResult;
                     LOGGER.info(
-                        "workflow {} entered WAITING_HUMAN waitingNode={} resumeNode={}",
+                        "workflow {} entered WAITING_RESUME waitingNode={} resumeNode={}",
                         request.workflowInstanceId(),
-                        waitingResult.humanTask() == null ? null : waitingResult.humanTask().nodeKey(),
+                        waitingResult.resumeTask() == null ? null : waitingResult.resumeTask().nodeKey(),
                         waitingResult.checkpoint() == null ? null : waitingResult.checkpoint().currentNodeKey()
                     );
-                    Workflow.await(() -> pendingHumanAction != null);
-                    HumanAction action = pendingHumanAction;
-                    pendingHumanAction = null;
-                    LOGGER.info("workflow {} received human action {}", request.workflowInstanceId(), action.action());
+                    Workflow.await(() -> pendingResumeAction != null);
+                    ResumeAction action = pendingResumeAction;
+                    pendingResumeAction = null;
+                    LOGGER.info(
+                        "workflow {} received resume action type={} source={}",
+                        request.workflowInstanceId(),
+                        action.type(),
+                        action.source()
+                    );
                     this.currentResult = runningResult(
                         startRequest.workflowInstanceId(),
                         waitingResult.currentNodeKey(),
                         "workflow-resuming",
-                        "已收到人工动作，流程继续执行中。"
+                        "已收到恢复动作，流程继续执行中。"
                     );
                     this.currentResult = activities.resumeExecution(new WorkflowResumeRequest(
                         startRequest.taskId(),
@@ -118,14 +123,15 @@ public class AssistantRunWorkflowImpl implements AssistantRunWorkflow {
     }
 
     @Override
-    public void submitHumanAction(HumanAction action) {
+    public void submitResumeAction(ResumeAction action) {
         LOGGER.info(
-            "workflow {} signal submitHumanAction action={} userId={}",
+            "workflow {} signal submitResumeAction type={} source={} userId={}",
             startRequest == null ? null : startRequest.workflowInstanceId(),
-            action == null ? null : action.action(),
+            action == null ? null : action.type(),
+            action == null ? null : action.source(),
             action == null ? null : action.userId()
         );
-        this.pendingHumanAction = action;
+        this.pendingResumeAction = action;
     }
 
     @Override
