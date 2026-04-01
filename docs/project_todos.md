@@ -11,15 +11,15 @@
 
 ### 1.1 真实身份与请求级鉴权
 
-现状：已完成 OIDC-first 登录流首版、API 请求级鉴权、前端登录页与 API 托管会话；当前剩余跨服务 internal token 与细粒度授权补齐。
+现状：已完成 OIDC-first 登录流首版、API 请求级鉴权、前端登录页与 API 托管会话；已补齐跨服务 internal token 与首版粗粒度 RBAC，当前保留四角色模型并按治理写权限收口。
 
 目标：
 
 1. [x] 引入标准化 OIDC 登录流；Lynxus 核心只依赖 OIDC 协议，不内置 Keycloak / Casdoor 等特定 IdP
 2. [x] API 层统一 auth filter：校验 session / JWT，注入 `SecurityContext`
 3. [x] 前端补登录页、API 托管会话、401 拦截与自动跳转
-4. [ ] Agent Runtime 与 Knowledge Service 的服务间调用引入 internal token 校验（不走 OIDC，走共享密钥或 service account）
-5. [ ] 预留 RBAC 注解，但首版只做 `admin / member` 两个角色，不做细粒度
+4. [x] Agent Runtime 与 Knowledge Service 的服务间调用引入 internal token 校验（不走 OIDC，走共享密钥或 service account）
+5. [x] 预留 RBAC 注解，并按当前四角色实现首版粗粒度权限：`PLATFORM_ADMIN / DOMAIN_ADMIN / DEVELOPER` 可治理写，`BUSINESS_USER` 仅运行态与只读访问
 
 为什么排最前：没有 auth 的系统不能交给任何真实用户，也无法做审计。
 

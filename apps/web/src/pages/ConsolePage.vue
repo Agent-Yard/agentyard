@@ -58,6 +58,7 @@ onMounted(() => {
       :current-page-subtitle="state.currentPageMeta.value.subtitle"
       :selected-keys="state.selectedKeys.value"
       :open-keys="state.openKeys.value"
+      :governance-writable="state.canManageGovernance.value"
       @menu-click="handleMenuClick"
       @open-change="handleOpenChange"
       @logout="handleLogout"

@@ -2,6 +2,7 @@ package com.lynxus.platform.catalog;
 
 import static com.lynxus.platform.catalog.CatalogDtos.*;
 
+import com.lynxus.platform.auth.RequireGovernanceWrite;
 import com.lynxus.platform.shared.ApiResponse;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -48,16 +49,19 @@ public class CatalogController {
     }
 
     @PostMapping("/domains")
+    @RequireGovernanceWrite
     public ApiResponse<?> createDomain(@RequestBody CreateDomainRequest request) {
         return ApiResponse.ok(catalogService.createDomain(request));
     }
 
     @PutMapping("/domains/{domainId}")
+    @RequireGovernanceWrite
     public ApiResponse<?> updateDomain(@PathVariable String domainId, @RequestBody UpdateDomainRequest request) {
         return ApiResponse.ok(catalogService.updateDomain(domainId, request));
     }
 
     @DeleteMapping("/domains/{domainId}")
+    @RequireGovernanceWrite
     public ApiResponse<?> deleteDomain(@PathVariable String domainId) {
         return ApiResponse.ok(catalogService.deleteDomain(domainId));
     }
@@ -73,16 +77,19 @@ public class CatalogController {
     }
 
     @PostMapping("/scenarios")
+    @RequireGovernanceWrite
     public ApiResponse<?> createScenario(@RequestBody CreateScenarioRequest request) {
         return ApiResponse.ok(catalogService.createScenario(request));
     }
 
     @PutMapping("/scenarios/{scenarioId}")
+    @RequireGovernanceWrite
     public ApiResponse<?> updateScenario(@PathVariable String scenarioId, @RequestBody UpdateScenarioRequest request) {
         return ApiResponse.ok(catalogService.updateScenario(scenarioId, request));
     }
 
     @DeleteMapping("/scenarios/{scenarioId}")
+    @RequireGovernanceWrite
     public ApiResponse<?> deleteScenario(@PathVariable String scenarioId) {
         return ApiResponse.ok(catalogService.deleteScenario(scenarioId));
     }
@@ -93,16 +100,19 @@ public class CatalogController {
     }
 
     @PostMapping("/assistants")
+    @RequireGovernanceWrite
     public ApiResponse<?> createAssistant(@RequestBody CreateAssistantRequest request) {
         return ApiResponse.ok(catalogService.createAssistant(request));
     }
 
     @PutMapping("/assistants/{assistantId}")
+    @RequireGovernanceWrite
     public ApiResponse<?> updateAssistant(@PathVariable String assistantId, @RequestBody UpdateAssistantRequest request) {
         return ApiResponse.ok(catalogService.updateAssistant(assistantId, request));
     }
 
     @DeleteMapping("/assistants/{assistantId}")
+    @RequireGovernanceWrite
     public ApiResponse<?> deleteAssistant(@PathVariable String assistantId) {
         return ApiResponse.ok(catalogService.deleteAssistant(assistantId));
     }
@@ -118,16 +128,19 @@ public class CatalogController {
     }
 
     @PostMapping("/agents")
+    @RequireGovernanceWrite
     public ApiResponse<?> createAgent(@RequestBody CreateAgentRequest request) {
         return ApiResponse.ok(catalogService.createAgent(request));
     }
 
     @PutMapping("/agents/{agentId}")
+    @RequireGovernanceWrite
     public ApiResponse<?> updateAgent(@PathVariable String agentId, @RequestBody UpdateAgentRequest request) {
         return ApiResponse.ok(catalogService.updateAgent(agentId, request));
     }
 
     @DeleteMapping("/agents/{agentId}")
+    @RequireGovernanceWrite
     public ApiResponse<?> deleteAgent(@PathVariable String agentId) {
         return ApiResponse.ok(catalogService.deleteAgent(agentId));
     }
@@ -143,16 +156,19 @@ public class CatalogController {
     }
 
     @PutMapping("/resources/{resourceId}")
+    @RequireGovernanceWrite
     public ApiResponse<?> updateResource(@PathVariable String resourceId, @RequestBody UpdateResourceRequest request) {
         return ApiResponse.ok(catalogService.updateResource(resourceId, request));
     }
 
     @PostMapping("/resources/{resourceId}/versions")
+    @RequireGovernanceWrite
     public ApiResponse<?> createResourceVersion(@PathVariable String resourceId, @RequestBody CreateResourceVersionRequest request) {
         return ApiResponse.ok(catalogService.createResourceVersion(resourceId, request));
     }
 
     @PutMapping("/resources/{resourceId}/versions/{versionId}")
+    @RequireGovernanceWrite
     public ApiResponse<?> updateResourceVersion(
         @PathVariable String resourceId,
         @PathVariable String versionId,
@@ -162,11 +178,13 @@ public class CatalogController {
     }
 
     @PatchMapping("/resources/{resourceId}/versions/{versionId}/publish")
+    @RequireGovernanceWrite
     public ApiResponse<?> publishResourceVersion(@PathVariable String resourceId, @PathVariable String versionId) {
         return ApiResponse.ok(catalogService.publishResourceVersion(resourceId, versionId));
     }
 
     @DeleteMapping("/resources/{resourceId}/versions/{versionId}")
+    @RequireGovernanceWrite
     public ApiResponse<?> deleteResourceVersion(@PathVariable String resourceId, @PathVariable String versionId) {
         return ApiResponse.ok(catalogService.deleteResourceVersion(resourceId, versionId));
     }
@@ -192,16 +210,19 @@ public class CatalogController {
     }
 
     @PutMapping("/orchestrations/{assistantId}")
+    @RequireGovernanceWrite
     public ApiResponse<?> saveOrchestration(@PathVariable String assistantId, @RequestBody UpdateOrchestrationRequest request) {
         return ApiResponse.ok(catalogService.saveOrchestration(assistantId, request));
     }
 
     @PostMapping("/resources")
+    @RequireGovernanceWrite
     public ApiResponse<?> createResource(@RequestBody CreateResourceRequest request) {
         return ApiResponse.ok(catalogService.createResource(request));
     }
 
     @DeleteMapping("/resources/{resourceId}")
+    @RequireGovernanceWrite
     public ApiResponse<?> deleteResource(@PathVariable String resourceId) {
         return ApiResponse.ok(catalogService.deleteResource(resourceId));
     }

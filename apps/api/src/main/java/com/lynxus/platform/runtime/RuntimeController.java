@@ -2,6 +2,7 @@ package com.lynxus.platform.runtime;
 
 import static com.lynxus.platform.runtime.RuntimeDtos.*;
 
+import com.lynxus.platform.auth.RequireRuntimeAccess;
 import com.lynxus.platform.shared.ApiResponse;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api")
+@RequireRuntimeAccess
 public class RuntimeController {
     private final RuntimeService runtimeService;
 

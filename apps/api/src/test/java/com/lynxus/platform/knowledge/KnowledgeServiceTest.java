@@ -162,7 +162,7 @@ class KnowledgeServiceTest {
         private CatalogDtos.KnowledgeRetrievalPreviewResultDto previewResult;
 
         private StubKnowledgeServiceClient() {
-            super("http://localhost:8091");
+            super("http://localhost:8091", "test-internal-token");
         }
 
         @Override

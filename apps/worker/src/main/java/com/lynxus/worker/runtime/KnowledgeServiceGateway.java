@@ -13,8 +13,15 @@ public interface KnowledgeServiceGateway {
     class HttpKnowledgeServiceGateway implements KnowledgeServiceGateway {
         private final RestClient restClient;
 
-        public HttpKnowledgeServiceGateway(@Value("${lynxus.knowledge-service.base-url:http://localhost:8091}") String baseUrl) {
-            this.restClient = RestClient.builder().baseUrl(baseUrl).build();
+        public HttpKnowledgeServiceGateway(
+            @Value("${lynxus.knowledge-service.base-url:http://localhost:8091}") String baseUrl,
+            @Value("${lynxus.internal-auth.token}") String internalAuthToken
+        ) {
+            String sanitizedToken = requireInternalAuthToken(internalAuthToken);
+            this.restClient = RestClient.builder()
+                .baseUrl(baseUrl)
+                .defaultHeader("Authorization", "Bearer " + sanitizedToken)
+                .build();
         }
 
         @Override
@@ -39,6 +46,13 @@ public interface KnowledgeServiceGateway {
         }
 
         record IndexSnapshotDto(String status) {
+        }
+
+        private static String requireInternalAuthToken(String internalAuthToken) {
+            if (internalAuthToken == null || internalAuthToken.isBlank()) {
+                throw new IllegalStateException("lynxus.internal-auth.token must be configured");
+            }
+            return internalAuthToken.trim();
         }
     }
 }

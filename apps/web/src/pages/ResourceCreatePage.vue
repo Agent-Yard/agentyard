@@ -13,6 +13,7 @@ const props = defineProps<{
   domains: BusinessDomain[];
   assistants: Assistant[];
   resourceBlueprints: ResourceBlueprint[];
+  canManageGovernance: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -150,7 +151,15 @@ function submitCreate() {
 
     <a-col :span="16">
       <a-card title="创建能力资源">
-        <a-form layout="vertical" :model="createForm" @finish="submitCreate">
+        <a-alert
+          v-if="!canManageGovernance"
+          type="warning"
+          show-icon
+          style="margin-bottom: 16px"
+          message="当前角色没有资源治理写权限"
+          description="请使用具备治理角色的账号创建资源。"
+        />
+        <a-form v-if="canManageGovernance" layout="vertical" :model="createForm" @finish="submitCreate">
           <a-row :gutter="[16, 16]">
             <a-col :span="12">
               <a-form-item label="资源名称">

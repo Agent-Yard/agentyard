@@ -8,6 +8,7 @@ import logging
 import math
 import os
 import re
+import secrets
 import uuid
 from collections import Counter
 from dataclasses import dataclass
@@ -18,7 +19,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from minio import Minio
 from pydantic import BaseModel, Field
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, create_engine, select
@@ -90,6 +91,22 @@ logger = logging.getLogger(__name__)
 SUPPORTED_FILE_TYPES = ["pdf", "docx", "md", "txt", "html", "csv"]
 SNAPSHOT_RETRIEVAL_MODES = {"LEXICAL", "VECTOR", "HYBRID"}
 MAX_RERANK_CANDIDATES = 20
+
+
+def internal_auth_token() -> str:
+    token = os.getenv("LYNXUS_INTERNAL_AUTH_TOKEN", "").strip()
+    if not token:
+        raise RuntimeError("LYNXUS_INTERNAL_AUTH_TOKEN must be configured")
+    return token
+
+
+def require_internal_bearer(authorization: str | None = Header(default=None)) -> None:
+    expected = internal_auth_token()
+    if authorization is None or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="internal authentication is required")
+    actual = authorization.removeprefix("Bearer ").strip()
+    if not actual or not secrets.compare_digest(actual, expected):
+        raise HTTPException(status_code=401, detail="invalid internal authentication token")
 
 
 class Base(DeclarativeBase):
@@ -576,7 +593,11 @@ class OpenSearchClient:
 
 storage = Storage()
 opensearch = OpenSearchClient()
-app = FastAPI(title="Lynxus Knowledge Service", version="2.0.0")
+app = FastAPI(
+    title="Lynxus Knowledge Service",
+    version="2.0.0",
+    dependencies=[Depends(require_internal_bearer)],
+)
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -1217,6 +1238,7 @@ def update_snapshot(
 
 @app.on_event("startup")
 def startup() -> None:
+    internal_auth_token()
     Base.metadata.create_all(bind=engine)
 
 

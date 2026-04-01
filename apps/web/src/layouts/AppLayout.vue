@@ -1,14 +1,16 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import type { UserSession } from '../types';
 import { menuItems, type SectionKey } from '../config/navigation';
 
-defineProps<{
+const props = defineProps<{
   session: UserSession;
   currentSectionLabel: string;
   currentPageLabel: string;
   currentPageSubtitle: string;
   selectedKeys: string[];
   openKeys: SectionKey[];
+  governanceWritable: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -16,6 +18,15 @@ const emit = defineEmits<{
   openChange: [keys: string[]];
   logout: [];
 }>();
+
+const filteredMenuItems = computed(() => (
+  props.governanceWritable
+    ? menuItems
+    : menuItems.map((section) => ({
+        ...section,
+        children: section.children.filter((item) => item.key !== 'knowledge-create' && item.key !== 'resource-create'),
+      }))
+));
 </script>
 
 <template>
@@ -29,7 +40,7 @@ const emit = defineEmits<{
         mode="inline"
         :selected-keys="selectedKeys"
         :open-keys="openKeys"
-        :items="menuItems"
+        :items="filteredMenuItems"
         @click="emit('menuClick', $event as { key: string | number })"
         @openChange="emit('openChange', $event as string[])"
       />

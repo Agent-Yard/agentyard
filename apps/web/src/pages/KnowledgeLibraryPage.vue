@@ -19,6 +19,7 @@ const props = defineProps<{
   knowledgeBases: KnowledgeBase[];
   preferredKnowledgeBaseId?: string | null;
   catalogRevision: number;
+  canManageGovernance: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -338,7 +339,7 @@ async function handlePreviewRetrieval() {
           <a-space>
             <a-tag>{{ selectedKnowledgeBase.shareScope }}</a-tag>
             <a-tag v-if="hasPendingOperations" color="processing">后台任务运行中</a-tag>
-            <a-button danger ghost @click="handleDeleteKnowledgeBase">删除知识库</a-button>
+            <a-button v-if="canManageGovernance" danger ghost @click="handleDeleteKnowledgeBase">删除知识库</a-button>
           </a-space>
         </template>
 
@@ -359,9 +360,16 @@ async function handlePreviewRetrieval() {
                 <a-col :span="12">
                   <a-card size="small" title="文件上传">
                     <a-space direction="vertical" style="width: 100%">
-                      <a-upload :before-upload="handleUpload" :show-upload-list="false">
+                      <a-upload v-if="canManageGovernance" :before-upload="handleUpload" :show-upload-list="false">
                         <a-button type="primary" :loading="uploading">上传文件并导入</a-button>
                       </a-upload>
+                      <a-alert
+                        v-else
+                        type="info"
+                        show-icon
+                        message="当前角色仅可查看知识内容"
+                        description="文件导入需要治理写权限。"
+                      />
                       <a-typography-text type="secondary">提交后立即返回，后台异步解析并更新状态。</a-typography-text>
                     </a-space>
                   </a-card>
@@ -375,7 +383,7 @@ async function handlePreviewRetrieval() {
                       <a-form-item label="标题">
                         <a-input v-model:value="urlImportForm.title" placeholder="可选" />
                       </a-form-item>
-                      <a-button type="primary" html-type="submit">提交 URL 导入</a-button>
+                      <a-button v-if="canManageGovernance" type="primary" html-type="submit">提交 URL 导入</a-button>
                     </a-form>
                   </a-card>
                 </a-col>
@@ -410,7 +418,7 @@ async function handlePreviewRetrieval() {
                             <a-tag>retry {{ item.retryCount }}</a-tag>
                           </a-space>
                           <a-button
-                            v-if="item.status === 'FAILED' && item.retryable"
+                            v-if="canManageGovernance && item.status === 'FAILED' && item.retryable"
                             type="primary"
                             ghost
                             size="small"
@@ -447,7 +455,14 @@ async function handlePreviewRetrieval() {
 
           <a-tab-pane key="snapshots" tab="索引快照">
             <a-space direction="vertical" style="width: 100%">
-              <a-button type="primary" :loading="creatingSnapshot" @click="handleCreateSnapshot">基于 READY 文档构建快照</a-button>
+              <a-button
+                v-if="canManageGovernance"
+                type="primary"
+                :loading="creatingSnapshot"
+                @click="handleCreateSnapshot"
+              >
+                基于 READY 文档构建快照
+              </a-button>
               <a-list :data-source="snapshots">
                 <template #renderItem="{ item }">
                   <a-list-item>
@@ -461,7 +476,7 @@ async function handlePreviewRetrieval() {
                           <a-tag>{{ item.chunkCount }} chunks</a-tag>
                           <a-tag>retry {{ item.retryCount }}</a-tag>
                           <a-button
-                            v-if="item.status === 'FAILED' && item.retryable"
+                            v-if="canManageGovernance && item.status === 'FAILED' && item.retryable"
                             type="primary"
                             ghost
                             size="small"
@@ -538,7 +553,7 @@ async function handlePreviewRetrieval() {
 
           <a-tab-pane key="releases" tab="发布版本">
             <a-space direction="vertical" style="width: 100%" size="large">
-              <a-card size="small" title="创建发布版本">
+              <a-card v-if="canManageGovernance" size="small" title="创建发布版本">
                 <a-form layout="vertical" :model="releaseForm" @finish="handleCreateRelease">
                   <a-form-item label="发布说明">
                     <a-input v-model:value="releaseForm.summary" placeholder="例如：FAQ 与售后规则更新" />
@@ -598,8 +613,15 @@ async function handlePreviewRetrieval() {
                     <a-list-item-meta :title="`v${item.version}`" :description="item.summary || item.snapshotId" />
                     <a-space>
                       <a-tag :color="item.status === 'PUBLISHED' ? 'green' : 'gold'">{{ item.status }}</a-tag>
-                      <a-button v-if="item.status !== 'PUBLISHED'" type="primary" ghost @click="handlePublishRelease(item.id)">发布</a-button>
-                      <a-button danger ghost @click="handleDeleteRelease(item.id)">删除</a-button>
+                      <a-button
+                        v-if="canManageGovernance && item.status !== 'PUBLISHED'"
+                        type="primary"
+                        ghost
+                        @click="handlePublishRelease(item.id)"
+                      >
+                        发布
+                      </a-button>
+                      <a-button v-if="canManageGovernance" danger ghost @click="handleDeleteRelease(item.id)">删除</a-button>
                     </a-space>
                   </a-list-item>
                 </template>

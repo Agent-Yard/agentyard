@@ -45,7 +45,7 @@ public class CatalogService {
         this(
             new InMemoryCatalogRepository(),
             new InMemoryKnowledgeRepository(),
-            new KnowledgeServiceClient("http://localhost:8091"),
+            new KnowledgeServiceClient("http://localhost:8091", "in-memory-internal-token"),
             new NoOpKnowledgeWorkflowGateway()
         );
     }

@@ -73,6 +73,7 @@ docker compose -f docker-compose.yml -f docker-compose.dashboards.yml up -d
 - Knowledge Service：`http://localhost:8091`
 - MinIO Console：`http://localhost:9001`
 - OpenSearch：`http://localhost:9200`
+- Python 内部服务鉴权：`LYNXUS_INTERNAL_AUTH_TOKEN`，API / Worker / Agent Runtime / Knowledge Service 必须保持一致
 
 启用可选 dashboard 后：
 
@@ -86,6 +87,7 @@ docker compose -f docker-compose.yml -f docker-compose.dashboards.yml up -d
 - Worker 会消费同一 Temporal namespace / task queue 下的 assistant run workflow
 - `dev-agent-runtime.sh` 默认以 `uv run --package lynxus-agent-runtime uvicorn --reload` 启动 Python runtime
 - `dev-knowledge-service.sh` 默认以 `uv run --package lynxus-knowledge-service uvicorn --reload` 启动知识服务
+- `Agent Runtime` 与 `Knowledge Service` 的 HTTP 入口不接浏览器 OIDC 会话，只接受共享 internal token
 
 ## 当前开发边界
 
@@ -95,6 +97,7 @@ docker compose -f docker-compose.yml -f docker-compose.dashboards.yml up -d
 - Web 知识库工作台会轮询展示导入 / 快照状态，并支持失败重试与检索验证
 - 若命中真实模型资源，必须在根目录 `.env` 提供对应 API key
 - `sendMessage` / `launchTask` 当前已改为异步受理后返回，由运行态观测页轮询收口
+- `BUSINESS_USER` 只保留目录只读与运行态使用；目录治理写操作需要 `PLATFORM_ADMIN / DOMAIN_ADMIN / DEVELOPER`
 
 ## 后续扩展方向
 

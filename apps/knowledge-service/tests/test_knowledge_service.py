@@ -10,6 +10,9 @@ os.environ["LYNXUS_KNOWLEDGE_DATABASE_URL"] = f"sqlite+pysqlite:///{Path(temp_ro
 os.environ["LYNXUS_KNOWLEDGE_STORAGE_MODE"] = "filesystem"
 os.environ["LYNXUS_KNOWLEDGE_STORAGE_ROOT"] = temp_root
 os.environ["LYNXUS_OPENSEARCH_URL"] = "http://opensearch.test"
+os.environ["LYNXUS_INTERNAL_AUTH_TOKEN"] = "test-internal-token"
+
+from fastapi.testclient import TestClient
 
 from app.main import (
     Base,
@@ -264,6 +267,24 @@ class KnowledgeServiceTest(unittest.TestCase):
         with SessionLocal() as db:
             job_count = db.query(KnowledgeImportJobRecord).filter(KnowledgeImportJobRecord.knowledge_base_id == "resource-kb-retry").count()
         self.assertEqual(job_count, 2)
+
+    def test_should_require_internal_token_for_http_endpoints(self) -> None:
+        with TestClient(app) as client:
+            missing = client.post("/internal/upload-sessions", json={"knowledgeBaseId": "resource-kb-auth"})
+            invalid = client.post(
+                "/internal/upload-sessions",
+                json={"knowledgeBaseId": "resource-kb-auth"},
+                headers={"Authorization": "Bearer wrong-token"},
+            )
+            valid = client.post(
+                "/internal/upload-sessions",
+                json={"knowledgeBaseId": "resource-kb-auth"},
+                headers={"Authorization": "Bearer test-internal-token"},
+            )
+
+        self.assertEqual(missing.status_code, 401)
+        self.assertEqual(invalid.status_code, 401)
+        self.assertEqual(valid.status_code, 200)
 
     def test_should_retry_failed_snapshot_with_new_attempt(self) -> None:
         with SessionLocal() as db:

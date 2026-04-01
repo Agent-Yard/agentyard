@@ -33,6 +33,7 @@ export function useAppState() {
   const selectedKeys = computed(() => [activeKey.value]);
   const currentPageMeta = computed(() => pageMeta[activeKey.value]);
   const currentSectionMeta = computed(() => sectionMeta[currentPageMeta.value.section]);
+  const canManageGovernance = computed(() => session.value?.currentRole !== 'BUSINESS_USER');
   const currentWorkflow = computed(
     () => workflows.value.find((item) => item.id === selectedWorkflowId.value)
       ?? workflows.value.find((item) => item.status === 'WAITING_HUMAN')
@@ -121,6 +122,7 @@ export function useAppState() {
     selectedKeys,
     currentPageMeta,
     currentSectionMeta,
+    canManageGovernance,
     currentWorkflow,
     errorMessage,
     findSessionById,

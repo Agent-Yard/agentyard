@@ -35,6 +35,8 @@ lynxus:
     secret-key: ${LYNXUS_MINIO_SECRET_KEY:minioadmin}
   knowledge-service:
     base-url: ${LYNXUS_KNOWLEDGE_SERVICE_BASE_URL:http://localhost:8091}
+  internal-auth:
+    token: ${LYNXUS_INTERNAL_AUTH_TOKEN}
   temporal:
     target: ${LYNXUS_TEMPORAL_TARGET:localhost:7233}
     namespace: ${LYNXUS_TEMPORAL_NAMESPACE:default}

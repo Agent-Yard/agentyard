@@ -16,6 +16,7 @@ const props = defineProps<{
   resources: Resource[];
   knowledgeBases: KnowledgeBase[];
   catalogRevision: number;
+  canManageGovernance: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -206,7 +207,7 @@ function submitSave() {
 <template>
   <a-row :gutter="[16, 16]">
     <a-col :span="9">
-      <a-card title="新建智能体">
+      <a-card v-if="canManageGovernance" title="新建智能体">
         <a-form layout="vertical" :model="createForm" @finish="submitCreate">
           <a-form-item label="所属助手" name="assistantId">
             <a-select
@@ -280,7 +281,7 @@ function submitSave() {
         <template #extra>
           <a-space>
             <a-tag color="blue">{{ currentAssistant?.name ?? currentAgent.assistantId }}</a-tag>
-            <a-button danger ghost @click="emit('deleteAgent', currentAgent.id)">删除智能体</a-button>
+            <a-button v-if="canManageGovernance" danger ghost @click="emit('deleteAgent', currentAgent.id)">删除智能体</a-button>
           </a-space>
         </template>
 
@@ -409,7 +410,7 @@ function submitSave() {
             :description="`版本 ${currentAssistant.currentRelease?.agents.find((item) => item.agentId === currentAgent.id)?.knowledge?.knowledgeReleaseVersion} · 快照 ${currentAssistant.currentRelease?.agents.find((item) => item.agentId === currentAgent.id)?.knowledge?.snapshotId}`"
           />
 
-          <a-space>
+          <a-space v-if="canManageGovernance">
             <a-button type="primary" html-type="submit">保存智能体</a-button>
           </a-space>
         </a-form>

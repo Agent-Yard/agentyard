@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException
 
+os.environ.setdefault("LYNXUS_INTERNAL_AUTH_TOKEN", "test-internal-token")
+
 from app.main import (
     AGENT_HUMAN_TASK_SOURCE,
     AGENT_DECISION_SKILL_READ,
@@ -440,7 +442,7 @@ class MemoryPromptTests(unittest.TestCase):
             async def __aexit__(self, exc_type, exc, tb) -> bool:
                 return False
 
-            async def post(self, url: str, json: dict) -> FakeResponse:
+            async def post(self, url: str, json: dict, headers: dict | None = None) -> FakeResponse:
                 return FakeResponse()
 
         with patch("app.main.httpx.AsyncClient", FakeAsyncClient):
@@ -477,7 +479,8 @@ class MemoryPromptTests(unittest.TestCase):
             async def __aexit__(self, exc_type, exc, tb) -> bool:
                 return False
 
-            async def post(self, url: str, json: dict) -> FakeResponse:
+            async def post(self, url: str, json: dict, headers: dict | None = None) -> FakeResponse:
+                assert headers == {"Authorization": "Bearer test-internal-token"}
                 return FakeResponse()
 
         with patch("app.main.httpx.AsyncClient", FakeAsyncClient):

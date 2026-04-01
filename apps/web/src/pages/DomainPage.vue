@@ -6,6 +6,7 @@ import type { BusinessDomain, CreateDomainPayload, UpdateDomainPayload } from '.
 const props = defineProps<{
   domains: BusinessDomain[];
   catalogRevision: number;
+  canManageGovernance: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -98,7 +99,7 @@ function submitUpdate() {
 
   <a-row :gutter="[16, 16]">
     <a-col :span="9">
-      <a-card title="新建业务域">
+      <a-card v-if="canManageGovernance" title="新建业务域">
         <a-form layout="vertical" :model="createForm" @finish="submitCreate">
           <a-form-item label="业务域名称">
             <a-input v-model:value="createForm.name" placeholder="例如：客户运营域" />
@@ -162,7 +163,7 @@ function submitUpdate() {
           <a-form-item label="业务域说明">
             <a-textarea v-model:value="editForm.description" :rows="4" />
           </a-form-item>
-          <a-space>
+          <a-space v-if="canManageGovernance">
             <a-button type="primary" html-type="submit">保存业务域</a-button>
             <a-button danger @click="emit('deleteDomain', current.id)">删除业务域</a-button>
           </a-space>

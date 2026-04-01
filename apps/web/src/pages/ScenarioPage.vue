@@ -12,6 +12,7 @@ const props = defineProps<{
   domains: BusinessDomain[];
   scenarios: Scenario[];
   catalogRevision: number;
+  canManageGovernance: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -118,7 +119,7 @@ function submitUpdate() {
 
   <a-row :gutter="[16, 16]">
     <a-col :span="9">
-      <a-card title="新建业务场景">
+      <a-card v-if="canManageGovernance" title="新建业务场景">
         <a-form layout="vertical" :model="createForm" @finish="submitCreate">
           <a-form-item label="所属业务域">
             <a-select
@@ -195,7 +196,7 @@ function submitUpdate() {
           <a-form-item label="场景目标">
             <a-textarea v-model:value="editForm.goal" :rows="4" />
           </a-form-item>
-          <a-space>
+          <a-space v-if="canManageGovernance">
             <a-button type="primary" html-type="submit">保存场景</a-button>
             <a-button danger @click="emit('deleteScenario', current.id)">删除场景</a-button>
           </a-space>

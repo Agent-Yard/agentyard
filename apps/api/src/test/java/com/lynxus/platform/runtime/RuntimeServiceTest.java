@@ -541,7 +541,7 @@ class RuntimeServiceTest {
     }
 
     private static KnowledgeServiceClient readySnapshotKnowledgeClient() {
-        return new KnowledgeServiceClient("http://localhost:8091") {
+        return new KnowledgeServiceClient("http://localhost:8091", "test-internal-token") {
             @Override
             public CatalogDtos.KnowledgeIndexSnapshotDto getIndexSnapshot(String snapshotId) {
                 return new CatalogDtos.KnowledgeIndexSnapshotDto(

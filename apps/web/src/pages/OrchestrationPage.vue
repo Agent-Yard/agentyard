@@ -15,6 +15,7 @@ const props = defineProps<{
   assistants: Assistant[];
   orchestrations: AssistantOrchestration[];
   resources: Resource[];
+  canManageGovernance: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -270,10 +271,15 @@ function submitSave() {
             </a-form-item>
           </a-form>
           <a-space wrap>
-            <a-button v-for="option in nodeTypeOptions" :key="option.value" @click="addNode(option.value)">
+            <a-button
+              v-for="option in nodeTypeOptions"
+              :key="option.value"
+              :disabled="!canManageGovernance"
+              @click="addNode(option.value)"
+            >
               新增{{ option.label }}
             </a-button>
-            <a-button @click="addEdge">新增边</a-button>
+            <a-button :disabled="!canManageGovernance" @click="addEdge">新增边</a-button>
           </a-space>
           <a-alert
             v-if="validationError"
@@ -281,7 +287,7 @@ function submitSave() {
             show-icon
             :message="validationError"
           />
-          <a-button type="primary" @click="submitSave">保存编排</a-button>
+          <a-button v-if="canManageGovernance" type="primary" @click="submitSave">保存编排</a-button>
         </a-space>
       </a-card>
 
@@ -365,7 +371,7 @@ function submitSave() {
           <a-col :span="12">
             <a-card v-if="selectedNode" title="节点属性">
               <template #extra>
-                <a-button danger size="small" @click="deleteSelectedNode">删除节点</a-button>
+                <a-button v-if="canManageGovernance" danger size="small" @click="deleteSelectedNode">删除节点</a-button>
               </template>
               <a-form layout="vertical">
                 <a-form-item label="节点 Key">
@@ -413,7 +419,7 @@ function submitSave() {
           <a-col :span="12">
             <a-card v-if="selectedEdge" title="边属性">
               <template #extra>
-                <a-button danger size="small" @click="deleteSelectedEdge">删除边</a-button>
+                <a-button v-if="canManageGovernance" danger size="small" @click="deleteSelectedEdge">删除边</a-button>
               </template>
               <a-form layout="vertical">
                 <a-form-item label="边 Key">

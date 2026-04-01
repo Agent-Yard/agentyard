@@ -63,6 +63,7 @@ public class AuthController {
     }
 
     @GetMapping("/session")
+    @RequireRuntimeAccess
     public ApiResponse<UserSession> session() {
         return ApiResponse.ok(authService.currentSession());
     }

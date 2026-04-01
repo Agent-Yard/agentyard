@@ -9,6 +9,7 @@ import type {
 const props = defineProps<{
   domains: BusinessDomain[];
   assistants: Assistant[];
+  canManageGovernance: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -90,13 +91,21 @@ function submitCreate() {
     <a-col :span="16">
       <a-card title="创建知识库">
         <a-alert
+          v-if="!canManageGovernance"
+          type="warning"
+          show-icon
+          style="margin-bottom: 16px"
+          message="当前角色没有知识库治理写权限"
+          description="请使用具备治理角色的账号创建知识库。"
+        />
+        <a-alert
           type="info"
           show-icon
           style="margin-bottom: 16px"
           message="知识库已从资源中心独立出来"
           description="这里仅创建知识库治理对象。文档导入、索引快照和发布版本会在知识库工作台里继续完成。"
         />
-        <a-form layout="vertical" :model="createForm" @finish="submitCreate">
+        <a-form v-if="canManageGovernance" layout="vertical" :model="createForm" @finish="submitCreate">
           <a-row :gutter="[16, 16]">
             <a-col :span="12">
               <a-form-item label="知识库名称">

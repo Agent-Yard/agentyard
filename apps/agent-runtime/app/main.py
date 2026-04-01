@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import secrets
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -10,7 +11,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, TypedDict
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 try:
@@ -516,6 +517,27 @@ FAILURE_CATEGORY_VALIDATION = "VALIDATION_FAILURE"
 FAILURE_CATEGORY_CONFIGURATION = "CONFIGURATION_FAILURE"
 FAILURE_CATEGORY_RUNTIME = "RUNTIME_FAILURE"
 FAILURE_CATEGORY_UNKNOWN = "UNKNOWN"
+
+
+def internal_auth_token() -> str:
+    token = os.getenv("LYNXUS_INTERNAL_AUTH_TOKEN", "").strip()
+    if not token:
+        raise RuntimeError("LYNXUS_INTERNAL_AUTH_TOKEN must be configured")
+    return token
+
+
+def require_internal_bearer(authorization: str | None = Header(default=None)) -> None:
+    expected = internal_auth_token()
+    if authorization is None or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="internal authentication is required")
+    actual = authorization.removeprefix("Bearer ").strip()
+    if not actual or not secrets.compare_digest(actual, expected):
+        raise HTTPException(status_code=401, detail="invalid internal authentication token")
+
+
+@app.on_event("startup")
+async def validate_internal_auth_configuration() -> None:
+    internal_auth_token()
 
 
 class AgentTurnError(Exception):
@@ -1427,9 +1449,11 @@ async def retrieve_knowledge(binding: Optional[KnowledgeBindingSnapshot], questi
     if not binding.snapshotId.strip():
         return []
     knowledge_service_base_url = os.getenv("LYNXUS_KNOWLEDGE_SERVICE_BASE_URL", "http://localhost:8091").rstrip("/")
+    auth_headers = {"Authorization": f"Bearer {internal_auth_token()}"}
     async with httpx.AsyncClient(timeout=10.0) as client:
         response = await client.post(
             f"{knowledge_service_base_url}/internal/retrieve",
+            headers=auth_headers,
             json={
                 "indexSnapshotId": binding.snapshotId,
                 "query": question,
@@ -2619,7 +2643,7 @@ def workflow_result_from_state(state: AgentState) -> WorkflowResult:
 
 
 @app.post("/agent-runs/start", response_model=WorkflowResult)
-async def start_agent_run(request: WorkflowStartRequest) -> WorkflowResult:
+async def start_agent_run(request: WorkflowStartRequest, _: None = Depends(require_internal_bearer)) -> WorkflowResult:
     logger.info("workflow %s start request received", request.workflowInstanceId)
     validate_graph(request.assistant.graph, request.assistant)
     entry_node = find_start_node(request.assistant.graph)
@@ -2665,7 +2689,7 @@ async def start_agent_run(request: WorkflowStartRequest) -> WorkflowResult:
 
 
 @app.post("/agent-runs/resume", response_model=WorkflowResult)
-async def resume_agent_run(request: WorkflowResumeRequest) -> WorkflowResult:
+async def resume_agent_run(request: WorkflowResumeRequest, _: None = Depends(require_internal_bearer)) -> WorkflowResult:
     logger.info(
         "workflow %s resume request received action=%s operator=%s",
         request.workflowInstanceId,

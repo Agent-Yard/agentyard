@@ -2,6 +2,7 @@ package com.lynxus.platform.knowledge;
 
 import static com.lynxus.platform.catalog.CatalogDtos.*;
 
+import com.lynxus.platform.auth.RequireGovernanceWrite;
 import com.lynxus.platform.catalog.CatalogService;
 import com.lynxus.platform.shared.ApiResponse;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -38,16 +39,19 @@ public class KnowledgeController {
     }
 
     @PostMapping
+    @RequireGovernanceWrite
     public ApiResponse<?> createKnowledgeBase(@RequestBody CreateKnowledgeBaseRequest request) {
         return ApiResponse.ok(knowledgeService.createKnowledgeBase(request));
     }
 
     @PutMapping("/{knowledgeBaseId}")
+    @RequireGovernanceWrite
     public ApiResponse<?> updateKnowledgeBase(@PathVariable String knowledgeBaseId, @RequestBody UpdateKnowledgeBaseRequest request) {
         return ApiResponse.ok(knowledgeService.updateKnowledgeBase(knowledgeBaseId, request));
     }
 
     @DeleteMapping("/{knowledgeBaseId}")
+    @RequireGovernanceWrite
     public ApiResponse<?> deleteKnowledgeBase(@PathVariable String knowledgeBaseId) {
         return ApiResponse.ok(catalogService.deleteKnowledgeBase(knowledgeBaseId));
     }
@@ -58,16 +62,19 @@ public class KnowledgeController {
     }
 
     @PostMapping("/{knowledgeBaseId}/releases")
+    @RequireGovernanceWrite
     public ApiResponse<?> createKnowledgeRelease(@PathVariable String knowledgeBaseId, @RequestBody CreateKnowledgeReleaseRequest request) {
         return ApiResponse.ok(knowledgeService.createKnowledgeRelease(knowledgeBaseId, request));
     }
 
     @PatchMapping("/{knowledgeBaseId}/releases/{releaseId}/publish")
+    @RequireGovernanceWrite
     public ApiResponse<?> publishKnowledgeRelease(@PathVariable String knowledgeBaseId, @PathVariable String releaseId) {
         return ApiResponse.ok(knowledgeService.publishKnowledgeRelease(knowledgeBaseId, releaseId));
     }
 
     @DeleteMapping("/{knowledgeBaseId}/releases/{releaseId}")
+    @RequireGovernanceWrite
     public ApiResponse<?> deleteKnowledgeRelease(@PathVariable String knowledgeBaseId, @PathVariable String releaseId) {
         return ApiResponse.ok(knowledgeService.deleteKnowledgeRelease(knowledgeBaseId, releaseId));
     }
@@ -78,11 +85,13 @@ public class KnowledgeController {
     }
 
     @PostMapping("/{knowledgeBaseId}/upload-sessions")
+    @RequireGovernanceWrite
     public ApiResponse<?> createUploadSession(@PathVariable String knowledgeBaseId) {
         return ApiResponse.ok(knowledgeService.createUploadSession(knowledgeBaseId));
     }
 
     @PostMapping("/{knowledgeBaseId}/upload-sessions/{uploadSessionId}/complete")
+    @RequireGovernanceWrite
     public ApiResponse<?> completeUpload(
         @PathVariable String knowledgeBaseId,
         @PathVariable String uploadSessionId,
@@ -98,6 +107,7 @@ public class KnowledgeController {
     }
 
     @PostMapping("/{knowledgeBaseId}/url-imports")
+    @RequireGovernanceWrite
     public ApiResponse<?> importUrl(@PathVariable String knowledgeBaseId, @RequestBody CreateKnowledgeUrlImportRequest request) {
         return ApiResponse.ok(knowledgeService.importUrl(knowledgeBaseId, request));
     }
@@ -113,6 +123,7 @@ public class KnowledgeController {
     }
 
     @PostMapping("/{knowledgeBaseId}/import-jobs/{jobId}/retry")
+    @RequireGovernanceWrite
     public ApiResponse<?> retryImportJob(@PathVariable String knowledgeBaseId, @PathVariable String jobId) {
         return ApiResponse.ok(knowledgeService.retryImportJob(knowledgeBaseId, jobId));
     }
@@ -128,11 +139,13 @@ public class KnowledgeController {
     }
 
     @PostMapping("/{knowledgeBaseId}/snapshots")
+    @RequireGovernanceWrite
     public ApiResponse<?> createSnapshot(@PathVariable String knowledgeBaseId, @RequestBody CreateKnowledgeIndexSnapshotRequest request) {
         return ApiResponse.ok(knowledgeService.createIndexSnapshot(knowledgeBaseId, request));
     }
 
     @PostMapping("/{knowledgeBaseId}/snapshots/{snapshotId}/retry")
+    @RequireGovernanceWrite
     public ApiResponse<?> retrySnapshot(@PathVariable String knowledgeBaseId, @PathVariable String snapshotId) {
         return ApiResponse.ok(knowledgeService.retryIndexSnapshot(knowledgeBaseId, snapshotId));
     }

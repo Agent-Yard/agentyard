@@ -26,9 +26,14 @@ public interface AgentRuntimeGateway {
         private final HttpClient httpClient = HttpClient.newHttpClient();
         private final ObjectMapper objectMapper = createObjectMapper();
         private final String agentRuntimeBaseUrl;
+        private final String authorizationHeaderValue;
 
-        public HttpAgentRuntimeGateway(@Value("${lynxus.agent-runtime.base-url}") String agentRuntimeBaseUrl) {
+        public HttpAgentRuntimeGateway(
+            @Value("${lynxus.agent-runtime.base-url}") String agentRuntimeBaseUrl,
+            @Value("${lynxus.internal-auth.token}") String internalAuthToken
+        ) {
             this.agentRuntimeBaseUrl = agentRuntimeBaseUrl;
+            this.authorizationHeaderValue = "Bearer " + requireInternalAuthToken(internalAuthToken);
         }
 
         static ObjectMapper createObjectMapper() {
@@ -54,6 +59,7 @@ public interface AgentRuntimeGateway {
                 HttpRequest httpRequest = HttpRequest.newBuilder()
                     .uri(URI.create(agentRuntimeBaseUrl + path))
                     .header("Content-Type", "application/json")
+                    .header("Authorization", authorizationHeaderValue)
                     .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                     .build();
                 HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
@@ -65,6 +71,13 @@ public interface AgentRuntimeGateway {
             } catch (IOException | InterruptedException error) {
                 throw new IllegalStateException("failed to invoke agent-runtime", error);
             }
+        }
+
+        private static String requireInternalAuthToken(String internalAuthToken) {
+            if (internalAuthToken == null || internalAuthToken.isBlank()) {
+                throw new IllegalStateException("lynxus.internal-auth.token must be configured");
+            }
+            return internalAuthToken.trim();
         }
     }
 }

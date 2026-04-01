@@ -20,6 +20,7 @@ const props = defineProps<{
   preferredResourceId?: string | null;
   preferredVersionId?: string | null;
   catalogRevision: number;
+  canManageGovernance: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -228,7 +229,7 @@ function submitUpdateDraftVersion() {
         <template #extra>
           <a-space>
             <a-tag>{{ selectedResource.shareScope }}</a-tag>
-            <a-button danger ghost @click="emit('deleteResource', selectedResource.id)">删除资源</a-button>
+            <a-button v-if="canManageGovernance" danger ghost @click="emit('deleteResource', selectedResource.id)">删除资源</a-button>
           </a-space>
         </template>
 
@@ -303,7 +304,7 @@ function submitUpdateDraftVersion() {
               </a-col>
             </a-row>
 
-            <a-button type="primary" html-type="submit">保存资源信息</a-button>
+            <a-button v-if="canManageGovernance" type="primary" html-type="submit">保存资源信息</a-button>
           </a-form>
         </a-card>
 
@@ -337,7 +338,7 @@ function submitUpdateDraftVersion() {
               <template #extra>
                 <a-space>
                   <a-button
-                    v-if="selectedVersion.status !== 'PUBLISHED'"
+                    v-if="canManageGovernance && selectedVersion.status !== 'PUBLISHED'"
                     type="primary"
                     ghost
                     @click="emit('publishResourceVersion', { resourceId: selectedResource.id, versionId: selectedVersion.id })"
@@ -345,6 +346,7 @@ function submitUpdateDraftVersion() {
                     发布
                   </a-button>
                   <a-button
+                    v-if="canManageGovernance"
                     danger
                     ghost
                     @click="emit('deleteResourceVersion', { resourceId: selectedResource.id, versionId: selectedVersion.id })"
@@ -385,7 +387,7 @@ function submitUpdateDraftVersion() {
                     snapshot-binding-mode="hidden"
                   />
 
-                  <a-button type="primary" html-type="submit">保存草稿版本</a-button>
+                  <a-button v-if="canManageGovernance" type="primary" html-type="submit">保存草稿版本</a-button>
                 </a-form>
               </template>
               <template v-else>
@@ -402,7 +404,7 @@ function submitUpdateDraftVersion() {
               </template>
             </a-card>
 
-            <a-card size="small" title="创建新版本" style="margin-top: 16px">
+            <a-card v-if="canManageGovernance" size="small" title="创建新版本" style="margin-top: 16px">
               <a-form layout="vertical" :model="createVersionForm" @finish="submitCreateVersion">
                 <a-row :gutter="[16, 16]">
                   <a-col :span="12">

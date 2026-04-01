@@ -22,8 +22,22 @@ public class KnowledgeServiceClient {
 
     private final RestClient restClient;
 
-    public KnowledgeServiceClient(@Value("${lynxus.knowledge-service.base-url:http://localhost:8091}") String baseUrl) {
-        this.restClient = RestClient.builder().baseUrl(baseUrl).build();
+    public KnowledgeServiceClient(
+        @Value("${lynxus.knowledge-service.base-url:http://localhost:8091}") String baseUrl,
+        @Value("${lynxus.internal-auth.token}") String internalAuthToken
+    ) {
+        String sanitizedToken = requireInternalAuthToken(internalAuthToken);
+        this.restClient = RestClient.builder()
+            .baseUrl(baseUrl)
+            .defaultHeader("Authorization", "Bearer " + sanitizedToken)
+            .build();
+    }
+
+    private static String requireInternalAuthToken(String internalAuthToken) {
+        if (internalAuthToken == null || internalAuthToken.isBlank()) {
+            throw new IllegalStateException("lynxus.internal-auth.token must be configured");
+        }
+        return internalAuthToken.trim();
     }
 
     public KnowledgeUploadSessionDto createUploadSession(String knowledgeBaseId) {
