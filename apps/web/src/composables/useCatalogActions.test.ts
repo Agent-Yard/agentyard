@@ -2,13 +2,15 @@ import { ref } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useCatalogActions } from './useCatalogActions';
 
-const { messageSuccess, messageError, apiMock } = vi.hoisted(() => ({
+const { messageSuccess, messageError, routerPush, apiMock } = vi.hoisted(() => ({
   messageSuccess: vi.fn(),
   messageError: vi.fn(),
+  routerPush: vi.fn(),
   apiMock: {
     getDeletionImpactPreview: vi.fn(),
     deleteDomain: vi.fn(),
     deleteKnowledgeBase: vi.fn(),
+    createKnowledgeBase: vi.fn(),
   },
 }));
 
@@ -23,9 +25,14 @@ vi.mock('../services/api', () => ({
   api: apiMock,
 }));
 
+vi.mock('../router', () => ({
+  router: {
+    push: routerPush,
+  },
+}));
+
 function makeState() {
   return {
-    activeKey: ref<'domain' | 'knowledge-library'>('domain'),
     knowledgeLibraryPreferredKnowledgeBaseId: ref<string | null>('knowledge-1'),
     resourceLibraryPreferredResourceId: ref<string | null>(null),
     resourceLibraryPreferredVersionId: ref<string | null>(null),
@@ -125,7 +132,6 @@ describe('useCatalogActions deletion flow', () => {
     apiMock.getDeletionImpactPreview.mockResolvedValue(allowedPreview('KNOWLEDGE_BASE', 'knowledge-1', '客服知识库'));
     apiMock.deleteKnowledgeBase.mockResolvedValue({ id: 'knowledge-1' });
     const state = makeState();
-    state.activeKey.value = 'knowledge-library';
     const refresh = vi.fn().mockResolvedValue(undefined);
     const actions = useCatalogActions(state, refresh, (_, fallback) => fallback);
 
@@ -134,5 +140,26 @@ describe('useCatalogActions deletion flow', () => {
 
     expect(apiMock.deleteKnowledgeBase).toHaveBeenCalledWith('knowledge-1');
     expect(state.knowledgeLibraryPreferredKnowledgeBaseId.value).toBeNull();
+  });
+
+  it('navigates to knowledge library after creation', async () => {
+    apiMock.createKnowledgeBase.mockResolvedValue({ id: 'knowledge-9' });
+    const state = makeState();
+    const refresh = vi.fn().mockResolvedValue(undefined);
+    const actions = useCatalogActions(state, refresh, (_, fallback) => fallback);
+
+    await actions.handleCreateKnowledgeBase({
+      domainId: 'domain-1',
+      name: '售后知识库',
+      shareScope: 'DOMAIN_SHARED',
+      ownerType: 'DOMAIN',
+      ownerId: 'domain-1',
+      summary: 'desc',
+      steward: 'ops',
+      tags: [],
+    });
+
+    expect(state.knowledgeLibraryPreferredKnowledgeBaseId.value).toBe('knowledge-9');
+    expect(routerPush).toHaveBeenCalledWith('/console/knowledge');
   });
 });

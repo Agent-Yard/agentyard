@@ -1,16 +1,19 @@
 <script setup lang="ts">
-import { onMounted } from 'vue';
+import { computed, onMounted } from 'vue';
+import { RouterView, useRoute, useRouter } from 'vue-router';
 import AppLayout from '../layouts/AppLayout.vue';
 import DeletionPreviewModal from '../components/DeletionPreviewModal.vue';
-import type { PageKey, SectionKey } from '../config/navigation';
+import { pageMeta, pagePathByKey, resolvePageKeyFromPath, type PageKey, type SectionKey } from '../config/navigation';
 import { useAppState } from '../composables/useAppState';
 import { useCatalogActions } from '../composables/useCatalogActions';
 import { useRuntimeActions } from '../composables/useRuntimeActions';
-import { useAppView } from '../composables/useAppView';
 import { useWorkflowPolling } from '../composables/useWorkflowPolling';
 import { api, isUnauthorizedError } from '../services/api';
 
-const state = useAppState();
+const route = useRoute();
+const router = useRouter();
+const currentPageKey = computed(() => resolvePageKeyFromPath(route.path));
+const state = useAppState(currentPageKey);
 
 const catalogActions = useCatalogActions(state, state.refresh, state.errorMessage);
 const runtimeActions = useRuntimeActions(
@@ -19,12 +22,167 @@ const runtimeActions = useRuntimeActions(
   state.refresh,
   state.errorMessage,
 );
-const { currentView } = useAppView(state, catalogActions, runtimeActions);
 
 useWorkflowPolling(state.workflows, state.refresh);
 
+const currentView = computed(() => {
+  const pageKey = currentPageKey.value;
+  const viewRegistry = {
+    domain: {
+      props: {
+        domains: state.catalog.value!.domains,
+        catalogRevision: state.catalogRevision.value,
+        canManageGovernance: state.canManageGovernance.value,
+      },
+      handlers: {
+        createDomain: catalogActions.handleCreateDomain,
+        updateDomain: catalogActions.handleUpdateDomain,
+        deleteDomain: catalogActions.handleDeleteDomain,
+      },
+    },
+    scenario: {
+      props: {
+        domains: state.catalog.value!.domains,
+        scenarios: state.catalog.value!.scenarios,
+        catalogRevision: state.catalogRevision.value,
+        canManageGovernance: state.canManageGovernance.value,
+      },
+      handlers: {
+        createScenario: catalogActions.handleCreateScenario,
+        updateScenario: catalogActions.handleUpdateScenario,
+        deleteScenario: catalogActions.handleDeleteScenario,
+      },
+    },
+    assistant: {
+      props: {
+        assistants: state.catalog.value!.assistants,
+        scenarios: state.catalog.value!.scenarios,
+        resources: state.catalog.value!.resources,
+        knowledgeBases: state.catalog.value!.knowledgeBases,
+        workflows: state.workflows.value,
+        catalogRevision: state.catalogRevision.value,
+        canManageGovernance: state.canManageGovernance.value,
+      },
+      handlers: {
+        createAssistant: catalogActions.handleCreateAssistant,
+        updateAssistant: catalogActions.handleUpdateAssistant,
+        deleteAssistant: catalogActions.handleDeleteAssistant,
+        openWorkflow: (workflowId: string) => {
+          state.selectedWorkflowId.value = workflowId;
+          void router.push(pagePathByKey.workflow);
+        },
+      },
+    },
+    agent: {
+      props: {
+        assistants: state.catalog.value!.assistants,
+        agents: state.catalog.value!.agents,
+        resources: state.catalog.value!.resources,
+        knowledgeBases: state.catalog.value!.knowledgeBases,
+        catalogRevision: state.catalogRevision.value,
+        canManageGovernance: state.canManageGovernance.value,
+      },
+      handlers: {
+        createAgent: catalogActions.handleCreateAgent,
+        saveAgent: catalogActions.handleSaveAgent,
+        deleteAgent: catalogActions.handleDeleteAgent,
+      },
+    },
+    orchestration: {
+      props: {
+        assistants: state.catalog.value!.assistants,
+        orchestrations: state.catalog.value!.orchestrations,
+        resources: state.catalog.value!.resources,
+        canManageGovernance: state.canManageGovernance.value,
+      },
+      handlers: { saveOrchestration: catalogActions.handleSaveOrchestration },
+    },
+    'knowledge-library': {
+      props: {
+        knowledgeBases: state.catalog.value!.knowledgeBases,
+        preferredKnowledgeBaseId: state.knowledgeLibraryPreferredKnowledgeBaseId.value,
+        catalogRevision: state.catalogRevision.value,
+        canManageGovernance: state.canManageGovernance.value,
+      },
+      handlers: {
+        refreshCatalog: state.refresh,
+        deleteKnowledgeBase: catalogActions.handleDeleteKnowledgeBase,
+      },
+    },
+    'knowledge-create': {
+      props: {
+        domains: state.catalog.value!.domains,
+        assistants: state.catalog.value!.assistants,
+        canManageGovernance: state.canManageGovernance.value,
+      },
+      handlers: { createKnowledgeBase: catalogActions.handleCreateKnowledgeBase },
+    },
+    'resource-library': {
+      props: {
+        domains: state.catalog.value!.domains,
+        resourceCenter: state.catalog.value!.resourceCenter,
+        resources: state.catalog.value!.resources,
+        preferredResourceId: state.resourceLibraryPreferredResourceId.value,
+        preferredVersionId: state.resourceLibraryPreferredVersionId.value,
+        catalogRevision: state.catalogRevision.value,
+        canManageGovernance: state.canManageGovernance.value,
+      },
+      handlers: {
+        deleteResource: catalogActions.handleDeleteResource,
+        updateResource: catalogActions.handleUpdateResource,
+        createResourceVersion: catalogActions.handleCreateResourceVersion,
+        updateResourceVersion: catalogActions.handleUpdateResourceVersion,
+        deleteResourceVersion: catalogActions.handleDeleteResourceVersion,
+        publishResourceVersion: catalogActions.handlePublishResourceVersion,
+      },
+    },
+    'resource-create': {
+      props: {
+        domains: state.catalog.value!.domains,
+        assistants: state.catalog.value!.assistants,
+        resourceBlueprints: state.catalog.value!.resourceBlueprints,
+        canManageGovernance: state.canManageGovernance.value,
+      },
+      handlers: { createResource: catalogActions.handleCreateResource },
+    },
+    runtime: {
+      props: {
+        scenarios: state.catalog.value!.scenarios,
+        assistants: state.catalog.value!.assistants,
+        sessions: state.conversationSessions.value,
+        tasks: state.tasks.value,
+        workflows: state.workflows.value,
+        creatingSession: state.creatingSession.value,
+        sendingSessionId: state.sendingSessionId.value,
+        preferredSessionId: state.runtimePreferredSessionId.value,
+        selectedSessionId: state.runtimeSelectedSessionId.value,
+        currentCustomerId: state.session.value?.userId ?? null,
+      },
+      handlers: {
+        selectSession: runtimeActions.handleSelectRuntimeSession,
+        createSession: runtimeActions.handleCreateSession,
+        sendMessage: runtimeActions.handleSendMessage,
+      },
+    },
+    workflow: {
+      props: {
+        workflow: state.currentWorkflow.value,
+        workflows: state.workflows.value,
+        selectedWorkflowId: state.selectedWorkflowId.value,
+        currentUserId: state.session.value?.userId ?? null,
+      },
+      handlers: {
+        selectWorkflow: runtimeActions.handleSelectWorkflow,
+        resumeAction: runtimeActions.handleResumeAction,
+      },
+    },
+  } satisfies Record<PageKey, { props: Record<string, unknown>; handlers: Record<string, (...args: any[]) => any> }>;
+
+  return viewRegistry[pageKey];
+});
+
 function handleMenuClick(info: { key: string | number }) {
-  state.activeKey.value = String(info.key) as PageKey;
+  void router.push(pageMeta[String(info.key) as PageKey].path);
 }
 
 function handleOpenChange(keys: string[]) {
@@ -63,7 +221,9 @@ onMounted(() => {
       @open-change="handleOpenChange"
       @logout="handleLogout"
     >
-      <component :is="currentView.component" v-bind="currentView.props.value" v-on="currentView.handlers" />
+      <RouterView v-slot="{ Component }">
+        <component :is="Component" v-bind="currentView.props" v-on="currentView.handlers" />
+      </RouterView>
     </AppLayout>
     <DeletionPreviewModal
       :open="catalogActions.deletionPreviewOpen.value"

@@ -1,6 +1,8 @@
 import { ref } from 'vue';
 import { message } from 'ant-design-vue';
 import { api } from '../services/api';
+import { pagePathByKey } from '../config/navigation';
+import { router } from '../router';
 import type {
   CreateAssistantPayload,
   CreateAgentPayload,
@@ -19,10 +21,8 @@ import type {
   UpdateResourceVersionPayload,
   UpdateScenarioPayload,
 } from '../types';
-import type { PageKey } from '../config/navigation';
 
 interface CatalogActionState {
-  activeKey: { value: PageKey };
   knowledgeLibraryPreferredKnowledgeBaseId: { value: string | null };
   resourceLibraryPreferredResourceId: { value: string | null };
   resourceLibraryPreferredVersionId: { value: string | null };
@@ -227,7 +227,7 @@ export function useCatalogActions(
       const created = await api.createKnowledgeBase(payload);
       await refresh();
       state.knowledgeLibraryPreferredKnowledgeBaseId.value = created.id;
-      state.activeKey.value = 'knowledge-library';
+      void router.push(pagePathByKey['knowledge-library']);
       void message.success('知识库已创建');
     } catch (error) {
       void message.error(errorMessage(error, '创建知识库失败'));
@@ -253,7 +253,7 @@ export function useCatalogActions(
       await refresh();
       state.resourceLibraryPreferredResourceId.value = created.id;
       state.resourceLibraryPreferredVersionId.value = created.latestVersion?.id ?? null;
-      state.activeKey.value = 'resource-library';
+      void router.push(pagePathByKey['resource-library']);
       void message.success('资源已创建');
     } catch (error) {
       void message.error(errorMessage(error, '创建资源失败'));

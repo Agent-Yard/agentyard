@@ -1,9 +1,9 @@
 import { message } from 'ant-design-vue';
+import { pagePathByKey } from '../config/navigation';
+import { router } from '../router';
 import { api } from '../services/api';
-import type { PageKey } from '../config/navigation';
 
 interface RuntimeActionState {
-  activeKey: { value: PageKey };
   creatingSession: { value: boolean };
   sendingSessionId: { value: string | null };
   runtimePreferredSessionId: { value: string | null };
@@ -39,7 +39,7 @@ export function useRuntimeActions(
       if (recoveredWorkflow) {
         state.selectedWorkflowId.value = recoveredWorkflow.id;
       }
-      state.activeKey.value = 'runtime';
+      void router.push(pagePathByKey.runtime);
       void message.success('会话已创建');
     } catch (error) {
       void message.error(errorMessage(error, '创建会话失败'));
@@ -62,7 +62,7 @@ export function useRuntimeActions(
       const recoveredWorkflow = helpers.findWorkflowById(recoveredSession?.latestWorkflowInstanceId ?? null);
       if (recoveredWorkflow) {
         state.selectedWorkflowId.value = recoveredWorkflow.id;
-        state.activeKey.value = recoveredWorkflow.status === 'WAITING_RESUME' ? 'workflow' : 'runtime';
+        void router.push(recoveredWorkflow.status === 'WAITING_RESUME' ? pagePathByKey.workflow : pagePathByKey.runtime);
       }
     } catch (error) {
       await refresh();
@@ -95,7 +95,7 @@ export function useRuntimeActions(
         attributes: payload.attributes,
       });
       await refresh();
-      state.activeKey.value = 'workflow';
+      void router.push(pagePathByKey.workflow);
     } catch (error) {
       void message.error(errorMessage(error, '提交流程恢复动作失败'));
     }

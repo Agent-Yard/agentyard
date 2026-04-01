@@ -226,7 +226,7 @@
 
 1. API 分页审计：确保所有列表接口支持分页，数据库查询有索引
 2. 连接池配置：HikariCP（Java）、SQLAlchemy pool（Python）参数调优
-3. 前端：路由级代码分割（当前单页无路由，需引入 Vue Router）
+3. 前端：继续优化路由级代码分割（Vue Router 已引入，控制台菜单页已完成真实路由）
 4. Knowledge Service：基于 `PostgreSQL + pgvector + pg_trgm + tsvector` 持续优化检索质量与索引性能
    - 优势：减少基础设施依赖，数据库与检索链路统一运维
    - 当前方案：保留 `LEXICAL / VECTOR / HYBRID` 三种模式，embedding 由 OpenAI-compatible `/embeddings` 提供
@@ -304,11 +304,11 @@
 - 后续重点不再是替换检索后端，而是调优 embedding 模型、索引参数、候选集规模与混合召回策略
 - 对早期规模（<100 万文档 chunks）当前架构足够，后续按实际负载决定是否引入独立搜索系统
 
-### B. Vue Router 引入（建议在阶段三）
+### B. Vue Router 持续完善
 
-- 当前页面切换由 App.vue 的 activeKey 管理，无真实路由
-- 不利于：浏览器前进后退、URL 直接访问、代码分割、SSE 回跳
-- 引入 Vue Router 后可支持路由级懒加载，减小首屏体积
+- Vue Router 已引入，`/login` 与 `/console/...` 以及控制台 11 个菜单页均已具备真实路由
+- 当前已支持：浏览器前进后退、URL 直接访问菜单页、路由级懒加载，首屏体积已较单页模式收敛
+- 后续待补的是对象级深链能力：如 workflow / session / knowledge / resource 的选中对象通过 URL 直达与恢复
 
 ### C. 消息 payload 结构化（阶段二 §2.5 前置）
 

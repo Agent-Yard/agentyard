@@ -1,6 +1,29 @@
 import { createRouter, createWebHistory } from 'vue-router';
-import ConsolePage from '../pages/ConsolePage.vue';
-import LoginPage from '../pages/LoginPage.vue';
+import { consoleBasePath, defaultPageKey, pageMeta, type PageKey } from '../config/navigation';
+
+const LoginPage = () => import('../pages/LoginPage.vue');
+const ConsolePage = () => import('../pages/ConsolePage.vue');
+
+const consolePageComponents: Record<PageKey, () => Promise<unknown>> = {
+  domain: () => import('../pages/DomainPage.vue'),
+  scenario: () => import('../pages/ScenarioPage.vue'),
+  assistant: () => import('../pages/AssistantPage.vue'),
+  agent: () => import('../pages/AgentPage.vue'),
+  orchestration: () => import('../pages/OrchestrationPage.vue'),
+  'knowledge-library': () => import('../pages/KnowledgeLibraryPage.vue'),
+  'knowledge-create': () => import('../pages/KnowledgeCreatePage.vue'),
+  'resource-library': () => import('../pages/ResourceLibraryPage.vue'),
+  'resource-create': () => import('../pages/ResourceCreatePage.vue'),
+  runtime: () => import('../pages/RuntimeConversationPage.vue'),
+  workflow: () => import('../pages/WorkflowPage.vue'),
+};
+
+const defaultConsolePath = pageMeta[defaultPageKey].path;
+const consoleChildRoutes = (Object.entries(pageMeta) as [PageKey, typeof pageMeta[PageKey]][]).map(([pageKey, meta]) => ({
+  path: meta.path.slice(`${consoleBasePath}/`.length),
+  name: pageKey,
+  component: consolePageComponents[pageKey],
+}));
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -12,12 +35,23 @@ export const router = createRouter({
     },
     {
       path: '/',
+      redirect: defaultConsolePath,
+    },
+    {
+      path: consoleBasePath,
       name: 'console',
       component: ConsolePage,
+      children: [
+        {
+          path: '',
+          redirect: defaultConsolePath,
+        },
+        ...consoleChildRoutes,
+      ],
     },
     {
       path: '/:pathMatch(.*)*',
-      redirect: '/',
+      redirect: defaultConsolePath,
     },
   ],
 });

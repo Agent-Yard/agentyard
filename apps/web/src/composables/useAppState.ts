@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue';
+import { computed, ref, type Ref } from 'vue';
 import type {
   CatalogSummary,
   ConversationSession,
@@ -10,7 +10,7 @@ import { pageMeta, sectionMeta } from '../config/navigation';
 import type { PageKey, SectionKey } from '../config/navigation';
 import { api } from '../services/api';
 
-export function useAppState() {
+export function useAppState(currentPageKey: Ref<PageKey>) {
   const loading = ref(true);
   const creatingSession = ref(false);
   const sendingSessionId = ref<string | null>(null);
@@ -21,7 +21,6 @@ export function useAppState() {
   const resourceLibraryPreferredResourceId = ref<string | null>(null);
   const resourceLibraryPreferredVersionId = ref<string | null>(null);
   const catalogRevision = ref(0);
-  const activeKey = ref<PageKey>('domain');
   const openKeys = ref<SectionKey[]>(['design', 'build', 'knowledge', 'resource', 'runtime-observe']);
   const session = ref<UserSession | null>(null);
   const catalog = ref<CatalogSummary | null>(null);
@@ -30,8 +29,8 @@ export function useAppState() {
   const workflows = ref<WorkflowInstance[]>([]);
   let workflowRefreshInFlight = false;
 
-  const selectedKeys = computed(() => [activeKey.value]);
-  const currentPageMeta = computed(() => pageMeta[activeKey.value]);
+  const selectedKeys = computed(() => [currentPageKey.value]);
+  const currentPageMeta = computed(() => pageMeta[currentPageKey.value]);
   const currentSectionMeta = computed(() => sectionMeta[currentPageMeta.value.section]);
   const canManageGovernance = computed(() => session.value?.currentRole !== 'BUSINESS_USER');
   const currentWorkflow = computed(
@@ -112,7 +111,6 @@ export function useAppState() {
     resourceLibraryPreferredResourceId,
     resourceLibraryPreferredVersionId,
     catalogRevision,
-    activeKey,
     openKeys,
     session,
     catalog,
