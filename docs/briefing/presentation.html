@@ -219,7 +219,7 @@ flowchart LR
 
   subgraph INF[基础设施]
     PG[(PostgreSQL)]
-    OS[(OpenSearch)]
+    OS[(pgvector)]
     MI[(MinIO)]
     TP[(Temporal)]
   end
@@ -443,7 +443,7 @@ flowchart LR
               <ul>
                 <li>`demo.local` provider 和 seed 数据仍承担演示闭环职责</li>
                 <li>审计、安全隔离、灰度发布、SLO、成本治理尚未成体系</li>
-                <li>OpenSearch / MinIO / Redis 的正式职责仍待进一步收敛</li>
+                <li>pgvector / MinIO / Redis 的正式职责仍待进一步收敛</li>
                 <li>CI、测试和环境一致性能力仍需补强</li>
                 <li>运行观测仍偏同步式，尚未形成完整事件化订阅链路</li>
               </ul>
@@ -478,7 +478,7 @@ flowchart LR
             <div class="roadmap-card">
               <span>04</span>
               <h3>生产化基础设施职责收敛</h3>
-              <p>明确 OpenSearch、MinIO、Redis 等依赖职责，并补齐监控、备份、恢复和 CI 能力。</p>
+              <p>明确 pgvector、MinIO、Redis 等依赖职责，并补齐监控、备份、恢复和 CI 能力。</p>
             </div>
           </div>
           <div class="two-col">

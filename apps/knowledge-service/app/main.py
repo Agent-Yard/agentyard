@@ -10,13 +10,12 @@ import os
 import re
 import secrets
 import uuid
-from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Generator, List, Optional, Union
+from typing import Any, Generator, List, Optional, Sequence, Union
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlparse
+from urllib.parse import urlparse
 from urllib.request import Request as UrlRequest, urlopen
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request as FastAPIRequest
@@ -28,9 +27,10 @@ from lynxus_common import (
 )
 from minio import Minio
 from pydantic import BaseModel, Field
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, create_engine, select
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, bindparam, cast, create_engine, func, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
+from sqlalchemy.sql.type_api import UserDefinedType
 
 try:
     from docx import Document as DocxDocument
@@ -48,24 +48,11 @@ def now_utc() -> datetime:
 
 SERVICE_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATA_ROOT = SERVICE_ROOT / "data"
-DEFAULT_DATABASE_PATH = DEFAULT_DATA_ROOT / "knowledge-service.db"
 DEFAULT_STORAGE_ROOT = DEFAULT_DATA_ROOT / "storage"
+DEFAULT_DATABASE_URL = "postgresql+psycopg://lynxus:lynxus@localhost:5432/lynxus_knowledge"
 
 
-def ensure_sqlite_parent(database_url: str) -> None:
-    try:
-        url = make_url(database_url)
-    except Exception:
-        return
-    if not url.drivername.startswith("sqlite") or url.database in (None, "", ":memory:"):
-        return
-    database_path = Path(url.database)
-    if not database_path.is_absolute():
-        database_path = (Path.cwd() / database_path).resolve()
-    database_path.parent.mkdir(parents=True, exist_ok=True)
-
-
-DATABASE_URL = os.getenv("LYNXUS_KNOWLEDGE_DATABASE_URL", f"sqlite+pysqlite:///{DEFAULT_DATABASE_PATH}")
+DATABASE_URL = os.getenv("LYNXUS_KNOWLEDGE_DATABASE_URL", DEFAULT_DATABASE_URL)
 STORAGE_MODE = os.getenv("LYNXUS_KNOWLEDGE_STORAGE_MODE", "filesystem").lower()
 STORAGE_ROOT = Path(os.getenv("LYNXUS_KNOWLEDGE_STORAGE_ROOT", str(DEFAULT_STORAGE_ROOT)))
 MINIO_ENDPOINT = os.getenv("LYNXUS_MINIO_ENDPOINT", "localhost:9000").replace("http://", "").replace("https://", "")
@@ -78,15 +65,14 @@ URL_IMPORT_USER_AGENT = os.getenv(
     "LYNXUS_KNOWLEDGE_URL_IMPORT_USER_AGENT",
     "LynxusKnowledgeService/2.0 (+https://lynxus.local)",
 )
-OPENSEARCH_URL = os.getenv("LYNXUS_OPENSEARCH_URL", "").rstrip("/")
-OPENSEARCH_USERNAME = os.getenv("LYNXUS_OPENSEARCH_USERNAME", "")
-OPENSEARCH_PASSWORD = os.getenv("LYNXUS_OPENSEARCH_PASSWORD", "")
-OPENSEARCH_INDEX_PREFIX = os.getenv("LYNXUS_OPENSEARCH_INDEX_PREFIX", "lynxus-knowledge")
-OPENSEARCH_TIMEOUT_SECONDS = float(os.getenv("LYNXUS_OPENSEARCH_TIMEOUT_SECONDS", "10"))
+EMBEDDING_BASE_URL = os.getenv("LYNXUS_KNOWLEDGE_EMBEDDING_BASE_URL", "").rstrip("/")
+EMBEDDING_MODEL = os.getenv("LYNXUS_KNOWLEDGE_EMBEDDING_MODEL", "").strip()
+EMBEDDING_API_KEY = os.getenv("LYNXUS_KNOWLEDGE_EMBEDDING_API_KEY", "").strip()
+EMBEDDING_DIMENSIONS = int(os.getenv("LYNXUS_KNOWLEDGE_EMBEDDING_DIMENSIONS", "1024"))
+EMBEDDING_BATCH_SIZE = max(1, int(os.getenv("LYNXUS_KNOWLEDGE_EMBEDDING_BATCH_SIZE", "16")))
+EMBEDDING_TIMEOUT_SECONDS = float(os.getenv("LYNXUS_KNOWLEDGE_EMBEDDING_TIMEOUT_SECONDS", "15"))
 DEFAULT_SNAPSHOT_RETRIEVAL_MODE = os.getenv("LYNXUS_KNOWLEDGE_DEFAULT_RETRIEVAL_MODE", "HYBRID").upper()
-DEFAULT_SNAPSHOT_RETRIEVAL_BACKEND = os.getenv("LYNXUS_KNOWLEDGE_DEFAULT_RETRIEVAL_BACKEND", "OPENSEARCH").upper()
-
-ensure_sqlite_parent(DATABASE_URL)
+DEFAULT_SNAPSHOT_RETRIEVAL_BACKEND = "PGVECTOR"
 if STORAGE_MODE == "filesystem":
     STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
 
@@ -98,6 +84,50 @@ logger = logging.getLogger(__name__)
 SUPPORTED_FILE_TYPES = ["pdf", "docx", "md", "txt", "html", "csv"]
 SNAPSHOT_RETRIEVAL_MODES = {"LEXICAL", "VECTOR", "HYBRID"}
 MAX_RERANK_CANDIDATES = 20
+LEXICAL_CANDIDATE_MULTIPLIER = 8
+
+
+class TSVectorType(UserDefinedType):
+    cache_ok = True
+
+    def get_col_spec(self, **_: Any) -> str:
+        return "tsvector"
+
+
+class VectorType(UserDefinedType):
+    cache_ok = True
+
+    def __init__(self, dimensions: int) -> None:
+        self.dimensions = dimensions
+
+    def get_col_spec(self, **_: Any) -> str:
+        return f"vector({self.dimensions})"
+
+    def bind_processor(self, dialect):
+        def process(value: Optional[Sequence[float]]) -> Optional[str]:
+            if value is None:
+                return None
+            return "[" + ",".join(f"{float(item):.12f}" for item in value) + "]"
+
+        return process
+
+    def bind_expression(self, bindvalue):
+        return cast(bindvalue, self)
+
+    def result_processor(self, dialect, coltype):
+        def process(value: Any) -> Optional[List[float]]:
+            if value is None:
+                return None
+            if isinstance(value, str):
+                stripped = value.strip()[1:-1].strip()
+                if not stripped:
+                    return []
+                return [float(item) for item in stripped.split(",")]
+            if isinstance(value, (list, tuple)):
+                return [float(item) for item in value]
+            return None
+
+        return process
 
 
 def internal_auth_token() -> str:
@@ -204,6 +234,11 @@ class KnowledgeChunkRecord(Base):
     normalized_heading_path: Mapped[str] = mapped_column(Text)
     normalized_content: Mapped[str] = mapped_column(Text)
     normalized_source_uri: Mapped[str] = mapped_column(Text)
+    search_text: Mapped[str] = mapped_column(Text)
+    search_vector: Mapped[Optional[str]] = mapped_column(TSVectorType(), nullable=True)
+    embedding: Mapped[Optional[List[float]]] = mapped_column(VectorType(EMBEDDING_DIMENSIONS), nullable=True)
+    embedding_model: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    embedding_dimensions: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
     document: Mapped[KnowledgeDocumentRecord] = relationship(back_populates="chunks")
@@ -436,170 +471,229 @@ class Storage:
             response.release_conn()
 
 
-class OpenSearchClient:
+class EmbeddingClient:
     def __init__(self) -> None:
-        self.base_url = OPENSEARCH_URL
-        self.username = OPENSEARCH_USERNAME
-        self.password = OPENSEARCH_PASSWORD
-        self.index_prefix = OPENSEARCH_INDEX_PREFIX.strip() or "lynxus-knowledge"
-        self.timeout_seconds = OPENSEARCH_TIMEOUT_SECONDS
+        self.base_url = EMBEDDING_BASE_URL
+        self.model = EMBEDDING_MODEL
+        self.api_key = EMBEDDING_API_KEY
+        self.dimensions = EMBEDDING_DIMENSIONS
+        self.batch_size = EMBEDDING_BATCH_SIZE
+        self.timeout_seconds = EMBEDDING_TIMEOUT_SECONDS
 
-    @property
-    def enabled(self) -> bool:
-        return bool(self.base_url)
+    def validate_configuration(self) -> None:
+        missing = [
+            name
+            for name, value in {
+                "LYNXUS_KNOWLEDGE_EMBEDDING_BASE_URL": self.base_url,
+                "LYNXUS_KNOWLEDGE_EMBEDDING_MODEL": self.model,
+                "LYNXUS_KNOWLEDGE_EMBEDDING_API_KEY": self.api_key,
+            }.items()
+            if not value
+        ]
+        if self.dimensions <= 0:
+            missing.append("LYNXUS_KNOWLEDGE_EMBEDDING_DIMENSIONS")
+        if missing:
+            raise RuntimeError("embedding provider is not configured: " + ", ".join(missing))
 
-    def snapshot_index_name(self, snapshot_id: str) -> str:
-        sanitized = re.sub(r"[^a-z0-9-]+", "-", snapshot_id.lower()).strip("-")
-        return f"{self.index_prefix}-{sanitized or 'snapshot'}"
-
-    def request(self, method: str, path: str, payload: Optional[Union[dict, list, str]] = None, content_type: str = "application/json") -> dict:
-        if not self.enabled:
-            raise ValueError("opensearch is not configured")
-        headers = {"Accept": "application/json"}
-        data: Optional[bytes] = None
-        if payload is not None:
-            if content_type == "application/x-ndjson" and isinstance(payload, str):
-                data = payload.encode("utf-8")
-            else:
-                data = json.dumps(payload).encode("utf-8")
-            headers["Content-Type"] = content_type
-        request = Request(f"{self.base_url}{path}", data=data, method=method.upper(), headers=headers)
-        if self.username or self.password:
-            token = base64.b64encode(f"{self.username}:{self.password}".encode("utf-8")).decode("ascii")
-            request.add_header("Authorization", f"Basic {token}")
+    def request(self, payload: dict) -> dict:
+        self.validate_configuration()
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
+        request = UrlRequest(
+            f"{self.base_url}/embeddings",
+            data=json.dumps(payload).encode("utf-8"),
+            method="POST",
+            headers=headers,
+        )
         try:
             with urlopen(request, timeout=self.timeout_seconds) as response:
                 body = response.read().decode("utf-8", errors="ignore").strip()
                 return json.loads(body) if body else {}
         except HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="ignore")
-            if exc.code == 404:
-                raise KeyError(detail or "not found") from exc
-            raise ValueError(f"opensearch {method.upper()} {path} failed: {exc.code} {detail}") from exc
+            raise ValueError(f"embedding request failed: {exc.code} {detail}") from exc
         except URLError as exc:
-            raise ValueError(f"opensearch request failed: {exc.reason}") from exc
+            raise ValueError(f"embedding request failed: {exc.reason}") from exc
 
-    def exists_index(self, index_name: str) -> bool:
-        try:
-            self.request("HEAD", f"/{quote(index_name)}")
-            return True
-        except KeyError:
-            return False
-
-    def delete_index(self, index_name: str) -> None:
-        if not self.exists_index(index_name):
-            return
-        self.request("DELETE", f"/{quote(index_name)}")
-
-    def ensure_index(self, index_name: str) -> None:
-        if self.exists_index(index_name):
-            return
-        self.request(
-            "PUT",
-            f"/{quote(index_name)}",
-            {
-                "settings": {
-                    "index": {"number_of_shards": 1, "number_of_replicas": 0},
-                    "analysis": {
-                        "analyzer": {
-                            "lynxus_text": {
-                                "type": "custom",
-                                "tokenizer": "standard",
-                                "filter": ["lowercase"],
-                            }
-                        }
-                    },
-                },
-                "mappings": {
-                    "properties": {
-                        "snapshot_id": {"type": "keyword"},
-                        "knowledge_base_id": {"type": "keyword"},
-                        "document_id": {"type": "keyword"},
-                        "chunk_id": {"type": "keyword"},
-                        "chunk_index": {"type": "integer"},
-                        "page_number": {"type": "integer"},
-                        "title": {"type": "text", "analyzer": "lynxus_text"},
-                        "heading_path": {"type": "text", "analyzer": "lynxus_text"},
-                        "source_uri": {"type": "text", "analyzer": "lynxus_text"},
-                        "content": {"type": "text", "analyzer": "lynxus_text"},
-                        "combined_text": {"type": "text", "analyzer": "lynxus_text"},
-                    }
-                },
-            },
-        )
-
-    def bulk_index_chunks(self, snapshot_id: str, knowledge_base_id: str, chunks: List[KnowledgeChunkRecord]) -> None:
-        index_name = self.snapshot_index_name(snapshot_id)
-        self.delete_index(index_name)
-        self.ensure_index(index_name)
-        lines: List[str] = []
-        for chunk in chunks:
-            lines.append(json.dumps({"index": {"_index": index_name, "_id": chunk.id}}, ensure_ascii=False))
-            lines.append(
-                json.dumps(
-                    {
-                        "snapshot_id": snapshot_id,
-                        "knowledge_base_id": knowledge_base_id,
-                        "document_id": chunk.document_id,
-                        "chunk_id": chunk.id,
-                        "chunk_index": chunk.chunk_index,
-                        "page_number": chunk.page_number,
-                        "title": chunk.title,
-                        "heading_path": chunk.heading_path,
-                        "source_uri": chunk.source_uri,
-                        "content": chunk.content,
-                        "combined_text": "\n".join(
-                            item for item in [chunk.title, chunk.heading_path, chunk.source_uri, chunk.content] if item
-                        ),
-                    },
-                    ensure_ascii=False,
-                )
+    def embed_texts(self, texts: Sequence[str]) -> List[List[float]]:
+        self.validate_configuration()
+        if not texts:
+            return []
+        embeddings: List[List[float]] = []
+        for start in range(0, len(texts), self.batch_size):
+            batch = list(texts[start : start + self.batch_size])
+            payload = self.request(
+                {
+                    "model": self.model,
+                    "input": batch,
+                    "dimensions": self.dimensions,
+                    "encoding_format": "float",
+                }
             )
-        payload = "\n".join(lines) + "\n"
-        response = self.request("POST", "/_bulk?refresh=true", payload, content_type="application/x-ndjson")
-        if response.get("errors"):
-            raise ValueError("opensearch bulk indexing reported item errors")
+            batch_embeddings = payload.get("data", [])
+            if len(batch_embeddings) != len(batch):
+                raise ValueError("embedding provider returned mismatched batch size")
+            for item in batch_embeddings:
+                vector = item.get("embedding")
+                if not isinstance(vector, list) or len(vector) != self.dimensions:
+                    raise ValueError("embedding provider returned an invalid embedding vector")
+                embeddings.append([float(value) for value in vector])
+        return embeddings
 
-    def search_chunk_ids(self, snapshot_id: str, query: str, retrieval_mode: str, size: int) -> List[str]:
-        index_name = self.snapshot_index_name(snapshot_id)
-        normalized_mode = normalize_retrieval_mode(retrieval_mode)
-        fuzziness = "AUTO" if normalized_mode != "VECTOR" else "0"
-        result = self.request(
-            "POST",
-            f"/{quote(index_name)}/_search",
+
+class PostgresRetrievalStore:
+    def __init__(self, dimensions: int, embedding_model: str) -> None:
+        self.dimensions = dimensions
+        self.embedding_model = embedding_model
+
+    @staticmethod
+    def _normalize_scores(raw_scores: dict[str, float]) -> dict[str, float]:
+        if not raw_scores:
+            return {}
+        values = list(raw_scores.values())
+        min_score = min(values)
+        max_score = max(values)
+        if math.isclose(max_score, min_score):
+            return {key: (1.0 if value > 0 else 0.0) for key, value in raw_scores.items()}
+        return {
+            key: max(0.0, min(1.0, (value - min_score) / (max_score - min_score)))
+            for key, value in raw_scores.items()
+        }
+
+    @staticmethod
+    def _vector_literal(embedding: Sequence[float]) -> str:
+        return "[" + ",".join(f"{float(value):.12f}" for value in embedding) + "]"
+
+    def refresh_chunk_search_vectors(self, db: Session, chunk_ids: Sequence[str]) -> None:
+        if not chunk_ids:
+            return
+        statement = text(
+            """
+            update knowledge_chunk
+               set search_vector =
+                   setweight(to_tsvector('simple', coalesce(title, '')), 'A')
+                || setweight(to_tsvector('simple', coalesce(heading_path, '')), 'B')
+                || setweight(to_tsvector('simple', coalesce(content, '')), 'C')
+                || setweight(to_tsvector('simple', coalesce(source_uri, '')), 'D')
+             where id in :chunk_ids
+            """
+        ).bindparams(bindparam("chunk_ids", expanding=True))
+        db.execute(statement, {"chunk_ids": list(chunk_ids)})
+
+    def ensure_snapshot_chunks_compatible(self, db: Session, snapshot_id: str) -> None:
+        row = db.execute(
+            text(
+                """
+                select count(*) as invalid_count
+                  from knowledge_index_snapshot_chunk mapping
+                  join knowledge_chunk chunk on chunk.id = mapping.chunk_id
+                 where mapping.snapshot_id = :snapshot_id
+                   and (
+                        chunk.embedding is null
+                     or chunk.embedding_model is distinct from :embedding_model
+                     or chunk.embedding_dimensions is distinct from :embedding_dimensions
+                   )
+                """
+            ),
             {
-                "size": size,
-                "_source": ["chunk_id"],
-                "query": {
-                    "bool": {
-                        "must": [
-                            {
-                                "multi_match": {
-                                    "query": query,
-                                    "fields": [
-                                        "title^4",
-                                        "heading_path^2",
-                                        "content",
-                                        "source_uri^0.5",
-                                        "combined_text^1.5",
-                                    ],
-                                    "type": "best_fields",
-                                    "operator": "or",
-                                    "fuzziness": fuzziness,
-                                }
-                            }
-                        ],
-                        "filter": [{"term": {"snapshot_id": snapshot_id}}],
-                    }
-                },
+                "snapshot_id": snapshot_id,
+                "embedding_model": self.embedding_model,
+                "embedding_dimensions": self.dimensions,
             },
-        )
-        hits = result.get("hits", {}).get("hits", [])
-        return [hit.get("_source", {}).get("chunk_id") or hit.get("_id") for hit in hits if hit]
+        ).mappings().one()
+        if int(row["invalid_count"]) > 0:
+            raise ValueError("snapshot chunks were embedded with a different embedding configuration; re-import the documents")
+
+    def lexical_candidates(self, db: Session, snapshot_id: str, query: str, size: int) -> dict[str, float]:
+        normalized_query = normalize_text(query)
+        rows = db.execute(
+            text(
+                """
+                select chunk.id as chunk_id,
+                       (
+                           ts_rank_cd(
+                               chunk.search_vector,
+                               websearch_to_tsquery('simple', :query)
+                           ) * 0.7
+                         + greatest(
+                               similarity(chunk.normalized_title, :normalized_query) * 1.0,
+                               similarity(chunk.normalized_heading_path, :normalized_query) * 0.8,
+                               similarity(chunk.normalized_content, :normalized_query) * 0.65,
+                               similarity(chunk.search_text, :normalized_query) * 0.75,
+                               similarity(chunk.normalized_source_uri, :normalized_query) * 0.3
+                           ) * 0.3
+                       ) as lexical_score
+                  from knowledge_chunk chunk
+                  join knowledge_index_snapshot_chunk mapping on mapping.chunk_id = chunk.id
+                 where mapping.snapshot_id = :snapshot_id
+                 order by lexical_score desc, chunk.chunk_index asc
+                 limit :limit
+                """
+            ),
+            {
+                "snapshot_id": snapshot_id,
+                "query": query,
+                "normalized_query": normalized_query,
+                "limit": size,
+            },
+        ).mappings().all()
+        return {
+            str(row["chunk_id"]): float(row["lexical_score"])
+            for row in rows
+            if row["lexical_score"] is not None and float(row["lexical_score"]) > 0
+        }
+
+    def vector_candidates(self, db: Session, snapshot_id: str, query_embedding: Sequence[float], size: int) -> dict[str, float]:
+        rows = db.execute(
+            text(
+                """
+                select chunk.id as chunk_id,
+                       greatest(0.0, 1 - (chunk.embedding <=> cast(:query_embedding as vector))) as vector_score
+                  from knowledge_chunk chunk
+                  join knowledge_index_snapshot_chunk mapping on mapping.chunk_id = chunk.id
+                 where mapping.snapshot_id = :snapshot_id
+                   and chunk.embedding is not null
+                 order by chunk.embedding <=> cast(:query_embedding as vector), chunk.chunk_index asc
+                 limit :limit
+                """
+            ),
+            {
+                "snapshot_id": snapshot_id,
+                "query_embedding": self._vector_literal(query_embedding),
+                "limit": size,
+            },
+        ).mappings().all()
+        return {
+            str(row["chunk_id"]): float(row["vector_score"])
+            for row in rows
+            if row["vector_score"] is not None and float(row["vector_score"]) > 0
+        }
+
+    def search(self, db: Session, snapshot_id: str, query: str, retrieval_mode: str, size: int) -> dict[str, float]:
+        mode = normalize_retrieval_mode(retrieval_mode)
+        lexical_raw = self.lexical_candidates(db, snapshot_id, query, size if mode == "LEXICAL" else size * 2)
+        lexical = self._normalize_scores(lexical_raw)
+        if mode == "LEXICAL":
+            return lexical
+
+        query_embedding = embedding_client.embed_texts([query])[0]
+        vector_raw = self.vector_candidates(db, snapshot_id, query_embedding, size if mode == "VECTOR" else size * 2)
+        vector = self._normalize_scores(vector_raw)
+        if mode == "VECTOR":
+            return vector
+
+        combined: dict[str, float] = {}
+        for chunk_id in set(lexical) | set(vector):
+            combined[chunk_id] = round((lexical.get(chunk_id, 0.0) * 0.45) + (vector.get(chunk_id, 0.0) * 0.55), 4)
+        return dict(sorted(combined.items(), key=lambda item: item[1], reverse=True)[:size])
 
 
 storage = Storage()
-opensearch = OpenSearchClient()
+embedding_client = EmbeddingClient()
+retrieval_store = PostgresRetrievalStore(EMBEDDING_DIMENSIONS, EMBEDDING_MODEL)
 app = FastAPI(
     title="Lynxus Knowledge Service",
     version="2.0.0",
@@ -624,6 +718,33 @@ def get_db() -> Generator[Session, None, None]:
         yield session
     finally:
         session.close()
+
+
+def ensure_postgres_configuration() -> None:
+    try:
+        url = make_url(DATABASE_URL)
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError(f"invalid knowledge database url: {exc}") from exc
+    if url.get_backend_name() != "postgresql":
+        raise RuntimeError("knowledge service requires PostgreSQL with pgvector and pg_trgm extensions")
+
+
+def initialize_postgres_schema() -> None:
+    ensure_postgres_configuration()
+    embedding_client.validate_configuration()
+    with engine.begin() as connection:
+        connection.execute(text("create extension if not exists vector"))
+        connection.execute(text("create extension if not exists pg_trgm"))
+        Base.metadata.create_all(bind=connection)
+        connection.execute(
+            text("create index if not exists idx_knowledge_chunk_search_vector on knowledge_chunk using gin (search_vector)")
+        )
+        connection.execute(
+            text("create index if not exists idx_knowledge_chunk_search_text_trgm on knowledge_chunk using gin (search_text gin_trgm_ops)")
+        )
+        connection.execute(
+            text("create index if not exists idx_knowledge_chunk_embedding_hnsw on knowledge_chunk using hnsw (embedding vector_cosine_ops)")
+        )
 
 
 def normalize_text(value: str) -> str:
@@ -919,116 +1040,39 @@ def build_chunks(knowledge_base_id: str, document_id: str, title: str, source_ur
     for index, segment in enumerate(segments):
         if not segment.content.strip():
             continue
+        resolved_title = segment.title or title
+        normalized_title = normalize_text(resolved_title)
+        normalized_heading_path = normalize_text(segment.heading_path)
+        normalized_content = normalize_text(segment.content)
+        normalized_source_uri = normalize_text(source_uri)
         chunks.append(
             KnowledgeChunkRecord(
                 id=f"kb-chunk-{uuid.uuid4().hex[:12]}",
                 knowledge_base_id=knowledge_base_id,
                 document_id=document_id,
                 chunk_index=index,
-                title=segment.title or title,
+                title=resolved_title,
                 heading_path=segment.heading_path,
                 source_uri=source_uri,
                 page_number=segment.page_number,
                 content=segment.content.strip(),
                 token_count=estimate_tokens(segment.content),
-                normalized_title=normalize_text(segment.title or title),
-                normalized_heading_path=normalize_text(segment.heading_path),
-                normalized_content=normalize_text(segment.content),
-                normalized_source_uri=normalize_text(source_uri),
+                normalized_title=normalized_title,
+                normalized_heading_path=normalized_heading_path,
+                normalized_content=normalized_content,
+                normalized_source_uri=normalized_source_uri,
+                search_text=" ".join(
+                    item
+                    for item in [normalized_title, normalized_heading_path, normalized_content, normalized_source_uri]
+                    if item
+                ),
             )
         )
     return chunks
 
 
-def trigram_similarity(left: str, right: str) -> float:
-    if not left or not right:
-        return 0.0
-
-    def trigrams(value: str) -> set[str]:
-        padded = f"  {value} "
-        return {padded[index : index + 3] for index in range(len(padded) - 2)}
-
-    left_trigrams = trigrams(left)
-    right_trigrams = trigrams(right)
-    if not left_trigrams or not right_trigrams:
-        return 0.0
-    overlap = len(left_trigrams & right_trigrams)
-    return overlap / max(len(left_trigrams), len(right_trigrams))
-
-
-def lexical_score(chunk: KnowledgeChunkRecord, query: str) -> float:
-    query_terms = tokenize(query)
-    if not query_terms:
-        return 0.0
-    title_hits = sum(1 for term in query_terms if term in chunk.normalized_title)
-    heading_hits = sum(1 for term in query_terms if term in chunk.normalized_heading_path)
-    body_hits = sum(1 for term in query_terms if term in chunk.normalized_content)
-    metadata_hits = sum(1 for term in query_terms if term in chunk.normalized_source_uri)
-    exact_phrase_boost = 1.5 if normalize_text(query) and normalize_text(query) in chunk.normalized_content else 0.0
-    trigram = trigram_similarity(normalize_text(query), chunk.normalized_content)
-    return round(
-        (title_hits * 3.0)
-        + (heading_hits * 2.0)
-        + body_hits
-        + (metadata_hits * 0.5)
-        + (trigram * 4.0)
-        + exact_phrase_boost,
-        4,
-    )
-
-
-def term_weights(value: str) -> Counter[str]:
-    tokens = tokenize(value)
-    if not tokens:
-        return Counter()
-    counts = Counter(tokens)
-    length = math.sqrt(sum(count * count for count in counts.values())) or 1.0
-    return Counter({token: count / length for token, count in counts.items()})
-
-
-def cosine_similarity(left: Counter[str], right: Counter[str]) -> float:
-    if not left or not right:
-        return 0.0
-    return sum(left[token] * right.get(token, 0.0) for token in left)
-
-
-def vector_score(chunk: KnowledgeChunkRecord, query: str) -> float:
-    query_vector = term_weights(query)
-    content_vector = term_weights(chunk.content)
-    title_vector = term_weights(chunk.title)
-    heading_vector = term_weights(chunk.heading_path)
-    return round(
-        (cosine_similarity(query_vector, title_vector) * 3.0)
-        + (cosine_similarity(query_vector, heading_vector) * 2.0)
-        + (cosine_similarity(query_vector, content_vector) * 4.0),
-        4,
-    )
-
-
-def rerank_bonus(chunk: KnowledgeChunkRecord, query: str) -> float:
-    query_terms = tokenize(query)
-    if not query_terms:
-        return 0.0
-    matched_terms = [term for term in query_terms if term in chunk.normalized_content or term in chunk.normalized_title]
-    if not matched_terms:
-        return 0.0
-    coverage = len(set(matched_terms)) / len(set(query_terms))
-    title_exact = 0.8 if normalize_text(query) in chunk.normalized_title else 0.0
-    heading_exact = 0.5 if normalize_text(query) in chunk.normalized_heading_path else 0.0
-    density = min(1.0, len(matched_terms) / max(1, chunk.token_count / 30))
-    return round((coverage * 1.8) + (density * 1.2) + title_exact + heading_exact, 4)
-
-
-def final_score(chunk: KnowledgeChunkRecord, query: str, retrieval_mode: str) -> float:
-    mode = normalize_retrieval_mode(retrieval_mode)
-    lexical = lexical_score(chunk, query)
-    vector = vector_score(chunk, query)
-    if mode == "LEXICAL":
-        return lexical
-    if mode == "VECTOR":
-        return vector
-    hybrid = (lexical * 0.65) + (vector * 0.75)
-    return round(hybrid + rerank_bonus(chunk, query), 4)
+def embedding_input_for_chunk(chunk: KnowledgeChunkRecord) -> str:
+    return "\n".join(part for part in [chunk.title, chunk.heading_path, chunk.content] if part).strip()
 
 
 def snippet_for_query(content: str, query_terms: List[str]) -> str:
@@ -1096,8 +1140,8 @@ def import_job_response(record: KnowledgeImportJobRecord) -> ImportJobResponse:
 
 
 def document_response(db: Session, record: KnowledgeDocumentRecord) -> DocumentResponse:
-    chunk_count = len(
-        db.scalars(select(KnowledgeChunkRecord).where(KnowledgeChunkRecord.document_id == record.id)).all()
+    chunk_count = int(
+        db.scalar(select(func.count()).select_from(KnowledgeChunkRecord).where(KnowledgeChunkRecord.document_id == record.id)) or 0
     )
     return DocumentResponse(
         id=record.id,
@@ -1257,7 +1301,7 @@ def update_snapshot(
 @app.on_event("startup")
 def startup() -> None:
     internal_auth_token()
-    Base.metadata.create_all(bind=engine)
+    initialize_postgres_schema()
 
 
 @app.post("/internal/upload-sessions", response_model=UploadSessionResponse)
@@ -1395,7 +1439,7 @@ def create_index_snapshot(knowledge_base_id: str, request: CreateIndexSnapshotRe
     snapshot = IndexSnapshotRecord(
         id=f"snapshot-{uuid.uuid4().hex[:12]}",
         knowledge_base_id=knowledge_base_id,
-        retrieval_backend="OPENSEARCH",
+        retrieval_backend=DEFAULT_SNAPSHOT_RETRIEVAL_BACKEND,
         retrieval_mode=normalize_retrieval_mode(request.retrievalMode),
         status="QUEUED",
         stage="QUEUED",
@@ -1483,6 +1527,8 @@ def run_import_job(job_id: str, db: Session = Depends(get_db)) -> ImportJobRespo
     if file_record is None:
         raise HTTPException(status_code=404, detail="knowledge file not found")
 
+    import_job_id = import_job.id
+    file_id = file_record.id
     update_import_job(import_job, status="RUNNING", stage="FETCHING_SOURCE", progress_percent=10, retryable=False, started_at=import_job.started_at or now_utc())
     file_record.status = "IMPORTING"
     file_record.updated_at = now_utc()
@@ -1541,6 +1587,31 @@ def run_import_job(job_id: str, db: Session = Depends(get_db)) -> ImportJobRespo
         update_import_job(import_job, stage="PERSISTING", progress_percent=90)
         db.add(document)
         db.add_all(chunks)
+        db.flush()
+        retrieval_store.refresh_chunk_search_vectors(db, [chunk.id for chunk in chunks])
+        embeddings = embedding_client.embed_texts([embedding_input_for_chunk(chunk) for chunk in chunks])
+        if len(embeddings) != len(chunks):
+            raise ValueError("embedding provider returned mismatched chunk embeddings")
+        db.execute(
+            text(
+                """
+                update knowledge_chunk
+                   set embedding = cast(:embedding as vector),
+                       embedding_model = :embedding_model,
+                       embedding_dimensions = :embedding_dimensions
+                 where id = :chunk_id
+                """
+            ),
+            [
+                {
+                    "chunk_id": chunk.id,
+                    "embedding": retrieval_store._vector_literal(embedding),
+                    "embedding_model": EMBEDDING_MODEL,
+                    "embedding_dimensions": EMBEDDING_DIMENSIONS,
+                }
+                for chunk, embedding in zip(chunks, embeddings)
+            ],
+        )
         import_job.failure_reason = None
         update_import_job(
             import_job,
@@ -1552,7 +1623,14 @@ def run_import_job(job_id: str, db: Session = Depends(get_db)) -> ImportJobRespo
         )
         file_record.status = "IMPORTED"
         file_record.error_message = None
+        file_record.updated_at = now_utc()
+        db.commit()
     except Exception as exc:
+        db.rollback()
+        import_job = db.get(KnowledgeImportJobRecord, import_job_id)
+        file_record = db.get(KnowledgeFileRecord, file_id)
+        if import_job is None or file_record is None:
+            raise
         update_import_job(
             import_job,
             status="FAILED",
@@ -1563,7 +1641,6 @@ def run_import_job(job_id: str, db: Session = Depends(get_db)) -> ImportJobRespo
         )
         file_record.status = "FAILED"
         file_record.error_message = str(exc)
-    finally:
         file_record.updated_at = now_utc()
         db.commit()
     logger.info("import job completed importJobId=%s status=%s stage=%s", job_id, import_job.status, import_job.stage)
@@ -1584,8 +1661,6 @@ def build_index_snapshot(snapshot_id: str, db: Session = Depends(get_db)) -> Ind
     db.commit()
 
     try:
-        if not opensearch.enabled:
-            raise ValueError("retrieval backend unavailable: opensearch is not configured for knowledge snapshot builds")
         selected_document_ids = [
             selection.document_id
             for selection in db.scalars(
@@ -1604,7 +1679,6 @@ def build_index_snapshot(snapshot_id: str, db: Session = Depends(get_db)) -> Ind
 
         update_snapshot(snapshot, stage="INDEXING", progress_percent=60)
         db.commit()
-        all_chunks: List[KnowledgeChunkRecord] = []
         chunk_records: List[IndexSnapshotChunkRecord] = []
         chunk_count = 0
         for document in documents:
@@ -1614,7 +1688,6 @@ def build_index_snapshot(snapshot_id: str, db: Session = Depends(get_db)) -> Ind
                 .order_by(KnowledgeChunkRecord.chunk_index.asc())
             ).all()
             for chunk in chunks:
-                all_chunks.append(chunk)
                 chunk_records.append(
                     IndexSnapshotChunkRecord(
                         id=f"snapshot-chunk-{uuid.uuid4().hex[:12]}",
@@ -1628,8 +1701,9 @@ def build_index_snapshot(snapshot_id: str, db: Session = Depends(get_db)) -> Ind
         if chunk_count == 0:
             raise ValueError("no chunks available for snapshot")
 
-        opensearch.bulk_index_chunks(snapshot.id, snapshot.knowledge_base_id, all_chunks)
         db.add_all(chunk_records)
+        db.flush()
+        retrieval_store.ensure_snapshot_chunks_compatible(db, snapshot.id)
         snapshot.failure_reason = None
         update_snapshot(
             snapshot,
@@ -1641,8 +1715,13 @@ def build_index_snapshot(snapshot_id: str, db: Session = Depends(get_db)) -> Ind
         )
         snapshot.document_count = len(documents)
         snapshot.chunk_count = chunk_count
-        snapshot.retrieval_backend = "OPENSEARCH"
+        snapshot.retrieval_backend = DEFAULT_SNAPSHOT_RETRIEVAL_BACKEND
+        db.commit()
     except Exception as exc:
+        db.rollback()
+        snapshot = db.get(IndexSnapshotRecord, snapshot_id)
+        if snapshot is None:
+            raise
         update_snapshot(
             snapshot,
             status="FAILED",
@@ -1652,7 +1731,7 @@ def build_index_snapshot(snapshot_id: str, db: Session = Depends(get_db)) -> Ind
         )
         snapshot.document_count = 0
         snapshot.chunk_count = 0
-    db.commit()
+        db.commit()
     logger.info("index snapshot completed snapshotId=%s status=%s stage=%s", snapshot_id, snapshot.status, snapshot.stage)
     return snapshot_response(snapshot)
 
@@ -1668,28 +1747,30 @@ def get_index_snapshot(snapshot_id: str, db: Session = Depends(get_db)) -> Index
 @app.post("/internal/retrieve", response_model=RetrieveResponse)
 def retrieve(request: RetrieveRequest, db: Session = Depends(get_db)) -> RetrieveResponse:
     logger.info("retrieve knowledge snapshotId=%s topK=%s", request.indexSnapshotId, request.topK)
+    if not request.query or not request.query.strip():
+        raise HTTPException(status_code=400, detail="query is required")
     snapshot = db.get(IndexSnapshotRecord, request.indexSnapshotId)
     if snapshot is None or snapshot.status != "READY":
         raise HTTPException(status_code=404, detail="index snapshot is not ready")
-    if snapshot.retrieval_backend != "OPENSEARCH":
+    if snapshot.retrieval_backend != DEFAULT_SNAPSHOT_RETRIEVAL_BACKEND:
         raise HTTPException(status_code=500, detail=f"unsupported retrieval backend: {snapshot.retrieval_backend}")
-    if not opensearch.enabled:
-        raise HTTPException(status_code=500, detail="opensearch is not configured for retrieval")
-
     retrieval_mode = normalize_retrieval_mode(request.retrievalMode or snapshot.retrieval_mode)
-    candidate_ids = opensearch.search_chunk_ids(
+    top_k = max(1, min(request.topK, MAX_RERANK_CANDIDATES))
+    min_score = max(0.0, request.minScore)
+    candidate_scores = retrieval_store.search(
+        db,
         snapshot.id,
-        request.query,
+        request.query.strip(),
         retrieval_mode,
-        max(20, min(MAX_RERANK_CANDIDATES, request.topK * 8)),
+        max(MAX_RERANK_CANDIDATES, top_k * LEXICAL_CANDIDATE_MULTIPLIER),
     )
-    if not candidate_ids:
+    if not candidate_scores:
         return RetrieveResponse(hits=[], lowConfidence=True)
 
     mappings = db.scalars(select(IndexSnapshotChunkRecord).where(IndexSnapshotChunkRecord.snapshot_id == snapshot.id)).all()
     mapping_index = {mapping.chunk_id: mapping for mapping in mappings}
     candidates: List[RetrieveHit] = []
-    for chunk_id in candidate_ids:
+    for chunk_id, score in candidate_scores.items():
         mapping = mapping_index.get(chunk_id)
         if mapping is None:
             continue
@@ -1697,8 +1778,7 @@ def retrieve(request: RetrieveRequest, db: Session = Depends(get_db)) -> Retriev
         document = db.get(KnowledgeDocumentRecord, mapping.document_id)
         if chunk is None or document is None:
             continue
-        score = final_score(chunk, request.query, retrieval_mode)
-        if score < request.minScore:
+        if score < min_score:
             continue
         candidates.append(
             RetrieveHit(
@@ -1706,13 +1786,13 @@ def retrieve(request: RetrieveRequest, db: Session = Depends(get_db)) -> Retriev
                 documentId=document.id,
                 documentTitle=document.title,
                 sourceUri=chunk.source_uri,
-                snippet=snippet_for_query(chunk.content, tokenize(request.query)),
+                snippet=snippet_for_query(chunk.content, tokenize(request.query.strip())),
                 score=round(score, 4),
                 pageNumber=chunk.page_number,
                 headingPath=chunk.heading_path,
             )
         )
     candidates.sort(key=lambda item: item.score, reverse=True)
-    hits = candidates[: max(1, min(request.topK, MAX_RERANK_CANDIDATES))]
+    hits = candidates[:top_k]
     logger.info("retrieve knowledge completed snapshotId=%s hitCount=%s", request.indexSnapshotId, len(hits))
     return RetrieveResponse(hits=hits, lowConfidence=not hits)

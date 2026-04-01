@@ -106,7 +106,7 @@ export interface KnowledgeDocument {
 export interface KnowledgeSnapshot {
   id: string;
   knowledgeBaseId: string;
-  retrievalBackend: string;
+  retrievalBackend: 'PGVECTOR';
   retrievalMode: string;
   status: KnowledgeIndexSnapshotStatus;
   stage: KnowledgeIndexSnapshotStage;

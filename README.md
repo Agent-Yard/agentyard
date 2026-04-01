@@ -29,7 +29,7 @@ Orchestrate Enterprise Agents
 - 运行态主投影已落 PostgreSQL，并在 API 启动时主动与 Temporal 对账
 - `sendMessage` / `launchTask` / `human-action` 已改为启动即返回，前端通过轮询收口运行结果
 - workflow 观测页已暴露 `agentTurnState`，可查看最新结构化决策和 turn logs
-- MinIO / OpenSearch 已纳入本地依赖与配置，知识服务当前默认以 OpenSearch 作为正式快照检索后端
+- MinIO / pgvector 已纳入本地依赖与配置，知识服务当前默认以 PostgreSQL 检索栈作为正式快照检索后端
 - 知识库导入与快照构建已改为异步后台任务；控制台会轮询展示进度、失败原因与手动重试入口
 
 ## Monorepo Layout
@@ -81,15 +81,9 @@ cd infra/local
 docker compose up -d
 ```
 
-默认本地依赖包含 PostgreSQL、MinIO、OpenSearch 和 Temporal。
+默认本地依赖包含 PostgreSQL、MinIO 和 Temporal。
 其中 PostgreSQL 会在本地自动准备独立的 `lynxus_api` 和 `lynxus_knowledge` 数据库，分别给 API 和 knowledge service 使用。
-知识服务按当前实现默认要求 OpenSearch 可用，不再保留本地嵌入式检索回退。
-
-如果你需要观察面板，再额外启动：
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.dashboards.yml up -d
-```
+知识服务按当前实现默认要求 PostgreSQL 内已启用 `pgvector` 与 `pg_trgm`，不再保留 OpenSearch 或本地嵌入式检索回退。
 
 ### 2. 准备环境变量
 
@@ -165,16 +159,21 @@ LYNXUS_OPENAI_COMPATIBLE_API_KEY_ENV_VAR=OPENAI_COMPATIBLE_API_KEY
 OPENAI_COMPATIBLE_API_KEY=your-token-if-needed
 ```
 
+知识服务的 embedding provider 也需要单独配置：
+
+```bash
+LYNXUS_KNOWLEDGE_EMBEDDING_BASE_URL=http://localhost:11434/v1
+LYNXUS_KNOWLEDGE_EMBEDDING_MODEL=nomic-embed-text
+LYNXUS_KNOWLEDGE_EMBEDDING_API_KEY=your-token-if-needed
+LYNXUS_KNOWLEDGE_EMBEDDING_DIMENSIONS=768
+```
+
 当前 LLM 调用没有本地假响应 fallback。只要助手或智能体命中了真实模型资源，就必须提供对应 API key。
 
 本地依赖启动后，常用控制台入口还包括：
 
 - MinIO Console：`http://localhost:9001`
-- OpenSearch：`http://localhost:9200`
 
-可选 dashboard 额外启动后，还可以访问：
-
-- OpenSearch Dashboards：`http://localhost:5601`
 - Temporal UI：`http://localhost:8088`
 
 如果你的模型响应时间较长，可以同步调大 worker 的 Temporal activity 超时：

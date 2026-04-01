@@ -1503,7 +1503,7 @@ components:
           type: string
         retrievalBackend:
           type: string
-          enum: [OPENSEARCH]
+          enum: [PGVECTOR]
         retrievalMode:
           type: string
           enum: [LEXICAL, VECTOR, HYBRID]

@@ -30,6 +30,14 @@ create_database_if_missing() {
   fi
 }
 
+enable_extension_if_missing() {
+  local database_name="$1"
+  local extension_name="$2"
+  psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$database_name" -c "create extension if not exists $extension_name" >/dev/null
+}
+
 wait_for_postgres
 create_database_if_missing "$LYNXUS_API_DATABASE"
 create_database_if_missing "$LYNXUS_KNOWLEDGE_DATABASE"
+enable_extension_if_missing "$LYNXUS_KNOWLEDGE_DATABASE" "vector"
+enable_extension_if_missing "$LYNXUS_KNOWLEDGE_DATABASE" "pg_trgm"

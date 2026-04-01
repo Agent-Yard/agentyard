@@ -7,18 +7,11 @@
 - PostgreSQL
 - PostgreSQL bootstrap 初始化器
 - MinIO
-- OpenSearch
 - Temporal
 
 这些依赖服务于当前“控制面 + Temporal + Python runtime + 前端控制台”的本地联调链路。
-其中当前主链路最依赖的是 PostgreSQL、Temporal、MinIO、OpenSearch 和知识服务；知识快照构建与检索默认依赖 OpenSearch。
+其中当前主链路最依赖的是 PostgreSQL、Temporal、MinIO 和知识服务；知识快照构建与检索默认依赖 PostgreSQL 内的 `pgvector + pg_trgm + tsvector`。
 本地 PostgreSQL 默认会准备独立的 `lynxus_api` 和 `lynxus_knowledge` 数据库，避免 API 的 Flyway 与 knowledge service 的自建表共享同一个 `public` schema。
-注意：OpenSearch 2.12+ 即使在 `plugins.security.disabled=true` 时，也会校验 `OPENSEARCH_INITIAL_ADMIN_PASSWORD` 是否为强密码；若密码不符合规则，容器会在启动阶段直接退出。
-
-可选的观察面板单独放在 `infra/local/docker-compose.dashboards.yml`：
-
-- OpenSearch Dashboards
-- Temporal UI
 
 ## 本机前置条件
 
@@ -48,13 +41,6 @@
 - `pnpm dev:knowledge-service`
 - `pnpm dev:agent-runtime`
 - `pnpm dev:web`
-
-如果需要 dashboard，再额外执行：
-
-```bash
-cd infra/local
-docker compose -f docker-compose.yml -f docker-compose.dashboards.yml up -d
-```
 
 这些脚本会统一加载：
 
@@ -97,15 +83,10 @@ SPRING_PROFILES_ACTIVE=default pnpm dev:worker
 - Agent Runtime：`http://localhost:8090`
 - Knowledge Service：`http://localhost:8091`
 - MinIO Console：`http://localhost:9001`
-- OpenSearch：`http://localhost:9200`
+- Temporal UI：`http://localhost:8088`
 - Python 内部服务鉴权：`LYNXUS_INTERNAL_AUTH_TOKEN`，API / Worker / Agent Runtime / Knowledge Service 必须保持一致
 - Java 结构化日志：默认非 `local` profile 输出 JSON，本地开发默认文本
 - Python 结构化日志：`LYNXUS_LOG_FORMAT` 默认开发态 `console`
-
-启用可选 dashboard 后：
-
-- OpenSearch Dashboards：`http://localhost:5601`
-- Temporal UI：`http://localhost:8088`
 - `pnpm dev:api` 会默认启用 `local` profile，并打开开发态 bootstrap 登录旁路
 - `pnpm dev:worker` 会默认启用 `local` profile，便于直接阅读 workflow/activity 日志
 - 前端开发服务通过 Vite 代理将 `/api` 转发到 `http://localhost:8080`
@@ -133,5 +114,5 @@ SPRING_PROFILES_ACTIVE=default pnpm dev:worker
 - 接入真实企业 OIDC 提供方，并按环境关闭开发态 bootstrap 登录旁路
 - 补齐异步订阅式运行观测
 - 收敛知识检索的线上索引策略、生命周期治理和监控面
-- 明确 MinIO / OpenSearch 的线上职责并补齐监控与备份
+- 明确 MinIO / pgvector 的线上职责并补齐监控与备份
 - 基于 Gradle wrapper 补齐 CI 校验

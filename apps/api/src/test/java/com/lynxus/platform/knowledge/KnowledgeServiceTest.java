@@ -105,7 +105,7 @@ class KnowledgeServiceTest {
         client.snapshot = new CatalogDtos.KnowledgeIndexSnapshotDto(
             "snapshot-1",
             knowledgeBase.id(),
-            "OPENSEARCH",
+            "PGVECTOR",
             "HYBRID",
             "READY",
             "READY",

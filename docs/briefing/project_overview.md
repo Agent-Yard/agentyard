@@ -64,7 +64,7 @@ Knowledge Base、Tool、LLM Model、Skill 四类资源已经进入统一治理�
 - 知识库作为独立一级治理对象，而不是助手附属字段
 - 资源目录、资源新建、版本发布、生效版本、引用分析
 - 知识库工作台、文件导入、URL 导入、文档解析、切片、索引快照、发布版本
-- OpenSearch 作为当前正式快照检索后端
+- `PostgreSQL + pgvector + pg_trgm + tsvector` 作为当前正式快照检索后端
 
 ### 4.3 发布与冻结能力
 
@@ -104,7 +104,6 @@ Knowledge Base、Tool、LLM Model、Skill 四类资源已经进入统一治理�
 
 - PostgreSQL：控制面与知识服务数据存储
 - MinIO：知识对象存储
-- OpenSearch：知识快照检索
 - Temporal：长流程编排与恢复
 
 ## 6. 当前关键设计取舍
@@ -179,7 +178,7 @@ Knowledge Base、Tool、LLM Model、Skill 四类资源已经进入统一治理�
 
 ### 9.4 明确生产化基础设施职责
 
-- 收敛 OpenSearch、MinIO、Redis 等依赖在正式架构中的职责
+- 收敛 pgvector、MinIO、Redis 等依赖在正式架构中的职责
 - 建立监控、备份、恢复和容量规划方案
 - 逐步补齐 CI、测试和环境一致性能力
 

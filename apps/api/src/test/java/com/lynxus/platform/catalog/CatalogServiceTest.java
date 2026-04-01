@@ -483,7 +483,7 @@ class CatalogServiceTest {
                 return new CatalogDtos.KnowledgeIndexSnapshotDto(
                     snapshotId,
                     "knowledge-base-support",
-                    "OPENSEARCH",
+                    "PGVECTOR",
                     "HYBRID",
                     "READY",
                     "READY",

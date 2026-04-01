@@ -1,6 +1,7 @@
 ## Rules for this project
 - DO NOT CONSIDER COMPATIBILITY WHEN CODING, INCLUDING DATABASE (this project is under development and not released yet).
 - ANY MODIFICATIONS MUST BE CONSIDERED FROM A GLOBAL PERSPECTIVE, TAKING INTO ACCOUNT THE ENTIRE PROJECT, ALL MODULES, AND THE ASSOCIATED IMPACTS ON DOCUMENTATION.
+- DO NOT MODIFY FILES UNDER `docs/develop_record/`; they are historical records only.
 
 ## Monorepo Layout
 

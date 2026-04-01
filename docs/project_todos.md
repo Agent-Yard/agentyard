@@ -210,7 +210,7 @@
 
 1. PostgreSQL：配置 WAL archiving + 定期 pg_dump，至少支持 point-in-time recovery
 2. MinIO：配置 bucket versioning + 定期 mirror 到备份存储
-3. OpenSearch / pgvector：知识索引可重建，备份优先级低于 PostgreSQL
+3. pgvector：知识索引可重建，备份优先级低于 PostgreSQL
 4. Temporal：使用 Temporal 自带的 visibility store，不额外备份
 5. 敏感配置（数据库密码、API key、OIDC secret）统一走 K8s Secret 或 Vault，不在代码/配置文件中明文存储
 
@@ -221,10 +221,10 @@
 1. API 分页审计：确保所有列表接口支持分页，数据库查询有索引
 2. 连接池配置：HikariCP（Java）、SQLAlchemy pool（Python）参数调优
 3. 前端：路由级代码分割（当前单页无路由，需引入 Vue Router）
-4. Knowledge Service：评估 pgvector 替代 OpenSearch
-   - 优势：减少一个基础设施依赖，运维复杂度大幅降低
-   - 劣势：大规模向量检索性能不如 OpenSearch
-   - 建议：当前阶段（<100 万文档）pgvector 足够，后续按需切换
+4. Knowledge Service：基于 `PostgreSQL + pgvector + pg_trgm + tsvector` 持续优化检索质量与索引性能
+   - 优势：减少基础设施依赖，数据库与检索链路统一运维
+   - 当前方案：保留 `LEXICAL / VECTOR / HYBRID` 三种模式，embedding 由 OpenAI-compatible `/embeddings` 提供
+   - 关注点：大规模 chunk 量级下持续评估索引参数、查询延迟与 embedding 成本
 5. 缓存策略：catalog 热数据（发布快照）考虑进程内缓存或 Redis
 
 ### 3.5 安全加固
@@ -292,12 +292,11 @@
 
 以下是在全局复盘中识别到的架构级优化方向，不作为 TODO 排期，而是在对应阶段实施时一并考虑：
 
-### A. pgvector 替代 OpenSearch（建议在阶段三评估）
+### A. PostgreSQL 检索栈持续优化
 
-- 当前 OpenSearch 只用于知识库向量检索，维护成本高
-- pgvector 与现有 PostgreSQL 共享运维，减少一个基础设施组件
-- 对早期规模（<100 万文档 chunks）完全够用
-- 迁移路径：Knowledge Service 的 index/search 接口抽象不变，只换底层实现
+- 当前知识检索已统一收敛到 `pgvector + pg_trgm + tsvector`
+- 后续重点不再是替换检索后端，而是调优 embedding 模型、索引参数、候选集规模与混合召回策略
+- 对早期规模（<100 万文档 chunks）当前架构足够，后续按实际负载决定是否引入独立搜索系统
 
 ### B. Vue Router 引入（建议在阶段三）
 

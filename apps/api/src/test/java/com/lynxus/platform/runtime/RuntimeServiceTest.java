@@ -547,7 +547,7 @@ class RuntimeServiceTest {
                 return new CatalogDtos.KnowledgeIndexSnapshotDto(
                     snapshotId,
                     "knowledge-base-runtime-test",
-                    "OPENSEARCH",
+                    "PGVECTOR",
                     "HYBRID",
                     "READY",
                     "READY",
