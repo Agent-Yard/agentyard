@@ -15,6 +15,9 @@ import type {
   CreateResourceVersionPayload,
   CreateScenarioPayload,
   DeletionImpactPreview,
+  ExternalInteractionCallbackPayload,
+  ExternalInteractionReturnPayload,
+  ExternalInteractionTask,
   KnowledgeBase,
   KnowledgeDocument,
   KnowledgeFile,
@@ -121,6 +124,12 @@ export const api = {
   getDeletionImpactPreview: (objectType: ReferenceObjectType, objectId: string) =>
     request<DeletionImpactPreview>(`/catalog/deletion-preview/${objectType}/${objectId}`),
   getConversationSessions: () => request<ConversationSession[]>('/runtime/sessions'),
+  getExternalInteractionTask: (interactionTaskId: string) =>
+    request<ExternalInteractionTask>(`/runtime/interactions/${interactionTaskId}`),
+  acknowledgeExternalInteractionReturn: (interactionTaskId: string, payload: ExternalInteractionReturnPayload) =>
+    request<ExternalInteractionTask>(`/runtime/interactions/${interactionTaskId}/return`, jsonOptions('POST', payload)),
+  callbackExternalInteraction: (provider: string, payload: ExternalInteractionCallbackPayload) =>
+    request<ExternalInteractionTask>(`/runtime/interactions/callbacks/${provider}`, jsonOptions('POST', payload)),
   createConversationSession: (payload: CreateConversationSessionPayload) =>
     request<ConversationSession>('/runtime/sessions', jsonOptions('POST', payload)),
   sendConversationMessage: (sessionId: string, payload: ConversationMessagePayload) =>

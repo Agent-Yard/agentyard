@@ -4,6 +4,7 @@ import type {
   ConversationMessage,
   ConversationSession,
   ExternalInteractionMessagePayload,
+  ExternalInteractionStatus,
   PauseSource,
   Scenario,
   TaskInstance,
@@ -184,6 +185,33 @@ function interactionPayload(message: ConversationMessage): ExternalInteractionMe
   return message.payloadType === 'EXTERNAL_INTERACTION' ? (message.payload as ExternalInteractionMessagePayload) : null;
 }
 
+function interactionStatusColor(status?: ExternalInteractionStatus | string | null) {
+  switch (status) {
+    case 'AWAITING_USER_ACTION':
+      return 'gold';
+    case 'RETURNED':
+      return 'cyan';
+    case 'PROCESSING':
+      return 'processing';
+    case 'SUCCEEDED':
+      return 'success';
+    case 'FAILED':
+    case 'CANCELLED':
+    case 'EXPIRED':
+      return 'error';
+    default:
+      return 'default';
+  }
+}
+
+function interactionPrimaryAction(message: ConversationMessage) {
+  return interactionPayload(message)?.primaryAction ?? null;
+}
+
+function interactionSecondaryActions(message: ConversationMessage) {
+  return interactionPayload(message)?.secondaryActions ?? [];
+}
+
 function messageText(message: ConversationMessage) {
   const text = textPayload(message)?.text?.trim();
   if (text) {
@@ -338,9 +366,33 @@ function messageText(message: ConversationMessage) {
                         <div class="conversation-bubble__card">
                           <p><strong>{{ interactionPayload(message)?.title }}</strong></p>
                           <p>{{ interactionPayload(message)?.description }}</p>
-                          <span class="conversation-bubble__meta">
-                            状态: {{ interactionPayload(message)?.status }}
-                          </span>
+                          <a-space direction="vertical" size="small" style="width: 100%">
+                            <a-tag :color="interactionStatusColor(interactionPayload(message)?.status)">
+                              状态: {{ interactionPayload(message)?.status }}
+                            </a-tag>
+                            <a-space v-if="interactionPrimaryAction(message) || interactionSecondaryActions(message).length">
+                              <a-button
+                                v-if="interactionPrimaryAction(message)"
+                                type="primary"
+                                size="small"
+                                :href="interactionPrimaryAction(message)?.url ?? undefined"
+                                :target="interactionPrimaryAction(message)?.target ?? undefined"
+                                :disabled="!!interactionPrimaryAction(message)?.disabled"
+                              >
+                                {{ interactionPrimaryAction(message)?.label }}
+                              </a-button>
+                              <a-button
+                                v-for="(action, index) in interactionSecondaryActions(message)"
+                                :key="`${message.id}-action-${index}`"
+                                size="small"
+                                :href="action.url ?? undefined"
+                                :target="action.target ?? undefined"
+                                :disabled="!!action.disabled"
+                              >
+                                {{ action.label }}
+                              </a-button>
+                            </a-space>
+                          </a-space>
                         </div>
                       </template>
                       <p v-else>{{ messageText(message) }}</p>

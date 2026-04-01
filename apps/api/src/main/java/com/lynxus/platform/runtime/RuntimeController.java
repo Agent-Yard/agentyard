@@ -42,6 +42,27 @@ public class RuntimeController {
         return ApiResponse.ok(runtimeService.getSession(sessionId));
     }
 
+    @GetMapping("/runtime/interactions/{interactionTaskId}")
+    public ApiResponse<?> interaction(@PathVariable String interactionTaskId) {
+        return ApiResponse.ok(runtimeService.getExternalInteractionTask(interactionTaskId));
+    }
+
+    @PostMapping("/runtime/interactions/{interactionTaskId}/return")
+    public ApiResponse<?> acknowledgeInteractionReturn(
+        @PathVariable String interactionTaskId,
+        @RequestBody ExternalInteractionReturnRequest request
+    ) {
+        return ApiResponse.ok(runtimeService.acknowledgeExternalInteractionReturn(interactionTaskId, request));
+    }
+
+    @PostMapping("/runtime/interactions/callbacks/{provider}")
+    public ApiResponse<?> interactionCallback(
+        @PathVariable String provider,
+        @RequestBody ExternalInteractionCallbackRequest request
+    ) {
+        return ApiResponse.ok(runtimeService.receiveExternalInteractionCallback(provider, request));
+    }
+
     @PostMapping("/runtime/sessions/{sessionId}/messages")
     public ApiResponse<?> sendMessage(@PathVariable String sessionId, @RequestBody ConversationMessageRequest request) {
         return ApiResponse.ok(runtimeService.sendMessage(sessionId, request));

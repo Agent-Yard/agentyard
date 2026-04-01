@@ -12,6 +12,26 @@ export type ResumeActionType = 'CONTINUE' | 'TERMINATE';
 export type ResumeInterventionStatus = 'PENDING' | 'APPLIED' | 'FAILED';
 export type DecisionType = 'FINAL' | 'TOOL_CALL' | 'SKILL_READ' | 'HUMAN_HANDOFF';
 export type ConversationPayloadType = 'TEXT' | 'EXTERNAL_INTERACTION';
+export type ExternalInteractionType =
+  | 'GENERIC_REDIRECT'
+  | 'PAYMENT_REDIRECT'
+  | 'FORM_REDIRECT'
+  | 'OAUTH_REDIRECT'
+  | 'EXTERNAL_CONFIRMATION'
+  | 'FILE_UPLOAD_PORTAL';
+export type ExternalInteractionStatus =
+  | 'CREATED'
+  | 'AWAITING_USER_ACTION'
+  | 'LAUNCHED'
+  | 'RETURNED'
+  | 'PROCESSING'
+  | 'SUCCEEDED'
+  | 'FAILED'
+  | 'CANCELLED'
+  | 'EXPIRED';
+export type ExternalInteractionEventSource = 'SYSTEM_CREATE' | 'FRONTEND_RETURN' | 'PROVIDER_CALLBACK';
+export type ExternalInteractionEventType = 'CREATED' | 'RETURNED' | 'CALLBACK_RECEIVED' | 'RESUME_TRIGGERED' | 'IGNORED';
+export type ExternalInteractionOutcome = 'SUCCEEDED' | 'FAILED' | 'CANCELLED' | 'EXPIRED' | 'PROCESSING' | 'UNKNOWN';
 export type WorkflowFailureCategory =
   | 'TIMEOUT'
   | 'PROVIDER_FAILURE'
@@ -136,10 +156,10 @@ export interface TextMessagePayload {
 
 export interface ExternalInteractionMessagePayload {
   interactionTaskId: string;
-  interactionType: string;
+  interactionType: ExternalInteractionType;
   title: string;
   description: string;
-  status: string;
+  status: ExternalInteractionStatus;
   primaryAction: ConversationAction | null;
   secondaryActions: ConversationAction[];
   displayHints: Record<string, unknown>;
@@ -150,6 +170,63 @@ export type ConversationPayload = TextMessagePayload | ExternalInteractionMessag
 export interface ConversationMessageInput {
   payloadType: ConversationPayloadType;
   payload: ConversationPayload;
+}
+
+export interface ExternalInteractionResult {
+  outcome: ExternalInteractionOutcome;
+  code: string | null;
+  summary: string | null;
+  rawProviderStatus: string | null;
+  attributes: Record<string, unknown>;
+}
+
+export interface ExternalInteractionTask {
+  id: string;
+  type: ExternalInteractionType;
+  status: ExternalInteractionStatus;
+  sessionId: string;
+  taskId: string;
+  workflowInstanceId: string;
+  messageId: string;
+  title: string;
+  instruction: string;
+  provider: string | null;
+  providerReference: string | null;
+  launchUrl: string | null;
+  returnToken: string;
+  returnPath: string | null;
+  expiresAt: string | null;
+  latestResult: ExternalInteractionResult | null;
+  lastEventSource: ExternalInteractionEventSource;
+  resumedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ExternalInteractionEvent {
+  id: string;
+  interactionTaskId: string;
+  eventType: ExternalInteractionEventType;
+  eventSource: ExternalInteractionEventSource;
+  dedupeKey: string;
+  payload: Record<string, unknown>;
+  result: ExternalInteractionResult | null;
+  createdAt: string;
+}
+
+export interface ExternalInteractionReturnRequest {
+  returnToken: string;
+  providerReference: string | null;
+  dedupeKey: string | null;
+  payload: Record<string, unknown>;
+}
+
+export interface ExternalInteractionCallbackRequest {
+  taskId: string;
+  providerReference: string | null;
+  dedupeKey: string | null;
+  payload: Record<string, unknown>;
+  result: ExternalInteractionResult | null;
 }
 
 export interface SharedSessionState {

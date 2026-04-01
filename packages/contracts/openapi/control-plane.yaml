@@ -716,6 +716,66 @@ paths:
                 $ref: '#/components/schemas/ConversationSession'
         '409':
           description: Session already has an active workflow
+  /runtime/interactions/{interactionTaskId}:
+    get:
+      summary: Get external interaction task detail
+      parameters:
+        - in: path
+          name: interactionTaskId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: External interaction task detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalInteractionTask'
+  /runtime/interactions/{interactionTaskId}/return:
+    post:
+      summary: Acknowledge an external interaction browser return
+      parameters:
+        - in: path
+          name: interactionTaskId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalInteractionReturnRequest'
+      responses:
+        '200':
+          description: Updated external interaction task
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalInteractionTask'
+  /runtime/interactions/callbacks/{provider}:
+    post:
+      summary: Ingest a generic external interaction callback
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalInteractionCallbackRequest'
+      responses:
+        '200':
+          description: Updated external interaction task
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalInteractionTask'
   /workflows:
     get:
       summary: List workflow instances
@@ -2215,6 +2275,21 @@ components:
     ConversationPayloadType:
       type: string
       enum: [TEXT, EXTERNAL_INTERACTION]
+    ExternalInteractionType:
+      type: string
+      enum: [GENERIC_REDIRECT, PAYMENT_REDIRECT, FORM_REDIRECT, OAUTH_REDIRECT, EXTERNAL_CONFIRMATION, FILE_UPLOAD_PORTAL]
+    ExternalInteractionStatus:
+      type: string
+      enum: [CREATED, AWAITING_USER_ACTION, LAUNCHED, RETURNED, PROCESSING, SUCCEEDED, FAILED, CANCELLED, EXPIRED]
+    ExternalInteractionEventSource:
+      type: string
+      enum: [SYSTEM_CREATE, FRONTEND_RETURN, PROVIDER_CALLBACK]
+    ExternalInteractionEventType:
+      type: string
+      enum: [CREATED, RETURNED, CALLBACK_RECEIVED, RESUME_TRIGGERED, IGNORED]
+    ExternalInteractionOutcome:
+      type: string
+      enum: [SUCCEEDED, FAILED, CANCELLED, EXPIRED, PROCESSING, UNKNOWN]
     ConversationAction:
       type: object
       properties:
@@ -2244,13 +2319,13 @@ components:
         interactionTaskId:
           type: string
         interactionType:
-          type: string
+          $ref: '#/components/schemas/ExternalInteractionType'
         title:
           type: string
         description:
           type: string
         status:
-          type: string
+          $ref: '#/components/schemas/ExternalInteractionStatus'
         primaryAction:
           allOf:
             - $ref: '#/components/schemas/ConversationAction'
@@ -2282,6 +2357,137 @@ components:
           $ref: '#/components/schemas/ConversationPayloadType'
         payload:
           $ref: '#/components/schemas/ConversationPayload'
+    ExternalInteractionResult:
+      type: object
+      properties:
+        outcome:
+          $ref: '#/components/schemas/ExternalInteractionOutcome'
+        code:
+          type: string
+          nullable: true
+        summary:
+          type: string
+          nullable: true
+        rawProviderStatus:
+          type: string
+          nullable: true
+        attributes:
+          type: object
+          additionalProperties: true
+    ExternalInteractionEvent:
+      type: object
+      properties:
+        id:
+          type: string
+        interactionTaskId:
+          type: string
+        eventType:
+          $ref: '#/components/schemas/ExternalInteractionEventType'
+        eventSource:
+          $ref: '#/components/schemas/ExternalInteractionEventSource'
+        dedupeKey:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+        result:
+          allOf:
+            - $ref: '#/components/schemas/ExternalInteractionResult'
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+    ExternalInteractionTask:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          $ref: '#/components/schemas/ExternalInteractionType'
+        status:
+          $ref: '#/components/schemas/ExternalInteractionStatus'
+        sessionId:
+          type: string
+        taskId:
+          type: string
+        workflowInstanceId:
+          type: string
+        messageId:
+          type: string
+        title:
+          type: string
+        instruction:
+          type: string
+        provider:
+          type: string
+          nullable: true
+        providerReference:
+          type: string
+          nullable: true
+        launchUrl:
+          type: string
+          nullable: true
+        returnToken:
+          type: string
+        returnPath:
+          type: string
+          nullable: true
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        latestResult:
+          allOf:
+            - $ref: '#/components/schemas/ExternalInteractionResult'
+          nullable: true
+        lastEventSource:
+          $ref: '#/components/schemas/ExternalInteractionEventSource'
+        resumedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExternalInteractionEvent'
+    ExternalInteractionReturnRequest:
+      type: object
+      properties:
+        returnToken:
+          type: string
+        providerReference:
+          type: string
+          nullable: true
+        dedupeKey:
+          type: string
+          nullable: true
+        payload:
+          type: object
+          additionalProperties: true
+    ExternalInteractionCallbackRequest:
+      type: object
+      properties:
+        taskId:
+          type: string
+        providerReference:
+          type: string
+          nullable: true
+        dedupeKey:
+          type: string
+          nullable: true
+        payload:
+          type: object
+          additionalProperties: true
+        result:
+          allOf:
+            - $ref: '#/components/schemas/ExternalInteractionResult'
+          nullable: true
     CreateConversationSessionRequest:
       type: object
       properties:

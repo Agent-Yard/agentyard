@@ -7,7 +7,14 @@ import type {
   ConversationSession as ContractsConversationSession,
   CreateConversationSessionRequest as ContractsCreateConversationSessionRequest,
   ExecutionCheckpoint as ContractsExecutionCheckpoint,
+  ExternalInteractionCallbackRequest as ContractsExternalInteractionCallbackRequest,
+  ExternalInteractionEvent as ContractsExternalInteractionEvent,
   ExternalInteractionMessagePayload as ContractsExternalInteractionMessagePayload,
+  ExternalInteractionResult as ContractsExternalInteractionResult,
+  ExternalInteractionReturnRequest as ContractsExternalInteractionReturnRequest,
+  ExternalInteractionStatus as ContractsExternalInteractionStatus,
+  ExternalInteractionTask as ContractsExternalInteractionTask,
+  ExternalInteractionType as ContractsExternalInteractionType,
   ResumeActionRequest as ContractsResumeActionRequest,
   ResumeIntervention as ContractsResumeIntervention,
   ResumeContextSnapshot as ContractsResumeContextSnapshot,
@@ -36,6 +43,8 @@ export type NodeStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'WAITI
 export type PauseSource = ContractsPauseSource;
 export type ResumeSource = ContractsResumeSource;
 export type ResumeActionType = 'CONTINUE' | 'TERMINATE';
+export type ExternalInteractionType = ContractsExternalInteractionType;
+export type ExternalInteractionStatus = ContractsExternalInteractionStatus;
 
 export type TaskInstance = ContractsTaskInstance;
 export type ToolOutcomeSummary = ContractsToolOutcomeSummary;
@@ -58,10 +67,15 @@ export type AgentTurnState = ContractsAgentTurnState;
 export type WorkflowInstance = ContractsWorkflowInstance;
 export type ConversationPayloadType = ContractsConversationPayloadType;
 export type TextMessagePayload = ContractsTextMessagePayload;
+export type ExternalInteractionResult = ContractsExternalInteractionResult;
+export type ExternalInteractionEvent = ContractsExternalInteractionEvent;
+export type ExternalInteractionTask = ContractsExternalInteractionTask;
 export type ExternalInteractionMessagePayload = ContractsExternalInteractionMessagePayload;
 export type ConversationMessage = ContractsConversationMessage;
 export type ConversationSession = ContractsConversationSession;
 
 export type CreateConversationSessionPayload = ContractsCreateConversationSessionRequest;
 export type ConversationMessagePayload = ContractsConversationMessageRequest;
+export type ExternalInteractionReturnPayload = ContractsExternalInteractionReturnRequest;
+export type ExternalInteractionCallbackPayload = ContractsExternalInteractionCallbackRequest;
 export type ResumeActionPayload = ContractsResumeActionRequest;

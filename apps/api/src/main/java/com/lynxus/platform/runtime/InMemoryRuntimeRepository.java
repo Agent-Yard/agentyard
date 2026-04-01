@@ -15,12 +15,16 @@ public class InMemoryRuntimeRepository implements RuntimeRepository {
         Comparator.comparing(ConversationMessageDto::createdAt).thenComparing(ConversationMessageDto::id);
     private static final Comparator<ResumeInterventionDto> INTERVENTION_ORDER =
         Comparator.comparing(ResumeInterventionDto::createdAt).thenComparing(ResumeInterventionDto::id);
+    private static final Comparator<ExternalInteractionEventDto> INTERACTION_EVENT_ORDER =
+        Comparator.comparing(ExternalInteractionEventDto::createdAt).thenComparing(ExternalInteractionEventDto::id);
 
     private final Map<String, TaskInstanceDto> tasks = new LinkedHashMap<>();
     private final Map<String, String> taskSessions = new LinkedHashMap<>();
     private final Map<String, WorkflowInstanceDto> workflows = new LinkedHashMap<>();
     private final Map<String, ConversationSessionDto> sessions = new LinkedHashMap<>();
     private final Map<String, Map<String, ConversationMessageDto>> sessionMessages = new LinkedHashMap<>();
+    private final Map<String, ExternalInteractionTaskDto> interactionTasks = new LinkedHashMap<>();
+    private final Map<String, Map<String, ExternalInteractionEventDto>> interactionEvents = new LinkedHashMap<>();
     private final Map<String, Map<String, ResumeInterventionDto>> workflowResumeInterventions = new LinkedHashMap<>();
 
     @Override
@@ -85,6 +89,49 @@ public class InMemoryRuntimeRepository implements RuntimeRepository {
     }
 
     @Override
+    public Optional<ExternalInteractionTaskDto> findExternalInteractionTask(String interactionTaskId) {
+        ExternalInteractionTaskDto task = interactionTasks.get(interactionTaskId);
+        return task == null ? Optional.empty() : Optional.of(hydrateInteractionTask(task));
+    }
+
+    @Override
+    public Optional<ExternalInteractionTaskDto> findExternalInteractionTaskByProviderReference(String provider, String providerReference) {
+        return interactionTasks.values().stream()
+            .filter(task -> java.util.Objects.equals(task.provider(), provider)
+                && java.util.Objects.equals(task.providerReference(), providerReference))
+            .map(this::hydrateInteractionTask)
+            .findFirst();
+    }
+
+    @Override
+    public List<ExternalInteractionEventDto> listExternalInteractionEvents(String interactionTaskId) {
+        return interactionEvents.getOrDefault(interactionTaskId, Map.of()).values().stream()
+            .sorted(INTERACTION_EVENT_ORDER)
+            .toList();
+    }
+
+    @Override
+    public Optional<ExternalInteractionEventDto> findExternalInteractionEventByDedupeKey(String interactionTaskId, String dedupeKey) {
+        if (dedupeKey == null || dedupeKey.isBlank()) {
+            return Optional.empty();
+        }
+        return interactionEvents.getOrDefault(interactionTaskId, Map.of()).values().stream()
+            .filter(event -> dedupeKey.equals(event.dedupeKey()))
+            .findFirst();
+    }
+
+    @Override
+    public void saveExternalInteractionTask(ExternalInteractionTaskDto task) {
+        interactionTasks.put(task.id(), stripInteractionEvents(task));
+    }
+
+    @Override
+    public void saveExternalInteractionEvent(ExternalInteractionEventDto event) {
+        interactionEvents.computeIfAbsent(event.interactionTaskId(), ignored -> new LinkedHashMap<>())
+            .put(event.id(), event);
+    }
+
+    @Override
     public Optional<ResumeInterventionDto> findPendingResumeIntervention(String workflowInstanceId) {
         return workflowResumeInterventions.getOrDefault(workflowInstanceId, Map.of()).values().stream()
             .filter(intervention -> intervention.status() == ResumeInterventionStatus.PENDING)
@@ -126,6 +173,32 @@ public class InMemoryRuntimeRepository implements RuntimeRepository {
         workflowResumeInterventions
             .computeIfAbsent(intervention.workflowInstanceId(), ignored -> new LinkedHashMap<>())
             .put(intervention.id(), intervention);
+    }
+
+    private ExternalInteractionTaskDto hydrateInteractionTask(ExternalInteractionTaskDto task) {
+        return new ExternalInteractionTaskDto(
+            task.id(),
+            task.type(),
+            task.status(),
+            task.sessionId(),
+            task.taskId(),
+            task.workflowInstanceId(),
+            task.messageId(),
+            task.title(),
+            task.instruction(),
+            task.provider(),
+            task.providerReference(),
+            task.launchUrl(),
+            task.returnToken(),
+            task.returnPath(),
+            task.expiresAt(),
+            task.latestResult(),
+            task.lastEventSource(),
+            task.resumedAt(),
+            task.createdAt(),
+            task.updatedAt(),
+            interactionEvents.getOrDefault(task.id(), Map.of()).values().stream().sorted(INTERACTION_EVENT_ORDER).toList()
+        );
     }
 
     private ConversationSessionDto hydrateSession(ConversationSessionDto session) {
@@ -229,6 +302,32 @@ public class InMemoryRuntimeRepository implements RuntimeRepository {
             List.copyOf(workflow.loadedSkillResourceVersionIds()),
             workflow.sharedState(),
             workflow.agentTurnState() == null ? AgentTurnState.empty() : workflow.agentTurnState()
+        );
+    }
+
+    private ExternalInteractionTaskDto stripInteractionEvents(ExternalInteractionTaskDto task) {
+        return new ExternalInteractionTaskDto(
+            task.id(),
+            task.type(),
+            task.status(),
+            task.sessionId(),
+            task.taskId(),
+            task.workflowInstanceId(),
+            task.messageId(),
+            task.title(),
+            task.instruction(),
+            task.provider(),
+            task.providerReference(),
+            task.launchUrl(),
+            task.returnToken(),
+            task.returnPath(),
+            task.expiresAt(),
+            task.latestResult(),
+            task.lastEventSource(),
+            task.resumedAt(),
+            task.createdAt(),
+            task.updatedAt(),
+            List.of()
         );
     }
 }

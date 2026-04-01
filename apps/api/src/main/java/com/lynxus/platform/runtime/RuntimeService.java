@@ -31,6 +31,12 @@ import com.lynxus.contracts.runtime.WorkflowContracts.AssistantPolicySnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.AssistantRunSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.ConversationPayloadType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ExecutionCheckpoint;
+import com.lynxus.contracts.runtime.WorkflowContracts.ExternalInteractionEventSource;
+import com.lynxus.contracts.runtime.WorkflowContracts.ExternalInteractionEventType;
+import com.lynxus.contracts.runtime.WorkflowContracts.ExternalInteractionResult;
+import com.lynxus.contracts.runtime.WorkflowContracts.ExternalInteractionStatus;
+import com.lynxus.contracts.runtime.WorkflowContracts.ExternalInteractionTask;
+import com.lynxus.contracts.runtime.WorkflowContracts.ExternalInteractionType;
 import com.lynxus.contracts.runtime.WorkflowContracts.GraphEdgeSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.GraphNodeSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.GraphSnapshot;
@@ -66,6 +72,7 @@ import io.temporal.failure.ApplicationFailure;
 import io.temporal.failure.TimeoutFailure;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -76,10 +83,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 @Service
 public class RuntimeService {
     private static final Logger log = LoggerFactory.getLogger(RuntimeService.class);
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private final AssistantRunWorkflowGateway workflowGateway;
     private final CatalogService catalogService;
     private final KnowledgeService knowledgeService;
@@ -127,6 +137,84 @@ public class RuntimeService {
     public ConversationSessionDto getSession(String sessionId) {
         refreshRunningWorkflows();
         return runtimeRepository.findSession(sessionId).orElseThrow();
+    }
+
+    public ExternalInteractionTaskDto getExternalInteractionTask(String interactionTaskId) {
+        refreshRunningWorkflows();
+        return runtimeRepository.findExternalInteractionTask(interactionTaskId).orElseThrow();
+    }
+
+    public ExternalInteractionTaskDto createExternalInteractionTask(CreateExternalInteractionTaskRequest request) {
+        ConversationSessionDto session = getSession(request.sessionId());
+        WorkflowInstanceDto workflow = getWorkflow(request.workflowInstanceId());
+        TaskInstanceDto task = runtimeRepository.findTaskByWorkflowInstanceId(workflow.id()).orElseThrow();
+        if (!Objects.equals(task.id(), workflow.taskId()) || !Objects.equals(session.latestWorkflowInstanceId(), workflow.id())) {
+            throw new IllegalArgumentException("interaction task must target the latest session workflow");
+        }
+        if (workflow.status() != WorkflowStatus.WAITING_RESUME) {
+            throw new IllegalArgumentException("interaction task can only be created for a waiting workflow");
+        }
+        if (resolveResumeSource(workflow) != ResumeSource.EXTERNAL_SYSTEM) {
+            throw new IllegalArgumentException("interaction task requires EXTERNAL_SYSTEM resume source");
+        }
+
+        Instant now = Instant.now();
+        String interactionTaskId = nextId("interaction");
+        String messageId = nextId("msg");
+        ExternalInteractionTask taskRecord = new ExternalInteractionTask(
+            interactionTaskId,
+            request.interactionType(),
+            ExternalInteractionStatus.AWAITING_USER_ACTION,
+            session.id(),
+            task.id(),
+            workflow.id(),
+            messageId,
+            request.title(),
+            request.instruction(),
+            blankToNull(request.provider()),
+            blankToNull(request.providerReference()),
+            blankToNull(request.launchUrl()),
+            nextId("return"),
+            blankToNull(request.returnPath()),
+            request.expiresAt(),
+            null,
+            ExternalInteractionEventSource.SYSTEM_CREATE,
+            null,
+            now,
+            now
+        );
+        ExternalInteractionTaskDto interactionTask = ExternalInteractionTaskDto.fromContract(taskRecord, List.of());
+        ExternalInteractionEventDto createdEvent = new ExternalInteractionEventDto(
+            nextId("interaction-event"),
+            interactionTask.id(),
+            ExternalInteractionEventType.CREATED,
+            ExternalInteractionEventSource.SYSTEM_CREATE,
+            "create:" + interactionTask.id(),
+            Map.of("status", ExternalInteractionStatus.AWAITING_USER_ACTION.name()),
+            null,
+            now
+        );
+        Map<String, Object> interactionPayload = interactionPayload(interactionTask, request);
+        ConversationMessageDto interactionMessage = conversationMessage(
+            messageId,
+            session.id(),
+            "ASSISTANT",
+            "ASSISTANT",
+            session.assistantId(),
+            session.assistantName(),
+            ConversationPayloadType.EXTERNAL_INTERACTION,
+            interactionPayload,
+            payloadContent(ConversationPayloadType.EXTERNAL_INTERACTION, interactionPayload),
+            now,
+            task.id(),
+            workflow.id()
+        );
+        ConversationSessionDto updatedSession = appendInteractionMessage(session, interactionMessage);
+        WorkflowInstanceDto updatedWorkflow = withInteractionCheckpoint(workflow, interactionTask.id(), interactionTask.type());
+        runtimeRepository.saveExternalInteractionTask(interactionTask);
+        runtimeRepository.saveExternalInteractionEvent(createdEvent);
+        runtimeRepository.persistProjection(task, updatedWorkflow, updatedSession, null);
+        return getExternalInteractionTask(interactionTask.id());
     }
 
     public ConversationSessionDto createSession(CreateConversationSessionRequest request) {
@@ -246,6 +334,57 @@ public class RuntimeService {
                 return failedSession;
             }
         }
+    }
+
+    public ExternalInteractionTaskDto acknowledgeExternalInteractionReturn(String interactionTaskId, ExternalInteractionReturnRequest request) {
+        ExternalInteractionTaskDto existing = getExternalInteractionTask(interactionTaskId);
+        if (!Objects.equals(existing.returnToken(), request.returnToken())) {
+            throw new IllegalArgumentException("invalid interaction return token");
+        }
+        return handleInteractionEvent(
+            existing,
+            ExternalInteractionEventSource.FRONTEND_RETURN,
+            ExternalInteractionEventType.RETURNED,
+            ExternalInteractionStatus.RETURNED,
+            blankToNull(request.providerReference()),
+            dedupeKey(
+                ExternalInteractionEventSource.FRONTEND_RETURN,
+                request.dedupeKey(),
+                existing.id(),
+                request.returnToken()
+            ),
+            request.payload(),
+            null
+        );
+    }
+
+    public ExternalInteractionTaskDto receiveExternalInteractionCallback(String provider, ExternalInteractionCallbackRequest request) {
+        ExternalInteractionTaskDto existing;
+        if (request.taskId() != null && !request.taskId().isBlank()) {
+            existing = getExternalInteractionTask(request.taskId());
+        } else if (request.providerReference() != null && !request.providerReference().isBlank()) {
+            existing = runtimeRepository.findExternalInteractionTaskByProviderReference(provider, request.providerReference()).orElseThrow();
+        } else {
+            throw new IllegalArgumentException("callback requires taskId or providerReference");
+        }
+        if (existing.provider() != null && provider != null && !provider.isBlank() && !Objects.equals(existing.provider(), provider)) {
+            throw new IllegalArgumentException("callback provider does not match interaction task");
+        }
+        return handleInteractionEvent(
+            existing,
+            ExternalInteractionEventSource.PROVIDER_CALLBACK,
+            ExternalInteractionEventType.CALLBACK_RECEIVED,
+            ExternalInteractionStatus.PROCESSING,
+            blankToNull(request.providerReference()),
+            dedupeKey(
+                ExternalInteractionEventSource.PROVIDER_CALLBACK,
+                request.dedupeKey(),
+                existing.id(),
+                firstNonBlank(blankToNull(request.providerReference()), existing.id())
+            ),
+            request.payload(),
+            request.result()
+        );
     }
 
     public TaskInstanceDto launchTask(TaskLaunchRequest request) {
@@ -468,7 +607,7 @@ public class RuntimeService {
             result.finalReply(),
             result.currentNodeKey(),
             result.escalationRequired(),
-            result.checkpoint(),
+            mergeCheckpoint(existing.checkpoint(), result.checkpoint()),
             result.resumeTask(),
             result.pauseReason(),
             latestFailure,
@@ -1080,6 +1219,76 @@ public class RuntimeService {
         return Map.of("text", text == null ? "" : text);
     }
 
+    private static Map<String, Object> interactionPayload(
+        ExternalInteractionTaskDto task,
+        CreateExternalInteractionTaskRequest request
+    ) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("interactionTaskId", task.id());
+        payload.put("interactionType", task.type().name());
+        payload.put("title", task.title());
+        payload.put("description", task.instruction());
+        payload.put("status", task.status().name());
+        payload.put("primaryAction", primaryInteractionAction(task, request.primaryActionLabel()));
+        payload.put("secondaryActions", request.secondaryActions().stream().map(RuntimeService::actionPayload).toList());
+        payload.put("displayHints", request.displayHints());
+        return Map.copyOf(payload);
+    }
+
+    private static Map<String, Object> updatedInteractionPayload(
+        ExternalInteractionTaskDto task,
+        Map<String, Object> existingPayload
+    ) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("interactionTaskId", task.id());
+        payload.put("interactionType", task.type().name());
+        payload.put("title", task.title());
+        payload.put("description", task.instruction());
+        payload.put("status", task.status().name());
+        payload.put("primaryAction", updatedPrimaryInteractionAction(task, existingPayload));
+        payload.put("secondaryActions", existingPayload == null ? List.of() : existingPayload.getOrDefault("secondaryActions", List.of()));
+        payload.put("displayHints", existingPayload == null ? Map.of() : existingPayload.getOrDefault("displayHints", Map.of()));
+        return Map.copyOf(payload);
+    }
+
+    private static Map<String, Object> primaryInteractionAction(ExternalInteractionTaskDto task, String label) {
+        if (task.launchUrl() == null || task.launchUrl().isBlank()) {
+            return null;
+        }
+        return Map.of(
+            "label", firstNonBlank(label, "打开外部交互"),
+            "actionType", "OPEN_URL",
+            "url", task.launchUrl(),
+            "target", "_blank",
+            "parameters", Map.of(
+                "interactionTaskId", task.id(),
+                "returnToken", task.returnToken()
+            ),
+            "disabled", task.status() != ExternalInteractionStatus.AWAITING_USER_ACTION
+        );
+    }
+
+    private static Object updatedPrimaryInteractionAction(ExternalInteractionTaskDto task, Map<String, Object> existingPayload) {
+        if (existingPayload == null || !(existingPayload.get("primaryAction") instanceof Map<?, ?> action)) {
+            return primaryInteractionAction(task, null);
+        }
+        Map<String, Object> updated = new LinkedHashMap<>();
+        updated.putAll((Map<String, Object>) action);
+        updated.put("disabled", task.status() != ExternalInteractionStatus.AWAITING_USER_ACTION);
+        return Map.copyOf(updated);
+    }
+
+    private static Map<String, Object> actionPayload(WorkflowContracts.ConversationAction action) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("label", action.label());
+        payload.put("actionType", action.actionType());
+        payload.put("url", action.url());
+        payload.put("target", action.target());
+        payload.put("parameters", action.parameters());
+        payload.put("disabled", action.disabled());
+        return Map.copyOf(payload);
+    }
+
     private static String payloadContent(ConversationPayloadType payloadType, Map<String, Object> payload) {
         if (payloadType == null) {
             return "";
@@ -1121,6 +1330,313 @@ public class RuntimeService {
             }
         }
         return -1;
+    }
+
+    private static int findMessageIndex(List<ConversationMessageDto> messages, String messageId) {
+        for (int index = 0; index < messages.size(); index++) {
+            if (Objects.equals(messages.get(index).id(), messageId)) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private ConversationSessionDto appendInteractionMessage(ConversationSessionDto session, ConversationMessageDto message) {
+        List<ConversationMessageDto> messages = new ArrayList<>(session.messages());
+        messages.add(message);
+        return new ConversationSessionDto(
+            session.id(),
+            session.scenarioId(),
+            session.title(),
+            session.customerId(),
+            session.assistantId(),
+            session.assistantName(),
+            session.assistantReleaseVersion(),
+            session.createdAt(),
+            Instant.now(),
+            messages,
+            session.latestTaskId(),
+            session.latestWorkflowInstanceId(),
+            session.latestToolOutcome(),
+            session.latestResumeTask(),
+            session.latestPauseReason(),
+            session.loadedSkillResourceVersionIds(),
+            session.sharedState()
+        );
+    }
+
+    private ConversationSessionDto updateInteractionMessageProjection(ConversationSessionDto session, ExternalInteractionTaskDto task) {
+        List<ConversationMessageDto> messages = new ArrayList<>(session.messages());
+        int index = findMessageIndex(messages, task.messageId());
+        if (index < 0) {
+            return session;
+        }
+        ConversationMessageDto original = messages.get(index);
+        Map<String, Object> payload = updatedInteractionPayload(task, original.payload());
+        messages.set(index, conversationMessage(
+            original.id(),
+            original.sessionId(),
+            original.role(),
+            original.senderType(),
+            original.senderId(),
+            original.senderName(),
+            ConversationPayloadType.EXTERNAL_INTERACTION,
+            payload,
+            payloadContent(ConversationPayloadType.EXTERNAL_INTERACTION, payload),
+            original.createdAt(),
+            original.taskId(),
+            original.workflowInstanceId()
+        ));
+        return new ConversationSessionDto(
+            session.id(),
+            session.scenarioId(),
+            session.title(),
+            session.customerId(),
+            session.assistantId(),
+            session.assistantName(),
+            session.assistantReleaseVersion(),
+            session.createdAt(),
+            Instant.now(),
+            messages,
+            session.latestTaskId(),
+            session.latestWorkflowInstanceId(),
+            session.latestToolOutcome(),
+            session.latestResumeTask(),
+            session.latestPauseReason(),
+            session.loadedSkillResourceVersionIds(),
+            session.sharedState()
+        );
+    }
+
+    private WorkflowInstanceDto withInteractionCheckpoint(
+        WorkflowInstanceDto workflow,
+        String interactionTaskId,
+        ExternalInteractionType interactionType
+    ) {
+        ExecutionCheckpoint checkpoint = workflow.checkpoint();
+        if (checkpoint == null) {
+            return workflow;
+        }
+        WorkflowContracts.ResumeContextSnapshot existingContext = checkpoint.resumeContext();
+        WorkflowContracts.ResumeContextSnapshot updatedContext = new WorkflowContracts.ResumeContextSnapshot(
+            existingContext == null ? ResumeSource.EXTERNAL_SYSTEM : existingContext.source(),
+            existingContext == null ? "EXTERNAL_INTERACTION_REQUIRED" : existingContext.reasonCode(),
+            interactionTaskId,
+            interactionType.name(),
+            existingContext == null ? null : existingContext.timeoutPolicyKey()
+        );
+        return new WorkflowInstanceDto(
+            workflow.id(),
+            workflow.taskId(),
+            workflow.assistantId(),
+            workflow.assistantName(),
+            workflow.assistantReleaseVersion(),
+            workflow.createdAt(),
+            Instant.now(),
+            workflow.status(),
+            workflow.summary(),
+            workflow.finalReply(),
+            workflow.currentNodeKey(),
+            workflow.escalationRequired(),
+            new ExecutionCheckpoint(
+                checkpoint.checkpointId(),
+                checkpoint.currentNodeKey(),
+                checkpoint.waitingNodeKey(),
+                checkpoint.statePayload(),
+                updatedContext,
+                checkpoint.resumeCount()
+            ),
+            workflow.resumeTask(),
+            workflow.pauseReason(),
+            workflow.latestFailure(),
+            workflow.latestToolOutcome(),
+            workflow.resourceAnchors(),
+            workflow.nodes(),
+            workflow.toolCalls(),
+            workflow.modelHits(),
+            workflow.resumeInterventions(),
+            workflow.loadedSkillResourceVersionIds(),
+            workflow.sharedState(),
+            workflow.agentTurnState()
+        );
+    }
+
+    private ExternalInteractionTaskDto handleInteractionEvent(
+        ExternalInteractionTaskDto existing,
+        ExternalInteractionEventSource source,
+        ExternalInteractionEventType eventType,
+        ExternalInteractionStatus nextStatus,
+        String providerReference,
+        String dedupeKey,
+        Map<String, Object> payload,
+        ExternalInteractionResult result
+    ) {
+        if (runtimeRepository.findExternalInteractionEventByDedupeKey(existing.id(), dedupeKey).isPresent()) {
+            return getExternalInteractionTask(existing.id());
+        }
+
+        ConversationSessionDto session = getSession(existing.sessionId());
+        WorkflowInstanceDto workflow = getWorkflow(existing.workflowInstanceId());
+        TaskInstanceDto task = runtimeRepository.findTaskByWorkflowInstanceId(workflow.id()).orElseThrow();
+        Instant now = Instant.now();
+        ExternalInteractionTaskDto updatedTask = updateInteractionTask(
+            existing,
+            nextStatus,
+            blankToNull(providerReference),
+            result == null ? null : ExternalInteractionResultDto.fromContract(result),
+            source,
+            null,
+            now
+        );
+        ExternalInteractionEventDto event = new ExternalInteractionEventDto(
+            nextId("interaction-event"),
+            existing.id(),
+            existing.resumedAt() == null ? eventType : ExternalInteractionEventType.IGNORED,
+            source,
+            dedupeKey,
+            payload == null ? Map.of() : payload,
+            result == null ? null : ExternalInteractionResultDto.fromContract(result),
+            now
+        );
+        runtimeRepository.saveExternalInteractionTask(updatedTask);
+        runtimeRepository.saveExternalInteractionEvent(event);
+
+        ConversationSessionDto updatedSession = updateInteractionMessageProjection(session, updatedTask);
+        runtimeRepository.saveSession(updatedSession);
+
+        if (existing.resumedAt() != null) {
+            return getExternalInteractionTask(existing.id());
+        }
+
+        return submitExternalInteractionResume(updatedTask, task, workflow, updatedSession, payload, result);
+    }
+
+    private ExternalInteractionTaskDto submitExternalInteractionResume(
+        ExternalInteractionTaskDto interactionTask,
+        TaskInstanceDto task,
+        WorkflowInstanceDto workflow,
+        ConversationSessionDto session,
+        Map<String, Object> payload,
+        ExternalInteractionResult result
+    ) {
+        Instant now = Instant.now();
+        Map<String, String> attributes = new LinkedHashMap<>();
+        attributes.put("interactionTaskId", interactionTask.id());
+        attributes.put("callbackSource", interactionTask.lastEventSource().name());
+        if (interactionTask.providerReference() != null) {
+            attributes.put("providerReference", interactionTask.providerReference());
+        }
+        if (result != null) {
+            attributes.put("resultPayload", writeJson(result));
+        }
+        if (payload != null && !payload.isEmpty()) {
+            attributes.put("eventPayload", writeJson(payload));
+        }
+        ResumeInterventionDto intervention = new ResumeInterventionDto(
+            nextId("resume"),
+            workflow.id(),
+            ResumeActionType.CONTINUE.name(),
+            ResumeSource.EXTERNAL_SYSTEM.name(),
+            "system-user",
+            "External interaction resumed from " + interactionTask.lastEventSource().name(),
+            Map.copyOf(attributes),
+            ResumeInterventionStatus.PENDING,
+            now,
+            null,
+            null
+        );
+        runtimeRepository.saveResumeIntervention(intervention);
+        try {
+            workflowGateway.submitResumeAction(
+                workflow.id(),
+                new ResumeAction(
+                    ResumeActionType.CONTINUE,
+                    ResumeSource.EXTERNAL_SYSTEM,
+                    intervention.comment(),
+                    intervention.userId(),
+                    intervention.attributes()
+                )
+            );
+            WorkflowInstanceDto updatedWorkflow = workflowResuming(workflow);
+            TaskInstanceDto updatedTaskProjection = withTaskStatus(task, TaskStatus.RUNNING);
+            ConversationSessionDto updatedSession = refreshSessionAfterResumeAction(session, updatedWorkflow);
+            runtimeRepository.persistProjection(updatedTaskProjection, updatedWorkflow, updatedSession, intervention);
+
+            ExternalInteractionTaskDto resumedTask = updateInteractionTask(
+                interactionTask,
+                interactionTask.status(),
+                interactionTask.providerReference(),
+                interactionTask.latestResult(),
+                interactionTask.lastEventSource(),
+                now,
+                now
+            );
+            runtimeRepository.saveExternalInteractionTask(resumedTask);
+            runtimeRepository.saveExternalInteractionEvent(new ExternalInteractionEventDto(
+                nextId("interaction-event"),
+                interactionTask.id(),
+                ExternalInteractionEventType.RESUME_TRIGGERED,
+                interactionTask.lastEventSource(),
+                "resume:" + interactionTask.id() + ":" + now.toEpochMilli(),
+                Map.of("workflowId", workflow.id()),
+                interactionTask.latestResult(),
+                now
+            ));
+            return getExternalInteractionTask(interactionTask.id());
+        } catch (RuntimeException error) {
+            ResumeInterventionDto failedIntervention = markInterventionFailed(intervention, describeFailure(error));
+            WorkflowInstanceDto failedWorkflow = withLatestFailure(
+                workflow,
+                new WorkflowFailureSnapshot(
+                    WorkflowFailureCategory.RUNTIME_FAILURE,
+                    "WORKFLOW_RESUME_SUBMISSION_FAILED",
+                    describeFailure(error),
+                    describeFailure(error),
+                    workflow.currentNodeKey(),
+                    null,
+                    null,
+                    null,
+                    now
+                )
+            );
+            runtimeRepository.saveResumeIntervention(failedIntervention);
+            runtimeRepository.persistProjection(task, failedWorkflow, session, failedIntervention);
+            return getExternalInteractionTask(interactionTask.id());
+        }
+    }
+
+    private ExternalInteractionTaskDto updateInteractionTask(
+        ExternalInteractionTaskDto existing,
+        ExternalInteractionStatus status,
+        String providerReference,
+        ExternalInteractionResultDto latestResult,
+        ExternalInteractionEventSource lastEventSource,
+        Instant resumedAt,
+        Instant updatedAt
+    ) {
+        return new ExternalInteractionTaskDto(
+            existing.id(),
+            existing.type(),
+            status,
+            existing.sessionId(),
+            existing.taskId(),
+            existing.workflowInstanceId(),
+            existing.messageId(),
+            existing.title(),
+            existing.instruction(),
+            existing.provider(),
+            coalesce(providerReference, existing.providerReference()),
+            existing.launchUrl(),
+            existing.returnToken(),
+            existing.returnPath(),
+            existing.expiresAt(),
+            latestResult == null ? existing.latestResult() : latestResult,
+            lastEventSource,
+            resumedAt == null ? existing.resumedAt() : resumedAt,
+            existing.createdAt(),
+            updatedAt,
+            existing.events()
+        );
     }
 
     private Optional<ConversationSessionDto> findSessionByWorkflowId(String workflowId) {
@@ -1370,6 +1886,35 @@ public class RuntimeService {
         return fallback == null || fallback.isBlank() ? "未知错误" : fallback;
     }
 
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
+    }
+
+    private static String coalesce(String primary, String fallback) {
+        return primary == null || primary.isBlank() ? fallback : primary;
+    }
+
+    private static String dedupeKey(
+        ExternalInteractionEventSource source,
+        String requestedKey,
+        String interactionTaskId,
+        String fallbackSeed
+    ) {
+        String normalizedRequested = blankToNull(requestedKey);
+        if (normalizedRequested != null) {
+            return normalizedRequested;
+        }
+        return source.name() + ":" + interactionTaskId + ":" + (fallbackSeed == null ? "default" : fallbackSeed);
+    }
+
+    private static String writeJson(Object value) {
+        try {
+            return OBJECT_MAPPER.writeValueAsString(value);
+        } catch (JacksonException error) {
+            throw new IllegalStateException("failed to serialize runtime interaction payload", error);
+        }
+    }
+
     private static ResumeActionType parseResumeActionType(String value) {
         return ResumeActionType.valueOf(firstNonBlank(value, "CONTINUE").trim().toUpperCase());
     }
@@ -1383,12 +1928,13 @@ public class RuntimeService {
 
     private static boolean matchesWorkflowResult(WorkflowInstanceDto existing, WorkflowResult result) {
         WorkflowFailureSnapshot latestFailure = result.latestFailure() == null ? existing.latestFailure() : result.latestFailure();
+        ExecutionCheckpoint checkpoint = mergeCheckpoint(existing.checkpoint(), result.checkpoint());
         return existing.status() == result.status()
             && Objects.equals(existing.summary(), result.summary())
             && Objects.equals(existing.finalReply(), result.finalReply())
             && Objects.equals(existing.currentNodeKey(), result.currentNodeKey())
             && existing.escalationRequired() == result.escalationRequired()
-            && Objects.equals(existing.checkpoint(), result.checkpoint())
+            && Objects.equals(existing.checkpoint(), checkpoint)
             && Objects.equals(existing.resumeTask(), result.resumeTask())
             && Objects.equals(existing.pauseReason(), result.pauseReason())
             && Objects.equals(existing.latestFailure(), latestFailure)
@@ -1410,6 +1956,37 @@ public class RuntimeService {
             case DRAFT, RUNNING, WAITING_RESUME -> true;
             case COMPLETED, FAILED, CANCELLED -> false;
         };
+    }
+
+    private static ExecutionCheckpoint mergeCheckpoint(ExecutionCheckpoint existing, ExecutionCheckpoint latest) {
+        if (latest == null) {
+            return null;
+        }
+        if (existing == null || existing.resumeContext() == null || latest.resumeContext() == null) {
+            return latest;
+        }
+        WorkflowContracts.ResumeContextSnapshot latestContext = latest.resumeContext();
+        if (latestContext.interactionTaskId() != null || latestContext.interactionType() != null) {
+            return latest;
+        }
+        WorkflowContracts.ResumeContextSnapshot existingContext = existing.resumeContext();
+        if (existingContext.interactionTaskId() == null && existingContext.interactionType() == null) {
+            return latest;
+        }
+        return new ExecutionCheckpoint(
+            latest.checkpointId(),
+            latest.currentNodeKey(),
+            latest.waitingNodeKey(),
+            latest.statePayload(),
+            new WorkflowContracts.ResumeContextSnapshot(
+                latestContext.source(),
+                latestContext.reasonCode(),
+                existingContext.interactionTaskId(),
+                existingContext.interactionType(),
+                latestContext.timeoutPolicyKey()
+            ),
+            latest.resumeCount()
+        );
     }
 
     private static boolean sameNodes(List<NodeExecutionDto> existing, List<WorkflowContracts.NodeSnapshot> latest) {

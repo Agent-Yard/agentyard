@@ -115,6 +115,65 @@ describe('api client', () => {
     );
   });
 
+  it('posts interaction return acknowledgements to the runtime interaction endpoint', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        data: {
+          id: 'interaction-1',
+          type: 'GENERIC_REDIRECT',
+          status: 'RETURNED',
+          sessionId: 'session-1',
+          taskId: 'task-1',
+          workflowInstanceId: 'wf-1',
+          messageId: 'msg-1',
+          title: '完成外部操作',
+          instruction: '请返回系统继续处理。',
+          provider: 'demo',
+          providerReference: 'ref-1',
+          launchUrl: 'https://example.com',
+          returnToken: 'token-1',
+          returnPath: '/console/runtime',
+          expiresAt: null,
+          latestResult: null,
+          lastEventSource: 'FRONTEND_RETURN',
+          resumedAt: null,
+          createdAt: '2026-04-01T00:00:00Z',
+          updatedAt: '2026-04-01T00:00:00Z',
+          events: [],
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.acknowledgeExternalInteractionReturn('interaction-1', {
+      returnToken: 'token-1',
+      providerReference: 'ref-1',
+      dedupeKey: 'dedupe-1',
+      payload: {
+        status: 'returned',
+      },
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/runtime/interactions/interaction-1/return',
+      expect.objectContaining({
+        credentials: 'include',
+        method: 'POST',
+        body: JSON.stringify({
+          returnToken: 'token-1',
+          providerReference: 'ref-1',
+          dedupeKey: 'dedupe-1',
+          payload: {
+            status: 'returned',
+          },
+        }),
+      }),
+    );
+  });
+
   it('posts logout through the authenticated session endpoint', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({

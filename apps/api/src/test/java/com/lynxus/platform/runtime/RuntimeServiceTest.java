@@ -557,6 +557,156 @@ class RuntimeServiceTest {
         assertEquals("resource-model", workflow.modelHits().getFirst().resourceId());
     }
 
+    @Test
+    void shouldCreateExternalInteractionTaskAndAppendCardProjection() {
+        StubWorkflowGateway gateway = new StubWorkflowGateway();
+        gateway.defaultCurrentResultFactory = request -> waitingResult(
+            request.workflowInstanceId(),
+            request.question(),
+            WorkflowContracts.ResumeSource.EXTERNAL_SYSTEM
+        );
+        RuntimeService service = runtimeService(gateway);
+
+        RuntimeDtos.ConversationSessionDto session = service.createSession(
+            new RuntimeDtos.CreateConversationSessionRequest(fixture.scenarioId(), fixture.assistantId(), "customer-1", null)
+        );
+        RuntimeDtos.ConversationSessionDto activeSession = service.sendMessage(session.id(), textRequest("customer-1", "请继续外部授权"));
+
+        RuntimeDtos.ExternalInteractionTaskDto interaction = service.createExternalInteractionTask(
+            new RuntimeDtos.CreateExternalInteractionTaskRequest(
+                activeSession.id(),
+                activeSession.latestWorkflowInstanceId(),
+                WorkflowContracts.ExternalInteractionType.OAUTH_REDIRECT,
+                "完成第三方授权",
+                "请前往外部页面完成授权后返回。",
+                "oauth-demo",
+                "provider-ref-1",
+                "https://example.com/oauth/start",
+                "/console/runtime",
+                null,
+                "去授权",
+                List.of(),
+                Map.of("intent", "oauth")
+            )
+        );
+
+        assertEquals(WorkflowContracts.ExternalInteractionStatus.AWAITING_USER_ACTION, interaction.status());
+        assertEquals(1, interaction.events().size());
+        RuntimeDtos.ConversationSessionDto storedSession = service.getSession(activeSession.id());
+        assertEquals(ConversationPayloadType.EXTERNAL_INTERACTION, storedSession.messages().getLast().payloadType());
+        assertEquals("AWAITING_USER_ACTION", String.valueOf(storedSession.messages().getLast().payload().get("status")));
+        assertEquals(
+            interaction.id(),
+            service.getWorkflow(activeSession.latestWorkflowInstanceId()).checkpoint().resumeContext().interactionTaskId()
+        );
+    }
+
+    @Test
+    void shouldResumeWorkflowOnFrontendReturn() {
+        StubWorkflowGateway gateway = new StubWorkflowGateway();
+        gateway.defaultCurrentResultFactory = request -> waitingResult(
+            request.workflowInstanceId(),
+            request.question(),
+            WorkflowContracts.ResumeSource.EXTERNAL_SYSTEM
+        );
+        RuntimeService service = runtimeService(gateway);
+
+        RuntimeDtos.ConversationSessionDto session = service.createSession(
+            new RuntimeDtos.CreateConversationSessionRequest(fixture.scenarioId(), fixture.assistantId(), "customer-1", null)
+        );
+        RuntimeDtos.ConversationSessionDto activeSession = service.sendMessage(session.id(), textRequest("customer-1", "需要站外交互"));
+        RuntimeDtos.ExternalInteractionTaskDto interaction = service.createExternalInteractionTask(
+            new RuntimeDtos.CreateExternalInteractionTaskRequest(
+                activeSession.id(),
+                activeSession.latestWorkflowInstanceId(),
+                WorkflowContracts.ExternalInteractionType.GENERIC_REDIRECT,
+                "继续站外操作",
+                "请完成站外操作后返回。",
+                "generic-provider",
+                "provider-ref-2",
+                "https://example.com/redirect",
+                "/console/runtime",
+                null,
+                "打开",
+                List.of(),
+                Map.of()
+            )
+        );
+
+        RuntimeDtos.ExternalInteractionTaskDto returned = service.acknowledgeExternalInteractionReturn(
+            interaction.id(),
+            new RuntimeDtos.ExternalInteractionReturnRequest(
+                interaction.returnToken(),
+                "provider-ref-2",
+                "return-dedupe-1",
+                Map.of("status", "returned")
+            )
+        );
+
+        assertEquals(WorkflowContracts.ExternalInteractionStatus.RETURNED, returned.status());
+        assertNotNull(returned.resumedAt());
+        assertEquals(1, gateway.submittedResumeActions.size());
+        assertEquals("FRONTEND_RETURN", gateway.submittedResumeActions.getFirst().attributes().get("callbackSource"));
+        assertEquals(interaction.id(), gateway.submittedResumeActions.getFirst().attributes().get("interactionTaskId"));
+        assertEquals(WorkflowContracts.WorkflowStatus.RUNNING, service.getWorkflow(activeSession.latestWorkflowInstanceId()).status());
+    }
+
+    @Test
+    void shouldIncludeCallbackResultPayloadWhenResumingExternalInteraction() {
+        StubWorkflowGateway gateway = new StubWorkflowGateway();
+        gateway.defaultCurrentResultFactory = request -> waitingResult(
+            request.workflowInstanceId(),
+            request.question(),
+            WorkflowContracts.ResumeSource.EXTERNAL_SYSTEM
+        );
+        RuntimeService service = runtimeService(gateway);
+
+        RuntimeDtos.ConversationSessionDto session = service.createSession(
+            new RuntimeDtos.CreateConversationSessionRequest(fixture.scenarioId(), fixture.assistantId(), "customer-1", null)
+        );
+        RuntimeDtos.ConversationSessionDto activeSession = service.sendMessage(session.id(), textRequest("customer-1", "等待 provider callback"));
+        RuntimeDtos.ExternalInteractionTaskDto interaction = service.createExternalInteractionTask(
+            new RuntimeDtos.CreateExternalInteractionTaskRequest(
+                activeSession.id(),
+                activeSession.latestWorkflowInstanceId(),
+                WorkflowContracts.ExternalInteractionType.PAYMENT_REDIRECT,
+                "完成支付",
+                "请完成支付后等待系统回调。",
+                "payment-demo",
+                "pay-ref-1",
+                "https://example.com/pay",
+                "/console/runtime",
+                null,
+                "去支付",
+                List.of(),
+                Map.of()
+            )
+        );
+
+        RuntimeDtos.ExternalInteractionTaskDto processed = service.receiveExternalInteractionCallback(
+            "payment-demo",
+            new RuntimeDtos.ExternalInteractionCallbackRequest(
+                interaction.id(),
+                "pay-ref-1",
+                "callback-dedupe-1",
+                Map.of("providerStatus", "APPROVED"),
+                new WorkflowContracts.ExternalInteractionResult(
+                    WorkflowContracts.ExternalInteractionOutcome.SUCCEEDED,
+                    "APPROVED",
+                    "支付成功",
+                    "APPROVED",
+                    Map.of("transactionId", "txn-1")
+                )
+            )
+        );
+
+        assertEquals(WorkflowContracts.ExternalInteractionStatus.PROCESSING, processed.status());
+        assertNotNull(processed.latestResult());
+        assertEquals("SUCCEEDED", processed.latestResult().outcome().name());
+        assertEquals("PROVIDER_CALLBACK", gateway.submittedResumeActions.getFirst().attributes().get("callbackSource"));
+        assertTrue(gateway.submittedResumeActions.getFirst().attributes().get("resultPayload").contains("\"transactionId\":\"txn-1\""));
+    }
+
     private static WorkflowContracts.WorkflowResult waitingHumanResult(String workflowId, String question) {
         return waitingResult(workflowId, question, WorkflowContracts.ResumeSource.HUMAN);
     }

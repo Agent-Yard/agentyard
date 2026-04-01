@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { RouterView, useRoute, useRouter } from 'vue-router';
 import AppLayout from '../layouts/AppLayout.vue';
 import DeletionPreviewModal from '../components/DeletionPreviewModal.vue';
@@ -24,6 +24,7 @@ const runtimeActions = useRuntimeActions(
 );
 
 useWorkflowPolling(state.workflows, state.refresh);
+const processedInteractionReturnKey = ref<string | null>(null);
 
 const currentView = computed(() => {
   const pageKey = currentPageKey.value;
@@ -189,6 +190,22 @@ function handleOpenChange(keys: string[]) {
   state.openKeys.value = keys as SectionKey[];
 }
 
+function queryValue(value: unknown): string | null {
+  if (Array.isArray(value)) {
+    return value.length ? String(value[0]) : null;
+  }
+  return value == null ? null : String(value);
+}
+
+function normalizedQueryPayload(query: Record<string, unknown>) {
+  return Object.fromEntries(
+    Object.entries(query).map(([key, value]) => [
+      key,
+      Array.isArray(value) ? value.map((item) => String(item)) : value == null ? null : String(value),
+    ]),
+  );
+}
+
 async function handleLogout() {
   const logoutResponse = await api.logout();
   window.location.assign(logoutResponse.postLogoutRedirectUrl || '/login');
@@ -201,6 +218,30 @@ onMounted(() => {
     }
   });
 });
+
+watch(
+  () => route.query,
+  (query) => {
+    const interactionTaskId = queryValue(query.interactionTaskId);
+    const returnToken = queryValue(query.returnToken);
+    if (!interactionTaskId || !returnToken) {
+      return;
+    }
+    const dedupeKey = queryValue(query.interactionDedupeKey) ?? `frontend-return:${interactionTaskId}:${returnToken}`;
+    if (processedInteractionReturnKey.value === dedupeKey) {
+      return;
+    }
+    processedInteractionReturnKey.value = dedupeKey;
+    void runtimeActions.handleInteractionReturn({
+      interactionTaskId,
+      returnToken,
+      providerReference: queryValue(query.providerReference),
+      dedupeKey,
+      queryPayload: normalizedQueryPayload(query as Record<string, unknown>),
+    });
+  },
+  { immediate: true },
+);
 </script>
 
 <template>

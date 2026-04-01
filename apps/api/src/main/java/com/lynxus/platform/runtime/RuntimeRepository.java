@@ -26,6 +26,18 @@ public interface RuntimeRepository {
 
     void saveSession(ConversationSessionDto session);
 
+    Optional<ExternalInteractionTaskDto> findExternalInteractionTask(String interactionTaskId);
+
+    Optional<ExternalInteractionTaskDto> findExternalInteractionTaskByProviderReference(String provider, String providerReference);
+
+    List<ExternalInteractionEventDto> listExternalInteractionEvents(String interactionTaskId);
+
+    Optional<ExternalInteractionEventDto> findExternalInteractionEventByDedupeKey(String interactionTaskId, String dedupeKey);
+
+    void saveExternalInteractionTask(ExternalInteractionTaskDto task);
+
+    void saveExternalInteractionEvent(ExternalInteractionEventDto event);
+
     Optional<ResumeInterventionDto> findPendingResumeIntervention(String workflowInstanceId);
 
     List<ResumeInterventionDto> listPendingResumeInterventions();

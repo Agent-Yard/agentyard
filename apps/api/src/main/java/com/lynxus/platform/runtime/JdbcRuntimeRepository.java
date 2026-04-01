@@ -14,6 +14,10 @@ import com.lynxus.contracts.runtime.WorkflowContracts.ToolInvocationSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.ToolOutcomeSummary;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowFailureSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowStatus;
+import com.lynxus.contracts.runtime.WorkflowContracts.ExternalInteractionEventSource;
+import com.lynxus.contracts.runtime.WorkflowContracts.ExternalInteractionEventType;
+import com.lynxus.contracts.runtime.WorkflowContracts.ExternalInteractionStatus;
+import com.lynxus.contracts.runtime.WorkflowContracts.ExternalInteractionType;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -152,6 +156,82 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
     public void saveSession(ConversationSessionDto session) {
         upsertSession(session);
         upsertMessages(session.messages());
+    }
+
+    @Override
+    public Optional<ExternalInteractionTaskDto> findExternalInteractionTask(String interactionTaskId) {
+        return hydrateInteractionTasks(jdbcTemplate.query(
+            """
+                select id, interaction_type, status, session_id, task_id, workflow_instance_id, message_id, title, instruction,
+                       provider, provider_reference, launch_url, return_token, return_path, expires_at, latest_result,
+                       last_event_source, resumed_at, created_at, updated_at
+                from external_interaction_task
+                where id = ?
+                """,
+            (rs, rowNum) -> mapInteractionTaskRow(rs),
+            interactionTaskId
+        )).stream().findFirst();
+    }
+
+    @Override
+    public Optional<ExternalInteractionTaskDto> findExternalInteractionTaskByProviderReference(String provider, String providerReference) {
+        return hydrateInteractionTasks(jdbcTemplate.query(
+            """
+                select id, interaction_type, status, session_id, task_id, workflow_instance_id, message_id, title, instruction,
+                       provider, provider_reference, launch_url, return_token, return_path, expires_at, latest_result,
+                       last_event_source, resumed_at, created_at, updated_at
+                from external_interaction_task
+                where provider = ? and provider_reference = ?
+                """,
+            (rs, rowNum) -> mapInteractionTaskRow(rs),
+            provider,
+            providerReference
+        )).stream().findFirst();
+    }
+
+    @Override
+    public List<ExternalInteractionEventDto> listExternalInteractionEvents(String interactionTaskId) {
+        return jdbcTemplate.query(
+            """
+                select id, interaction_task_id, event_type, event_source, dedupe_key, payload, result, created_at
+                from external_interaction_event
+                where interaction_task_id = ?
+                order by created_at asc, id asc
+                """,
+            (rs, rowNum) -> mapInteractionEvent(rs),
+            interactionTaskId
+        );
+    }
+
+    @Override
+    public Optional<ExternalInteractionEventDto> findExternalInteractionEventByDedupeKey(String interactionTaskId, String dedupeKey) {
+        if (dedupeKey == null || dedupeKey.isBlank()) {
+            return Optional.empty();
+        }
+        return jdbcTemplate.query(
+            """
+                select id, interaction_task_id, event_type, event_source, dedupe_key, payload, result, created_at
+                from external_interaction_event
+                where interaction_task_id = ? and dedupe_key = ?
+                order by created_at desc, id desc
+                limit 1
+                """,
+            (rs, rowNum) -> mapInteractionEvent(rs),
+            interactionTaskId,
+            dedupeKey
+        ).stream().findFirst();
+    }
+
+    @Override
+    @Transactional
+    public void saveExternalInteractionTask(ExternalInteractionTaskDto task) {
+        upsertExternalInteractionTask(task);
+    }
+
+    @Override
+    @Transactional
+    public void saveExternalInteractionEvent(ExternalInteractionEventDto event) {
+        upsertExternalInteractionEvent(event);
     }
 
     @Override
@@ -294,6 +374,44 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             readInstant(rs, "created_at"),
             readNullableInstant(rs, "applied_at"),
             rs.getString("failure_reason")
+        );
+    }
+
+    private StoredInteractionTaskRow mapInteractionTaskRow(ResultSet rs) throws SQLException {
+        return new StoredInteractionTaskRow(
+            rs.getString("id"),
+            ExternalInteractionType.valueOf(rs.getString("interaction_type")),
+            ExternalInteractionStatus.valueOf(rs.getString("status")),
+            rs.getString("session_id"),
+            rs.getString("task_id"),
+            rs.getString("workflow_instance_id"),
+            rs.getString("message_id"),
+            rs.getString("title"),
+            rs.getString("instruction"),
+            rs.getString("provider"),
+            rs.getString("provider_reference"),
+            rs.getString("launch_url"),
+            rs.getString("return_token"),
+            rs.getString("return_path"),
+            readNullableInstant(rs, "expires_at"),
+            readJson(rs.getString("latest_result"), ExternalInteractionResultDto.class),
+            ExternalInteractionEventSource.valueOf(rs.getString("last_event_source")),
+            readNullableInstant(rs, "resumed_at"),
+            readInstant(rs, "created_at"),
+            readInstant(rs, "updated_at")
+        );
+    }
+
+    private ExternalInteractionEventDto mapInteractionEvent(ResultSet rs) throws SQLException {
+        return new ExternalInteractionEventDto(
+            rs.getString("id"),
+            rs.getString("interaction_task_id"),
+            ExternalInteractionEventType.valueOf(rs.getString("event_type")),
+            ExternalInteractionEventSource.valueOf(rs.getString("event_source")),
+            rs.getString("dedupe_key"),
+            readJson(rs.getString("payload"), OBJECT_MAP),
+            readJson(rs.getString("result"), ExternalInteractionResultDto.class),
+            readInstant(rs, "created_at")
         );
     }
 
@@ -460,6 +578,56 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             workflowIds.toArray()
         );
         return interventionsByWorkflow;
+    }
+
+    private List<ExternalInteractionTaskDto> hydrateInteractionTasks(List<StoredInteractionTaskRow> rows) {
+        if (rows.isEmpty()) {
+            return List.of();
+        }
+        Map<String, List<ExternalInteractionEventDto>> eventsByTask = loadInteractionEvents(rows.stream().map(StoredInteractionTaskRow::id).toList());
+        return rows.stream()
+            .map(row -> new ExternalInteractionTaskDto(
+                row.id(),
+                row.type(),
+                row.status(),
+                row.sessionId(),
+                row.taskId(),
+                row.workflowInstanceId(),
+                row.messageId(),
+                row.title(),
+                row.instruction(),
+                row.provider(),
+                row.providerReference(),
+                row.launchUrl(),
+                row.returnToken(),
+                row.returnPath(),
+                row.expiresAt(),
+                row.latestResult(),
+                row.lastEventSource(),
+                row.resumedAt(),
+                row.createdAt(),
+                row.updatedAt(),
+                eventsByTask.getOrDefault(row.id(), List.of())
+            ))
+            .toList();
+    }
+
+    private Map<String, List<ExternalInteractionEventDto>> loadInteractionEvents(List<String> interactionTaskIds) {
+        Map<String, List<ExternalInteractionEventDto>> eventsByTask = new LinkedHashMap<>();
+        jdbcTemplate.query(
+            """
+                select id, interaction_task_id, event_type, event_source, dedupe_key, payload, result, created_at
+                from external_interaction_event
+                where interaction_task_id in (%s)
+                order by interaction_task_id, created_at asc, id asc
+                """.formatted(placeholders(interactionTaskIds.size())),
+            rs -> {
+                String interactionTaskId = rs.getString("interaction_task_id");
+                eventsByTask.computeIfAbsent(interactionTaskId, ignored -> new ArrayList<>()).add(mapInteractionEvent(rs));
+            },
+            interactionTaskIds.toArray()
+        );
+        return eventsByTask;
     }
 
     private void upsertTask(TaskInstanceDto task, String sessionId) {
@@ -668,6 +836,84 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         );
     }
 
+    private void upsertExternalInteractionTask(ExternalInteractionTaskDto task) {
+        jdbcTemplate.update(
+            """
+                insert into external_interaction_task (
+                    id, interaction_type, status, session_id, task_id, workflow_instance_id, message_id, title, instruction,
+                    provider, provider_reference, launch_url, return_token, return_path, expires_at, latest_result,
+                    last_event_source, resumed_at, created_at, updated_at
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, cast(? as jsonb), ?, ?, ?, ?)
+                on conflict (id) do update set
+                    interaction_type = excluded.interaction_type,
+                    status = excluded.status,
+                    session_id = excluded.session_id,
+                    task_id = excluded.task_id,
+                    workflow_instance_id = excluded.workflow_instance_id,
+                    message_id = excluded.message_id,
+                    title = excluded.title,
+                    instruction = excluded.instruction,
+                    provider = excluded.provider,
+                    provider_reference = excluded.provider_reference,
+                    launch_url = excluded.launch_url,
+                    return_token = excluded.return_token,
+                    return_path = excluded.return_path,
+                    expires_at = excluded.expires_at,
+                    latest_result = excluded.latest_result,
+                    last_event_source = excluded.last_event_source,
+                    resumed_at = excluded.resumed_at,
+                    created_at = excluded.created_at,
+                    updated_at = excluded.updated_at
+                """,
+            task.id(),
+            task.type().name(),
+            task.status().name(),
+            task.sessionId(),
+            task.taskId(),
+            task.workflowInstanceId(),
+            task.messageId(),
+            task.title(),
+            task.instruction(),
+            task.provider(),
+            task.providerReference(),
+            task.launchUrl(),
+            task.returnToken(),
+            task.returnPath(),
+            writeTimestamp(task.expiresAt()),
+            writeJson(task.latestResult()),
+            task.lastEventSource().name(),
+            writeTimestamp(task.resumedAt()),
+            writeTimestamp(task.createdAt()),
+            writeTimestamp(task.updatedAt())
+        );
+    }
+
+    private void upsertExternalInteractionEvent(ExternalInteractionEventDto event) {
+        jdbcTemplate.update(
+            """
+                insert into external_interaction_event (
+                    id, interaction_task_id, event_type, event_source, dedupe_key, payload, result, created_at
+                ) values (?, ?, ?, ?, ?, cast(? as jsonb), cast(? as jsonb), ?)
+                on conflict (id) do update set
+                    interaction_task_id = excluded.interaction_task_id,
+                    event_type = excluded.event_type,
+                    event_source = excluded.event_source,
+                    dedupe_key = excluded.dedupe_key,
+                    payload = excluded.payload,
+                    result = excluded.result,
+                    created_at = excluded.created_at
+                """,
+            event.id(),
+            event.interactionTaskId(),
+            event.eventType().name(),
+            event.eventSource().name(),
+            event.dedupeKey(),
+            writeJson(event.payload()),
+            writeJson(event.result()),
+            writeTimestamp(event.createdAt())
+        );
+    }
+
     private Timestamp writeTimestamp(Instant instant) {
         return instant == null ? null : Timestamp.from(instant);
     }
@@ -734,6 +980,30 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         PauseReasonSnapshot latestPauseReason,
         List<String> loadedSkillResourceVersionIds,
         SharedSessionState sharedState
+    ) {
+    }
+
+    private record StoredInteractionTaskRow(
+        String id,
+        ExternalInteractionType type,
+        ExternalInteractionStatus status,
+        String sessionId,
+        String taskId,
+        String workflowInstanceId,
+        String messageId,
+        String title,
+        String instruction,
+        String provider,
+        String providerReference,
+        String launchUrl,
+        String returnToken,
+        String returnPath,
+        Instant expiresAt,
+        ExternalInteractionResultDto latestResult,
+        ExternalInteractionEventSource lastEventSource,
+        Instant resumedAt,
+        Instant createdAt,
+        Instant updatedAt
     ) {
     }
 }

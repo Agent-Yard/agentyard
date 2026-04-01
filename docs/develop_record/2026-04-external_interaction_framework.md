@@ -10,6 +10,34 @@
 
 这份文档不只记录待办，还给出当前项目语境下的目标模型和分阶段落地方式。
 
+## 0. 当前实现状态（2026-04-01）
+
+第一步通用框架已经落地，当前代码基线不是“纯设计态”，而是“框架已实现、provider 仍待接入”的状态。
+
+已完成：
+
+- 共享契约、JVM 契约、OpenAPI、Web 类型已引入 `ExternalInteractionType / Status / Task / Event / Result`
+- API 已落 `external_interaction_task`、`external_interaction_event` 两张表
+- RuntimeService 已支持 interaction task 创建、查询、前端 return ack、后端 callback ingest、幂等去重与 resume 触发
+- `ConversationMessage.payloadType = EXTERNAL_INTERACTION` 已成为 interaction card 的正式展示模型
+- Web 已支持 interaction card 渲染、回跳 query 解析与 return ack
+- workflow 恢复继续复用 `WAITING_RESUME + ResumeAction`，不新增系统级“结果确认完成”字段
+
+当前协议约束：
+
+- 前端回跳不是可信结果信源，只表示“用户已返回”
+- 首次有效 `FRONTEND_RETURN` 会把 task 推进到 `RETURNED`，并立即触发 `EXTERNAL_SYSTEM` resume
+- 首次有效 `PROVIDER_CALLBACK` 会把 task 推进到 `PROCESSING`，如带可信结果则写入 `latestResult`，并立即触发 `EXTERNAL_SYSTEM` resume
+- 恢复后是否继续调用工具确认真实结果，属于 assistant / workflow 配置逻辑，不属于系统硬编码流程
+- 后续重复 return/callback 只记审计事件，不重复 resume
+
+仍未完成：
+
+- provider adapter 抽象
+- webhook 签名校验
+- 主动查单 / 查状态补偿
+- 真正的支付 / OAuth provider 接入
+
 ## 1. 目标
 
 希望把当前“对话里出现一条文本提示，用户自行跳转处理”的局部能力，升级为统一的运行态能力：
@@ -35,11 +63,11 @@
 
 ### 2.2 当前约束
 
-- 会话消息对外已统一为 `payloadType + payload`，文本消息也使用 `TEXT` payload；但 external interaction 仍缺独立业务对象和完整状态机
+- 会话消息对外已统一为 `payloadType + payload`，文本消息也使用 `TEXT` payload；external interaction 已有独立 task / event 对象与基础状态机
 - 运行态内部与 `SessionContext` 仍保留 `content` 文本投影，供 LLM 上下文和摘要使用
-- runtime 主投影已落 PostgreSQL，但 external interaction 仍缺独立任务模型与跨回跳状态机
-- web 端已具备正式路由与运行态消息 payload 渲染分发，但 external interaction 卡片仍是预留位
-- workflow 只建模了“人工恢复”，还没有“外部结果恢复”的通用契约
+- runtime 主投影已落 PostgreSQL，external interaction 已落 task/event 模型与跨回跳状态机；但 provider 适配与补偿还没做
+- web 端已具备正式路由、interaction 卡片渲染和回跳参数解析；但还没有更强的对象级深链和 SSE 推送
+- workflow 继续复用“泛化恢复”契约，不区分“人工恢复”和“外部结果恢复”的独立系统通道
 
 ### 2.3 当前代码位置
 
@@ -287,8 +315,9 @@ workflow 不需要为每种外部动作单独发明状态。
 同时新增：
 
 - `ExternalInteractionTaskDto`
-- `CreateExternalInteractionRequest`
-- `ExternalInteractionReturnAckRequest`
+- `CreateExternalInteractionTaskRequest`
+- `ExternalInteractionReturnRequest`
+- `ExternalInteractionCallbackRequest`
 
 涉及文件：
 
@@ -310,10 +339,15 @@ workflow 不需要为每种外部动作单独发明状态。
 
 - `POST /api/runtime/interactions`
 - `GET /api/runtime/interactions/{interactionId}`
-- `POST /api/runtime/interactions/{interactionId}/launch`
 - `POST /api/runtime/interactions/{interactionId}/return`
-- `POST /api/runtime/interactions/{interactionId}/complete`
-- `POST /api/runtime/interactions/webhooks/{provider}`
+- `POST /api/runtime/interactions/callbacks/{provider}`
+
+当前已实现：
+
+- `POST /api/runtime/interactions`
+- `GET /api/runtime/interactions/{interactionId}`
+- `POST /api/runtime/interactions/{interactionId}/return`
+- `POST /api/runtime/interactions/callbacks/{provider}`
 
 涉及文件：
 
@@ -374,10 +408,10 @@ workflow 不需要为每种外部动作单独发明状态。
 - `ackExternalInteractionReturn`
 - `launchExternalInteraction`
 
-涉及文件：
+当前实现位置：
 
 - `apps/web/src/pages/RuntimeConversationPage.vue`
-- `apps/web/src/App.vue`
+- `apps/web/src/pages/ConsolePage.vue`
 - `apps/web/src/composables/useAppState.ts`
 - `apps/web/src/composables/useRuntimeActions.ts`
 - `apps/web/src/services/api.ts`
@@ -389,13 +423,12 @@ workflow 不需要为每种外部动作单独发明状态。
 
 ### 9.1 当前问题
 
-虽然已有 `task_instance` 和 `workflow_instance` 表，但当前 runtime 主投影仍主要在内存里。
-如果支付发生在以下场景，单靠内存会出问题：
+当前 `task_instance / workflow_instance / conversation_session / conversation_message / external_interaction_task / external_interaction_event` 已经落库，不再是“纯内存态”问题。当前剩余问题集中在 provider 侧可靠性与补偿，而不是基础持久化缺失：
 
-- 用户跳转支付后 API 重启
-- webhook 晚于前端回跳到达
-- 用户数分钟后才回到页面
-- 需要审计 interaction 过程
+- callback 的签名与来源可信度尚未统一校验
+- provider callback 缺少标准 adapter 抽象
+- provider callback 未到但前端已 return 时，后续确认仍依赖 assistant / workflow 配置的工具调用
+- 还没有主动查单 / 查状态补偿
 
 ### 9.2 建议新增表
 
@@ -481,7 +514,7 @@ workflow 不需要为每种外部动作单独发明状态。
 
 ## 12. MVP 分阶段落地
 
-### Phase 1: 先打通通用 interaction 卡片和内存态闭环
+### Phase 1: 先打通通用 interaction 卡片和框架闭环
 
 目标：
 
@@ -490,11 +523,13 @@ workflow 不需要为每种外部动作单独发明状态。
 - web 能处理回跳参数
 - runtime 能轮询看到 interaction 状态
 
+状态：已完成。
+
 范围：
 
 - 可先不接真实支付平台
 - 用 mock provider 或模拟 webhook
-- interaction task 先可保留内存态，仅用于验证 UI 和 workflow 主线
+- interaction task 已持久化到 PostgreSQL，并带事件表
 
 产出：
 
@@ -506,14 +541,15 @@ workflow 不需要为每种外部动作单独发明状态。
 
 目标：
 
-- interaction task 可跨进程、跨跳转可靠存在
-- webhook 能最终确认结果
+- 接入真实 provider callback
+- 让 webhook / callback 成为真实业务输入，而不是框架占位入口
 
 范围：
 
-- 新增 interaction 相关表
-- 增加 webhook 接口和幂等处理
-- session/message 持久化至少落核心投影
+- provider adapter
+- webhook 签名校验
+- callback 语义标准化
+- 根据 provider 特性补充幂等键
 
 ### Phase 3: 首个真实支付 provider 接入
 
@@ -556,17 +592,17 @@ workflow 不需要为每种外部动作单独发明状态。
 ### P0
 
 - [x] 给 `ConversationMessage` 增加统一消息 payload 能力
-- 引入 `ExternalInteractionTask` 统一对象
-- 定义 interaction 状态机和共享契约
-- 让 workflow 能表达“等待 external interaction”
-- 让 web 支持 interaction 卡片渲染和回跳恢复
+- [x] 引入 `ExternalInteractionTask` 统一对象
+- [x] 定义 interaction 状态机和共享契约
+- [x] 让 workflow 能表达“等待 external interaction”
+- [x] 让 web 支持 interaction 卡片渲染和回跳恢复
 
 ### P1
 
-- interaction task 持久化
-- conversation session/message 持久化
-- webhook 接口和幂等事件表
-- workflow 恢复动作通用化
+- [x] interaction task 持久化
+- [x] conversation session/message 持久化
+- [x] webhook / callback 框架入口和幂等事件表
+- [x] workflow 恢复动作通用化
 
 ### P2
 

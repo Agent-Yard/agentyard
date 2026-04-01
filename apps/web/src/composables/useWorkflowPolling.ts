@@ -22,9 +22,9 @@ export function useWorkflowPolling(workflows: Ref<WorkflowInstance[]>, refresh: 
   }
 
   watch(
-    () => workflows.value.some((item) => item.status === 'RUNNING'),
-    (hasRunningWorkflow) => {
-      if (hasRunningWorkflow) {
+    () => workflows.value.some((item) => item.status === 'RUNNING' || item.status === 'WAITING_RESUME'),
+    (hasActiveWorkflow) => {
+      if (hasActiveWorkflow) {
         startWorkflowPolling();
         return;
       }

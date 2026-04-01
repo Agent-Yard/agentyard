@@ -116,11 +116,37 @@ export function useRuntimeActions(
     }
   }
 
+  async function handleInteractionReturn(payload: {
+    interactionTaskId: string;
+    returnToken: string;
+    providerReference: string | null;
+    dedupeKey: string | null;
+    queryPayload: Record<string, unknown>;
+  }) {
+    try {
+      const interaction = await api.acknowledgeExternalInteractionReturn(payload.interactionTaskId, {
+        returnToken: payload.returnToken,
+        providerReference: payload.providerReference,
+        dedupeKey: payload.dedupeKey,
+        payload: payload.queryPayload,
+      });
+      state.runtimePreferredSessionId.value = interaction.sessionId;
+      state.runtimeSelectedSessionId.value = interaction.sessionId;
+      state.selectedWorkflowId.value = interaction.workflowInstanceId;
+      await refresh();
+      void router.push(pagePathByKey.runtime);
+      void message.success('已接收外部交互回跳，流程继续处理中');
+    } catch (error) {
+      void message.error(errorMessage(error, '处理外部交互回跳失败'));
+    }
+  }
+
   return {
     handleCreateSession,
     handleSendMessage,
     handleSelectRuntimeSession,
     handleSelectWorkflow,
     handleResumeAction,
+    handleInteractionReturn,
   };
 }

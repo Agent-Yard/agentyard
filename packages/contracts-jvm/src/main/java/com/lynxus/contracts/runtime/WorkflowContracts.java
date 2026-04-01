@@ -133,6 +133,50 @@ public final class WorkflowContracts {
         EXTERNAL_INTERACTION
     }
 
+    public enum ExternalInteractionType {
+        GENERIC_REDIRECT,
+        PAYMENT_REDIRECT,
+        FORM_REDIRECT,
+        OAUTH_REDIRECT,
+        EXTERNAL_CONFIRMATION,
+        FILE_UPLOAD_PORTAL
+    }
+
+    public enum ExternalInteractionStatus {
+        CREATED,
+        AWAITING_USER_ACTION,
+        LAUNCHED,
+        RETURNED,
+        PROCESSING,
+        SUCCEEDED,
+        FAILED,
+        CANCELLED,
+        EXPIRED
+    }
+
+    public enum ExternalInteractionEventSource {
+        SYSTEM_CREATE,
+        FRONTEND_RETURN,
+        PROVIDER_CALLBACK
+    }
+
+    public enum ExternalInteractionEventType {
+        CREATED,
+        RETURNED,
+        CALLBACK_RECEIVED,
+        RESUME_TRIGGERED,
+        IGNORED
+    }
+
+    public enum ExternalInteractionOutcome {
+        SUCCEEDED,
+        FAILED,
+        CANCELLED,
+        EXPIRED,
+        PROCESSING,
+        UNKNOWN
+    }
+
     public record KnowledgeBindingSnapshot(
         String knowledgeBaseId,
         String knowledgeBaseName,
@@ -334,6 +378,19 @@ public final class WorkflowContracts {
         }
     }
 
+    public record ConversationAction(
+        String label,
+        String actionType,
+        String url,
+        String target,
+        Map<String, Object> parameters,
+        boolean disabled
+    ) {
+        public ConversationAction {
+            parameters = immutableObjectMap(parameters);
+        }
+    }
+
     public record SharedSessionState(
         Map<String, Object> facts,
         Map<String, Object> artifacts,
@@ -435,7 +492,102 @@ public final class WorkflowContracts {
         List<SessionMessageSnapshot> history,
         List<String> loadedSkillResourceVersionIds,
         SharedSessionState sharedState
+        ) {
+    }
+
+    public record ExternalInteractionResult(
+        ExternalInteractionOutcome outcome,
+        String code,
+        String summary,
+        String rawProviderStatus,
+        Map<String, Object> attributes
     ) {
+        public ExternalInteractionResult {
+            attributes = immutableObjectMap(attributes);
+        }
+    }
+
+    public record ExternalInteractionTask(
+        String id,
+        ExternalInteractionType type,
+        ExternalInteractionStatus status,
+        String sessionId,
+        String taskId,
+        String workflowInstanceId,
+        String messageId,
+        String title,
+        String instruction,
+        String provider,
+        String providerReference,
+        String launchUrl,
+        String returnToken,
+        String returnPath,
+        Instant expiresAt,
+        ExternalInteractionResult latestResult,
+        ExternalInteractionEventSource lastEventSource,
+        Instant resumedAt,
+        Instant createdAt,
+        Instant updatedAt
+    ) {
+    }
+
+    public record ExternalInteractionEvent(
+        String id,
+        String interactionTaskId,
+        ExternalInteractionEventType eventType,
+        ExternalInteractionEventSource eventSource,
+        String dedupeKey,
+        Map<String, Object> payload,
+        ExternalInteractionResult result,
+        Instant createdAt
+    ) {
+        public ExternalInteractionEvent {
+            payload = immutableObjectMap(payload);
+        }
+    }
+
+    public record CreateExternalInteractionTaskRequest(
+        String sessionId,
+        String workflowInstanceId,
+        ExternalInteractionType interactionType,
+        String title,
+        String instruction,
+        String provider,
+        String providerReference,
+        String launchUrl,
+        String returnPath,
+        Instant expiresAt,
+        String primaryActionLabel,
+        List<ConversationAction> secondaryActions,
+        Map<String, Object> displayHints
+    ) {
+        public CreateExternalInteractionTaskRequest {
+            secondaryActions = secondaryActions == null ? List.of() : List.copyOf(secondaryActions);
+            displayHints = immutableObjectMap(displayHints);
+        }
+    }
+
+    public record ExternalInteractionReturnRequest(
+        String returnToken,
+        String providerReference,
+        String dedupeKey,
+        Map<String, Object> payload
+    ) {
+        public ExternalInteractionReturnRequest {
+            payload = immutableObjectMap(payload);
+        }
+    }
+
+    public record ExternalInteractionCallbackRequest(
+        String taskId,
+        String providerReference,
+        String dedupeKey,
+        Map<String, Object> payload,
+        ExternalInteractionResult result
+    ) {
+        public ExternalInteractionCallbackRequest {
+            payload = immutableObjectMap(payload);
+        }
     }
 
     public record LogContext(

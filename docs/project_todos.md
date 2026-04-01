@@ -137,18 +137,27 @@
 
 ### 2.5 External Interaction 一等能力
 
-现状：已完成统一消息 payload 基座。`ConversationMessage` 对外已切到 `payloadType + payload`，运行态内部与 `SessionContext` 保留 `content` 作为 LLM 上下文和摘要文本；但 `external_interaction_task / event`、provider adapter、回跳与 webhook 链路仍未实现。 
+现状：已完成第一步通用框架。共享契约、OpenAPI、API Runtime DTO、`external_interaction_task / event` 持久化、interaction card 渲染、前端回跳 ack、后端 callback ingest 与基于 `ResumeAction` 的立即恢复链路均已落地。当前协议约束为：前端回跳不是可信结果信源；`RETURNED` 或 `PROCESSING` 的首次有效事件都会立即恢复 workflow；是否在恢复后调用工具确认真实结果，属于 assistant / workflow 配置逻辑，不由系统层硬编码。第二步的 provider adapter、签名校验和主动查单补偿仍未实现。 
 
 目标（分两步）：
 
 **第一步 — 通用框架：**
 
-1. 共享契约引入 `ExternalInteractionType / Status / Task / Result`
-2. `ConversationMessage` 切换为统一的 `payloadType + payload` 消息模型，文本消息也使用 `TEXT` payload 表达
-3. RuntimeService 新增 interaction task CRUD 和状态机
-4. Workflow 使用泛化后的 `ResumeAction` 处理 external interaction 完成
-5. 前端支持 interaction 卡片渲染、回跳参数解析、状态轮询
-6. 持久化：`external_interaction_task` + `external_interaction_event` 表
+1. [x] 共享契约引入 `ExternalInteractionType / Status / Task / Result / Event`
+2. [x] `ConversationMessage` 切换为统一的 `payloadType + payload` 消息模型，文本消息也使用 `TEXT` payload 表达
+3. [x] RuntimeService 新增 interaction task 创建 / 查询 / return / callback、幂等事件表与状态机
+4. [x] Workflow 使用泛化后的 `ResumeAction` 处理 external interaction 恢复；恢复载荷统一放入 `ResumeAction.attributes`
+5. [x] 前端支持 interaction 卡片渲染、回跳参数解析、状态轮询
+6. [x] 持久化：`external_interaction_task` + `external_interaction_event` 表
+
+当前实现说明：
+
+- 已提供 `GET /api/runtime/interactions/{taskId}`、`POST /api/runtime/interactions/{taskId}/return`、`POST /api/runtime/interactions/callbacks/{provider}`
+- interaction 创建由控制面 API 内部负责，不对外暴露单独的公共创建入口
+- `ExternalInteractionTask` 是唯一真相源；卡片消息只是 task 的展示投影
+- 首次有效 `FRONTEND_RETURN` 会把 task 推进到 `RETURNED` 并立即触发 `EXTERNAL_SYSTEM` resume
+- 首次有效 `PROVIDER_CALLBACK` 会把 task 推进到 `PROCESSING`，如有可信结果则一并写入 `latestResult`，并立即触发 `EXTERNAL_SYSTEM` resume
+- 后续重复 return/callback 只记事件，不重复 resume
 
 **第二步 — 首个真实 provider：**
 
