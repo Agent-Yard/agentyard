@@ -247,6 +247,7 @@ public class InMemoryRuntimeRepository implements RuntimeRepository {
             workflow.toolCalls(),
             workflow.modelHits(),
             workflowResumeInterventions.getOrDefault(workflow.id(), Map.of()).values().stream().sorted(INTERVENTION_ORDER).toList(),
+            workflow.emittedMessageKeys(),
             workflow.loadedSkillResourceVersionIds(),
             workflow.sharedState(),
             workflow.agentTurnState() == null ? AgentTurnState.empty() : workflow.agentTurnState()
@@ -299,6 +300,7 @@ public class InMemoryRuntimeRepository implements RuntimeRepository {
             List.copyOf(workflow.toolCalls()),
             List.copyOf(workflow.modelHits()),
             List.of(),
+            List.copyOf(workflow.emittedMessageKeys()),
             List.copyOf(workflow.loadedSkillResourceVersionIds()),
             workflow.sharedState(),
             workflow.agentTurnState() == null ? AgentTurnState.empty() : workflow.agentTurnState()

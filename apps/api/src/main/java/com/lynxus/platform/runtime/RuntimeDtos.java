@@ -149,6 +149,7 @@ public final class RuntimeDtos {
         List<ToolInvocationSnapshot> toolCalls,
         List<ModelHitSnapshot> modelHits,
         List<ResumeInterventionDto> resumeInterventions,
+        List<String> emittedMessageKeys,
         List<String> loadedSkillResourceVersionIds,
         SharedSessionState sharedState,
         AgentTurnState agentTurnState
@@ -189,6 +190,7 @@ public final class RuntimeDtos {
 
     public record ConversationMessageDto(
         String id,
+        String messageKey,
         String sessionId,
         String role,
         String senderType,

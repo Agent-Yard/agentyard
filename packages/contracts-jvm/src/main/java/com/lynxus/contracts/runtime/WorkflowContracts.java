@@ -391,6 +391,49 @@ public final class WorkflowContracts {
         }
     }
 
+    public record TextMessagePayload(
+        String text
+    ) {
+    }
+
+    public record ExternalInteractionMessageSpec(
+        ExternalInteractionType interactionType,
+        String title,
+        String instruction,
+        String provider,
+        String providerReference,
+        String launchUrl,
+        String returnPath,
+        Instant expiresAt,
+        String primaryActionLabel,
+        List<ConversationAction> secondaryActions,
+        Map<String, Object> displayHints
+    ) {
+        public ExternalInteractionMessageSpec {
+            secondaryActions = secondaryActions == null ? List.of() : List.copyOf(secondaryActions);
+            displayHints = immutableObjectMap(displayHints);
+        }
+    }
+
+    public record ExternalInteractionMessageProjection(
+        String interactionTaskId,
+        ExternalInteractionStatus status,
+        ConversationAction primaryAction,
+        List<ConversationAction> secondaryActions,
+        Map<String, Object> displayHints
+    ) {
+        public ExternalInteractionMessageProjection {
+            secondaryActions = secondaryActions == null ? List.of() : List.copyOf(secondaryActions);
+            displayHints = immutableObjectMap(displayHints);
+        }
+    }
+
+    public record ExternalInteractionMessagePayload(
+        ExternalInteractionMessageSpec spec,
+        ExternalInteractionMessageProjection projection
+    ) {
+    }
+
     public record SharedSessionState(
         Map<String, Object> facts,
         Map<String, Object> artifacts,
@@ -711,6 +754,17 @@ public final class WorkflowContracts {
     ) {
     }
 
+    public record WorkflowOutputMessage(
+        String messageKey,
+        ConversationPayloadType payloadType,
+        Map<String, Object> payload,
+        Instant createdAt
+    ) {
+        public WorkflowOutputMessage {
+            payload = immutableObjectMap(payload);
+        }
+    }
+
     public record WorkflowResult(
         String workflowInstanceId,
         WorkflowStatus status,
@@ -726,10 +780,14 @@ public final class WorkflowContracts {
         boolean escalationRequired,
         ToolOutcomeSummary latestToolOutcome,
         List<ModelHitSnapshot> modelHits,
+        List<WorkflowOutputMessage> outputMessages,
         List<String> loadedSkillResourceVersionIds,
         SharedSessionState sharedState,
         AgentTurnState agentTurnState
     ) {
+        public WorkflowResult {
+            outputMessages = outputMessages == null ? List.of() : List.copyOf(outputMessages);
+        }
     }
 
     public record KnowledgeImportRequest(

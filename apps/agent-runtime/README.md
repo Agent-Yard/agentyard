@@ -23,7 +23,7 @@ pnpm dev:agent-runtime
 
 ```bash
 uv run --package lynxus-agent-runtime uvicorn app.main:app --reload --host 0.0.0.0 --port 8090
-uv run --directory apps/agent-runtime --package lynxus-agent-runtime python -m unittest tests/test_memory_prompt.py
+uv run --directory apps/agent-runtime --package lynxus-agent-runtime pytest tests/test_memory_prompt.py
 ```
 
 `scripts/dev-agent-runtime.sh` 会直接使用 `uv run --package lynxus-agent-runtime ...`，因此需要先安装 `uv` 并在仓库根目录执行 `uv sync --all-packages`。

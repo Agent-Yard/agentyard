@@ -57,6 +57,7 @@ class AssistantRunActivitiesImplTest {
                     )
                 ),
                 List.of(),
+                List.of(),
                 List.of("resource-version-skill-handoff-v1"),
                 WorkflowContracts.SharedSessionState.empty(),
                 WorkflowContracts.AgentTurnState.empty()
@@ -155,6 +156,7 @@ class AssistantRunActivitiesImplTest {
                 )
             ),
             List.of(),
+            List.of(),
             List.of("resource-version-skill-handoff-v1"),
             WorkflowContracts.SharedSessionState.empty(),
             WorkflowContracts.AgentTurnState.empty()
@@ -179,6 +181,7 @@ class AssistantRunActivitiesImplTest {
             List.of(),
             false,
             null,
+            List.of(),
             List.of(),
             List.of(),
             WorkflowContracts.SharedSessionState.empty(),

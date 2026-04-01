@@ -185,6 +185,14 @@ function interactionPayload(message: ConversationMessage): ExternalInteractionMe
   return message.payloadType === 'EXTERNAL_INTERACTION' ? (message.payload as ExternalInteractionMessagePayload) : null;
 }
 
+function interactionSpec(message: ConversationMessage) {
+  return interactionPayload(message)?.spec ?? null;
+}
+
+function interactionProjection(message: ConversationMessage) {
+  return interactionPayload(message)?.projection ?? null;
+}
+
 function interactionStatusColor(status?: ExternalInteractionStatus | string | null) {
   switch (status) {
     case 'AWAITING_USER_ACTION':
@@ -205,11 +213,11 @@ function interactionStatusColor(status?: ExternalInteractionStatus | string | nu
 }
 
 function interactionPrimaryAction(message: ConversationMessage) {
-  return interactionPayload(message)?.primaryAction ?? null;
+  return interactionProjection(message)?.primaryAction ?? null;
 }
 
 function interactionSecondaryActions(message: ConversationMessage) {
-  return interactionPayload(message)?.secondaryActions ?? [];
+  return interactionProjection(message)?.secondaryActions ?? [];
 }
 
 function messageText(message: ConversationMessage) {
@@ -217,13 +225,15 @@ function messageText(message: ConversationMessage) {
   if (text) {
     return text;
   }
-  const interaction = interactionPayload(message);
-  if (!interaction) {
+  const spec = interactionSpec(message);
+  const projection = interactionProjection(message);
+  if (!spec) {
     return '';
   }
-  const title = interaction.title?.trim();
-  const description = interaction.description?.trim();
-  return [title, description].filter(Boolean).join(' · ');
+  const title = spec.title?.trim();
+  const description = spec.instruction?.trim();
+  const status = projection?.status?.trim();
+  return [title, description, status].filter(Boolean).join(' · ');
 }
 </script>
 
@@ -364,11 +374,11 @@ function messageText(message: ConversationMessage) {
                       <strong>{{ message.senderName }}</strong>
                       <template v-if="message.payloadType === 'EXTERNAL_INTERACTION'">
                         <div class="conversation-bubble__card">
-                          <p><strong>{{ interactionPayload(message)?.title }}</strong></p>
-                          <p>{{ interactionPayload(message)?.description }}</p>
+                          <p><strong>{{ interactionSpec(message)?.title }}</strong></p>
+                          <p>{{ interactionSpec(message)?.instruction }}</p>
                           <a-space direction="vertical" size="small" style="width: 100%">
-                            <a-tag :color="interactionStatusColor(interactionPayload(message)?.status)">
-                              状态: {{ interactionPayload(message)?.status }}
+                            <a-tag :color="interactionStatusColor(interactionProjection(message)?.status)">
+                              状态: {{ interactionProjection(message)?.status }}
                             </a-tag>
                             <a-space v-if="interactionPrimaryAction(message) || interactionSecondaryActions(message).length">
                               <a-button

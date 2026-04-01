@@ -5,6 +5,7 @@ import logging
 import os
 import secrets
 import time
+from contextlib import asynccontextmanager
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, TypedDict
@@ -214,6 +215,36 @@ class SessionMessageSnapshot(BaseModel):
         if isinstance(value, datetime):
             return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
         raise TypeError("createdAt must be a string, timestamp, or datetime")
+
+
+class ConversationAction(BaseModel):
+    label: str
+    actionType: str
+    url: Optional[str] = None
+    target: Optional[str] = None
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+    disabled: bool = False
+
+
+class WorkflowOutputMessage(BaseModel):
+    messageKey: str
+    payloadType: str
+    payload: Dict[str, Any] = Field(default_factory=dict)
+    createdAt: str
+
+    @field_validator("payload", mode="before")
+    @classmethod
+    def normalize_payload(cls, value: Any) -> Dict[str, Any]:
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            raise TypeError("payload must be an object")
+        return value
+
+    @field_validator("createdAt", mode="before")
+    @classmethod
+    def normalize_created_at(cls, value: Any) -> str:
+        return SessionMessageSnapshot.normalize_created_at(value)
 
 
 class SharedSessionState(BaseModel):
@@ -497,6 +528,7 @@ class WorkflowResult(BaseModel):
     escalationRequired: bool
     latestToolOutcome: Optional[ToolOutcomeSummary] = None
     modelHits: List[ModelHitSnapshot] = Field(default_factory=list)
+    outputMessages: List[WorkflowOutputMessage] = Field(default_factory=list)
     loadedSkillResourceVersionIds: List[str] = Field(default_factory=list)
     sharedState: SharedSessionState = Field(default_factory=SharedSessionState)
     agentTurnState: AgentTurnState = Field(default_factory=AgentTurnState)
@@ -519,6 +551,7 @@ class AgentState(TypedDict):
     tool_history: List[Dict[str, Any]]
     tool_calls: List[Dict[str, Any]]
     model_hits: List[Dict[str, Any]]
+    output_messages: List[Dict[str, Any]]
     node_snapshots: List[Dict[str, Any]]
     resume_task: Optional[Dict[str, Any]]
     checkpoint: Optional[Dict[str, Any]]
@@ -540,7 +573,6 @@ def configure_runtime_logger() -> logging.Logger:
     )
 
 
-app = FastAPI(title="lynxus-agent-runtime", version="1.0.0")
 logger = configure_runtime_logger()
 LLM_REQUEST_TIMEOUT_SECONDS = 30
 AGENT_MAX_TURNS = 6
@@ -558,6 +590,15 @@ RESUME_SOURCE_TIMEOUT_POLICY = "TIMEOUT_POLICY"
 RESUME_ACTION_CONTINUE = "CONTINUE"
 RESUME_ACTION_TERMINATE = "TERMINATE"
 DEFAULT_RESUME_ACTIONS = [RESUME_ACTION_CONTINUE, RESUME_ACTION_TERMINATE]
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    internal_auth_token()
+    yield
+
+
+app = FastAPI(title="lynxus-agent-runtime", version="1.0.0", lifespan=lifespan)
 SESSION_STATE_TARGET_FACTS = "FACTS"
 SESSION_STATE_TARGET_ARTIFACTS = "ARTIFACTS"
 SESSION_STATE_TARGET_AGENT_SCOPE = "AGENT_SCOPE"
@@ -602,11 +643,6 @@ def require_internal_bearer(authorization: str | None = Header(default=None)) ->
         raise HTTPException(status_code=401, detail="invalid internal authentication token")
 
 
-@app.on_event("startup")
-async def validate_internal_auth_configuration() -> None:
-    internal_auth_token()
-
-
 class AgentTurnError(Exception):
     def __init__(self, code: str, message: str):
         super().__init__(message)
@@ -636,6 +672,45 @@ def now_iso() -> str:
 
 def next_id(prefix: str) -> str:
     return f"{prefix}-{abs(hash((prefix, time.time_ns()))) % 1_000_000:06d}"
+
+
+def append_output_message(
+    state: AgentState,
+    *,
+    message_key: str,
+    payload_type: str,
+    payload: Dict[str, Any],
+    created_at: Optional[str] = None,
+) -> None:
+    normalized = WorkflowOutputMessage(
+        messageKey=message_key,
+        payloadType=payload_type,
+        payload=payload,
+        createdAt=created_at or now_iso(),
+    ).model_dump(mode="json")
+    existing_index = next(
+        (index for index, item in enumerate(state["output_messages"]) if item.get("messageKey") == message_key),
+        None,
+    )
+    if existing_index is None:
+        state["output_messages"].append(normalized)
+        return
+    existing = WorkflowOutputMessage.model_validate(state["output_messages"][existing_index]).model_dump(mode="json")
+    if existing["payloadType"] != normalized["payloadType"] or existing["payload"] != normalized["payload"]:
+        raise HTTPException(status_code=500, detail=f"output message changed for key {message_key}")
+    state["output_messages"][existing_index] = existing
+
+
+def sync_final_text_output(state: AgentState) -> None:
+    final_reply = (state.get("final_reply") or "").strip()
+    if not final_reply:
+        return
+    append_output_message(
+        state,
+        message_key="assistant-final-reply",
+        payload_type="TEXT",
+        payload={"text": final_reply},
+    )
 
 
 def build_failure_snapshot(
@@ -1999,6 +2074,7 @@ def export_state(state: AgentState) -> Dict[str, Any]:
         "tool_history": state["tool_history"],
         "tool_calls": state["tool_calls"],
         "model_hits": state["model_hits"],
+        "output_messages": state["output_messages"],
         "node_snapshots": state["node_snapshots"],
         "resume_task": state["resume_task"],
         "latest_tool_outcome": state["latest_tool_outcome"],
@@ -2029,6 +2105,7 @@ def restore_state(data: Dict[str, Any], resume_request: WorkflowResumeRequest) -
         "tool_history": data.get("tool_history", []),
         "tool_calls": data.get("tool_calls", []),
         "model_hits": data.get("model_hits", []),
+        "output_messages": data.get("output_messages", []),
         "node_snapshots": data.get("node_snapshots", []),
         "resume_task": None,
         "checkpoint": None,
@@ -2740,6 +2817,8 @@ def compile_graph(graph_snapshot: GraphSnapshot, entry_node_key: str):
 
 def workflow_result_from_state(state: AgentState) -> WorkflowResult:
     status = state.get("workflow_status") or ("WAITING_RESUME" if state["resume_task"] else "COMPLETED")
+    if status in {"COMPLETED", "CANCELLED"}:
+        sync_final_text_output(state)
     return WorkflowResult(
         workflowInstanceId=state["workflow_instance_id"],
         status=status,
@@ -2755,6 +2834,7 @@ def workflow_result_from_state(state: AgentState) -> WorkflowResult:
         escalationRequired=state["escalation_required"],
         latestToolOutcome=ToolOutcomeSummary(**state["latest_tool_outcome"]) if state["latest_tool_outcome"] else None,
         modelHits=[ModelHitSnapshot(**hit) for hit in state["model_hits"]],
+        outputMessages=[WorkflowOutputMessage(**message) for message in state["output_messages"]],
         loadedSkillResourceVersionIds=loaded_skill_version_ids(state["session_context"]),
         sharedState=SharedSessionState.model_validate(shared_state_from_session_context(state["session_context"])),
         agentTurnState=AgentTurnState.model_validate(state["agent_turn_state"]),
@@ -2789,6 +2869,7 @@ async def start_agent_run(request: WorkflowStartRequest, _: None = Depends(requi
         "tool_history": [],
         "tool_calls": [],
         "model_hits": [],
+        "output_messages": [],
         "node_snapshots": [],
         "resume_task": None,
         "checkpoint": None,

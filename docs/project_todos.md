@@ -137,7 +137,7 @@
 
 ### 2.5 External Interaction 一等能力
 
-现状：已完成第一步通用框架。共享契约、OpenAPI、API Runtime DTO、`external_interaction_task / event` 持久化、interaction card 渲染、前端回跳 ack、后端 callback ingest 与基于 `ResumeAction` 的立即恢复链路均已落地。当前协议约束为：前端回跳不是可信结果信源；`RETURNED` 或 `PROCESSING` 的首次有效事件都会立即恢复 workflow；是否在恢复后调用工具确认真实结果，属于 assistant / workflow 配置逻辑，不由系统层硬编码。第二步的 provider adapter、签名校验和主动查单补偿仍未实现。 
+现状：已完成第一步通用框架，并进一步收敛为 runtime 统一消息出口。共享契约、OpenAPI、API Runtime DTO、`external_interaction_task / event` 持久化、interaction card 渲染、前端回跳 ack、后端 callback ingest 与基于 `ResumeAction` 的立即恢复链路均已落地。当前协议约束为：前端回跳不是可信结果信源；`RETURNED` 或 `PROCESSING` 的首次有效事件都会立即恢复 workflow；是否在恢复后调用工具确认真实结果，属于 assistant / workflow 配置逻辑，不由系统层硬编码。第二步的 provider adapter、签名校验和主动查单补偿仍未实现。 
 
 目标（分两步）：
 
@@ -149,11 +149,16 @@
 4. [x] Workflow 使用泛化后的 `ResumeAction` 处理 external interaction 恢复；恢复载荷统一放入 `ResumeAction.attributes`
 5. [x] 前端支持 interaction 卡片渲染、回跳参数解析、状态轮询
 6. [x] 持久化：`external_interaction_task` + `external_interaction_event` 表
+7. [x] `WorkflowResult` 收敛为“流程状态 + 累计 outputMessages”，assistant 文本输出与 `EXTERNAL_INTERACTION` 共用统一出站协议
+8. [x] `conversation_message` 增加 `message_key`，workflow 投影改为按 `(workflow_instance_id, messageKey)` 幂等落消息
+9. [x] interaction task 创建闭环改为：agent-runtime 发出 `EXTERNAL_INTERACTION` output message，控制面 API 在消费 workflow 结果时内部创建 task 和卡片投影
 
 当前实现说明：
 
 - 已提供 `GET /api/runtime/interactions/{taskId}`、`POST /api/runtime/interactions/{taskId}/return`、`POST /api/runtime/interactions/callbacks/{provider}`
 - interaction 创建由控制面 API 内部负责，不对外暴露单独的公共创建入口
+- runtime 出站统一采用 `WorkflowResult.outputMessages`；当前先落地 `TEXT` 与 `EXTERNAL_INTERACTION`
+- `outputMessages` 采用 workflow 级累计 append-only 语义，`messageKey` 在单 workflow 内唯一且不可变
 - `ExternalInteractionTask` 是唯一真相源；卡片消息只是 task 的展示投影
 - 首次有效 `FRONTEND_RETURN` 会把 task 推进到 `RETURNED` 并立即触发 `EXTERNAL_SYSTEM` resume
 - 首次有效 `PROVIDER_CALLBACK` 会把 task 推进到 `PROCESSING`，如有可信结果则一并写入 `latestResult`，并立即触发 `EXTERNAL_SYSTEM` resume

@@ -15,6 +15,8 @@
 
 - `ExternalInteractionTask` 是唯一真相源
 - `ConversationMessage(payloadType = EXTERNAL_INTERACTION)` 只是 task 的展示投影
+- runtime 出站统一走 `WorkflowResult.outputMessages`
+- `EXTERNAL_INTERACTION` 只是其中一种 output message；assistant 文本输出也走同一条出口
 - 前端回跳不是可信结果信源，只表示“用户已经返回”
 - 首次有效 `FRONTEND_RETURN` 会把 task 推进到 `RETURNED` 并立即恢复 workflow
 - 首次有效 `PROVIDER_CALLBACK` 会把 task 推进到 `PROCESSING`，如带可信结果则写入 `latestResult`，并立即恢复 workflow
@@ -37,14 +39,18 @@
 
 消息卡片 payload：
 
-- `interactionTaskId`
-- `interactionType`
-- `title`
-- `description`
-- `status`
-- `primaryAction`
-- `secondaryActions`
-- `displayHints`
+- `spec`
+  - `interactionType / title / instruction / provider / providerReference / launchUrl / returnPath / expiresAt`
+  - `primaryActionLabel / secondaryActions / displayHints`
+- `projection`
+  - `interactionTaskId / status / primaryAction / secondaryActions / displayHints`
+
+统一 output message 结构：
+
+- `messageKey`
+- `payloadType`
+- `payload`
+- `createdAt`
 
 ## 3. API 一览
 
@@ -60,42 +66,41 @@
 - 当前设计中，interaction 应由控制面 API 内部在运行态编排过程中创建
 - worker 不负责直接写控制面投影或持久化 interaction task
 
-### 3.1 创建 interaction task
+### 3.1 runtime 如何创建 interaction task
 
 用途：
 
-- 在一个已经进入 `WAITING_RESUME` 的 workflow 上创建 interaction task 和消息卡片
+- agent-runtime 发出 `EXTERNAL_INTERACTION` output message 后，由控制面 API 在投影阶段创建 interaction task 和消息卡片
 
 入口边界：
 
 - 这是控制面 API 内部能力，不是对外开放接口
-- 推荐职责边界是：agent-runtime / worker 产出“需要外部交互”的结构化信息，API 负责真正创建 `ExternalInteractionTask`、消息投影和事件记录
+- 推荐职责边界是：agent-runtime / worker 产出结构化 `WorkflowResult.outputMessages`，API 负责真正创建 `ExternalInteractionTask`、消息投影和事件记录
 - 不推荐让 worker 直接写数据库，因为 task、message、event、checkpoint 对齐都属于控制面投影责任
 
-前置条件：
-
-- 目标 workflow 必须是当前 session 的最新 workflow
-- workflow 当前状态必须是 `WAITING_RESUME`
-- workflow 的 `resumeContext.source` 必须是 `EXTERNAL_SYSTEM`
-
-内部请求形状示例：
+agent-runtime output message 示例：
 
 ```json
 {
-  "sessionId": "session-123",
-  "workflowInstanceId": "wf-123",
-  "interactionType": "OAUTH_REDIRECT",
-  "title": "完成第三方授权",
-  "instruction": "请前往第三方页面完成授权后返回。",
-  "provider": "oauth-demo",
-  "providerReference": "oauth-order-1",
-  "launchUrl": "https://provider.example.com/oauth/start?state=abc",
-  "returnPath": "/console/runtime",
-  "expiresAt": null,
-  "primaryActionLabel": "去授权",
-  "secondaryActions": [],
-  "displayHints": {
-    "intent": "oauth"
+  "messageKey": "external-interaction-card",
+  "payloadType": "EXTERNAL_INTERACTION",
+  "createdAt": "2026-04-01T12:00:00Z",
+  "payload": {
+    "spec": {
+      "interactionType": "OAUTH_REDIRECT",
+      "title": "完成第三方授权",
+      "instruction": "请前往第三方页面完成授权后返回。",
+      "provider": "oauth-demo",
+      "providerReference": "oauth-order-1",
+      "launchUrl": "https://provider.example.com/oauth/start?state=abc",
+      "returnPath": "/console/runtime",
+      "expiresAt": null,
+      "primaryActionLabel": "去授权",
+      "secondaryActions": [],
+      "displayHints": {
+        "intent": "oauth"
+      }
+    }
   }
 }
 ```
@@ -104,8 +109,14 @@
 
 - 写入 `external_interaction_task`
 - 写入 `external_interaction_event(type=CREATED)`
-- 向会话追加一条 `EXTERNAL_INTERACTION` assistant 消息
+- 向会话追加一条带 `messageKey` 的 `EXTERNAL_INTERACTION` assistant 消息
 - 把 workflow checkpoint 的 `resumeContext.interactionTaskId / interactionType` 对齐到该 task
+
+约束：
+
+- `WorkflowResult.outputMessages` 是 workflow 级累计有序列表，不是单轮 delta
+- `messageKey` 在单 workflow 内唯一且不可变
+- API 依据 `(workflow_instance_id, messageKey)` 幂等投影消息
 
 ### 3.2 查询 interaction task
 

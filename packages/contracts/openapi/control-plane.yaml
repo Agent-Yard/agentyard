@@ -2262,6 +2262,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ResumeIntervention'
+        emittedMessageKeys:
+          type: array
+          items:
+            type: string
         loadedSkillResourceVersionIds:
           type: array
           items:
@@ -2313,16 +2317,45 @@ components:
       properties:
         text:
           type: string
-    ExternalInteractionMessagePayload:
+    ExternalInteractionMessageSpec:
       type: object
       properties:
-        interactionTaskId:
-          type: string
         interactionType:
           $ref: '#/components/schemas/ExternalInteractionType'
         title:
           type: string
-        description:
+        instruction:
+          type: string
+        provider:
+          type: string
+          nullable: true
+        providerReference:
+          type: string
+          nullable: true
+        launchUrl:
+          type: string
+          nullable: true
+        returnPath:
+          type: string
+          nullable: true
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        primaryActionLabel:
+          type: string
+          nullable: true
+        secondaryActions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationAction'
+        displayHints:
+          type: object
+          additionalProperties: true
+    ExternalInteractionMessageProjection:
+      type: object
+      properties:
+        interactionTaskId:
           type: string
         status:
           $ref: '#/components/schemas/ExternalInteractionStatus'
@@ -2337,6 +2370,27 @@ components:
         displayHints:
           type: object
           additionalProperties: true
+    ExternalInteractionMessagePayload:
+      type: object
+      properties:
+        spec:
+          $ref: '#/components/schemas/ExternalInteractionMessageSpec'
+        projection:
+          allOf:
+            - $ref: '#/components/schemas/ExternalInteractionMessageProjection'
+          nullable: true
+    WorkflowOutputMessage:
+      type: object
+      properties:
+        messageKey:
+          type: string
+        payloadType:
+          $ref: '#/components/schemas/ConversationPayloadType'
+        payload:
+          $ref: '#/components/schemas/ConversationPayload'
+        createdAt:
+          type: string
+          format: date-time
     ConversationPayload:
       oneOf:
         - $ref: '#/components/schemas/TextMessagePayload'
@@ -2506,6 +2560,9 @@ components:
       properties:
         id:
           type: string
+        messageKey:
+          type: string
+          nullable: true
         sessionId:
           type: string
         role:

@@ -154,15 +154,31 @@ export interface TextMessagePayload {
   text: string;
 }
 
-export interface ExternalInteractionMessagePayload {
-  interactionTaskId: string;
+export interface ExternalInteractionMessageSpec {
   interactionType: ExternalInteractionType;
   title: string;
-  description: string;
+  instruction: string;
+  provider: string | null;
+  providerReference: string | null;
+  launchUrl: string | null;
+  returnPath: string | null;
+  expiresAt: string | null;
+  primaryActionLabel: string | null;
+  secondaryActions: ConversationAction[];
+  displayHints: Record<string, unknown>;
+}
+
+export interface ExternalInteractionMessageProjection {
+  interactionTaskId: string;
   status: ExternalInteractionStatus;
   primaryAction: ConversationAction | null;
   secondaryActions: ConversationAction[];
   displayHints: Record<string, unknown>;
+}
+
+export interface ExternalInteractionMessagePayload {
+  spec: ExternalInteractionMessageSpec;
+  projection: ExternalInteractionMessageProjection | null;
 }
 
 export type ConversationPayload = TextMessagePayload | ExternalInteractionMessagePayload;
@@ -227,6 +243,13 @@ export interface ExternalInteractionCallbackRequest {
   dedupeKey: string | null;
   payload: Record<string, unknown>;
   result: ExternalInteractionResult | null;
+}
+
+export interface WorkflowOutputMessage {
+  messageKey: string;
+  payloadType: ConversationPayloadType;
+  payload: ConversationPayload;
+  createdAt: string;
 }
 
 export interface SharedSessionState {
@@ -575,12 +598,14 @@ export interface WorkflowInstance {
   toolCalls: ToolInvocationSnapshot[];
   modelHits: ModelHitSnapshot[];
   resumeInterventions: ResumeIntervention[];
+  emittedMessageKeys: string[];
   loadedSkillResourceVersionIds: string[];
   sharedState: SharedSessionState;
   agentTurnState: AgentTurnState | null;
 }
 
 export interface ConversationMessage {
+  messageKey: string | null;
   payloadType: ConversationPayloadType;
   payload: ConversationPayload;
   id: string;

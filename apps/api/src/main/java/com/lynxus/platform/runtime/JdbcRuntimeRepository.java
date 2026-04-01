@@ -113,7 +113,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             """
                 select id, task_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at, status, summary, final_reply,
                        current_node_key, escalation_required, checkpoint, resume_task, pause_reason, latest_failure, latest_tool_outcome,
-                       resource_anchors, nodes, tool_calls, model_hits, loaded_skill_resource_version_ids, shared_state, agent_turn_state
+                       resource_anchors, nodes, tool_calls, model_hits, emitted_message_keys, loaded_skill_resource_version_ids, shared_state, agent_turn_state
                 from workflow_instance
                 order by updated_at desc, created_at desc, id desc
                 """,
@@ -127,7 +127,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             """
                 select id, task_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at, status, summary, final_reply,
                        current_node_key, escalation_required, checkpoint, resume_task, pause_reason, latest_failure, latest_tool_outcome,
-                       resource_anchors, nodes, tool_calls, model_hits, loaded_skill_resource_version_ids, shared_state, agent_turn_state
+                       resource_anchors, nodes, tool_calls, model_hits, emitted_message_keys, loaded_skill_resource_version_ids, shared_state, agent_turn_state
                 from workflow_instance
                 where status not in ('COMPLETED', 'FAILED', 'CANCELLED')
                 order by updated_at desc, created_at desc, id desc
@@ -142,7 +142,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             """
                 select id, task_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at, status, summary, final_reply,
                        current_node_key, escalation_required, checkpoint, resume_task, pause_reason, latest_failure, latest_tool_outcome,
-                       resource_anchors, nodes, tool_calls, model_hits, loaded_skill_resource_version_ids, shared_state, agent_turn_state
+                       resource_anchors, nodes, tool_calls, model_hits, emitted_message_keys, loaded_skill_resource_version_ids, shared_state, agent_turn_state
                 from workflow_instance
                 where id = ?
                 """,
@@ -438,6 +438,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             readJson(rs.getString("nodes"), NODE_LIST),
             readJson(rs.getString("tool_calls"), TOOL_CALL_LIST),
             readJson(rs.getString("model_hits"), MODEL_HIT_LIST),
+            readJson(rs.getString("emitted_message_keys"), STRING_LIST),
             readJson(rs.getString("loaded_skill_resource_version_ids"), STRING_LIST),
             readJson(rs.getString("shared_state"), SharedSessionState.class),
             readJson(rs.getString("agent_turn_state"), AgentTurnState.class)
@@ -524,6 +525,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
                 row.toolCalls() == null ? List.of() : row.toolCalls(),
                 row.modelHits() == null ? List.of() : row.modelHits(),
                 interventionsByWorkflow.getOrDefault(row.id(), List.of()),
+                normalizeStringList(row.emittedMessageKeys()),
                 normalizeStringList(row.loadedSkillResourceVersionIds()),
                 row.sharedState() == null ? SharedSessionState.empty() : row.sharedState(),
                 row.agentTurnState() == null ? AgentTurnState.empty() : row.agentTurnState()
@@ -535,7 +537,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         Map<String, List<ConversationMessageDto>> messagesBySession = new LinkedHashMap<>();
         jdbcTemplate.query(
             """
-                select id, session_id, role, sender_type, sender_id, sender_name, payload_type, payload_json, content, created_at, task_id, workflow_instance_id
+                select id, message_key, session_id, role, sender_type, sender_id, sender_name, payload_type, payload_json, content, created_at, task_id, workflow_instance_id
                 from conversation_message
                 where session_id in (%s)
                 order by session_id, created_at asc, id asc
@@ -544,6 +546,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
                 String sessionId = rs.getString("session_id");
                 messagesBySession.computeIfAbsent(sessionId, ignored -> new ArrayList<>()).add(new ConversationMessageDto(
                     rs.getString("id"),
+                    rs.getString("message_key"),
                     sessionId,
                     rs.getString("role"),
                     rs.getString("sender_type"),
@@ -668,10 +671,10 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
                 insert into workflow_instance (
                     id, task_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at, status, summary, final_reply,
                     current_node_key, escalation_required, checkpoint, resume_task, pause_reason, latest_failure, latest_tool_outcome,
-                    resource_anchors, nodes, tool_calls, model_hits, loaded_skill_resource_version_ids, shared_state, agent_turn_state
+                    resource_anchors, nodes, tool_calls, model_hits, emitted_message_keys, loaded_skill_resource_version_ids, shared_state, agent_turn_state
                 ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb),
                           cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb),
-                          cast(? as jsonb))
+                          cast(? as jsonb), cast(? as jsonb))
                 on conflict (id) do update set
                     task_id = excluded.task_id,
                     assistant_id = excluded.assistant_id,
@@ -693,6 +696,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
                     nodes = excluded.nodes,
                     tool_calls = excluded.tool_calls,
                     model_hits = excluded.model_hits,
+                    emitted_message_keys = excluded.emitted_message_keys,
                     loaded_skill_resource_version_ids = excluded.loaded_skill_resource_version_ids,
                     shared_state = excluded.shared_state,
                     agent_turn_state = excluded.agent_turn_state
@@ -718,6 +722,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             writeJson(workflow.nodes()),
             writeJson(workflow.toolCalls()),
             writeJson(workflow.modelHits()),
+            writeJson(workflow.emittedMessageKeys()),
             writeJson(workflow.loadedSkillResourceVersionIds()),
             writeJson(workflow.sharedState()),
             writeJson(workflow.agentTurnState())
@@ -773,9 +778,10 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             jdbcTemplate.update(
                 """
                     insert into conversation_message (
-                        id, session_id, role, sender_type, sender_id, sender_name, payload_type, payload_json, content, created_at, task_id, workflow_instance_id
-                    ) values (?, ?, ?, ?, ?, ?, ?, cast(? as jsonb), ?, ?, ?, ?)
+                        id, message_key, session_id, role, sender_type, sender_id, sender_name, payload_type, payload_json, content, created_at, task_id, workflow_instance_id
+                    ) values (?, ?, ?, ?, ?, ?, ?, ?, cast(? as jsonb), ?, ?, ?, ?)
                     on conflict (id) do update set
+                        message_key = excluded.message_key,
                         session_id = excluded.session_id,
                         role = excluded.role,
                         sender_type = excluded.sender_type,
@@ -789,6 +795,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
                         workflow_instance_id = excluded.workflow_instance_id
                     """,
                 message.id(),
+                message.messageKey(),
                 message.sessionId(),
                 message.role(),
                 message.senderType(),
@@ -957,6 +964,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         List<NodeExecutionDto> nodes,
         List<ToolInvocationSnapshot> toolCalls,
         List<ModelHitSnapshot> modelHits,
+        List<String> emittedMessageKeys,
         List<String> loadedSkillResourceVersionIds,
         SharedSessionState sharedState,
         AgentTurnState agentTurnState

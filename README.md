@@ -134,8 +134,9 @@ pnpm dev:web
 如果你只想单独运行或测试 Python 服务，也统一使用 `uv`：
 
 ```bash
-uv run --directory apps/agent-runtime --package lynxus-agent-runtime python -m unittest tests/test_memory_prompt.py
-uv run --directory apps/knowledge-service --package lynxus-knowledge-service python -m unittest tests/test_knowledge_service.py
+uv run pytest
+uv run --directory apps/agent-runtime --package lynxus-agent-runtime pytest tests/test_memory_prompt.py
+uv run --directory apps/knowledge-service --package lynxus-knowledge-service pytest tests/test_knowledge_service.py
 ```
 
 ### 5. 常用环境变量
