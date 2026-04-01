@@ -137,14 +137,14 @@
 
 ### 2.5 External Interaction 一等能力
 
-现状：已有详细设计方案（`docs/todo/external_interaction_plan.md`），未实现。
+现状：已完成统一消息 payload 基座。`ConversationMessage` 对外已切到 `payloadType + payload`，运行态内部与 `SessionContext` 保留 `content` 作为 LLM 上下文和摘要文本；但 `external_interaction_task / event`、provider adapter、回跳与 webhook 链路仍未实现。 
 
 目标（分两步）：
 
 **第一步 — 通用框架：**
 
 1. 共享契约引入 `ExternalInteractionType / Status / Task / Result`
-2. `ConversationMessage` 扩展 `payloadType + payload` 结构化载荷
+2. `ConversationMessage` 切换为统一的 `payloadType + payload` 消息模型，文本消息也使用 `TEXT` payload 表达
 3. RuntimeService 新增 interaction task CRUD 和状态机
 4. Workflow 使用泛化后的 `ResumeAction` 处理 external interaction 完成
 5. 前端支持 interaction 卡片渲染、回跳参数解析、状态轮询
@@ -312,9 +312,35 @@
 
 ### C. 消息 payload 结构化（阶段二 §2.5 前置）
 
-- 当前 ConversationMessage 只有 content 文本字段
-- External interaction、rich card、code block 等都需要结构化载荷
-- 建议尽早引入 `payloadType + payload` 模式，避免在 content 中塞 JSON
+现状：
+
+- 已完成统一消息 payload 改造：对外 `ConversationMessage` / `ConversationMessageRequest` / `CreateConversationSessionRequest` 已统一采用 `payloadType + payload`
+- 运行态内部存储与 `SessionContext` 保留 `content`，用于 LLM 上下文、列表摘要和历史回放文本语义
+
+统一目标：
+
+- 持久化消息、API 返回消息、前端渲染消息统一采用 `payloadType + payload` 模型
+- 文本消息不再特殊对待，改为 `payloadType = TEXT`，通过结构化 `payload` 表达
+- `content` 不再作为对外 canonical message 字段，只作为内部持久化和运行时文本投影保留
+
+v1 类型：
+
+- `TEXT`：承载普通对话文本
+- `EXTERNAL_INTERACTION`：承载外部交互卡片及其关联 task 信息
+- `RICH_CARD / CODE_BLOCK` 等只保留为后续扩展方向，本阶段不定义具体 schema
+
+跨层影响：
+
+- `packages/contracts`、OpenAPI、API Runtime DTO、`conversation_message` 表、Worker / Agent Runtime `SessionContext`、Web 消息渲染层已同步切换到统一消息 payload
+- 数据库存储已采用 `payload_type + payload_json + content` 双层模型：payload 负责 canonical 语义，content 负责内部文本语义
+- 后续 external interaction 需要直接复用这套消息基座，而不是再引入旁路字段或把 JSON 塞回文本
+
+实施顺序：
+
+1. [x] 已完成统一消息契约与存储模型
+2. [x] 已完成前端渲染切到 payload
+3. 下一步接 `EXTERNAL_INTERACTION` 的 task / card / return 流程
+4. 最后扩展其他消息类型
 
 ### D. API 版本策略（阶段三之前确定）
 

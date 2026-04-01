@@ -3,6 +3,7 @@ package com.lynxus.platform.runtime;
 import static com.lynxus.platform.runtime.RuntimeDtos.*;
 
 import com.lynxus.contracts.runtime.WorkflowContracts.AgentTurnState;
+import com.lynxus.contracts.runtime.WorkflowContracts.ConversationPayloadType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ExecutionCheckpoint;
 import com.lynxus.contracts.runtime.WorkflowContracts.ModelHitSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.ResumeTaskSnapshot;
@@ -35,6 +36,8 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() {
     };
     private static final TypeReference<Map<String, String>> STRING_MAP = new TypeReference<>() {
+    };
+    private static final TypeReference<Map<String, Object>> OBJECT_MAP = new TypeReference<>() {
     };
     private static final TypeReference<List<NodeExecutionDto>> NODE_LIST = new TypeReference<>() {
     };
@@ -414,7 +417,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         Map<String, List<ConversationMessageDto>> messagesBySession = new LinkedHashMap<>();
         jdbcTemplate.query(
             """
-                select id, session_id, role, sender_type, sender_id, sender_name, content, created_at, task_id, workflow_instance_id
+                select id, session_id, role, sender_type, sender_id, sender_name, payload_type, payload_json, content, created_at, task_id, workflow_instance_id
                 from conversation_message
                 where session_id in (%s)
                 order by session_id, created_at asc, id asc
@@ -428,6 +431,8 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
                     rs.getString("sender_type"),
                     rs.getString("sender_id"),
                     rs.getString("sender_name"),
+                    ConversationPayloadType.valueOf(rs.getString("payload_type")),
+                    readJson(rs.getString("payload_json"), OBJECT_MAP),
                     rs.getString("content"),
                     readInstant(rs, "created_at"),
                     rs.getString("task_id"),
@@ -600,14 +605,16 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             jdbcTemplate.update(
                 """
                     insert into conversation_message (
-                        id, session_id, role, sender_type, sender_id, sender_name, content, created_at, task_id, workflow_instance_id
-                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        id, session_id, role, sender_type, sender_id, sender_name, payload_type, payload_json, content, created_at, task_id, workflow_instance_id
+                    ) values (?, ?, ?, ?, ?, ?, ?, cast(? as jsonb), ?, ?, ?, ?)
                     on conflict (id) do update set
                         session_id = excluded.session_id,
                         role = excluded.role,
                         sender_type = excluded.sender_type,
                         sender_id = excluded.sender_id,
                         sender_name = excluded.sender_name,
+                        payload_type = excluded.payload_type,
+                        payload_json = excluded.payload_json,
                         content = excluded.content,
                         created_at = excluded.created_at,
                         task_id = excluded.task_id,
@@ -619,6 +626,8 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
                 message.senderType(),
                 message.senderId(),
                 message.senderName(),
+                message.payloadType().name(),
+                writeJson(message.payload()),
                 message.content(),
                 writeTimestamp(message.createdAt()),
                 message.taskId(),

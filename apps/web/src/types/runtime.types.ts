@@ -3,9 +3,11 @@ import type {
   AgentTurnState as ContractsAgentTurnState,
   ConversationMessage as ContractsConversationMessage,
   ConversationMessageRequest as ContractsConversationMessageRequest,
+  ConversationPayloadType as ContractsConversationPayloadType,
   ConversationSession as ContractsConversationSession,
   CreateConversationSessionRequest as ContractsCreateConversationSessionRequest,
   ExecutionCheckpoint as ContractsExecutionCheckpoint,
+  ExternalInteractionMessagePayload as ContractsExternalInteractionMessagePayload,
   ResumeActionRequest as ContractsResumeActionRequest,
   ResumeIntervention as ContractsResumeIntervention,
   ResumeContextSnapshot as ContractsResumeContextSnapshot,
@@ -21,6 +23,7 @@ import type {
   SharedSessionState as ContractsSharedSessionState,
   StructuredAgentDecision as ContractsStructuredAgentDecision,
   TaskInstance as ContractsTaskInstance,
+  TextMessagePayload as ContractsTextMessagePayload,
   ToolInvocationSnapshot as ContractsToolInvocationSnapshot,
   ToolOutcomeSummary as ContractsToolOutcomeSummary,
   ToolRequest as ContractsToolRequest,
@@ -53,6 +56,9 @@ export type StructuredAgentDecision = ContractsStructuredAgentDecision;
 export type AgentTurnLog = ContractsAgentTurnLog;
 export type AgentTurnState = ContractsAgentTurnState;
 export type WorkflowInstance = ContractsWorkflowInstance;
+export type ConversationPayloadType = ContractsConversationPayloadType;
+export type TextMessagePayload = ContractsTextMessagePayload;
+export type ExternalInteractionMessagePayload = ContractsExternalInteractionMessagePayload;
 export type ConversationMessage = ContractsConversationMessage;
 export type ConversationSession = ContractsConversationSession;
 

@@ -11,6 +11,7 @@ export type ResumeSource = 'HUMAN' | 'EXTERNAL_SYSTEM' | 'TIMEOUT_POLICY';
 export type ResumeActionType = 'CONTINUE' | 'TERMINATE';
 export type ResumeInterventionStatus = 'PENDING' | 'APPLIED' | 'FAILED';
 export type DecisionType = 'FINAL' | 'TOOL_CALL' | 'SKILL_READ' | 'HUMAN_HANDOFF';
+export type ConversationPayloadType = 'TEXT' | 'EXTERNAL_INTERACTION';
 export type WorkflowFailureCategory =
   | 'TIMEOUT'
   | 'PROVIDER_FAILURE'
@@ -118,6 +119,37 @@ export interface ToolOutcomeSummary {
   operation: string;
   providerType: string;
   result: Record<string, unknown>;
+}
+
+export interface ConversationAction {
+  label: string;
+  actionType: string;
+  url: string | null;
+  target: string | null;
+  parameters: Record<string, unknown>;
+  disabled: boolean;
+}
+
+export interface TextMessagePayload {
+  text: string;
+}
+
+export interface ExternalInteractionMessagePayload {
+  interactionTaskId: string;
+  interactionType: string;
+  title: string;
+  description: string;
+  status: string;
+  primaryAction: ConversationAction | null;
+  secondaryActions: ConversationAction[];
+  displayHints: Record<string, unknown>;
+}
+
+export type ConversationPayload = TextMessagePayload | ExternalInteractionMessagePayload;
+
+export interface ConversationMessageInput {
+  payloadType: ConversationPayloadType;
+  payload: ConversationPayload;
 }
 
 export interface SharedSessionState {
@@ -472,13 +504,14 @@ export interface WorkflowInstance {
 }
 
 export interface ConversationMessage {
+  payloadType: ConversationPayloadType;
+  payload: ConversationPayload;
   id: string;
   sessionId: string;
   role: 'USER' | 'ASSISTANT' | 'SYSTEM';
   senderType: 'USER' | 'ASSISTANT' | 'SYSTEM';
   senderId: string;
   senderName: string;
-  content: string;
   createdAt: string;
   taskId: string | null;
   workflowInstanceId: string | null;
@@ -508,10 +541,9 @@ export interface CreateConversationSessionRequest {
   scenarioId: string;
   assistantId: string;
   customerId: string;
-  openingMessage: string;
+  openingMessage: ConversationMessageInput | null;
 }
 
-export interface ConversationMessageRequest {
+export interface ConversationMessageRequest extends ConversationMessageInput {
   customerId: string;
-  message: string;
 }

@@ -35,9 +35,10 @@
 
 ### 2.2 当前约束
 
-- 会话消息目前只有 `content` 文本，没有结构化动作载荷
+- 会话消息对外已统一为 `payloadType + payload`，文本消息也使用 `TEXT` payload；但 external interaction 仍缺独立业务对象和完整状态机
+- 运行态内部与 `SessionContext` 仍保留 `content` 文本投影，供 LLM 上下文和摘要使用
 - runtime 主投影已落 PostgreSQL，但 external interaction 仍缺独立任务模型与跨回跳状态机
-- web 端没有正式路由，页面切换由 `App.vue` 的 `activeKey` 管理
+- web 端已具备正式路由与运行态消息 payload 渲染分发，但 external interaction 卡片仍是预留位
 - workflow 只建模了“人工恢复”，还没有“外部结果恢复”的通用契约
 
 ### 2.3 当前代码位置
@@ -122,7 +123,7 @@ MVP 阶段优先复用轮询链路，不强依赖 SSE / WebSocket。
 
 | 字段 | 含义 |
 | -- | -- |
-| `kind` | 固定为 `EXTERNAL_INTERACTION` |
+| `payloadType` | 固定为 `EXTERNAL_INTERACTION` |
 | `interactionTaskId` | 关联 interaction task |
 | `interactionType` | 类型 |
 | `title` | 卡片标题 |
@@ -268,22 +269,20 @@ workflow 不需要为每种外部动作单独发明状态。
 
 ### 8.2 Runtime DTO 层
 
-当前 `ConversationMessageDto` 需要增加结构化载荷字段。
+当前 `ConversationMessageDto` 已采用“对外 payload、对内 payload + content”双层模型。
 
-建议从：
+当前字段：
 
 - `content`
-
-扩展为：
-
 - `content`
 - `payloadType`
 - `payload`
 
 其中：
 
-- 纯文本消息：`payloadType = null`
+- 纯文本消息：`payloadType = TEXT`
 - external interaction 卡片：`payloadType = EXTERNAL_INTERACTION`
+- `content` 不对外暴露，仅用于内部持久化、SessionContext 和 LLM 文本语义
 
 同时新增：
 
@@ -408,7 +407,7 @@ workflow 不需要为每种外部动作单独发明状态。
 
 #### `conversation_message`
 
-保存消息历史，包括 `payload_type` 和 `payload_json`。
+保存消息历史，包括 `payload_type`、`payload_json` 和内部 `content` 文本投影。
 
 #### `external_interaction_task`
 
@@ -556,7 +555,7 @@ workflow 不需要为每种外部动作单独发明状态。
 
 ### P0
 
-- 给 `ConversationMessage` 增加结构化 payload 能力
+- [x] 给 `ConversationMessage` 增加统一消息 payload 能力
 - 引入 `ExternalInteractionTask` 统一对象
 - 定义 interaction 状态机和共享契约
 - 让 workflow 能表达“等待 external interaction”

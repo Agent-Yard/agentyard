@@ -30,7 +30,19 @@ export function useRuntimeActions(
   }) {
     state.creatingSession.value = true;
     try {
-      const created = await api.createConversationSession(payload);
+      const created = await api.createConversationSession({
+        scenarioId: payload.scenarioId,
+        assistantId: payload.assistantId,
+        customerId: payload.customerId,
+        openingMessage: payload.openingMessage.trim()
+          ? {
+              payloadType: 'TEXT',
+              payload: {
+                text: payload.openingMessage.trim(),
+              },
+            }
+          : null,
+      });
       state.runtimePreferredSessionId.value = created.id;
       state.runtimeSelectedSessionId.value = created.id;
       await refresh();
@@ -55,7 +67,10 @@ export function useRuntimeActions(
     try {
       await api.sendConversationMessage(payload.sessionId, {
         customerId: payload.customerId,
-        message: payload.message,
+        payloadType: 'TEXT',
+        payload: {
+          text: payload.message,
+        },
       });
       await refresh();
       const recoveredSession = helpers.findSessionById(payload.sessionId);

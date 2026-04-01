@@ -29,6 +29,7 @@ import com.lynxus.contracts.runtime.WorkflowContracts.AgentTurnState;
 import com.lynxus.contracts.runtime.WorkflowContracts.AgentSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.AssistantPolicySnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.AssistantRunSnapshot;
+import com.lynxus.contracts.runtime.WorkflowContracts.ConversationPayloadType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ExecutionCheckpoint;
 import com.lynxus.contracts.runtime.WorkflowContracts.GraphEdgeSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.GraphNodeSnapshot;
@@ -133,10 +134,11 @@ public class RuntimeService {
             ScenarioDto scenario = catalogService.getScenario(request.scenarioId());
             AssistantDto assistant = resolveAssistant(scenario, request.assistantId());
             Instant now = Instant.now();
+            String openingContent = request.openingMessage() == null ? null : payloadContent(request.openingMessage().payloadType(), request.openingMessage().payload());
             ConversationSessionDto session = new ConversationSessionDto(
                 nextId("session"),
                 scenario.id(),
-                summarizeTitle(request.openingMessage()),
+                summarizeTitle(openingContent),
                 request.customerId(),
                 assistant.id(),
                 assistant.name(),
@@ -154,8 +156,12 @@ public class RuntimeService {
             );
             persistSession(session);
 
-            if (request.openingMessage() != null && !request.openingMessage().isBlank()) {
-                return sendMessage(session.id(), new ConversationMessageRequest(request.customerId(), request.openingMessage()));
+            if (request.openingMessage() != null && openingContent != null && !openingContent.isBlank()) {
+                return sendMessage(session.id(), new ConversationMessageRequest(
+                    request.customerId(),
+                    request.openingMessage().payloadType(),
+                    request.openingMessage().payload()
+                ));
             }
 
             return session;
@@ -168,22 +174,25 @@ public class RuntimeService {
             ensureSessionReadyForNewTurn(existing);
             ScenarioDto scenario = catalogService.getScenario(existing.scenarioId());
             AssistantDto assistant = resolveAssistant(scenario, existing.assistantId());
+            String requestContent = payloadContent(request.payloadType(), request.payload());
 
             List<ConversationMessageDto> messages = new ArrayList<>(existing.messages());
-            ConversationMessageDto userMessage = new ConversationMessageDto(
+            ConversationMessageDto userMessage = conversationMessage(
                 nextId("msg"),
                 sessionId,
                 "USER",
                 "USER",
                 "user",
                 request.customerId(),
-                request.message(),
+                request.payloadType(),
+                request.payload(),
+                requestContent,
                 Instant.now(),
                 null,
                 null
             );
             messages.add(userMessage);
-            PreparedTurn prepared = prepareTurn(sessionId, scenario.id(), assistant, request.customerId(), request.message(), existing.sharedState());
+            PreparedTurn prepared = prepareTurn(sessionId, scenario.id(), assistant, request.customerId(), requestContent, existing.sharedState());
             messages.add(placeholderAssistantMessage(sessionId, assistant, prepared.task(), prepared.workflow()));
             ConversationSessionDto startedSession = new ConversationSessionDto(
                 existing.id(),
@@ -211,12 +220,12 @@ public class RuntimeService {
                     prepared.task().id(),
                     prepared.workflow().id(),
                     scenario.id(),
-                    request.message(),
+                    requestContent,
                     request.customerId(),
                     buildSessionContext(
                         sessionId,
                         request.customerId(),
-                        request.message(),
+                        toSessionMessageSnapshot(userMessage),
                         messages,
                         existing.loadedSkillResourceVersionIds(),
                         existing.sharedState()
@@ -336,7 +345,21 @@ public class RuntimeService {
                 scenarioId,
                 message,
                 customerId,
-                buildSessionContext(null, customerId, message, List.of(), List.of(), SharedSessionState.empty()),
+                buildSessionContext(
+                    null,
+                    customerId,
+                    new SessionMessageSnapshot(
+                        "USER",
+                        customerId,
+                        ConversationPayloadType.TEXT,
+                        textPayload(message),
+                        message,
+                        Instant.now()
+                    ),
+                    List.of(),
+                    List.of(),
+                    SharedSessionState.empty()
+                ),
                 prepared.assistantSnapshot(),
                 PlatformLogContext.capture(null, prepared.workflow().id(), customerId)
             ));
@@ -516,13 +539,15 @@ public class RuntimeService {
         if (latestWorkflowMessageIndex >= 0) {
             ConversationMessageDto original = messages.get(latestWorkflowMessageIndex);
             String content = firstNonBlank(updated.finalReply(), updated.summary());
-            messages.set(latestWorkflowMessageIndex, new ConversationMessageDto(
+            messages.set(latestWorkflowMessageIndex, conversationMessage(
                 original.id(),
                 original.sessionId(),
                 original.role(),
                 original.senderType(),
                 original.senderId(),
                 original.senderName(),
+                ConversationPayloadType.TEXT,
+                textPayload(content),
                 content,
                 original.createdAt(),
                 original.taskId(),
@@ -908,7 +933,7 @@ public class RuntimeService {
     private SessionContext buildSessionContext(
         String sessionId,
         String customerId,
-        String latestMessage,
+        SessionMessageSnapshot latestMessage,
         List<ConversationMessageDto> currentMessages,
         List<String> loadedSkillResourceVersionIds,
         SharedSessionState sharedState
@@ -918,7 +943,7 @@ public class RuntimeService {
             customerId,
             latestMessage,
             currentMessages.stream()
-                .map(message -> new SessionMessageSnapshot(message.role(), message.senderName(), message.content(), message.createdAt()))
+                .map(RuntimeService::toSessionMessageSnapshot)
                 .toList(),
             loadedSkillResourceVersionIds == null ? List.of() : List.copyOf(loadedSkillResourceVersionIds),
             sharedStateOrEmpty(sharedState)
@@ -994,13 +1019,15 @@ public class RuntimeService {
         String workflowId,
         String content
     ) {
-        return new ConversationMessageDto(
+        return conversationMessage(
             nextId("msg"),
             sessionId,
             "ASSISTANT",
             "ASSISTANT",
             assistantId,
             assistantName,
+            ConversationPayloadType.TEXT,
+            textPayload(content),
             content,
             Instant.now(),
             taskId,
@@ -1008,9 +1035,88 @@ public class RuntimeService {
         );
     }
 
+    private static ConversationMessageDto conversationMessage(
+        String id,
+        String sessionId,
+        String role,
+        String senderType,
+        String senderId,
+        String senderName,
+        ConversationPayloadType payloadType,
+        Map<String, Object> payload,
+        String content,
+        Instant createdAt,
+        String taskId,
+        String workflowInstanceId
+    ) {
+        return new ConversationMessageDto(
+            id,
+            sessionId,
+            role,
+            senderType,
+            senderId,
+            senderName,
+            payloadType,
+            payload,
+            content == null ? "" : content,
+            createdAt,
+            taskId,
+            workflowInstanceId
+        );
+    }
+
+    private static SessionMessageSnapshot toSessionMessageSnapshot(ConversationMessageDto message) {
+        return new SessionMessageSnapshot(
+            message.role(),
+            message.senderName(),
+            message.payloadType(),
+            message.payload(),
+            message.content(),
+            message.createdAt()
+        );
+    }
+
+    private static Map<String, Object> textPayload(String text) {
+        return Map.of("text", text == null ? "" : text);
+    }
+
+    private static String payloadContent(ConversationPayloadType payloadType, Map<String, Object> payload) {
+        if (payloadType == null) {
+            return "";
+        }
+        return switch (payloadType) {
+            case TEXT -> stringValue(payload, "text").trim();
+            case EXTERNAL_INTERACTION -> summarizeExternalInteractionPayload(payload);
+        };
+    }
+
+    private static String summarizeExternalInteractionPayload(Map<String, Object> payload) {
+        if (payload == null || payload.isEmpty()) {
+            return "";
+        }
+        String title = stringValue(payload, "title").trim();
+        String description = stringValue(payload, "description").trim();
+        String status = stringValue(payload, "status").trim();
+        String base = firstNonBlank(title, description);
+        if (base == null) {
+            return status;
+        }
+        return status == null || status.isBlank() ? base : base + " [" + status + "]";
+    }
+
+    private static String stringValue(Map<String, Object> payload, String key) {
+        if (payload == null || !payload.containsKey(key) || payload.get(key) == null) {
+            return "";
+        }
+        return String.valueOf(payload.get(key));
+    }
+
     private static int findLatestWorkflowMessageIndex(List<ConversationMessageDto> messages, String workflowId) {
         for (int index = messages.size() - 1; index >= 0; index--) {
-            if (Objects.equals(messages.get(index).workflowInstanceId(), workflowId)) {
+            ConversationMessageDto message = messages.get(index);
+            if (Objects.equals(message.workflowInstanceId(), workflowId)
+                && message.payloadType() == ConversationPayloadType.TEXT
+                && "ASSISTANT".equals(message.senderType())) {
                 return index;
             }
         }

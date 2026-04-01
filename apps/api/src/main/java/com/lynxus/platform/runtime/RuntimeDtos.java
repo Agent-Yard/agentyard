@@ -2,6 +2,7 @@ package com.lynxus.platform.runtime;
 
 import com.lynxus.contracts.runtime.WorkflowContracts.ExecutionCheckpoint;
 import com.lynxus.contracts.runtime.WorkflowContracts.AgentTurnState;
+import com.lynxus.contracts.runtime.WorkflowContracts.ConversationPayloadType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ResumeTaskSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.ModelHitSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.NodeStatus;
@@ -13,11 +14,21 @@ import com.lynxus.contracts.runtime.WorkflowContracts.ToolOutcomeSummary;
 import com.lynxus.contracts.runtime.WorkflowContracts.ToolInvocationSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.WorkflowStatus;
 import java.time.Instant;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 public final class RuntimeDtos {
     private RuntimeDtos() {
+    }
+
+    private static Map<String, Object> immutableObjectMap(Map<String, Object> source) {
+        if (source == null || source.isEmpty()) {
+            return Map.of();
+        }
+        return Collections.unmodifiableMap(new LinkedHashMap<>(source));
     }
 
     public record TaskLaunchRequest(String scenarioId, String assistantId, String question, String customerId) {
@@ -26,10 +37,26 @@ public final class RuntimeDtos {
     public record ResumeActionRequest(String type, String comment, String userId, Map<String, String> attributes) {
     }
 
-    public record CreateConversationSessionRequest(String scenarioId, String assistantId, String customerId, String openingMessage) {
+    public record ConversationMessageInputDto(
+        ConversationPayloadType payloadType,
+        Map<String, Object> payload
+    ) {
+        public ConversationMessageInputDto {
+            payload = immutableObjectMap(payload);
+        }
     }
 
-    public record ConversationMessageRequest(String customerId, String message) {
+    public record CreateConversationSessionRequest(String scenarioId, String assistantId, String customerId, ConversationMessageInputDto openingMessage) {
+    }
+
+    public record ConversationMessageRequest(
+        String customerId,
+        ConversationPayloadType payloadType,
+        Map<String, Object> payload
+    ) {
+        public ConversationMessageRequest {
+            payload = immutableObjectMap(payload);
+        }
     }
 
     public record TaskInstanceDto(
@@ -114,11 +141,16 @@ public final class RuntimeDtos {
         String senderType,
         String senderId,
         String senderName,
-        String content,
+        ConversationPayloadType payloadType,
+        Map<String, Object> payload,
+        @JsonIgnore String content,
         Instant createdAt,
         String taskId,
         String workflowInstanceId
     ) {
+        public ConversationMessageDto {
+            payload = immutableObjectMap(payload);
+        }
     }
 
     public record ConversationSessionDto(

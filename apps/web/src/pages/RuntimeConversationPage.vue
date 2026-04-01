@@ -1,6 +1,15 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
-import type { ConversationSession, PauseSource, Scenario, TaskInstance, WorkflowInstance } from '../types';
+import type {
+  ConversationMessage,
+  ConversationSession,
+  ExternalInteractionMessagePayload,
+  PauseSource,
+  Scenario,
+  TaskInstance,
+  TextMessagePayload,
+  WorkflowInstance,
+} from '../types';
 
 const props = defineProps<{
   scenarios: Scenario[];
@@ -166,6 +175,28 @@ function hasSharedState(value?: { facts: Record<string, unknown>; artifacts: Rec
 function formatSharedState(value?: { facts: Record<string, unknown>; artifacts: Record<string, unknown>; agentScopes: Record<string, Record<string, unknown>> } | null) {
   return JSON.stringify(value ?? { facts: {}, artifacts: {}, agentScopes: {} }, null, 2);
 }
+
+function textPayload(message: ConversationMessage): TextMessagePayload | null {
+  return message.payloadType === 'TEXT' ? (message.payload as TextMessagePayload) : null;
+}
+
+function interactionPayload(message: ConversationMessage): ExternalInteractionMessagePayload | null {
+  return message.payloadType === 'EXTERNAL_INTERACTION' ? (message.payload as ExternalInteractionMessagePayload) : null;
+}
+
+function messageText(message: ConversationMessage) {
+  const text = textPayload(message)?.text?.trim();
+  if (text) {
+    return text;
+  }
+  const interaction = interactionPayload(message);
+  if (!interaction) {
+    return '';
+  }
+  const title = interaction.title?.trim();
+  const description = interaction.description?.trim();
+  return [title, description].filter(Boolean).join(' · ');
+}
 </script>
 
 <template>
@@ -303,7 +334,16 @@ function formatSharedState(value?: { facts: Record<string, unknown>; artifacts: 
                       }"
                     >
                       <strong>{{ message.senderName }}</strong>
-                      <p>{{ message.content }}</p>
+                      <template v-if="message.payloadType === 'EXTERNAL_INTERACTION'">
+                        <div class="conversation-bubble__card">
+                          <p><strong>{{ interactionPayload(message)?.title }}</strong></p>
+                          <p>{{ interactionPayload(message)?.description }}</p>
+                          <span class="conversation-bubble__meta">
+                            状态: {{ interactionPayload(message)?.status }}
+                          </span>
+                        </div>
+                      </template>
+                      <p v-else>{{ messageText(message) }}</p>
                       <span v-if="message.workflowInstanceId" class="conversation-bubble__meta">
                         workflow: {{ message.workflowInstanceId }}
                       </span>

@@ -42,7 +42,10 @@ describe('api client', () => {
     await expect(
       api.sendConversationMessage('session-1', {
         customerId: 'customer-1',
-        message: '第二条消息',
+        payloadType: 'TEXT',
+        payload: {
+          text: '第二条消息',
+        },
       }),
     ).rejects.toThrow('session has an active workflow');
     expect(fetchMock).toHaveBeenCalledOnce();

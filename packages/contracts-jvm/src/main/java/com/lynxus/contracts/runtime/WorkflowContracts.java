@@ -128,6 +128,11 @@ public final class WorkflowContracts {
         TERMINATE
     }
 
+    public enum ConversationPayloadType {
+        TEXT,
+        EXTERNAL_INTERACTION
+    }
+
     public record KnowledgeBindingSnapshot(
         String knowledgeBaseId,
         String knowledgeBaseName,
@@ -319,9 +324,14 @@ public final class WorkflowContracts {
     public record SessionMessageSnapshot(
         String role,
         String senderName,
+        ConversationPayloadType payloadType,
+        Map<String, Object> payload,
         String content,
         Instant createdAt
     ) {
+        public SessionMessageSnapshot {
+            payload = immutableObjectMap(payload);
+        }
     }
 
     public record SharedSessionState(
@@ -421,7 +431,7 @@ public final class WorkflowContracts {
     public record SessionContext(
         String sessionId,
         String customerId,
-        String latestMessage,
+        SessionMessageSnapshot latestMessage,
         List<SessionMessageSnapshot> history,
         List<String> loadedSkillResourceVersionIds,
         SharedSessionState sharedState

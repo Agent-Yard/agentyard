@@ -190,8 +190,19 @@ class AssistantRunSnapshot(BaseModel):
 class SessionMessageSnapshot(BaseModel):
     role: str
     senderName: str
+    payloadType: str
+    payload: Dict[str, Any] = Field(default_factory=dict)
     content: str
     createdAt: str
+
+    @field_validator("payload", mode="before")
+    @classmethod
+    def normalize_payload(cls, value: Any) -> Dict[str, Any]:
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            raise TypeError("payload must be an object")
+        return value
 
     @field_validator("createdAt", mode="before")
     @classmethod
@@ -243,7 +254,7 @@ class SharedSessionState(BaseModel):
 class SessionContext(BaseModel):
     sessionId: str
     customerId: str
-    latestMessage: str
+    latestMessage: SessionMessageSnapshot
     history: List[SessionMessageSnapshot]
     loadedSkillResourceVersionIds: List[str] = Field(default_factory=list)
     sharedState: SharedSessionState = Field(default_factory=SharedSessionState)

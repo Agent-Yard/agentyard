@@ -30,7 +30,10 @@ class RuntimeControllerTest {
                 .content("""
                     {
                       "customerId": "customer-1",
-                      "message": "第二条消息"
+                      "payloadType": "TEXT",
+                      "payload": {
+                        "text": "第二条消息"
+                      }
                     }
                     """))
             .andExpect(status().isConflict())

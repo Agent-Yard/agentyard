@@ -187,11 +187,19 @@ class AssistantRunActivitiesImplTest {
     }
 
     private WorkflowContracts.SessionContext sampleSessionContext(String latestMessage) {
+        WorkflowContracts.SessionMessageSnapshot message = new WorkflowContracts.SessionMessageSnapshot(
+            "USER",
+            "tester",
+            WorkflowContracts.ConversationPayloadType.TEXT,
+            Map.of("text", latestMessage),
+            latestMessage,
+            Instant.now()
+        );
         return new WorkflowContracts.SessionContext(
             "session-1",
             "tester",
-            latestMessage,
-            List.of(new WorkflowContracts.SessionMessageSnapshot("USER", "tester", latestMessage, Instant.now())),
+            message,
+            List.of(message),
             List.of(),
             WorkflowContracts.SharedSessionState.empty()
         );

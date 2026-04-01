@@ -12,6 +12,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
@@ -27,8 +28,22 @@ class AgentRuntimeGatewayTest {
             new WorkflowContracts.SessionContext(
                 "session-1",
                 "tester",
-                "你好",
-                List.of(new WorkflowContracts.SessionMessageSnapshot("USER", "tester", "你好", Instant.parse("2026-03-24T08:35:20Z"))),
+                new WorkflowContracts.SessionMessageSnapshot(
+                    "USER",
+                    "tester",
+                    WorkflowContracts.ConversationPayloadType.TEXT,
+                    Map.of("text", "你好"),
+                    "你好",
+                    Instant.parse("2026-03-24T08:35:20Z")
+                ),
+                List.of(new WorkflowContracts.SessionMessageSnapshot(
+                    "USER",
+                    "tester",
+                    WorkflowContracts.ConversationPayloadType.TEXT,
+                    Map.of("text", "你好"),
+                    "你好",
+                    Instant.parse("2026-03-24T08:35:20Z")
+                )),
                 List.of(),
                 WorkflowContracts.SharedSessionState.empty()
             ),
@@ -157,7 +172,14 @@ class AgentRuntimeGatewayTest {
                 new WorkflowContracts.SessionContext(
                     "session-1",
                     "tester",
-                    "你好",
+                    new WorkflowContracts.SessionMessageSnapshot(
+                        "USER",
+                        "tester",
+                        WorkflowContracts.ConversationPayloadType.TEXT,
+                        Map.of("text", "你好"),
+                        "你好",
+                        Instant.now()
+                    ),
                     List.of(),
                     List.of(),
                     WorkflowContracts.SharedSessionState.empty()

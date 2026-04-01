@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import com.lynxus.contracts.runtime.WorkflowContracts;
 import com.lynxus.contracts.runtime.WorkflowContracts.AgentTurnState;
+import com.lynxus.contracts.runtime.WorkflowContracts.ConversationPayloadType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ExecutionCheckpoint;
 import com.lynxus.contracts.runtime.WorkflowContracts.ResumeTaskSnapshot;
 import com.lynxus.contracts.runtime.WorkflowContracts.NodeStatus;
@@ -75,8 +76,8 @@ class InMemoryRuntimeRepositoryTest {
             now,
             now,
             List.of(
-                new ConversationMessageDto("msg-1", "session-1", "USER", "USER", "user", "tester", "你好", now, null, null),
-                new ConversationMessageDto("msg-2", "session-1", "ASSISTANT", "ASSISTANT", "assistant-1", "助手A", "已进入人工流程", now, "task-1", "wf-1")
+                new ConversationMessageDto("msg-1", "session-1", "USER", "USER", "user", "tester", ConversationPayloadType.TEXT, Map.of("text", "你好"), "你好", now, null, null),
+                new ConversationMessageDto("msg-2", "session-1", "ASSISTANT", "ASSISTANT", "assistant-1", "助手A", ConversationPayloadType.TEXT, Map.of("text", "已进入人工流程"), "已进入人工流程", now, "task-1", "wf-1")
             ),
             "task-1",
             "wf-1",
@@ -107,6 +108,7 @@ class InMemoryRuntimeRepositoryTest {
 
         assertEquals(2, storedSession.messages().size());
         assertEquals("已进入人工流程", storedSession.messages().getLast().content());
+        assertEquals(ConversationPayloadType.TEXT, storedSession.messages().getLast().payloadType());
         assertEquals("session-1", repository.findTaskSessionId("task-1").orElseThrow());
         assertEquals(1, storedWorkflow.resumeInterventions().size());
         assertEquals("CONTINUE", storedWorkflow.resumeInterventions().getFirst().type());

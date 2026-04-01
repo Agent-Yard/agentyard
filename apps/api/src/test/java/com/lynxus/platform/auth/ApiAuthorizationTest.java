@@ -132,7 +132,12 @@ class ApiAuthorizationTest {
                           "scenarioId": "scenario-1",
                           "assistantId": "assistant-1",
                           "customerId": "customer-1",
-                          "openingMessage": "你好"
+                          "openingMessage": {
+                            "payloadType": "TEXT",
+                            "payload": {
+                              "text": "你好"
+                            }
+                          }
                         }
                         """))
                 .andExpect(status().isOk())

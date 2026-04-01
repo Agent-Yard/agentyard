@@ -266,6 +266,14 @@ class AssistantRunWorkflowTest {
     }
 
     private WorkflowStartRequest sampleRequest(String question, String workflowId) {
+        WorkflowContracts.SessionMessageSnapshot message = new WorkflowContracts.SessionMessageSnapshot(
+            "USER",
+            "tester",
+            WorkflowContracts.ConversationPayloadType.TEXT,
+            Map.of("text", question),
+            question,
+            Instant.now()
+        );
         return new WorkflowStartRequest(
             "task-" + workflowId,
             workflowId,
@@ -275,8 +283,8 @@ class AssistantRunWorkflowTest {
             new WorkflowContracts.SessionContext(
                 "session-" + workflowId,
                 "tester",
-                question,
-                List.of(new WorkflowContracts.SessionMessageSnapshot("USER", "tester", question, Instant.now())),
+                message,
+                List.of(message),
                 List.of(),
                 WorkflowContracts.SharedSessionState.empty()
             ),

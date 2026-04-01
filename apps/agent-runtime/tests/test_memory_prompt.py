@@ -28,6 +28,7 @@ from app.main import (
     ResourceConfigurationSnapshot,
     ResourceVersionSnapshot,
     SessionContext,
+    SessionMessageSnapshot,
     SkillConfig,
     ToolConfig,
     ToolOperationConfig,
@@ -176,7 +177,7 @@ def make_agent_state(assistant: AssistantRunSnapshot, graph: GraphSnapshot, ques
         "session_context": {
             "sessionId": "session-1",
             "customerId": "u-1",
-            "latestMessage": question,
+            "latestMessage": text_message_snapshot_payload(question),
             "history": [],
             "loadedSkillResourceVersionIds": [],
             "sharedState": {"facts": {}, "artifacts": {}, "agentScopes": {}},
@@ -206,6 +207,21 @@ def make_agent_state(assistant: AssistantRunSnapshot, graph: GraphSnapshot, ques
         "workflow_status": "RUNNING",
         "model_hits": [],
     }
+
+
+def text_message_snapshot(text: str, role: str = "USER", sender_name: str = "u-1") -> SessionMessageSnapshot:
+    return SessionMessageSnapshot(
+        role=role,
+        senderName=sender_name,
+        payloadType="TEXT",
+        payload={"text": text},
+        content=text,
+        createdAt="2026-03-24T08:35:20Z",
+    )
+
+
+def text_message_snapshot_payload(text: str, role: str = "USER", sender_name: str = "u-1") -> dict:
+    return text_message_snapshot(text, role=role, sender_name=sender_name).model_dump(mode="json")
 
 
 class MemoryPromptTests(unittest.TestCase):
@@ -1585,7 +1601,7 @@ class MemoryPromptTests(unittest.TestCase):
         session_context = SessionContext(
             sessionId="session-1",
             customerId="u-1",
-            latestMessage="帮我处理退款",
+            latestMessage=text_message_snapshot("帮我处理退款"),
             history=[],
             loadedSkillResourceVersionIds=[],
         )
@@ -1690,7 +1706,7 @@ class MemoryPromptTests(unittest.TestCase):
         session_context = SessionContext(
             sessionId="session-1",
             customerId="u-1",
-            latestMessage="请审核订单",
+            latestMessage=text_message_snapshot("请审核订单"),
             history=[],
             loadedSkillResourceVersionIds=[],
         )
@@ -1750,7 +1766,7 @@ class MemoryPromptTests(unittest.TestCase):
         session_context = SessionContext(
             sessionId="session-1",
             customerId="u-1",
-            latestMessage="继续处理",
+            latestMessage=text_message_snapshot("继续处理"),
             history=[],
             loadedSkillResourceVersionIds=[],
             sharedState={"facts": {"fromResume": True}, "artifacts": {}, "agentScopes": {}},
@@ -1826,7 +1842,7 @@ class MemoryPromptTests(unittest.TestCase):
         session_context = SessionContext(
             sessionId="session-1",
             customerId="u-1",
-            latestMessage="帮我处理退款",
+            latestMessage=text_message_snapshot("帮我处理退款"),
             history=[],
             loadedSkillResourceVersionIds=[],
         )

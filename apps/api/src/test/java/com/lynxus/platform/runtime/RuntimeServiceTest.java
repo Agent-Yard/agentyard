@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.lynxus.contracts.runtime.WorkflowContracts;
 import com.lynxus.contracts.runtime.WorkflowContracts.AgentTurnLog;
 import com.lynxus.contracts.runtime.WorkflowContracts.AgentTurnState;
+import com.lynxus.contracts.runtime.WorkflowContracts.ConversationPayloadType;
 import com.lynxus.contracts.runtime.WorkflowContracts.DecisionType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ResourceType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
@@ -67,7 +68,7 @@ class RuntimeServiceTest {
         );
         RuntimeDtos.ConversationSessionDto updated = service.sendMessage(
             session.id(),
-            new RuntimeDtos.ConversationMessageRequest("customer-1", "怎么重置密码")
+            textRequest("customer-1", "怎么重置密码")
         );
 
         assertEquals(2, updated.messages().size());
@@ -85,7 +86,7 @@ class RuntimeServiceTest {
         );
         RuntimeDtos.ConversationSessionDto failed = service.sendMessage(
             session.id(),
-            new RuntimeDtos.ConversationMessageRequest("customer-1", "你好")
+            textRequest("customer-1", "你好")
         );
 
         RuntimeDtos.WorkflowInstanceDto workflow = service.getWorkflow(failed.latestWorkflowInstanceId());
@@ -234,7 +235,7 @@ class RuntimeServiceTest {
             "release-v1",
             now,
             now,
-            List.of(new RuntimeDtos.ConversationMessageDto("msg-1", "session-1", "ASSISTANT", "ASSISTANT", fixture.assistantId(), fixture.assistantName(), "已进入人工协同流程。", now, "task-1", "wf-1")),
+            List.of(textMessage("msg-1", "session-1", "ASSISTANT", "ASSISTANT", fixture.assistantId(), fixture.assistantName(), "已进入人工协同流程。", now, "task-1", "wf-1")),
             "task-1",
             "wf-1",
             null,
@@ -298,14 +299,14 @@ class RuntimeServiceTest {
         RuntimeService service = runtimeService(gateway, catalogService, repository);
 
         RuntimeDtos.ConversationSessionDto created = service.createSession(
-            new RuntimeDtos.CreateConversationSessionRequest(fixture.scenarioId(), fixture.assistantId(), "customer-1", "客户投诉，需要人工处理")
+            new RuntimeDtos.CreateConversationSessionRequest(fixture.scenarioId(), fixture.assistantId(), "customer-1", textInput("客户投诉，需要人工处理"))
         );
 
         int taskCount = service.listTasks().size();
         int workflowCount = service.listWorkflows().size();
         ConflictException error = assertThrows(
             ConflictException.class,
-            () -> service.sendMessage(created.id(), new RuntimeDtos.ConversationMessageRequest("customer-1", "第二条消息"))
+            () -> service.sendMessage(created.id(), textRequest("customer-1", "第二条消息"))
         );
 
         assertTrue(error.getMessage().contains("active workflow"));
@@ -320,14 +321,14 @@ class RuntimeServiceTest {
         RuntimeService service = runtimeService(gateway);
 
         RuntimeDtos.ConversationSessionDto created = service.createSession(
-            new RuntimeDtos.CreateConversationSessionRequest(fixture.scenarioId(), fixture.assistantId(), "customer-1", "第一条消息")
+            new RuntimeDtos.CreateConversationSessionRequest(fixture.scenarioId(), fixture.assistantId(), "customer-1", textInput("第一条消息"))
         );
         String firstWorkflowId = created.latestWorkflowInstanceId();
         gateway.currentResults.put(firstWorkflowId, completedResult(firstWorkflowId, "已完成处理。", "turn-1"));
 
         RuntimeDtos.ConversationSessionDto secondTurn = service.sendMessage(
             created.id(),
-            new RuntimeDtos.ConversationMessageRequest("customer-1", "第二条消息")
+            textRequest("customer-1", "第二条消息")
         );
 
         assertNotEquals(firstWorkflowId, secondTurn.latestWorkflowInstanceId());
@@ -340,7 +341,7 @@ class RuntimeServiceTest {
         RuntimeService service = runtimeService(gateway);
 
         RuntimeDtos.ConversationSessionDto created = service.createSession(
-            new RuntimeDtos.CreateConversationSessionRequest(fixture.scenarioId(), fixture.assistantId(), "customer-1", "第一条消息")
+            new RuntimeDtos.CreateConversationSessionRequest(fixture.scenarioId(), fixture.assistantId(), "customer-1", textInput("第一条消息"))
         );
         String firstWorkflowId = created.latestWorkflowInstanceId();
         gateway.currentResults.put(firstWorkflowId, completedResult(firstWorkflowId, "已完成处理。", "turn-1"));
@@ -354,7 +355,7 @@ class RuntimeServiceTest {
 
         service.sendMessage(
             created.id(),
-            new RuntimeDtos.ConversationMessageRequest("customer-1", "第二条消息")
+            textRequest("customer-1", "第二条消息")
         );
 
         WorkflowContracts.WorkflowStartRequest secondRequest = gateway.startRequests.getLast();
@@ -484,7 +485,7 @@ class RuntimeServiceTest {
 
         IllegalStateException error = assertThrows(
             IllegalStateException.class,
-            () -> runtimeService.sendMessage(session.id(), new RuntimeDtos.ConversationMessageRequest("customer-1", "继续处理"))
+            () -> runtimeService.sendMessage(session.id(), textRequest("customer-1", "继续处理"))
         );
 
         assertTrue(error.getMessage().contains("assistant default model must be configured before running an unpublished draft"));
@@ -812,6 +813,42 @@ class RuntimeServiceTest {
             catalogService,
             catalogService.knowledgeService(),
             repository
+        );
+    }
+
+    private static RuntimeDtos.ConversationMessageInputDto textInput(String text) {
+        return new RuntimeDtos.ConversationMessageInputDto(ConversationPayloadType.TEXT, Map.of("text", text));
+    }
+
+    private static RuntimeDtos.ConversationMessageRequest textRequest(String customerId, String text) {
+        return new RuntimeDtos.ConversationMessageRequest(customerId, ConversationPayloadType.TEXT, Map.of("text", text));
+    }
+
+    private static RuntimeDtos.ConversationMessageDto textMessage(
+        String id,
+        String sessionId,
+        String role,
+        String senderType,
+        String senderId,
+        String senderName,
+        String content,
+        Instant createdAt,
+        String taskId,
+        String workflowInstanceId
+    ) {
+        return new RuntimeDtos.ConversationMessageDto(
+            id,
+            sessionId,
+            role,
+            senderType,
+            senderId,
+            senderName,
+            ConversationPayloadType.TEXT,
+            Map.of("text", content),
+            content,
+            createdAt,
+            taskId,
+            workflowInstanceId
         );
     }
 

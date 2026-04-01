@@ -2212,13 +2212,76 @@ components:
           allOf:
             - $ref: '#/components/schemas/AgentTurnState'
           nullable: true
+    ConversationPayloadType:
+      type: string
+      enum: [TEXT, EXTERNAL_INTERACTION]
+    ConversationAction:
+      type: object
+      properties:
+        label:
+          type: string
+        actionType:
+          type: string
+        url:
+          type: string
+          nullable: true
+        target:
+          type: string
+          nullable: true
+        parameters:
+          type: object
+          additionalProperties: true
+        disabled:
+          type: boolean
+    TextMessagePayload:
+      type: object
+      properties:
+        text:
+          type: string
+    ExternalInteractionMessagePayload:
+      type: object
+      properties:
+        interactionTaskId:
+          type: string
+        interactionType:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+        primaryAction:
+          allOf:
+            - $ref: '#/components/schemas/ConversationAction'
+          nullable: true
+        secondaryActions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationAction'
+        displayHints:
+          type: object
+          additionalProperties: true
+    ConversationPayload:
+      oneOf:
+        - $ref: '#/components/schemas/TextMessagePayload'
+        - $ref: '#/components/schemas/ExternalInteractionMessagePayload'
+    ConversationMessageInput:
+      type: object
+      properties:
+        payloadType:
+          $ref: '#/components/schemas/ConversationPayloadType'
+        payload:
+          $ref: '#/components/schemas/ConversationPayload'
     ConversationMessageRequest:
       type: object
       properties:
         customerId:
           type: string
-        message:
-          type: string
+        payloadType:
+          $ref: '#/components/schemas/ConversationPayloadType'
+        payload:
+          $ref: '#/components/schemas/ConversationPayload'
     CreateConversationSessionRequest:
       type: object
       properties:
@@ -2229,7 +2292,9 @@ components:
         customerId:
           type: string
         openingMessage:
-          type: string
+          allOf:
+            - $ref: '#/components/schemas/ConversationMessageInput'
+          nullable: true
     ConversationMessage:
       type: object
       properties:
@@ -2245,8 +2310,10 @@ components:
           type: string
         senderName:
           type: string
-        content:
-          type: string
+        payloadType:
+          $ref: '#/components/schemas/ConversationPayloadType'
+        payload:
+          $ref: '#/components/schemas/ConversationPayload'
         createdAt:
           type: string
           format: date-time
