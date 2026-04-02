@@ -16,4 +16,4 @@ HOST="${LYNXUS_AGENT_RUNTIME_HOST:-127.0.0.1}"
 PORT="${LYNXUS_AGENT_RUNTIME_PORT:-8090}"
 
 cd "$ROOT_DIR/apps/agent-runtime"
-exec uv run --package lynxus-agent-runtime uvicorn app.main:app --host "$HOST" --port "$PORT" --reload
+exec uv run --package lynxus-agent-runtime uvicorn lynxus_agent_runtime.main:app --host "$HOST" --port "$PORT" --reload

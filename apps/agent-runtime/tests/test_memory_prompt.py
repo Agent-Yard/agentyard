@@ -8,7 +8,7 @@ from fastapi import HTTPException
 
 os.environ.setdefault("LYNXUS_INTERNAL_AUTH_TOKEN", "test-internal-token")
 
-from app.main import (
+from lynxus_agent_runtime.main import (
     AGENT_HUMAN_TASK_SOURCE,
     AGENT_DECISION_SKILL_READ,
     AvailableTool,
@@ -556,7 +556,7 @@ class MemoryPromptTests(unittest.TestCase):
                 captured_request["kwargs"] = kwargs
                 return FakeResponse()
 
-        with patch("app.main.httpx.AsyncClient", FakeAsyncClient):
+        with patch("lynxus_agent_runtime.main.httpx.AsyncClient", FakeAsyncClient):
             result = asyncio.run(call_http_tool(tool_resource, operation, payload))
 
         self.assertEqual({"status": "ok"}, result)
@@ -595,7 +595,7 @@ class MemoryPromptTests(unittest.TestCase):
                 captured_request["kwargs"] = kwargs
                 return FakeResponse()
 
-        with patch("app.main.httpx.AsyncClient", FakeAsyncClient):
+        with patch("lynxus_agent_runtime.main.httpx.AsyncClient", FakeAsyncClient):
             result = asyncio.run(call_http_tool(tool_resource, operation, payload))
 
         self.assertEqual({"status": "ok"}, result)
@@ -636,7 +636,7 @@ class MemoryPromptTests(unittest.TestCase):
             async def post(self, url: str, json: dict, headers: dict | None = None) -> FakeResponse:
                 return FakeResponse()
 
-        with patch("app.main.httpx.AsyncClient", FakeAsyncClient):
+        with patch("lynxus_agent_runtime.main.httpx.AsyncClient", FakeAsyncClient):
             hits = asyncio.run(retrieve_knowledge(binding, "怎么重置密码"))
 
         self.assertEqual(hits, [])
@@ -674,7 +674,7 @@ class MemoryPromptTests(unittest.TestCase):
                 assert headers == {"Authorization": "Bearer test-internal-token"}
                 return FakeResponse()
 
-        with patch("app.main.httpx.AsyncClient", FakeAsyncClient):
+        with patch("lynxus_agent_runtime.main.httpx.AsyncClient", FakeAsyncClient):
             hits = asyncio.run(retrieve_knowledge(binding, "怎么重置密码"))
 
         self.assertEqual([{"snippet": "请通过忘记密码完成重置"}], hits)
@@ -962,7 +962,7 @@ class MemoryPromptTests(unittest.TestCase):
             "runtime_context_block": "runtime",
         }
 
-        with patch("app.main.httpx.AsyncClient", FakeAsyncClient), patch.dict(os.environ, {"DUMMY_KEY": "test-key"}, clear=False):
+        with patch("lynxus_agent_runtime.main.httpx.AsyncClient", FakeAsyncClient), patch.dict(os.environ, {"DUMMY_KEY": "test-key"}, clear=False):
             content = asyncio.run(call_llm(model_resource, prompt_payload))
 
         self.assertEqual("{\"decisionType\":\"FINAL\"}", content)
@@ -1035,7 +1035,7 @@ class MemoryPromptTests(unittest.TestCase):
         state = make_agent_state(assistant, graph, question="请继续处理")
 
         with patch(
-            "app.main.call_llm",
+            "lynxus_agent_runtime.main.call_llm",
             AsyncMock(
                 return_value="""{
                   "decisionType": "FINAL",
@@ -1088,7 +1088,7 @@ class MemoryPromptTests(unittest.TestCase):
         state = make_agent_state(assistant, graph)
 
         with patch(
-            "app.main.call_llm",
+            "lynxus_agent_runtime.main.call_llm",
             AsyncMock(return_value='{"decisionType":"FINAL","outputMessages":[{"payloadType":"TEXT","payload":{"text":"处理完成"}}],"routeDecision":"default"}'),
         ):
             asyncio.run(execute_agent_node(state, graph.nodes[1]))
@@ -1141,7 +1141,7 @@ class MemoryPromptTests(unittest.TestCase):
         state = make_agent_state(assistant, graph)
 
         with patch(
-            "app.main.call_llm",
+            "lynxus_agent_runtime.main.call_llm",
             AsyncMock(return_value='{"decisionType":"FINAL","outputMessages":[{"payloadType":"TEXT","payload":{"text":"处理完成"}}],"routeDecision":"default"}'),
         ):
             asyncio.run(execute_agent_node(state, graph.nodes[1]))
@@ -1187,7 +1187,7 @@ class MemoryPromptTests(unittest.TestCase):
         self.assertEqual(state["next_node_key"], "agent-node")
 
         with patch(
-            "app.main.call_llm",
+            "lynxus_agent_runtime.main.call_llm",
             AsyncMock(
                 return_value="""{
                   "decisionType": "FINAL",
@@ -1247,7 +1247,7 @@ class MemoryPromptTests(unittest.TestCase):
 
         execute_start_node(state, graph.nodes[0])
         with patch(
-            "app.main.call_llm",
+            "lynxus_agent_runtime.main.call_llm",
             AsyncMock(
                 return_value="""{
                   "decisionType": "FINAL",
@@ -1305,7 +1305,7 @@ class MemoryPromptTests(unittest.TestCase):
         state["session_context"]["sharedState"]["facts"] = {"existing": "value"}
 
         with patch(
-            "app.main.call_llm",
+            "lynxus_agent_runtime.main.call_llm",
             AsyncMock(
                 return_value="""{
                   "decisionType": "FINAL",
@@ -1644,7 +1644,7 @@ class MemoryPromptTests(unittest.TestCase):
             }
         )
 
-        with patch("app.main.call_llm", mock_llm), patch("app.main.call_tool", mock_tool):
+        with patch("lynxus_agent_runtime.main.call_llm", mock_llm), patch("lynxus_agent_runtime.main.call_tool", mock_tool):
             asyncio.run(execute_agent_node(state, node))
 
         self.assertEqual(state["session_context"]["loadedSkillResourceVersionIds"], ["skill-v2"])
@@ -1706,7 +1706,7 @@ class MemoryPromptTests(unittest.TestCase):
 
         execute_start_node(state, graph.nodes[0])
         with patch(
-            "app.main.call_llm",
+            "lynxus_agent_runtime.main.call_llm",
             AsyncMock(
                 return_value="""{
                   "decisionType": "FINAL",
@@ -1821,7 +1821,7 @@ class MemoryPromptTests(unittest.TestCase):
             }""",
         ]
 
-        with patch("app.main.call_llm", AsyncMock(side_effect=llm_outputs)):
+        with patch("lynxus_agent_runtime.main.call_llm", AsyncMock(side_effect=llm_outputs)):
             asyncio.run(execute_agent_node(state, graph.nodes[1]))
 
         self.assertEqual(state["session_context"]["loadedSkillResourceVersionIds"], ["skill-v2"])
@@ -1949,7 +1949,7 @@ class MemoryPromptTests(unittest.TestCase):
         mock_llm = AsyncMock(side_effect=llm_outputs)
         mock_tool = AsyncMock(side_effect=tool_results)
 
-        with patch("app.main.call_llm", mock_llm), patch("app.main.call_tool", mock_tool):
+        with patch("lynxus_agent_runtime.main.call_llm", mock_llm), patch("lynxus_agent_runtime.main.call_tool", mock_tool):
             asyncio.run(execute_agent_node(state, graph.nodes[0]))
 
         second_tool_payload = mock_tool.await_args_list[1].args[1]
@@ -2000,7 +2000,7 @@ class MemoryPromptTests(unittest.TestCase):
         )
         state = make_agent_state(assistant, graph, question="帮我处理")
 
-        with patch("app.main.call_llm", AsyncMock(return_value="not json")):
+        with patch("lynxus_agent_runtime.main.call_llm", AsyncMock(return_value="not json")):
             asyncio.run(execute_agent_node(state, graph.nodes[1]))
 
         self.assertIsNotNone(state["resume_task"])
@@ -2051,7 +2051,7 @@ class MemoryPromptTests(unittest.TestCase):
         state = make_agent_state(assistant, graph, question="帮我处理")
 
         with patch(
-            "app.main.call_llm",
+            "lynxus_agent_runtime.main.call_llm",
             AsyncMock(
                 return_value="""{
                   "decisionType": "FINAL",
@@ -2175,8 +2175,8 @@ class MemoryPromptTests(unittest.TestCase):
           ]
         }"""
 
-        with patch("app.main.call_llm", AsyncMock(return_value=llm_output)), patch(
-            "app.main.call_tool",
+        with patch("lynxus_agent_runtime.main.call_llm", AsyncMock(return_value=llm_output)), patch(
+            "lynxus_agent_runtime.main.call_tool",
             AsyncMock(side_effect=RuntimeError("tool failed")),
         ):
             asyncio.run(execute_agent_node(state, graph.nodes[1]))
@@ -2239,7 +2239,7 @@ class MemoryPromptTests(unittest.TestCase):
           }
         }"""
 
-        with patch("app.main.call_llm", AsyncMock(return_value=llm_output)):
+        with patch("lynxus_agent_runtime.main.call_llm", AsyncMock(return_value=llm_output)):
             asyncio.run(execute_agent_node(state, graph.nodes[1]))
 
         self.assertEqual(state["resume_task"]["title"], "人工核查")
@@ -2326,7 +2326,7 @@ class MemoryPromptTests(unittest.TestCase):
         initial_state["workflow_instance_id"] = "wf-resume-agent"
         initial_state["session_context"] = session_context.model_dump(mode="json")
 
-        with patch("app.main.call_llm", mock_llm):
+        with patch("lynxus_agent_runtime.main.call_llm", mock_llm):
             asyncio.run(execute_agent_node(initial_state, graph.nodes[1]))
             resume_request = WorkflowResumeRequest(
                 taskId="task-1",
@@ -2549,7 +2549,7 @@ class MemoryPromptTests(unittest.TestCase):
         initial_state["session_context"] = session_context.model_dump(mode="json")
         initial_state["entry_node_key"] = "agent-node"
         with patch(
-            "app.main.call_llm",
+            "lynxus_agent_runtime.main.call_llm",
             AsyncMock(
                 return_value="""{
                   "decisionType": "HUMAN_HANDOFF",
@@ -2572,7 +2572,7 @@ class MemoryPromptTests(unittest.TestCase):
                 assistant=assistant,
                 checkpoint=ExecutionCheckpoint(**initial_state["checkpoint"]),
             )
-            from app.main import resume_agent_run
+            from lynxus_agent_runtime.main import resume_agent_run
 
             result = asyncio.run(resume_agent_run(resume_request))
 

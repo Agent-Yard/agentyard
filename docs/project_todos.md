@@ -45,7 +45,7 @@
 
 1. Java：`./gradlew check`（compile + test）
 2. Node：`pnpm install && pnpm lint && pnpm build`
-3. Python：`uv sync --all-packages && uv run pytest`
+3. Python：`uv sync --all-packages && uv run --all-packages pytest`
 4. 门禁：PR 不过 CI 不能合并
 
 依赖：1.2 测试先有内容，CI 才有意义。

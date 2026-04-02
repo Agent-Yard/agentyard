@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 os.environ.setdefault("LYNXUS_INTERNAL_AUTH_TOKEN", "test-internal-token")
 
-from app.main import app
+from lynxus_agent_runtime.main import app
 
 
 class AgentRuntimeInternalAuthTest(unittest.TestCase):

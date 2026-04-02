@@ -10,10 +10,11 @@ import os
 import re
 import secrets
 import uuid
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Generator, List, Optional, Sequence, Union
+from typing import Any, AsyncIterator, Generator, List, Optional, Sequence, Union
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request as UrlRequest, urlopen
@@ -713,10 +714,24 @@ class PostgresRetrievalStore:
 storage = Storage()
 embedding_client = EmbeddingClient()
 retrieval_store = PostgresRetrievalStore(EMBEDDING_DIMENSIONS, EMBEDDING_MODEL)
+
+
+def startup() -> None:
+    internal_auth_token()
+    initialize_postgres_schema()
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    startup()
+    yield
+
+
 app = FastAPI(
     title="Lynxus Knowledge Service",
     version="2.0.0",
     dependencies=[Depends(require_internal_bearer)],
+    lifespan=lifespan,
 )
 
 
@@ -1316,13 +1331,6 @@ def update_snapshot(
     if built_at is not None:
         snapshot.built_at = built_at
     snapshot.updated_at = now_utc()
-
-
-@app.on_event("startup")
-def startup() -> None:
-    internal_auth_token()
-    initialize_postgres_schema()
-
 
 @app.post("/internal/upload-sessions", response_model=UploadSessionResponse)
 def create_upload_session(request: CreateUploadSessionRequest, db: Session = Depends(get_db)) -> UploadSessionResponse:

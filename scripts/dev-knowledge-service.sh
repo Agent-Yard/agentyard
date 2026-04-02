@@ -16,4 +16,4 @@ HOST="${LYNXUS_KNOWLEDGE_SERVICE_HOST:-127.0.0.1}"
 PORT="${LYNXUS_KNOWLEDGE_SERVICE_PORT:-8091}"
 
 cd "$ROOT_DIR/apps/knowledge-service"
-exec uv run --package lynxus-knowledge-service uvicorn app.main:app --host "$HOST" --port "$PORT" --reload
+exec uv run --package lynxus-knowledge-service uvicorn lynxus_knowledge_service.main:app --host "$HOST" --port "$PORT" --reload

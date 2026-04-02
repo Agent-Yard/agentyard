@@ -37,7 +37,7 @@ os.environ["LYNXUS_INTERNAL_AUTH_TOKEN"] = "test-internal-token"
 
 from fastapi.testclient import TestClient
 
-from app.main import (
+from lynxus_knowledge_service.main import (
     Base,
     CompleteUploadRequest,
     CreateIndexSnapshotRequest,
@@ -256,7 +256,7 @@ class KnowledgeServiceTest(unittest.TestCase):
           </body>
         </html>
         """.strip()
-        with patch("app.main.urlopen", return_value=FakeUrlResponse(html.encode("utf-8"), "text/html")):
+        with patch("lynxus_knowledge_service.main.urlopen", return_value=FakeUrlResponse(html.encode("utf-8"), "text/html")):
             with SessionLocal() as db:
                 created = create_url_import(
                     CreateUrlImportRequest(
@@ -267,7 +267,7 @@ class KnowledgeServiceTest(unittest.TestCase):
                     db,
                 )
         import_job_id = created["importJob"]["id"]
-        with patch("app.main.urlopen", return_value=FakeUrlResponse(html.encode("utf-8"), "text/html")):
+        with patch("lynxus_knowledge_service.main.urlopen", return_value=FakeUrlResponse(html.encode("utf-8"), "text/html")):
             with SessionLocal() as db:
                 imported = run_import_job(import_job_id, db)
         self.assertEqual(imported.status, "SUCCEEDED")
@@ -634,7 +634,7 @@ class KnowledgeServiceTest(unittest.TestCase):
         self.assertEqual(snapshot_count, 0)
 
     def test_should_fail_fast_when_database_is_not_postgresql(self) -> None:
-        with patch("app.main.DATABASE_URL", "sqlite+pysqlite:///tmp/test.db"):
+        with patch("lynxus_knowledge_service.main.DATABASE_URL", "sqlite+pysqlite:///tmp/test.db"):
             with self.assertRaises(RuntimeError) as ctx:
                 ensure_postgres_configuration()
         self.assertIn("requires PostgreSQL", str(ctx.exception))
@@ -645,7 +645,7 @@ class KnowledgeServiceTest(unittest.TestCase):
         fake_context.__enter__.return_value = fake_connection
         fake_context.__exit__.return_value = False
         fake_connection.execute.side_effect = RuntimeError("extension install failed")
-        with patch("app.main.engine.begin", return_value=fake_context):
+        with patch("lynxus_knowledge_service.main.engine.begin", return_value=fake_context):
             with self.assertRaises(RuntimeError) as ctx:
                 initialize_postgres_schema()
         self.assertIn("extension install failed", str(ctx.exception))

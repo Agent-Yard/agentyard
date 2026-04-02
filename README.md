@@ -134,7 +134,7 @@ pnpm dev:web
 如果你只想单独运行或测试 Python 服务，也统一使用 `uv`：
 
 ```bash
-uv run pytest
+uv run --all-packages pytest
 uv run --directory apps/agent-runtime --package lynxus-agent-runtime pytest tests/test_memory_prompt.py
 uv run --directory apps/knowledge-service --package lynxus-knowledge-service pytest tests/test_knowledge_service.py
 ```
@@ -201,4 +201,4 @@ LYNXUS_TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT=PT2M
 - `apps/api/src/main/java/com/lynxus/platform/catalog/CatalogService.java`
 - `apps/api/src/main/java/com/lynxus/platform/runtime/RuntimeService.java`
 - `apps/worker/src/main/java/com/lynxus/worker/workflow/AssistantRunWorkflowImpl.java`
-- `apps/agent-runtime/app/main.py`
+- `apps/agent-runtime/lynxus_agent_runtime/main.py`
