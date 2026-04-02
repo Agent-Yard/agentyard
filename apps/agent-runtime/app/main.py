@@ -1799,7 +1799,7 @@ async def retrieve_knowledge(binding: Optional[KnowledgeBindingSnapshot], questi
         return []
     if not binding.snapshotId.strip():
         return []
-    knowledge_service_base_url = os.getenv("LYNXUS_KNOWLEDGE_SERVICE_BASE_URL", "http://localhost:8091").rstrip("/")
+    knowledge_service_base_url = os.getenv("LYNXUS_KNOWLEDGE_SERVICE_BASE_URL", "http://127.0.0.1:8091").rstrip("/")
     auth_headers = {"Authorization": f"Bearer {internal_auth_token()}"}
     async with httpx.AsyncClient(timeout=10.0) as client:
         response = await client.post(

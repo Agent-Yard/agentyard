@@ -51,6 +51,32 @@
 
 其中 `dev-agent-runtime.sh` 和 `dev-knowledge-service.sh` 会直接通过 `uv run` 使用 workspace 环境；运行前需先完成 `uv sync --all-packages`。
 
+## 可配置镜像源
+
+本地 `docker compose` 默认仍使用 upstream 官方镜像，但基础依赖镜像已经支持通过根目录 `.env` 单独覆盖：
+
+- `LYNXUS_IMAGE_POSTGRES`
+- `LYNXUS_IMAGE_POSTGRES_BOOTSTRAP`
+- `LYNXUS_IMAGE_MINIO`
+- `LYNXUS_IMAGE_TEMPORAL`
+- `LYNXUS_IMAGE_TEMPORAL_UI`
+- `LYNXUS_IMAGE_CADDY`
+
+之所以采用“逐镜像覆盖”而不是统一 registry 前缀，是因为不同上游在 ECR pull-through cache 下的路径规则并不一致；例如 Docker Hub 官方镜像通常需要 `docker-hub/library/...`，第三方镜像和其他 registry 又是另一套路径。
+
+如果你使用私有 AWS ECR pull-through cache，可以直接把这些变量改成完整镜像地址，例如：
+
+```dotenv
+LYNXUS_IMAGE_POSTGRES=<aws_account_id>.dkr.ecr.<region>.amazonaws.com/docker-hub/pgvector/pgvector:pg17
+LYNXUS_IMAGE_POSTGRES_BOOTSTRAP=<aws_account_id>.dkr.ecr.<region>.amazonaws.com/docker-hub/library/postgres:17.6
+LYNXUS_IMAGE_MINIO=<aws_account_id>.dkr.ecr.<region>.amazonaws.com/docker-hub/minio/minio:RELEASE.2025-09-07T16-13-09Z
+LYNXUS_IMAGE_TEMPORAL=<aws_account_id>.dkr.ecr.<region>.amazonaws.com/docker-hub/temporalio/auto-setup:1.28.1
+LYNXUS_IMAGE_TEMPORAL_UI=<aws_account_id>.dkr.ecr.<region>.amazonaws.com/docker-hub/temporalio/ui:2.39.0
+LYNXUS_IMAGE_CADDY=<aws_account_id>.dkr.ecr.<region>.amazonaws.com/docker-hub/library/caddy:2.8.4-alpine
+```
+
+实际路径需要以你在 ECR 中配置的 pull-through cache rule 为准。
+
 ## 日志与链路上下文
 
 当前四个后端服务已经统一结构化日志约定：
@@ -78,24 +104,27 @@ SPRING_PROFILES_ACTIVE=default pnpm dev:worker
 
 ## 默认开发约定
 
-- 后端 API：`http://localhost:8080/api`
-- 前端开发服务：`http://localhost:5173`
-- Agent Runtime：`http://localhost:8090`
-- Knowledge Service：`http://localhost:8091`
-- MinIO Console：`http://localhost:9001`
-- Temporal UI：`http://localhost:8088`
+- 后端 API：`http://127.0.0.1:8080/api`
+- 前端开发服务：`http://127.0.0.1:5173`
+- Agent Runtime：`http://127.0.0.1:8090`
+- Knowledge Service：`http://127.0.0.1:8091`
+- MinIO Console：`http://127.0.0.1:9001`
+- Temporal UI：`http://<host>:8088`（对外监听，经过 Basic Auth 保护）
 - Python 内部服务鉴权：`LYNXUS_INTERNAL_AUTH_TOKEN`，API / Worker / Agent Runtime / Knowledge Service 必须保持一致
 - Java 结构化日志：默认非 `local` profile 输出 JSON，本地开发默认文本
 - Python 结构化日志：`LYNXUS_LOG_FORMAT` 默认开发态 `console`
 - `pnpm dev:api` 会默认启用 `local` profile，并打开开发态 bootstrap 登录旁路
 - `pnpm dev:worker` 会默认启用 `local` profile，便于直接阅读 workflow/activity 日志
-- 前端开发服务通过 Vite 代理将 `/api` 转发到 `http://localhost:8080`
+- 前端开发服务通过 Vite 代理将 `/api` 转发到 `http://127.0.0.1:8080`
 - 控制台未登录时会跳转 `/login`；开发态可通过 `/api/auth/dev-bootstrap-login` 建立本地 bootstrap 会话
 - 前端不再回退到内置 mock 数据；后端未启动时页面请求会直接报错
 - API 启动时会对数据库中的非终态 runtime workflow 主动向 Temporal 做一次对账
 - Worker 会消费同一 Temporal namespace / task queue 下的 assistant run workflow
-- `dev-agent-runtime.sh` 默认以 `uv run --package lynxus-agent-runtime uvicorn --reload` 启动 Python runtime
-- `dev-knowledge-service.sh` 默认以 `uv run --package lynxus-knowledge-service uvicorn --reload` 启动知识服务
+- `dev-agent-runtime.sh` 默认监听 `127.0.0.1:8090`，仅供本机 `worker` 调用
+- `dev-knowledge-service.sh` 默认监听 `127.0.0.1:8091`，仅供本机 `api / worker / agent-runtime` 调用
+- `dev-web.sh` 默认监听 `0.0.0.0:5173`，便于开发时从局域网设备访问
+- `pnpm dev:api` 默认暴露 `8080` 供前端代理访问；`Temporal UI` 通过 Docker Compose 暴露 `0.0.0.0:8088`
+- `Temporal UI` 通过 `temporal-ui-gateway` 代理暴露，默认 Basic Auth 用户名来自 `LYNXUS_TEMPORAL_UI_USERNAME`，密码来自 `LYNXUS_TEMPORAL_UI_PASSWORD`
 - `Agent Runtime` 与 `Knowledge Service` 的 HTTP 入口不接浏览器 OIDC 会话，只接受共享 internal token
 - API -> Worker -> Python 服务已经统一透传 `traceparent` 与 Lynxus 日志上下文头，跨服务排障时应优先按 `traceId` 聚合日志
 

@@ -22,7 +22,7 @@ pnpm dev:agent-runtime
 也可以直接运行该服务或单测：
 
 ```bash
-uv run --package lynxus-agent-runtime uvicorn app.main:app --reload --host 0.0.0.0 --port 8090
+uv run --package lynxus-agent-runtime uvicorn app.main:app --reload --host 127.0.0.1 --port 8090
 uv run --directory apps/agent-runtime --package lynxus-agent-runtime pytest tests/test_memory_prompt.py
 ```
 

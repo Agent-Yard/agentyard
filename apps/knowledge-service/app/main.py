@@ -49,16 +49,16 @@ def now_utc() -> datetime:
 SERVICE_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATA_ROOT = SERVICE_ROOT / "data"
 DEFAULT_STORAGE_ROOT = DEFAULT_DATA_ROOT / "storage"
-DEFAULT_DATABASE_URL = "postgresql+psycopg://lynxus:lynxus@localhost:5432/lynxus_knowledge"
+DEFAULT_DATABASE_URL = "postgresql+psycopg://lynxus:lynxus@127.0.0.1:5432/lynxus_knowledge"
 
 
 DATABASE_URL = os.getenv("LYNXUS_KNOWLEDGE_DATABASE_URL", DEFAULT_DATABASE_URL)
 STORAGE_MODE = os.getenv("LYNXUS_KNOWLEDGE_STORAGE_MODE", "filesystem").lower()
 STORAGE_ROOT = Path(os.getenv("LYNXUS_KNOWLEDGE_STORAGE_ROOT", str(DEFAULT_STORAGE_ROOT)))
-MINIO_ENDPOINT = os.getenv("LYNXUS_MINIO_ENDPOINT", "localhost:9000").replace("http://", "").replace("https://", "")
+MINIO_ENDPOINT = os.getenv("LYNXUS_MINIO_ENDPOINT", "127.0.0.1:9000").replace("http://", "").replace("https://", "")
 MINIO_ACCESS_KEY = os.getenv("LYNXUS_MINIO_ACCESS_KEY", "minioadmin")
 MINIO_SECRET_KEY = os.getenv("LYNXUS_MINIO_SECRET_KEY", "minioadmin")
-MINIO_SECURE = os.getenv("LYNXUS_MINIO_ENDPOINT", "http://localhost:9000").startswith("https://")
+MINIO_SECURE = os.getenv("LYNXUS_MINIO_ENDPOINT", "http://127.0.0.1:9000").startswith("https://")
 MINIO_BUCKET = os.getenv("LYNXUS_KNOWLEDGE_MINIO_BUCKET", "lynxus-knowledge")
 URL_IMPORT_TIMEOUT_SECONDS = float(os.getenv("LYNXUS_KNOWLEDGE_URL_IMPORT_TIMEOUT_SECONDS", "15"))
 URL_IMPORT_USER_AGENT = os.getenv(

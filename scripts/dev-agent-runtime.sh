@@ -12,7 +12,7 @@ if ! command -v uv >/dev/null 2>&1; then
   echo "uv was not found. Install uv first, then run 'uv sync --all-packages' at $ROOT_DIR." >&2
   exit 1
 fi
-HOST="${LYNXUS_AGENT_RUNTIME_HOST:-0.0.0.0}"
+HOST="${LYNXUS_AGENT_RUNTIME_HOST:-127.0.0.1}"
 PORT="${LYNXUS_AGENT_RUNTIME_PORT:-8090}"
 
 cd "$ROOT_DIR/apps/agent-runtime"

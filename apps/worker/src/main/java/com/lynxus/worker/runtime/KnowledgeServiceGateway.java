@@ -15,7 +15,7 @@ public interface KnowledgeServiceGateway {
         private final RestClient restClient;
 
         public HttpKnowledgeServiceGateway(
-            @Value("${lynxus.knowledge-service.base-url:http://localhost:8091}") String baseUrl,
+            @Value("${lynxus.knowledge-service.base-url:http://127.0.0.1:8091}") String baseUrl,
             @Value("${lynxus.internal-auth.token}") String internalAuthToken
         ) {
             String sanitizedToken = requireInternalAuthToken(internalAuthToken);

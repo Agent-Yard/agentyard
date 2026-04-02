@@ -3,7 +3,7 @@ info:
   title: Lynxus Control Plane API
   version: 1.0.0
 servers:
-  - url: http://localhost:8080/api
+  - url: http://127.0.0.1:8080/api
 paths:
   /auth/login:
     get:

@@ -1,0 +1,7 @@
+:8088 {
+	basicauth {
+		{$LYNXUS_TEMPORAL_UI_USERNAME} {$LYNXUS_TEMPORAL_UI_PASSWORD_HASH}
+	}
+
+	reverse_proxy temporal-ui:8080
+}

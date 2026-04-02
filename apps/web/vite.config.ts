@@ -18,13 +18,13 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/oauth2': {
-        target: 'http://localhost:8080',
+        target: 'http://127.0.0.1:8080',
       },
       '/login/oauth2': {
-        target: 'http://localhost:8080',
+        target: 'http://127.0.0.1:8080',
       },
       '/api': {
-        target: 'http://localhost:8080',
+        target: 'http://127.0.0.1:8080',
       },
     },
   },

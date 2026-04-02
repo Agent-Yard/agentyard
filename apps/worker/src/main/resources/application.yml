@@ -18,13 +18,13 @@ server:
 
 lynxus:
   agent-runtime:
-    base-url: ${LYNXUS_AGENT_RUNTIME_BASE_URL:http://localhost:8090}
+    base-url: ${LYNXUS_AGENT_RUNTIME_BASE_URL:http://127.0.0.1:8090}
   knowledge-service:
-    base-url: ${LYNXUS_KNOWLEDGE_SERVICE_BASE_URL:http://localhost:8091}
+    base-url: ${LYNXUS_KNOWLEDGE_SERVICE_BASE_URL:http://127.0.0.1:8091}
   internal-auth:
     token: ${LYNXUS_INTERNAL_AUTH_TOKEN}
   temporal:
-    target: ${LYNXUS_TEMPORAL_TARGET:localhost:7233}
+    target: ${LYNXUS_TEMPORAL_TARGET:127.0.0.1:7233}
     namespace: ${LYNXUS_TEMPORAL_NAMESPACE:default}
     task-queue: ${LYNXUS_TEMPORAL_TASK_QUEUE:lynxus-customer-ops}
     activity-start-to-close-timeout: ${LYNXUS_TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT:PT2M}
