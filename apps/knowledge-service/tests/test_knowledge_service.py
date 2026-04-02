@@ -66,6 +66,7 @@ from app.main import (
     retrieval_store,
     retrieve,
     run_import_job,
+    storage,
     startup,
 )
 
@@ -387,6 +388,142 @@ class KnowledgeServiceTest(unittest.TestCase):
         with SessionLocal() as db:
             job_count = db.query(KnowledgeImportJobRecord).filter(KnowledgeImportJobRecord.knowledge_base_id == "resource-kb-retry").count()
         self.assertEqual(job_count, 2)
+
+    def test_should_track_state_machine_from_upload_to_import_to_document_to_snapshot(self) -> None:
+        markdown = "# 退款规则\n订单未发货时可以直接退款。"
+        with SessionLocal() as db:
+            upload = create_upload_session(CreateUploadSessionRequest(knowledgeBaseId="resource-kb-state"), db)
+            self.assertEqual(upload.status, "OPEN")
+
+            completed = complete_upload(
+                CompleteUploadRequest(
+                    knowledgeBaseId="resource-kb-state",
+                    uploadSessionId=upload.id,
+                    fileName="refund.md",
+                    contentType="text/markdown",
+                    contentBase64=base64.b64encode(markdown.encode("utf-8")).decode("ascii"),
+                ),
+                db,
+            )
+            file_id = completed["file"]["id"]
+            import_job_id = completed["importJob"]["id"]
+
+            upload_record = db.get(UploadSessionRecord, upload.id)
+            file_record = db.get(KnowledgeFileRecord, file_id)
+            import_job = db.get(KnowledgeImportJobRecord, import_job_id)
+            self.assertEqual(upload_record.status, "COMPLETED")
+            self.assertEqual(file_record.status, "UPLOADED")
+            self.assertEqual(import_job.status, "QUEUED")
+            self.assertEqual(import_job.stage, "QUEUED")
+            self.assertEqual(import_job.progress_percent, 0)
+
+        with SessionLocal() as db:
+            imported = run_import_job(import_job_id, db)
+            self.assertEqual(imported.status, "SUCCEEDED")
+            self.assertEqual(imported.stage, "SUCCEEDED")
+            self.assertEqual(imported.progressPercent, 100)
+
+            file_record = db.get(KnowledgeFileRecord, file_id)
+            self.assertEqual(file_record.status, "IMPORTED")
+            self.assertIsNone(file_record.error_message)
+
+            documents = db.query(KnowledgeDocumentRecord).filter(KnowledgeDocumentRecord.knowledge_base_id == "resource-kb-state").all()
+            self.assertEqual(len(documents), 1)
+            document = documents[0]
+            self.assertEqual(document.file_id, file_id)
+            self.assertEqual(document.status, "READY")
+
+        with SessionLocal() as db:
+            created_snapshot = create_index_snapshot(
+                "resource-kb-state",
+                CreateIndexSnapshotRequest(documentIds=[document.id], retrievalMode="HYBRID"),
+                db,
+            )
+            snapshot_record = db.get(IndexSnapshotRecord, created_snapshot.id)
+            self.assertEqual(snapshot_record.status, "QUEUED")
+            self.assertEqual(snapshot_record.stage, "QUEUED")
+            self.assertEqual(snapshot_record.progress_percent, 0)
+
+        with SessionLocal() as db:
+            built_snapshot = build_index_snapshot(created_snapshot.id, db)
+            self.assertEqual(built_snapshot.status, "READY")
+            self.assertEqual(built_snapshot.stage, "READY")
+            self.assertEqual(built_snapshot.progressPercent, 100)
+            self.assertEqual(built_snapshot.documentCount, 1)
+            self.assertGreater(built_snapshot.chunkCount, 0)
+
+            snapshot_record = db.get(IndexSnapshotRecord, created_snapshot.id)
+            self.assertEqual(snapshot_record.status, "READY")
+            self.assertEqual(snapshot_record.document_count, 1)
+            self.assertGreater(snapshot_record.chunk_count, 0)
+
+    def test_should_allow_failed_import_retry_to_recover_file_and_document_state(self) -> None:
+        with SessionLocal() as db:
+            upload = create_upload_session(CreateUploadSessionRequest(knowledgeBaseId="resource-kb-recover"), db)
+            completed = complete_upload(
+                CompleteUploadRequest(
+                    knowledgeBaseId="resource-kb-recover",
+                    uploadSessionId=upload.id,
+                    fileName="empty.md",
+                    contentType="text/markdown",
+                    contentBase64=base64.b64encode(b"").decode("ascii"),
+                ),
+                db,
+            )
+            file_id = completed["file"]["id"]
+            failed_job_id = completed["importJob"]["id"]
+
+        with SessionLocal() as db:
+            failed = run_import_job(failed_job_id, db)
+            self.assertEqual(failed.status, "FAILED")
+            self.assertTrue(failed.retryable)
+
+            file_record = db.get(KnowledgeFileRecord, file_id)
+            self.assertEqual(file_record.status, "FAILED")
+            self.assertIn("no extractable text", file_record.error_message or "")
+            self.assertEqual(
+                db.query(KnowledgeDocumentRecord).filter(KnowledgeDocumentRecord.file_id == file_id).count(),
+                0,
+            )
+
+        with SessionLocal() as db:
+            file_record = db.get(KnowledgeFileRecord, file_id)
+            file_record.object_key = f"{file_record.knowledge_base_id}/retry-refund.md"
+            file_record.size_bytes = len("# 重试退款规则\n补充后可以导入。".encode("utf-8"))
+            storage.put_bytes(file_record.object_key, "# 重试退款规则\n补充后可以导入。".encode("utf-8"), "text/markdown")
+            db.commit()
+
+            retry_job = retry_import_job(failed_job_id, db)
+            self.assertEqual(retry_job.status, "QUEUED")
+            self.assertEqual(retry_job.retryCount, 1)
+            retry_job_id = retry_job.id
+
+            file_record = db.get(KnowledgeFileRecord, file_id)
+            self.assertEqual(file_record.status, "UPLOADED")
+            self.assertIsNone(file_record.error_message)
+
+        with SessionLocal() as db:
+            retried = run_import_job(retry_job_id, db)
+            self.assertEqual(retried.status, "SUCCEEDED")
+            self.assertEqual(retried.stage, "SUCCEEDED")
+
+            file_record = db.get(KnowledgeFileRecord, file_id)
+            self.assertEqual(file_record.status, "IMPORTED")
+            self.assertIsNone(file_record.error_message)
+
+            jobs = (
+                db.query(KnowledgeImportJobRecord)
+                .filter(KnowledgeImportJobRecord.file_id == file_id)
+                .order_by(KnowledgeImportJobRecord.created_at.asc())
+                .all()
+            )
+            self.assertEqual([job.status for job in jobs], ["FAILED", "SUCCEEDED"])
+            self.assertEqual(jobs[0].retry_count, 0)
+            self.assertEqual(jobs[1].retry_count, 1)
+
+            documents = db.query(KnowledgeDocumentRecord).filter(KnowledgeDocumentRecord.file_id == file_id).all()
+            self.assertEqual(len(documents), 1)
+            self.assertEqual(documents[0].status, "READY")
 
     def test_should_require_internal_token_for_http_endpoints(self) -> None:
         with TestClient(app) as client:

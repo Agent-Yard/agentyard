@@ -29,11 +29,11 @@
 
 目标（不追求覆盖率，只保护关键路径）：
 
-1. **编排图校验器单测**：合法图 / 非法图 / 边界情况，防止发布出非法拓扑
-2. **发布快照冻结逻辑单测**：确保资源版本锚点和知识版本在快照中被正确冻结
-3. **Workflow start → signal → resume 集成测试**：使用 Temporal TestWorkflowEnvironment，覆盖正常完成、人工恢复、失败三条路径
-4. **Agent Runtime 图执行单测**：给定快照 JSON，验证节点推进顺序和输出结构
-5. **Knowledge Service 导入链路单测**：source → import job → document → snapshot 状态机流转
+1. [x] **编排图校验器单测**：合法图 / 非法图 / 边界情况，防止发布出非法拓扑
+2. [x] **发布快照冻结逻辑单测**：确保资源版本锚点和知识版本在快照中被正确冻结
+3. [x] **Workflow start → signal → resume 集成测试**：使用 Temporal TestWorkflowEnvironment，覆盖正常完成、人工恢复、失败三条路径
+4. [x] **Agent Runtime 图执行单测**：给定快照 JSON，验证节点推进顺序和输出结构
+5. [x] **Knowledge Service 导入链路单测**：source → import job → document → snapshot 状态机流转
 
 技术方案：Java 用 JUnit 5 + Testcontainers（PostgreSQL）；Python 用 pytest + httpx AsyncClient；前端暂不要求测试。
 

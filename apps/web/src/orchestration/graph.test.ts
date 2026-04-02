@@ -36,6 +36,20 @@ describe('validateOrchestrationGraph', () => {
     expect(validateOrchestrationGraph(baseNodes(), baseEdges())).toBe('');
   });
 
+  it('rejects graphs without exactly one end node', () => {
+    const nodes = baseNodes().filter((node) => node.nodeKey !== 'end');
+
+    expect(validateOrchestrationGraph(nodes, baseEdges())).toContain('END 节点');
+  });
+
+  it('rejects edges that reference missing nodes', () => {
+    const edges = baseEdges().map((edge) =>
+      edge.edgeKey === 'edge-route-human' ? { ...edge, targetNodeKey: 'missing-node' } : edge,
+    );
+
+    expect(validateOrchestrationGraph(baseNodes(), edges)).toContain('引用无效节点');
+  });
+
   it('rejects unreachable nodes', () => {
     const nodes = baseNodes().concat({
       nodeKey: 'faq',
@@ -75,6 +89,14 @@ describe('validateOrchestrationGraph', () => {
     expect(validateOrchestrationGraph(baseNodes(), edges)).toContain('必须使用 routeKey=default');
   });
 
+  it('rejects non-default edges that use routeKey=default', () => {
+    const edges = baseEdges().map((edge) =>
+      edge.edgeKey === 'edge-route-human' ? { ...edge, routeKey: 'default' } : edge,
+    );
+
+    expect(validateOrchestrationGraph(baseNodes(), edges)).toContain('非默认边');
+  });
+
   it('rejects start node with multiple outgoing edges', () => {
     const edges = baseEdges().concat({
       edgeKey: 'edge-start-extra',
@@ -94,5 +116,41 @@ describe('validateOrchestrationGraph', () => {
     );
 
     expect(validateOrchestrationGraph(baseNodes(), edges)).toContain('START 节点的出口边必须是 routeKey=default 的默认边');
+  });
+
+  it('rejects agent node without agent binding', () => {
+    const nodes = baseNodes().map((node) =>
+      node.nodeKey === 'route' ? { ...node, agentId: null } : node,
+    );
+
+    expect(validateOrchestrationGraph(nodes, baseEdges())).toContain('必须绑定 agentId');
+  });
+
+  it('rejects duplicate route keys on the same node', () => {
+    const edges = baseEdges().concat({
+      edgeKey: 'edge-route-end',
+      sourceNodeKey: 'route',
+      targetNodeKey: 'end',
+      routeKey: 'human_handoff',
+      label: '重复分支',
+      defaultEdge: false,
+    });
+
+    expect(validateOrchestrationGraph(baseNodes(), edges)).toContain('重复 routeKey');
+  });
+
+  it('rejects branching nodes without a default edge', () => {
+    const edges = baseEdges()
+      .map((edge) => (edge.edgeKey === 'edge-route-human' ? { ...edge, routeKey: 'human_review' } : edge))
+      .concat({
+        edgeKey: 'edge-route-end',
+        sourceNodeKey: 'route',
+        targetNodeKey: 'end',
+        routeKey: 'auto_close',
+        label: '自动结束',
+        defaultEdge: false,
+      });
+
+    expect(validateOrchestrationGraph(baseNodes(), edges)).toContain('必须配置一条默认边');
   });
 });

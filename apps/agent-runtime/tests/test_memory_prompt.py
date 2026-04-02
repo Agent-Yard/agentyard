@@ -45,7 +45,9 @@ from app.main import (
     call_llm,
     configure_runtime_logger,
     execute_agent_node,
+    execute_end_node,
     execute_human_node,
+    execute_start_node,
     format_timestamp_to_minute,
     loaded_skill_details,
     memory_window_for_agent,
@@ -268,6 +270,28 @@ class MemoryPromptTests(unittest.TestCase):
 
         self.assertEqual("default", edge.routeKey)
 
+    def test_validate_graph_accepts_valid_graph(self) -> None:
+        assistant = make_assistant(memory_enabled=True, memory_window_size=10).model_copy(
+            update={"agents": [make_agent(10)]}
+        )
+        graph = GraphSnapshot(
+            executionMode="GRAPH",
+            nodes=[
+                GraphNodeSnapshot(nodeKey="start", nodeName="开始", nodeType="START", description="入口", agentId=None, humanNode=None),
+                GraphNodeSnapshot(nodeKey="agent", nodeName="分诊", nodeType="AGENT", description="处理问题", agentId="agent-1", humanNode=None),
+                GraphNodeSnapshot(nodeKey="human", nodeName="人工处理", nodeType="HUMAN", description="人工接手", agentId=None, humanNode=HumanNodeConfig(title="人工待办", instruction="请审核", expectedAction="填写意见", resumeRouteKey="default")),
+                GraphNodeSnapshot(nodeKey="end", nodeName="结束", nodeType="END", description="出口", agentId=None, humanNode=None),
+            ],
+            edges=[
+                GraphEdgeSnapshot(edgeKey="edge-start", sourceNodeKey="start", targetNodeKey="agent", routeKey="default", label="开始", defaultEdge=True),
+                GraphEdgeSnapshot(edgeKey="edge-agent-human", sourceNodeKey="agent", targetNodeKey="human", routeKey="needs_review", label="转人工", defaultEdge=False),
+                GraphEdgeSnapshot(edgeKey="edge-agent-end", sourceNodeKey="agent", targetNodeKey="end", routeKey="default", label="直接完成", defaultEdge=True),
+                GraphEdgeSnapshot(edgeKey="edge-human-end", sourceNodeKey="human", targetNodeKey="end", routeKey="default", label="人工完成", defaultEdge=True),
+            ],
+        )
+
+        validate_graph(graph, assistant)
+
     def test_validate_graph_rejects_start_node_with_multiple_edges(self) -> None:
         assistant = make_assistant(memory_enabled=True, memory_window_size=10)
         graph = GraphSnapshot(
@@ -303,6 +327,115 @@ class MemoryPromptTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as ctx:
             validate_graph(graph, assistant)
         self.assertIn("START node outgoing edge must be routeKey=default and defaultEdge=true", str(ctx.exception.detail))
+
+    def test_validate_graph_rejects_unknown_agent_binding(self) -> None:
+        assistant = make_assistant(memory_enabled=True, memory_window_size=10)
+        graph = GraphSnapshot(
+            executionMode="GRAPH",
+            nodes=[
+                GraphNodeSnapshot(nodeKey="start", nodeName="开始", nodeType="START", description="入口", agentId=None, humanNode=None),
+                GraphNodeSnapshot(nodeKey="agent", nodeName="处理", nodeType="AGENT", description="处理节点", agentId="agent-missing", humanNode=None),
+                GraphNodeSnapshot(nodeKey="end", nodeName="结束", nodeType="END", description="出口", agentId=None, humanNode=None),
+            ],
+            edges=[
+                GraphEdgeSnapshot(edgeKey="edge-start", sourceNodeKey="start", targetNodeKey="agent", routeKey="default", label="进入处理", defaultEdge=True),
+                GraphEdgeSnapshot(edgeKey="edge-agent-end", sourceNodeKey="agent", targetNodeKey="end", routeKey="default", label="结束", defaultEdge=True),
+            ],
+        )
+
+        with self.assertRaises(HTTPException) as ctx:
+            validate_graph(graph, assistant)
+        self.assertIn("unknown agent for node agent", str(ctx.exception.detail))
+
+    def test_validate_graph_rejects_human_node_without_config(self) -> None:
+        assistant = make_assistant(memory_enabled=True, memory_window_size=10)
+        graph = GraphSnapshot(
+            executionMode="GRAPH",
+            nodes=[
+                GraphNodeSnapshot(nodeKey="start", nodeName="开始", nodeType="START", description="入口", agentId=None, humanNode=None),
+                GraphNodeSnapshot(nodeKey="human", nodeName="人工处理", nodeType="HUMAN", description="人工接手", agentId=None, humanNode=None),
+                GraphNodeSnapshot(nodeKey="end", nodeName="结束", nodeType="END", description="出口", agentId=None, humanNode=None),
+            ],
+            edges=[
+                GraphEdgeSnapshot(edgeKey="edge-start", sourceNodeKey="start", targetNodeKey="human", routeKey="default", label="转人工", defaultEdge=True),
+                GraphEdgeSnapshot(edgeKey="edge-human-end", sourceNodeKey="human", targetNodeKey="end", routeKey="default", label="完成", defaultEdge=True),
+            ],
+        )
+
+        with self.assertRaises(HTTPException) as ctx:
+            validate_graph(graph, assistant)
+        self.assertIn("human node human requires humanNode config", str(ctx.exception.detail))
+
+    def test_validate_graph_rejects_duplicate_route_keys(self) -> None:
+        assistant = make_assistant(memory_enabled=True, memory_window_size=10).model_copy(
+            update={"agents": [make_agent(10)]}
+        )
+        graph = GraphSnapshot(
+            executionMode="GRAPH",
+            nodes=[
+                GraphNodeSnapshot(nodeKey="start", nodeName="开始", nodeType="START", description="入口", agentId=None, humanNode=None),
+                GraphNodeSnapshot(nodeKey="agent", nodeName="处理", nodeType="AGENT", description="处理节点", agentId="agent-1", humanNode=None),
+                GraphNodeSnapshot(nodeKey="end-a", nodeName="结束A", nodeType="END", description="出口A", agentId=None, humanNode=None),
+                GraphNodeSnapshot(nodeKey="end-b", nodeName="结束B", nodeType="END", description="出口B", agentId=None, humanNode=None),
+                GraphNodeSnapshot(nodeKey="end-c", nodeName="结束C", nodeType="END", description="出口C", agentId=None, humanNode=None),
+            ],
+            edges=[
+                GraphEdgeSnapshot(edgeKey="edge-start", sourceNodeKey="start", targetNodeKey="agent", routeKey="default", label="进入处理", defaultEdge=True),
+                GraphEdgeSnapshot(edgeKey="edge-agent-a", sourceNodeKey="agent", targetNodeKey="end-a", routeKey="default", label="默认完成", defaultEdge=True),
+                GraphEdgeSnapshot(edgeKey="edge-agent-b", sourceNodeKey="agent", targetNodeKey="end-b", routeKey="same_route", label="结束B", defaultEdge=False),
+                GraphEdgeSnapshot(edgeKey="edge-agent-c", sourceNodeKey="agent", targetNodeKey="end-c", routeKey="same_route", label="结束C", defaultEdge=False),
+            ],
+        )
+
+        with self.assertRaises(HTTPException) as ctx:
+            validate_graph(graph, assistant)
+        self.assertIn("duplicate routeKey for node agent", str(ctx.exception.detail))
+
+    def test_validate_graph_rejects_branching_node_without_default_edge(self) -> None:
+        assistant = make_assistant(memory_enabled=True, memory_window_size=10).model_copy(
+            update={"agents": [make_agent(10)]}
+        )
+        graph = GraphSnapshot(
+            executionMode="GRAPH",
+            nodes=[
+                GraphNodeSnapshot(nodeKey="start", nodeName="开始", nodeType="START", description="入口", agentId=None, humanNode=None),
+                GraphNodeSnapshot(nodeKey="agent", nodeName="处理", nodeType="AGENT", description="处理节点", agentId="agent-1", humanNode=None),
+                GraphNodeSnapshot(nodeKey="end-a", nodeName="结束A", nodeType="END", description="出口A", agentId=None, humanNode=None),
+                GraphNodeSnapshot(nodeKey="end-b", nodeName="结束B", nodeType="END", description="出口B", agentId=None, humanNode=None),
+            ],
+            edges=[
+                GraphEdgeSnapshot(edgeKey="edge-start", sourceNodeKey="start", targetNodeKey="agent", routeKey="default", label="进入处理", defaultEdge=True),
+                GraphEdgeSnapshot(edgeKey="edge-agent-a", sourceNodeKey="agent", targetNodeKey="end-a", routeKey="approve", label="通过", defaultEdge=False),
+                GraphEdgeSnapshot(edgeKey="edge-agent-b", sourceNodeKey="agent", targetNodeKey="end-b", routeKey="reject", label="拒绝", defaultEdge=False),
+            ],
+        )
+
+        with self.assertRaises(HTTPException) as ctx:
+            validate_graph(graph, assistant)
+        self.assertIn("branching node requires default edge", str(ctx.exception.detail))
+
+    def test_validate_graph_rejects_unreachable_nodes(self) -> None:
+        assistant = make_assistant(memory_enabled=True, memory_window_size=10).model_copy(
+            update={"agents": [make_agent(10)]}
+        )
+        graph = GraphSnapshot(
+            executionMode="GRAPH",
+            nodes=[
+                GraphNodeSnapshot(nodeKey="start", nodeName="开始", nodeType="START", description="入口", agentId=None, humanNode=None),
+                GraphNodeSnapshot(nodeKey="agent", nodeName="处理", nodeType="AGENT", description="处理节点", agentId="agent-1", humanNode=None),
+                GraphNodeSnapshot(nodeKey="detached", nodeName="孤立节点", nodeType="AGENT", description="未接入", agentId="agent-1", humanNode=None),
+                GraphNodeSnapshot(nodeKey="end", nodeName="结束", nodeType="END", description="出口", agentId=None, humanNode=None),
+            ],
+            edges=[
+                GraphEdgeSnapshot(edgeKey="edge-start", sourceNodeKey="start", targetNodeKey="agent", routeKey="default", label="进入处理", defaultEdge=True),
+                GraphEdgeSnapshot(edgeKey="edge-agent-end", sourceNodeKey="agent", targetNodeKey="end", routeKey="default", label="结束", defaultEdge=True),
+                GraphEdgeSnapshot(edgeKey="edge-detached-end", sourceNodeKey="detached", targetNodeKey="end", routeKey="default", label="孤立结束", defaultEdge=True),
+            ],
+        )
+
+        with self.assertRaises(HTTPException) as ctx:
+            validate_graph(graph, assistant)
+        self.assertIn("graph contains unreachable nodes", str(ctx.exception.detail))
 
     def test_build_tool_outcome_keeps_business_result_without_orchestration_mapping(self) -> None:
         tool_resource = make_tool_resource()
@@ -964,6 +1097,122 @@ class MemoryPromptTests(unittest.TestCase):
         self.assertEqual(result.modelHits[0].resourceId, override_model_resource.resourceId)
         self.assertEqual(result.modelHits[0].resourceVersionId, override_model_resource.resourceVersionId)
 
+    def test_graph_execution_advances_from_start_to_agent_to_end_with_text_output(self) -> None:
+        model_resource = make_model_resource()
+        agent = make_agent(memory_window_size=4)
+        graph = GraphSnapshot(
+            executionMode="GRAPH",
+            nodes=[
+                GraphNodeSnapshot(nodeKey="start", nodeName="开始", nodeType="START", description="开始"),
+                GraphNodeSnapshot(nodeKey="agent-node", nodeName="处理节点", nodeType="AGENT", description="执行处理", agentId=agent.agentId),
+                GraphNodeSnapshot(nodeKey="end", nodeName="结束", nodeType="END", description="结束"),
+            ],
+            edges=[
+                GraphEdgeSnapshot(edgeKey="edge-start", sourceNodeKey="start", targetNodeKey="agent-node", routeKey="default", label="进入处理", defaultEdge=True),
+                GraphEdgeSnapshot(edgeKey="edge-end", sourceNodeKey="agent-node", targetNodeKey="end", routeKey="default", label="完成", defaultEdge=True),
+            ],
+        )
+        assistant = make_assistant(True, 4).model_copy(
+            update={
+                "agents": [agent],
+                "resources": [model_resource],
+                "graph": graph,
+                "assistantPolicy": AssistantPolicySnapshot(
+                    providerResourceId=model_resource.resourceId,
+                    providerResourceVersionId=model_resource.resourceVersionId,
+                    memoryEnabled=True,
+                    memoryWindowSize=4,
+                ),
+            }
+        )
+        state = make_agent_state(assistant, graph, question="帮我处理退款")
+
+        execute_start_node(state, graph.nodes[0])
+        self.assertEqual(state["current_node_key"], "start")
+        self.assertEqual(state["next_node_key"], "agent-node")
+
+        with patch(
+            "app.main.call_llm",
+            AsyncMock(
+                return_value="""{
+                  "decisionType": "FINAL",
+                  "outputMessages": [{"payloadType": "TEXT", "payload": {"text": "退款已处理完成。"}}],
+                  "routeDecision": "default"
+                }"""
+            ),
+        ):
+            asyncio.run(execute_agent_node(state, graph.nodes[1]))
+
+        self.assertEqual(state["current_node_key"], "agent-node")
+        self.assertEqual(state["next_node_key"], "end")
+        self.assertEqual(state["output_messages"][0]["messageKey"], "agent-node:1:1")
+        self.assertEqual(state["output_messages"][0]["payload"]["text"], "退款已处理完成。")
+        self.assertEqual(state["summary"], "退款已处理完成。")
+
+        execute_end_node(state, graph.nodes[2])
+        result = workflow_result_from_state(state)
+
+        self.assertEqual(result.status, "COMPLETED")
+        self.assertEqual(result.currentNodeKey, "end")
+        self.assertEqual([node.nodeKey for node in result.nodes], ["start", "agent-node", "end"])
+        self.assertEqual(result.outputMessages[0].messageKey, "agent-node:1:1")
+        self.assertEqual(result.outputMessages[0].payload["text"], "退款已处理完成。")
+
+    def test_graph_execution_uses_route_decision_to_select_target_branch(self) -> None:
+        model_resource = make_model_resource()
+        agent = make_agent(memory_window_size=4)
+        graph = GraphSnapshot(
+            executionMode="GRAPH",
+            nodes=[
+                GraphNodeSnapshot(nodeKey="start", nodeName="开始", nodeType="START", description="开始"),
+                GraphNodeSnapshot(nodeKey="agent-node", nodeName="分流节点", nodeType="AGENT", description="判断去向", agentId=agent.agentId),
+                GraphNodeSnapshot(nodeKey="approved-end", nodeName="通过结束", nodeType="END", description="通过"),
+                GraphNodeSnapshot(nodeKey="rejected-end", nodeName="拒绝结束", nodeType="END", description="拒绝"),
+            ],
+            edges=[
+                GraphEdgeSnapshot(edgeKey="edge-start", sourceNodeKey="start", targetNodeKey="agent-node", routeKey="default", label="进入处理", defaultEdge=True),
+                GraphEdgeSnapshot(edgeKey="edge-default", sourceNodeKey="agent-node", targetNodeKey="approved-end", routeKey="default", label="默认通过", defaultEdge=True),
+                GraphEdgeSnapshot(edgeKey="edge-reject", sourceNodeKey="agent-node", targetNodeKey="rejected-end", routeKey="reject", label="驳回", defaultEdge=False),
+            ],
+        )
+        assistant = make_assistant(True, 4).model_copy(
+            update={
+                "agents": [agent],
+                "resources": [model_resource],
+                "graph": graph,
+                "assistantPolicy": AssistantPolicySnapshot(
+                    providerResourceId=model_resource.resourceId,
+                    providerResourceVersionId=model_resource.resourceVersionId,
+                    memoryEnabled=True,
+                    memoryWindowSize=4,
+                ),
+            }
+        )
+        state = make_agent_state(assistant, graph, question="这个退款不符合条件")
+
+        execute_start_node(state, graph.nodes[0])
+        with patch(
+            "app.main.call_llm",
+            AsyncMock(
+                return_value="""{
+                  "decisionType": "FINAL",
+                  "outputMessages": [{"payloadType": "TEXT", "payload": {"text": "不满足退款条件。"}}],
+                  "routeDecision": "reject"
+                }"""
+            ),
+        ):
+            asyncio.run(execute_agent_node(state, graph.nodes[1]))
+
+        self.assertEqual(state["route_key"], "reject")
+        self.assertEqual(state["next_node_key"], "rejected-end")
+
+        execute_end_node(state, graph.nodes[3])
+        result = workflow_result_from_state(state)
+
+        self.assertEqual(result.currentNodeKey, "rejected-end")
+        self.assertEqual(result.summary, "不满足退款条件。")
+        self.assertEqual(result.outputMessages[0].payload["text"], "不满足退款条件。")
+
     def test_execute_agent_node_pauses_for_invalid_session_state_patch(self) -> None:
         model_resource = make_model_resource()
         agent = make_agent(memory_window_size=4).model_copy(
@@ -1373,6 +1622,77 @@ class MemoryPromptTests(unittest.TestCase):
         self.assertIn("工具结果：", second_prompt["runtime_context_block"])
         self.assertIn('"result"', second_prompt["runtime_context_block"])
         self.assertEqual(mock_tool.await_count, 1)
+
+    def test_graph_execution_external_interaction_pauses_with_structured_output_message(self) -> None:
+        model_resource = make_model_resource()
+        agent = make_agent(memory_window_size=4)
+        graph = GraphSnapshot(
+            executionMode="GRAPH",
+            nodes=[
+                GraphNodeSnapshot(nodeKey="start", nodeName="开始", nodeType="START", description="开始"),
+                GraphNodeSnapshot(nodeKey="agent-node", nodeName="授权节点", nodeType="AGENT", description="发起授权", agentId=agent.agentId),
+                GraphNodeSnapshot(nodeKey="end", nodeName="结束", nodeType="END", description="结束"),
+            ],
+            edges=[
+                GraphEdgeSnapshot(edgeKey="edge-start", sourceNodeKey="start", targetNodeKey="agent-node", routeKey="default", label="进入授权", defaultEdge=True),
+                GraphEdgeSnapshot(edgeKey="edge-end", sourceNodeKey="agent-node", targetNodeKey="end", routeKey="default", label="授权完成", defaultEdge=True),
+            ],
+        )
+        assistant = make_assistant(True, 4).model_copy(
+            update={
+                "agents": [agent],
+                "resources": [model_resource],
+                "graph": graph,
+                "assistantPolicy": AssistantPolicySnapshot(
+                    providerResourceId=model_resource.resourceId,
+                    providerResourceVersionId=model_resource.resourceVersionId,
+                    memoryEnabled=True,
+                    memoryWindowSize=4,
+                ),
+            }
+        )
+        state = make_agent_state(assistant, graph, question="请完成授权")
+
+        execute_start_node(state, graph.nodes[0])
+        with patch(
+            "app.main.call_llm",
+            AsyncMock(
+                return_value="""{
+                  "decisionType": "FINAL",
+                  "outputMessages": [{
+                    "payloadType": "EXTERNAL_INTERACTION",
+                    "payload": {
+                      "spec": {
+                        "interactionType": "OAUTH_REDIRECT",
+                        "title": "完成授权",
+                        "instruction": "请前往授权页面完成授权。",
+                        "provider": "oauth-demo",
+                        "providerReference": "oauth-ref-1",
+                        "launchUrl": "https://example.com/oauth",
+                        "returnPath": "/console/runtime",
+                        "expiresAt": null,
+                        "primaryActionLabel": "去授权",
+                        "secondaryActions": [],
+                        "displayHints": {}
+                      }
+                    }
+                  }],
+                  "routeDecision": "default"
+                }"""
+            ),
+        ):
+            asyncio.run(execute_agent_node(state, graph.nodes[1]))
+
+        result = workflow_result_from_state(state)
+
+        self.assertEqual(result.status, "WAITING_RESUME")
+        self.assertEqual(result.currentNodeKey, "agent-node")
+        self.assertEqual(result.outputMessages[0].messageKey, "agent-node:1:1")
+        self.assertEqual(result.outputMessages[0].payloadType, "EXTERNAL_INTERACTION")
+        self.assertEqual(result.outputMessages[0].payload["spec"]["interactionType"], "OAUTH_REDIRECT")
+        self.assertEqual(result.resumeTask.source, "EXTERNAL_INTERACTION")
+        self.assertEqual(result.pauseReason.code, "EXTERNAL_INTERACTION_REQUIRED")
+        self.assertEqual(result.checkpoint.currentNodeKey, "end")
 
     def test_execute_agent_node_supports_skill_read_only_turn(self) -> None:
         skill_resource = make_skill_resource(

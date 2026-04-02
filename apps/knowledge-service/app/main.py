@@ -862,7 +862,6 @@ def extract_text(file_name: str, payload: bytes, content_type: Optional[str]) ->
 
 def parse_document(file_record: KnowledgeFileRecord, payload: bytes) -> ParsedDocument:
     document_type = ensure_supported_document_type(file_record.file_name, file_record.content_type)
-    source_uri = infer_source_uri(file_record)
     if document_type == "html":
         raw_html = payload.decode("utf-8", errors="ignore")
         title, text = html_to_text_payload(raw_html)
@@ -873,10 +872,12 @@ def parse_document(file_record: KnowledgeFileRecord, payload: bytes) -> ParsedDo
             body_text=text,
             segments=segments,
         )
+    source_uri = infer_source_uri(file_record)
     text_type, text = extract_text(file_record.file_name, payload, file_record.content_type)
     segments = parse_segments(file_record.file_name, text, source_uri)
+    resolved_title = next((segment.title for segment in segments if segment.title and segment.title.strip()), Path(file_record.file_name).stem)
     return ParsedDocument(
-        title=Path(file_record.file_name).stem,
+        title=resolved_title,
         document_type=text_type,
         body_text=text,
         segments=segments,
@@ -1380,7 +1381,9 @@ def create_url_import(request: CreateUrlImportRequest, db: Session = Depends(get
         size_bytes=0,
         status="UPLOADED",
     )
-    db.add_all([upload_session, file_record])
+    db.add(upload_session)
+    db.flush()
+    db.add(file_record)
     import_job = create_import_job_attempt(db, file_record, 0)
     db.commit()
     return {

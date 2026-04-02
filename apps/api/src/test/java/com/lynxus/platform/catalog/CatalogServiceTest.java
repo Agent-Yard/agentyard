@@ -513,6 +513,249 @@ class CatalogServiceTest {
     }
 
     @Test
+    void shouldKeepPublishedReleaseResourceAnchorsFrozenUntilAssistantRepublished() {
+        CatalogService catalogService = new CatalogService(new InMemoryCatalogRepository(), readySnapshotKnowledgeClient(), noopKnowledgeWorkflowGateway());
+        CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("冻结资源域", "验证资源版本冻结"));
+        CatalogDtos.ScenarioDto scenario = catalogService.createScenario(
+            new CatalogDtos.CreateScenarioRequest(domain.id(), "冻结资源场景", "测试资源版本锚点")
+        );
+        CatalogDtos.ResourceDto defaultModel = catalogService.createResource(
+            new CatalogDtos.CreateResourceRequest(
+                domain.id(),
+                "冻结模型",
+                ResourceType.LLM_MODEL,
+                ShareScope.DOMAIN_SHARED,
+                "DOMAIN",
+                domain.id(),
+                "初始模型版本",
+                "平台模型团队",
+                List.of("LLM"),
+                new CatalogDtos.CreateResourceVersionRequest("模型 v1", VersionStatus.PUBLISHED, null)
+            )
+        );
+        CatalogDtos.ResourceDto tool = catalogService.createResource(
+            new CatalogDtos.CreateResourceRequest(
+                domain.id(),
+                "冻结 Tool",
+                ResourceType.TOOL,
+                ShareScope.DOMAIN_SHARED,
+                "DOMAIN",
+                domain.id(),
+                "初始工具版本",
+                "平台工具团队",
+                List.of("TOOL"),
+                new CatalogDtos.CreateResourceVersionRequest("Tool v1", VersionStatus.PUBLISHED, null)
+            )
+        );
+        CatalogDtos.AssistantDto assistant = catalogService.createAssistant(
+            new CatalogDtos.CreateAssistantRequest(
+                scenario.id(),
+                "冻结助手",
+                "发布后资源版本应被冻结",
+                new CatalogDtos.AssistantModelPolicyDto(defaultModel.id()),
+                null,
+                null
+            )
+        );
+        catalogService.createAgent(new CatalogDtos.CreateAgentRequest(
+            assistant.id(),
+            "执行智能体",
+            "executor",
+            "调用工具",
+            new CatalogDtos.AgentExecutionPolicyDto(true, null, "", false, false, null, 8, List.of(), List.of(tool.id()))
+        ));
+
+        CatalogDtos.AssistantDto publishedV1 = catalogService.updateAssistant(
+            assistant.id(),
+            new CatalogDtos.UpdateAssistantRequest(
+                assistant.name(),
+                assistant.description(),
+                VersionStatus.PUBLISHED,
+                assistant.modelPolicy(),
+                assistant.ragPolicy(),
+                assistant.memoryPolicy()
+            )
+        );
+        CatalogDtos.AssistantReleaseDto releaseV1 = publishedV1.currentRelease();
+        String frozenModelVersionId = releaseV1.defaultModelBinding().resourceVersionId();
+        String frozenModelVersion = releaseV1.defaultModelBinding().resourceVersion();
+        CatalogDtos.AssistantReleaseResourceDto frozenToolBinding = releaseV1.resources().stream()
+            .filter(item -> item.resourceId().equals(tool.id()))
+            .findFirst()
+            .orElseThrow();
+
+        CatalogDtos.ResourceVersionDto newModelVersion = catalogService.createResourceVersion(
+            defaultModel.id(),
+            new CatalogDtos.CreateResourceVersionRequest("模型 v2", VersionStatus.PUBLISHED, null)
+        );
+        CatalogDtos.ResourceVersionDto newToolVersion = catalogService.createResourceVersion(
+            tool.id(),
+            new CatalogDtos.CreateResourceVersionRequest("Tool v2", VersionStatus.PUBLISHED, null)
+        );
+
+        CatalogDtos.AssistantDto unchangedRelease = catalogService.listAssistants().stream()
+            .filter(item -> item.id().equals(assistant.id()))
+            .findFirst()
+            .orElseThrow();
+        assertEquals(frozenModelVersionId, unchangedRelease.currentRelease().defaultModelBinding().resourceVersionId());
+        assertEquals(frozenModelVersion, unchangedRelease.currentRelease().defaultModelBinding().resourceVersion());
+        CatalogDtos.AssistantReleaseResourceDto unchangedToolBinding = unchangedRelease.currentRelease().resources().stream()
+            .filter(item -> item.resourceId().equals(tool.id()))
+            .findFirst()
+            .orElseThrow();
+        assertEquals(frozenToolBinding.resourceVersionId(), unchangedToolBinding.resourceVersionId());
+        assertEquals(frozenToolBinding.resourceVersion(), unchangedToolBinding.resourceVersion());
+        assertEquals(newModelVersion.id(), catalogService.listResources().stream()
+            .filter(item -> item.id().equals(defaultModel.id()))
+            .findFirst()
+            .orElseThrow()
+            .effectiveVersion()
+            .id());
+        assertEquals(newToolVersion.id(), catalogService.listResources().stream()
+            .filter(item -> item.id().equals(tool.id()))
+            .findFirst()
+            .orElseThrow()
+            .effectiveVersion()
+            .id());
+
+        CatalogDtos.AssistantDto publishedV2 = catalogService.updateAssistant(
+            assistant.id(),
+            new CatalogDtos.UpdateAssistantRequest(
+                unchangedRelease.name(),
+                unchangedRelease.description(),
+                VersionStatus.PUBLISHED,
+                unchangedRelease.modelPolicy(),
+                unchangedRelease.ragPolicy(),
+                unchangedRelease.memoryPolicy()
+            )
+        );
+        CatalogDtos.AssistantReleaseResourceDto republishedToolBinding = publishedV2.currentRelease().resources().stream()
+            .filter(item -> item.resourceId().equals(tool.id()))
+            .findFirst()
+            .orElseThrow();
+        assertEquals(newModelVersion.id(), publishedV2.currentRelease().defaultModelBinding().resourceVersionId());
+        assertEquals(newModelVersion.version(), publishedV2.currentRelease().defaultModelBinding().resourceVersion());
+        assertEquals(newToolVersion.id(), republishedToolBinding.resourceVersionId());
+        assertEquals(newToolVersion.version(), republishedToolBinding.resourceVersion());
+    }
+
+    @Test
+    void shouldKeepPublishedKnowledgeBindingFrozenUntilAssistantRepublished() {
+        CatalogService catalogService = new CatalogService(new InMemoryCatalogRepository(), readySnapshotKnowledgeClient(), noopKnowledgeWorkflowGateway());
+        CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("冻结知识域", "验证知识版本冻结"));
+        CatalogDtos.ScenarioDto scenario = catalogService.createScenario(
+            new CatalogDtos.CreateScenarioRequest(domain.id(), "冻结知识场景", "测试知识绑定锚点")
+        );
+        CatalogDtos.KnowledgeBaseDto knowledgeBase = catalogService.createKnowledgeBase(
+            new CatalogDtos.CreateKnowledgeBaseRequest(
+                domain.id(),
+                "冻结知识库",
+                ShareScope.DOMAIN_SHARED,
+                "DOMAIN",
+                domain.id(),
+                "用于验证知识版本冻结",
+                "知识团队",
+                List.of("KB")
+            )
+        );
+        CatalogDtos.KnowledgeReleaseDto knowledgeV1 = catalogService.createKnowledgeRelease(
+            knowledgeBase.id(),
+            new CatalogDtos.CreateKnowledgeReleaseRequest(
+                "知识 v1",
+                VersionStatus.PUBLISHED,
+                "snapshot-knowledge-v1",
+                new CatalogDtos.KnowledgeRetrievalProfileDto(5, "HYBRID", 0.1)
+            )
+        );
+        CatalogDtos.ResourceDto defaultModel = catalogService.createResource(
+            new CatalogDtos.CreateResourceRequest(
+                domain.id(),
+                "知识默认模型",
+                ResourceType.LLM_MODEL,
+                ShareScope.DOMAIN_SHARED,
+                "DOMAIN",
+                domain.id(),
+                "用于知识助手",
+                "平台模型团队",
+                List.of("LLM"),
+                new CatalogDtos.CreateResourceVersionRequest("模型 v1", VersionStatus.PUBLISHED, null)
+            )
+        );
+        CatalogDtos.AssistantDto assistant = catalogService.createAssistant(
+            new CatalogDtos.CreateAssistantRequest(
+                scenario.id(),
+                "知识助手",
+                "发布后知识绑定应被冻结",
+                new CatalogDtos.AssistantModelPolicyDto(defaultModel.id()),
+                new CatalogDtos.RagPolicyDto(true, knowledgeBase.id()),
+                null
+            )
+        );
+        catalogService.createAgent(new CatalogDtos.CreateAgentRequest(
+            assistant.id(),
+            "知识执行智能体",
+            "support",
+            "使用知识库检索",
+            new CatalogDtos.AgentExecutionPolicyDto(true, null, "", true, false, knowledgeBase.id(), 8, List.of(), List.of())
+        ));
+
+        CatalogDtos.AssistantDto publishedV1 = catalogService.updateAssistant(
+            assistant.id(),
+            new CatalogDtos.UpdateAssistantRequest(
+                assistant.name(),
+                assistant.description(),
+                VersionStatus.PUBLISHED,
+                assistant.modelPolicy(),
+                assistant.ragPolicy(),
+                assistant.memoryPolicy()
+            )
+        );
+        CatalogDtos.KnowledgeBindingSnapshotDto frozenAssistantKnowledge = publishedV1.currentRelease().assistantKnowledge();
+        CatalogDtos.KnowledgeBindingSnapshotDto frozenAgentKnowledge = publishedV1.currentRelease().agents().getFirst().knowledge();
+        assertEquals(knowledgeV1.id(), frozenAssistantKnowledge.knowledgeReleaseId());
+        assertEquals(knowledgeV1.version(), frozenAssistantKnowledge.knowledgeReleaseVersion());
+        assertEquals("snapshot-knowledge-v1", frozenAssistantKnowledge.snapshotId());
+
+        CatalogDtos.KnowledgeReleaseDto knowledgeV2 = catalogService.createKnowledgeRelease(
+            knowledgeBase.id(),
+            new CatalogDtos.CreateKnowledgeReleaseRequest(
+                "知识 v2",
+                VersionStatus.PUBLISHED,
+                "snapshot-knowledge-v2",
+                new CatalogDtos.KnowledgeRetrievalProfileDto(8, "VECTOR", 0.3)
+            )
+        );
+
+        CatalogDtos.AssistantDto unchangedRelease = catalogService.listAssistants().stream()
+            .filter(item -> item.id().equals(assistant.id()))
+            .findFirst()
+            .orElseThrow();
+        assertEquals(frozenAssistantKnowledge.knowledgeReleaseId(), unchangedRelease.currentRelease().assistantKnowledge().knowledgeReleaseId());
+        assertEquals(frozenAssistantKnowledge.knowledgeReleaseVersion(), unchangedRelease.currentRelease().assistantKnowledge().knowledgeReleaseVersion());
+        assertEquals(frozenAssistantKnowledge.snapshotId(), unchangedRelease.currentRelease().assistantKnowledge().snapshotId());
+        assertEquals(frozenAgentKnowledge.knowledgeReleaseId(), unchangedRelease.currentRelease().agents().getFirst().knowledge().knowledgeReleaseId());
+        assertEquals(frozenAgentKnowledge.knowledgeReleaseVersion(), unchangedRelease.currentRelease().agents().getFirst().knowledge().knowledgeReleaseVersion());
+        assertEquals(knowledgeV2.id(), catalogService.getKnowledgeBase(knowledgeBase.id()).effectiveRelease().id());
+
+        CatalogDtos.AssistantDto publishedV2 = catalogService.updateAssistant(
+            assistant.id(),
+            new CatalogDtos.UpdateAssistantRequest(
+                unchangedRelease.name(),
+                unchangedRelease.description(),
+                VersionStatus.PUBLISHED,
+                unchangedRelease.modelPolicy(),
+                unchangedRelease.ragPolicy(),
+                unchangedRelease.memoryPolicy()
+            )
+        );
+        assertEquals(knowledgeV2.id(), publishedV2.currentRelease().assistantKnowledge().knowledgeReleaseId());
+        assertEquals(knowledgeV2.version(), publishedV2.currentRelease().assistantKnowledge().knowledgeReleaseVersion());
+        assertEquals("snapshot-knowledge-v2", publishedV2.currentRelease().assistantKnowledge().snapshotId());
+        assertEquals(knowledgeV2.id(), publishedV2.currentRelease().agents().getFirst().knowledge().knowledgeReleaseId());
+        assertEquals(knowledgeV2.version(), publishedV2.currentRelease().agents().getFirst().knowledge().knowledgeReleaseVersion());
+    }
+
+    @Test
     void shouldStillFreezeToolVersionsWhenPublishingAssistant() {
         CatalogService catalogService = new CatalogService(new InMemoryCatalogRepository(), readySnapshotKnowledgeClient(), noopKnowledgeWorkflowGateway());
         CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("交付域", "承载交付流程"));

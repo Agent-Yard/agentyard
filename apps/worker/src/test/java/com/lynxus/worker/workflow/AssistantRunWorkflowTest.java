@@ -14,15 +14,18 @@ import io.temporal.testing.TestWorkflowEnvironment;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class AssistantRunWorkflowTest {
     private TestWorkflowEnvironment environment;
+    private AtomicReference<WorkflowContracts.WorkflowResumeRequest> lastResumeRequest;
 
     @BeforeEach
     void setUp() {
+        lastResumeRequest = new AtomicReference<>();
         environment = TestWorkflowEnvironment.newInstance();
         var worker = environment.newWorker("test-assistant-run");
         worker.registerWorkflowImplementationTypes(AssistantRunWorkflowImpl.class);
@@ -93,6 +96,7 @@ class AssistantRunWorkflowTest {
 
             @Override
             public WorkflowContracts.WorkflowResult resume(WorkflowContracts.WorkflowResumeRequest request) {
+                lastResumeRequest.set(request);
                 assertNotNull(request.checkpoint());
                 assertEquals("handoff-close", request.checkpoint().currentNodeKey());
                 assertEquals("human-review", request.checkpoint().waitingNodeKey());
@@ -159,6 +163,9 @@ class AssistantRunWorkflowTest {
         WorkflowContracts.WorkflowResult waiting = waitForResult(workflow, result -> result.status() == WorkflowStatus.WAITING_RESUME);
         assertEquals(WorkflowStatus.WAITING_RESUME, waiting.status());
         assertNotNull(waiting.resumeTask());
+        assertNotNull(waiting.checkpoint());
+        assertEquals("human-review", waiting.resumeTask().nodeKey());
+        assertEquals("GRAPH_NODE", waiting.pauseReason().source().name());
 
         workflow.submitResumeAction(
             new WorkflowContracts.ResumeAction(
@@ -166,12 +173,16 @@ class AssistantRunWorkflowTest {
                 WorkflowContracts.ResumeSource.HUMAN,
                 "人工已确认处理",
                 "tester",
-                java.util.Map.of()
+                java.util.Map.of("resolution", "refund-approved")
             )
         );
         WorkflowStub untyped = WorkflowStub.fromTyped(workflow);
         WorkflowContracts.WorkflowResult finalResult = untyped.getResult(WorkflowContracts.WorkflowResult.class);
         assertEquals(WorkflowStatus.COMPLETED, finalResult.status());
+        assertNotNull(lastResumeRequest.get());
+        assertEquals(WorkflowContracts.ResumeActionType.CONTINUE, lastResumeRequest.get().action().type());
+        assertEquals(WorkflowContracts.ResumeSource.HUMAN, lastResumeRequest.get().action().source());
+        assertEquals("refund-approved", lastResumeRequest.get().action().attributes().get("resolution"));
     }
 
     @Test
