@@ -52,7 +52,7 @@
             <div class="hero-card">
               <span class="label">当前边界</span>
               <strong>未生产化</strong>
-              <p>多租户、鉴权、运行态持久化和生产级治理仍待补齐。</p>
+              <p>多租户、正式权限、订阅式观测和生产级治理仍待补齐。</p>
             </div>
           </div>
         </section>
@@ -69,7 +69,7 @@
                 <li>智能体、知识、工具、模型配置分散</li>
                 <li>运行直接依赖草稿配置，缺少稳定发布锚点</li>
                 <li>多智能体协作链路难回溯、难解释</li>
-                <li>自动化与人工处理缺少平滑衔接</li>
+                <li>自动化、人工处理和站外交互缺少平滑衔接</li>
                 <li>资源复用、版本控制、影响分析能力不足</li>
                 <li>业务侧、开发侧、运营侧对系统对象理解不统一</li>
               </ul>
@@ -81,7 +81,7 @@
                 <li>能力资产：Knowledge Base、Tool、LLM、Skill</li>
                 <li>稳定运行：发布快照冻结资源和编排图</li>
                 <li>执行承载：Temporal + agent runtime</li>
-                <li>运行表达：会话、任务、流程、节点、人工作业</li>
+                <li>运行表达：会话、任务、流程、节点、恢复动作</li>
                 <li>控制台串起配置治理、资源管理与运行观测</li>
               </ul>
             </div>
@@ -117,7 +117,7 @@
                 <li>治理主树已经形成稳定结构</li>
                 <li>资源治理模型已经落地</li>
                 <li>运行模型已经由快照驱动</li>
-                <li>人工暂停与恢复闭环已经打通</li>
+                <li>异步受理、投影持久化与恢复闭环已经打通</li>
                 <li>本地联调链路已经覆盖前后端与基础依赖</li>
               </ul>
             </div>
@@ -125,10 +125,11 @@
               <h3>尚未完成</h3>
               <ul>
                 <li>多租户与正式权限治理</li>
-                <li>运行态持久化与异步观测</li>
+                <li>订阅式运行观测与实时推送</li>
                 <li>生产级审计、隔离、SLO、成本治理</li>
+                <li>对象生命周期与归档治理</li>
                 <li>基础设施职责的最终收敛</li>
-                <li>面向生产环境的 CI、回滚和运维基线</li>
+                <li>面向生产环境的 CI、恢复和运维基线</li>
               </ul>
             </div>
           </div>
@@ -328,7 +329,7 @@ flowchart LR
             </article>
             <article class="capability">
               <h3>资源与知识治理</h3>
-              <p>知识库、Tool、LLM Model、Skill 四类资源已打通，支持版本、生效版本和引用分析。</p>
+              <p>知识库、Tool、LLM Model、Skill 四类资源已打通，支持版本、生效版本、引用分析和删除影响预览。</p>
             </article>
             <article class="capability">
               <h3>发布冻结</h3>
@@ -344,19 +345,19 @@ flowchart LR
             </article>
             <article class="capability">
               <h3>运行观测</h3>
-              <p>会话、任务、工作流、节点轨迹、工具摘要和人工介入可回看。</p>
+              <p>会话、任务、工作流、节点轨迹、失败诊断、模型命中和人工介入可回看。</p>
             </article>
             <article class="capability">
               <h3>知识工作台</h3>
-              <p>已支持文件导入、URL 导入、文档解析、切片、索引快照和发布版本。</p>
+              <p>已支持文件导入、URL 导入、导入任务、索引快照、检索验证和发布版本。</p>
             </article>
             <article class="capability">
               <h3>本地联调闭环</h3>
               <p>前端、控制面、Worker、知识服务、运行时和基础依赖可在本地一次拉通。</p>
             </article>
             <article class="capability">
-              <h3>演示能力</h3>
-              <p>预置 seed 数据、示例助手和运行会话，适合方案验证和汇报演示。</p>
+              <h3>认证与会话</h3>
+              <p>控制台已切到 API 托管 Session，OIDC 入口已预留，本地开发保留 bootstrap 登录旁路。</p>
             </article>
           </div>
         </section>
@@ -381,7 +382,7 @@ flowchart LR
             </div>
             <div class="value-card">
               <h3>建立了继续演进的地基</h3>
-              <p>后续补齐权限、持久化、审计和成本治理时，不需要推翻当前架构主线。</p>
+              <p>后续补齐权限、订阅式观测、审计和成本治理时，不需要推翻当前架构主线。</p>
             </div>
           </div>
           <div class="bottom-banner">
@@ -408,16 +409,16 @@ flowchart LR
               <p>将协作结构、人工节点和路由关系从 Prompt 或代码分支中抽离出来，提升可解释性和可观测性。</p>
             </div>
             <div class="decision-card">
-              <h3>人工介入保留为一等能力</h3>
-              <p>不追求全自动闭环，而是面向企业复杂链路保留“暂停、接手、恢复”的系统能力。</p>
+              <h3>可恢复暂停保留为一等能力</h3>
+              <p>不追求全自动闭环，而是面向企业复杂链路保留人工节点和站外交互后的统一恢复能力。</p>
             </div>
             <div class="decision-card">
-              <h3>以本地可联调为阶段目标</h3>
-              <p>优先保证控制台、控制面、知识服务、运行时和基础依赖能够真实联通，提升方案验证效率。</p>
+              <h3>命令受理与结果观测解耦</h3>
+              <p>运行入口先落投影再提交 workflow，避免 API 同步等待首个结果，为后续 SSE 或事件订阅预留清晰边界。</p>
             </div>
             <div class="decision-card">
               <h3>保留长期平台边界</h3>
-              <p>虽然当前默认单租户和 mock 认证，但对象模型和职责划分已为后续多租户与正式治理预留边界。</p>
+              <p>虽然当前默认单租户且开发态保留 bootstrap 登录旁路，但对象模型和职责划分已为后续多租户与正式治理预留边界。</p>
             </div>
           </div>
         </section>
@@ -432,20 +433,20 @@ flowchart LR
               <h3>原型边界</h3>
               <ul>
                 <li>默认单租户，复杂租户治理仅保留模型边界</li>
-                <li>认证仍以 mock 为主，尚未接入真实 OIDC / IAM</li>
+                <li>认证已具备 API Session 与 OIDC 边界，开发态仍保留 bootstrap 登录旁路</li>
                 <li>运行态主投影已落 PostgreSQL，并在 API 启动时与 Temporal 对账</li>
-                <li>`sendMessage` / `launchTask` 仍同步等待首个 workflow 结果</li>
-                <li>部分 provider 和 seed 逻辑仍兼顾演示闭环需求</li>
+                <li>运行入口已改为异步受理返回，前端仍主要靠轮询收口</li>
+                <li>external interaction 已入模，但 provider 与 callback 治理仍待继续补齐</li>
               </ul>
             </div>
             <div class="risk-panel">
               <h3>生产化缺口</h3>
               <ul>
-                <li>`demo.local` provider 和 seed 数据仍承担演示闭环职责</li>
+                <li>细粒度权限、多租户与跨域共享治理尚未成体系</li>
                 <li>审计、安全隔离、灰度发布、SLO、成本治理尚未成体系</li>
-                <li>pgvector / MinIO / Redis 的正式职责仍待进一步收敛</li>
-                <li>CI、测试和环境一致性能力仍需补强</li>
-                <li>运行观测仍偏同步式，尚未形成完整事件化订阅链路</li>
+                <li>pgvector / MinIO 的正式职责仍待进一步收敛</li>
+                <li>CI、测试、备份恢复和环境一致性能力仍需补强</li>
+                <li>运行观测仍缺完整事件化订阅链路</li>
               </ul>
             </div>
           </div>
@@ -462,40 +463,40 @@ flowchart LR
           <div class="roadmap">
             <div class="roadmap-card">
               <span>01</span>
-              <h3>运行态持久化与异步观测</h3>
-              <p>补齐内存态运行对象落库，改造为完整异步观测链路，增强 workflow 历史查询能力。</p>
+              <h3>订阅式运行观测</h3>
+              <p>在现有 runtime 投影基础上补 SSE 或事件推送，增强 workflow 历史和恢复态查询能力。</p>
             </div>
             <div class="roadmap-card">
               <span>02</span>
               <h3>真实身份与权限体系</h3>
-              <p>引入 OIDC / IAM，收敛平台、域、场景和资源的权限边界，为多租户治理做准备。</p>
+              <p>在现有 API Session + OIDC 边界基础上接入真实身份源，收敛平台、域、场景和资源权限。</p>
             </div>
             <div class="roadmap-card">
               <span>03</span>
-              <h3>知识与资源治理闭环</h3>
-              <p>完善生命周期、删除影响预览、软删除归档和发布影响控制。</p>
+              <h3>治理生命周期闭环</h3>
+              <p>完善软删除归档、版本差异、删除影响预览扩面和发布影响控制。</p>
             </div>
             <div class="roadmap-card">
               <span>04</span>
-              <h3>生产化基础设施职责收敛</h3>
-              <p>明确 pgvector、MinIO、Redis 等依赖职责，并补齐监控、备份、恢复和 CI 能力。</p>
+              <h3>生产化运行基座收敛</h3>
+              <p>明确 external interaction provider、回调鉴权、pgvector / MinIO 职责，并补齐监控、备份、恢复和 CI 能力。</p>
             </div>
           </div>
           <div class="two-col">
             <div class="panel accent-blue">
               <h3>近期优先级更高</h3>
               <ul>
-                <li>运行态落库与查询能力</li>
-                <li>异步观测链路替代同步等待</li>
-                <li>真实身份体系替换 mock 认证</li>
+                <li>SSE 或订阅式运行观测</li>
+                <li>workflow 历史与恢复态查询能力</li>
+                <li>真实身份体系替换开发旁路</li>
               </ul>
             </div>
             <div class="panel accent-amber">
               <h3>中期需要持续推进</h3>
               <ul>
                 <li>多租户和跨域共享治理</li>
-                <li>资源删除影响预览与归档视图</li>
-                <li>生产环境监控、备份、容量和发布治理</li>
+                <li>生命周期治理与发布影响视图</li>
+                <li>provider 集成安全与生产运维基线</li>
               </ul>
             </div>
           </div>
