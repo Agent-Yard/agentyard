@@ -347,7 +347,7 @@ class CatalogServiceTest {
                 created.description(),
                 VersionStatus.DRAFT,
                 new CatalogDtos.AssistantModelPolicyDto(null),
-                created.ragPolicy(),
+                created.knowledgeAccessPolicy(),
                 created.memoryPolicy()
             )
         );
@@ -376,7 +376,7 @@ class CatalogServiceTest {
                     assistant.description(),
                     VersionStatus.PUBLISHED,
                     assistant.modelPolicy(),
-                    assistant.ragPolicy(),
+                    assistant.knowledgeAccessPolicy(),
                     assistant.memoryPolicy()
                 )
             )
@@ -429,7 +429,7 @@ class CatalogServiceTest {
                 assistant.description(),
                 VersionStatus.PUBLISHED,
                 assistant.modelPolicy(),
-                assistant.ragPolicy(),
+                assistant.knowledgeAccessPolicy(),
                 assistant.memoryPolicy()
             )
         );
@@ -443,7 +443,7 @@ class CatalogServiceTest {
                     published.description(),
                     null,
                     new CatalogDtos.AssistantModelPolicyDto(null),
-                    published.ragPolicy(),
+                    published.knowledgeAccessPolicy(),
                     published.memoryPolicy()
                 )
             )
@@ -497,7 +497,7 @@ class CatalogServiceTest {
                 assistant.description(),
                 VersionStatus.PUBLISHED,
                 assistant.modelPolicy(),
-                assistant.ragPolicy(),
+                assistant.knowledgeAccessPolicy(),
                 assistant.memoryPolicy()
             )
         );
@@ -572,7 +572,7 @@ class CatalogServiceTest {
                 assistant.description(),
                 VersionStatus.PUBLISHED,
                 assistant.modelPolicy(),
-                assistant.ragPolicy(),
+                assistant.knowledgeAccessPolicy(),
                 assistant.memoryPolicy()
             )
         );
@@ -625,7 +625,7 @@ class CatalogServiceTest {
                 unchangedRelease.description(),
                 VersionStatus.PUBLISHED,
                 unchangedRelease.modelPolicy(),
-                unchangedRelease.ragPolicy(),
+                unchangedRelease.knowledgeAccessPolicy(),
                 unchangedRelease.memoryPolicy()
             )
         );
@@ -687,7 +687,7 @@ class CatalogServiceTest {
                 "知识助手",
                 "发布后知识绑定应被冻结",
                 new CatalogDtos.AssistantModelPolicyDto(defaultModel.id()),
-                new CatalogDtos.RagPolicyDto(true, knowledgeBase.id()),
+                new CatalogDtos.KnowledgeAccessPolicyDto(true, knowledgeBase.id()),
                 null
             )
         );
@@ -706,12 +706,12 @@ class CatalogServiceTest {
                 assistant.description(),
                 VersionStatus.PUBLISHED,
                 assistant.modelPolicy(),
-                assistant.ragPolicy(),
+                assistant.knowledgeAccessPolicy(),
                 assistant.memoryPolicy()
             )
         );
-        CatalogDtos.KnowledgeBindingSnapshotDto frozenAssistantKnowledge = publishedV1.currentRelease().assistantKnowledge();
-        CatalogDtos.KnowledgeBindingSnapshotDto frozenAgentKnowledge = publishedV1.currentRelease().agents().getFirst().knowledge();
+        CatalogDtos.KnowledgeBindingSnapshotDto frozenAssistantKnowledge = publishedV1.currentRelease().assistantKnowledgeBinding();
+        CatalogDtos.KnowledgeBindingSnapshotDto frozenAgentKnowledge = publishedV1.currentRelease().agents().getFirst().knowledgeBinding();
         assertEquals(knowledgeV1.id(), frozenAssistantKnowledge.knowledgeReleaseId());
         assertEquals(knowledgeV1.version(), frozenAssistantKnowledge.knowledgeReleaseVersion());
         assertEquals("snapshot-knowledge-v1", frozenAssistantKnowledge.snapshotId());
@@ -730,11 +730,11 @@ class CatalogServiceTest {
             .filter(item -> item.id().equals(assistant.id()))
             .findFirst()
             .orElseThrow();
-        assertEquals(frozenAssistantKnowledge.knowledgeReleaseId(), unchangedRelease.currentRelease().assistantKnowledge().knowledgeReleaseId());
-        assertEquals(frozenAssistantKnowledge.knowledgeReleaseVersion(), unchangedRelease.currentRelease().assistantKnowledge().knowledgeReleaseVersion());
-        assertEquals(frozenAssistantKnowledge.snapshotId(), unchangedRelease.currentRelease().assistantKnowledge().snapshotId());
-        assertEquals(frozenAgentKnowledge.knowledgeReleaseId(), unchangedRelease.currentRelease().agents().getFirst().knowledge().knowledgeReleaseId());
-        assertEquals(frozenAgentKnowledge.knowledgeReleaseVersion(), unchangedRelease.currentRelease().agents().getFirst().knowledge().knowledgeReleaseVersion());
+        assertEquals(frozenAssistantKnowledge.knowledgeReleaseId(), unchangedRelease.currentRelease().assistantKnowledgeBinding().knowledgeReleaseId());
+        assertEquals(frozenAssistantKnowledge.knowledgeReleaseVersion(), unchangedRelease.currentRelease().assistantKnowledgeBinding().knowledgeReleaseVersion());
+        assertEquals(frozenAssistantKnowledge.snapshotId(), unchangedRelease.currentRelease().assistantKnowledgeBinding().snapshotId());
+        assertEquals(frozenAgentKnowledge.knowledgeReleaseId(), unchangedRelease.currentRelease().agents().getFirst().knowledgeBinding().knowledgeReleaseId());
+        assertEquals(frozenAgentKnowledge.knowledgeReleaseVersion(), unchangedRelease.currentRelease().agents().getFirst().knowledgeBinding().knowledgeReleaseVersion());
         assertEquals(knowledgeV2.id(), catalogService.getKnowledgeBase(knowledgeBase.id()).effectiveRelease().id());
 
         CatalogDtos.AssistantDto publishedV2 = catalogService.updateAssistant(
@@ -744,15 +744,15 @@ class CatalogServiceTest {
                 unchangedRelease.description(),
                 VersionStatus.PUBLISHED,
                 unchangedRelease.modelPolicy(),
-                unchangedRelease.ragPolicy(),
+                unchangedRelease.knowledgeAccessPolicy(),
                 unchangedRelease.memoryPolicy()
             )
         );
-        assertEquals(knowledgeV2.id(), publishedV2.currentRelease().assistantKnowledge().knowledgeReleaseId());
-        assertEquals(knowledgeV2.version(), publishedV2.currentRelease().assistantKnowledge().knowledgeReleaseVersion());
-        assertEquals("snapshot-knowledge-v2", publishedV2.currentRelease().assistantKnowledge().snapshotId());
-        assertEquals(knowledgeV2.id(), publishedV2.currentRelease().agents().getFirst().knowledge().knowledgeReleaseId());
-        assertEquals(knowledgeV2.version(), publishedV2.currentRelease().agents().getFirst().knowledge().knowledgeReleaseVersion());
+        assertEquals(knowledgeV2.id(), publishedV2.currentRelease().assistantKnowledgeBinding().knowledgeReleaseId());
+        assertEquals(knowledgeV2.version(), publishedV2.currentRelease().assistantKnowledgeBinding().knowledgeReleaseVersion());
+        assertEquals("snapshot-knowledge-v2", publishedV2.currentRelease().assistantKnowledgeBinding().snapshotId());
+        assertEquals(knowledgeV2.id(), publishedV2.currentRelease().agents().getFirst().knowledgeBinding().knowledgeReleaseId());
+        assertEquals(knowledgeV2.version(), publishedV2.currentRelease().agents().getFirst().knowledgeBinding().knowledgeReleaseVersion());
     }
 
     @Test
@@ -810,7 +810,7 @@ class CatalogServiceTest {
 
         CatalogDtos.AssistantDto published = catalogService.updateAssistant(
             assistant.id(),
-            new CatalogDtos.UpdateAssistantRequest("交付助手", "处理交付跟进", VersionStatus.PUBLISHED, assistant.modelPolicy(), assistant.ragPolicy(), assistant.memoryPolicy())
+            new CatalogDtos.UpdateAssistantRequest("交付助手", "处理交付跟进", VersionStatus.PUBLISHED, assistant.modelPolicy(), assistant.knowledgeAccessPolicy(), assistant.memoryPolicy())
         );
         assertEquals(VersionStatus.PUBLISHED, published.version().status());
         assertFalse(published.currentRelease().agents().getFirst().toolResourceVersionIds().isEmpty());
@@ -1035,7 +1035,7 @@ class CatalogServiceTest {
                 "客服助手",
                 "处理客服问题",
                 new CatalogDtos.AssistantModelPolicyDto(defaultModel.id()),
-                new CatalogDtos.RagPolicyDto(true, knowledgeBase.id()),
+                new CatalogDtos.KnowledgeAccessPolicyDto(true, knowledgeBase.id()),
                 null
             )
         );
@@ -1067,7 +1067,7 @@ class CatalogServiceTest {
                 assistant.description(),
                 VersionStatus.PUBLISHED,
                 assistant.modelPolicy(),
-                new CatalogDtos.RagPolicyDto(true, knowledgeBase.id()),
+                new CatalogDtos.KnowledgeAccessPolicyDto(true, knowledgeBase.id()),
                 assistant.memoryPolicy()
             )
         );

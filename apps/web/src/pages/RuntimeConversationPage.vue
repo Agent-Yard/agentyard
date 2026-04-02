@@ -425,7 +425,7 @@ const messageText = conversationMessageText;
                 <a-descriptions-item label="摘要">{{ latestWorkflow.summary }}</a-descriptions-item>
                 <a-descriptions-item label="工具结果">
                   {{ currentSession?.latestToolOutcome
-                    ? `${currentSession.latestToolOutcome.toolResourceName} / ${currentSession.latestToolOutcome.operation}`
+                    ? `${currentSession.latestToolOutcome.toolName} / ${currentSession.latestToolOutcome.operation} / ${currentSession.latestToolOutcome.toolKind}`
                     : '当前无工具调用记录' }}
                 </a-descriptions-item>
                 <a-descriptions-item label="人工待办">

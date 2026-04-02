@@ -36,7 +36,7 @@ const createForm = reactive<CreateAgentPayload>({
     inheritAssistantDefaults: true,
     modelResourceId: null,
     systemPrompt: '',
-    ragEnabled: false,
+    knowledgeEnabled: false,
     inheritAssistantKnowledge: true,
     knowledgeBaseId: null,
     memoryWindowSize: 8,
@@ -52,7 +52,7 @@ const editForm = reactive<UpdateAgentPayload>({
     inheritAssistantDefaults: true,
     modelResourceId: null,
     systemPrompt: '',
-    ragEnabled: false,
+    knowledgeEnabled: false,
     inheritAssistantKnowledge: true,
     knowledgeBaseId: null,
     memoryWindowSize: 8,
@@ -84,7 +84,7 @@ function toolOperationSummary(resource: Resource) {
 function normalizeKnowledgeSelection(
   policy: CreateAgentPayload['executionPolicy'] | UpdateAgentPayload['executionPolicy'],
 ) {
-  if (!policy.ragEnabled) {
+  if (!policy.knowledgeEnabled) {
     policy.knowledgeBaseId = null;
     policy.inheritAssistantKnowledge = true;
     return;
@@ -149,7 +149,7 @@ watch(
 
 watch(
   () => [
-    createForm.executionPolicy.ragEnabled,
+    createForm.executionPolicy.knowledgeEnabled,
     createForm.executionPolicy.inheritAssistantKnowledge,
     props.knowledgeBases,
   ],
@@ -159,7 +159,7 @@ watch(
 
 watch(
   () => [
-    editForm.executionPolicy.ragEnabled,
+    editForm.executionPolicy.knowledgeEnabled,
     editForm.executionPolicy.inheritAssistantKnowledge,
     props.knowledgeBases,
   ],
@@ -313,8 +313,8 @@ function submitSave() {
               </a-form-item>
             </a-col>
             <a-col :span="8">
-              <a-form-item label="启用知识检索">
-                <a-switch v-model:checked="editForm.executionPolicy.ragEnabled" />
+              <a-form-item label="启用知识能力">
+                <a-switch v-model:checked="editForm.executionPolicy.knowledgeEnabled" />
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -351,7 +351,7 @@ function submitSave() {
               <a-form-item label="继承助手知识库">
                 <a-switch
                   v-model:checked="editForm.executionPolicy.inheritAssistantKnowledge"
-                  :disabled="!editForm.executionPolicy.ragEnabled"
+                  :disabled="!editForm.executionPolicy.knowledgeEnabled"
                 />
               </a-form-item>
             </a-col>
@@ -360,7 +360,7 @@ function submitSave() {
                 <a-select
                   v-model:value="editForm.executionPolicy.knowledgeBaseId"
                   allow-clear
-                  :disabled="!editForm.executionPolicy.ragEnabled || editForm.executionPolicy.inheritAssistantKnowledge"
+                  :disabled="!editForm.executionPolicy.knowledgeEnabled || editForm.executionPolicy.inheritAssistantKnowledge"
                   :options="knowledgeBaseOptions"
                 />
               </a-form-item>
@@ -402,12 +402,12 @@ function submitSave() {
           </a-form-item>
 
           <a-alert
-            v-if="currentAssistant?.currentRelease?.agents.find((item) => item.agentId === currentAgent.id)?.knowledge"
+            v-if="currentAssistant?.currentRelease?.agents.find((item) => item.agentId === currentAgent.id)?.knowledgeBinding"
             type="info"
             show-icon
             style="margin-bottom: 16px"
-            :message="`当前发布冻结知识：${currentAssistant.currentRelease?.agents.find((item) => item.agentId === currentAgent.id)?.knowledge?.knowledgeBaseName}`"
-            :description="`版本 ${currentAssistant.currentRelease?.agents.find((item) => item.agentId === currentAgent.id)?.knowledge?.knowledgeReleaseVersion} · 快照 ${currentAssistant.currentRelease?.agents.find((item) => item.agentId === currentAgent.id)?.knowledge?.snapshotId}`"
+            :message="`当前发布冻结知识：${currentAssistant.currentRelease?.agents.find((item) => item.agentId === currentAgent.id)?.knowledgeBinding?.knowledgeBaseName}`"
+            :description="`版本 ${currentAssistant.currentRelease?.agents.find((item) => item.agentId === currentAgent.id)?.knowledgeBinding?.knowledgeReleaseVersion} · 快照 ${currentAssistant.currentRelease?.agents.find((item) => item.agentId === currentAgent.id)?.knowledgeBinding?.snapshotId}`"
           />
 
           <a-space v-if="canManageGovernance">

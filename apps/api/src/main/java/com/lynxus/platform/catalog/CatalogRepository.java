@@ -65,12 +65,12 @@ public interface CatalogRepository {
         CatalogSnapshot snapshot = load();
         List<KnowledgeBindingRef> refs = new java.util.ArrayList<>();
         for (AssistantDto a : snapshot.assistants()) {
-            if (a.ragPolicy() != null && a.ragPolicy().enabled() && knowledgeBaseId.equals(a.ragPolicy().knowledgeBaseId())) {
+            if (a.knowledgeAccessPolicy() != null && a.knowledgeAccessPolicy().enabled() && knowledgeBaseId.equals(a.knowledgeAccessPolicy().knowledgeBaseId())) {
                 refs.add(new KnowledgeBindingRef("ASSISTANT", a.id(), knowledgeBaseId, "ASSISTANT_DEFAULT_KNOWLEDGE_BASE"));
             }
         }
         for (AgentDto a : snapshot.agents()) {
-            if (a.executionPolicy() != null && a.executionPolicy().ragEnabled()
+            if (a.executionPolicy() != null && a.executionPolicy().knowledgeEnabled()
                 && !a.executionPolicy().inheritAssistantKnowledge()
                 && knowledgeBaseId.equals(a.executionPolicy().knowledgeBaseId())) {
                 refs.add(new KnowledgeBindingRef("AGENT", a.id(), knowledgeBaseId, "AGENT_OVERRIDE_KNOWLEDGE_BASE"));
@@ -85,13 +85,13 @@ public interface CatalogRepository {
         List<ReleaseKnowledgeRef> refs = new java.util.ArrayList<>();
         for (Map.Entry<String, List<AssistantReleaseDto>> entry : snapshot.assistantReleases().entrySet()) {
             for (AssistantReleaseDto release : entry.getValue()) {
-                if (release.assistantKnowledge() != null && knowledgeBaseId.equals(release.assistantKnowledge().knowledgeBaseId())) {
-                    refs.add(new ReleaseKnowledgeRef(release.id(), entry.getKey(), knowledgeBaseId, release.assistantKnowledge().knowledgeReleaseId()));
+                if (release.assistantKnowledgeBinding() != null && knowledgeBaseId.equals(release.assistantKnowledgeBinding().knowledgeBaseId())) {
+                    refs.add(new ReleaseKnowledgeRef(release.id(), entry.getKey(), knowledgeBaseId, release.assistantKnowledgeBinding().knowledgeReleaseId()));
                 }
                 if (release.agents() != null) {
                     for (AssistantReleaseAgentDto agent : release.agents()) {
-                        if (agent.knowledge() != null && knowledgeBaseId.equals(agent.knowledge().knowledgeBaseId())) {
-                            refs.add(new ReleaseKnowledgeRef(release.id(), entry.getKey(), knowledgeBaseId, agent.knowledge().knowledgeReleaseId()));
+                        if (agent.knowledgeBinding() != null && knowledgeBaseId.equals(agent.knowledgeBinding().knowledgeBaseId())) {
+                            refs.add(new ReleaseKnowledgeRef(release.id(), entry.getKey(), knowledgeBaseId, agent.knowledgeBinding().knowledgeReleaseId()));
                         }
                     }
                 }

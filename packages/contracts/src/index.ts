@@ -52,6 +52,7 @@ export type KnowledgeImportSourceType = 'FILE_UPLOAD' | 'URL';
 export type KnowledgeIndexSnapshotStatus = 'QUEUED' | 'RUNNING' | 'READY' | 'FAILED';
 export type KnowledgeImportJobStage = 'QUEUED' | 'FETCHING_SOURCE' | 'PARSING' | 'CHUNKING' | 'PERSISTING' | 'SUCCEEDED' | 'FAILED';
 export type KnowledgeIndexSnapshotStage = 'QUEUED' | 'COLLECTING_DOCUMENTS' | 'INDEXING' | 'READY' | 'FAILED';
+export type ToolKind = 'RESOURCE' | 'BUILTIN';
 
 export interface HumanNodeConfig {
   title: string;
@@ -124,9 +125,12 @@ export interface WorkflowFailureSnapshot {
 
 export interface ToolInvocationSnapshot {
   id: string;
+  toolId: string;
+  toolName: string;
+  toolKind: ToolKind;
   providerType: string;
-  resourceId: string;
-  resourceName: string;
+  resourceId: string | null;
+  resourceName: string | null;
   operation: string;
   status: string;
   detail: string;
@@ -134,10 +138,13 @@ export interface ToolInvocationSnapshot {
 }
 
 export interface ToolOutcomeSummary {
-  toolResourceId: string;
-  toolResourceName: string;
+  toolId: string;
+  toolName: string;
+  toolKind: ToolKind;
   operation: string;
   providerType: string;
+  resourceId: string | null;
+  resourceName: string | null;
   result: Record<string, unknown>;
 }
 
@@ -259,8 +266,7 @@ export interface SharedSessionState {
 }
 
 export interface ToolRequest {
-  toolResourceVersionId: string;
-  operation: string;
+  toolId: string;
   arguments: Record<string, unknown>;
 }
 
@@ -336,6 +342,44 @@ export interface KnowledgeBindingSnapshot {
   defaultTopK: number;
   retrievalMode: string;
   minScore: number;
+}
+
+export interface KnowledgeChunkRead {
+  chunkId: string;
+  documentId: string;
+  documentTitle: string;
+  sourceUri: string;
+  headingPath: string;
+  pageNumber: number | null;
+  content: string;
+}
+
+export interface KnowledgeSearchRequest {
+  query: string;
+  topK?: number;
+  minScore?: number;
+  retrievalMode?: 'LEXICAL' | 'VECTOR' | 'HYBRID' | null;
+}
+
+export interface KnowledgeSearchResult {
+  knowledgeBaseId: string;
+  knowledgeBaseName: string;
+  knowledgeReleaseId: string;
+  knowledgeReleaseVersion: string;
+  hits: KnowledgeRetrievalPreviewHit[];
+  lowConfidence: boolean;
+}
+
+export interface KnowledgeReadRequest {
+  chunkIds: string[];
+}
+
+export interface KnowledgeReadResult {
+  knowledgeBaseId: string;
+  knowledgeBaseName: string;
+  knowledgeReleaseId: string;
+  knowledgeReleaseVersion: string;
+  chunks: KnowledgeChunkRead[];
 }
 
 export interface KnowledgeRetrievalProfile {

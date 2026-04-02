@@ -26,7 +26,7 @@ class CatalogReferenceProjectionTest {
             new VersionDto("1.0.0", VersionStatus.PUBLISHED, Instant.now()),
             List.of(), null, List.of(),
             new AssistantModelPolicyDto("res-llm-1"),
-            new RagPolicyDto(true, "kb-1"),
+            new KnowledgeAccessPolicyDto(true, "kb-1"),
             new MemoryPolicyDto(false, 0)
         );
 
@@ -56,7 +56,7 @@ class CatalogReferenceProjectionTest {
                 new KnowledgeBindingSnapshotDto("kb-2", "知识库2", "kr-2", "1.0.0", "snap-2", 5, "HYBRID", 0.5),
                 List.of(), List.of()
             )),
-            null, assistant.modelPolicy(), assistant.ragPolicy(), assistant.memoryPolicy()
+            null, assistant.modelPolicy(), assistant.knowledgeAccessPolicy(), assistant.memoryPolicy()
         );
 
         repository.save(new CatalogSnapshot(

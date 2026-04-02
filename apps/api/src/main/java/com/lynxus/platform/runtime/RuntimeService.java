@@ -15,7 +15,6 @@ import com.lynxus.platform.catalog.CatalogDtos.KnowledgeBindingSnapshotDto;
 import com.lynxus.platform.catalog.CatalogDtos.MemoryPolicyDto;
 import com.lynxus.platform.catalog.CatalogDtos.OrchestrationEdgeDto;
 import com.lynxus.platform.catalog.CatalogDtos.OrchestrationNodeDto;
-import com.lynxus.platform.catalog.CatalogDtos.RagPolicyDto;
 import com.lynxus.platform.catalog.CatalogDtos.ResourceDto;
 import com.lynxus.platform.catalog.CatalogDtos.ResourceVersionConfigurationDto;
 import com.lynxus.platform.catalog.CatalogDtos.ScenarioDto;
@@ -835,7 +834,7 @@ public class RuntimeService {
                 assistant.name(),
                 release.releaseVersion(),
                 toAssistantPolicySnapshot(release.modelPolicy(), release.memoryPolicy(), release.resources()),
-                toKnowledgeBindingSnapshot(release.assistantKnowledge()),
+                toKnowledgeBindingSnapshot(release.assistantKnowledgeBinding()),
                 release.agents().stream().map(agent -> toAgentSnapshot(agent, release.resources())).toList(),
                 release.resources().stream().map(this::toResourceSnapshot).toList(),
                 toGraphSnapshot(release.orchestration())
@@ -879,7 +878,7 @@ public class RuntimeService {
             agent.name(),
             agent.role(),
             agent.responsibility(),
-            toAgentExecutionPolicySnapshot(agent.executionPolicy(), resources, agent.knowledge(), agent.skillResourceVersionIds(), agent.toolResourceVersionIds())
+            toAgentExecutionPolicySnapshot(agent.executionPolicy(), resources, agent.knowledgeBinding(), agent.skillResourceVersionIds(), agent.toolResourceVersionIds())
         );
     }
 
@@ -911,7 +910,7 @@ public class RuntimeService {
             policy.modelResourceId(),
             resolveReleasedVersionId(resources, policy.modelResourceId()),
             policy.systemPrompt(),
-            policy.ragEnabled(),
+            policy.knowledgeEnabled(),
             policy.inheritAssistantKnowledge(),
             toKnowledgeBindingSnapshot(knowledge),
             policy.memoryWindowSize(),
@@ -939,10 +938,12 @@ public class RuntimeService {
     }
 
     private KnowledgeBindingSnapshotDto resolveAssistantKnowledgeBinding(AssistantDto assistant) {
-        if (!assistant.ragPolicy().enabled() || assistant.ragPolicy().knowledgeBaseId() == null || assistant.ragPolicy().knowledgeBaseId().isBlank()) {
+        if (!assistant.knowledgeAccessPolicy().enabled()
+            || assistant.knowledgeAccessPolicy().knowledgeBaseId() == null
+            || assistant.knowledgeAccessPolicy().knowledgeBaseId().isBlank()) {
             return null;
         }
-        return resolveKnowledgeBinding(assistant.ragPolicy().knowledgeBaseId());
+        return resolveKnowledgeBinding(assistant.knowledgeAccessPolicy().knowledgeBaseId());
     }
 
     private void ensureAssistantReadyForRuntime(AssistantDto assistant) {
@@ -957,15 +958,15 @@ public class RuntimeService {
     }
 
     private KnowledgeBindingSnapshotDto resolveAgentKnowledgeBinding(AssistantDto assistant, AgentDto agent) {
-        if (!agent.executionPolicy().ragEnabled()) {
+        if (!agent.executionPolicy().knowledgeEnabled()) {
             return null;
         }
         if (agent.executionPolicy().inheritAssistantKnowledge()) {
-            return null;
+            return resolveAssistantKnowledgeBinding(assistant);
         }
         String knowledgeBaseId = agent.executionPolicy().knowledgeBaseId();
         if (knowledgeBaseId == null || knowledgeBaseId.isBlank()) {
-            knowledgeBaseId = assistant.ragPolicy().knowledgeBaseId();
+            throw new IllegalStateException("agent knowledgeBaseId must be configured when knowledgeEnabled=true and inheritAssistantKnowledge=false");
         }
         return knowledgeBaseId == null || knowledgeBaseId.isBlank() ? null : resolveKnowledgeBinding(knowledgeBaseId);
     }

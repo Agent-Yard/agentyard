@@ -207,7 +207,7 @@ public final class ObjectReferenceAnalyzer {
                     ));
                 }
             }
-            if (agent.executionPolicy().ragEnabled()
+            if (agent.executionPolicy().knowledgeEnabled()
                 && !agent.executionPolicy().inheritAssistantKnowledge()
                 && agent.executionPolicy().knowledgeBaseId() != null) {
                 KnowledgeBaseDto knowledgeBase = findById(knowledgeBases, agent.executionPolicy().knowledgeBaseId(), KnowledgeBaseDto::id);
@@ -348,7 +348,7 @@ public final class ObjectReferenceAnalyzer {
                 if (release == null) {
                     return;
                 }
-                if (release.assistantKnowledge() != null && knowledgeBase.id().equals(release.assistantKnowledge().knowledgeBaseId())) {
+                if (release.assistantKnowledgeBinding() != null && knowledgeBase.id().equals(release.assistantKnowledgeBinding().knowledgeBaseId())) {
                     relations.add(relation(
                         "RELEASE_ASSISTANT_KNOWLEDGE",
                         "RELEASE_SNAPSHOT",
@@ -361,12 +361,12 @@ public final class ObjectReferenceAnalyzer {
                         release.releaseVersion(),
                         null,
                         null,
-                        release.assistantKnowledge().knowledgeReleaseId(),
-                        release.assistantKnowledge().knowledgeReleaseVersion()
+                        release.assistantKnowledgeBinding().knowledgeReleaseId(),
+                        release.assistantKnowledgeBinding().knowledgeReleaseVersion()
                     ));
                 }
                 release.agents().stream()
-                    .filter(item -> item.knowledge() != null && knowledgeBase.id().equals(item.knowledge().knowledgeBaseId()))
+                    .filter(item -> item.knowledgeBinding() != null && knowledgeBase.id().equals(item.knowledgeBinding().knowledgeBaseId()))
                     .forEach(item -> relations.add(relation(
                         "RELEASE_AGENT_KNOWLEDGE",
                         "RELEASE_SNAPSHOT",
@@ -379,8 +379,8 @@ public final class ObjectReferenceAnalyzer {
                         release.releaseVersion(),
                         null,
                         null,
-                        item.knowledge().knowledgeReleaseId(),
-                        item.knowledge().knowledgeReleaseVersion()
+                        item.knowledgeBinding().knowledgeReleaseId(),
+                        item.knowledgeBinding().knowledgeReleaseVersion()
                     )));
             });
         return analysis("KNOWLEDGE_BASE", knowledgeBase.id(), knowledgeBase.name(), relations);

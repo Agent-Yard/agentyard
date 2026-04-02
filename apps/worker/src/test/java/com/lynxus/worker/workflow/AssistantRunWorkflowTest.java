@@ -59,8 +59,11 @@ class AssistantRunWorkflowTest {
                         new WorkflowContracts.ToolOutcomeSummary(
                             "resource-tool-ticket",
                             "工单协同 Tool",
+                            WorkflowContracts.ToolKind.RESOURCE,
                             "create_ticket",
                             "MCP",
+                            "resource-tool-ticket",
+                            "工单协同 Tool",
                             Map.of(
                                 "ticketId", "TICKET-10001",
                                 "status", "ACCEPTED",
@@ -115,8 +118,11 @@ class AssistantRunWorkflowTest {
                     new WorkflowContracts.ToolOutcomeSummary(
                         "resource-tool-ticket",
                         "工单协同 Tool",
+                        WorkflowContracts.ToolKind.RESOURCE,
                         "create_ticket",
                         "MCP",
+                        "resource-tool-ticket",
+                        "工单协同 Tool",
                         Map.of(
                             "ticketId", "TICKET-10001",
                             "status", "ACCEPTED",

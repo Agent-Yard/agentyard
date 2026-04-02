@@ -2,7 +2,7 @@
 import { computed, reactive, ref, watch } from 'vue';
 import type { ResumeActionType, WorkflowInstance } from '../types';
 import { failureAlertDescription, failureAlertMessage, failureAlertType, failureSummary, hasActiveFailure } from './workflowFailure';
-import { pauseSourceLabel as sourceLabel, workflowDecisionSummary as formatDecision } from './runtimePresentation';
+import { pauseSourceLabel as sourceLabel, toolCallTitle, workflowDecisionSummary as formatDecision } from './runtimePresentation';
 
 const props = defineProps<{
   workflow?: WorkflowInstance;
@@ -204,7 +204,7 @@ function formatLatestModelHit(workflow?: WorkflowInstance | null) {
               {{ current.latestFailure ? `${current.latestFailure.category} / ${current.latestFailure.code}` : '无' }}
             </a-descriptions-item>
             <a-descriptions-item label="工具结果">
-              {{ current.latestToolOutcome ? `${current.latestToolOutcome.toolResourceName} / ${current.latestToolOutcome.operation}` : '无' }}
+              {{ current.latestToolOutcome ? `${current.latestToolOutcome.toolName} / ${current.latestToolOutcome.operation} / ${current.latestToolOutcome.toolKind}` : '无' }}
             </a-descriptions-item>
             <a-descriptions-item label="最新模型命中">
               {{ formatLatestModelHit(current) }}
@@ -384,7 +384,7 @@ function formatLatestModelHit(workflow?: WorkflowInstance | null) {
                 <template #renderItem="{ item }">
                   <a-list-item>
                     <a-list-item-meta
-                      :title="`${item.resourceName} · ${item.operation}`"
+                      :title="toolCallTitle(item)"
                       :description="`${item.providerType} / ${item.status} / ${item.detail}`"
                     />
                   </a-list-item>

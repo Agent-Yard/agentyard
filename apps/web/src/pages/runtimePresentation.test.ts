@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ConversationMessage, WorkflowInstance } from '../types';
-import { conversationMessageText, workflowDecisionSummary } from './runtimePresentation';
+import { conversationMessageText, toolCallTitle, workflowDecisionSummary } from './runtimePresentation';
 
 function makeMessage(overrides: Partial<ConversationMessage>): ConversationMessage {
   return {
@@ -82,13 +82,29 @@ describe('runtimePresentation helpers', () => {
           },
         ],
         skillReads: ['skill-v1'],
-        toolRequests: [{ toolResourceVersionId: 'tool-v1', operation: 'lookup', arguments: {} }],
+        toolRequests: [{ toolId: 'resource:tool-v1:lookup', arguments: {} }],
         humanRequest: null,
         sessionStatePatch: null,
       },
       turnLogs: [],
     };
 
-    expect(workflowDecisionSummary(agentTurnState)).toBe('FINAL / route=default / tools=lookup / skills=1 / outputs=TEXT, EXTERNAL_INTERACTION');
+    expect(workflowDecisionSummary(agentTurnState)).toBe('FINAL / route=default / tools=resource:tool-v1:lookup / skills=1 / outputs=TEXT, EXTERNAL_INTERACTION');
+  });
+
+  it('formats builtin tool calls without resource names', () => {
+    expect(toolCallTitle({
+      id: 'tool-1',
+      toolId: 'builtin:knowledge_search',
+      toolName: 'knowledge_search',
+      toolKind: 'BUILTIN',
+      providerType: 'BUILTIN',
+      resourceId: null,
+      resourceName: null,
+      operation: 'knowledge_search',
+      status: 'COMPLETED',
+      detail: 'ok',
+      createdAt: '2026-04-02T00:00:00Z',
+    })).toBe('knowledge_search · knowledge_search · BUILTIN');
   });
 });

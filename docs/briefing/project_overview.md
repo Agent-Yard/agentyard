@@ -76,7 +76,7 @@ Knowledge Base、Tool、LLM Model、Skill 四类资源已经进入统一治理�
 
 - `START / AGENT / HUMAN / END` 显式图编排
 - 基于 Temporal 的 `start / signal / resume` 长流程托管
-- Python `agent-runtime` 按发布快照动态执行知识检索、Skill 读取、Tool 调用和模型推理
+- Python `agent-runtime` 按发布快照动态注入知识内置工具，驱动 LLM 自主决定是否执行 `knowledge_search / knowledge_read`、Skill 读取、Tool 调用和模型推理
 - `HUMAN` 节点生成 checkpoint 和人工待办，恢复后继续沿图执行
 
 ### 4.5 观测与演示能力
@@ -94,9 +94,9 @@ Knowledge Base、Tool、LLM Model、Skill 四类资源已经进入统一治理�
 - `apps/worker`
   Temporal worker，负责 workflow 执行、长流程托管和人工 signal 恢复。
 - `apps/knowledge-service`
-  Python 知识服务，负责内容导入、文档解析、切片、索引快照构建和检索。
+  Python 知识服务，负责内容导入、文档解析、切片、索引快照构建、检索和按快照读取 chunk。
 - `apps/agent-runtime`
-  Python 运行时，负责按发布快照执行图节点，驱动知识检索、Skill 读取、Tool 调用和模型推理。
+  Python 运行时，负责按发布快照执行图节点，向 LLM 注入知识内置工具并驱动 Skill 读取、Tool 调用和模型推理。
 - `apps/web`
   Vue 控制台，提供配置治理、知识与资源管理、运行与观测界面。
 

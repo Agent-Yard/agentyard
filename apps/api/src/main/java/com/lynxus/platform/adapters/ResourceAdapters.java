@@ -1,6 +1,7 @@
 package com.lynxus.platform.adapters;
 
 import com.lynxus.contracts.runtime.WorkflowContracts.ToolOutcomeSummary;
+import com.lynxus.contracts.runtime.WorkflowContracts.ToolKind;
 import java.util.List;
 import java.util.Map;
 import org.springframework.context.annotation.Primary;
@@ -81,8 +82,11 @@ public final class ResourceAdapters {
             return new ToolOutcomeSummary(
                 toolName,
                 toolName,
+                ToolKind.RESOURCE,
                 operation,
                 "MCP",
+                toolName,
+                toolName,
                 Map.of(
                     "ticketId", ticketId,
                     "status", humanHandoff ? "ACCEPTED" : "RECORDED",
@@ -102,8 +106,11 @@ public final class ResourceAdapters {
             return new ToolOutcomeSummary(
                 toolName,
                 toolName,
+                ToolKind.RESOURCE,
                 operation,
                 "MCP",
+                toolName,
+                toolName,
                 Map.of(
                     "ticketId", "mock-ticket",
                     "status", "RECORDED",

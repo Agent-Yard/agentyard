@@ -36,7 +36,7 @@ const createForm = reactive<CreateAssistantPayload>({
   modelPolicy: {
     defaultModelResourceId: null,
   },
-  ragPolicy: {
+  knowledgeAccessPolicy: {
     enabled: false,
     knowledgeBaseId: null,
   },
@@ -52,7 +52,7 @@ const editForm = reactive<UpdateAssistantPayload>({
   modelPolicy: {
     defaultModelResourceId: null,
   },
-  ragPolicy: {
+  knowledgeAccessPolicy: {
     enabled: false,
     knowledgeBaseId: null,
   },
@@ -156,7 +156,7 @@ watch(
     editForm.description = assistant.description;
     editForm.status = assistant.version.status;
     editForm.modelPolicy = { ...assistant.modelPolicy };
-    editForm.ragPolicy = { ...assistant.ragPolicy };
+    editForm.knowledgeAccessPolicy = { ...assistant.knowledgeAccessPolicy };
     editForm.memoryPolicy = { ...assistant.memoryPolicy };
   },
   { immediate: true },
@@ -188,33 +188,33 @@ watch(
 watch(
   () => props.knowledgeBases,
   (knowledgeBases) => {
-    if (!knowledgeBases.some((item) => item.id === createForm.ragPolicy.knowledgeBaseId)) {
-      createForm.ragPolicy.knowledgeBaseId = knowledgeBases[0]?.id ?? null;
+    if (!knowledgeBases.some((item) => item.id === createForm.knowledgeAccessPolicy.knowledgeBaseId)) {
+      createForm.knowledgeAccessPolicy.knowledgeBaseId = knowledgeBases[0]?.id ?? null;
     }
   },
   { immediate: true },
 );
 
 watch(
-  () => createForm.ragPolicy.enabled,
+  () => createForm.knowledgeAccessPolicy.enabled,
   (enabled) => {
-    if (enabled && !createForm.ragPolicy.knowledgeBaseId) {
-      createForm.ragPolicy.knowledgeBaseId = props.knowledgeBases[0]?.id ?? null;
+    if (enabled && !createForm.knowledgeAccessPolicy.knowledgeBaseId) {
+      createForm.knowledgeAccessPolicy.knowledgeBaseId = props.knowledgeBases[0]?.id ?? null;
     }
     if (!enabled) {
-      createForm.ragPolicy.knowledgeBaseId = null;
+      createForm.knowledgeAccessPolicy.knowledgeBaseId = null;
     }
   },
 );
 
 watch(
-  () => editForm.ragPolicy.enabled,
+  () => editForm.knowledgeAccessPolicy.enabled,
   (enabled) => {
-    if (enabled && !editForm.ragPolicy.knowledgeBaseId) {
-      editForm.ragPolicy.knowledgeBaseId = props.knowledgeBases[0]?.id ?? null;
+    if (enabled && !editForm.knowledgeAccessPolicy.knowledgeBaseId) {
+      editForm.knowledgeAccessPolicy.knowledgeBaseId = props.knowledgeBases[0]?.id ?? null;
     }
     if (!enabled) {
-      editForm.ragPolicy.knowledgeBaseId = null;
+      editForm.knowledgeAccessPolicy.knowledgeBaseId = null;
     }
   },
 );
@@ -222,9 +222,9 @@ watch(
 function submitCreate() {
   emit('createAssistant', {
     ...createForm,
-    ragPolicy: {
-      enabled: createForm.ragPolicy.enabled && !!createForm.ragPolicy.knowledgeBaseId,
-      knowledgeBaseId: createForm.ragPolicy.enabled ? createForm.ragPolicy.knowledgeBaseId : null,
+    knowledgeAccessPolicy: {
+      enabled: createForm.knowledgeAccessPolicy.enabled && !!createForm.knowledgeAccessPolicy.knowledgeBaseId,
+      knowledgeBaseId: createForm.knowledgeAccessPolicy.enabled ? createForm.knowledgeAccessPolicy.knowledgeBaseId : null,
     },
   });
   createForm.name = '';
@@ -239,9 +239,9 @@ function submitUpdate() {
     assistantId: current.value.id,
     data: {
       ...editForm,
-      ragPolicy: {
-        enabled: editForm.ragPolicy.enabled && !!editForm.ragPolicy.knowledgeBaseId,
-        knowledgeBaseId: editForm.ragPolicy.enabled ? editForm.ragPolicy.knowledgeBaseId : null,
+      knowledgeAccessPolicy: {
+        enabled: editForm.knowledgeAccessPolicy.enabled && !!editForm.knowledgeAccessPolicy.knowledgeBaseId,
+        knowledgeBaseId: editForm.knowledgeAccessPolicy.enabled ? editForm.knowledgeAccessPolicy.knowledgeBaseId : null,
       },
     },
   });
@@ -292,15 +292,15 @@ function submitUpdate() {
               </a-form-item>
             </a-col>
             <a-col :span="12">
-              <a-form-item label="默认知识检索">
-                <a-switch v-model:checked="createForm.ragPolicy.enabled" />
+              <a-form-item label="默认知识能力">
+                <a-switch v-model:checked="createForm.knowledgeAccessPolicy.enabled" />
               </a-form-item>
             </a-col>
           </a-row>
           <a-form-item label="默认知识库">
             <a-select
-              v-model:value="createForm.ragPolicy.knowledgeBaseId"
-              :disabled="!createForm.ragPolicy.enabled"
+              v-model:value="createForm.knowledgeAccessPolicy.knowledgeBaseId"
+              :disabled="!createForm.knowledgeAccessPolicy.enabled"
               allow-clear
               :options="knowledgeBaseOptions"
               placeholder="选择知识库"
@@ -397,8 +397,8 @@ function submitUpdate() {
 
           <a-row :gutter="[16, 16]">
             <a-col :span="12">
-              <a-form-item label="知识检索">
-                <a-switch v-model:checked="editForm.ragPolicy.enabled" />
+              <a-form-item label="知识能力">
+                <a-switch v-model:checked="editForm.knowledgeAccessPolicy.enabled" />
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -410,8 +410,8 @@ function submitUpdate() {
 
           <a-form-item label="默认知识库">
             <a-select
-              v-model:value="editForm.ragPolicy.knowledgeBaseId"
-              :disabled="!editForm.ragPolicy.enabled"
+              v-model:value="editForm.knowledgeAccessPolicy.knowledgeBaseId"
+              :disabled="!editForm.knowledgeAccessPolicy.enabled"
               allow-clear
               :options="knowledgeBaseOptions"
               placeholder="选择知识库"
@@ -419,12 +419,12 @@ function submitUpdate() {
           </a-form-item>
 
           <a-alert
-            v-if="current.currentRelease?.assistantKnowledge"
+            v-if="current.currentRelease?.assistantKnowledgeBinding"
             type="info"
             show-icon
             style="margin-bottom: 16px"
-            :message="`当前发布冻结知识：${current.currentRelease.assistantKnowledge.knowledgeBaseName} @ ${current.currentRelease.assistantKnowledge.knowledgeReleaseVersion}`"
-            :description="`运行时快照 ${current.currentRelease.assistantKnowledge.snapshotId} · ${current.currentRelease.assistantKnowledge.retrievalMode} · topK ${current.currentRelease.assistantKnowledge.defaultTopK}`"
+            :message="`当前发布冻结知识：${current.currentRelease.assistantKnowledgeBinding.knowledgeBaseName} @ ${current.currentRelease.assistantKnowledgeBinding.knowledgeReleaseVersion}`"
+            :description="`运行时快照 ${current.currentRelease.assistantKnowledgeBinding.snapshotId} · ${current.currentRelease.assistantKnowledgeBinding.retrievalMode} · topK ${current.currentRelease.assistantKnowledgeBinding.defaultTopK}`"
           />
 
           <a-space v-if="canManageGovernance">

@@ -256,7 +256,7 @@ public class CatalogService {
             null,
             List.of(),
             normalizedModelPolicy,
-            normalizeRagPolicy(request.ragPolicy()),
+            normalizeKnowledgeAccessPolicy(request.knowledgeAccessPolicy()),
             normalizeMemoryPolicy(request.memoryPolicy())
         );
         assistants.add(assistant);
@@ -288,7 +288,7 @@ public class CatalogService {
             existing.currentRelease(),
             existing.releases(),
             normalizedModelPolicy,
-            normalizeRagPolicy(request.ragPolicy()),
+            normalizeKnowledgeAccessPolicy(request.knowledgeAccessPolicy()),
             normalizeMemoryPolicy(request.memoryPolicy())
         );
         replace(assistants, AssistantDto::id, updated);
@@ -812,7 +812,7 @@ public class CatalogService {
             releases.isEmpty() ? null : releases.getFirst(),
             releases,
             normalizeAssistantModelPolicy(assistant.modelPolicy()),
-            normalizeRagPolicy(assistant.ragPolicy()),
+            normalizeKnowledgeAccessPolicy(assistant.knowledgeAccessPolicy()),
             normalizeMemoryPolicy(assistant.memoryPolicy())
         );
     }
@@ -1101,7 +1101,7 @@ public class CatalogService {
         Map<String, AssistantReleaseResourceDto> snapshotMap = new LinkedHashMap<>();
         DefaultModelBindingDto defaultModelBinding = resolveDefaultModelBinding(assistant);
         captureEffectiveResource(snapshotMap, assistant.modelPolicy().defaultModelResourceId(), "ASSISTANT_DEFAULT_MODEL");
-        KnowledgeBindingSnapshotDto assistantKnowledge = resolveAssistantKnowledgeBinding(assistant);
+        KnowledgeBindingSnapshotDto assistantKnowledgeBinding = resolveAssistantKnowledgeBinding(assistant);
 
         List<AssistantReleaseAgentDto> releaseAgents = new ArrayList<>();
         for (AgentDto agent : orderAgentsForAssistant(assistantId)) {
@@ -1133,7 +1133,7 @@ public class CatalogService {
                 agent.role(),
                 agent.responsibility(),
                 agent.executionPolicy(),
-                resolveAgentKnowledgeBinding(assistantKnowledge, agent),
+                resolveAgentKnowledgeBinding(assistantKnowledgeBinding, agent),
                 List.copyOf(skillResourceVersionIds),
                 List.copyOf(toolResourceVersionIds)
             ));
@@ -1146,13 +1146,13 @@ public class CatalogService {
             status,
             Instant.now(),
             status == VersionStatus.PUBLISHED ? Instant.now() : null,
-            assistantKnowledge,
+            assistantKnowledgeBinding,
             defaultModelBinding,
             List.copyOf(snapshotMap.values()),
             List.copyOf(releaseAgents),
             getOrCreateOrchestration(assistantId),
             assistant.modelPolicy(),
-            assistant.ragPolicy(),
+            assistant.knowledgeAccessPolicy(),
             assistant.memoryPolicy()
         );
         List<AssistantReleaseDto> releases = new ArrayList<>(assistantReleases.getOrDefault(assistantId, List.of()));
@@ -1162,21 +1162,24 @@ public class CatalogService {
     }
 
     private KnowledgeBindingSnapshotDto resolveAssistantKnowledgeBinding(AssistantDto assistant) {
-        if (!assistant.ragPolicy().enabled() || assistant.ragPolicy().knowledgeBaseId() == null || assistant.ragPolicy().knowledgeBaseId().isBlank()) {
+        if (!assistant.knowledgeAccessPolicy().enabled() || assistant.knowledgeAccessPolicy().knowledgeBaseId() == null || assistant.knowledgeAccessPolicy().knowledgeBaseId().isBlank()) {
             return null;
         }
-        return knowledgeService.resolveKnowledgeBinding(assistant.ragPolicy().knowledgeBaseId());
+        return knowledgeService.resolveKnowledgeBinding(assistant.knowledgeAccessPolicy().knowledgeBaseId());
     }
 
-    private KnowledgeBindingSnapshotDto resolveAgentKnowledgeBinding(KnowledgeBindingSnapshotDto assistantKnowledge, AgentDto agent) {
-        if (!agent.executionPolicy().ragEnabled()) {
+    private KnowledgeBindingSnapshotDto resolveAgentKnowledgeBinding(KnowledgeBindingSnapshotDto assistantKnowledgeBinding, AgentDto agent) {
+        if (!agent.executionPolicy().knowledgeEnabled()) {
             return null;
         }
         if (agent.executionPolicy().inheritAssistantKnowledge()) {
-            return null;
+            if (assistantKnowledgeBinding == null) {
+                throw new IllegalStateException("assistant knowledge binding must exist when inheritAssistantKnowledge=true and knowledgeEnabled=true");
+            }
+            return assistantKnowledgeBinding;
         }
         if (agent.executionPolicy().knowledgeBaseId() == null || agent.executionPolicy().knowledgeBaseId().isBlank()) {
-            return assistantKnowledge;
+            throw new IllegalStateException("agent knowledgeBaseId must be configured when knowledgeEnabled=true and inheritAssistantKnowledge=false");
         }
         return knowledgeService.resolveKnowledgeBinding(agent.executionPolicy().knowledgeBaseId());
     }
@@ -1608,7 +1611,7 @@ public class CatalogService {
                 assistant.currentRelease(),
                 assistant.releases(),
                 normalizeAssistantModelPolicy(assistant.modelPolicy()),
-                normalizeRagPolicy(assistant.ragPolicy()),
+                normalizeKnowledgeAccessPolicy(assistant.knowledgeAccessPolicy()),
                 normalizeMemoryPolicy(assistant.memoryPolicy())
             ))
             .toList());
@@ -1654,7 +1657,7 @@ public class CatalogService {
                     release.status(),
                     release.createdAt(),
                     release.publishedAt(),
-                    normalizeKnowledgeBindingSnapshot(release.assistantKnowledge()),
+                    normalizeKnowledgeBindingSnapshot(release.assistantKnowledgeBinding()),
                     normalizeDefaultModelBinding(release.defaultModelBinding()),
                     release.resources().stream()
                         .map(resource -> new AssistantReleaseResourceDto(
@@ -1674,14 +1677,14 @@ public class CatalogService {
                             agent.role(),
                             agent.responsibility(),
                             normalizeAgentExecutionPolicy(agent.executionPolicy()),
-                            normalizeKnowledgeBindingSnapshot(agent.knowledge()),
+                            normalizeKnowledgeBindingSnapshot(agent.knowledgeBinding()),
                             agent.skillResourceVersionIds(),
                             agent.toolResourceVersionIds()
                         ))
                         .toList(),
                     release.orchestration(),
                     normalizeAssistantModelPolicy(release.modelPolicy()),
-                    normalizeRagPolicy(release.ragPolicy()),
+                    normalizeKnowledgeAccessPolicy(release.knowledgeAccessPolicy()),
                     normalizeMemoryPolicy(release.memoryPolicy())
                 ))
                 .toList()
@@ -1708,7 +1711,7 @@ public class CatalogService {
                 normalizedPolicy.inheritAssistantDefaults(),
                 normalizedPolicy.modelResourceId(),
                 normalizedPolicy.systemPrompt(),
-                normalizedPolicy.ragEnabled(),
+                normalizedPolicy.knowledgeEnabled(),
                 normalizedPolicy.inheritAssistantKnowledge(),
                 normalizedPolicy.knowledgeBaseId(),
                 normalizedPolicy.memoryWindowSize(),
@@ -1981,12 +1984,12 @@ public class CatalogService {
         return new AssistantModelPolicyDto(defaultModelResourceId.trim());
     }
 
-    private RagPolicyDto normalizeRagPolicy(RagPolicyDto policy) {
+    private KnowledgeAccessPolicyDto normalizeKnowledgeAccessPolicy(KnowledgeAccessPolicyDto policy) {
         if (policy == null) {
             String defaultKnowledgeBaseId = resolveDefaultKnowledgeBaseId(null);
-            return new RagPolicyDto(defaultKnowledgeBaseId != null, defaultKnowledgeBaseId);
+            return new KnowledgeAccessPolicyDto(defaultKnowledgeBaseId != null, defaultKnowledgeBaseId);
         }
-        return new RagPolicyDto(policy.enabled(), normalizeOptionalText(policy.knowledgeBaseId()));
+        return new KnowledgeAccessPolicyDto(policy.enabled(), normalizeOptionalText(policy.knowledgeBaseId()));
     }
 
     private MemoryPolicyDto normalizeMemoryPolicy(MemoryPolicyDto policy) {
@@ -1998,14 +2001,13 @@ public class CatalogService {
 
     private AgentExecutionPolicyDto normalizeAgentExecutionPolicy(AgentExecutionPolicyDto policy) {
         if (policy == null) {
-            String defaultKnowledgeBaseId = resolveDefaultKnowledgeBaseId(null);
-            return new AgentExecutionPolicyDto(true, null, "", defaultKnowledgeBaseId != null, true, defaultKnowledgeBaseId, 8, List.of(), List.of());
+            return new AgentExecutionPolicyDto(true, null, "", false, true, null, 8, List.of(), List.of());
         }
         return new AgentExecutionPolicyDto(
             policy.inheritAssistantDefaults(),
             policy.modelResourceId(),
             normalizeOptionalText(policy.systemPrompt()),
-            policy.ragEnabled(),
+            policy.knowledgeEnabled(),
             policy.inheritAssistantKnowledge(),
             normalizeOptionalText(policy.knowledgeBaseId()),
             policy.memoryWindowSize(),

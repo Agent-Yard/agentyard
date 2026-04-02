@@ -44,9 +44,11 @@ from app.main import (
     CreateUploadSessionRequest,
     CreateUrlImportRequest,
     IndexSnapshotRecord,
+    IndexSnapshotChunkRecord,
     KnowledgeDocumentRecord,
     KnowledgeFileRecord,
     KnowledgeImportJobRecord,
+    ReadChunksRequest,
     RetrieveRequest,
     SessionLocal,
     UploadSessionRecord,
@@ -64,6 +66,7 @@ from app.main import (
     retry_import_job,
     retry_index_snapshot,
     retrieval_store,
+    read_chunks,
     retrieve,
     run_import_job,
     storage,
@@ -324,6 +327,58 @@ class KnowledgeServiceTest(unittest.TestCase):
             )
         self.assertTrue(retrieval.lowConfidence)
         self.assertEqual(retrieval.hits, [])
+
+    def test_should_read_chunks_in_request_order_and_deduplicate(self) -> None:
+        self.upload_markdown("resource-kb-read-order", "refund.md", "# 退款说明\n未发货可退款。")
+        self.upload_markdown("resource-kb-read-order", "shipping.md", "# 发货说明\n48 小时内出库。")
+        snapshot_id = self.create_snapshot("resource-kb-read-order", [])
+
+        with SessionLocal() as db:
+            mappings = (
+                db.query(IndexSnapshotChunkRecord)
+                .filter(IndexSnapshotChunkRecord.snapshot_id == snapshot_id)
+                .order_by(IndexSnapshotChunkRecord.document_id.asc(), IndexSnapshotChunkRecord.chunk_id.asc())
+                .all()
+            )
+            self.assertGreaterEqual(len(mappings), 2)
+            requested_chunk_ids = [mappings[1].chunk_id, mappings[0].chunk_id, mappings[1].chunk_id]
+            response = read_chunks(ReadChunksRequest(indexSnapshotId=snapshot_id, chunkIds=requested_chunk_ids), db)
+
+        self.assertEqual([mappings[1].chunk_id, mappings[0].chunk_id], [chunk.chunkId for chunk in response.chunks])
+
+    def test_should_filter_read_chunks_to_current_snapshot_only(self) -> None:
+        self.upload_markdown("resource-kb-read-snapshot", "refund.md", "# 退款说明\n未发货可退款。")
+        self.upload_markdown("resource-kb-read-snapshot", "shipping.md", "# 发货说明\n48 小时内出库。")
+        with SessionLocal() as db:
+            documents = list_documents("resource-kb-read-snapshot", db)
+        refund_doc = next(item for item in documents if item.title == "退款说明")
+        shipping_doc = next(item for item in documents if item.title == "发货说明")
+
+        refund_snapshot_id = self.create_snapshot("resource-kb-read-snapshot", [refund_doc.id])
+        shipping_snapshot_id = self.create_snapshot("resource-kb-read-snapshot", [shipping_doc.id])
+
+        with SessionLocal() as db:
+            refund_mapping = (
+                db.query(IndexSnapshotChunkRecord)
+                .filter(IndexSnapshotChunkRecord.snapshot_id == refund_snapshot_id)
+                .first()
+            )
+            shipping_mapping = (
+                db.query(IndexSnapshotChunkRecord)
+                .filter(IndexSnapshotChunkRecord.snapshot_id == shipping_snapshot_id)
+                .first()
+            )
+            self.assertIsNotNone(refund_mapping)
+            self.assertIsNotNone(shipping_mapping)
+            response = read_chunks(
+                ReadChunksRequest(
+                    indexSnapshotId=refund_snapshot_id,
+                    chunkIds=[refund_mapping.chunk_id, shipping_mapping.chunk_id],
+                ),
+                db,
+            )
+
+        self.assertEqual([refund_mapping.chunk_id], [chunk.chunkId for chunk in response.chunks])
 
     def test_should_fail_snapshot_build_when_embedding_configuration_changes(self) -> None:
         self.upload_markdown("resource-kb-config", "refund.md", "# 退款说明\n未发货可退款。")

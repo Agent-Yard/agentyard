@@ -54,7 +54,7 @@ class InMemoryRuntimeRepositoryTest {
             new ResumeTaskSnapshot("human-review", "人工待办", "请审核", "填写备注", WorkflowContracts.PauseSource.GRAPH_NODE, List.of(WorkflowContracts.ResumeActionType.CONTINUE)),
             new PauseReasonSnapshot("GRAPH_HUMAN_NODE", "需要人工审核", WorkflowContracts.PauseSource.GRAPH_NODE),
             null,
-            new ToolOutcomeSummary("resource-tool", "工单工具", "create_ticket", "MCP", Map.of("ticketId", "T-1")),
+            new ToolOutcomeSummary("resource-tool", "工单工具", WorkflowContracts.ToolKind.RESOURCE, "create_ticket", "MCP", "resource-tool", "工单工具", Map.of("ticketId", "T-1")),
             List.of("tool@v1"),
             List.of(new NodeExecutionDto("node-1", "wf-1", "human-review", "人工审核", NodeStatus.WAITING_RESUME, "等待人工", now)),
             List.of(),

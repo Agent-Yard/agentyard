@@ -37,6 +37,11 @@ public final class WorkflowContracts {
         MCP
     }
 
+    public enum ToolKind {
+        RESOURCE,
+        BUILTIN
+    }
+
     public enum ShareScope {
         PRIVATE,
         DOMAIN_SHARED
@@ -298,9 +303,9 @@ public final class WorkflowContracts {
         String modelResourceId,
         String modelResourceVersionId,
         String systemPrompt,
-        boolean ragEnabled,
+        boolean knowledgeEnabled,
         boolean inheritAssistantKnowledge,
-        KnowledgeBindingSnapshot knowledge,
+        KnowledgeBindingSnapshot knowledgeBinding,
         int memoryWindowSize,
         List<String> skillResourceIds,
         List<String> skillResourceVersionIds,
@@ -358,7 +363,7 @@ public final class WorkflowContracts {
         String assistantName,
         String assistantReleaseVersion,
         AssistantPolicySnapshot assistantPolicy,
-        KnowledgeBindingSnapshot assistantKnowledge,
+        KnowledgeBindingSnapshot assistantKnowledgeBinding,
         List<AgentSnapshot> agents,
         List<ResourceVersionSnapshot> resources,
         GraphSnapshot graph
@@ -451,8 +456,7 @@ public final class WorkflowContracts {
     }
 
     public record ToolRequest(
-        String toolResourceVersionId,
-        String operation,
+        String toolId,
         Map<String, Object> arguments
     ) {
         public ToolRequest {
@@ -706,6 +710,9 @@ public final class WorkflowContracts {
 
     public record ToolInvocationSnapshot(
         String id,
+        String toolId,
+        String toolName,
+        ToolKind toolKind,
         String providerType,
         String resourceId,
         String resourceName,
@@ -747,10 +754,13 @@ public final class WorkflowContracts {
     }
 
     public record ToolOutcomeSummary(
-        String toolResourceId,
-        String toolResourceName,
+        String toolId,
+        String toolName,
+        ToolKind toolKind,
         String operation,
         String providerType,
+        String resourceId,
+        String resourceName,
         Map<String, Object> result
     ) {
     }

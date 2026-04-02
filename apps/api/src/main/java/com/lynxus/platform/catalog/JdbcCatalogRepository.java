@@ -257,14 +257,14 @@ public class JdbcCatalogRepository implements CatalogRepository {
     private void replaceKnowledgeBindings(CatalogSnapshot snapshot) {
         jdbcTemplate.update("delete from catalog_ref_knowledge_binding");
         for (AssistantDto assistant : snapshot.assistants()) {
-            if (assistant.ragPolicy() != null && assistant.ragPolicy().enabled() && assistant.ragPolicy().knowledgeBaseId() != null) {
-                insertKnowledgeBinding("ASSISTANT", assistant.id(), assistant.ragPolicy().knowledgeBaseId(), "ASSISTANT_DEFAULT_KNOWLEDGE_BASE");
+            if (assistant.knowledgeAccessPolicy() != null && assistant.knowledgeAccessPolicy().enabled() && assistant.knowledgeAccessPolicy().knowledgeBaseId() != null) {
+                insertKnowledgeBinding("ASSISTANT", assistant.id(), assistant.knowledgeAccessPolicy().knowledgeBaseId(), "ASSISTANT_DEFAULT_KNOWLEDGE_BASE");
             }
         }
         for (AgentDto agent : snapshot.agents()) {
             AgentExecutionPolicyDto policy = agent.executionPolicy();
             if (policy == null) continue;
-            if (policy.ragEnabled() && !policy.inheritAssistantKnowledge() && policy.knowledgeBaseId() != null) {
+            if (policy.knowledgeEnabled() && !policy.inheritAssistantKnowledge() && policy.knowledgeBaseId() != null) {
                 insertKnowledgeBinding("AGENT", agent.id(), policy.knowledgeBaseId(), "AGENT_OVERRIDE_KNOWLEDGE_BASE");
             }
         }
@@ -297,9 +297,9 @@ public class JdbcCatalogRepository implements CatalogRepository {
         for (Map.Entry<String, List<AssistantReleaseDto>> entry : snapshot.assistantReleases().entrySet()) {
             String assistantId = entry.getKey();
             for (AssistantReleaseDto release : entry.getValue()) {
-                insertReleaseKnowledgeIfPresent(release.id(), assistantId, release.assistantKnowledge());
+                insertReleaseKnowledgeIfPresent(release.id(), assistantId, release.assistantKnowledgeBinding());
                 for (AssistantReleaseAgentDto agent : safe(release.agents())) {
-                    insertReleaseKnowledgeIfPresent(release.id(), assistantId, agent.knowledge());
+                    insertReleaseKnowledgeIfPresent(release.id(), assistantId, agent.knowledgeBinding());
                 }
             }
         }

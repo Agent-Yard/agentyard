@@ -43,7 +43,7 @@ public final class CatalogDtos {
         AssistantReleaseDto currentRelease,
         List<AssistantReleaseDto> releases,
         AssistantModelPolicyDto modelPolicy,
-        RagPolicyDto ragPolicy,
+        KnowledgeAccessPolicyDto knowledgeAccessPolicy,
         MemoryPolicyDto memoryPolicy
     ) {
     }
@@ -55,13 +55,13 @@ public final class CatalogDtos {
         VersionStatus status,
         Instant createdAt,
         Instant publishedAt,
-        KnowledgeBindingSnapshotDto assistantKnowledge,
+        KnowledgeBindingSnapshotDto assistantKnowledgeBinding,
         DefaultModelBindingDto defaultModelBinding,
         List<AssistantReleaseResourceDto> resources,
         List<AssistantReleaseAgentDto> agents,
         AssistantOrchestrationDto orchestration,
         AssistantModelPolicyDto modelPolicy,
-        RagPolicyDto ragPolicy,
+        KnowledgeAccessPolicyDto knowledgeAccessPolicy,
         MemoryPolicyDto memoryPolicy
     ) {
     }
@@ -93,7 +93,7 @@ public final class CatalogDtos {
         String role,
         String responsibility,
         AgentExecutionPolicyDto executionPolicy,
-        KnowledgeBindingSnapshotDto knowledge,
+        KnowledgeBindingSnapshotDto knowledgeBinding,
         List<String> skillResourceVersionIds,
         List<String> toolResourceVersionIds
     ) {
@@ -390,7 +390,7 @@ public final class CatalogDtos {
     ) {
     }
 
-    public record RagPolicyDto(
+    public record KnowledgeAccessPolicyDto(
         boolean enabled,
         String knowledgeBaseId
     ) {
@@ -406,7 +406,7 @@ public final class CatalogDtos {
         boolean inheritAssistantDefaults,
         String modelResourceId,
         String systemPrompt,
-        boolean ragEnabled,
+        boolean knowledgeEnabled,
         boolean inheritAssistantKnowledge,
         String knowledgeBaseId,
         int memoryWindowSize,
@@ -573,7 +573,7 @@ public final class CatalogDtos {
         String name,
         String description,
         AssistantModelPolicyDto modelPolicy,
-        RagPolicyDto ragPolicy,
+        KnowledgeAccessPolicyDto knowledgeAccessPolicy,
         MemoryPolicyDto memoryPolicy
     ) {
     }
@@ -583,7 +583,7 @@ public final class CatalogDtos {
         String description,
         VersionStatus status,
         AssistantModelPolicyDto modelPolicy,
-        RagPolicyDto ragPolicy,
+        KnowledgeAccessPolicyDto knowledgeAccessPolicy,
         MemoryPolicyDto memoryPolicy
     ) {
     }

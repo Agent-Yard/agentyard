@@ -50,6 +50,16 @@ class KnowledgeHit(BaseModel):
     headingPath: str = ""
 
 
+class KnowledgeChunkRead(BaseModel):
+    chunkId: str
+    documentId: str
+    documentTitle: str
+    sourceUri: str
+    headingPath: str = ""
+    pageNumber: Optional[int] = None
+    content: str
+
+
 class ToolOperationConfig(BaseModel):
     name: str
     description: str = ""
@@ -128,9 +138,9 @@ class AgentExecutionPolicySnapshot(BaseModel):
     modelResourceId: Optional[str] = None
     modelResourceVersionId: Optional[str] = None
     systemPrompt: str = ""
-    ragEnabled: bool
+    knowledgeEnabled: bool
     inheritAssistantKnowledge: bool
-    knowledge: Optional[KnowledgeBindingSnapshot] = None
+    knowledgeBinding: Optional[KnowledgeBindingSnapshot] = None
     memoryWindowSize: int
     skillResourceIds: List[str]
     skillResourceVersionIds: List[str]
@@ -182,7 +192,7 @@ class AssistantRunSnapshot(BaseModel):
     assistantName: str
     assistantReleaseVersion: str
     assistantPolicy: AssistantPolicySnapshot
-    assistantKnowledge: Optional[KnowledgeBindingSnapshot] = None
+    assistantKnowledgeBinding: Optional[KnowledgeBindingSnapshot] = None
     agents: List[AgentSnapshot]
     resources: List[ResourceVersionSnapshot]
     graph: GraphSnapshot
@@ -407,9 +417,12 @@ class WorkflowResumeRequest(BaseModel):
 
 class ToolInvocationSnapshot(BaseModel):
     id: str
+    toolId: str
+    toolName: str
+    toolKind: str
     providerType: str
-    resourceId: str
-    resourceName: str
+    resourceId: Optional[str] = None
+    resourceName: Optional[str] = None
     operation: str
     status: str
     detail: str
@@ -444,18 +457,25 @@ class WorkflowFailureSnapshot(BaseModel):
 
 
 class ToolOutcomeSummary(BaseModel):
-    toolResourceId: str
-    toolResourceName: str
+    toolId: str
+    toolName: str
+    toolKind: str
     operation: str
     providerType: str
+    resourceId: Optional[str] = None
+    resourceName: Optional[str] = None
     result: Dict[str, Any] = Field(default_factory=dict)
 
 
 class ToolExecutionRecord(BaseModel):
     agentId: str
-    toolResourceId: str
-    toolResourceVersionId: str
-    toolResourceName: str
+    toolId: str
+    toolName: str
+    toolKind: str
+    providerType: str
+    resourceId: Optional[str] = None
+    resourceVersionId: Optional[str] = None
+    resourceName: Optional[str] = None
     operation: str
     arguments: Dict[str, Any] = Field(default_factory=dict)
     result: Dict[str, Any] = Field(default_factory=dict)
@@ -463,9 +483,22 @@ class ToolExecutionRecord(BaseModel):
 
 
 class ToolRequest(BaseModel):
-    toolResourceVersionId: str
-    operation: str
+    toolId: str
     arguments: Dict[str, Any] = Field(default_factory=dict)
+
+
+class AvailableTool(BaseModel):
+    toolId: str
+    toolName: str
+    toolKind: str
+    providerType: str
+    operation: str
+    description: str = ""
+    inputSchema: str = ""
+    outputSchema: str = ""
+    resourceId: Optional[str] = None
+    resourceVersionId: Optional[str] = None
+    resourceName: Optional[str] = None
 
 
 class HumanRequest(BaseModel):
@@ -576,8 +609,6 @@ class AgentState(TypedDict):
     next_node_key: Optional[str]
     route_key: Optional[str]
     summary: str
-    retrieval_hits: List[Dict[str, Any]]
-    retrieval_cache: Dict[str, List[Dict[str, Any]]]
     tool_history: List[Dict[str, Any]]
     tool_calls: List[Dict[str, Any]]
     model_hits: List[Dict[str, Any]]
@@ -610,6 +641,11 @@ AGENT_DECISION_FINAL = "FINAL"
 AGENT_DECISION_TOOL_CALL = "TOOL_CALL"
 AGENT_DECISION_SKILL_READ = "SKILL_READ"
 AGENT_DECISION_HUMAN_HANDOFF = "HUMAN_HANDOFF"
+TOOL_KIND_RESOURCE = "RESOURCE"
+TOOL_KIND_BUILTIN = "BUILTIN"
+PROVIDER_TYPE_BUILTIN = "BUILTIN"
+BUILTIN_TOOL_KNOWLEDGE_SEARCH = "builtin:knowledge_search"
+BUILTIN_TOOL_KNOWLEDGE_READ = "builtin:knowledge_read"
 GRAPH_HUMAN_TASK_SOURCE = "GRAPH_NODE"
 AGENT_HUMAN_TASK_SOURCE = "AGENT_REQUEST"
 PAUSE_SOURCE_EXTERNAL_INTERACTION = "EXTERNAL_INTERACTION"
@@ -933,18 +969,24 @@ def append_node(state: AgentState, key: str, name: str, detail: str, status: str
 
 def record_tool_call(
     state: AgentState,
+    tool_id: str,
+    tool_name: str,
+    tool_kind: str,
     provider_type: str,
-    resource: ResourceVersionSnapshot,
     operation: str,
     status: str,
     detail: str,
+    resource: Optional[ResourceVersionSnapshot] = None,
 ) -> None:
     state["tool_calls"].append(
         {
             "id": next_id("tool"),
+            "toolId": tool_id,
+            "toolName": tool_name,
+            "toolKind": tool_kind,
             "providerType": provider_type,
-            "resourceId": resource.resourceId,
-            "resourceName": resource.resourceName,
+            "resourceId": resource.resourceId if resource else None,
+            "resourceName": resource.resourceName if resource else None,
             "operation": operation,
             "status": status,
             "detail": detail,
@@ -1115,11 +1157,11 @@ def append_model_hit(
 
 
 def resolve_knowledge_binding(assistant: AssistantRunSnapshot, agent: AgentSnapshot) -> Optional[KnowledgeBindingSnapshot]:
-    if not agent.executionPolicy.ragEnabled:
+    if not agent.executionPolicy.knowledgeEnabled:
         return None
     if agent.executionPolicy.inheritAssistantKnowledge:
-        return assistant.assistantKnowledge
-    return agent.executionPolicy.knowledge or assistant.assistantKnowledge
+        return assistant.assistantKnowledgeBinding
+    return agent.executionPolicy.knowledgeBinding
 
 
 def resolve_tool_resources(assistant: AssistantRunSnapshot, agent: AgentSnapshot) -> List[ResourceVersionSnapshot]:
@@ -1129,6 +1171,168 @@ def resolve_tool_resources(assistant: AssistantRunSnapshot, agent: AgentSnapshot
         if resource:
             tools.append(resource)
     return tools
+
+
+def resource_tool_id(resource: ResourceVersionSnapshot, operation_name: str) -> str:
+    return f"resource:{resource.resourceVersionId}:{operation_name}"
+
+
+def available_builtin_tools(binding: Optional[KnowledgeBindingSnapshot]) -> List[AvailableTool]:
+    if binding is None:
+        return []
+    return [
+        AvailableTool(
+            toolId=BUILTIN_TOOL_KNOWLEDGE_SEARCH,
+            toolName="knowledge_search",
+            toolKind=TOOL_KIND_BUILTIN,
+            providerType=PROVIDER_TYPE_BUILTIN,
+            operation="knowledge_search",
+            description="Search the bound knowledge base for relevant chunks before answering.",
+            inputSchema=json.dumps(
+                {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string"},
+                        "topK": {"type": "integer"},
+                        "minScore": {"type": "number"},
+                        "retrievalMode": {"type": "string", "enum": ["LEXICAL", "VECTOR", "HYBRID"]},
+                    },
+                    "required": ["query"],
+                    "additionalProperties": False,
+                },
+                ensure_ascii=False,
+            ),
+            outputSchema=json.dumps(
+                {
+                    "type": "object",
+                    "properties": {
+                        "knowledgeBaseId": {"type": "string"},
+                        "knowledgeBaseName": {"type": "string"},
+                        "knowledgeReleaseId": {"type": "string"},
+                        "knowledgeReleaseVersion": {"type": "string"},
+                        "lowConfidence": {"type": "boolean"},
+                        "hits": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "chunkId": {"type": "string"},
+                                    "documentId": {"type": "string"},
+                                    "documentTitle": {"type": "string"},
+                                    "sourceUri": {"type": "string"},
+                                    "snippet": {"type": "string"},
+                                    "score": {"type": "number"},
+                                    "pageNumber": {"type": ["integer", "null"]},
+                                    "headingPath": {"type": "string"},
+                                },
+                                "required": ["chunkId", "documentId", "documentTitle", "sourceUri", "snippet", "score", "headingPath"],
+                                "additionalProperties": False,
+                            },
+                        },
+                    },
+                    "required": [
+                        "knowledgeBaseId",
+                        "knowledgeBaseName",
+                        "knowledgeReleaseId",
+                        "knowledgeReleaseVersion",
+                        "lowConfidence",
+                        "hits",
+                    ],
+                    "additionalProperties": False,
+                },
+                ensure_ascii=False,
+            ),
+        ),
+        AvailableTool(
+            toolId=BUILTIN_TOOL_KNOWLEDGE_READ,
+            toolName="knowledge_read",
+            toolKind=TOOL_KIND_BUILTIN,
+            providerType=PROVIDER_TYPE_BUILTIN,
+            operation="knowledge_read",
+            description="Read full content for selected chunks from the bound knowledge base.",
+            inputSchema=json.dumps(
+                {
+                    "type": "object",
+                    "properties": {
+                        "chunkIds": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        }
+                    },
+                    "required": ["chunkIds"],
+                    "additionalProperties": False,
+                },
+                ensure_ascii=False,
+            ),
+            outputSchema=json.dumps(
+                {
+                    "type": "object",
+                    "properties": {
+                        "knowledgeBaseId": {"type": "string"},
+                        "knowledgeBaseName": {"type": "string"},
+                        "knowledgeReleaseId": {"type": "string"},
+                        "knowledgeReleaseVersion": {"type": "string"},
+                        "chunks": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "chunkId": {"type": "string"},
+                                    "documentId": {"type": "string"},
+                                    "documentTitle": {"type": "string"},
+                                    "sourceUri": {"type": "string"},
+                                    "headingPath": {"type": "string"},
+                                    "pageNumber": {"type": ["integer", "null"]},
+                                    "content": {"type": "string"},
+                                },
+                                "required": ["chunkId", "documentId", "documentTitle", "sourceUri", "headingPath", "content"],
+                                "additionalProperties": False,
+                            },
+                        },
+                    },
+                    "required": [
+                        "knowledgeBaseId",
+                        "knowledgeBaseName",
+                        "knowledgeReleaseId",
+                        "knowledgeReleaseVersion",
+                        "chunks",
+                    ],
+                    "additionalProperties": False,
+                },
+                ensure_ascii=False,
+            ),
+        ),
+    ]
+
+
+def available_tools_for_agent(
+    assistant: AssistantRunSnapshot,
+    agent: AgentSnapshot,
+    binding: Optional[KnowledgeBindingSnapshot],
+) -> List[AvailableTool]:
+    catalog: List[AvailableTool] = []
+    for resource in resolve_tool_resources(assistant, agent):
+        tool = resource.configuration.tool
+        if tool is None:
+            continue
+        for operation in tool.operations:
+            catalog.append(
+                AvailableTool(
+                    toolId=resource_tool_id(resource, operation.name),
+                    toolName=f"{resource.resourceName}.{operation.name}",
+                    toolKind=TOOL_KIND_RESOURCE,
+                    providerType=tool.providerType,
+                    operation=operation.name,
+                    description=operation.description,
+                    inputSchema=operation.inputSchema,
+                    outputSchema=operation.outputSchema,
+                    resourceId=resource.resourceId,
+                    resourceVersionId=resource.resourceVersionId,
+                    resourceName=resource.resourceName,
+                )
+            )
+    catalog.extend(available_builtin_tools(binding))
+    return catalog
 
 
 def resolve_skill_resources(assistant: AssistantRunSnapshot, agent: AgentSnapshot) -> List[ResourceVersionSnapshot]:
@@ -1387,7 +1591,6 @@ def build_runtime_context_block(
     question: str,
     question_created_at: str,
     conversation_history: str,
-    knowledge_context: List[Dict[str, Any]],
     tool_results: List[Dict[str, Any]],
     resume_input: Optional[Dict[str, Any]],
     shared_facts_payload: Dict[str, Any],
@@ -1404,8 +1607,6 @@ def build_runtime_context_block(
         sections.append(f"共享产物（artifacts）：\n{json.dumps(shared_artifacts_payload, ensure_ascii=False, indent=2)}")
     if agent_scope_payload:
         sections.append(f"当前智能体私有上下文（agentScope）：\n{json.dumps(agent_scope_payload, ensure_ascii=False, indent=2)}")
-    if knowledge_context:
-        sections.append(f"知识召回结果：\n{json.dumps(knowledge_context, ensure_ascii=False, indent=2)}")
     if tool_results:
         sections.append(f"工具结果：\n{json.dumps(tool_results, ensure_ascii=False, indent=2)}")
     if resume_input:
@@ -1434,30 +1635,23 @@ def available_routes_for_prompt(graph: GraphSnapshot, node_key: str) -> List[Dic
     return routes
 
 
-def tool_catalog_for_prompt(tool_resources: List[ResourceVersionSnapshot]) -> List[Dict[str, Any]]:
-    catalog: List[Dict[str, Any]] = []
-    for resource in tool_resources:
-        tool = resource.configuration.tool
-        if tool is None:
-            continue
-        catalog.append(
-            {
-                "toolResourceId": resource.resourceId,
-                "toolResourceVersionId": resource.resourceVersionId,
-                "toolResourceName": resource.resourceName,
-                "providerType": tool.providerType,
-                "operations": [
-                    {
-                        "name": operation.name,
-                        "description": operation.description,
-                        "inputSchema": operation.inputSchema,
-                        "outputSchema": operation.outputSchema,
-                    }
-                    for operation in tool.operations
-                ],
-            }
-        )
-    return catalog
+def tool_catalog_for_prompt(available_tools: List[AvailableTool]) -> List[Dict[str, Any]]:
+    return [
+        {
+            "toolId": tool.toolId,
+            "toolName": tool.toolName,
+            "toolKind": tool.toolKind,
+            "providerType": tool.providerType,
+            "operation": tool.operation,
+            "description": tool.description,
+            "inputSchema": tool.inputSchema,
+            "outputSchema": tool.outputSchema,
+            "resourceId": tool.resourceId,
+            "resourceVersionId": tool.resourceVersionId,
+            "resourceName": tool.resourceName,
+        }
+        for tool in available_tools
+    ]
 
 
 def build_instruction_block() -> str:
@@ -1499,8 +1693,7 @@ def build_instruction_block() -> str:
         "skillReads": ["skillResourceVersionId; only when decisionType=SKILL_READ or TOOL_CALL"],
         "toolRequests": [
             {
-                "toolResourceVersionId": "string",
-                "operation": "string",
+                "toolId": "string",
                 "arguments": {"key": "value; only when decisionType=TOOL_CALL"},
             }
         ],
@@ -1552,6 +1745,8 @@ def build_instruction_block() -> str:
             "Use skillReads to request needed skill details from the skill catalog in the prompt.",
             "Tool results are business data only. Do not expect them to return orchestration fields such as routeKey.",
             "After tool calls complete, inspect the returned business result and make the routeDecision yourself when needed.",
+            "Use builtin:knowledge_search before citing knowledge-base facts, and builtin:knowledge_read when you need full chunk content.",
+            "Do not claim knowledge-base confirmation unless you actually called a knowledge tool in this node.",
             "Use sessionStatePatch to persist reusable session facts, artifacts, or your own agentScope.",
             "You can read facts/artifacts and only your own agentScope from the prompt. Do not assume access to other agents' scopes.",
             f"Use {AGENT_DECISION_SKILL_READ} for skill-only continuation turns.",
@@ -1573,13 +1768,13 @@ def build_instruction_block() -> str:
 def build_capability_block(
     available_skills: List[Dict[str, str]],
     loaded_skills: List[Dict[str, str]],
-    tool_resources: List[ResourceVersionSnapshot],
+    available_tools: List[AvailableTool],
     routes: List[Dict[str, Any]],
 ) -> str:
     sections: List[str] = []
     if routes:
         sections.append(f"可用路由：\n{json.dumps(routes, ensure_ascii=False, indent=2)}")
-    tool_catalog = tool_catalog_for_prompt(tool_resources)
+    tool_catalog = tool_catalog_for_prompt(available_tools)
     if tool_catalog:
         sections.append(f"可用工具：\n{json.dumps(tool_catalog, ensure_ascii=False, indent=2)}")
     if available_skills:
@@ -1598,10 +1793,9 @@ def build_structured_agent_prompt(
     agent_scope_payload: Dict[str, Any],
     available_skills: List[Dict[str, str]],
     loaded_skills: List[Dict[str, str]],
-    knowledge_context: List[Dict[str, Any]],
     tool_results: List[Dict[str, Any]],
     resume_input: Optional[Dict[str, Any]],
-    tool_resources: List[ResourceVersionSnapshot],
+    available_tools: List[AvailableTool],
     routes: List[Dict[str, Any]],
     loop_index: int,
 ) -> StructuredAgentPrompt:
@@ -1609,7 +1803,6 @@ def build_structured_agent_prompt(
         question,
         question_created_at,
         conversation_history,
-        knowledge_context,
         tool_results,
         resume_input,
         shared_facts_payload,
@@ -1619,7 +1812,7 @@ def build_structured_agent_prompt(
     )
     return {
         "instruction_block": build_instruction_block(),
-        "capability_block": build_capability_block(available_skills, loaded_skills, tool_resources, routes),
+        "capability_block": build_capability_block(available_skills, loaded_skills, available_tools, routes),
         "runtime_context_block": runtime_context_block,
     }
 
@@ -1794,30 +1987,84 @@ def tokenize(text: str) -> List[str]:
     return [token for token in text.replace("？", " ").replace("，", " ").replace("。", " ").split() if token]
 
 
-async def retrieve_knowledge(binding: Optional[KnowledgeBindingSnapshot], question: str) -> List[Dict[str, Any]]:
-    if binding is None:
-        return []
-    if not binding.snapshotId.strip():
-        return []
-    knowledge_service_base_url = os.getenv("LYNXUS_KNOWLEDGE_SERVICE_BASE_URL", "http://127.0.0.1:8091").rstrip("/")
+def knowledge_service_base_url() -> str:
+    return os.getenv("LYNXUS_KNOWLEDGE_SERVICE_BASE_URL", "http://127.0.0.1:8091").rstrip("/")
+
+
+async def knowledge_search(binding: KnowledgeBindingSnapshot, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    query = str(arguments.get("query", "")).strip()
+    if not query:
+        raise AgentTurnError("TOOL_REQUEST_INVALID", "knowledge_search.query is required")
+    top_k_raw = arguments.get("topK", binding.defaultTopK)
+    min_score_raw = arguments.get("minScore", binding.minScore)
+    retrieval_mode_raw = arguments.get("retrievalMode", binding.retrievalMode)
+    if not isinstance(top_k_raw, int) or isinstance(top_k_raw, bool):
+        raise AgentTurnError("TOOL_REQUEST_INVALID", "knowledge_search.topK must be an integer")
+    if not isinstance(min_score_raw, (int, float)) or isinstance(min_score_raw, bool):
+        raise AgentTurnError("TOOL_REQUEST_INVALID", "knowledge_search.minScore must be a number")
+    retrieval_mode = str(retrieval_mode_raw or binding.retrievalMode).strip().upper()
+    if retrieval_mode not in {"LEXICAL", "VECTOR", "HYBRID"}:
+        raise AgentTurnError("TOOL_REQUEST_INVALID", "knowledge_search.retrievalMode must be LEXICAL, VECTOR, or HYBRID")
     auth_headers = {"Authorization": f"Bearer {internal_auth_token()}"}
     async with httpx.AsyncClient(timeout=10.0) as client:
         response = await client.post(
-            f"{knowledge_service_base_url}/internal/retrieve",
+            f"{knowledge_service_base_url()}/internal/retrieve",
             headers=auth_headers,
             json={
                 "indexSnapshotId": binding.snapshotId,
-                "query": question,
-                "topK": binding.defaultTopK,
-                "minScore": binding.minScore,
-                "retrievalMode": binding.retrievalMode,
+                "query": query,
+                "topK": top_k_raw,
+                "minScore": float(min_score_raw),
+                "retrievalMode": retrieval_mode,
             },
         )
         response.raise_for_status()
     payload = response.json()
-    if payload.get("lowConfidence"):
-        return []
-    return payload.get("hits", [])
+    hits = payload.get("hits", [])
+    return {
+        "knowledgeBaseId": binding.knowledgeBaseId,
+        "knowledgeBaseName": binding.knowledgeBaseName,
+        "knowledgeReleaseId": binding.knowledgeReleaseId,
+        "knowledgeReleaseVersion": binding.knowledgeReleaseVersion,
+        "lowConfidence": bool(payload.get("lowConfidence", False)),
+        "hits": hits if isinstance(hits, list) else [],
+    }
+
+
+async def knowledge_read(binding: KnowledgeBindingSnapshot, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    raw_chunk_ids = arguments.get("chunkIds", [])
+    if not isinstance(raw_chunk_ids, list):
+        raise AgentTurnError("TOOL_REQUEST_INVALID", "knowledge_read.chunkIds must be a list")
+    chunk_ids: List[str] = []
+    for item in raw_chunk_ids:
+        chunk_id = str(item).strip()
+        if not chunk_id:
+            raise AgentTurnError("TOOL_REQUEST_INVALID", "knowledge_read.chunkIds items must be non-empty strings")
+        if chunk_id not in chunk_ids:
+            chunk_ids.append(chunk_id)
+    if not chunk_ids:
+        raise AgentTurnError("TOOL_REQUEST_INVALID", "knowledge_read.chunkIds must not be empty")
+
+    auth_headers = {"Authorization": f"Bearer {internal_auth_token()}"}
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(
+            f"{knowledge_service_base_url()}/internal/read-chunks",
+            headers=auth_headers,
+            json={
+                "indexSnapshotId": binding.snapshotId,
+                "chunkIds": chunk_ids,
+            },
+        )
+        response.raise_for_status()
+    payload = response.json()
+    chunks = payload.get("chunks", [])
+    return {
+        "knowledgeBaseId": binding.knowledgeBaseId,
+        "knowledgeBaseName": binding.knowledgeBaseName,
+        "knowledgeReleaseId": binding.knowledgeReleaseId,
+        "knowledgeReleaseVersion": binding.knowledgeReleaseVersion,
+        "chunks": chunks if isinstance(chunks, list) else [],
+    }
 
 
 def resolve_tool_operation(resource: ResourceVersionSnapshot, operation_name: Optional[str] = None) -> ToolOperationConfig:
@@ -1935,7 +2182,47 @@ async def call_mcp_tool(resource: ResourceVersionSnapshot, operation: ToolOperat
         ) from exc
 
 
-async def call_tool(resource: ResourceVersionSnapshot, operation_name: Optional[str], payload: Dict[str, Any]) -> tuple[ToolOperationConfig, Dict[str, Any]]:
+def resolve_available_tool(available_tools: List[AvailableTool], tool_id: str) -> AvailableTool:
+    for tool in available_tools:
+        if tool.toolId == tool_id:
+            return tool
+    raise AgentTurnError("TOOL_REQUEST_INVALID", f"unknown toolId={tool_id}")
+
+
+async def call_tool(
+    available_tool: AvailableTool,
+    payload: Dict[str, Any],
+    knowledge_binding: Optional[KnowledgeBindingSnapshot],
+    resource_index_by_version: Dict[str, ResourceVersionSnapshot],
+) -> Dict[str, Any]:
+    if available_tool.toolKind == TOOL_KIND_BUILTIN:
+        if knowledge_binding is None:
+            raise WorkflowFailureError(
+                FAILURE_CATEGORY_CONFIGURATION,
+                "KNOWLEDGE_BINDING_MISSING",
+                f"builtin knowledge tool unavailable without knowledge binding: {available_tool.toolId}",
+            )
+        if available_tool.toolId == BUILTIN_TOOL_KNOWLEDGE_SEARCH:
+            result = await knowledge_search(knowledge_binding, payload)
+        elif available_tool.toolId == BUILTIN_TOOL_KNOWLEDGE_READ:
+            result = await knowledge_read(knowledge_binding, payload)
+        else:
+            raise WorkflowFailureError(
+                FAILURE_CATEGORY_CONFIGURATION,
+                "TOOL_PROVIDER_UNSUPPORTED",
+                f"unsupported builtin tool: {available_tool.toolId}",
+            )
+        validate_tool_result_for_available_tool(available_tool, result)
+        return result
+
+    resource_version_id = available_tool.resourceVersionId or ""
+    resource = resource_index_by_version.get(resource_version_id)
+    if resource is None:
+        raise WorkflowFailureError(
+            FAILURE_CATEGORY_CONFIGURATION,
+            "TOOL_RESOURCE_MISSING",
+            f"tool resource not found for {available_tool.toolId}",
+        )
     config = resource.configuration.tool
     if config is None:
         raise WorkflowFailureError(
@@ -1944,7 +2231,7 @@ async def call_tool(resource: ResourceVersionSnapshot, operation_name: Optional[
             f"resource {resource.resourceId} is not a tool",
             failed_resource=resource,
         )
-    operation = resolve_tool_operation(resource, operation_name)
+    operation = resolve_tool_operation(resource, available_tool.operation)
     if config.providerType == "HTTP":
         result = await call_http_tool(resource, operation, payload)
     elif config.providerType == "MCP":
@@ -1956,8 +2243,8 @@ async def call_tool(resource: ResourceVersionSnapshot, operation_name: Optional[
             f"Unsupported tool provider: {config.providerType}",
             failed_resource=resource,
         )
-    validate_tool_result(resource, operation, result)
-    return operation, result
+    validate_tool_result_for_available_tool(available_tool, result)
+    return result
 
 
 def tool_history_for_prompt(state: AgentState) -> List[Dict[str, Any]]:
@@ -1967,9 +2254,13 @@ def tool_history_for_prompt(state: AgentState) -> List[Dict[str, Any]]:
             continue
         prompt_rows.append(
             {
-                "toolResourceId": item.get("toolResourceId", ""),
-                "toolResourceVersionId": item.get("toolResourceVersionId", ""),
-                "toolResourceName": item.get("toolResourceName", ""),
+                "toolId": item.get("toolId", ""),
+                "toolName": item.get("toolName", ""),
+                "toolKind": item.get("toolKind", ""),
+                "providerType": item.get("providerType", ""),
+                "resourceId": item.get("resourceId"),
+                "resourceVersionId": item.get("resourceVersionId"),
+                "resourceName": item.get("resourceName"),
                 "operation": item.get("operation", ""),
                 "arguments": item.get("arguments", {}),
                 "result": item.get("result", {}),
@@ -1985,13 +2276,13 @@ def default_route_key(graph: GraphSnapshot, node_key: str) -> Optional[str]:
     return None
 
 
-def validate_tool_result(resource: ResourceVersionSnapshot, operation: ToolOperationConfig, result: Any) -> None:
+def validate_tool_result_for_available_tool(available_tool: AvailableTool, result: Any) -> None:
     if not isinstance(result, dict):
         raise AgentTurnError(
             "TOOL_RESPONSE_INVALID",
-            f"tool {resource.resourceName}/{operation.name} must return a JSON object",
+            f"tool {available_tool.toolName} must return a JSON object",
         )
-    output_schema = operation.outputSchema.strip()
+    output_schema = available_tool.outputSchema.strip()
     if not output_schema:
         return
     try:
@@ -1999,9 +2290,38 @@ def validate_tool_result(resource: ResourceVersionSnapshot, operation: ToolOpera
     except json.JSONDecodeError as exc:
         raise AgentTurnError(
             "TOOL_SCHEMA_INVALID",
-            f"tool {resource.resourceName}/{operation.name} has invalid outputSchema: {exc}",
+            f"tool {available_tool.toolName} has invalid outputSchema: {exc}",
         ) from exc
     validate_json_schema_value(result, schema, path="$")
+
+
+def validate_tool_result(resource: ResourceVersionSnapshot, operation: ToolOperationConfig, result: Any) -> None:
+    validate_tool_result_for_available_tool(
+        AvailableTool(
+            toolId=resource_tool_id(resource, operation.name),
+            toolName=f"{resource.resourceName}.{operation.name}",
+            toolKind=TOOL_KIND_RESOURCE,
+            providerType=resource.configuration.tool.providerType if resource.configuration.tool else "UNKNOWN",
+            operation=operation.name,
+            description=operation.description,
+            inputSchema=operation.inputSchema,
+            outputSchema=operation.outputSchema,
+            resourceId=resource.resourceId,
+            resourceVersionId=resource.resourceVersionId,
+            resourceName=resource.resourceName,
+        ),
+        result,
+    )
+
+
+async def retrieve_knowledge(binding: Optional[KnowledgeBindingSnapshot], question: str) -> List[Dict[str, Any]]:
+    if binding is None or not binding.snapshotId.strip():
+        return []
+    result = await knowledge_search(binding, {"query": question})
+    if result.get("lowConfidence"):
+        return []
+    hits = result.get("hits", [])
+    return hits if isinstance(hits, list) else []
 
 
 def validate_json_schema_value(value: Any, schema: Any, path: str = "$") -> None:
@@ -2086,29 +2406,24 @@ def resolve_route_or_raise(graph: GraphSnapshot, node_key: str, route_key: Optio
 
 def normalize_tool_requests(
     raw_requests: Any,
-    tool_resources: List[ResourceVersionSnapshot],
+    available_tools: List[AvailableTool],
 ) -> List[ToolRequest]:
-    by_version_id = {resource.resourceVersionId: resource for resource in tool_resources}
+    allowed_tool_ids = {tool.toolId for tool in available_tools}
     if not isinstance(raw_requests, list):
         raise AgentTurnError("MODEL_OUTPUT_INVALID", "toolRequests must be a list")
     normalized: List[ToolRequest] = []
     for raw_request in raw_requests:
         if not isinstance(raw_request, dict):
             raise AgentTurnError("TOOL_REQUEST_INVALID", "toolRequests items must be objects")
-        resource_version_id = str(raw_request.get("toolResourceVersionId", "")).strip()
-        operation = str(raw_request.get("operation", "")).strip()
+        tool_id = str(raw_request.get("toolId", "")).strip()
         arguments = raw_request.get("arguments", {})
-        if resource_version_id not in by_version_id:
-            raise AgentTurnError("TOOL_REQUEST_INVALID", f"unknown toolResourceVersionId={resource_version_id}")
-        if not operation:
-            raise AgentTurnError("TOOL_REQUEST_INVALID", "toolRequests.operation is required")
+        if tool_id not in allowed_tool_ids:
+            raise AgentTurnError("TOOL_REQUEST_INVALID", f"unknown toolId={tool_id}")
         if not isinstance(arguments, dict):
             raise AgentTurnError("TOOL_REQUEST_INVALID", "toolRequests.arguments must be an object")
-        resolve_tool_operation(by_version_id[resource_version_id], operation)
         normalized.append(
             ToolRequest(
-                toolResourceVersionId=resource_version_id,
-                operation=operation,
+                toolId=tool_id,
                 arguments=arguments,
             )
         )
@@ -2230,7 +2545,7 @@ def parse_agent_structured_response(
     graph: GraphSnapshot,
     node: GraphNodeSnapshot,
     skill_resources: List[ResourceVersionSnapshot],
-    tool_resources: List[ResourceVersionSnapshot],
+    available_tools: List[AvailableTool],
 ) -> StructuredAgentDecision:
     parsed = extract_json_object(llm_output)
     if parsed is None:
@@ -2248,7 +2563,7 @@ def parse_agent_structured_response(
             raise AgentTurnError("ROUTE_INVALID", f"invalid routeDecision={route_decision} for node {node.nodeKey}")
 
     skill_reads = normalize_skill_reads(parsed.get("skillReads", []), skill_resources)
-    tool_requests = normalize_tool_requests(parsed.get("toolRequests", []), tool_resources)
+    tool_requests = normalize_tool_requests(parsed.get("toolRequests", []), available_tools)
     output_messages = normalize_output_messages(parsed.get("outputMessages", []))
     raw_human_request = parsed.get("humanRequest")
     human_request = HumanRequest.model_validate(raw_human_request) if raw_human_request is not None else None
@@ -2297,19 +2612,22 @@ def parse_agent_structured_response(
 def store_tool_result(
     state: AgentState,
     agent: AgentSnapshot,
-    resource: ResourceVersionSnapshot,
-    operation: ToolOperationConfig,
+    available_tool: AvailableTool,
     arguments: Dict[str, Any],
     result: Dict[str, Any],
 ) -> None:
-    outcome_summary = build_tool_outcome(resource, operation, result)
+    outcome_summary = build_tool_outcome(available_tool, result)
     state["tool_history"].append(
         {
             "agentId": agent.agentId,
-            "toolResourceId": resource.resourceId,
-            "toolResourceVersionId": resource.resourceVersionId,
-            "toolResourceName": resource.resourceName,
-            "operation": operation.name,
+            "toolId": available_tool.toolId,
+            "toolName": available_tool.toolName,
+            "toolKind": available_tool.toolKind,
+            "providerType": available_tool.providerType,
+            "resourceId": available_tool.resourceId,
+            "resourceVersionId": available_tool.resourceVersionId,
+            "resourceName": available_tool.resourceName,
+            "operation": available_tool.operation,
             "arguments": arguments,
             "result": result,
             "createdAt": now_iso(),
@@ -2318,13 +2636,15 @@ def store_tool_result(
     state["latest_tool_outcome"] = outcome_summary
 
 
-def build_tool_outcome(resource: ResourceVersionSnapshot, operation: ToolOperationConfig, result: Dict[str, Any]) -> Dict[str, Any]:
-    provider_type = resource.configuration.tool.providerType if resource.configuration.tool else "UNKNOWN"
+def build_tool_outcome(available_tool: AvailableTool, result: Dict[str, Any]) -> Dict[str, Any]:
     return {
-        "toolResourceId": resource.resourceId,
-        "toolResourceName": resource.resourceName,
-        "operation": operation.name,
-        "providerType": provider_type,
+        "toolId": available_tool.toolId,
+        "toolName": available_tool.toolName,
+        "toolKind": available_tool.toolKind,
+        "operation": available_tool.operation,
+        "providerType": available_tool.providerType,
+        "resourceId": available_tool.resourceId,
+        "resourceName": available_tool.resourceName,
         "result": result,
     }
 
@@ -2336,8 +2656,6 @@ def export_state(state: AgentState) -> Dict[str, Any]:
         "assistant": state["assistant"],
         "graph": state["graph"],
         "summary": state["summary"],
-        "retrieval_hits": state["retrieval_hits"],
-        "retrieval_cache": state["retrieval_cache"],
         "tool_history": state["tool_history"],
         "tool_calls": state["tool_calls"],
         "model_hits": state["model_hits"],
@@ -2366,8 +2684,6 @@ def restore_state(data: Dict[str, Any], resume_request: WorkflowResumeRequest) -
         "next_node_key": None,
         "route_key": None,
         "summary": data.get("summary", ""),
-        "retrieval_hits": data.get("retrieval_hits", []),
-        "retrieval_cache": data.get("retrieval_cache", {}),
         "tool_history": data.get("tool_history", []),
         "tool_calls": data.get("tool_calls", []),
         "model_hits": data.get("model_hits", []),
@@ -2569,14 +2885,13 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
     agent = find_agent(assistant, node.agentId)
     knowledge_binding = resolve_knowledge_binding(assistant, agent)
     skill_resources = resolve_skill_resources(assistant, agent)
+    available_tools = available_tools_for_agent(assistant, agent, knowledge_binding)
+    resource_index_by_version = resource_index(assistant)
     conversation_history = build_conversation_history(
         state["session_context"],
         state["question"],
         memory_window_for_agent(assistant, agent),
     )
-    hits = await retrieve_knowledge(knowledge_binding, state["question"]) if knowledge_binding else []
-    state["retrieval_hits"] = hits
-    state["retrieval_cache"][agent.agentId] = hits
 
     detail_lines = [agent.responsibility]
     route_key: Optional[str] = None
@@ -2603,7 +2918,6 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
             "failure",
         )
         return
-    tool_resources = resolve_tool_resources(assistant, agent)
 
     for turn_index in range(1, AGENT_MAX_TURNS + 1):
         state["agent_turn_state"]["phase"] = "PREPARE_CONTEXT"
@@ -2619,10 +2933,9 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
             agent_scope(state["session_context"], agent.agentId),
             available_skills,
             loaded_skills,
-            hits,
             tool_history_for_prompt(state),
             state["resume_input"],
-            tool_resources,
+            available_tools,
             available_routes_for_prompt(graph, node.nodeKey),
             turn_index - 1,
         )
@@ -2650,7 +2963,7 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
             return
         state["agent_turn_state"]["phase"] = "VALIDATE_RESPONSE"
         try:
-            structured = parse_agent_structured_response(llm_output, graph, node, skill_resources, tool_resources)
+            structured = parse_agent_structured_response(llm_output, graph, node, skill_resources, available_tools)
             state["agent_turn_state"]["latestDecision"] = structured.model_dump(mode="json")
             if structured.sessionStatePatch is not None:
                 state["agent_turn_state"]["phase"] = "APPLY_SESSION_STATE_PATCH"
@@ -2763,28 +3076,20 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
         if structured.decisionType == AGENT_DECISION_TOOL_CALL:
             state["agent_turn_state"]["phase"] = "EXECUTE_TOOL_REQUESTS"
             for tool_request in structured.toolRequests:
-                tool_resource = next(
-                    (resource for resource in tool_resources if resource.resourceVersionId == tool_request.toolResourceVersionId),
-                    None,
-                )
-                if tool_resource is None:
+                try:
+                    available_tool = resolve_available_tool(available_tools, tool_request.toolId)
+                except AgentTurnError as exc:
                     turn_log.phase = "FAIL"
-                    turn_log.failureReason = "TOOL_RESOURCE_MISSING"
+                    turn_log.failureReason = exc.code
                     turn_logs.append(turn_log.model_dump(mode="json"))
                     state["agent_turn_state"]["turnLogs"] = turn_logs
                     detail_lines.append(turn_log_line(turn_logs[-1]))
-                    log_turn_failure(
-                        state["workflow_instance_id"],
-                        node.nodeKey,
-                        turn_index,
-                        "TOOL_RESOURCE_MISSING",
-                        f"tool resource not found: {tool_request.toolResourceVersionId}",
-                    )
+                    log_turn_failure(state["workflow_instance_id"], node.nodeKey, turn_index, exc.code, exc.message)
                     failure = build_failure_snapshot(
                         FAILURE_CATEGORY_CONFIGURATION,
-                        "TOOL_RESOURCE_MISSING",
-                        f"tool resource not found: {tool_request.toolResourceVersionId}",
-                        f"tool resource not found: {tool_request.toolResourceVersionId}",
+                        exc.code,
+                        exc.message,
+                        exc.message,
                         node_key=node.nodeKey,
                         node_name=node.nodeName,
                     )
@@ -2792,22 +3097,41 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
                         state,
                         node.nodeKey,
                         node.nodeName,
-                        "工具资源缺失，需要人工介入",
-                        f"TOOL_RESOURCE_MISSING: tool resource not found: {tool_request.toolResourceVersionId}",
+                        "工具不可用，需要人工介入",
+                        f"{exc.code}: {exc.message}",
                         "请人工确认工具配置并继续处理",
-                        "\n".join([*detail_lines, f"tool_error=tool resource not found: {tool_request.toolResourceVersionId}"]),
+                        "\n".join([*detail_lines, f"tool_error={exc.message}"]),
                         failure,
                     )
                     return
+                tool_resource = resource_index_by_version.get(available_tool.resourceVersionId or "")
                 try:
-                    operation, tool_result = await call_tool(tool_resource, tool_request.operation, tool_request.arguments)
-                    store_tool_result(state, agent, tool_resource, operation, tool_request.arguments, tool_result)
-                    provider_type = tool_resource.configuration.tool.providerType if tool_resource.configuration.tool else "UNKNOWN"
-                    record_tool_call(state, provider_type, tool_resource, operation.name, "COMPLETED", json.dumps(tool_result, ensure_ascii=False))
+                    tool_result = await call_tool(available_tool, tool_request.arguments, knowledge_binding, resource_index_by_version)
+                    store_tool_result(state, agent, available_tool, tool_request.arguments, tool_result)
+                    record_tool_call(
+                        state,
+                        available_tool.toolId,
+                        available_tool.toolName,
+                        available_tool.toolKind,
+                        available_tool.providerType,
+                        available_tool.operation,
+                        "COMPLETED",
+                        json.dumps(tool_result, ensure_ascii=False),
+                        tool_resource,
+                    )
                     turn_log.toolCallsDelta += 1
                 except AgentTurnError as exc:
-                    provider_type = tool_resource.configuration.tool.providerType if tool_resource.configuration.tool else "UNKNOWN"
-                    record_tool_call(state, provider_type, tool_resource, tool_request.operation, "FAILED", exc.message)
+                    record_tool_call(
+                        state,
+                        available_tool.toolId,
+                        available_tool.toolName,
+                        available_tool.toolKind,
+                        available_tool.providerType,
+                        available_tool.operation,
+                        "FAILED",
+                        exc.message,
+                        tool_resource,
+                    )
                     turn_log.phase = "FAIL"
                     turn_log.failureReason = exc.code
                     turn_logs.append(turn_log.model_dump(mode="json"))
@@ -2835,8 +3159,17 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
                     )
                     return
                 except WorkflowFailureError as exc:
-                    provider_type = tool_resource.configuration.tool.providerType if tool_resource.configuration.tool else "UNKNOWN"
-                    record_tool_call(state, provider_type, tool_resource, tool_request.operation, "FAILED", exc.message)
+                    record_tool_call(
+                        state,
+                        available_tool.toolId,
+                        available_tool.toolName,
+                        available_tool.toolKind,
+                        available_tool.providerType,
+                        available_tool.operation,
+                        "FAILED",
+                        exc.message,
+                        tool_resource,
+                    )
                     pause_agent_node_with_workflow_failure(
                         state,
                         node,
@@ -2851,8 +3184,17 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
                     )
                     return
                 except Exception as exc:
-                    provider_type = tool_resource.configuration.tool.providerType if tool_resource.configuration.tool else "UNKNOWN"
-                    record_tool_call(state, provider_type, tool_resource, tool_request.operation, "FAILED", str(exc))
+                    record_tool_call(
+                        state,
+                        available_tool.toolId,
+                        available_tool.toolName,
+                        available_tool.toolKind,
+                        available_tool.providerType,
+                        available_tool.operation,
+                        "FAILED",
+                        str(exc),
+                        tool_resource,
+                    )
                     turn_log.phase = "FAIL"
                     turn_log.failureReason = "TOOL_EXECUTION_FAILED"
                     turn_logs.append(turn_log.model_dump(mode="json"))
@@ -3162,8 +3504,6 @@ async def start_agent_run(request: WorkflowStartRequest, _: None = Depends(requi
         "next_node_key": None,
         "route_key": None,
         "summary": "",
-        "retrieval_hits": [],
-        "retrieval_cache": {},
         "tool_history": [],
         "tool_calls": [],
         "model_hits": [],

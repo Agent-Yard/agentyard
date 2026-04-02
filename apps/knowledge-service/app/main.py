@@ -410,6 +410,25 @@ class RetrieveResponse(BaseModel):
     lowConfidence: bool
 
 
+class ReadChunksRequest(BaseModel):
+    indexSnapshotId: str
+    chunkIds: List[str] = Field(default_factory=list)
+
+
+class ReadChunk(BaseModel):
+    chunkId: str
+    documentId: str
+    documentTitle: str
+    sourceUri: str
+    headingPath: str = ""
+    pageNumber: Optional[int] = None
+    content: str
+
+
+class ReadChunksResponse(BaseModel):
+    chunks: List[ReadChunk]
+
+
 @dataclass
 class ParsedDocument:
     title: str
@@ -1799,3 +1818,43 @@ def retrieve(request: RetrieveRequest, db: Session = Depends(get_db)) -> Retriev
     hits = candidates[:top_k]
     logger.info("retrieve knowledge completed snapshotId=%s hitCount=%s", request.indexSnapshotId, len(hits))
     return RetrieveResponse(hits=hits, lowConfidence=not hits)
+
+
+@app.post("/internal/read-chunks", response_model=ReadChunksResponse)
+def read_chunks(request: ReadChunksRequest, db: Session = Depends(get_db)) -> ReadChunksResponse:
+    logger.info("read knowledge chunks snapshotId=%s chunkCount=%s", request.indexSnapshotId, len(request.chunkIds or []))
+    snapshot = db.get(IndexSnapshotRecord, request.indexSnapshotId)
+    if snapshot is None or snapshot.status != "READY":
+        raise HTTPException(status_code=404, detail="index snapshot is not ready")
+    requested_chunk_ids = []
+    for item in request.chunkIds or []:
+        chunk_id = str(item).strip()
+        if chunk_id and chunk_id not in requested_chunk_ids:
+            requested_chunk_ids.append(chunk_id)
+    if not requested_chunk_ids:
+        return ReadChunksResponse(chunks=[])
+
+    mappings = db.scalars(select(IndexSnapshotChunkRecord).where(IndexSnapshotChunkRecord.snapshot_id == snapshot.id)).all()
+    mapping_index = {mapping.chunk_id: mapping for mapping in mappings}
+    chunks: List[ReadChunk] = []
+    for chunk_id in requested_chunk_ids:
+        mapping = mapping_index.get(chunk_id)
+        if mapping is None:
+            continue
+        chunk = db.get(KnowledgeChunkRecord, mapping.chunk_id)
+        document = db.get(KnowledgeDocumentRecord, mapping.document_id)
+        if chunk is None or document is None:
+            continue
+        chunks.append(
+            ReadChunk(
+                chunkId=chunk.id,
+                documentId=document.id,
+                documentTitle=document.title,
+                sourceUri=chunk.source_uri,
+                headingPath=chunk.heading_path,
+                pageNumber=chunk.page_number,
+                content=chunk.content,
+            )
+        )
+    logger.info("read knowledge chunks completed snapshotId=%s returnedCount=%s", request.indexSnapshotId, len(chunks))
+    return ReadChunksResponse(chunks=chunks)

@@ -442,12 +442,12 @@ class RuntimeServiceTest {
 
         service.launchTask(new RuntimeDtos.TaskLaunchRequest(fixture.scenarioId(), fixture.assistantId(), "怎么重置密码", "customer-1"));
 
-        WorkflowContracts.KnowledgeBindingSnapshot assistantKnowledge = gateway.startRequests.getFirst().assistant().assistantKnowledge();
-        assertNotNull(assistantKnowledge);
-        assertEquals(fixture.knowledgeBaseId(), assistantKnowledge.knowledgeBaseId());
-        assertEquals(fixture.knowledgeReleaseId(), assistantKnowledge.knowledgeReleaseId());
-        assertEquals(fixture.snapshotId(), assistantKnowledge.snapshotId());
-        assertEquals("HYBRID", assistantKnowledge.retrievalMode());
+        WorkflowContracts.KnowledgeBindingSnapshot assistantKnowledgeBinding = gateway.startRequests.getFirst().assistant().assistantKnowledgeBinding();
+        assertNotNull(assistantKnowledgeBinding);
+        assertEquals(fixture.knowledgeBaseId(), assistantKnowledgeBinding.knowledgeBaseId());
+        assertEquals(fixture.knowledgeReleaseId(), assistantKnowledgeBinding.knowledgeReleaseId());
+        assertEquals(fixture.snapshotId(), assistantKnowledgeBinding.snapshotId());
+        assertEquals("HYBRID", assistantKnowledgeBinding.retrievalMode());
     }
 
     @Test
@@ -493,7 +493,7 @@ class RuntimeServiceTest {
                 "知识助手",
                 "依赖知识库回答问题",
                 new CatalogDtos.AssistantModelPolicyDto(defaultModel.id()),
-                new CatalogDtos.RagPolicyDto(true, knowledgeBase.id()),
+                new CatalogDtos.KnowledgeAccessPolicyDto(true, knowledgeBase.id()),
                 null
             )
         );
@@ -576,7 +576,7 @@ class RuntimeServiceTest {
                 publishedAssistant.description(),
                 VersionStatus.DRAFT,
                 new CatalogDtos.AssistantModelPolicyDto(null),
-                publishedAssistant.ragPolicy(),
+                publishedAssistant.knowledgeAccessPolicy(),
                 publishedAssistant.memoryPolicy()
             )
         );
@@ -823,8 +823,11 @@ class RuntimeServiceTest {
             new WorkflowContracts.ToolOutcomeSummary(
                 "resource-tool-ticket",
                 "工单协同 Tool",
+                WorkflowContracts.ToolKind.RESOURCE,
                 "create_ticket",
                 "MCP",
+                "resource-tool-ticket",
+                "工单协同 Tool",
                 Map.of("ticketId", "TICKET-10001", "status", "ACCEPTED")
             ),
             List.of(),
@@ -1059,7 +1062,7 @@ class RuntimeServiceTest {
                 "客服助手",
                 "处理客服问题",
                 new CatalogDtos.AssistantModelPolicyDto(defaultModel.id()),
-                new CatalogDtos.RagPolicyDto(true, knowledgeBase.id()),
+                new CatalogDtos.KnowledgeAccessPolicyDto(true, knowledgeBase.id()),
                 null
             )
         );
@@ -1070,7 +1073,7 @@ class RuntimeServiceTest {
                 assistant.description(),
                 VersionStatus.PUBLISHED,
                 assistant.modelPolicy(),
-                new CatalogDtos.RagPolicyDto(true, knowledgeBase.id()),
+                new CatalogDtos.KnowledgeAccessPolicyDto(true, knowledgeBase.id()),
                 assistant.memoryPolicy()
             )
         );

@@ -315,7 +315,7 @@ export interface AssistantModelPolicy {
   defaultModelResourceId: string | null;
 }
 
-export interface RagPolicy {
+export interface KnowledgeAccessPolicy {
   enabled: boolean;
   knowledgeBaseId: string | null;
 }
@@ -329,7 +329,7 @@ export interface AgentExecutionPolicy {
   inheritAssistantDefaults: boolean;
   modelResourceId: string | null;
   systemPrompt: string;
-  ragEnabled: boolean;
+  knowledgeEnabled: boolean;
   inheritAssistantKnowledge: boolean;
   knowledgeBaseId: string | null;
   memoryWindowSize: number;
@@ -371,7 +371,7 @@ export interface AssistantReleaseAgent {
   role: string;
   responsibility: string;
   executionPolicy: AgentExecutionPolicy;
-  knowledge: KnowledgeBindingSnapshot | null;
+  knowledgeBinding: KnowledgeBindingSnapshot | null;
   skillResourceVersionIds: string[];
   toolResourceVersionIds: string[];
 }
@@ -383,13 +383,13 @@ export interface AssistantRelease {
   status: VersionStatus;
   createdAt: string;
   publishedAt: string | null;
-  assistantKnowledge: KnowledgeBindingSnapshot | null;
+  assistantKnowledgeBinding: KnowledgeBindingSnapshot | null;
   defaultModelBinding: DefaultModelBinding | null;
   resources: AssistantReleaseResource[];
   agents: AssistantReleaseAgent[];
   orchestration: AssistantOrchestration;
   modelPolicy: AssistantModelPolicy;
-  ragPolicy: RagPolicy;
+  knowledgeAccessPolicy: KnowledgeAccessPolicy;
   memoryPolicy: MemoryPolicy;
 }
 
@@ -403,7 +403,7 @@ export interface Assistant {
   currentRelease: AssistantRelease | null;
   releases: AssistantRelease[];
   modelPolicy: AssistantModelPolicy;
-  ragPolicy: RagPolicy;
+  knowledgeAccessPolicy: KnowledgeAccessPolicy;
   memoryPolicy: MemoryPolicy;
 }
 
@@ -482,7 +482,7 @@ export interface CreateAssistantPayload {
   name: string;
   description: string;
   modelPolicy: AssistantModelPolicy;
-  ragPolicy: RagPolicy;
+  knowledgeAccessPolicy: KnowledgeAccessPolicy;
   memoryPolicy: MemoryPolicy;
 }
 
@@ -512,7 +512,7 @@ export interface UpdateAssistantPayload {
   description: string;
   status: VersionStatus;
   modelPolicy: AssistantModelPolicy;
-  ragPolicy: RagPolicy;
+  knowledgeAccessPolicy: KnowledgeAccessPolicy;
   memoryPolicy: MemoryPolicy;
 }
 

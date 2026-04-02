@@ -11,6 +11,7 @@ os.environ.setdefault("LYNXUS_INTERNAL_AUTH_TOKEN", "test-internal-token")
 from app.main import (
     AGENT_HUMAN_TASK_SOURCE,
     AGENT_DECISION_SKILL_READ,
+    AvailableTool,
     AgentExecutionPolicySnapshot,
     AgentSnapshot,
     AgentTurnError,
@@ -35,6 +36,7 @@ from app.main import (
     WorkflowResumeRequest,
     available_routes_for_prompt,
     available_skill_catalog,
+    available_tools_for_agent,
     build_conversation_history,
     build_structured_agent_prompt,
     build_system_prompt,
@@ -54,6 +56,7 @@ from app.main import (
     merge_loaded_skills,
     prompt_user_messages,
     parse_agent_structured_response,
+    resolve_knowledge_binding,
     retrieve_knowledge,
     restore_state,
     validate_graph,
@@ -73,9 +76,9 @@ def make_agent(memory_window_size: int) -> AgentSnapshot:
             modelResourceId=None,
             modelResourceVersionId=None,
             systemPrompt="你是测试智能体",
-            ragEnabled=False,
+            knowledgeEnabled=False,
             inheritAssistantKnowledge=False,
-            knowledge=None,
+            knowledgeBinding=None,
             memoryWindowSize=memory_window_size,
             skillResourceIds=[],
             skillResourceVersionIds=[],
@@ -175,6 +178,31 @@ def make_tool_resource(
     )
 
 
+def make_available_tools(tool_resources: list[ResourceVersionSnapshot]) -> list[AvailableTool]:
+    catalog: list[AvailableTool] = []
+    for resource in tool_resources:
+        tool_config = resource.configuration.tool
+        if tool_config is None:
+            continue
+        for operation in tool_config.operations:
+            catalog.append(
+                AvailableTool(
+                    toolId=f"resource:{resource.resourceVersionId}:{operation.name}",
+                    toolName=f"{resource.resourceName}.{operation.name}",
+                    toolKind="RESOURCE",
+                    providerType=tool_config.providerType,
+                    operation=operation.name,
+                    description=operation.description,
+                    inputSchema=operation.inputSchema,
+                    outputSchema=operation.outputSchema,
+                    resourceId=resource.resourceId,
+                    resourceVersionId=resource.resourceVersionId,
+                    resourceName=resource.resourceName,
+                )
+            )
+    return catalog
+
+
 def make_agent_state(assistant: AssistantRunSnapshot, graph: GraphSnapshot, question: str = "可以帮我退款吗") -> dict:
     return {
         "workflow_instance_id": "wf-1",
@@ -195,8 +223,6 @@ def make_agent_state(assistant: AssistantRunSnapshot, graph: GraphSnapshot, ques
         "route_key": None,
         "summary": "",
         "output_messages": [],
-        "retrieval_hits": [],
-        "retrieval_cache": {},
         "tool_history": [],
         "tool_calls": [],
         "node_snapshots": [],
@@ -242,9 +268,9 @@ class MemoryPromptTests(unittest.TestCase):
                     "modelResourceId": None,
                     "modelResourceVersionId": None,
                     "systemPrompt": "",
-                    "ragEnabled": False,
+                    "knowledgeEnabled": False,
                     "inheritAssistantKnowledge": False,
-                    "knowledge": None,
+                    "knowledgeBinding": None,
                     "memoryWindowSize": 10,
                     "skillResourceIds": [],
                     "skillResourceVersionIds": [],
@@ -439,21 +465,32 @@ class MemoryPromptTests(unittest.TestCase):
 
     def test_build_tool_outcome_keeps_business_result_without_orchestration_mapping(self) -> None:
         tool_resource = make_tool_resource()
-        operation = tool_resource.configuration.tool.operations[0]
+        available_tool = AvailableTool(
+            toolId="resource:tool-v1:evaluate_refund",
+            toolName="退款策略工具.evaluate_refund",
+            toolKind="RESOURCE",
+            providerType="HTTP",
+            operation="evaluate_refund",
+            resourceId=tool_resource.resourceId,
+            resourceVersionId=tool_resource.resourceVersionId,
+            resourceName=tool_resource.resourceName,
+        )
 
         outcome = build_tool_outcome(
-            tool_resource,
-            operation,
+            available_tool,
             {"status": "COMPLETED", "ticketId": "TICKET-1001", "reason": "需要人工复核"},
         )
 
         self.assertEqual(
             outcome,
             {
-                "toolResourceId": "resource-tool",
-                "toolResourceName": "退款策略工具",
+                "toolId": "resource:tool-v1:evaluate_refund",
+                "toolName": "退款策略工具.evaluate_refund",
+                "toolKind": "RESOURCE",
                 "operation": "evaluate_refund",
                 "providerType": "HTTP",
+                "resourceId": "resource-tool",
+                "resourceName": "退款策略工具",
                 "result": {"status": "COMPLETED", "ticketId": "TICKET-1001", "reason": "需要人工复核"},
             },
         )
@@ -642,6 +679,29 @@ class MemoryPromptTests(unittest.TestCase):
 
         self.assertEqual([{"snippet": "请通过忘记密码完成重置"}], hits)
 
+    def test_should_not_fallback_to_assistant_knowledge_binding_when_agent_override_is_missing(self) -> None:
+        assistant = make_assistant(memory_enabled=False, memory_window_size=0)
+        assistant.assistantKnowledgeBinding = KnowledgeBindingSnapshot(
+            knowledgeBaseId="knowledge-base-assistant",
+            knowledgeBaseName="助手知识库",
+            knowledgeReleaseId="knowledge-release-assistant-v1",
+            knowledgeReleaseVersion="1.0.0",
+            snapshotId="snapshot-assistant-v1",
+            defaultTopK=3,
+            retrievalMode="HYBRID",
+            minScore=0.1,
+        )
+        agent = make_agent(memory_window_size=4)
+        agent.executionPolicy.knowledgeEnabled = True
+        agent.executionPolicy.inheritAssistantKnowledge = False
+        agent.executionPolicy.knowledgeBinding = None
+
+        binding = resolve_knowledge_binding(assistant, agent)
+        available_tools = available_tools_for_agent(assistant, agent, binding)
+
+        self.assertIsNone(binding)
+        self.assertEqual([], [tool for tool in available_tools if tool.toolKind == "BUILTIN"])
+
     def test_configure_runtime_logger_attaches_console_handler(self) -> None:
         logger_name = "lynxus.agent_runtime"
         test_logger = logging.getLogger(logger_name)
@@ -691,7 +751,6 @@ class MemoryPromptTests(unittest.TestCase):
             "可以帮我退款吗",
             "2026-03-24 08:35",
             "[USER][2026-03-24 08:33] 用户: 订单号是 123",
-            [],
             [{"operation": "evaluate_refund", "detail": "符合规则"}],
             {"human": "none"},
             {"customer": {"tier": "gold"}},
@@ -715,6 +774,7 @@ class MemoryPromptTests(unittest.TestCase):
             make_skill_resource("skill-v2", "售后技能", "用于售后策略", "请结合规则与工具结果判断售后策略。"),
         ]
         tool_resources = [make_tool_resource()]
+        available_tools = make_available_tools(tool_resources)
         graph = GraphSnapshot(
             executionMode="GRAPH",
             nodes=[
@@ -750,9 +810,8 @@ class MemoryPromptTests(unittest.TestCase):
             available_skill_catalog(skill_resources),
             loaded_skill_details(skill_resources, {"loadedSkillResourceVersionIds": ["skill-v2"]}),
             [],
-            [],
             None,
-            tool_resources,
+            available_tools,
             available_routes_for_prompt(graph, "agent-node"),
             0,
         )
@@ -762,7 +821,7 @@ class MemoryPromptTests(unittest.TestCase):
         self.assertIn('"sessionStatePatch"', prompt["instruction_block"])
         self.assertIn('"routeKey": "default"', prompt["capability_block"])
         self.assertIn('"targetNodeKey": "end"', prompt["capability_block"])
-        self.assertIn('"toolResourceVersionId": "tool-v1"', prompt["capability_block"])
+        self.assertIn('"toolId": "resource:tool-v1:evaluate_refund"', prompt["capability_block"])
         self.assertIn("请结合规则与工具结果判断售后策略。", prompt["capability_block"])
         self.assertIn("[2026-03-24 08:35] 用户: 可以帮我退款吗", prompt["runtime_context_block"])
         self.assertIn('"customer": {', prompt["runtime_context_block"])
@@ -778,7 +837,6 @@ class MemoryPromptTests(unittest.TestCase):
             [],
             [],
             [],
-            [],
             None,
             [],
             [],
@@ -791,7 +849,6 @@ class MemoryPromptTests(unittest.TestCase):
             {},
             {},
             {},
-            [],
             [],
             [],
             [],
@@ -821,7 +878,6 @@ class MemoryPromptTests(unittest.TestCase):
             available_skill_catalog(skill_resources),
             loaded_skill_details(skill_resources, {"loadedSkillResourceVersionIds": ["skill-v1"]}),
             [],
-            [],
             None,
             [],
             [],
@@ -836,7 +892,6 @@ class MemoryPromptTests(unittest.TestCase):
             {},
             available_skill_catalog(skill_resources),
             loaded_skill_details(skill_resources, {"loadedSkillResourceVersionIds": ["skill-v2"]}),
-            [],
             [],
             None,
             [],
@@ -1513,9 +1568,9 @@ class MemoryPromptTests(unittest.TestCase):
                 modelResourceId=None,
                 modelResourceVersionId=None,
                 systemPrompt="你是售后策略智能体",
-                ragEnabled=False,
+                knowledgeEnabled=False,
                 inheritAssistantKnowledge=False,
-                knowledge=None,
+                knowledgeBinding=None,
                 memoryWindowSize=4,
                 skillResourceIds=[skill_resource.resourceId],
                 skillResourceVersionIds=[skill_resource.resourceVersionId],
@@ -1568,8 +1623,7 @@ class MemoryPromptTests(unittest.TestCase):
               "skillReads": ["skill-v2"],
               "toolRequests": [
                 {
-                  "toolResourceVersionId": "tool-v1",
-                  "operation": "evaluate_refund",
+                  "toolId": "resource:tool-v1:evaluate_refund",
                   "arguments": {"question": "可以帮我退款吗"}
                 }
               ]
@@ -1582,15 +1636,12 @@ class MemoryPromptTests(unittest.TestCase):
         ]
         mock_llm = AsyncMock(side_effect=llm_outputs)
         mock_tool = AsyncMock(
-            return_value=(
-                tool_resource.configuration.tool.operations[0],
-                {
-                    "status": "COMPLETED",
-                    "eligibility": "APPROVED",
-                    "resolution": "STANDARD_REFUND",
-                    "reason": "订单符合规则，可直接退款。",
-                },
-            )
+            return_value={
+                "status": "COMPLETED",
+                "eligibility": "APPROVED",
+                "resolution": "STANDARD_REFUND",
+                "reason": "订单符合规则，可直接退款。",
+            }
         )
 
         with patch("app.main.call_llm", mock_llm), patch("app.main.call_tool", mock_tool):
@@ -1875,14 +1926,14 @@ class MemoryPromptTests(unittest.TestCase):
               "decisionType": "TOOL_CALL",
               "message": "先创建工单。",
               "toolRequests": [
-                {"toolResourceVersionId": "tool-v1", "operation": "create_ticket", "arguments": {"question": "我要人工跟进"}}
+                {"toolId": "resource:tool-v1:create_ticket", "arguments": {"question": "我要人工跟进"}}
               ]
             }""",
             """{
               "decisionType": "TOOL_CALL",
               "message": "补充人工说明。",
               "toolRequests": [
-                {"toolResourceVersionId": "tool-v1", "operation": "append_comment", "arguments": {"comment": "请尽快处理"}}
+                {"toolId": "resource:tool-v1:append_comment", "arguments": {"comment": "请尽快处理"}}
               ]
             }""",
             """{
@@ -1892,14 +1943,8 @@ class MemoryPromptTests(unittest.TestCase):
             }""",
         ]
         tool_results = [
-            (
-                tool_resource.configuration.tool.operations[0],
-                {"status": "ACCEPTED", "ticketId": "TICKET-1001", "message": "工单已创建。"},
-            ),
-            (
-                tool_resource.configuration.tool.operations[1],
-                {"status": "COMPLETED", "message": "备注已追加。"},
-            ),
+            {"status": "ACCEPTED", "ticketId": "TICKET-1001", "message": "工单已创建。"},
+            {"status": "COMPLETED", "message": "备注已追加。"},
         ]
         mock_llm = AsyncMock(side_effect=llm_outputs)
         mock_tool = AsyncMock(side_effect=tool_results)
@@ -1907,7 +1952,7 @@ class MemoryPromptTests(unittest.TestCase):
         with patch("app.main.call_llm", mock_llm), patch("app.main.call_tool", mock_tool):
             asyncio.run(execute_agent_node(state, graph.nodes[0]))
 
-        second_tool_payload = mock_tool.await_args_list[1].args[2]
+        second_tool_payload = mock_tool.await_args_list[1].args[1]
         self.assertEqual(second_tool_payload, {"comment": "请尽快处理"})
         self.assertEqual(len(state["tool_history"]), 2)
         self.assertEqual(state["output_messages"][0]["payload"]["text"], "已经记录工单并补充备注。")
@@ -2126,7 +2171,7 @@ class MemoryPromptTests(unittest.TestCase):
           "decisionType": "TOOL_CALL",
           "message": "调用工具",
           "toolRequests": [
-            {"toolResourceVersionId": "tool-v1", "operation": "evaluate_refund", "arguments": {"question": "可以帮我退款吗"}}
+            {"toolId": "resource:tool-v1:evaluate_refund", "arguments": {"question": "可以帮我退款吗"}}
           ]
         }"""
 
@@ -2405,8 +2450,6 @@ class MemoryPromptTests(unittest.TestCase):
             "graph": state["graph"],
             "summary": "",
             "output_messages": [],
-            "retrieval_hits": [],
-            "retrieval_cache": {},
             "tool_history": [],
             "tool_calls": [],
             "node_snapshots": [],

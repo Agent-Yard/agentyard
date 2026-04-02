@@ -900,7 +900,7 @@ components:
         defaultModelResourceId:
           type: string
           nullable: true
-    RagPolicy:
+    KnowledgeAccessPolicy:
       type: object
       properties:
         enabled:
@@ -925,7 +925,7 @@ components:
           nullable: true
         systemPrompt:
           type: string
-        ragEnabled:
+        knowledgeEnabled:
           type: boolean
         inheritAssistantKnowledge:
           type: boolean
@@ -951,6 +951,9 @@ components:
     ToolProviderType:
       type: string
       enum: [HTTP, MCP]
+    ToolKind:
+      type: string
+      enum: [RESOURCE, BUILTIN]
     ToolOperation:
       type: object
       properties:
@@ -1762,8 +1765,8 @@ components:
           type: string
         modelPolicy:
           $ref: '#/components/schemas/AssistantModelPolicy'
-        ragPolicy:
-          $ref: '#/components/schemas/RagPolicy'
+        knowledgeAccessPolicy:
+          $ref: '#/components/schemas/KnowledgeAccessPolicy'
         memoryPolicy:
           $ref: '#/components/schemas/MemoryPolicy'
     UpdateAssistantRequest:
@@ -1777,8 +1780,8 @@ components:
           $ref: '#/components/schemas/VersionStatus'
         modelPolicy:
           $ref: '#/components/schemas/AssistantModelPolicy'
-        ragPolicy:
-          $ref: '#/components/schemas/RagPolicy'
+        knowledgeAccessPolicy:
+          $ref: '#/components/schemas/KnowledgeAccessPolicy'
         memoryPolicy:
           $ref: '#/components/schemas/MemoryPolicy'
     CreateAgentRequest:
@@ -1930,14 +1933,22 @@ components:
     ToolOutcomeSummary:
       type: object
       properties:
-        toolResourceId:
+        toolId:
           type: string
-        toolResourceName:
+        toolName:
           type: string
+        toolKind:
+          $ref: '#/components/schemas/ToolKind'
         operation:
           type: string
         providerType:
           type: string
+        resourceId:
+          type: string
+          nullable: true
+        resourceName:
+          type: string
+          nullable: true
         result:
           type: object
           additionalProperties: true
@@ -1967,9 +1978,7 @@ components:
     ToolRequest:
       type: object
       properties:
-        toolResourceVersionId:
-          type: string
-        operation:
+        toolId:
           type: string
         arguments:
           type: object
@@ -2072,12 +2081,20 @@ components:
       properties:
         id:
           type: string
+        toolId:
+          type: string
+        toolName:
+          type: string
+        toolKind:
+          $ref: '#/components/schemas/ToolKind'
         providerType:
           type: string
         resourceId:
           type: string
+          nullable: true
         resourceName:
           type: string
+          nullable: true
         operation:
           type: string
         status:
