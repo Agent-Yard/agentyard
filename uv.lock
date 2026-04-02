@@ -594,7 +594,7 @@ wheels = [
 [[package]]
 name = "lynxus-agent-runtime"
 version = "0.1.0"
-source = { virtual = "apps/agent-runtime" }
+source = { editable = "apps/agent-runtime" }
 dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
@@ -619,7 +619,7 @@ requires-dist = [
 [[package]]
 name = "lynxus-knowledge-service"
 version = "0.1.0"
-source = { virtual = "apps/knowledge-service" }
+source = { editable = "apps/knowledge-service" }
 dependencies = [
     { name = "fastapi" },
     { name = "lynxus-python-common" },

@@ -77,6 +77,31 @@ LYNXUS_IMAGE_CADDY=<aws_account_id>.dkr.ecr.<region>.amazonaws.com/docker-hub/li
 
 实际路径需要以你在 ECR 中配置的 pull-through cache rule 为准。
 
+## 应用容器构建
+
+当前 5 个应用都已提供多阶段 Dockerfile，构建时统一使用仓库根目录作为 build context：
+
+- API：`docker build -f apps/api/Dockerfile -t lynxus-api .`
+- Worker：`docker build -f apps/worker/Dockerfile -t lynxus-worker .`
+- Web：`docker build -f apps/web/Dockerfile -t lynxus-web .`
+- Agent Runtime：`docker build -f apps/agent-runtime/Dockerfile -t lynxus-agent-runtime .`
+- Knowledge Service：`docker build -f apps/knowledge-service/Dockerfile -t lynxus-knowledge-service .`
+
+构建策略如下：
+
+- API / Worker：Gradle 在构建阶段产出 Spring Boot 可执行 jar，运行阶段使用 JRE 镜像
+- Web：`pnpm build` 产出静态资源，运行阶段使用 Nginx 提供 SPA 文件并处理路由回退
+- Agent Runtime / Knowledge Service：`uv build` 产出 wheel，运行阶段使用 Python slim 镜像安装 wheel
+
+Web 默认把 `VITE_API_BASE_URL` 编译为 `/api`。如果前端容器和 API 不在同一反向代理下，需要在构建时显式覆盖，例如：
+
+```bash
+docker build \
+  -f apps/web/Dockerfile \
+  --build-arg VITE_API_BASE_URL=http://127.0.0.1:8080/api \
+  -t lynxus-web .
+```
+
 ## 日志与链路上下文
 
 当前四个后端服务已经统一结构化日志约定：
