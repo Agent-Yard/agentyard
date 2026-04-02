@@ -48,7 +48,6 @@ class InMemoryRuntimeRepositoryTest {
             now,
             WorkflowStatus.WAITING_RESUME,
             "等待人工",
-            null,
             "human-review",
             true,
             new ExecutionCheckpoint("cp-1", "resume", "human-review", "{\"step\":1}", null, 1),
@@ -102,7 +101,7 @@ class InMemoryRuntimeRepositoryTest {
             null
         );
 
-        repository.persistProjection(task, workflow, session, intervention);
+        repository.persistProjection(new RuntimeDtos.ProjectionPlanDto(task, workflow, session, session.messages(), List.of(), List.of(), intervention));
 
         ConversationSessionDto storedSession = repository.findSession("session-1").orElseThrow();
         WorkflowInstanceDto storedWorkflow = repository.findWorkflow("wf-1").orElseThrow();

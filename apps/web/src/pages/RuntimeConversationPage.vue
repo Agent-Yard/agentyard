@@ -3,14 +3,21 @@ import { computed, reactive, ref, watch } from 'vue';
 import type {
   ConversationMessage,
   ConversationSession,
-  ExternalInteractionMessagePayload,
-  ExternalInteractionStatus,
-  PauseSource,
   Scenario,
   TaskInstance,
-  TextMessagePayload,
   WorkflowInstance,
 } from '../types';
+import {
+  conversationMessageText,
+  interactionPayload,
+  interactionPrimaryAction,
+  interactionProjection,
+  interactionSecondaryActions,
+  interactionSpec,
+  interactionStatusColor,
+  pauseSourceLabel as sourceLabel,
+  textPayload,
+} from './runtimePresentation';
 
 const props = defineProps<{
   scenarios: Scenario[];
@@ -83,13 +90,6 @@ const currentSessionBlockingMessage = computed(() => {
   }
   return '该助手没有已发布版本，且草稿默认模型未配置，当前不能继续发送消息。';
 });
-
-const sourceLabel: Record<PauseSource, string> = {
-  GRAPH_NODE: '编排人工节点',
-  AGENT_REQUEST: '智能体主动求助',
-  EXTERNAL_INTERACTION: '外部交互',
-  TIMEOUT_POLICY: '超时策略',
-};
 
 watch(
   () => props.sessions,
@@ -177,64 +177,7 @@ function formatSharedState(value?: { facts: Record<string, unknown>; artifacts: 
   return JSON.stringify(value ?? { facts: {}, artifacts: {}, agentScopes: {} }, null, 2);
 }
 
-function textPayload(message: ConversationMessage): TextMessagePayload | null {
-  return message.payloadType === 'TEXT' ? (message.payload as TextMessagePayload) : null;
-}
-
-function interactionPayload(message: ConversationMessage): ExternalInteractionMessagePayload | null {
-  return message.payloadType === 'EXTERNAL_INTERACTION' ? (message.payload as ExternalInteractionMessagePayload) : null;
-}
-
-function interactionSpec(message: ConversationMessage) {
-  return interactionPayload(message)?.spec ?? null;
-}
-
-function interactionProjection(message: ConversationMessage) {
-  return interactionPayload(message)?.projection ?? null;
-}
-
-function interactionStatusColor(status?: ExternalInteractionStatus | string | null) {
-  switch (status) {
-    case 'AWAITING_USER_ACTION':
-      return 'gold';
-    case 'RETURNED':
-      return 'cyan';
-    case 'PROCESSING':
-      return 'processing';
-    case 'SUCCEEDED':
-      return 'success';
-    case 'FAILED':
-    case 'CANCELLED':
-    case 'EXPIRED':
-      return 'error';
-    default:
-      return 'default';
-  }
-}
-
-function interactionPrimaryAction(message: ConversationMessage) {
-  return interactionProjection(message)?.primaryAction ?? null;
-}
-
-function interactionSecondaryActions(message: ConversationMessage) {
-  return interactionProjection(message)?.secondaryActions ?? [];
-}
-
-function messageText(message: ConversationMessage) {
-  const text = textPayload(message)?.text?.trim();
-  if (text) {
-    return text;
-  }
-  const spec = interactionSpec(message);
-  const projection = interactionProjection(message);
-  if (!spec) {
-    return '';
-  }
-  const title = spec.title?.trim();
-  const description = spec.instruction?.trim();
-  const status = projection?.status?.trim();
-  return [title, description, status].filter(Boolean).join(' · ');
-}
+const messageText = conversationMessageText;
 </script>
 
 <template>
@@ -480,7 +423,6 @@ function messageText(message: ConversationMessage) {
                 <a-descriptions-item label="状态">{{ latestWorkflow.status }}</a-descriptions-item>
                 <a-descriptions-item label="当前节点">{{ latestWorkflow.currentNodeKey }}</a-descriptions-item>
                 <a-descriptions-item label="摘要">{{ latestWorkflow.summary }}</a-descriptions-item>
-                <a-descriptions-item label="最终回复">{{ latestWorkflow.finalReply ?? '尚未输出' }}</a-descriptions-item>
                 <a-descriptions-item label="工具结果">
                   {{ currentSession?.latestToolOutcome
                     ? `${currentSession.latestToolOutcome.toolResourceName} / ${currentSession.latestToolOutcome.operation}`

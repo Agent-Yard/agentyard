@@ -72,7 +72,6 @@ class AgentRuntimeGatewayTest {
               "workflowInstanceId": "wf-1",
               "status": "WAITING_RESUME",
               "summary": "等待人工处理",
-              "finalReply": "已进入人工协同流程。",
               "currentNodeKey": "human-review",
               "checkpoint": null,
               "resumeTask": {
@@ -128,7 +127,6 @@ class AgentRuntimeGatewayTest {
                       "workflowInstanceId": "wf-1",
                       "status": "COMPLETED",
                       "summary": "流程已完成",
-                      "finalReply": "完成",
                       "currentNodeKey": "end",
                       "checkpoint": null,
                       "resumeTask": null,

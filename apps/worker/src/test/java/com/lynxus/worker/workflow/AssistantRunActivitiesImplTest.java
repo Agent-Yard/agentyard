@@ -33,7 +33,6 @@ class AssistantRunActivitiesImplTest {
                 request.workflowInstanceId(),
                 WorkflowContracts.WorkflowStatus.COMPLETED,
                 "人工处理已完成",
-                "人工处理已完成，已同步客户。",
                 "end",
                 null,
                 null,
@@ -125,7 +124,6 @@ class AssistantRunActivitiesImplTest {
             workflowId,
             WorkflowContracts.WorkflowStatus.WAITING_RESUME,
             "等待人工处理",
-            "已进入人工协同流程。",
             "human-review",
             new WorkflowContracts.ExecutionCheckpoint("cp-1", "handoff-close", "human-review", "{\"question\":\"" + question + "\"}", null, 0),
             new WorkflowContracts.ResumeTaskSnapshot(
@@ -168,7 +166,6 @@ class AssistantRunActivitiesImplTest {
             workflowId,
             WorkflowContracts.WorkflowStatus.COMPLETED,
             "问题已自动处理完成。",
-            "请通过登录页的忘记密码完成密码重置。",
             "end",
             null,
             null,

@@ -111,7 +111,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
     public List<WorkflowInstanceDto> listWorkflows() {
         return hydrateWorkflows(jdbcTemplate.query(
             """
-                select id, task_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at, status, summary, final_reply,
+                select id, task_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at, status, summary,
                        current_node_key, escalation_required, checkpoint, resume_task, pause_reason, latest_failure, latest_tool_outcome,
                        resource_anchors, nodes, tool_calls, model_hits, emitted_message_keys, loaded_skill_resource_version_ids, shared_state, agent_turn_state
                 from workflow_instance
@@ -125,7 +125,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
     public List<WorkflowInstanceDto> listActiveWorkflows() {
         return hydrateWorkflows(jdbcTemplate.query(
             """
-                select id, task_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at, status, summary, final_reply,
+                select id, task_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at, status, summary,
                        current_node_key, escalation_required, checkpoint, resume_task, pause_reason, latest_failure, latest_tool_outcome,
                        resource_anchors, nodes, tool_calls, model_hits, emitted_message_keys, loaded_skill_resource_version_ids, shared_state, agent_turn_state
                 from workflow_instance
@@ -140,7 +140,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
     public Optional<WorkflowInstanceDto> findWorkflow(String workflowId) {
         return hydrateWorkflows(jdbcTemplate.query(
             """
-                select id, task_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at, status, summary, final_reply,
+                select id, task_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at, status, summary,
                        current_node_key, escalation_required, checkpoint, resume_task, pause_reason, latest_failure, latest_tool_outcome,
                        resource_anchors, nodes, tool_calls, model_hits, emitted_message_keys, loaded_skill_resource_version_ids, shared_state, agent_turn_state
                 from workflow_instance
@@ -162,7 +162,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
     public Optional<ExternalInteractionTaskDto> findExternalInteractionTask(String interactionTaskId) {
         return hydrateInteractionTasks(jdbcTemplate.query(
             """
-                select id, interaction_type, status, session_id, task_id, workflow_instance_id, message_id, title, instruction,
+                select id, interaction_type, status, session_id, task_id, workflow_instance_id, source_message_key, message_id, title, instruction,
                        provider, provider_reference, launch_url, return_token, return_path, expires_at, latest_result,
                        last_event_source, resumed_at, created_at, updated_at
                 from external_interaction_task
@@ -177,7 +177,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
     public Optional<ExternalInteractionTaskDto> findExternalInteractionTaskByProviderReference(String provider, String providerReference) {
         return hydrateInteractionTasks(jdbcTemplate.query(
             """
-                select id, interaction_type, status, session_id, task_id, workflow_instance_id, message_id, title, instruction,
+                select id, interaction_type, status, session_id, task_id, workflow_instance_id, source_message_key, message_id, title, instruction,
                        provider, provider_reference, launch_url, return_token, return_path, expires_at, latest_result,
                        last_event_source, resumed_at, created_at, updated_at
                 from external_interaction_task
@@ -220,18 +220,6 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             interactionTaskId,
             dedupeKey
         ).stream().findFirst();
-    }
-
-    @Override
-    @Transactional
-    public void saveExternalInteractionTask(ExternalInteractionTaskDto task) {
-        upsertExternalInteractionTask(task);
-    }
-
-    @Override
-    @Transactional
-    public void saveExternalInteractionEvent(ExternalInteractionEventDto event) {
-        upsertExternalInteractionEvent(event);
     }
 
     @Override
@@ -293,20 +281,25 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
 
     @Override
     @Transactional
-    public void persistProjection(
-        TaskInstanceDto task,
-        WorkflowInstanceDto workflow,
-        ConversationSessionDto session,
-        ResumeInterventionDto intervention
-    ) {
-        upsertTask(task, session == null ? findTaskSessionId(task.id()).orElse(null) : session.id());
-        upsertWorkflow(workflow);
-        if (session != null) {
-            upsertSession(session);
-            upsertMessages(session.messages());
+    public void persistProjection(ProjectionPlanDto plan) {
+        if (plan.task() != null) {
+            upsertTask(plan.task(), plan.session() == null ? findTaskSessionId(plan.task().id()).orElse(null) : plan.session().id());
         }
-        if (intervention != null) {
-            upsertResumeIntervention(intervention);
+        if (plan.workflow() != null) {
+            upsertWorkflow(plan.workflow());
+        }
+        if (plan.session() != null) {
+            upsertSession(plan.session());
+        }
+        upsertMessages(plan.conversationMessages());
+        for (ExternalInteractionTaskDto task : plan.interactionTasks()) {
+            upsertExternalInteractionTask(task);
+        }
+        for (ExternalInteractionEventDto event : plan.interactionEvents()) {
+            upsertExternalInteractionEvent(event);
+        }
+        if (plan.intervention() != null) {
+            upsertResumeIntervention(plan.intervention());
         }
     }
 
@@ -385,6 +378,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             rs.getString("session_id"),
             rs.getString("task_id"),
             rs.getString("workflow_instance_id"),
+            rs.getString("source_message_key"),
             rs.getString("message_id"),
             rs.getString("title"),
             rs.getString("instruction"),
@@ -426,7 +420,6 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             readInstant(rs, "updated_at"),
             WorkflowStatus.valueOf(rs.getString("status")),
             rs.getString("summary"),
-            rs.getString("final_reply"),
             rs.getString("current_node_key"),
             rs.getBoolean("escalation_required"),
             readJson(rs.getString("checkpoint"), ExecutionCheckpoint.class),
@@ -512,7 +505,6 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
                 row.updatedAt(),
                 row.status(),
                 row.summary(),
-                row.finalReply(),
                 row.currentNodeKey(),
                 row.escalationRequired(),
                 row.checkpoint(),
@@ -596,6 +588,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
                 row.sessionId(),
                 row.taskId(),
                 row.workflowInstanceId(),
+                row.sourceMessageKey(),
                 row.messageId(),
                 row.title(),
                 row.instruction(),
@@ -669,10 +662,10 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         jdbcTemplate.update(
             """
                 insert into workflow_instance (
-                    id, task_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at, status, summary, final_reply,
+                    id, task_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at, status, summary,
                     current_node_key, escalation_required, checkpoint, resume_task, pause_reason, latest_failure, latest_tool_outcome,
                     resource_anchors, nodes, tool_calls, model_hits, emitted_message_keys, loaded_skill_resource_version_ids, shared_state, agent_turn_state
-                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb),
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb),
                           cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb),
                           cast(? as jsonb), cast(? as jsonb))
                 on conflict (id) do update set
@@ -684,7 +677,6 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
                     updated_at = excluded.updated_at,
                     status = excluded.status,
                     summary = excluded.summary,
-                    final_reply = excluded.final_reply,
                     current_node_key = excluded.current_node_key,
                     escalation_required = excluded.escalation_required,
                     checkpoint = excluded.checkpoint,
@@ -710,7 +702,6 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             writeTimestamp(workflow.updatedAt()),
             workflow.status().name(),
             workflow.summary(),
-            workflow.finalReply(),
             workflow.currentNodeKey(),
             workflow.escalationRequired(),
             writeJson(workflow.checkpoint()),
@@ -775,6 +766,41 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
 
     private void upsertMessages(List<ConversationMessageDto> messages) {
         for (ConversationMessageDto message : messages) {
+            if (message.messageKey() != null && message.workflowInstanceId() != null) {
+                jdbcTemplate.update(
+                    """
+                        insert into conversation_message (
+                            id, message_key, session_id, role, sender_type, sender_id, sender_name, payload_type, payload_json, content, created_at, task_id, workflow_instance_id
+                        ) values (?, ?, ?, ?, ?, ?, ?, ?, cast(? as jsonb), ?, ?, ?, ?)
+                        on conflict (workflow_instance_id, message_key) do update set
+                            id = excluded.id,
+                            session_id = excluded.session_id,
+                            role = excluded.role,
+                            sender_type = excluded.sender_type,
+                            sender_id = excluded.sender_id,
+                            sender_name = excluded.sender_name,
+                            payload_type = excluded.payload_type,
+                            payload_json = excluded.payload_json,
+                            content = excluded.content,
+                            created_at = excluded.created_at,
+                            task_id = excluded.task_id
+                        """,
+                    message.id(),
+                    message.messageKey(),
+                    message.sessionId(),
+                    message.role(),
+                    message.senderType(),
+                    message.senderId(),
+                    message.senderName(),
+                    message.payloadType().name(),
+                    writeJson(message.payload()),
+                    message.content(),
+                    writeTimestamp(message.createdAt()),
+                    message.taskId(),
+                    message.workflowInstanceId()
+                );
+                continue;
+            }
             jdbcTemplate.update(
                 """
                     insert into conversation_message (
@@ -847,16 +873,16 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         jdbcTemplate.update(
             """
                 insert into external_interaction_task (
-                    id, interaction_type, status, session_id, task_id, workflow_instance_id, message_id, title, instruction,
+                    id, interaction_type, status, session_id, task_id, workflow_instance_id, source_message_key, message_id, title, instruction,
                     provider, provider_reference, launch_url, return_token, return_path, expires_at, latest_result,
                     last_event_source, resumed_at, created_at, updated_at
-                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, cast(? as jsonb), ?, ?, ?, ?)
-                on conflict (id) do update set
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, cast(? as jsonb), ?, ?, ?, ?)
+                on conflict (workflow_instance_id, source_message_key) do update set
+                    id = excluded.id,
                     interaction_type = excluded.interaction_type,
                     status = excluded.status,
                     session_id = excluded.session_id,
                     task_id = excluded.task_id,
-                    workflow_instance_id = excluded.workflow_instance_id,
                     message_id = excluded.message_id,
                     title = excluded.title,
                     instruction = excluded.instruction,
@@ -878,6 +904,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
             task.sessionId(),
             task.taskId(),
             task.workflowInstanceId(),
+            task.sourceMessageKey(),
             task.messageId(),
             task.title(),
             task.instruction(),
@@ -901,11 +928,10 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
                 insert into external_interaction_event (
                     id, interaction_task_id, event_type, event_source, dedupe_key, payload, result, created_at
                 ) values (?, ?, ?, ?, ?, cast(? as jsonb), cast(? as jsonb), ?)
-                on conflict (id) do update set
-                    interaction_task_id = excluded.interaction_task_id,
+                on conflict (interaction_task_id, dedupe_key) do update set
+                    id = excluded.id,
                     event_type = excluded.event_type,
                     event_source = excluded.event_source,
-                    dedupe_key = excluded.dedupe_key,
                     payload = excluded.payload,
                     result = excluded.result,
                     created_at = excluded.created_at
@@ -952,7 +978,6 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         Instant updatedAt,
         WorkflowStatus status,
         String summary,
-        String finalReply,
         String currentNodeKey,
         boolean escalationRequired,
         ExecutionCheckpoint checkpoint,
@@ -998,6 +1023,7 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
         String sessionId,
         String taskId,
         String workflowInstanceId,
+        String sourceMessageKey,
         String messageId,
         String title,
         String instruction,

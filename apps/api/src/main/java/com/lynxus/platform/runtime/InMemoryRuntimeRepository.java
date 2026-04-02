@@ -85,7 +85,7 @@ public class InMemoryRuntimeRepository implements RuntimeRepository {
     public void saveSession(ConversationSessionDto session) {
         sessions.put(session.id(), stripMessages(session));
         sessionMessages.computeIfAbsent(session.id(), ignored -> new LinkedHashMap<>());
-        session.messages().forEach(message -> sessionMessages.get(session.id()).put(message.id(), message));
+        session.messages().forEach(message -> sessionMessages.get(session.id()).put(messageStorageKey(message), message));
     }
 
     @Override
@@ -121,17 +121,6 @@ public class InMemoryRuntimeRepository implements RuntimeRepository {
     }
 
     @Override
-    public void saveExternalInteractionTask(ExternalInteractionTaskDto task) {
-        interactionTasks.put(task.id(), stripInteractionEvents(task));
-    }
-
-    @Override
-    public void saveExternalInteractionEvent(ExternalInteractionEventDto event) {
-        interactionEvents.computeIfAbsent(event.interactionTaskId(), ignored -> new LinkedHashMap<>())
-            .put(event.id(), event);
-    }
-
-    @Override
     public Optional<ResumeInterventionDto> findPendingResumeIntervention(String workflowInstanceId) {
         return workflowResumeInterventions.getOrDefault(workflowInstanceId, Map.of()).values().stream()
             .filter(intervention -> intervention.status() == ResumeInterventionStatus.PENDING)
@@ -149,22 +138,36 @@ public class InMemoryRuntimeRepository implements RuntimeRepository {
     }
 
     @Override
-    public void persistProjection(
-        TaskInstanceDto task,
-        WorkflowInstanceDto workflow,
-        ConversationSessionDto session,
-        ResumeInterventionDto intervention
-    ) {
-        tasks.put(task.id(), task);
-        if (session != null) {
-            taskSessions.put(task.id(), session.id());
-            saveSession(session);
-        } else if (!taskSessions.containsKey(task.id())) {
-            taskSessions.put(task.id(), null);
+    public void persistProjection(ProjectionPlanDto plan) {
+        if (plan.task() != null) {
+            tasks.put(plan.task().id(), plan.task());
+            if (plan.session() != null) {
+                taskSessions.put(plan.task().id(), plan.session().id());
+            } else if (!taskSessions.containsKey(plan.task().id())) {
+                taskSessions.put(plan.task().id(), null);
+            }
         }
-        workflows.put(workflow.id(), stripInterventions(workflow));
-        if (intervention != null) {
-            saveResumeIntervention(intervention);
+        if (plan.workflow() != null) {
+            workflows.put(plan.workflow().id(), stripInterventions(plan.workflow()));
+        }
+        if (plan.session() != null) {
+            sessions.put(plan.session().id(), stripMessages(plan.session()));
+            sessionMessages.computeIfAbsent(plan.session().id(), ignored -> new LinkedHashMap<>());
+        }
+        if (plan.session() != null) {
+            for (ConversationMessageDto message : plan.conversationMessages()) {
+                sessionMessages.get(plan.session().id()).put(messageStorageKey(message), message);
+            }
+        }
+        for (ExternalInteractionTaskDto task : plan.interactionTasks()) {
+            interactionTasks.put(task.id(), stripInteractionEvents(task));
+        }
+        for (ExternalInteractionEventDto event : plan.interactionEvents()) {
+            interactionEvents.computeIfAbsent(event.interactionTaskId(), ignored -> new LinkedHashMap<>())
+                .put(event.id(), event);
+        }
+        if (plan.intervention() != null) {
+            saveResumeIntervention(plan.intervention());
         }
     }
 
@@ -183,6 +186,7 @@ public class InMemoryRuntimeRepository implements RuntimeRepository {
             task.sessionId(),
             task.taskId(),
             task.workflowInstanceId(),
+            task.sourceMessageKey(),
             task.messageId(),
             task.title(),
             task.instruction(),
@@ -234,7 +238,6 @@ public class InMemoryRuntimeRepository implements RuntimeRepository {
             workflow.updatedAt(),
             workflow.status(),
             workflow.summary(),
-            workflow.finalReply(),
             workflow.currentNodeKey(),
             workflow.escalationRequired(),
             workflow.checkpoint(),
@@ -287,7 +290,6 @@ public class InMemoryRuntimeRepository implements RuntimeRepository {
             workflow.updatedAt(),
             workflow.status(),
             workflow.summary(),
-            workflow.finalReply(),
             workflow.currentNodeKey(),
             workflow.escalationRequired(),
             workflow.checkpoint(),
@@ -315,6 +317,7 @@ public class InMemoryRuntimeRepository implements RuntimeRepository {
             task.sessionId(),
             task.taskId(),
             task.workflowInstanceId(),
+            task.sourceMessageKey(),
             task.messageId(),
             task.title(),
             task.instruction(),
@@ -331,5 +334,12 @@ public class InMemoryRuntimeRepository implements RuntimeRepository {
             task.updatedAt(),
             List.of()
         );
+    }
+
+    private String messageStorageKey(ConversationMessageDto message) {
+        if (message.workflowInstanceId() != null && message.messageKey() != null) {
+            return message.workflowInstanceId() + "::" + message.messageKey();
+        }
+        return message.id();
     }
 }

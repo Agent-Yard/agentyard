@@ -2008,11 +2008,13 @@ components:
       properties:
         decisionType:
           $ref: '#/components/schemas/DecisionType'
-        message:
-          type: string
         routeDecision:
           type: string
           nullable: true
+        outputMessages:
+          type: array
+          items:
+            $ref: '#/components/schemas/OutputMessageDraft'
         skillReads:
           type: array
           items:
@@ -2214,9 +2216,6 @@ components:
           $ref: '#/components/schemas/WorkflowStatus'
         summary:
           type: string
-        finalReply:
-          type: string
-          nullable: true
         currentNodeKey:
           type: string
           nullable: true
@@ -2391,6 +2390,22 @@ components:
         createdAt:
           type: string
           format: date-time
+    OutputMessageDraft:
+      type: object
+      properties:
+        payloadType:
+          $ref: '#/components/schemas/ConversationPayloadType'
+        payload:
+          $ref: '#/components/schemas/OutputMessagePayload'
+    OutputMessagePayload:
+      oneOf:
+        - $ref: '#/components/schemas/TextMessagePayload'
+        - $ref: '#/components/schemas/ExternalInteractionOutputPayload'
+    ExternalInteractionOutputPayload:
+      type: object
+      properties:
+        spec:
+          $ref: '#/components/schemas/ExternalInteractionMessageSpec'
     ConversationPayload:
       oneOf:
         - $ref: '#/components/schemas/TextMessagePayload'

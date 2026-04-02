@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
-import type { PauseSource, ResumeActionType, WorkflowInstance } from '../types';
+import type { ResumeActionType, WorkflowInstance } from '../types';
 import { failureAlertDescription, failureAlertMessage, failureAlertType, failureSummary, hasActiveFailure } from './workflowFailure';
+import { pauseSourceLabel as sourceLabel, workflowDecisionSummary as formatDecision } from './runtimePresentation';
 
 const props = defineProps<{
   workflow?: WorkflowInstance;
@@ -32,13 +33,6 @@ watch(
   { immediate: true },
 );
 
-const sourceLabel: Record<PauseSource, string> = {
-  GRAPH_NODE: '编排人工节点',
-  AGENT_REQUEST: '智能体主动求助',
-  EXTERNAL_INTERACTION: '外部交互',
-  TIMEOUT_POLICY: '超时策略',
-};
-
 const filteredWorkflows = computed(() => {
   const keyword = searchKeyword.value.trim().toLowerCase();
   return props.workflows.filter((item) => {
@@ -50,7 +44,6 @@ const filteredWorkflows = computed(() => {
       item.latestFailure?.code ?? '',
       item.latestFailure?.rootCause ?? '',
       item.currentNodeKey ?? '',
-      item.finalReply ?? '',
     ].some((value) => value.toLowerCase().includes(keyword));
     return matchesStatus && matchesKeyword;
   });
@@ -113,27 +106,6 @@ function hasSharedState(value?: { facts: Record<string, unknown>; artifacts: Rec
 
 function formatSharedState(value?: { facts: Record<string, unknown>; artifacts: Record<string, unknown>; agentScopes: Record<string, Record<string, unknown>> } | null) {
   return JSON.stringify(value ?? { facts: {}, artifacts: {}, agentScopes: {} }, null, 2);
-}
-
-function formatDecision(value?: WorkflowInstance['agentTurnState'] | null) {
-  if (!value?.latestDecision) {
-    return '暂无';
-  }
-  const decision = value.latestDecision;
-  const parts: string[] = [decision.decisionType];
-  if (decision.routeDecision) {
-    parts.push(`route=${decision.routeDecision}`);
-  }
-  if (decision.toolRequests.length) {
-    parts.push(`tools=${decision.toolRequests.map((item) => item.operation).join(', ')}`);
-  }
-  if (decision.skillReads.length) {
-    parts.push(`skills=${decision.skillReads.length}`);
-  }
-  if (decision.message) {
-    parts.push(decision.message);
-  }
-  return parts.join(' / ');
 }
 
 function formatFailureLocation(workflow: WorkflowInstance) {
@@ -221,7 +193,6 @@ function formatLatestModelHit(workflow?: WorkflowInstance | null) {
             <a-descriptions-item label="当前节点">{{ current.currentNodeKey ?? '无' }}</a-descriptions-item>
             <a-descriptions-item label="是否待恢复">{{ current.escalationRequired ? '是' : '否' }}</a-descriptions-item>
             <a-descriptions-item label="摘要">{{ current.summary }}</a-descriptions-item>
-            <a-descriptions-item label="最终回复">{{ current.finalReply ?? '尚未形成最终回复' }}</a-descriptions-item>
             <a-descriptions-item label="恢复记录">{{ current.resumeInterventions.length }}</a-descriptions-item>
             <a-descriptions-item label="Checkpoint">
               {{ current.checkpoint ? `${current.checkpoint.checkpointId} / resume=${current.checkpoint.resumeCount}` : '无' }}

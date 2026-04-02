@@ -281,10 +281,21 @@ export interface SessionStatePatch {
   ops: SessionStatePatchOp[];
 }
 
+export interface OutputMessageDraft {
+  payloadType: ConversationPayloadType;
+  payload: OutputMessagePayload;
+}
+
+export interface ExternalInteractionOutputPayload {
+  spec: ExternalInteractionMessageSpec;
+}
+
+export type OutputMessagePayload = TextMessagePayload | ExternalInteractionOutputPayload;
+
 export interface StructuredAgentDecision {
   decisionType: DecisionType;
-  message: string;
   routeDecision: string | null;
+  outputMessages: OutputMessageDraft[];
   skillReads: string[];
   toolRequests: ToolRequest[];
   humanRequest: HumanRequest | null;
@@ -585,7 +596,6 @@ export interface WorkflowInstance {
   updatedAt: string;
   status: WorkflowStatus;
   summary: string;
-  finalReply: string | null;
   currentNodeKey: string | null;
   escalationRequired: boolean;
   checkpoint: ExecutionCheckpoint | null;

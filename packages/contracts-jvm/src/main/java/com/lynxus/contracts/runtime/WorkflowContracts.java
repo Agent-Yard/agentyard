@@ -486,16 +486,26 @@ public final class WorkflowContracts {
         }
     }
 
+    public record OutputMessageDraft(
+        ConversationPayloadType payloadType,
+        Map<String, Object> payload
+    ) {
+        public OutputMessageDraft {
+            payload = immutableObjectMap(payload);
+        }
+    }
+
     public record StructuredAgentDecision(
         DecisionType decisionType,
-        String message,
         String routeDecision,
+        List<OutputMessageDraft> outputMessages,
         List<String> skillReads,
         List<ToolRequest> toolRequests,
         HumanRequest humanRequest,
         SessionStatePatch sessionStatePatch
     ) {
         public StructuredAgentDecision {
+            outputMessages = outputMessages == null ? List.of() : List.copyOf(outputMessages);
             skillReads = skillReads == null ? List.of() : List.copyOf(skillReads);
             toolRequests = toolRequests == null ? List.of() : List.copyOf(toolRequests);
         }
@@ -769,7 +779,6 @@ public final class WorkflowContracts {
         String workflowInstanceId,
         WorkflowStatus status,
         String summary,
-        String finalReply,
         String currentNodeKey,
         ExecutionCheckpoint checkpoint,
         ResumeTaskSnapshot resumeTask,

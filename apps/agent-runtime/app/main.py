@@ -461,10 +461,29 @@ class HumanRequest(BaseModel):
     expectedAction: str = ""
 
 
+class OutputMessageDraft(BaseModel):
+    payloadType: str
+    payload: Dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("payloadType", mode="before")
+    @classmethod
+    def normalize_payload_type(cls, value: Any) -> str:
+        return str(value or "").strip().upper()
+
+    @field_validator("payload", mode="before")
+    @classmethod
+    def normalize_payload(cls, value: Any) -> Dict[str, Any]:
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            raise TypeError("outputMessages.payload must be an object")
+        return value
+
+
 class StructuredAgentDecision(BaseModel):
     decisionType: str
-    message: str = ""
     routeDecision: Optional[str] = None
+    outputMessages: List[OutputMessageDraft] = Field(default_factory=list)
     skillReads: List[str] = Field(default_factory=list)
     toolRequests: List[ToolRequest] = Field(default_factory=list)
     humanRequest: Optional[HumanRequest] = None
@@ -517,7 +536,6 @@ class WorkflowResult(BaseModel):
     workflowInstanceId: str
     status: str
     summary: str
-    finalReply: Optional[str] = None
     currentNodeKey: Optional[str] = None
     checkpoint: Optional[ExecutionCheckpoint] = None
     resumeTask: Optional[ResumeTaskSnapshot] = None
@@ -544,7 +562,6 @@ class AgentState(TypedDict):
     current_node_key: Optional[str]
     next_node_key: Optional[str]
     route_key: Optional[str]
-    final_reply: str
     summary: str
     retrieval_hits: List[Dict[str, Any]]
     retrieval_cache: Dict[str, List[Dict[str, Any]]]
@@ -674,6 +691,27 @@ def next_id(prefix: str) -> str:
     return f"{prefix}-{abs(hash((prefix, time.time_ns()))) % 1_000_000:06d}"
 
 
+def output_message_key(node_key: str, turn_index: int, ordinal: int) -> str:
+    return f"{node_key}:{turn_index}:{ordinal}"
+
+
+def summarize_output_payload(payload_type: str, payload: Dict[str, Any]) -> str:
+    if payload_type == "TEXT":
+        return str(payload.get("text", "")).strip()
+    if payload_type == "EXTERNAL_INTERACTION":
+        spec = payload.get("spec", {})
+        projection = payload.get("projection", {})
+        if not isinstance(spec, dict):
+            spec = {}
+        if not isinstance(projection, dict):
+            projection = {}
+        title = str(spec.get("title", "")).strip()
+        instruction = str(spec.get("instruction", "")).strip()
+        status = str(projection.get("status", "")).strip()
+        return " · ".join([item for item in [title, instruction, status] if item])
+    return ""
+
+
 def append_output_message(
     state: AgentState,
     *,
@@ -701,16 +739,31 @@ def append_output_message(
     state["output_messages"][existing_index] = existing
 
 
-def sync_final_text_output(state: AgentState) -> None:
-    final_reply = (state.get("final_reply") or "").strip()
-    if not final_reply:
-        return
-    append_output_message(
-        state,
-        message_key="assistant-final-reply",
-        payload_type="TEXT",
-        payload={"text": final_reply},
-    )
+def emit_output_messages(
+    state: AgentState,
+    node_key: str,
+    turn_index: int,
+    output_messages: List[OutputMessageDraft],
+) -> List[WorkflowOutputMessage]:
+    emitted: List[WorkflowOutputMessage] = []
+    for ordinal, draft in enumerate(output_messages, start=1):
+        message = WorkflowOutputMessage(
+            messageKey=output_message_key(node_key, turn_index, ordinal),
+            payloadType=draft.payloadType,
+            payload=draft.payload,
+            createdAt=now_iso(),
+        )
+        append_output_message(
+            state,
+            message_key=message.messageKey,
+            payload_type=message.payloadType,
+            payload=message.payload,
+            created_at=message.createdAt,
+        )
+        emitted.append(message)
+    if emitted:
+        state["summary"] = summarize_output_payload(emitted[-1].payloadType, emitted[-1].payload) or state["summary"]
+    return emitted
 
 
 def build_failure_snapshot(
@@ -1399,8 +1452,39 @@ def build_structured_agent_prompt(
     tool_catalog = tool_catalog_for_prompt(tool_resources)
     response_schema = {
         "decisionType": f"{AGENT_DECISION_FINAL} | {AGENT_DECISION_TOOL_CALL} | {AGENT_DECISION_SKILL_READ} | {AGENT_DECISION_HUMAN_HANDOFF}",
-        "message": "string; if decisionType=FINAL, this must be the user-facing final reply; otherwise summarize the current decision or immediate next step",
         "routeDecision": "string | null; required only when FINAL and no unique default route exists",
+        "outputMessages": [
+            {
+                "payloadType": "TEXT | EXTERNAL_INTERACTION; only when decisionType=FINAL",
+                "payload": {
+                    "TEXT": {"text": "string"},
+                    "EXTERNAL_INTERACTION": {
+                        "spec": {
+                            "interactionType": "GENERIC_REDIRECT | PAYMENT_REDIRECT | FORM_REDIRECT | OAUTH_REDIRECT | EXTERNAL_CONFIRMATION | FILE_UPLOAD_PORTAL",
+                            "title": "string",
+                            "instruction": "string",
+                            "provider": "string | null",
+                            "providerReference": "string | null",
+                            "launchUrl": "string | null",
+                            "returnPath": "string | null",
+                            "expiresAt": "RFC3339 datetime string | null",
+                            "primaryActionLabel": "string | null",
+                            "secondaryActions": [
+                                {
+                                    "label": "string",
+                                    "actionType": "string",
+                                    "url": "string | null",
+                                    "target": "string | null",
+                                    "parameters": {"key": "value"},
+                                    "disabled": "boolean",
+                                }
+                            ],
+                            "displayHints": {"key": "value"},
+                        }
+                    },
+                },
+            }
+        ],
         "skillReads": ["skillResourceVersionId; only when decisionType=SKILL_READ or TOOL_CALL"],
         "toolRequests": [
             {
@@ -1432,7 +1516,7 @@ def build_structured_agent_prompt(
         "decisionSemantics": {
             AGENT_DECISION_FINAL: {
                 "whenToUse": "You already have enough information to finish this node.",
-                "must": ["Return the user-facing answer in message."],
+                "must": ["Populate outputMessages with any user-facing outputs for this turn."],
                 "mustNot": ["Do not include skillReads.", "Do not include toolRequests.", "Do not include humanRequest."],
             },
             AGENT_DECISION_SKILL_READ: {
@@ -1464,8 +1548,11 @@ def build_structured_agent_prompt(
             "You can read facts/artifacts and only your own agentScope from the prompt. Do not assume access to other agents' scopes.",
             f"Use {AGENT_DECISION_SKILL_READ} for skill-only continuation turns.",
             f"Use {AGENT_DECISION_TOOL_CALL} for tool continuation turns.",
-            f"Use {AGENT_DECISION_FINAL} only for a completed answer.",
+            f"Use {AGENT_DECISION_FINAL} only for a completed node decision.",
             f"Use {AGENT_DECISION_HUMAN_HANDOFF} only when a human must take over.",
+            "outputMessages is incremental for this decision only; never repeat historical messages.",
+            "At most one EXTERNAL_INTERACTION output is allowed, and if present it must be the last outputMessages item.",
+            "If you emit EXTERNAL_INTERACTION, you must choose the routeDecision that should run after the external interaction resumes.",
             "Return JSON only.",
         ],
     }
@@ -1961,6 +2048,98 @@ def normalize_skill_reads(raw_skill_reads: Any, skill_resources: List[ResourceVe
     return normalized
 
 
+def validate_output_message_payload(payload_type: str, payload: Dict[str, Any], path: str) -> None:
+    if payload_type == "TEXT":
+        extra_fields = sorted(key for key in payload.keys() if key != "text")
+        if extra_fields:
+            raise AgentTurnError("MODEL_OUTPUT_INVALID", f"{path}.payload has unsupported fields: {', '.join(extra_fields)}")
+        text = payload.get("text")
+        if not isinstance(text, str) or not text.strip():
+            raise AgentTurnError("MODEL_OUTPUT_INVALID", f"{path}.payload.text must be a non-empty string")
+        return
+    if payload_type == "EXTERNAL_INTERACTION":
+        extra_payload_fields = sorted(key for key in payload.keys() if key != "spec")
+        if extra_payload_fields:
+            raise AgentTurnError(
+                "MODEL_OUTPUT_INVALID",
+                f"{path}.payload has unsupported fields: {', '.join(extra_payload_fields)}",
+            )
+        spec = payload.get("spec")
+        if not isinstance(spec, dict):
+            raise AgentTurnError("MODEL_OUTPUT_INVALID", f"{path}.payload.spec must be an object")
+        allowed_fields = {
+            "interactionType",
+            "title",
+            "instruction",
+            "provider",
+            "providerReference",
+            "launchUrl",
+            "returnPath",
+            "expiresAt",
+            "primaryActionLabel",
+            "secondaryActions",
+            "displayHints",
+        }
+        required_fields = allowed_fields
+        extra_spec_fields = sorted(key for key in spec.keys() if key not in allowed_fields)
+        if extra_spec_fields:
+            raise AgentTurnError("MODEL_OUTPUT_INVALID", f"{path}.payload.spec has unsupported fields: {', '.join(extra_spec_fields)}")
+        missing = [field for field in required_fields if field not in spec]
+        if missing:
+            raise AgentTurnError("MODEL_OUTPUT_INVALID", f"{path}.payload.spec missing fields: {', '.join(sorted(missing))}")
+        if str(spec.get("interactionType", "")).strip().upper() not in {
+            "GENERIC_REDIRECT",
+            "PAYMENT_REDIRECT",
+            "FORM_REDIRECT",
+            "OAUTH_REDIRECT",
+            "EXTERNAL_CONFIRMATION",
+            "FILE_UPLOAD_PORTAL",
+        }:
+            raise AgentTurnError("MODEL_OUTPUT_INVALID", f"{path}.payload.spec.interactionType is invalid")
+        if not isinstance(spec.get("title"), str) or not str(spec.get("title")).strip():
+            raise AgentTurnError("MODEL_OUTPUT_INVALID", f"{path}.payload.spec.title must be a non-empty string")
+        if not isinstance(spec.get("instruction"), str) or not str(spec.get("instruction")).strip():
+            raise AgentTurnError("MODEL_OUTPUT_INVALID", f"{path}.payload.spec.instruction must be a non-empty string")
+        for nullable_field in ["provider", "providerReference", "launchUrl", "returnPath", "expiresAt", "primaryActionLabel"]:
+            value = spec.get(nullable_field)
+            if value is not None and not isinstance(value, str):
+                raise AgentTurnError("MODEL_OUTPUT_INVALID", f"{path}.payload.spec.{nullable_field} must be a string or null")
+        secondary_actions = spec.get("secondaryActions")
+        if not isinstance(secondary_actions, list):
+            raise AgentTurnError("MODEL_OUTPUT_INVALID", f"{path}.payload.spec.secondaryActions must be a list")
+        for index, action in enumerate(secondary_actions):
+            if not isinstance(action, dict):
+                raise AgentTurnError("MODEL_OUTPUT_INVALID", f"{path}.payload.spec.secondaryActions[{index}] must be an object")
+        display_hints = spec.get("displayHints")
+        if not isinstance(display_hints, dict):
+            raise AgentTurnError("MODEL_OUTPUT_INVALID", f"{path}.payload.spec.displayHints must be an object")
+        return
+    raise AgentTurnError("MODEL_OUTPUT_INVALID", f"{path}.payloadType is unsupported: {payload_type}")
+
+
+def normalize_output_messages(raw_messages: Any) -> List[OutputMessageDraft]:
+    if raw_messages is None:
+        return []
+    if not isinstance(raw_messages, list):
+        raise AgentTurnError("MODEL_OUTPUT_INVALID", "outputMessages must be a list")
+    normalized: List[OutputMessageDraft] = []
+    interaction_indexes: List[int] = []
+    for index, raw_message in enumerate(raw_messages):
+        try:
+            message = OutputMessageDraft.model_validate(raw_message)
+        except ValidationError as exc:
+            raise AgentTurnError("MODEL_OUTPUT_INVALID", f"outputMessages[{index}] is invalid: {exc}") from exc
+        validate_output_message_payload(message.payloadType, message.payload, f"outputMessages[{index}]")
+        if message.payloadType == "EXTERNAL_INTERACTION":
+            interaction_indexes.append(index)
+        normalized.append(message)
+    if len(interaction_indexes) > 1:
+        raise AgentTurnError("MODEL_OUTPUT_INVALID", "at most one EXTERNAL_INTERACTION output is allowed")
+    if interaction_indexes and interaction_indexes[0] != len(raw_messages) - 1:
+        raise AgentTurnError("MODEL_OUTPUT_INVALID", "EXTERNAL_INTERACTION output must be the last outputMessages item")
+    return normalized
+
+
 def parse_agent_structured_response(
     llm_output: str,
     graph: GraphSnapshot,
@@ -1985,6 +2164,7 @@ def parse_agent_structured_response(
 
     skill_reads = normalize_skill_reads(parsed.get("skillReads", []), skill_resources)
     tool_requests = normalize_tool_requests(parsed.get("toolRequests", []), tool_resources)
+    output_messages = normalize_output_messages(parsed.get("outputMessages", []))
     raw_human_request = parsed.get("humanRequest")
     human_request = HumanRequest.model_validate(raw_human_request) if raw_human_request is not None else None
     raw_session_state_patch = parsed.get("sessionStatePatch")
@@ -1998,6 +2178,9 @@ def parse_agent_structured_response(
             raise AgentTurnError("TOOL_REQUEST_INVALID", "FINAL decisionType must not include toolRequests")
         if skill_reads:
             raise AgentTurnError("MODEL_OUTPUT_INVALID", "FINAL decisionType must not include skillReads")
+    else:
+        if output_messages:
+            raise AgentTurnError("MODEL_OUTPUT_INVALID", f"{decision_type} decisionType must not include outputMessages")
     if decision_type == AGENT_DECISION_TOOL_CALL and not tool_requests:
         raise AgentTurnError("TOOL_REQUEST_INVALID", "TOOL_CALL decisionType requires toolRequests")
     if decision_type == AGENT_DECISION_SKILL_READ:
@@ -2017,8 +2200,8 @@ def parse_agent_structured_response(
 
     return StructuredAgentDecision(
         decisionType=decision_type,
-        message=str(parsed.get("message", "")).strip(),
         routeDecision=route_decision,
+        outputMessages=output_messages,
         skillReads=skill_reads,
         toolRequests=tool_requests,
         humanRequest=human_request,
@@ -2067,7 +2250,6 @@ def export_state(state: AgentState) -> Dict[str, Any]:
         "session_context": state["session_context"],
         "assistant": state["assistant"],
         "graph": state["graph"],
-        "final_reply": state["final_reply"],
         "summary": state["summary"],
         "retrieval_hits": state["retrieval_hits"],
         "retrieval_cache": state["retrieval_cache"],
@@ -2098,7 +2280,6 @@ def restore_state(data: Dict[str, Any], resume_request: WorkflowResumeRequest) -
         "current_node_key": resume_request.checkpoint.currentNodeKey,
         "next_node_key": None,
         "route_key": None,
-        "final_reply": data.get("final_reply", ""),
         "summary": data.get("summary", ""),
         "retrieval_hits": data.get("retrieval_hits", []),
         "retrieval_cache": data.get("retrieval_cache", {}),
@@ -2240,6 +2421,43 @@ def pause_for_resume(
     append_node(state, node_key, node_name, detail or state["summary"], status="WAITING_RESUME")
 
 
+def pause_for_external_interaction(
+    state: AgentState,
+    node: GraphNodeSnapshot,
+    route_key: str,
+    turn_index: int,
+    output_messages: List[OutputMessageDraft],
+    detail_lines: List[str],
+) -> None:
+    emitted = emit_output_messages(state, node.nodeKey, turn_index, output_messages)
+    interaction_message = emitted[-1]
+    spec = interaction_message.payload.get("spec", {})
+    if not isinstance(spec, dict):
+        raise HTTPException(status_code=500, detail="external interaction spec is missing")
+    next_node_key = resolve_next_node(graph_from_state(state), node.nodeKey, route_key)
+    title = str(spec.get("title", "")).strip() or "需要外部交互"
+    instruction = str(spec.get("instruction", "")).strip() or "请完成外部交互后返回。"
+    expected_action = str(spec.get("primaryActionLabel", "")).strip() or "完成外部交互后继续流程"
+    state["route_key"] = route_key
+    pause_for_resume(
+        state,
+        node.nodeKey,
+        node.nodeName,
+        title,
+        instruction,
+        expected_action,
+        PAUSE_SOURCE_EXTERNAL_INTERACTION,
+        next_node_key or "end",
+        "\n".join(detail_lines),
+        allowed_actions=[RESUME_ACTION_CONTINUE],
+        reason_code="EXTERNAL_INTERACTION_REQUIRED",
+        reason_detail=instruction,
+        resume_source=RESUME_SOURCE_EXTERNAL_SYSTEM,
+        interaction_type=str(spec.get("interactionType", "")).strip().upper() or None,
+    )
+    state["summary"] = summarize_output_payload(interaction_message.payloadType, interaction_message.payload) or state["summary"]
+
+
 def cancel_workflow_from_resume_action(
     state: AgentState,
     graph: GraphSnapshot,
@@ -2257,7 +2475,6 @@ def cancel_workflow_from_resume_action(
     state["escalation_required"] = False
     state["workflow_status"] = "CANCELLED"
     state["summary"] = "人工终止了当前流程。"
-    state["final_reply"] = "当前流程已由人工终止。"
     append_node(state, node_key, node_name, detail, status="CANCELLED")
 
 
@@ -2279,7 +2496,6 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
     detail_lines = [agent.responsibility]
     route_key: Optional[str] = None
     route_source = ""
-    final_message = ""
     turn_logs: List[Dict[str, Any]] = []
     state["agent_turn_state"] = {
         "phase": "PREPARE_CONTEXT",
@@ -2385,9 +2601,6 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
             phase="VALIDATE_RESPONSE",
             decisionType=structured.decisionType,
         )
-        if structured.message:
-            final_message = structured.message
-
         if structured.skillReads:
             state["agent_turn_state"]["phase"] = "APPLY_SKILL_READS"
             before = set(loaded_skill_version_ids(state["session_context"]))
@@ -2454,7 +2667,7 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
                 "\n".join(detail_lines),
                 allowed_actions=list(DEFAULT_RESUME_ACTIONS),
                 reason_code="HUMAN_HANDOFF_REQUESTED",
-                reason_detail=human_request.instruction or structured.message,
+                reason_detail=human_request.instruction,
             )
             return
 
@@ -2680,24 +2893,23 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
         )
         return
 
-    message = final_message or agent.responsibility
-    human_comment = state["resume_input"]["comment"] if state["resume_input"] else ""
-    latest_outcome = state["latest_tool_outcome"] or {}
-    latest_result = latest_outcome.get("result", {}) if isinstance(latest_outcome, dict) else {}
-    suggestion = json.dumps(latest_result, ensure_ascii=False) if latest_result else ""
-    human_suffix = f"恢复说明：{human_comment}" if human_comment else ""
-    state["final_reply"] = f"{message}\n\n{human_suffix}".strip() if human_suffix and human_suffix not in message else message
-    if state["final_reply"]:
-        state["summary"] = state["final_reply"]
-    else:
-        state["summary"] = suggestion
     detail_lines.append(f"loop_count={len(turn_logs)}")
     detail_lines.append(f"route_key={route_key}")
+    if structured.outputMessages and structured.outputMessages[-1].payloadType == "EXTERNAL_INTERACTION":
+        pause_for_external_interaction(state, node, route_key, turn_index, structured.outputMessages, detail_lines)
+        return
 
+    emitted = emit_output_messages(state, node.nodeKey, turn_index, structured.outputMessages)
+    if not emitted and not state["summary"]:
+        latest_outcome = state["latest_tool_outcome"] or {}
+        latest_result = latest_outcome.get("result", {}) if isinstance(latest_outcome, dict) else {}
+        state["summary"] = json.dumps(latest_result, ensure_ascii=False) if latest_result else agent.responsibility
     state["route_key"] = route_key
     state["next_node_key"] = resolve_next_node(graph, node.nodeKey, route_key)
     state["current_node_key"] = node.nodeKey
     state["escalation_required"] = False
+    state["resume_task"] = None
+    state["checkpoint"] = None
     state["pause_reason"] = None
     state["workflow_status"] = "COMPLETED"
     append_node(state, node.nodeKey, node.nodeName, "\n".join(detail_lines))
@@ -2712,9 +2924,10 @@ def execute_start_node(state: AgentState, node: GraphNodeSnapshot) -> None:
 def execute_end_node(state: AgentState, node: GraphNodeSnapshot) -> None:
     state["current_node_key"] = node.nodeKey
     state["next_node_key"] = "__end__"
-    final_reply = state["final_reply"] or state["summary"] or "流程已完成。"
-    state["final_reply"] = final_reply
-    state["summary"] = state["summary"] or final_reply
+    if not state["summary"] and state["output_messages"]:
+        latest_output = WorkflowOutputMessage.model_validate(state["output_messages"][-1])
+        state["summary"] = summarize_output_payload(latest_output.payloadType, latest_output.payload) or "流程已完成。"
+    state["summary"] = state["summary"] or "流程已完成。"
     state["workflow_status"] = "COMPLETED"
     append_node(state, node.nodeKey, node.nodeName, state["summary"])
 
@@ -2817,13 +3030,10 @@ def compile_graph(graph_snapshot: GraphSnapshot, entry_node_key: str):
 
 def workflow_result_from_state(state: AgentState) -> WorkflowResult:
     status = state.get("workflow_status") or ("WAITING_RESUME" if state["resume_task"] else "COMPLETED")
-    if status in {"COMPLETED", "CANCELLED"}:
-        sync_final_text_output(state)
     return WorkflowResult(
         workflowInstanceId=state["workflow_instance_id"],
         status=status,
-        summary=state["summary"] or state["final_reply"] or "流程已执行。",
-        finalReply=state["final_reply"] or None,
+        summary=state["summary"] or "流程已执行。",
         currentNodeKey=state["current_node_key"],
         checkpoint=ExecutionCheckpoint(**state["checkpoint"]) if state["checkpoint"] else None,
         resumeTask=ResumeTaskSnapshot(**state["resume_task"]) if state["resume_task"] else None,
@@ -2862,7 +3072,6 @@ async def start_agent_run(request: WorkflowStartRequest, _: None = Depends(requi
         "current_node_key": None,
         "next_node_key": None,
         "route_key": None,
-        "final_reply": "",
         "summary": "",
         "retrieval_hits": [],
         "retrieval_cache": {},

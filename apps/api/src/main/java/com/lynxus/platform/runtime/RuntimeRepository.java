@@ -34,15 +34,11 @@ public interface RuntimeRepository {
 
     Optional<ExternalInteractionEventDto> findExternalInteractionEventByDedupeKey(String interactionTaskId, String dedupeKey);
 
-    void saveExternalInteractionTask(ExternalInteractionTaskDto task);
-
-    void saveExternalInteractionEvent(ExternalInteractionEventDto event);
-
     Optional<ResumeInterventionDto> findPendingResumeIntervention(String workflowInstanceId);
 
     List<ResumeInterventionDto> listPendingResumeInterventions();
 
-    void persistProjection(TaskInstanceDto task, WorkflowInstanceDto workflow, ConversationSessionDto session, ResumeInterventionDto intervention);
+    void persistProjection(ProjectionPlanDto plan);
 
     void saveResumeIntervention(ResumeInterventionDto intervention);
 }

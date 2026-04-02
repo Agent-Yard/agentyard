@@ -136,7 +136,6 @@ public final class RuntimeDtos {
         Instant updatedAt,
         WorkflowStatus status,
         String summary,
-        String finalReply,
         String currentNodeKey,
         boolean escalationRequired,
         ExecutionCheckpoint checkpoint,
@@ -154,6 +153,22 @@ public final class RuntimeDtos {
         SharedSessionState sharedState,
         AgentTurnState agentTurnState
     ) {
+    }
+
+    public record ProjectionPlanDto(
+        TaskInstanceDto task,
+        WorkflowInstanceDto workflow,
+        ConversationSessionDto session,
+        List<ConversationMessageDto> conversationMessages,
+        List<ExternalInteractionTaskDto> interactionTasks,
+        List<ExternalInteractionEventDto> interactionEvents,
+        ResumeInterventionDto intervention
+    ) {
+        public ProjectionPlanDto {
+            conversationMessages = conversationMessages == null ? List.of() : List.copyOf(conversationMessages);
+            interactionTasks = interactionTasks == null ? List.of() : List.copyOf(interactionTasks);
+            interactionEvents = interactionEvents == null ? List.of() : List.copyOf(interactionEvents);
+        }
     }
 
     public record NodeExecutionDto(
@@ -309,6 +324,7 @@ public final class RuntimeDtos {
         String sessionId,
         String taskId,
         String workflowInstanceId,
+        @JsonIgnore String sourceMessageKey,
         String messageId,
         String title,
         String instruction,
@@ -337,6 +353,7 @@ public final class RuntimeDtos {
                 task.sessionId(),
                 task.taskId(),
                 task.workflowInstanceId(),
+                null,
                 task.messageId(),
                 task.title(),
                 task.instruction(),

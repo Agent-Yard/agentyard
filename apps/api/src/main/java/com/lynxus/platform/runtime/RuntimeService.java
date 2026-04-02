@@ -70,6 +70,7 @@ import io.temporal.client.WorkflowFailedException;
 import io.temporal.failure.ActivityFailure;
 import io.temporal.failure.ApplicationFailure;
 import io.temporal.failure.TimeoutFailure;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -229,7 +230,7 @@ public class RuntimeService {
                 existing.loadedSkillResourceVersionIds(),
                 existing.sharedState()
             );
-            runtimeRepository.persistProjection(prepared.task(), prepared.workflow(), startedSession, null);
+            runtimeRepository.persistProjection(projectionPlan(prepared.task(), prepared.workflow(), startedSession, startedSession == null ? List.of() : List.of(userMessage), null));
 
             try {
                 workflowGateway.start(new WorkflowStartRequest(
@@ -258,7 +259,7 @@ public class RuntimeService {
                 );
                 TaskInstanceDto task = withTaskStatus(prepared.task(), TaskStatus.FAILED);
                 ConversationSessionDto failedSession = refreshSessionForWorkflow(startedSession, workflow);
-                runtimeRepository.persistProjection(task, workflow, failedSession, null);
+                runtimeRepository.persistProjection(projectionPlan(task, workflow, failedSession, List.of(), null));
                 return failedSession;
             }
         }
@@ -374,7 +375,7 @@ public class RuntimeService {
                 TaskInstanceDto updatedTask = withTaskStatus(task, TaskStatus.RUNNING);
                 ConversationSessionDto session = findSessionByWorkflowId(workflowId).orElse(null);
                 ConversationSessionDto updatedSession = session == null ? null : refreshSessionAfterResumeAction(session, updated);
-                runtimeRepository.persistProjection(updatedTask, updated, updatedSession, intervention);
+                runtimeRepository.persistProjection(projectionPlan(updatedTask, updated, updatedSession, List.of(), intervention));
                 return updated;
             } catch (RuntimeException error) {
                 ResumeInterventionDto failedIntervention = markInterventionFailed(intervention, describeFailure(error));
@@ -395,7 +396,7 @@ public class RuntimeService {
                 runtimeRepository.saveResumeIntervention(failedIntervention);
                 TaskInstanceDto task = runtimeRepository.findTaskByWorkflowInstanceId(workflowId).orElseThrow();
                 ConversationSessionDto session = findSessionByWorkflowId(workflowId).orElse(null);
-                runtimeRepository.persistProjection(task, failedWorkflow, session, failedIntervention);
+                runtimeRepository.persistProjection(projectionPlan(task, failedWorkflow, session, List.of(), failedIntervention));
                 throw error;
             }
         }
@@ -403,7 +404,7 @@ public class RuntimeService {
 
     private TurnExecutionResult executeTurn(String scenarioId, AssistantDto assistant, String customerId, String message) {
         PreparedTurn prepared = prepareTurn(null, scenarioId, assistant, customerId, message, SharedSessionState.empty());
-        runtimeRepository.persistProjection(prepared.task(), prepared.workflow(), null, null);
+        runtimeRepository.persistProjection(projectionPlan(prepared.task(), prepared.workflow(), null, List.of(), null));
 
         try {
             workflowGateway.start(new WorkflowStartRequest(
@@ -438,8 +439,8 @@ public class RuntimeService {
                 describeFailure(error)
             );
             TaskInstanceDto task = withTaskStatus(prepared.task(), TaskStatus.FAILED);
-            runtimeRepository.persistProjection(task, workflow, null, null);
-            return new TurnExecutionResult(task, workflow, firstNonBlank(workflow.finalReply(), workflow.summary()));
+            runtimeRepository.persistProjection(projectionPlan(task, workflow, null, List.of(), null));
+            return new TurnExecutionResult(task, workflow, workflow.summary());
         }
     }
 
@@ -497,7 +498,6 @@ public class RuntimeService {
             WorkflowStatus.RUNNING,
             "流程已提交到 Temporal，等待首个运行结果。",
             null,
-            null,
             false,
             null,
             null,
@@ -533,7 +533,6 @@ public class RuntimeService {
             Instant.now(),
             result.status(),
             result.summary(),
-            result.finalReply(),
             result.currentNodeKey(),
             result.escalationRequired(),
             mergeCheckpoint(existing.checkpoint(), result.checkpoint()),
@@ -571,7 +570,7 @@ public class RuntimeService {
             TaskInstanceDto updatedTask = withTaskStatus(task, toTaskStatus(updated.status()));
             ConversationSessionDto session = findSessionByWorkflowId(workflow.id()).orElse(null);
             ProjectionRefresh refreshed = reconcileWorkflowProjection(task, session, updated, latest.outputMessages());
-            runtimeRepository.persistProjection(updatedTask, refreshed.workflow(), refreshed.session(), null);
+            runtimeRepository.persistProjection(projectionPlan(updatedTask, refreshed, null));
         }
     }
 
@@ -591,7 +590,7 @@ public class RuntimeService {
             TaskInstanceDto updatedTask = withTaskStatus(task, toTaskStatus(updated.status()));
             ConversationSessionDto session = findSessionByWorkflowId(workflow.id()).orElse(null);
             ProjectionRefresh refreshed = reconcileWorkflowProjection(task, session, updated, latest.outputMessages());
-            runtimeRepository.persistProjection(updatedTask, refreshed.workflow(), refreshed.session(), appliedIntervention);
+            runtimeRepository.persistProjection(projectionPlan(updatedTask, refreshed, appliedIntervention));
         }
     }
 
@@ -627,14 +626,17 @@ public class RuntimeService {
         List<WorkflowContracts.WorkflowOutputMessage> outputMessages
     ) {
         if (session == null) {
-            return new ProjectionRefresh(workflow, null);
+            return new ProjectionRefresh(workflow, null, List.of(), List.of(), List.of());
         }
         ConversationSessionDto refreshedSession = refreshSessionForWorkflow(session, workflow);
         if (!Objects.equals(refreshedSession.latestWorkflowInstanceId(), workflow.id())) {
-            return new ProjectionRefresh(workflow, refreshedSession);
+            return new ProjectionRefresh(workflow, refreshedSession, List.of(), List.of(), List.of());
         }
         ConversationSessionDto projectedSession = refreshedSession;
         WorkflowInstanceDto projectedWorkflow = workflow;
+        List<ConversationMessageDto> conversationMessages = new ArrayList<>();
+        List<ExternalInteractionTaskDto> interactionTasks = new ArrayList<>();
+        List<ExternalInteractionEventDto> interactionEvents = new ArrayList<>();
         List<WorkflowContracts.WorkflowOutputMessage> emittedMessages = outputMessages == null ? List.of() : outputMessages;
         for (WorkflowContracts.WorkflowOutputMessage message : emittedMessages) {
             int existingIndex = findMessageIndexByKey(projectedSession.messages(), projectedWorkflow.id(), message.messageKey());
@@ -643,15 +645,22 @@ public class RuntimeService {
                 continue;
             }
             switch (message.payloadType()) {
-                case TEXT -> projectedSession = appendWorkflowOutputMessage(projectedSession, projectedWorkflow, message);
+                case TEXT -> {
+                    ConversationMessageDto conversationMessage = workflowOutputConversationMessage(projectedSession, projectedWorkflow, message);
+                    projectedSession = appendInteractionMessage(projectedSession, conversationMessage);
+                    conversationMessages.add(conversationMessage);
+                }
                 case EXTERNAL_INTERACTION -> {
                     ProjectionRefresh interactionProjection = createExternalInteractionTask(task, projectedWorkflow, projectedSession, message);
                     projectedWorkflow = interactionProjection.workflow();
                     projectedSession = interactionProjection.session();
+                    conversationMessages.addAll(interactionProjection.conversationMessages());
+                    interactionTasks.addAll(interactionProjection.interactionTasks());
+                    interactionEvents.addAll(interactionProjection.interactionEvents());
                 }
             }
         }
-        return new ProjectionRefresh(projectedWorkflow, projectedSession);
+        return new ProjectionRefresh(projectedWorkflow, projectedSession, conversationMessages, interactionTasks, interactionEvents);
     }
 
     private void validateProjectedMessage(ConversationMessageDto stored, WorkflowContracts.WorkflowOutputMessage emitted) {
@@ -668,14 +677,14 @@ public class RuntimeService {
         }
     }
 
-    private ConversationSessionDto appendWorkflowOutputMessage(
+    private ConversationMessageDto workflowOutputConversationMessage(
         ConversationSessionDto session,
         WorkflowInstanceDto workflow,
         WorkflowContracts.WorkflowOutputMessage message
     ) {
         Map<String, Object> payload = message.payload() == null ? Map.of() : message.payload();
-        return appendInteractionMessage(session, conversationMessage(
-            nextId("msg"),
+        return conversationMessage(
+            stableId("msg", workflow.id(), message.messageKey()),
             message.messageKey(),
             session.id(),
             "ASSISTANT",
@@ -688,7 +697,7 @@ public class RuntimeService {
             message.createdAt() == null ? Instant.now() : message.createdAt(),
             workflow.taskId(),
             workflow.id()
-        ));
+        );
     }
 
     private ProjectionRefresh createExternalInteractionTask(
@@ -707,8 +716,8 @@ public class RuntimeService {
         ExternalInteractionType interactionType = ExternalInteractionType.valueOf(stringValue(spec, "interactionType").trim());
         Instant createdAt = instantValue(spec, "createdAt");
         Instant now = createdAt == null ? (outputMessage.createdAt() == null ? Instant.now() : outputMessage.createdAt()) : createdAt;
-        String interactionTaskId = nextId("interaction");
-        String messageId = nextId("msg");
+        String interactionTaskId = stableId("interaction", workflow.id(), outputMessage.messageKey());
+        String messageId = stableId("msg", workflow.id(), outputMessage.messageKey());
         CreateExternalInteractionTaskRequest request = new CreateExternalInteractionTaskRequest(
             session.id(),
             workflow.id(),
@@ -737,7 +746,7 @@ public class RuntimeService {
             blankToNull(request.provider()),
             blankToNull(request.providerReference()),
             blankToNull(request.launchUrl()),
-            nextId("return"),
+            stableToken("return", workflow.id(), outputMessage.messageKey()),
             blankToNull(request.returnPath()),
             request.expiresAt(),
             null,
@@ -746,9 +755,32 @@ public class RuntimeService {
             now,
             now
         );
-        ExternalInteractionTaskDto interactionTask = ExternalInteractionTaskDto.fromContract(taskRecord, List.of());
+        ExternalInteractionTaskDto interactionTask = new ExternalInteractionTaskDto(
+            taskRecord.id(),
+            taskRecord.type(),
+            taskRecord.status(),
+            taskRecord.sessionId(),
+            taskRecord.taskId(),
+            taskRecord.workflowInstanceId(),
+            outputMessage.messageKey(),
+            taskRecord.messageId(),
+            taskRecord.title(),
+            taskRecord.instruction(),
+            taskRecord.provider(),
+            taskRecord.providerReference(),
+            taskRecord.launchUrl(),
+            taskRecord.returnToken(),
+            taskRecord.returnPath(),
+            taskRecord.expiresAt(),
+            ExternalInteractionResultDto.fromContract(taskRecord.latestResult()),
+            taskRecord.lastEventSource(),
+            taskRecord.resumedAt(),
+            taskRecord.createdAt(),
+            taskRecord.updatedAt(),
+            List.of()
+        );
         ExternalInteractionEventDto createdEvent = new ExternalInteractionEventDto(
-            nextId("interaction-event"),
+            stableId("interaction-event", workflow.id(), outputMessage.messageKey(), "created"),
             interactionTask.id(),
             ExternalInteractionEventType.CREATED,
             ExternalInteractionEventSource.SYSTEM_CREATE,
@@ -775,9 +807,7 @@ public class RuntimeService {
         );
         ConversationSessionDto updatedSession = appendInteractionMessage(session, interactionMessage);
         WorkflowInstanceDto updatedWorkflow = withInteractionCheckpoint(workflow, interactionTask.id(), interactionTask.type());
-        runtimeRepository.saveExternalInteractionTask(interactionTask);
-        runtimeRepository.saveExternalInteractionEvent(createdEvent);
-        return new ProjectionRefresh(updatedWorkflow, updatedSession);
+        return new ProjectionRefresh(updatedWorkflow, updatedSession, List.of(interactionMessage), List.of(interactionTask), List.of(createdEvent));
     }
 
     private AssistantDto resolveAssistant(ScenarioDto scenario, String assistantId) {
@@ -1567,7 +1597,6 @@ public class RuntimeService {
             Instant.now(),
             workflow.status(),
             workflow.summary(),
-            workflow.finalReply(),
             workflow.currentNodeKey(),
             workflow.escalationRequired(),
             new ExecutionCheckpoint(
@@ -1631,11 +1660,16 @@ public class RuntimeService {
             result == null ? null : ExternalInteractionResultDto.fromContract(result),
             now
         );
-        runtimeRepository.saveExternalInteractionTask(updatedTask);
-        runtimeRepository.saveExternalInteractionEvent(event);
-
         ConversationSessionDto updatedSession = updateInteractionMessageProjection(session, updatedTask);
-        runtimeRepository.saveSession(updatedSession);
+        runtimeRepository.persistProjection(new ProjectionPlanDto(
+            null,
+            null,
+            updatedSession,
+            updatedSession.messages(),
+            List.of(updatedTask),
+            List.of(event),
+            null
+        ));
 
         if (existing.resumedAt() != null) {
             return getExternalInteractionTask(existing.id());
@@ -1678,7 +1712,6 @@ public class RuntimeService {
             null,
             null
         );
-        runtimeRepository.saveResumeIntervention(intervention);
         try {
             workflowGateway.submitResumeAction(
                 workflow.id(),
@@ -1693,8 +1726,6 @@ public class RuntimeService {
             WorkflowInstanceDto updatedWorkflow = workflowResuming(workflow);
             TaskInstanceDto updatedTaskProjection = withTaskStatus(task, TaskStatus.RUNNING);
             ConversationSessionDto updatedSession = refreshSessionAfterResumeAction(session, updatedWorkflow);
-            runtimeRepository.persistProjection(updatedTaskProjection, updatedWorkflow, updatedSession, intervention);
-
             ExternalInteractionTaskDto resumedTask = updateInteractionTask(
                 interactionTask,
                 interactionTask.status(),
@@ -1704,16 +1735,24 @@ public class RuntimeService {
                 now,
                 now
             );
-            runtimeRepository.saveExternalInteractionTask(resumedTask);
-            runtimeRepository.saveExternalInteractionEvent(new ExternalInteractionEventDto(
-                nextId("interaction-event"),
+            ExternalInteractionEventDto resumeTriggeredEvent = new ExternalInteractionEventDto(
+                stableId("interaction-event", workflow.id(), interactionTask.id(), "resume-triggered"),
                 interactionTask.id(),
                 ExternalInteractionEventType.RESUME_TRIGGERED,
                 interactionTask.lastEventSource(),
-                "resume:" + interactionTask.id() + ":" + now.toEpochMilli(),
+                "resume:" + interactionTask.id(),
                 Map.of("workflowId", workflow.id()),
                 interactionTask.latestResult(),
                 now
+            );
+            runtimeRepository.persistProjection(new ProjectionPlanDto(
+                updatedTaskProjection,
+                updatedWorkflow,
+                updatedSession,
+                List.of(),
+                List.of(resumedTask),
+                List.of(resumeTriggeredEvent),
+                intervention
             ));
             return getExternalInteractionTask(interactionTask.id());
         } catch (RuntimeException error) {
@@ -1732,8 +1771,7 @@ public class RuntimeService {
                     now
                 )
             );
-            runtimeRepository.saveResumeIntervention(failedIntervention);
-            runtimeRepository.persistProjection(task, failedWorkflow, session, failedIntervention);
+            runtimeRepository.persistProjection(projectionPlan(task, failedWorkflow, session, List.of(), failedIntervention));
             return getExternalInteractionTask(interactionTask.id());
         }
     }
@@ -1754,6 +1792,7 @@ public class RuntimeService {
             existing.sessionId(),
             existing.taskId(),
             existing.workflowInstanceId(),
+            existing.sourceMessageKey(),
             existing.messageId(),
             existing.title(),
             existing.instruction(),
@@ -1811,7 +1850,6 @@ public class RuntimeService {
             Instant.now(),
             WorkflowStatus.RUNNING,
             "已收到恢复动作，流程继续执行中。",
-            null,
             workflow.currentNodeKey(),
             false,
             workflow.checkpoint(),
@@ -1845,7 +1883,6 @@ public class RuntimeService {
             Instant.now(),
             workflow.status(),
             workflow.summary(),
-            workflow.finalReply(),
             workflow.currentNodeKey(),
             workflow.escalationRequired(),
             workflow.checkpoint(),
@@ -1898,7 +1935,6 @@ public class RuntimeService {
             Instant.now(),
             WorkflowStatus.FAILED,
             "流程执行失败：" + failureDetail,
-            null,
             null,
             false,
             null,
@@ -2067,7 +2103,6 @@ public class RuntimeService {
         ExecutionCheckpoint checkpoint = mergeCheckpoint(existing.checkpoint(), result.checkpoint());
         return existing.status() == result.status()
             && Objects.equals(existing.summary(), result.summary())
-            && Objects.equals(existing.finalReply(), result.finalReply())
             && Objects.equals(existing.currentNodeKey(), result.currentNodeKey())
             && existing.escalationRequired() == result.escalationRequired()
             && Objects.equals(existing.checkpoint(), checkpoint)
@@ -2144,10 +2179,50 @@ public class RuntimeService {
         return true;
     }
 
+    private static ProjectionPlanDto projectionPlan(
+        TaskInstanceDto task,
+        WorkflowInstanceDto workflow,
+        ConversationSessionDto session,
+        List<ConversationMessageDto> conversationMessages,
+        ResumeInterventionDto intervention
+    ) {
+        return new ProjectionPlanDto(task, workflow, session, conversationMessages, List.of(), List.of(), intervention);
+    }
+
+    private static ProjectionPlanDto projectionPlan(
+        TaskInstanceDto task,
+        ProjectionRefresh refresh,
+        ResumeInterventionDto intervention
+    ) {
+        return new ProjectionPlanDto(
+            task,
+            refresh.workflow(),
+            refresh.session(),
+            refresh.conversationMessages(),
+            refresh.interactionTasks(),
+            refresh.interactionEvents(),
+            intervention
+        );
+    }
+
+    private static String stableId(String prefix, String... parts) {
+        return prefix + "-" + UUID.nameUUIDFromBytes(String.join("::", parts).getBytes(StandardCharsets.UTF_8)).toString();
+    }
+
+    private static String stableToken(String prefix, String... parts) {
+        return stableId(prefix, parts);
+    }
+
     private record PreparedTurn(TaskInstanceDto task, WorkflowInstanceDto workflow, AssistantRunSnapshot assistantSnapshot) {
     }
 
-    private record ProjectionRefresh(WorkflowInstanceDto workflow, ConversationSessionDto session) {
+    private record ProjectionRefresh(
+        WorkflowInstanceDto workflow,
+        ConversationSessionDto session,
+        List<ConversationMessageDto> conversationMessages,
+        List<ExternalInteractionTaskDto> interactionTasks,
+        List<ExternalInteractionEventDto> interactionEvents
+    ) {
     }
 
     private record TurnExecutionResult(TaskInstanceDto task, WorkflowInstanceDto workflow, String reply) {

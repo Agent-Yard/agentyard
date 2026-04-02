@@ -174,7 +174,7 @@ class RuntimeServiceTest {
     }
 
     @Test
-    void shouldReconcilePendingInterventionAndFinalReplyOnRefresh() {
+    void shouldReconcilePendingInterventionAndOutputMessagesOnRefresh() {
         StubWorkflowGateway gateway = new StubWorkflowGateway();
         InMemoryRuntimeRepository repository = new InMemoryRuntimeRepository();
         RuntimeService service = runtimeService(gateway, catalogService, repository);
@@ -202,7 +202,6 @@ class RuntimeServiceTest {
             now,
             WorkflowContracts.WorkflowStatus.WAITING_RESUME,
             "已创建人工协同工单，等待人工处理。",
-            null,
             "human-review",
             true,
             new WorkflowContracts.ExecutionCheckpoint("cp-1", "handoff-close", "human-review", "{}", null, 0),
@@ -259,7 +258,7 @@ class RuntimeServiceTest {
             null,
             null
         );
-        repository.persistProjection(task, workflow, session, pending);
+        repository.persistProjection(new RuntimeDtos.ProjectionPlanDto(task, workflow, session, session.messages(), List.of(), List.of(), pending));
         gateway.currentResults.put("wf-1", completedResult("wf-1", "人工处理已完成，已同步客户。", "turn-1"));
 
         service.reconcileRunningWorkflows();
@@ -269,6 +268,75 @@ class RuntimeServiceTest {
         assertEquals(WorkflowContracts.WorkflowStatus.COMPLETED, reconciledWorkflow.status());
         assertEquals(RuntimeDtos.ResumeInterventionStatus.APPLIED, reconciledWorkflow.resumeInterventions().getLast().status());
         assertEquals("人工处理已完成，已同步客户。", reconciledSession.messages().getLast().content());
+    }
+
+    @Test
+    void shouldNotDuplicateWorkflowOutputMessagesAcrossRepeatedRefreshes() {
+        StubWorkflowGateway gateway = new StubWorkflowGateway();
+        RuntimeService service = runtimeService(gateway);
+
+        RuntimeDtos.ConversationSessionDto session = service.createSession(
+            new RuntimeDtos.CreateConversationSessionRequest(fixture.scenarioId(), fixture.assistantId(), "customer-1", null)
+        );
+        RuntimeDtos.ConversationSessionDto activeSession = service.sendMessage(
+            session.id(),
+            textRequest("customer-1", "请帮我处理退款")
+        );
+        gateway.currentResults.put(
+            activeSession.latestWorkflowInstanceId(),
+            completedResult(activeSession.latestWorkflowInstanceId(), "退款已经处理完成。", "turn-1")
+        );
+
+        RuntimeDtos.ConversationSessionDto firstRefresh = service.getSession(activeSession.id());
+        RuntimeDtos.ConversationSessionDto secondRefresh = service.getSession(activeSession.id());
+        RuntimeDtos.WorkflowInstanceDto workflow = service.getWorkflow(activeSession.latestWorkflowInstanceId());
+
+        assertEquals(2, firstRefresh.messages().size());
+        assertEquals(2, secondRefresh.messages().size());
+        assertEquals("退款已经处理完成。", secondRefresh.messages().getLast().content());
+        assertEquals(List.of("assistant-final-reply"), workflow.emittedMessageKeys());
+    }
+
+    @Test
+    void shouldNotDuplicateExternalInteractionProjectionAcrossRepeatedRefreshes() {
+        StubWorkflowGateway gateway = new StubWorkflowGateway();
+        gateway.defaultCurrentResultFactory = request -> waitingResult(
+            request.workflowInstanceId(),
+            request.question(),
+            WorkflowContracts.ResumeSource.EXTERNAL_SYSTEM
+        );
+        RuntimeService service = runtimeService(gateway);
+
+        RuntimeDtos.ConversationSessionDto session = service.createSession(
+            new RuntimeDtos.CreateConversationSessionRequest(fixture.scenarioId(), fixture.assistantId(), "customer-1", null)
+        );
+        RuntimeDtos.ConversationSessionDto activeSession = service.sendMessage(session.id(), textRequest("customer-1", "需要继续外部授权"));
+        gateway.currentResults.put(
+            activeSession.latestWorkflowInstanceId(),
+            waitingExternalInteractionResult(
+                activeSession.latestWorkflowInstanceId(),
+                "需要继续外部授权",
+                WorkflowContracts.ExternalInteractionType.OAUTH_REDIRECT,
+                "完成第三方授权",
+                "请前往外部页面完成授权后返回。",
+                "oauth-demo",
+                "provider-ref-1",
+                "https://example.com/oauth/start",
+                "/console/runtime",
+                "去授权",
+                Map.of("intent", "oauth")
+            )
+        );
+
+        RuntimeDtos.ConversationSessionDto firstRefresh = service.getSession(activeSession.id());
+        RuntimeDtos.ConversationSessionDto secondRefresh = service.getSession(activeSession.id());
+        String interactionTaskId = service.getWorkflow(activeSession.latestWorkflowInstanceId()).checkpoint().resumeContext().interactionTaskId();
+        RuntimeDtos.ExternalInteractionTaskDto interaction = service.getExternalInteractionTask(interactionTaskId);
+
+        assertEquals(2, firstRefresh.messages().size());
+        assertEquals(2, secondRefresh.messages().size());
+        assertEquals(1, interaction.events().size());
+        assertEquals("create:" + activeSession.latestWorkflowInstanceId() + ":external-interaction-card", interaction.events().getFirst().dedupeKey());
     }
 
     @Test
@@ -727,7 +795,6 @@ class RuntimeServiceTest {
             workflowId,
             WorkflowContracts.WorkflowStatus.WAITING_RESUME,
             "已创建人工协同工单，等待人工处理。",
-            null,
             "human-review",
             new WorkflowContracts.ExecutionCheckpoint(
                 "cp-1",
@@ -773,7 +840,6 @@ class RuntimeServiceTest {
             workflowId,
             WorkflowContracts.WorkflowStatus.RUNNING,
             "已收到恢复动作，流程继续执行中。",
-            null,
             currentNodeKey,
             null,
             null,
@@ -805,7 +871,6 @@ class RuntimeServiceTest {
             workflowId,
             WorkflowContracts.WorkflowStatus.COMPLETED,
             reply,
-            reply,
             "end",
             null,
             null,
@@ -828,8 +893,11 @@ class RuntimeServiceTest {
                 1,
                 new WorkflowContracts.StructuredAgentDecision(
                     DecisionType.FINAL,
-                    reply,
                     "default",
+                    List.of(new WorkflowContracts.OutputMessageDraft(
+                        ConversationPayloadType.TEXT,
+                        Map.of("text", reply)
+                    )),
                     List.of(),
                     List.of(),
                     null,
@@ -857,7 +925,6 @@ class RuntimeServiceTest {
             workflowId,
             WorkflowContracts.WorkflowStatus.WAITING_RESUME,
             instruction,
-            null,
             "external-interaction",
             new WorkflowContracts.ExecutionCheckpoint(
                 "cp-ext-1",

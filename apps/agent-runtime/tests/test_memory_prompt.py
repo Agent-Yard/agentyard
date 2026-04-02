@@ -188,8 +188,8 @@ def make_agent_state(assistant: AssistantRunSnapshot, graph: GraphSnapshot, ques
         "current_node_key": None,
         "next_node_key": None,
         "route_key": None,
-        "final_reply": "",
         "summary": "",
+        "output_messages": [],
         "retrieval_hits": [],
         "retrieval_cache": {},
         "tool_history": [],
@@ -705,7 +705,7 @@ class MemoryPromptTests(unittest.TestCase):
             AsyncMock(
                 return_value="""{
                   "decisionType": "FINAL",
-                  "message": "处理完成",
+                  "outputMessages": [{"payloadType": "TEXT", "payload": {"text": "处理完成"}}],
                   "routeDecision": "default",
                   "sessionStatePatch": {
                     "ops": [
@@ -755,7 +755,7 @@ class MemoryPromptTests(unittest.TestCase):
 
         with patch(
             "app.main.call_llm",
-            AsyncMock(return_value='{"decisionType":"FINAL","message":"处理完成","routeDecision":"default"}'),
+            AsyncMock(return_value='{"decisionType":"FINAL","outputMessages":[{"payloadType":"TEXT","payload":{"text":"处理完成"}}],"routeDecision":"default"}'),
         ):
             asyncio.run(execute_agent_node(state, graph.nodes[1]))
 
@@ -808,7 +808,7 @@ class MemoryPromptTests(unittest.TestCase):
 
         with patch(
             "app.main.call_llm",
-            AsyncMock(return_value='{"decisionType":"FINAL","message":"处理完成","routeDecision":"default"}'),
+            AsyncMock(return_value='{"decisionType":"FINAL","outputMessages":[{"payloadType":"TEXT","payload":{"text":"处理完成"}}],"routeDecision":"default"}'),
         ):
             asyncio.run(execute_agent_node(state, graph.nodes[1]))
 
@@ -859,7 +859,7 @@ class MemoryPromptTests(unittest.TestCase):
             AsyncMock(
                 return_value="""{
                   "decisionType": "FINAL",
-                  "message": "处理完成",
+                  "outputMessages": [{"payloadType": "TEXT", "payload": {"text": "处理完成"}}],
                   "routeDecision": "default",
                   "sessionStatePatch": {
                     "ops": [
@@ -897,7 +897,7 @@ class MemoryPromptTests(unittest.TestCase):
         state = make_agent_state(make_assistant(True, 4), graph, question="你好")
         llm_output = """{
           "decisionType": "FINAL",
-          "message": "读取技能",
+          "outputMessages": [{"payloadType": "TEXT", "payload": {"text": "读取技能"}}],
           "skillReads": ["skill-v1", "skill-v9"]
         }"""
 
@@ -911,6 +911,193 @@ class MemoryPromptTests(unittest.TestCase):
             )
 
         self.assertEqual(captured.exception.code, "MODEL_OUTPUT_INVALID")
+
+    def test_parse_agent_structured_response_rejects_external_interaction_projection_fields(self) -> None:
+        agent = make_agent(memory_window_size=4)
+        graph = GraphSnapshot(
+            executionMode="GRAPH",
+            nodes=[
+                GraphNodeSnapshot(
+                    nodeKey="agent-node",
+                    nodeName="节点",
+                    nodeType="AGENT",
+                    description="说明",
+                    agentId=agent.agentId,
+                )
+            ],
+            edges=[],
+        )
+        node = graph.nodes[0]
+        llm_output = """{
+          "decisionType": "FINAL",
+          "outputMessages": [{
+            "payloadType": "EXTERNAL_INTERACTION",
+            "payload": {
+              "spec": {
+                "interactionType": "OAUTH_REDIRECT",
+                "title": "完成授权",
+                "instruction": "请前往授权页面。",
+                "provider": "oauth-demo",
+                "providerReference": "ref-1",
+                "launchUrl": "https://example.com/oauth",
+                "returnPath": "/console/runtime",
+                "expiresAt": null,
+                "primaryActionLabel": "去授权",
+                "secondaryActions": [],
+                "displayHints": {}
+              },
+              "projection": {
+                "status": "SUCCEEDED"
+              }
+            }
+          }]
+        }"""
+
+        with self.assertRaises(AgentTurnError) as captured:
+            parse_agent_structured_response(
+                llm_output,
+                graph,
+                node,
+                [],
+                [],
+            )
+
+        self.assertEqual(captured.exception.code, "MODEL_OUTPUT_INVALID")
+        self.assertIn("unsupported fields: projection", captured.exception.message)
+
+    def test_parse_agent_structured_response_rejects_external_interaction_when_not_last(self) -> None:
+        agent = make_agent(memory_window_size=4)
+        graph = GraphSnapshot(
+            executionMode="GRAPH",
+            nodes=[
+                GraphNodeSnapshot(
+                    nodeKey="agent-node",
+                    nodeName="节点",
+                    nodeType="AGENT",
+                    description="说明",
+                    agentId=agent.agentId,
+                )
+            ],
+            edges=[],
+        )
+        node = graph.nodes[0]
+        llm_output = """{
+          "decisionType": "FINAL",
+          "outputMessages": [
+            {
+              "payloadType": "EXTERNAL_INTERACTION",
+              "payload": {
+                "spec": {
+                  "interactionType": "GENERIC_REDIRECT",
+                  "title": "处理工单",
+                  "instruction": "请先处理。",
+                  "provider": null,
+                  "providerReference": null,
+                  "launchUrl": null,
+                  "returnPath": null,
+                  "expiresAt": null,
+                  "primaryActionLabel": null,
+                  "secondaryActions": [],
+                  "displayHints": {}
+                }
+              }
+            },
+            {
+              "payloadType": "TEXT",
+              "payload": {
+                "text": "返回后继续"
+              }
+            }
+          ]
+        }"""
+
+        with self.assertRaises(AgentTurnError) as captured:
+            parse_agent_structured_response(
+                llm_output,
+                graph,
+                node,
+                [],
+                [],
+            )
+
+        self.assertEqual(captured.exception.code, "MODEL_OUTPUT_INVALID")
+        self.assertIn("must be the last", captured.exception.message)
+
+    def test_parse_agent_structured_response_rejects_multiple_external_interactions(self) -> None:
+        agent = make_agent(memory_window_size=4)
+        graph = GraphSnapshot(
+            executionMode="GRAPH",
+            nodes=[
+                GraphNodeSnapshot(
+                    nodeKey="agent-node",
+                    nodeName="节点",
+                    nodeType="AGENT",
+                    description="说明",
+                    agentId=agent.agentId,
+                )
+            ],
+            edges=[],
+        )
+        node = graph.nodes[0]
+        llm_output = """{
+          "decisionType": "FINAL",
+          "outputMessages": [
+            {
+              "payloadType": "TEXT",
+              "payload": {
+                "text": "先说明"
+              }
+            },
+            {
+              "payloadType": "EXTERNAL_INTERACTION",
+              "payload": {
+                "spec": {
+                  "interactionType": "GENERIC_REDIRECT",
+                  "title": "外部处理一",
+                  "instruction": "先处理第一步。",
+                  "provider": null,
+                  "providerReference": null,
+                  "launchUrl": null,
+                  "returnPath": null,
+                  "expiresAt": null,
+                  "primaryActionLabel": null,
+                  "secondaryActions": [],
+                  "displayHints": {}
+                }
+              }
+            },
+            {
+              "payloadType": "EXTERNAL_INTERACTION",
+              "payload": {
+                "spec": {
+                  "interactionType": "FORM_REDIRECT",
+                  "title": "外部处理二",
+                  "instruction": "再处理第二步。",
+                  "provider": null,
+                  "providerReference": null,
+                  "launchUrl": null,
+                  "returnPath": null,
+                  "expiresAt": null,
+                  "primaryActionLabel": null,
+                  "secondaryActions": [],
+                  "displayHints": {}
+                }
+              }
+            }
+          ]
+        }"""
+
+        with self.assertRaises(AgentTurnError) as captured:
+            parse_agent_structured_response(
+                llm_output,
+                graph,
+                node,
+                [],
+                [],
+            )
+
+        self.assertEqual(captured.exception.code, "MODEL_OUTPUT_INVALID")
+        self.assertIn("at most one EXTERNAL_INTERACTION", captured.exception.message)
 
     def test_execute_agent_node_supports_skill_reads_and_tool_requests_in_same_round(self) -> None:
         skill_resource = make_skill_resource(
@@ -994,7 +1181,7 @@ class MemoryPromptTests(unittest.TestCase):
             }""",
             """{
               "decisionType": "FINAL",
-              "message": "可以按标准退款流程处理。",
+              "outputMessages": [{"payloadType": "TEXT", "payload": {"text": "可以按标准退款流程处理。"}}],
               "routeDecision": "default"
             }""",
         ]
@@ -1016,9 +1203,11 @@ class MemoryPromptTests(unittest.TestCase):
 
         self.assertEqual(state["session_context"]["loadedSkillResourceVersionIds"], ["skill-v2"])
         self.assertEqual(len(state["tool_history"]), 1)
-        self.assertIn("可以按标准退款流程处理。", state["final_reply"])
-        self.assertNotIn("订单符合规则，可直接退款。", state["final_reply"])
-        self.assertEqual(state["summary"], state["final_reply"])
+        self.assertEqual(len(state["output_messages"]), 1)
+        self.assertEqual(state["output_messages"][0]["payloadType"], "TEXT")
+        self.assertEqual(state["output_messages"][0]["messageKey"], "agent-node:2:1")
+        self.assertEqual(state["output_messages"][0]["payload"]["text"], "可以按标准退款流程处理。")
+        self.assertEqual(state["summary"], "可以按标准退款流程处理。")
         self.assertEqual(
             state["latest_tool_outcome"]["result"],
             {
@@ -1110,7 +1299,7 @@ class MemoryPromptTests(unittest.TestCase):
             }}""",
             """{
               "decisionType": "FINAL",
-              "message": "可以按照售后规则处理。",
+              "outputMessages": [{"payloadType": "TEXT", "payload": {"text": "可以按照售后规则处理。"}}],
               "routeDecision": "default"
             }""",
         ]
@@ -1119,7 +1308,7 @@ class MemoryPromptTests(unittest.TestCase):
             asyncio.run(execute_agent_node(state, graph.nodes[1]))
 
         self.assertEqual(state["session_context"]["loadedSkillResourceVersionIds"], ["skill-v2"])
-        self.assertIn("可以按照售后规则处理。", state["final_reply"])
+        self.assertEqual(state["output_messages"][0]["payload"]["text"], "可以按照售后规则处理。")
 
     def test_parse_agent_structured_response_rejects_final_with_skill_reads(self) -> None:
         skill_resource = make_skill_resource("skill-v1", "FAQ 技能", "用于 FAQ 回答", "请基于知识库直接回答 FAQ。")
@@ -1145,7 +1334,7 @@ class MemoryPromptTests(unittest.TestCase):
         )
         llm_output = """{
           "decisionType": "FINAL",
-          "message": "读取技能",
+          "outputMessages": [{"payloadType": "TEXT", "payload": {"text": "读取技能"}}],
           "skillReads": ["skill-v1"]
         }"""
 
@@ -1232,7 +1421,7 @@ class MemoryPromptTests(unittest.TestCase):
             }""",
             """{
               "decisionType": "FINAL",
-              "message": "已经记录工单并补充备注。",
+              "outputMessages": [{"payloadType": "TEXT", "payload": {"text": "已经记录工单并补充备注。"}}],
               "routeDecision": "default"
             }""",
         ]
@@ -1255,8 +1444,8 @@ class MemoryPromptTests(unittest.TestCase):
         second_tool_payload = mock_tool.await_args_list[1].args[2]
         self.assertEqual(second_tool_payload, {"comment": "请尽快处理"})
         self.assertEqual(len(state["tool_history"]), 2)
-        self.assertNotIn("备注已追加。", state["final_reply"])
-        self.assertEqual(state["summary"], state["final_reply"])
+        self.assertEqual(state["output_messages"][0]["payload"]["text"], "已经记录工单并补充备注。")
+        self.assertEqual(state["summary"], "已经记录工单并补充备注。")
         self.assertEqual(state["latest_tool_outcome"]["result"], {"status": "COMPLETED", "message": "备注已追加。"})
 
     def test_execute_agent_node_non_json_output_pauses_for_human(self) -> None:
@@ -1355,7 +1544,7 @@ class MemoryPromptTests(unittest.TestCase):
             AsyncMock(
                 return_value="""{
                   "decisionType": "FINAL",
-                  "message": "处理完成"
+                  "outputMessages": [{"payloadType": "TEXT", "payload": {"text": "处理完成"}}]
                 }"""
             ),
         ):
@@ -1617,7 +1806,7 @@ class MemoryPromptTests(unittest.TestCase):
             }""",
             """{
               "decisionType": "FINAL",
-              "message": "已根据人工说明完成处理。",
+              "outputMessages": [{"payloadType": "TEXT", "payload": {"text": "已根据人工说明完成处理。"}}],
               "routeDecision": "default"
             }""",
         ]
@@ -1649,7 +1838,7 @@ class MemoryPromptTests(unittest.TestCase):
         self.assertIsNone(initial_state["latest_failure"])
         self.assertIsNone(resumed_state["resume_task"])
         self.assertFalse(resumed_state["escalation_required"])
-        self.assertIn("已根据人工说明完成处理。", resumed_state["final_reply"])
+        self.assertEqual(resumed_state["output_messages"][0]["payload"]["text"], "已根据人工说明完成处理。")
         second_prompt = mock_llm.await_args_list[1].args[1]
         self.assertIn("恢复输入：", second_prompt)
         self.assertIn("订单已签收，可退款", second_prompt)
@@ -1748,8 +1937,8 @@ class MemoryPromptTests(unittest.TestCase):
             "session_context": state["session_context"],
             "assistant": state["assistant"],
             "graph": state["graph"],
-            "final_reply": "",
             "summary": "",
+            "output_messages": [],
             "retrieval_hits": [],
             "retrieval_cache": {},
             "tool_history": [],
@@ -1881,7 +2070,8 @@ class MemoryPromptTests(unittest.TestCase):
         self.assertEqual(result.status, "CANCELLED")
         self.assertIsNone(result.resumeTask)
         self.assertIsNone(result.pauseReason)
-        self.assertEqual(result.finalReply, "当前流程已由人工终止。")
+        self.assertEqual(result.summary, "人工终止了当前流程。")
+        self.assertEqual(result.outputMessages, [])
 
 
 if __name__ == "__main__":
