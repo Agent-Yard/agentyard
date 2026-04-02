@@ -39,15 +39,18 @@ from app.main import (
     build_structured_agent_prompt,
     build_system_prompt,
     build_tool_outcome,
+    build_runtime_context_block,
     categorize_agent_turn_error,
     call_http_tool,
+    call_llm,
     configure_runtime_logger,
     execute_agent_node,
     execute_human_node,
-    format_default_user_prompt,
+    format_timestamp_to_minute,
     loaded_skill_details,
     memory_window_for_agent,
     merge_loaded_skills,
+    prompt_user_messages,
     parse_agent_structured_response,
     retrieve_knowledge,
     restore_state,
@@ -535,54 +538,50 @@ class MemoryPromptTests(unittest.TestCase):
     def test_build_conversation_history_uses_recent_messages_and_skips_current_question(self) -> None:
         session_context = {
             "history": [
-                {"role": "USER", "senderName": "用户", "content": "你好"},
-                {"role": "ASSISTANT", "senderName": "助手", "content": "您好，我在。"},
-                {"role": "USER", "senderName": "用户", "content": "订单号是 123"},
-                {"role": "ASSISTANT", "senderName": "助手", "content": "已收到订单号。"},
-                {"role": "USER", "senderName": "用户", "content": "可以帮我退款吗"},
+                {"role": "USER", "senderName": "用户", "content": "你好", "createdAt": "2026-03-24T08:31:20Z"},
+                {"role": "ASSISTANT", "senderName": "助手", "content": "您好，我在。", "createdAt": "2026-03-24T08:32:20Z"},
+                {"role": "USER", "senderName": "用户", "content": "订单号是 123", "createdAt": "2026-03-24T08:33:20Z"},
+                {"role": "ASSISTANT", "senderName": "助手", "content": "已收到订单号。", "createdAt": "2026-03-24T08:34:20Z"},
+                {"role": "USER", "senderName": "用户", "content": "可以帮我退款吗", "createdAt": "2026-03-24T08:35:20Z"},
             ]
         }
 
         history = build_conversation_history(session_context, "可以帮我退款吗", 2)
 
-        self.assertEqual(history, "[USER] 用户: 订单号是 123\n[ASSISTANT] 助手: 已收到订单号。")
+        self.assertEqual(
+            history,
+            "[USER][2026-03-24 08:33] 用户: 订单号是 123\n[ASSISTANT][2026-03-24 08:34] 助手: 已收到订单号。",
+        )
 
-    def test_default_user_prompt_contains_skill_catalog_and_loaded_skill_details(self) -> None:
-        resources = [
-            make_skill_resource("skill-v1", "FAQ 技能", "用于 FAQ 回答", "请基于知识库直接回答 FAQ。"),
-            make_skill_resource("skill-v2", "售后技能", "用于售后策略", "请结合规则与工具结果判断售后策略。"),
-        ]
-        session_context = {"loadedSkillResourceVersionIds": ["skill-v2"]}
-
-        prompt = format_default_user_prompt(
+    def test_build_runtime_context_block_contains_dynamic_context_with_minute_timestamps(self) -> None:
+        prompt = build_runtime_context_block(
             "可以帮我退款吗",
-            "[USER] 用户: 订单号是 123",
-            available_skill_catalog(resources),
-            loaded_skill_details(resources, session_context),
+            "2026-03-24 08:35",
+            "[USER][2026-03-24 08:33] 用户: 订单号是 123",
             [],
             [{"operation": "evaluate_refund", "detail": "符合规则"}],
             {"human": "none"},
             {"customer": {"tier": "gold"}},
             {"refundCheck": {"status": "done"}},
             {"draft": {"step": "confirm"}},
+            2,
         )
 
-        self.assertIn("用户消息[", prompt)
+        self.assertIn("当前用户消息：", prompt)
+        self.assertIn("[2026-03-24 08:35] 用户: 可以帮我退款吗", prompt)
         self.assertIn("可以帮我退款吗", prompt)
-        self.assertIn("会话记忆：\n[USER] 用户: 订单号是 123", prompt)
-        self.assertIn("可用技能目录：", prompt)
-        self.assertIn("已加载技能详情：", prompt)
-        self.assertIn("请结合规则与工具结果判断售后策略。", prompt)
+        self.assertIn("会话记忆：\n[USER][2026-03-24 08:33] 用户: 订单号是 123", prompt)
         self.assertIn("工具结果：", prompt)
         self.assertIn("共享事实（facts）：", prompt)
         self.assertIn("共享产物（artifacts）：", prompt)
         self.assertIn("当前智能体私有上下文（agentScope）：", prompt)
-        self.assertNotIn("请基于知识库直接回答 FAQ。", prompt)
+        self.assertIn("当前执行轮次：\n2", prompt)
 
-    def test_build_structured_agent_prompt_includes_decision_schema_and_route_details(self) -> None:
-        resources = [
+    def test_build_structured_agent_prompt_splits_instruction_capability_and_runtime_blocks(self) -> None:
+        skill_resources = [
             make_skill_resource("skill-v2", "售后技能", "用于售后策略", "请结合规则与工具结果判断售后策略。"),
         ]
+        tool_resources = [make_tool_resource()]
         graph = GraphSnapshot(
             executionMode="GRAPH",
             nodes=[
@@ -610,29 +609,114 @@ class MemoryPromptTests(unittest.TestCase):
 
         prompt = build_structured_agent_prompt(
             "可以帮我退款吗",
-            "[USER] 用户: 订单号是 123",
+            "2026-03-24 08:35",
+            "[USER][2026-03-24 08:33] 用户: 订单号是 123",
             {"customer": {"tier": "gold"}},
             {"refundCheck": {"status": "done"}},
             {"draft": {"step": "confirm"}},
-            available_skill_catalog(resources),
-            loaded_skill_details(resources, {"loadedSkillResourceVersionIds": ["skill-v2"]}),
+            available_skill_catalog(skill_resources),
+            loaded_skill_details(skill_resources, {"loadedSkillResourceVersionIds": ["skill-v2"]}),
             [],
             [],
             None,
-            [],
+            tool_resources,
             available_routes_for_prompt(graph, "agent-node"),
             0,
         )
 
-        self.assertIn('"decisionType"', prompt)
-        self.assertIn('"availableRoutes"', prompt)
-        self.assertIn('"routeKey": "default"', prompt)
-        self.assertIn('"targetNodeKey": "end"', prompt)
-        self.assertIn('"decisionSemantics"', prompt)
-        self.assertIn('"SKILL_READ"', prompt)
-        self.assertIn('"sessionStatePatch"', prompt)
-        self.assertIn('Do not include skillReads.', prompt)
-        self.assertIn('Use SKILL_READ for skill-only continuation turns.', prompt)
+        self.assertIn('"decisionType"', prompt["instruction_block"])
+        self.assertIn('"decisionSemantics"', prompt["instruction_block"])
+        self.assertIn('"sessionStatePatch"', prompt["instruction_block"])
+        self.assertIn('"routeKey": "default"', prompt["capability_block"])
+        self.assertIn('"targetNodeKey": "end"', prompt["capability_block"])
+        self.assertIn('"toolResourceVersionId": "tool-v1"', prompt["capability_block"])
+        self.assertIn("请结合规则与工具结果判断售后策略。", prompt["capability_block"])
+        self.assertIn("[2026-03-24 08:35] 用户: 可以帮我退款吗", prompt["runtime_context_block"])
+        self.assertIn('"customer": {', prompt["runtime_context_block"])
+
+    def test_build_structured_agent_prompt_only_changes_runtime_block_for_question_change(self) -> None:
+        prompt_one = build_structured_agent_prompt(
+            "问题 A",
+            "2026-03-24 08:35",
+            "[USER][2026-03-24 08:33] 用户: 历史 A",
+            {},
+            {},
+            {},
+            [],
+            [],
+            [],
+            [],
+            None,
+            [],
+            [],
+            0,
+        )
+        prompt_two = build_structured_agent_prompt(
+            "问题 B",
+            "2026-03-24 08:36",
+            "[USER][2026-03-24 08:33] 用户: 历史 A",
+            {},
+            {},
+            {},
+            [],
+            [],
+            [],
+            [],
+            None,
+            [],
+            [],
+            0,
+        )
+
+        self.assertEqual(prompt_one["instruction_block"], prompt_two["instruction_block"])
+        self.assertEqual(prompt_one["capability_block"], prompt_two["capability_block"])
+        self.assertNotEqual(prompt_one["runtime_context_block"], prompt_two["runtime_context_block"])
+
+    def test_build_structured_agent_prompt_only_changes_capability_block_for_loaded_skill_change(self) -> None:
+        skill_resources = [
+            make_skill_resource("skill-v1", "FAQ 技能", "用于 FAQ 回答", "请基于知识库直接回答 FAQ。"),
+            make_skill_resource("skill-v2", "售后技能", "用于售后策略", "请结合规则与工具结果判断售后策略。"),
+        ]
+
+        prompt_one = build_structured_agent_prompt(
+            "问题 A",
+            "2026-03-24 08:35",
+            "",
+            {},
+            {},
+            {},
+            available_skill_catalog(skill_resources),
+            loaded_skill_details(skill_resources, {"loadedSkillResourceVersionIds": ["skill-v1"]}),
+            [],
+            [],
+            None,
+            [],
+            [],
+            0,
+        )
+        prompt_two = build_structured_agent_prompt(
+            "问题 A",
+            "2026-03-24 08:35",
+            "",
+            {},
+            {},
+            {},
+            available_skill_catalog(skill_resources),
+            loaded_skill_details(skill_resources, {"loadedSkillResourceVersionIds": ["skill-v2"]}),
+            [],
+            [],
+            None,
+            [],
+            [],
+            0,
+        )
+
+        self.assertEqual(prompt_one["instruction_block"], prompt_two["instruction_block"])
+        self.assertEqual(prompt_one["runtime_context_block"], prompt_two["runtime_context_block"])
+        self.assertNotEqual(prompt_one["capability_block"], prompt_two["capability_block"])
+
+    def test_format_timestamp_to_minute_normalizes_iso_timestamp(self) -> None:
+        self.assertEqual("2026-03-24 08:35", format_timestamp_to_minute("2026-03-24T08:35:20Z"))
 
     def test_memory_window_for_agent_respects_assistant_toggle(self) -> None:
         assistant = make_assistant(memory_enabled=False, memory_window_size=10)
@@ -654,6 +738,68 @@ class MemoryPromptTests(unittest.TestCase):
 
         self.assertIn("你是企业级智能体执行节点，可能扮演不同角色。", prompt)
         self.assertNotIn("这是给人看的职责说明", prompt)
+        self.assertNotIn("2026-", prompt)
+
+    def test_call_llm_openai_uses_structured_prompt_blocks(self) -> None:
+        model_resource = make_model_resource()
+        captured_request: dict = {}
+
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict:
+                return {"choices": [{"message": {"content": "{\"decisionType\":\"FINAL\"}"}}]}
+
+        class FakeAsyncClient:
+            def __init__(self, *args, **kwargs) -> None:
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb) -> bool:
+                return False
+
+            async def post(self, url: str, headers: dict | None = None, json: dict | None = None) -> FakeResponse:
+                captured_request["url"] = url
+                captured_request["headers"] = headers
+                captured_request["json"] = json
+                return FakeResponse()
+
+        prompt_payload = {
+            "system_prompt": "system",
+            "instruction_block": "instruction",
+            "capability_block": "capability",
+            "runtime_context_block": "runtime",
+        }
+
+        with patch("app.main.httpx.AsyncClient", FakeAsyncClient), patch.dict(os.environ, {"DUMMY_KEY": "test-key"}, clear=False):
+            content = asyncio.run(call_llm(model_resource, prompt_payload))
+
+        self.assertEqual("{\"decisionType\":\"FINAL\"}", content)
+        self.assertEqual(
+            [
+                {"role": "system", "content": "system"},
+                {"role": "user", "content": "instruction"},
+                {"role": "user", "content": "capability"},
+                {"role": "user", "content": "runtime"},
+            ],
+            captured_request["json"]["messages"],
+        )
+
+    def test_prompt_user_messages_keep_stable_order(self) -> None:
+        self.assertEqual(
+            ["instruction", "capability", "runtime"],
+            prompt_user_messages(
+                {
+                    "system_prompt": "system",
+                    "instruction_block": "instruction",
+                    "capability_block": "capability",
+                    "runtime_context_block": "runtime",
+                }
+            ),
+        )
 
     def test_merge_loaded_skills_is_deduplicated(self) -> None:
         session_context = {"loadedSkillResourceVersionIds": ["skill-v1"]}
@@ -1220,12 +1366,12 @@ class MemoryPromptTests(unittest.TestCase):
 
         first_prompt = mock_llm.await_args_list[0].args[1]
         second_prompt = mock_llm.await_args_list[1].args[1]
-        self.assertIn("可用技能目录：", first_prompt)
-        self.assertNotIn("请结合规则与工具结果判断售后策略。", first_prompt)
-        self.assertIn("已加载技能详情：", second_prompt)
-        self.assertIn("请结合规则与工具结果判断售后策略。", second_prompt)
-        self.assertIn("工具结果：", second_prompt)
-        self.assertIn('"result"', second_prompt)
+        self.assertIn("可用技能目录：", first_prompt["capability_block"])
+        self.assertNotIn("请结合规则与工具结果判断售后策略。", first_prompt["capability_block"])
+        self.assertIn("已加载技能详情：", second_prompt["capability_block"])
+        self.assertIn("请结合规则与工具结果判断售后策略。", second_prompt["capability_block"])
+        self.assertIn("工具结果：", second_prompt["runtime_context_block"])
+        self.assertIn('"result"', second_prompt["runtime_context_block"])
         self.assertEqual(mock_tool.await_count, 1)
 
     def test_execute_agent_node_supports_skill_read_only_turn(self) -> None:
@@ -1840,8 +1986,8 @@ class MemoryPromptTests(unittest.TestCase):
         self.assertFalse(resumed_state["escalation_required"])
         self.assertEqual(resumed_state["output_messages"][0]["payload"]["text"], "已根据人工说明完成处理。")
         second_prompt = mock_llm.await_args_list[1].args[1]
-        self.assertIn("恢复输入：", second_prompt)
-        self.assertIn("订单已签收，可退款", second_prompt)
+        self.assertIn("恢复输入：", second_prompt["runtime_context_block"])
+        self.assertIn("订单已签收，可退款", second_prompt["runtime_context_block"])
 
     def test_graph_human_node_checkpoint_and_resume_state_still_work(self) -> None:
         graph = GraphSnapshot(

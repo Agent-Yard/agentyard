@@ -188,6 +188,19 @@ class AssistantRunSnapshot(BaseModel):
     graph: GraphSnapshot
 
 
+class StructuredAgentPrompt(TypedDict):
+    instruction_block: str
+    capability_block: str
+    runtime_context_block: str
+
+
+class LlmPromptPayload(TypedDict):
+    system_prompt: str
+    instruction_block: str
+    capability_block: str
+    runtime_context_block: str
+
+
 class SessionMessageSnapshot(BaseModel):
     role: str
     senderName: str
@@ -1135,6 +1148,31 @@ def memory_window_for_agent(assistant: AssistantRunSnapshot, agent: AgentSnapsho
     return max(assistant.assistantPolicy.memoryWindowSize, 0)
 
 
+def format_timestamp_to_minute(value: Any) -> str:
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d %H:%M")
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(value, tz=timezone.utc).strftime("%Y-%m-%d %H:%M")
+    if isinstance(value, str):
+        candidate = value.strip()
+        if not candidate:
+            return ""
+        try:
+            return datetime.fromisoformat(candidate.replace("Z", "+00:00")).strftime("%Y-%m-%d %H:%M")
+        except ValueError:
+            return candidate[:16]
+    return ""
+
+
+def latest_message_timestamp_for_prompt(session_context: Dict[str, Any]) -> str:
+    latest_message = session_context.get("latestMessage")
+    if isinstance(latest_message, dict):
+        created_at = format_timestamp_to_minute(latest_message.get("createdAt"))
+        if created_at:
+            return created_at
+    return format_timestamp_to_minute(datetime.now())
+
+
 def build_conversation_history(session_context: Dict[str, Any], question: str, window_size: int) -> str:
     if window_size <= 0:
         return ""
@@ -1142,7 +1180,7 @@ def build_conversation_history(session_context: Dict[str, Any], question: str, w
     if not isinstance(raw_history, list):
         return ""
 
-    history_entries: List[tuple[str, str, str]] = []
+    history_entries: List[tuple[str, str, str, str]] = []
     for item in raw_history:
         if not isinstance(item, dict):
             continue
@@ -1151,14 +1189,18 @@ def build_conversation_history(session_context: Dict[str, Any], question: str, w
             continue
         role = str(item.get("role", "UNKNOWN")).strip().upper() or "UNKNOWN"
         sender_name = str(item.get("senderName", "")).strip() or role
-        history_entries.append((role, sender_name, content))
+        created_at = format_timestamp_to_minute(item.get("createdAt"))
+        history_entries.append((role, sender_name, content, created_at))
 
     if history_entries and history_entries[-1][0] == "USER" and history_entries[-1][2] == question.strip():
         history_entries = history_entries[:-1]
 
     if not history_entries:
         return ""
-    history_lines = [f"[{role}] {sender_name}: {content}" for role, sender_name, content in history_entries[-window_size:]]
+    history_lines = []
+    for role, sender_name, content, created_at in history_entries[-window_size:]:
+        prefix = f"[{role}][{created_at}] " if created_at else f"[{role}] "
+        history_lines.append(f"{prefix}{sender_name}: {content}")
     return "\n".join(history_lines)
 
 
@@ -1341,20 +1383,19 @@ def apply_session_state_patch(state: AgentState, agent: AgentSnapshot, patch: Se
     validate_shared_state_size(shared_state)
 
 
-def format_default_user_prompt(
+def build_runtime_context_block(
     question: str,
+    question_created_at: str,
     conversation_history: str,
-    available_skills: List[Dict[str, str]],
-    loaded_skills: List[Dict[str, str]],
     knowledge_context: List[Dict[str, Any]],
     tool_results: List[Dict[str, Any]],
     resume_input: Optional[Dict[str, Any]],
     shared_facts_payload: Dict[str, Any],
     shared_artifacts_payload: Dict[str, Any],
     agent_scope_payload: Dict[str, Any],
+    loop_index: int,
 ) -> str:
-    cur_dt = datetime.now().strftime("%Y-%m-%d %H:%M")
-    sections = [f"用户消息[{cur_dt}]：\n{question}"]
+    sections = [f"当前用户消息：\n[{question_created_at}] 用户: {question}"]
     if conversation_history:
         sections.append(f"会话记忆：\n{conversation_history}")
     if shared_facts_payload:
@@ -1363,16 +1404,13 @@ def format_default_user_prompt(
         sections.append(f"共享产物（artifacts）：\n{json.dumps(shared_artifacts_payload, ensure_ascii=False, indent=2)}")
     if agent_scope_payload:
         sections.append(f"当前智能体私有上下文（agentScope）：\n{json.dumps(agent_scope_payload, ensure_ascii=False, indent=2)}")
-    if available_skills:
-        sections.append(f"可用技能目录：\n{json.dumps(available_skills, ensure_ascii=False, indent=2)}")
-    if loaded_skills:
-        sections.append(f"已加载技能详情：\n{json.dumps(loaded_skills, ensure_ascii=False, indent=2)}")
     if knowledge_context:
         sections.append(f"知识召回结果：\n{json.dumps(knowledge_context, ensure_ascii=False, indent=2)}")
     if tool_results:
         sections.append(f"工具结果：\n{json.dumps(tool_results, ensure_ascii=False, indent=2)}")
     if resume_input:
         sections.append(f"恢复输入：\n{json.dumps(resume_input, ensure_ascii=False, indent=2)}")
+    sections.append(f"当前执行轮次：\n{loop_index}")
     return "\n\n".join(sections)
 
 
@@ -1422,34 +1460,7 @@ def tool_catalog_for_prompt(tool_resources: List[ResourceVersionSnapshot]) -> Li
     return catalog
 
 
-def build_structured_agent_prompt(
-    question: str,
-    conversation_history: str,
-    shared_facts_payload: Dict[str, Any],
-    shared_artifacts_payload: Dict[str, Any],
-    agent_scope_payload: Dict[str, Any],
-    available_skills: List[Dict[str, str]],
-    loaded_skills: List[Dict[str, str]],
-    knowledge_context: List[Dict[str, Any]],
-    tool_results: List[Dict[str, Any]],
-    resume_input: Optional[Dict[str, Any]],
-    tool_resources: List[ResourceVersionSnapshot],
-    routes: List[Dict[str, Any]],
-    loop_index: int,
-) -> str:
-    base_prompt = format_default_user_prompt(
-        question,
-        conversation_history,
-        available_skills,
-        loaded_skills,
-        knowledge_context,
-        tool_results,
-        resume_input,
-        shared_facts_payload,
-        shared_artifacts_payload,
-        agent_scope_payload,
-    )
-    tool_catalog = tool_catalog_for_prompt(tool_resources)
+def build_instruction_block() -> str:
     response_schema = {
         "decisionType": f"{AGENT_DECISION_FINAL} | {AGENT_DECISION_TOOL_CALL} | {AGENT_DECISION_SKILL_READ} | {AGENT_DECISION_HUMAN_HANDOFF}",
         "routeDecision": "string | null; required only when FINAL and no unique default route exists",
@@ -1510,9 +1521,6 @@ def build_structured_agent_prompt(
         },
     }
     guidance = {
-        "loopIndex": loop_index,
-        "availableRoutes": routes,
-        "availableTools": tool_catalog,
         "decisionSemantics": {
             AGENT_DECISION_FINAL: {
                 "whenToUse": "You already have enough information to finish this node.",
@@ -1557,10 +1565,63 @@ def build_structured_agent_prompt(
         ],
     }
     return (
-        f"{base_prompt}\n\n"
-        f"决策规则与可用路由/工具：\n{json.dumps(guidance, ensure_ascii=False, indent=2)}\n\n"
+        f"决策规则：\n{json.dumps(guidance, ensure_ascii=False, indent=2)}\n\n"
         f"请严格输出 JSON，字段结构如下：\n{json.dumps(response_schema, ensure_ascii=False, indent=2)}"
     )
+
+
+def build_capability_block(
+    available_skills: List[Dict[str, str]],
+    loaded_skills: List[Dict[str, str]],
+    tool_resources: List[ResourceVersionSnapshot],
+    routes: List[Dict[str, Any]],
+) -> str:
+    sections: List[str] = []
+    if routes:
+        sections.append(f"可用路由：\n{json.dumps(routes, ensure_ascii=False, indent=2)}")
+    tool_catalog = tool_catalog_for_prompt(tool_resources)
+    if tool_catalog:
+        sections.append(f"可用工具：\n{json.dumps(tool_catalog, ensure_ascii=False, indent=2)}")
+    if available_skills:
+        sections.append(f"可用技能目录：\n{json.dumps(available_skills, ensure_ascii=False, indent=2)}")
+    if loaded_skills:
+        sections.append(f"已加载技能详情：\n{json.dumps(loaded_skills, ensure_ascii=False, indent=2)}")
+    return "\n\n".join(sections)
+
+
+def build_structured_agent_prompt(
+    question: str,
+    question_created_at: str,
+    conversation_history: str,
+    shared_facts_payload: Dict[str, Any],
+    shared_artifacts_payload: Dict[str, Any],
+    agent_scope_payload: Dict[str, Any],
+    available_skills: List[Dict[str, str]],
+    loaded_skills: List[Dict[str, str]],
+    knowledge_context: List[Dict[str, Any]],
+    tool_results: List[Dict[str, Any]],
+    resume_input: Optional[Dict[str, Any]],
+    tool_resources: List[ResourceVersionSnapshot],
+    routes: List[Dict[str, Any]],
+    loop_index: int,
+) -> StructuredAgentPrompt:
+    runtime_context_block = build_runtime_context_block(
+        question,
+        question_created_at,
+        conversation_history,
+        knowledge_context,
+        tool_results,
+        resume_input,
+        shared_facts_payload,
+        shared_artifacts_payload,
+        agent_scope_payload,
+        loop_index,
+    )
+    return {
+        "instruction_block": build_instruction_block(),
+        "capability_block": build_capability_block(available_skills, loaded_skills, tool_resources, routes),
+        "runtime_context_block": runtime_context_block,
+    }
 
 
 def strip_json_fence(text: str) -> str:
@@ -1591,7 +1652,19 @@ def extract_json_object(text: str) -> Optional[Dict[str, Any]]:
                 return None
     return None
 
-async def call_llm(model_resource: ResourceVersionSnapshot, prompt: str, system_prompt: str) -> str:
+def prompt_user_messages(prompt_payload: LlmPromptPayload) -> List[str]:
+    return [
+        block
+        for block in [
+            prompt_payload["instruction_block"],
+            prompt_payload["capability_block"],
+            prompt_payload["runtime_context_block"],
+        ]
+        if block.strip()
+    ]
+
+
+async def call_llm(model_resource: ResourceVersionSnapshot, prompt_payload: LlmPromptPayload) -> str:
     model_config = model_resource.configuration.llmModel
     if model_config is None:
         raise WorkflowFailureError(
@@ -1615,9 +1688,10 @@ async def call_llm(model_resource: ResourceVersionSnapshot, prompt: str, system_
             "llm request prepared provider=%s model=%s systemPromptChars=%s userPromptChars=%s",
             model_config.providerType,
             model_config.modelId,
-            len(system_prompt),
-            len(prompt),
+            len(prompt_payload["system_prompt"]),
+            sum(len(message) for message in prompt_user_messages(prompt_payload)),
         )
+        user_messages = prompt_user_messages(prompt_payload)
         async with httpx.AsyncClient(timeout=LLM_REQUEST_TIMEOUT_SECONDS) as client:
             if model_config.providerType in {"OPENAI", "OPENAI_COMPATIBLE"}:
                 response = await client.post(
@@ -1627,10 +1701,8 @@ async def call_llm(model_resource: ResourceVersionSnapshot, prompt: str, system_
                         "model": model_config.modelId,
                         "temperature": model_config.temperature,
                         "max_tokens": model_config.maxTokens,
-                        "messages": [
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": prompt},
-                        ],
+                        "messages": [{"role": "system", "content": prompt_payload["system_prompt"]}]
+                        + [{"role": "user", "content": message} for message in user_messages],
                         "enable_thinking": False
                     },
                 )
@@ -1651,8 +1723,8 @@ async def call_llm(model_resource: ResourceVersionSnapshot, prompt: str, system_
                     json={
                         "model": model_config.modelId,
                         "max_tokens": model_config.maxTokens,
-                        "system": system_prompt,
-                        "messages": [{"role": "user", "content": prompt}],
+                        "system": prompt_payload["system_prompt"],
+                        "messages": [{"role": "user", "content": "\n\n".join(user_messages)}],
                     },
                 )
                 response.raise_for_status()
@@ -1662,7 +1734,20 @@ async def call_llm(model_resource: ResourceVersionSnapshot, prompt: str, system_
                 response = await client.post(
                     f"{model_config.baseUrl.rstrip('/')}/models/{model_config.modelId}:generateContent?key={api_key}",
                     json={
-                        "contents": [{"parts": [{"text": f"{system_prompt}\n\n{prompt}"}]}],
+                        "contents": [
+                            {
+                                "parts": [
+                                    {
+                                        "text": "\n\n".join(
+                                            [
+                                                prompt_payload["system_prompt"],
+                                                *user_messages,
+                                            ]
+                                        )
+                                    }
+                                ]
+                            }
+                        ],
                         "generationConfig": {
                             "temperature": model_config.temperature,
                             "maxOutputTokens": model_config.maxTokens,
@@ -2518,7 +2603,6 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
             "failure",
         )
         return
-    system_prompt = build_system_prompt(agent)
     tool_resources = resolve_tool_resources(assistant, agent)
 
     for turn_index in range(1, AGENT_MAX_TURNS + 1):
@@ -2526,8 +2610,9 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
         state["agent_turn_state"]["turnIndex"] = turn_index
         available_skills = available_skill_catalog(skill_resources)
         loaded_skills = loaded_skill_details(skill_resources, state["session_context"])
-        prompt = build_structured_agent_prompt(
+        prompt_blocks = build_structured_agent_prompt(
             state["question"],
+            latest_message_timestamp_for_prompt(state["session_context"]),
             conversation_history,
             shared_facts(state["session_context"]),
             shared_artifacts(state["session_context"]),
@@ -2541,10 +2626,14 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
             available_routes_for_prompt(graph, node.nodeKey),
             turn_index - 1,
         )
+        prompt_payload: LlmPromptPayload = {
+            "system_prompt": build_system_prompt(agent),
+            **prompt_blocks,
+        }
         state["agent_turn_state"]["phase"] = "CALL_MODEL"
         try:
             append_model_hit(state, node, agent, model_resource, model_source, turn_index)
-            llm_output = await call_llm(model_resource, prompt, system_prompt)
+            llm_output = await call_llm(model_resource, prompt_payload)
         except WorkflowFailureError as exc:
             pause_agent_node_with_workflow_failure(
                 state,
