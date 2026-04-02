@@ -1,6 +1,10 @@
+# sys
 .DS_Store
+
+# ide
 .idea/
 .vscode/*.code-workspace
+.VSCodeCounter/
 
 # node
 node_modules/
@@ -16,12 +20,15 @@ bin/
 # python
 .venv/
 __pycache__/
+**/.pytest_cache/
 apps/knowledge-service/data/
 knowledge-service.db
 data/
 
 .env
 .env.local
+.env.dev
+.env.dev.local
 
 output/
 

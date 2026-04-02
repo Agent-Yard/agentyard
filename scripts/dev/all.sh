@@ -2,10 +2,10 @@
 
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/lynxus-dev.XXXXXX")"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/lynxus-dev-source.XXXXXX")"
 
-source "$ROOT_DIR/scripts/dev-process.sh"
+source "$ROOT_DIR/scripts/common/process.sh"
 
 SERVICE_ROOT_PIDS=()
 TAIL_ROOT_PIDS=()
@@ -51,7 +51,6 @@ force_cleanup() {
 }
 
 cleanup() {
-  # Second Ctrl+C = immediate force kill
   trap force_cleanup INT
   trap '' TERM
   trap - EXIT
@@ -59,20 +58,15 @@ cleanup() {
   echo ""
   echo "Shutting down... (Ctrl+C again to force)"
 
-  # 1) Walk every process tree BEFORE killing anything
   collect_all_pids
-
-  # 2) SIGTERM everything
   signal_all TERM
 
-  # 3) Wait up to 3 seconds for graceful shutdown
   local i
   for ((i = 0; i < 15; i++)); do
     any_alive || break
     sleep 0.2
   done
 
-  # 4) SIGKILL anything that survived
   if any_alive; then
     signal_all KILL
   fi
@@ -90,11 +84,9 @@ start_service() {
   local log_file="$LOG_DIR/${name}.log"
   : > "$log_file"
 
-  # Start the service in its own session
   start_in_new_session "$@" >"$log_file" 2>&1 &
   SERVICE_ROOT_PIDS+=("$!")
 
-  # Start log tailer in its own session
   start_in_new_session bash -c '
     tail -n 0 -F "$1" 2>/dev/null | while IFS= read -r line; do
       printf "[%s] %s\n" "$2" "$line"
@@ -103,13 +95,12 @@ start_service() {
   TAIL_ROOT_PIDS+=("$!")
 }
 
-start_service api "$ROOT_DIR/scripts/dev-api.sh"
-start_service worker "$ROOT_DIR/scripts/dev-worker.sh"
-start_service knowledge-service "$ROOT_DIR/scripts/dev-knowledge-service.sh"
-start_service agent-runtime "$ROOT_DIR/scripts/dev-agent-runtime.sh"
-start_service web "$ROOT_DIR/scripts/dev-web.sh"
+start_service api "$ROOT_DIR/scripts/dev/api.sh"
+start_service worker "$ROOT_DIR/scripts/dev/worker.sh"
+start_service knowledge-service "$ROOT_DIR/scripts/dev/knowledge-service.sh"
+start_service agent-runtime "$ROOT_DIR/scripts/dev/agent-runtime.sh"
+start_service web "$ROOT_DIR/scripts/dev/web.sh"
 
-# Wait until any service exits, then trigger cleanup
 while true; do
   for pid in "${SERVICE_ROOT_PIDS[@]}"; do
     if ! kill -0 "$pid" 2>/dev/null; then

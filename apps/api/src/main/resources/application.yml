@@ -52,3 +52,5 @@ lynxus:
     target: ${LYNXUS_TEMPORAL_TARGET:127.0.0.1:7233}
     namespace: ${LYNXUS_TEMPORAL_NAMESPACE:default}
     task-queue: ${LYNXUS_TEMPORAL_TASK_QUEUE:lynxus-customer-ops}
+  web:
+    allowed-origins: ${LYNXUS_WEB_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}

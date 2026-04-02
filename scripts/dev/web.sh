@@ -2,10 +2,11 @@
 
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ENV_NAME="dev"
 
-source "$ROOT_DIR/scripts/common-env.sh"
-load_lynxus_env "apps/web"
+source "$ROOT_DIR/scripts/common/env.sh"
+load_lynxus_env "apps/web" "$ENV_NAME"
 
 cd "$ROOT_DIR"
 exec pnpm --filter @lynxus/web dev --host "${LYNXUS_WEB_HOST:-0.0.0.0}" --port "${LYNXUS_WEB_PORT:-5173}"

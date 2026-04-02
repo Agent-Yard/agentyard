@@ -32,15 +32,15 @@
 3. 执行 `pnpm install`
 4. 执行 `uv sync --all-packages` 安装 Python 依赖
 5. 根据需要配置真实模型服务相关环境变量
-6. 通过 `pnpm dev` 一次启动整套应用
+6. 通过 `pnpm local` 一次启动整套应用
 
 也可以拆开启动：
 
-- `pnpm dev:api`
-- `pnpm dev:worker`
-- `pnpm dev:knowledge-service`
-- `pnpm dev:agent-runtime`
-- `pnpm dev:web`
+- `pnpm local:api`
+- `pnpm local:worker`
+- `pnpm local:knowledge-service`
+- `pnpm local:agent-runtime`
+- `pnpm local:web`
 
 这些脚本会统一加载：
 
@@ -49,7 +49,9 @@
 - 各应用目录下的 `.env`
 - 各应用目录下的 `.env.local`
 
-其中 `dev-agent-runtime.sh` 和 `dev-knowledge-service.sh` 会直接通过 `uv run` 使用 workspace 环境；运行前需先完成 `uv sync --all-packages`。
+其中 Web 的 Vite 环境变量现在统一以仓库根目录 `.env*` 为准；不再建议使用 `apps/web/.env*` 作为主配置入口。
+
+其中 [agent-runtime.sh](/Users/eric/projects/lynxus/scripts/local/agent-runtime.sh) 和 [knowledge-service.sh](/Users/eric/projects/lynxus/scripts/local/knowledge-service.sh) 会直接通过 `uv run` 使用 workspace 环境；运行前需先完成 `uv sync --all-packages`。
 
 ## 可配置镜像源
 
@@ -115,16 +117,16 @@ docker build \
 
 - API 与 Worker 默认使用 Spring `local` profile，输出可读文本日志；非 `local` profile 输出结构化 JSON
 - Agent Runtime 与 Knowledge Service 使用 `LYNXUS_LOG_FORMAT=console|json`
-- `dev-agent-runtime.sh` 与 `dev-knowledge-service.sh` 默认会设置 `LYNXUS_LOG_FORMAT=console`
-- `dev-worker.sh` 默认会设置 `SPRING_PROFILES_ACTIVE=local`
+- [agent-runtime.sh](/Users/eric/projects/lynxus/scripts/local/agent-runtime.sh) 与 [knowledge-service.sh](/Users/eric/projects/lynxus/scripts/local/knowledge-service.sh) 默认会设置 `LYNXUS_LOG_FORMAT=console`
+- [worker.sh](/Users/eric/projects/lynxus/scripts/local/worker.sh) 默认会设置 `SPRING_PROFILES_ACTIVE=local`
 
 如果需要在本地排查结构化日志链路，可以临时改用：
 
 ```bash
-LYNXUS_LOG_FORMAT=json pnpm dev:agent-runtime
-LYNXUS_LOG_FORMAT=json pnpm dev:knowledge-service
-SPRING_PROFILES_ACTIVE=default pnpm dev:api
-SPRING_PROFILES_ACTIVE=default pnpm dev:worker
+LYNXUS_LOG_FORMAT=json pnpm local:agent-runtime
+LYNXUS_LOG_FORMAT=json pnpm local:knowledge-service
+SPRING_PROFILES_ACTIVE=default pnpm local:api
+SPRING_PROFILES_ACTIVE=default pnpm local:worker
 ```
 
 ## 默认开发约定
@@ -138,17 +140,17 @@ SPRING_PROFILES_ACTIVE=default pnpm dev:worker
 - Python 内部服务鉴权：`LYNXUS_INTERNAL_AUTH_TOKEN`，API / Worker / Agent Runtime / Knowledge Service 必须保持一致
 - Java 结构化日志：默认非 `local` profile 输出 JSON，本地开发默认文本
 - Python 结构化日志：`LYNXUS_LOG_FORMAT` 默认开发态 `console`
-- `pnpm dev:api` 会默认启用 `local` profile，并打开开发态 bootstrap 登录旁路
-- `pnpm dev:worker` 会默认启用 `local` profile，便于直接阅读 workflow/activity 日志
+- `pnpm local:api` 会默认启用 `local` profile，并打开开发态 bootstrap 登录旁路
+- `pnpm local:worker` 会默认启用 `local` profile，便于直接阅读 workflow/activity 日志
 - 前端开发服务通过 Vite 代理将 `/api` 转发到 `http://127.0.0.1:8080`
 - 控制台未登录时会跳转 `/login`；开发态可通过 `/api/auth/dev-bootstrap-login` 建立本地 bootstrap 会话
 - 前端不再回退到内置 mock 数据；后端未启动时页面请求会直接报错
 - API 启动时会对数据库中的非终态 runtime workflow 主动向 Temporal 做一次对账
 - Worker 会消费同一 Temporal namespace / task queue 下的 assistant run workflow
-- `dev-agent-runtime.sh` 默认监听 `127.0.0.1:8090`，仅供本机 `worker` 调用
-- `dev-knowledge-service.sh` 默认监听 `127.0.0.1:8091`，仅供本机 `api / worker / agent-runtime` 调用
-- `dev-web.sh` 默认监听 `0.0.0.0:5173`，便于开发时从局域网设备访问
-- `pnpm dev:api` 默认暴露 `8080` 供前端代理访问；`Temporal UI` 通过 Docker Compose 暴露 `0.0.0.0:8088`
+- [agent-runtime.sh](/Users/eric/projects/lynxus/scripts/local/agent-runtime.sh) 默认监听 `127.0.0.1:8090`，仅供本机 `worker` 调用
+- [knowledge-service.sh](/Users/eric/projects/lynxus/scripts/local/knowledge-service.sh) 默认监听 `127.0.0.1:8091`，仅供本机 `api / worker / agent-runtime` 调用
+- [web.sh](/Users/eric/projects/lynxus/scripts/local/web.sh) 默认监听 `0.0.0.0:5173`，便于开发时从局域网设备访问
+- `pnpm local:api` 默认暴露 `8080` 供前端代理访问；`Temporal UI` 通过 Docker Compose 暴露 `0.0.0.0:8088`
 - `Temporal UI` 通过 `temporal-ui-gateway` 代理暴露，默认 Basic Auth 用户名来自 `LYNXUS_TEMPORAL_UI_USERNAME`，密码来自 `LYNXUS_TEMPORAL_UI_PASSWORD`
 - `Agent Runtime` 与 `Knowledge Service` 的 HTTP 入口不接浏览器 OIDC 会话，只接受共享 internal token
 - API -> Worker -> Python 服务已经统一透传 `traceparent` 与 Lynxus 日志上下文头，跨服务排障时应优先按 `traceId` 聚合日志

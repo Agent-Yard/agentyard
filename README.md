@@ -45,7 +45,8 @@ packages/
   contracts-jvm/ Shared JVM workflow/runtime contracts
 infra/
   local/       Docker Compose for local development
-scripts/       Local startup wrappers and env loading
+  dev/         Docker Compose for persistent development environment
+scripts/       Startup wrappers and env loading
 docs/
   architecture/ current architecture and startup notes
   todo/         current backlog and next-step docs
@@ -67,6 +68,7 @@ docs/
 - 当前阶段与范围说明：`docs/lynxus_mvp.md`
 - 当前对象模型说明：`docs/mvp_brief_models.md`
 - 当前代码结构与本地开发：`docs/architecture/code-framework.md`、`docs/architecture/local-development.md`
+- 开发服务器环境：`docs/architecture/dev-environment.md`
 - 当前待办：`docs/todo/`
 - 记录性文档目录：`docs/develop_record/`
 
@@ -91,7 +93,7 @@ docker compose up -d
 cp .env.example .env
 ```
 
-根目录 `.env` 会被 `pnpm dev`、`pnpm dev:api`、`pnpm dev:worker`、`pnpm dev:knowledge-service`、`pnpm dev:agent-runtime` 和 `pnpm dev:web` 自动加载。
+根目录 `.env` 会被 `pnpm local`、`pnpm local:api`、`pnpm local:worker`、`pnpm local:knowledge-service`、`pnpm local:agent-runtime` 和 `pnpm local:web` 自动加载。
 默认示例环境已经把 API 和 knowledge service 指向不同数据库，避免 Flyway 与知识库表互相污染。
 
 ### 3. 安装前端与 Python 依赖
@@ -108,20 +110,20 @@ Python 依赖统一由根目录 `uv` workspace 管理。首次使用前请先安
 单命令启动：
 
 ```bash
-pnpm dev
+pnpm local
 ```
 
 拆开启动：
 
 ```bash
-pnpm dev:api
-pnpm dev:worker
-pnpm dev:knowledge-service
-pnpm dev:agent-runtime
-pnpm dev:web
+pnpm local:api
+pnpm local:worker
+pnpm local:knowledge-service
+pnpm local:agent-runtime
+pnpm local:web
 ```
 
-`pnpm dev` 会在根目录同时拉起：
+`pnpm local` 会在根目录同时拉起：
 
 - `apps:api`
 - `apps:worker`
@@ -139,17 +141,28 @@ uv run --directory apps/agent-runtime --package lynxus-agent-runtime pytest test
 uv run --directory apps/knowledge-service --package lynxus-knowledge-service pytest tests/test_knowledge_service.py
 ```
 
+如果你要在开发服务器上常驻整套环境，使用：
+
+```bash
+cp .env.dev.example .env.dev
+pnpm dev
+```
+
+`pnpm dev` 默认走 Docker Compose 后台常驻模式；如果需要在服务器上从源码热加载运行，则改用 `pnpm dev:source`。
+
 ### 5. 常用环境变量
 
 API 启动时会自动对数据库中的非终态 workflow 做一次 Temporal 对账。
 当前不再提供内置 demo seed 或 demo SQL 导入路径；目录、资源和知识库数据需由控制台或 API 显式创建。
 知识库当前支持文件上传与 URL 导入；运行态只消费已发布知识版本绑定的 `READY` snapshot。
 
-前端默认连接 `http://localhost:8080/api`，可通过根目录 `.env` 或 `apps/web/.env.local` 覆盖：
+前端源码开发默认连接 `http://localhost:8080/api`，统一通过仓库根目录环境文件覆盖，例如 `.env` / `.env.local` / `.env.dev`：
 
 ```bash
 VITE_API_BASE_URL=http://localhost:8080/api
 ```
+
+`apps/web/.env*` 不再作为主配置入口，避免和仓库根目录环境变量重复定义。
 
 如果你要接自定义的 OpenAI-compatible 模型服务，可以配置：
 

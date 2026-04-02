@@ -6,11 +6,18 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
+    private final WebProperties webProperties;
+
+    public WebConfig(WebProperties webProperties) {
+        this.webProperties = webProperties;
+    }
+
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")
-            .allowedOrigins("http://localhost:5173")
+            .allowedOriginPatterns(webProperties.allowedOrigins().toArray(String[]::new))
             .allowedMethods("*")
-            .allowedHeaders("*");
+            .allowedHeaders("*")
+            .allowCredentials(true);
     }
 }
