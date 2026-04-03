@@ -665,9 +665,12 @@ public class JdbcRuntimeRepository implements RuntimeRepository {
                     id, task_id, assistant_id, assistant_name, assistant_release_version, created_at, updated_at, status, summary,
                     current_node_key, escalation_required, checkpoint, resume_task, pause_reason, latest_failure, latest_tool_outcome,
                     resource_anchors, nodes, tool_calls, model_hits, emitted_message_keys, loaded_skill_resource_version_ids, shared_state, agent_turn_state
-                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb),
-                          cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb),
-                          cast(? as jsonb), cast(? as jsonb))
+                ) values (
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb),
+                    cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb), cast(? as jsonb),
+                    cast(? as jsonb), cast(? as jsonb)
+                )
                 on conflict (id) do update set
                     task_id = excluded.task_id,
                     assistant_id = excluded.assistant_id,

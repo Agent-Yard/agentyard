@@ -17,6 +17,7 @@ import {
   interactionStatusColor,
   pauseSourceLabel as sourceLabel,
   textPayload,
+  visibleConversationMessages,
 } from './runtimePresentation';
 
 const props = defineProps<{
@@ -69,6 +70,7 @@ const latestWorkflow = computed(() =>
 const latestTask = computed(() =>
   props.tasks.find((item) => item.id === currentSession.value?.latestTaskId),
 );
+const visibleMessages = computed(() => visibleConversationMessages(currentSession.value?.messages ?? []));
 
 function canRunAssistant(assistant?: Scenario['assistants'][number] | null) {
   if (!assistant) {
@@ -155,11 +157,13 @@ function submitMessage() {
     return;
   }
 
+  const message = messageDraft.value.trim();
   emit('sendMessage', {
     sessionId: currentSession.value.id,
     customerId: currentSession.value.customerId,
-    message: messageDraft.value.trim(),
+    message,
   });
+  messageDraft.value = '';
 }
 
 function selectSession(sessionId: string) {
@@ -302,10 +306,10 @@ const messageText = conversationMessageText;
                 style="margin-bottom: 16px"
               />
               <a-spin :spinning="isCurrentSessionSending">
-                <div class="conversation-board" :class="{ 'conversation-board--empty': currentSession.messages.length === 0 }">
-                  <template v-if="currentSession.messages.length">
+                <div class="conversation-board" :class="{ 'conversation-board--empty': visibleMessages.length === 0 }">
+                  <template v-if="visibleMessages.length">
                     <div
-                      v-for="message in currentSession.messages"
+                      v-for="message in visibleMessages"
                       :key="message.id"
                       class="conversation-bubble"
                       :class="{

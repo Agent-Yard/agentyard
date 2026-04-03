@@ -1415,6 +1415,45 @@ class MemoryPromptTests(unittest.TestCase):
         self.assertEqual(captured.exception.code, "MODEL_OUTPUT_INVALID")
         self.assertIn("unsupported fields: projection", captured.exception.message)
 
+    def test_parse_agent_structured_response_strips_extra_text_payload_fields(self) -> None:
+        agent = make_agent(memory_window_size=4)
+        graph = GraphSnapshot(
+            executionMode="GRAPH",
+            nodes=[
+                GraphNodeSnapshot(
+                    nodeKey="agent-node",
+                    nodeName="节点",
+                    nodeType="AGENT",
+                    description="说明",
+                    agentId=agent.agentId,
+                )
+            ],
+            edges=[],
+        )
+        node = graph.nodes[0]
+        llm_output = """{
+          "decisionType": "FINAL",
+          "outputMessages": [{
+            "payloadType": "TEXT",
+            "payload": {
+              "text": "处理完成",
+              "customerId": "user-admin",
+              "sessionId": "session-1"
+            }
+          }]
+        }"""
+
+        decision = parse_agent_structured_response(
+            llm_output,
+            graph,
+            node,
+            [],
+            [],
+        )
+
+        self.assertEqual(1, len(decision.outputMessages))
+        self.assertEqual({"text": "处理完成"}, decision.outputMessages[0].payload)
+
     def test_parse_agent_structured_response_rejects_external_interaction_when_not_last(self) -> None:
         agent = make_agent(memory_window_size=4)
         graph = GraphSnapshot(

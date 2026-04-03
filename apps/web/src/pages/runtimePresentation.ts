@@ -73,6 +73,30 @@ export function conversationMessageText(message: ConversationMessage) {
   return [title, description, status].filter(Boolean).join(' · ');
 }
 
+export function visibleConversationMessages(messages: ConversationMessage[]) {
+  const retainedAssistantWorkflowIds = new Set<string>();
+  const visible: ConversationMessage[] = [];
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role !== 'ASSISTANT') {
+      visible.push(message);
+      continue;
+    }
+    if (!message.workflowInstanceId) {
+      visible.push(message);
+      continue;
+    }
+    if (retainedAssistantWorkflowIds.has(message.workflowInstanceId)) {
+      continue;
+    }
+    retainedAssistantWorkflowIds.add(message.workflowInstanceId);
+    visible.push(message);
+  }
+
+  return visible.reverse();
+}
+
 export function workflowDecisionSummary(value?: WorkflowInstance['agentTurnState'] | null) {
   if (!value?.latestDecision) {
     return '暂无';

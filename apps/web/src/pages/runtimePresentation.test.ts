@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ConversationMessage, WorkflowInstance } from '../types';
-import { conversationMessageText, toolCallTitle, workflowDecisionSummary } from './runtimePresentation';
+import { conversationMessageText, toolCallTitle, visibleConversationMessages, workflowDecisionSummary } from './runtimePresentation';
 
 function makeMessage(overrides: Partial<ConversationMessage>): ConversationMessage {
   return {
@@ -106,5 +106,48 @@ describe('runtimePresentation helpers', () => {
       detail: 'ok',
       createdAt: '2026-04-02T00:00:00Z',
     })).toBe('knowledge_search · knowledge_search · BUILTIN');
+  });
+
+  it('keeps only the last assistant message for each workflow', () => {
+    const visible = visibleConversationMessages([
+      makeMessage({
+        id: 'msg-user-1',
+        role: 'USER',
+        senderType: 'USER',
+        senderId: 'user',
+        senderName: '用户',
+        workflowInstanceId: null,
+        payload: { text: '你好' },
+      }),
+      makeMessage({
+        id: 'msg-a-1',
+        messageKey: 'node-a:1:1',
+        workflowInstanceId: 'wf-1',
+        payload: { text: '中间输出' },
+      }),
+      makeMessage({
+        id: 'msg-a-2',
+        messageKey: 'node-b:1:1',
+        workflowInstanceId: 'wf-1',
+        payload: { text: '最终输出' },
+      }),
+      makeMessage({
+        id: 'msg-user-2',
+        role: 'USER',
+        senderType: 'USER',
+        senderId: 'user',
+        senderName: '用户',
+        workflowInstanceId: null,
+        payload: { text: '继续' },
+      }),
+      makeMessage({
+        id: 'msg-b-1',
+        messageKey: 'node-c:1:1',
+        workflowInstanceId: 'wf-2',
+        payload: { text: '第二轮最终输出' },
+      }),
+    ]);
+
+    expect(visible.map((item) => item.id)).toEqual(['msg-user-1', 'msg-a-2', 'msg-user-2', 'msg-b-1']);
   });
 });

@@ -1661,35 +1661,44 @@ def build_instruction_block() -> str:
         "outputMessages": [
             {
                 "payloadType": "TEXT | EXTERNAL_INTERACTION; only when decisionType=FINAL",
-                "payload": {
-                    "TEXT": {"text": "string"},
-                    "EXTERNAL_INTERACTION": {
-                        "spec": {
-                            "interactionType": "GENERIC_REDIRECT | PAYMENT_REDIRECT | FORM_REDIRECT | OAUTH_REDIRECT | EXTERNAL_CONFIRMATION | FILE_UPLOAD_PORTAL",
-                            "title": "string",
-                            "instruction": "string",
-                            "provider": "string | null",
-                            "providerReference": "string | null",
-                            "launchUrl": "string | null",
-                            "returnPath": "string | null",
-                            "expiresAt": "RFC3339 datetime string | null",
-                            "primaryActionLabel": "string | null",
-                            "secondaryActions": [
-                                {
-                                    "label": "string",
-                                    "actionType": "string",
-                                    "url": "string | null",
-                                    "target": "string | null",
-                                    "parameters": {"key": "value"},
-                                    "disabled": "boolean",
-                                }
-                            ],
-                            "displayHints": {"key": "value"},
-                        }
-                    },
-                },
+                "payload": "object; shape depends on payloadType",
             }
         ],
+        "outputMessageExamples": {
+            "TEXT": {
+                "payloadType": "TEXT",
+                "payload": {
+                    "text": "string"
+                },
+            },
+            "EXTERNAL_INTERACTION": {
+                "payloadType": "EXTERNAL_INTERACTION",
+                "payload": {
+                    "spec": {
+                        "interactionType": "GENERIC_REDIRECT | PAYMENT_REDIRECT | FORM_REDIRECT | OAUTH_REDIRECT | EXTERNAL_CONFIRMATION | FILE_UPLOAD_PORTAL",
+                        "title": "string",
+                        "instruction": "string",
+                        "provider": "string | null",
+                        "providerReference": "string | null",
+                        "launchUrl": "string | null",
+                        "returnPath": "string | null",
+                        "expiresAt": "RFC3339 datetime string | null",
+                        "primaryActionLabel": "string | null",
+                        "secondaryActions": [
+                            {
+                                "label": "string",
+                                "actionType": "string",
+                                "url": "string | null",
+                                "target": "string | null",
+                                "parameters": {"key": "value"},
+                                "disabled": "boolean",
+                            }
+                        ],
+                        "displayHints": {"key": "value"},
+                    }
+                },
+            },
+        },
         "skillReads": ["skillResourceVersionId; only when decisionType=SKILL_READ or TOOL_CALL"],
         "toolRequests": [
             {
@@ -1749,6 +1758,9 @@ def build_instruction_block() -> str:
             "Do not claim knowledge-base confirmation unless you actually called a knowledge tool in this node.",
             "Use sessionStatePatch to persist reusable session facts, artifacts, or your own agentScope.",
             "You can read facts/artifacts and only your own agentScope from the prompt. Do not assume access to other agents' scopes.",
+            "For TEXT outputMessages, payload must be exactly {\"text\": \"...\"}. Do not wrap it as {\"TEXT\": {...}}.",
+            "For EXTERNAL_INTERACTION outputMessages, payload must be exactly {\"spec\": {...}}. Do not wrap it as {\"EXTERNAL_INTERACTION\": {...}}.",
+            "Do not copy customerId, userId, sessionId, workflowId, or similar context metadata into outputMessages payloads.",
             f"Use {AGENT_DECISION_SKILL_READ} for skill-only continuation turns.",
             f"Use {AGENT_DECISION_TOOL_CALL} for tool continuation turns.",
             f"Use {AGENT_DECISION_FINAL} only for a completed node decision.",
@@ -1887,17 +1899,24 @@ async def call_llm(model_resource: ResourceVersionSnapshot, prompt_payload: LlmP
         user_messages = prompt_user_messages(prompt_payload)
         async with httpx.AsyncClient(timeout=LLM_REQUEST_TIMEOUT_SECONDS) as client:
             if model_config.providerType in {"OPENAI", "OPENAI_COMPATIBLE"}:
+                request_body = {
+                    "model": model_config.modelId,
+                    "temperature": model_config.temperature,
+                    "max_tokens": model_config.maxTokens,
+                    "messages": [{"role": "system", "content": prompt_payload["system_prompt"]}]
+                    + [{"role": "user", "content": message} for message in user_messages],
+                    "enable_thinking": False,
+                }
+                logger.warning(
+                    "temporary llm request payload provider=%s model=%s payload=%s",
+                    model_config.providerType,
+                    model_config.modelId,
+                    json.dumps(request_body, ensure_ascii=False),
+                )
                 response = await client.post(
                     f"{model_config.baseUrl.rstrip('/')}/chat/completions",
                     headers={"Authorization": f"Bearer {api_key}"},
-                    json={
-                        "model": model_config.modelId,
-                        "temperature": model_config.temperature,
-                        "max_tokens": model_config.maxTokens,
-                        "messages": [{"role": "system", "content": prompt_payload["system_prompt"]}]
-                        + [{"role": "user", "content": message} for message in user_messages],
-                        "enable_thinking": False
-                    },
+                    json=request_body,
                 )
                 response.raise_for_status()
                 reponse_json = response.json()
@@ -1907,48 +1926,83 @@ async def call_llm(model_resource: ResourceVersionSnapshot, prompt_payload: LlmP
                     model_config.modelId,
                     len(reponse_json.get("choices", [])),
                 )
-                return reponse_json["choices"][0]["message"]["content"]
+                response_text = reponse_json["choices"][0]["message"]["content"]
+                logger.warning(
+                    "temporary llm response payload provider=%s model=%s payload=%s",
+                    model_config.providerType,
+                    model_config.modelId,
+                    response_text,
+                )
+                return response_text
 
             if model_config.providerType == "ANTHROPIC":
+                request_body = {
+                    "model": model_config.modelId,
+                    "max_tokens": model_config.maxTokens,
+                    "system": prompt_payload["system_prompt"],
+                    "messages": [{"role": "user", "content": "\n\n".join(user_messages)}],
+                }
+                logger.warning(
+                    "temporary llm request payload provider=%s model=%s payload=%s",
+                    model_config.providerType,
+                    model_config.modelId,
+                    json.dumps(request_body, ensure_ascii=False),
+                )
                 response = await client.post(
                     f"{model_config.baseUrl.rstrip('/')}/messages",
                     headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"},
-                    json={
-                        "model": model_config.modelId,
-                        "max_tokens": model_config.maxTokens,
-                        "system": prompt_payload["system_prompt"],
-                        "messages": [{"role": "user", "content": "\n\n".join(user_messages)}],
-                    },
+                    json=request_body,
                 )
                 response.raise_for_status()
-                return response.json()["content"][0]["text"]
+                response_text = response.json()["content"][0]["text"]
+                logger.warning(
+                    "temporary llm response payload provider=%s model=%s payload=%s",
+                    model_config.providerType,
+                    model_config.modelId,
+                    response_text,
+                )
+                return response_text
 
             if model_config.providerType == "GEMINI":
+                request_body = {
+                    "contents": [
+                        {
+                            "parts": [
+                                {
+                                    "text": "\n\n".join(
+                                        [
+                                            prompt_payload["system_prompt"],
+                                            *user_messages,
+                                        ]
+                                    )
+                                }
+                            ]
+                        }
+                    ],
+                    "generationConfig": {
+                        "temperature": model_config.temperature,
+                        "maxOutputTokens": model_config.maxTokens,
+                    },
+                }
+                logger.warning(
+                    "temporary llm request payload provider=%s model=%s payload=%s",
+                    model_config.providerType,
+                    model_config.modelId,
+                    json.dumps(request_body, ensure_ascii=False),
+                )
                 response = await client.post(
                     f"{model_config.baseUrl.rstrip('/')}/models/{model_config.modelId}:generateContent?key={api_key}",
-                    json={
-                        "contents": [
-                            {
-                                "parts": [
-                                    {
-                                        "text": "\n\n".join(
-                                            [
-                                                prompt_payload["system_prompt"],
-                                                *user_messages,
-                                            ]
-                                        )
-                                    }
-                                ]
-                            }
-                        ],
-                        "generationConfig": {
-                            "temperature": model_config.temperature,
-                            "maxOutputTokens": model_config.maxTokens,
-                        },
-                    },
+                    json=request_body,
                 )
                 response.raise_for_status()
-                return response.json()["candidates"][0]["content"]["parts"][0]["text"]
+                response_text = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+                logger.warning(
+                    "temporary llm response payload provider=%s model=%s payload=%s",
+                    model_config.providerType,
+                    model_config.modelId,
+                    response_text,
+                )
+                return response_text
     except httpx.TimeoutException as exc:
         raise WorkflowFailureError(
             FAILURE_CATEGORY_TIMEOUT,
@@ -2517,6 +2571,21 @@ def validate_output_message_payload(payload_type: str, payload: Dict[str, Any], 
     raise AgentTurnError("MODEL_OUTPUT_INVALID", f"{path}.payloadType is unsupported: {payload_type}")
 
 
+def sanitize_output_message_payload(payload_type: str, payload: Dict[str, Any], path: str) -> Dict[str, Any]:
+    if payload_type == "TEXT":
+        extra_fields = sorted(key for key in payload.keys() if key != "text")
+        if extra_fields:
+            logger.warning(
+                "%s dropped unsupported TEXT payload fields: %s",
+                path,
+                ", ".join(extra_fields),
+            )
+        # TEXT messages are display-only. Strip leaked context metadata from model output
+        # and keep only the field the runtime contract actually consumes.
+        return {"text": payload.get("text")}
+    return payload
+
+
 def normalize_output_messages(raw_messages: Any) -> List[OutputMessageDraft]:
     if raw_messages is None:
         return []
@@ -2529,7 +2598,9 @@ def normalize_output_messages(raw_messages: Any) -> List[OutputMessageDraft]:
             message = OutputMessageDraft.model_validate(raw_message)
         except ValidationError as exc:
             raise AgentTurnError("MODEL_OUTPUT_INVALID", f"outputMessages[{index}] is invalid: {exc}") from exc
-        validate_output_message_payload(message.payloadType, message.payload, f"outputMessages[{index}]")
+        sanitized_payload = sanitize_output_message_payload(message.payloadType, message.payload, f"outputMessages[{index}]")
+        validate_output_message_payload(message.payloadType, sanitized_payload, f"outputMessages[{index}]")
+        message = OutputMessageDraft(payloadType=message.payloadType, payload=sanitized_payload)
         if message.payloadType == "EXTERNAL_INTERACTION":
             interaction_indexes.append(index)
         normalized.append(message)
