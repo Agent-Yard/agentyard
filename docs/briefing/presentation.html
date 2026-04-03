@@ -245,7 +245,7 @@ flowchart LR
             <div class="foot-card">控制面 API 负责目录数据、资源治理、知识聚合、发布快照和运行聚合。</div>
             <div class="foot-card">流程 Worker 负责 workflow 执行、长流程托管和人工恢复。</div>
             <div class="foot-card">知识服务负责导入、切片、索引快照构建和检索。</div>
-            <div class="foot-card">智能体运行时负责按发布快照执行图节点和资源调用。</div>
+            <div class="foot-card">智能体运行时负责执行控制面下发的运行快照，并完成图节点和资源调用。</div>
           </div>
         </section>
 
@@ -397,8 +397,8 @@ flowchart LR
           </div>
           <div class="decision-stack">
             <div class="decision-card">
-              <h3>发布快照作为运行锚点</h3>
-              <p>优先解决配置漂移和运行回溯问题，为后续回滚、审计和版本定位建立基础。</p>
+              <h3>运行快照作为执行锚点</h3>
+              <p>优先解决配置漂移和运行回溯问题；已发布助手复用发布快照，未发布草稿在满足前置条件时即时组装临时快照。</p>
             </div>
             <div class="decision-card">
               <h3>知识库提升为一级治理对象</h3>

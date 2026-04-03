@@ -15,10 +15,10 @@
 
 - `apps/api`：控制面接口、目录数据、发布快照和运行实例聚合
 - `apps/worker`：Assistant Run Workflow 的 Temporal worker
-- `apps/agent-runtime`：基于发布图的节点执行运行时
+- `apps/agent-runtime`：基于助手运行快照的节点执行运行时
 - `apps/web`：配置态和运行态控制台
 
-当前执行核心是一条“发布快照 -> Temporal -> Python runtime -> WorkflowResult”的闭环。
+当前执行核心是一条“助手运行快照（发布版或草稿临时快照） -> Temporal -> Python runtime -> WorkflowResult”的闭环。
 
 ## 当前模型取舍
 

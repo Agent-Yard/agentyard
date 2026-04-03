@@ -44,7 +44,7 @@ Knowledge Base、Tool、LLM Model、Skill 四类能力资产已经进入统一�
 
 ### 3.3 运行模型已经成立
 
-运行不是静态问答链路，而是基于发布快照驱动的真实图编排，支持 `START / AGENT / HUMAN / END` 显式节点执行，且已打通异步受理、运行投影持久化、人工恢复和站外交互回跳。
+运行不是静态问答链路，而是基于运行快照驱动的真实图编排；已发布助手复用发布快照，未发布草稿在满足前置条件时即时组装临时快照。当前链路支持 `START / AGENT / HUMAN / END` 显式节点执行，且已打通异步受理、运行投影持久化、人工恢复和站外交互回跳。
 
 ### 3.4 平台主链已经闭环
 
@@ -71,13 +71,13 @@ Knowledge Base、Tool、LLM Model、Skill 四类能力资产已经进入统一�
 
 - 助手发布时冻结资源版本锚点
 - 冻结默认模型绑定、知识发布绑定、智能体执行策略和图编排快照
-- 运行始终基于发布快照启动，而不是直接读取草稿配置
+- 运行优先基于发布快照启动；未发布草稿在满足前置条件时，由控制面即时组装临时运行快照
 
 ### 4.4 运行与编排能力
 
 - `START / AGENT / HUMAN / END` 显式图编排
 - 基于 Temporal 的 `start / signal / resume` 长流程托管
-- Python `agent-runtime` 按发布快照动态注入知识内置工具，驱动 `knowledge_search / knowledge_read`、Skill 读取、Tool 调用和模型推理
+- Python `agent-runtime` 按控制面下发的运行快照动态注入知识内置工具，驱动 `knowledge_search / knowledge_read`、Skill 读取、Tool 调用和模型推理
 - `createSession`、`sendMessage`、`launchTask` 已改为异步受理后返回，由运行态视图轮询收口
 - `HUMAN` 节点、external interaction task 和 callback 都能回到统一的 resume 链路
 
@@ -99,7 +99,7 @@ Knowledge Base、Tool、LLM Model、Skill 四类能力资产已经进入统一�
 - `apps/knowledge-service`
   Python 知识服务，负责内容导入、文档解析、切片、索引快照构建、检索和按快照读取 chunk。
 - `apps/agent-runtime`
-  Python 运行时，负责按发布快照执行图节点，向 LLM 注入知识工具、Skill、Tool 和模型配置。
+  Python 运行时，负责执行控制面下发的运行快照，向 LLM 注入知识工具、Skill、Tool 和模型配置。
 - `apps/web`
   Vue 控制台，提供配置治理、知识与资源管理、运行与观测界面。
 
@@ -111,9 +111,9 @@ Knowledge Base、Tool、LLM Model、Skill 四类能力资产已经进入统一�
 
 ## 6. 当前关键设计取舍
 
-### 6.1 以发布快照作为运行锚点
+### 6.1 以运行快照作为执行锚点
 
-核心目的在于解决配置漂移问题。当前运行实例不直接读取草稿态对象，而是始终基于助手发布快照启动。这样可以保证：
+核心目的在于解决配置漂移问题。当前运行实例不直接把草稿对象原样暴露给运行时，而是统一下发 `AssistantRunSnapshot`。已发布助手优先复用发布快照；未发布草稿在满足前置条件时即时组装临时快照。这样可以保证：
 
 - 运行结果可回溯
 - 资源版本可定位

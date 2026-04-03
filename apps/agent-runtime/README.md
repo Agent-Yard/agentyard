@@ -1,6 +1,8 @@
 # agent-runtime
 
-`agent-runtime` 是 Lynxus 的 Python 执行运行时，负责按发布快照执行助手图。
+`agent-runtime` 是 Lynxus 的 Python 执行运行时，负责执行控制面下发的助手运行快照。
+
+默认情况下，已发布助手会按发布快照运行；未发布草稿在满足运行前置条件时，也会由控制面即时解析当前编排、资源和知识绑定并生成临时运行快照。当前实现里，草稿态并不天然禁止对话，只有缺少默认模型等关键前置条件时才会阻断启动。
 
 当前职责包括：
 
@@ -35,7 +37,7 @@ uv run --directory apps/agent-runtime --package lynxus-agent-runtime pytest test
 - `POST /agent-runs/start`
 - `POST /agent-runs/resume`
 
-它们由 `apps/worker` 通过 HTTP 调用，不直接面向控制台页面。
+它们由 `apps/worker` 通过 HTTP 调用，不直接面向控制台页面。`agent-runtime` 本身不区分“发布快照”还是“草稿临时快照”，只消费控制面组装后的 `AssistantRunSnapshot` 并执行图节点。
 
 ## 环境变量
 

@@ -6,7 +6,7 @@
 更贴切的描述是：
 
 - 单租户默认的企业智能体平台原型
-- 发布快照驱动的单助手多智能体运行系统
+- 运行快照驱动的单助手多智能体运行系统
 - 面向后续持久化、权限、可观测和生产化治理扩展的代码底座
 
 ## 当前重心
@@ -62,13 +62,13 @@
 
 - `apps/worker` 中的 `workflow` 包负责 Temporal workflow 与 activity 编排
 - `apps/worker` 中的 `runtime` 包负责通过 HTTP 调用 Python `agent-runtime`
-- `apps/agent-runtime` 负责解析发布快照、校验图、执行节点并返回 `WorkflowResult`
+- `apps/agent-runtime` 负责解析运行快照、校验图、执行节点并返回 `WorkflowResult`
 
 ## 运行链路
 
-当前运行链路已经是“发布快照驱动的单助手多智能体图编排”：
+当前运行链路已经是“运行快照驱动的单助手多智能体图编排”：
 
-1. API 基于助手发布快照构建运行时 `AssistantRunSnapshot`
+1. API 优先基于助手发布快照构建运行时 `AssistantRunSnapshot`；若无发布版则即时组装草稿临时快照
 2. Temporal workflow 调用 Python runtime `start`
 3. Python runtime 按 graph snapshot 动态执行 `START / AGENT / HUMAN / END`
 4. 若命中 `HUMAN` 节点，则返回 checkpoint 与 human task，workflow 等待 signal
