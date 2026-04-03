@@ -2,6 +2,7 @@ package com.lynxus.platform.knowledge;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
 import com.lynxus.platform.catalog.CatalogDtos;
@@ -145,6 +146,55 @@ class KnowledgeServiceTest {
         assertFalse(preview.lowConfidence());
     }
 
+    @Test
+    void shouldBlockDocumentDeletionWhenSnapshotExists() {
+        InMemoryCatalogRepository catalogRepository = new InMemoryCatalogRepository();
+        CatalogDtos.BusinessDomainDto domain = seedDomain(catalogRepository);
+        StubKnowledgeServiceClient client = new StubKnowledgeServiceClient();
+        KnowledgeService knowledgeService = new KnowledgeService(
+            new InMemoryKnowledgeRepository(),
+            catalogRepository,
+            client,
+            new TrackingKnowledgeWorkflowGateway()
+        );
+        CatalogDtos.KnowledgeBaseDto knowledgeBase = knowledgeService.createKnowledgeBase(
+            new CatalogDtos.CreateKnowledgeBaseRequest(
+                domain.id(),
+                "客服知识库",
+                ShareScope.DOMAIN_SHARED,
+                "DOMAIN",
+                domain.id(),
+                "FAQ",
+                "知识运营",
+                List.of("FAQ")
+            )
+        );
+        client.documentDeletionPreview = new CatalogDtos.KnowledgeDocumentDeletionPreviewDto(
+            "doc-1",
+            knowledgeBase.id(),
+            "file-1",
+            "refund.md",
+            "upload://knowledge/refund.md",
+            "退款规则",
+            3,
+            false,
+            List.of(new CatalogDtos.KnowledgeDocumentDeletionBlockerDto(
+                "snapshot-1",
+                "READY",
+                "READY",
+                "HYBRID",
+                "snapshot targets all ready documents in this knowledge base"
+            ))
+        );
+
+        IllegalStateException error = assertThrows(
+            IllegalStateException.class,
+            () -> knowledgeService.deleteDocument(knowledgeBase.id(), "doc-1")
+        );
+
+        assertEquals("knowledge document is referenced by snapshot: snapshot-1", error.getMessage());
+    }
+
     private static CatalogDtos.BusinessDomainDto seedDomain(InMemoryCatalogRepository catalogRepository) {
         CatalogService catalogService = new CatalogService(
             catalogRepository,
@@ -160,6 +210,8 @@ class KnowledgeServiceTest {
         private CatalogDtos.KnowledgeIndexSnapshotDto snapshot;
         private CatalogDtos.KnowledgeRetrievalPreviewRequest previewRequest;
         private CatalogDtos.KnowledgeRetrievalPreviewResultDto previewResult;
+        private CatalogDtos.KnowledgeDocumentDeletionPreviewDto documentDeletionPreview;
+        private CatalogDtos.KnowledgeDocumentDeletionResultDto documentDeletionResult;
 
         private StubKnowledgeServiceClient() {
             super("http://localhost:8091", "test-internal-token");
@@ -184,6 +236,16 @@ class KnowledgeServiceTest {
         public CatalogDtos.KnowledgeRetrievalPreviewResultDto previewRetrieval(CatalogDtos.KnowledgeRetrievalPreviewRequest request) {
             previewRequest = request;
             return previewResult;
+        }
+
+        @Override
+        public CatalogDtos.KnowledgeDocumentDeletionPreviewDto previewDocumentDeletion(String knowledgeBaseId, String documentId) {
+            return documentDeletionPreview;
+        }
+
+        @Override
+        public CatalogDtos.KnowledgeDocumentDeletionResultDto deleteDocument(String knowledgeBaseId, String documentId) {
+            return documentDeletionResult;
         }
     }
 

@@ -104,6 +104,20 @@ public class KnowledgeServiceClient {
             .body(KNOWLEDGE_DOCUMENT_LIST);
     }
 
+    public KnowledgeDocumentDeletionPreviewDto previewDocumentDeletion(String knowledgeBaseId, String documentId) {
+        return restClient.get()
+            .uri("/internal/knowledge-bases/{knowledgeBaseId}/documents/{documentId}/deletion-preview", knowledgeBaseId, documentId)
+            .retrieve()
+            .body(KnowledgeDocumentDeletionPreviewDto.class);
+    }
+
+    public KnowledgeDocumentDeletionResultDto deleteDocument(String knowledgeBaseId, String documentId) {
+        return restClient.delete()
+            .uri("/internal/knowledge-bases/{knowledgeBaseId}/documents/{documentId}", knowledgeBaseId, documentId)
+            .retrieve()
+            .body(KnowledgeDocumentDeletionResultDto.class);
+    }
+
     public KnowledgeIndexSnapshotDto createIndexSnapshot(String knowledgeBaseId, List<String> documentIds) {
         return restClient.post()
             .uri("/internal/knowledge-bases/{knowledgeBaseId}/index-snapshots", knowledgeBaseId)

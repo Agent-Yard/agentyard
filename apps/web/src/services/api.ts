@@ -20,6 +20,8 @@ import type {
   ExternalInteractionTask,
   KnowledgeBase,
   KnowledgeDocument,
+  KnowledgeDocumentDeletionPreview,
+  KnowledgeDocumentDeletionResult,
   KnowledgeFile,
   KnowledgeImportJob,
   KnowledgeIndexSnapshot,
@@ -200,6 +202,10 @@ export const api = {
   retryKnowledgeImportJob: (knowledgeBaseId: string, jobId: string) =>
     request<KnowledgeUploadCompletion>(`/knowledge-bases/${knowledgeBaseId}/import-jobs/${jobId}/retry`, jsonOptions('POST')),
   listKnowledgeDocuments: (knowledgeBaseId: string) => request<KnowledgeDocument[]>(`/knowledge-bases/${knowledgeBaseId}/documents`),
+  previewKnowledgeDocumentDeletion: (knowledgeBaseId: string, documentId: string) =>
+    request<KnowledgeDocumentDeletionPreview>(`/knowledge-bases/${knowledgeBaseId}/documents/${documentId}/deletion-preview`),
+  deleteKnowledgeDocument: (knowledgeBaseId: string, documentId: string) =>
+    request<KnowledgeDocumentDeletionResult>(`/knowledge-bases/${knowledgeBaseId}/documents/${documentId}`, jsonOptions('DELETE')),
   createKnowledgeIndexSnapshot: (knowledgeBaseId: string, documentIds: string[]) =>
     request<KnowledgeIndexSnapshot>(`/knowledge-bases/${knowledgeBaseId}/snapshots`, jsonOptions('POST', { documentIds })),
   listKnowledgeIndexSnapshots: (knowledgeBaseId: string) =>

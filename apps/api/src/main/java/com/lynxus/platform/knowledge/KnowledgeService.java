@@ -298,6 +298,34 @@ public class KnowledgeService {
         return knowledgeServiceClient.listDocuments(knowledgeBaseId);
     }
 
+    public KnowledgeDocumentDeletionPreviewDto previewDocumentDeletion(String knowledgeBaseId, String documentId) {
+        ensureLoaded();
+        requireKnowledgeBase(knowledgeBaseId);
+        KnowledgeDocumentDeletionPreviewDto preview = knowledgeServiceClient.previewDocumentDeletion(knowledgeBaseId, documentId);
+        if (!knowledgeBaseId.equals(preview.knowledgeBaseId())) {
+            throw new IllegalArgumentException("knowledge document does not belong to the requested knowledge base");
+        }
+        return preview;
+    }
+
+    public KnowledgeDocumentDeletionResultDto deleteDocument(String knowledgeBaseId, String documentId) {
+        ensureLoaded();
+        requireKnowledgeBase(knowledgeBaseId);
+        KnowledgeDocumentDeletionPreviewDto preview = previewDocumentDeletion(knowledgeBaseId, documentId);
+        if (!preview.canDelete()) {
+            String blocker = preview.blockers().stream()
+                .findFirst()
+                .map(item -> "knowledge document is referenced by snapshot: " + item.snapshotId())
+                .orElse("knowledge document cannot be deleted");
+            throw new IllegalStateException(blocker);
+        }
+        KnowledgeDocumentDeletionResultDto deleted = knowledgeServiceClient.deleteDocument(knowledgeBaseId, documentId);
+        if (!knowledgeBaseId.equals(deleted.knowledgeBaseId())) {
+            throw new IllegalArgumentException("knowledge document does not belong to the requested knowledge base");
+        }
+        return deleted;
+    }
+
     public KnowledgeIndexSnapshotDto createIndexSnapshot(String knowledgeBaseId, CreateKnowledgeIndexSnapshotRequest request) {
         ensureLoaded();
         requireKnowledgeBase(knowledgeBaseId);

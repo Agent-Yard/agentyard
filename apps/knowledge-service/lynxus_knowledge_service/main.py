@@ -362,6 +362,38 @@ class DocumentResponse(BaseModel):
     updatedAt: datetime
 
 
+class DocumentDeletionBlockerResponse(BaseModel):
+    snapshotId: str
+    status: str
+    stage: str
+    retrievalMode: str
+    reason: str
+
+
+class DocumentDeletionPreviewResponse(BaseModel):
+    documentId: str
+    knowledgeBaseId: str
+    fileId: str
+    fileName: str
+    sourceUri: str
+    title: str
+    chunkCount: int
+    canDelete: bool
+    blockers: List[DocumentDeletionBlockerResponse]
+
+
+class DocumentDeletionResponse(BaseModel):
+    documentId: str
+    knowledgeBaseId: str
+    fileId: str
+    fileName: str
+    title: str
+    deletedChunkCount: int
+    deletedImportJobCount: int
+    deletedDocumentCount: int
+    deletedStorageObject: bool
+
+
 class CreateIndexSnapshotRequest(BaseModel):
     knowledgeBaseId: Optional[str] = None
     documentIds: List[str] = Field(default_factory=list)
@@ -489,6 +521,21 @@ class Storage:
         finally:
             response.close()
             response.release_conn()
+
+    def delete_object(self, object_key: str) -> bool:
+        if not object_key:
+            return False
+        if self.client is None:
+            target = STORAGE_ROOT / object_key
+            if not target.exists():
+                return False
+            target.unlink()
+            return True
+        try:
+            self.client.remove_object(MINIO_BUCKET, object_key)
+            return True
+        except Exception:
+            return False
 
 
 class EmbeddingClient:
@@ -1192,6 +1239,173 @@ def document_response(db: Session, record: KnowledgeDocumentRecord) -> DocumentR
     )
 
 
+def chunk_count_for_document(db: Session, document_id: str) -> int:
+    return int(
+        db.scalar(select(func.count()).select_from(KnowledgeChunkRecord).where(KnowledgeChunkRecord.document_id == document_id)) or 0
+    )
+
+
+def resolve_document_for_deletion(db: Session, knowledge_base_id: str, document_id: str) -> tuple[KnowledgeDocumentRecord, KnowledgeFileRecord]:
+    document = db.get(KnowledgeDocumentRecord, document_id)
+    if document is None or document.knowledge_base_id != knowledge_base_id:
+        raise HTTPException(status_code=404, detail="knowledge document not found")
+    file_record = db.get(KnowledgeFileRecord, document.file_id)
+    if file_record is None or file_record.knowledge_base_id != knowledge_base_id:
+        raise HTTPException(status_code=404, detail="knowledge file not found")
+    return document, file_record
+
+
+def document_deletion_blockers(
+    db: Session,
+    knowledge_base_id: str,
+    document_id: str,
+) -> List[DocumentDeletionBlockerResponse]:
+    snapshots = db.scalars(
+        select(IndexSnapshotRecord)
+        .where(IndexSnapshotRecord.knowledge_base_id == knowledge_base_id)
+        .order_by(IndexSnapshotRecord.created_at.desc())
+    ).all()
+    if not snapshots:
+        return []
+
+    snapshot_ids = [snapshot.id for snapshot in snapshots]
+    selections = db.scalars(
+        select(SnapshotDocumentSelectionRecord).where(SnapshotDocumentSelectionRecord.snapshot_id.in_(snapshot_ids))
+    ).all()
+    selected_by_snapshot: dict[str, set[str]] = {}
+    for selection in selections:
+        selected_by_snapshot.setdefault(selection.snapshot_id, set()).add(selection.document_id)
+
+    mapped_snapshot_ids = set(
+        db.scalars(
+            select(IndexSnapshotChunkRecord.snapshot_id).where(IndexSnapshotChunkRecord.document_id == document_id)
+        ).all()
+    )
+
+    blockers: List[DocumentDeletionBlockerResponse] = []
+    for snapshot in snapshots:
+        selected_ids = selected_by_snapshot.get(snapshot.id)
+        reason: Optional[str] = None
+        if selected_ids is None:
+            reason = "snapshot targets all ready documents in this knowledge base"
+        elif document_id in selected_ids:
+            reason = "snapshot explicitly selected this document"
+        elif snapshot.id in mapped_snapshot_ids:
+            reason = "snapshot already indexed chunks from this document"
+        if reason is None:
+            continue
+        blockers.append(
+            DocumentDeletionBlockerResponse(
+                snapshotId=snapshot.id,
+                status=snapshot.status,
+                stage=snapshot.stage,
+                retrievalMode=snapshot.retrieval_mode,
+                reason=reason,
+            )
+        )
+    return blockers
+
+
+def build_document_deletion_preview(
+    db: Session,
+    knowledge_base_id: str,
+    document_id: str,
+) -> DocumentDeletionPreviewResponse:
+    document, file_record = resolve_document_for_deletion(db, knowledge_base_id, document_id)
+    blockers = document_deletion_blockers(db, knowledge_base_id, document.id)
+    return DocumentDeletionPreviewResponse(
+        documentId=document.id,
+        knowledgeBaseId=document.knowledge_base_id,
+        fileId=file_record.id,
+        fileName=file_record.file_name,
+        sourceUri=document.source_uri,
+        title=document.title,
+        chunkCount=chunk_count_for_document(db, document.id),
+        canDelete=not blockers,
+        blockers=blockers,
+    )
+
+
+def delete_document_source(
+    db: Session,
+    knowledge_base_id: str,
+    document_id: str,
+) -> DocumentDeletionResponse:
+    document, file_record = resolve_document_for_deletion(db, knowledge_base_id, document_id)
+    blockers = document_deletion_blockers(db, knowledge_base_id, document.id)
+    if blockers:
+        raise HTTPException(status_code=409, detail="knowledge document is referenced by snapshots")
+
+    related_documents = db.scalars(
+        select(KnowledgeDocumentRecord).where(KnowledgeDocumentRecord.file_id == file_record.id)
+    ).all()
+    related_document_ids = [item.id for item in related_documents]
+    chunk_count = int(
+        db.scalar(
+            select(func.count())
+            .select_from(KnowledgeChunkRecord)
+            .where(KnowledgeChunkRecord.document_id.in_(related_document_ids or [""]))
+        ) or 0
+    )
+    import_job_count = int(
+        db.scalar(
+            select(func.count())
+            .select_from(KnowledgeImportJobRecord)
+            .where(KnowledgeImportJobRecord.file_id == file_record.id)
+        ) or 0
+    )
+    document_count = len(related_documents)
+    upload_session_id = file_record.upload_session_id
+    object_key = file_record.object_key
+
+    if related_document_ids:
+        db.query(IndexSnapshotChunkRecord).filter(
+            IndexSnapshotChunkRecord.document_id.in_(related_document_ids)
+        ).delete(synchronize_session=False)
+        db.query(SnapshotDocumentSelectionRecord).filter(
+            SnapshotDocumentSelectionRecord.document_id.in_(related_document_ids)
+        ).delete(synchronize_session=False)
+        db.query(KnowledgeChunkRecord).filter(
+            KnowledgeChunkRecord.document_id.in_(related_document_ids)
+        ).delete(synchronize_session=False)
+        db.query(KnowledgeDocumentRecord).filter(
+            KnowledgeDocumentRecord.id.in_(related_document_ids)
+        ).delete(synchronize_session=False)
+
+    db.query(KnowledgeImportJobRecord).filter(
+        KnowledgeImportJobRecord.file_id == file_record.id
+    ).delete(synchronize_session=False)
+    db.query(KnowledgeFileRecord).filter(
+        KnowledgeFileRecord.id == file_record.id
+    ).delete(synchronize_session=False)
+
+    remaining_files_for_session = int(
+        db.scalar(
+            select(func.count())
+            .select_from(KnowledgeFileRecord)
+            .where(KnowledgeFileRecord.upload_session_id == upload_session_id)
+        ) or 0
+    )
+    if remaining_files_for_session == 0:
+        db.query(UploadSessionRecord).filter(
+            UploadSessionRecord.id == upload_session_id
+        ).delete(synchronize_session=False)
+
+    db.commit()
+    deleted_storage_object = storage.delete_object(object_key)
+    return DocumentDeletionResponse(
+        documentId=document.id,
+        knowledgeBaseId=document.knowledge_base_id,
+        fileId=file_record.id,
+        fileName=file_record.file_name,
+        title=document.title,
+        deletedChunkCount=chunk_count,
+        deletedImportJobCount=import_job_count,
+        deletedDocumentCount=document_count,
+        deletedStorageObject=deleted_storage_object,
+    )
+
+
 def snapshot_response(record: IndexSnapshotRecord) -> IndexSnapshotResponse:
     return IndexSnapshotResponse(
         id=record.id,
@@ -1462,6 +1676,23 @@ def list_documents(knowledge_base_id: str, db: Session = Depends(get_db)) -> Lis
         .order_by(KnowledgeDocumentRecord.created_at.desc())
     ).all()
     return [document_response(db, record) for record in records]
+
+
+@app.get(
+    "/internal/knowledge-bases/{knowledge_base_id}/documents/{document_id}/deletion-preview",
+    response_model=DocumentDeletionPreviewResponse,
+)
+def preview_document_deletion(knowledge_base_id: str, document_id: str, db: Session = Depends(get_db)) -> DocumentDeletionPreviewResponse:
+    return build_document_deletion_preview(db, knowledge_base_id, document_id)
+
+
+@app.delete(
+    "/internal/knowledge-bases/{knowledge_base_id}/documents/{document_id}",
+    response_model=DocumentDeletionResponse,
+)
+def delete_document(knowledge_base_id: str, document_id: str, db: Session = Depends(get_db)) -> DocumentDeletionResponse:
+    logger.info("delete knowledge document knowledgeBaseId=%s documentId=%s", knowledge_base_id, document_id)
+    return delete_document_source(db, knowledge_base_id, document_id)
 
 
 @app.post("/internal/knowledge-bases/{knowledge_base_id}/index-snapshots", response_model=IndexSnapshotResponse)

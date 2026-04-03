@@ -103,6 +103,38 @@ export interface KnowledgeDocument {
   updatedAt: string;
 }
 
+export interface KnowledgeDocumentDeletionBlocker {
+  snapshotId: string;
+  status: string;
+  stage: string;
+  retrievalMode: string;
+  reason: string;
+}
+
+export interface KnowledgeDocumentDeletionPreview {
+  documentId: string;
+  knowledgeBaseId: string;
+  fileId: string;
+  fileName: string;
+  sourceUri: string;
+  title: string;
+  chunkCount: number;
+  canDelete: boolean;
+  blockers: KnowledgeDocumentDeletionBlocker[];
+}
+
+export interface KnowledgeDocumentDeletionResult {
+  documentId: string;
+  knowledgeBaseId: string;
+  fileId: string;
+  fileName: string;
+  title: string;
+  deletedChunkCount: number;
+  deletedImportJobCount: number;
+  deletedDocumentCount: number;
+  deletedStorageObject: boolean;
+}
+
 export interface KnowledgeSnapshot {
   id: string;
   knowledgeBaseId: string;

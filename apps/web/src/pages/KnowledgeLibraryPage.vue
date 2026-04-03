@@ -8,6 +8,7 @@ import type {
   CreateKnowledgeReleasePayload,
   KnowledgeBase,
   KnowledgeDocument,
+  KnowledgeDocumentDeletionPreview,
   KnowledgeFile,
   KnowledgeImportJob,
   KnowledgeIndexSnapshot,
@@ -38,9 +39,14 @@ const uploading = ref(false);
 const uploadGuideOpen = ref(false);
 const creatingSnapshot = ref(false);
 const previewingRetrieval = ref(false);
+const previewingDocumentDeletion = ref(false);
+const deletingDocument = ref(false);
+const documentDeletionTargetId = ref('');
 const retrievalPreviewSnapshotId = ref('');
 const retrievalPreviewQuery = ref('');
 const retrievalPreviewResult = ref<KnowledgeRetrievalPreviewResult | null>(null);
+const documentDeletionPreview = ref<KnowledgeDocumentDeletionPreview | null>(null);
+const documentDeletionOpen = ref(false);
 let workspacePollingTimer: number | null = null;
 const releaseForm = reactive<CreateKnowledgeReleasePayload>({
   summary: '',
@@ -241,6 +247,53 @@ async function handleCreateSnapshot() {
     void message.error(error instanceof Error ? error.message : '创建索引快照失败');
   } finally {
     creatingSnapshot.value = false;
+  }
+}
+
+async function handleOpenDocumentDeletion(document: KnowledgeDocument) {
+  if (!selectedKnowledgeBase.value) {
+    return;
+  }
+  documentDeletionTargetId.value = document.id;
+  previewingDocumentDeletion.value = true;
+  try {
+    documentDeletionPreview.value = await api.previewKnowledgeDocumentDeletion(selectedKnowledgeBase.value.id, document.id);
+    documentDeletionOpen.value = true;
+  } catch (error) {
+    documentDeletionPreview.value = null;
+    documentDeletionOpen.value = false;
+    documentDeletionTargetId.value = '';
+    void message.error(error instanceof Error ? error.message : '加载文档删除预览失败');
+  } finally {
+    previewingDocumentDeletion.value = false;
+  }
+}
+
+function closeDocumentDeletionModal() {
+  if (deletingDocument.value) {
+    return;
+  }
+  documentDeletionOpen.value = false;
+  documentDeletionPreview.value = null;
+  documentDeletionTargetId.value = '';
+}
+
+async function handleConfirmDeleteDocument() {
+  if (!selectedKnowledgeBase.value || !documentDeletionPreview.value?.canDelete) {
+    return;
+  }
+  deletingDocument.value = true;
+  try {
+    await api.deleteKnowledgeDocument(selectedKnowledgeBase.value.id, documentDeletionPreview.value.documentId);
+    documentDeletionOpen.value = false;
+    documentDeletionPreview.value = null;
+    documentDeletionTargetId.value = '';
+    await loadWorkspace();
+    void message.success('导入文档已删除');
+  } catch (error) {
+    void message.error(error instanceof Error ? error.message : '删除导入文档失败');
+  } finally {
+    deletingDocument.value = false;
   }
 }
 
@@ -489,6 +542,16 @@ async function handlePreviewRetrieval() {
                   <a-space>
                     <a-tag>{{ item.status }}</a-tag>
                     <a-tag color="blue">{{ item.chunkCount }} chunks</a-tag>
+                    <a-button
+                      v-if="canManageGovernance"
+                      danger
+                      ghost
+                      size="small"
+                      :loading="previewingDocumentDeletion && documentDeletionTargetId === item.id"
+                      @click="handleOpenDocumentDeletion(item)"
+                    >
+                      删除导入文档
+                    </a-button>
                   </a-space>
                 </a-list-item>
               </template>
@@ -682,6 +745,63 @@ async function handlePreviewRetrieval() {
       </a-card>
     </a-col>
   </a-row>
+
+  <a-modal
+    :open="documentDeletionOpen"
+    :title="documentDeletionPreview?.canDelete ? '删除导入文档' : '文档删除已被阻断'"
+    :confirm-loading="deletingDocument"
+    :ok-button-props="{ danger: true, disabled: !documentDeletionPreview?.canDelete }"
+    :ok-text="documentDeletionPreview?.canDelete ? '确认删除' : '无法删除'"
+    cancel-text="取消"
+    @ok="handleConfirmDeleteDocument"
+    @cancel="closeDocumentDeletionModal"
+  >
+    <a-space direction="vertical" style="width: 100%" size="middle">
+      <a-alert
+        v-if="documentDeletionPreview?.canDelete"
+        type="warning"
+        show-icon
+        message="删除后会同步清理导入源对象和解析后的知识内容"
+        :description="`会删除源文件、导入任务、文档正文和 ${documentDeletionPreview.chunkCount} 个 chunk。`"
+      />
+      <a-alert
+        v-else-if="documentDeletionPreview"
+        type="error"
+        show-icon
+        message="当前文档已被快照引用，不能删除"
+        description="根据当前策略，只要文档已经进入任何快照，就必须先处理快照再删除文档。"
+      />
+
+      <a-descriptions v-if="documentDeletionPreview" :column="1" bordered size="small">
+        <a-descriptions-item label="标题">{{ documentDeletionPreview.title }}</a-descriptions-item>
+        <a-descriptions-item label="源文件">{{ documentDeletionPreview.fileName }}</a-descriptions-item>
+        <a-descriptions-item label="来源">{{ documentDeletionPreview.sourceUri }}</a-descriptions-item>
+        <a-descriptions-item label="Chunk 数">{{ documentDeletionPreview.chunkCount }}</a-descriptions-item>
+      </a-descriptions>
+
+      <a-card
+        v-if="documentDeletionPreview && documentDeletionPreview.blockers.length"
+        size="small"
+        title="阻断删除的快照"
+      >
+        <a-list :data-source="documentDeletionPreview.blockers" size="small">
+          <template #renderItem="{ item }">
+            <a-list-item>
+              <a-space direction="vertical" style="width: 100%">
+                <a-space wrap>
+                  <a-typography-text strong>{{ item.snapshotId }}</a-typography-text>
+                  <a-tag :color="knowledgeStatusColor(item.status)">{{ item.status }}</a-tag>
+                  <a-tag>{{ item.stage }}</a-tag>
+                  <a-tag>{{ item.retrievalMode }}</a-tag>
+                </a-space>
+                <a-typography-text type="secondary">{{ item.reason }}</a-typography-text>
+              </a-space>
+            </a-list-item>
+          </template>
+        </a-list>
+      </a-card>
+    </a-space>
+  </a-modal>
 
   <a-modal
     :open="uploadGuideOpen"

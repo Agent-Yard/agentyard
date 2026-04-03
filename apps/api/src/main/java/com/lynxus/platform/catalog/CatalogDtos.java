@@ -265,6 +265,41 @@ public final class CatalogDtos {
     ) {
     }
 
+    public record KnowledgeDocumentDeletionBlockerDto(
+        String snapshotId,
+        String status,
+        String stage,
+        String retrievalMode,
+        String reason
+    ) {
+    }
+
+    public record KnowledgeDocumentDeletionPreviewDto(
+        String documentId,
+        String knowledgeBaseId,
+        String fileId,
+        String fileName,
+        String sourceUri,
+        String title,
+        int chunkCount,
+        boolean canDelete,
+        List<KnowledgeDocumentDeletionBlockerDto> blockers
+    ) {
+    }
+
+    public record KnowledgeDocumentDeletionResultDto(
+        String documentId,
+        String knowledgeBaseId,
+        String fileId,
+        String fileName,
+        String title,
+        int deletedChunkCount,
+        int deletedImportJobCount,
+        int deletedDocumentCount,
+        boolean deletedStorageObject
+    ) {
+    }
+
     public record KnowledgeIndexSnapshotDto(
         String id,
         String knowledgeBaseId,

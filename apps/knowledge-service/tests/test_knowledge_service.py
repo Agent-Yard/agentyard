@@ -35,6 +35,7 @@ os.environ["LYNXUS_KNOWLEDGE_EMBEDDING_DIMENSIONS"] = "4"
 os.environ["LYNXUS_KNOWLEDGE_EMBEDDING_BATCH_SIZE"] = "8"
 os.environ["LYNXUS_INTERNAL_AUTH_TOKEN"] = "test-internal-token"
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from lynxus_knowledge_service.main import (
@@ -45,6 +46,7 @@ from lynxus_knowledge_service.main import (
     CreateUrlImportRequest,
     IndexSnapshotRecord,
     IndexSnapshotChunkRecord,
+    KnowledgeChunkRecord,
     KnowledgeDocumentRecord,
     KnowledgeFileRecord,
     KnowledgeImportJobRecord,
@@ -58,11 +60,13 @@ from lynxus_knowledge_service.main import (
     create_index_snapshot,
     create_upload_session,
     create_url_import,
+    delete_document,
     embedding_client,
     engine,
     ensure_postgres_configuration,
     initialize_postgres_schema,
     list_documents,
+    preview_document_deletion,
     retry_import_job,
     retry_index_snapshot,
     retrieval_store,
@@ -579,6 +583,51 @@ class KnowledgeServiceTest(unittest.TestCase):
             documents = db.query(KnowledgeDocumentRecord).filter(KnowledgeDocumentRecord.file_id == file_id).all()
             self.assertEqual(len(documents), 1)
             self.assertEqual(documents[0].status, "READY")
+
+    def test_should_delete_imported_document_and_related_source_records_when_no_snapshot_exists(self) -> None:
+        file_id = self.upload_markdown(
+            "resource-kb-delete",
+            "refund.md",
+            "# 退款规则\n订单未发货时可以直接退款。",
+        )
+
+        with SessionLocal() as db:
+            document = db.query(KnowledgeDocumentRecord).filter(KnowledgeDocumentRecord.file_id == file_id).one()
+            preview = preview_document_deletion("resource-kb-delete", document.id, db)
+            self.assertTrue(preview.canDelete)
+            self.assertEqual(preview.chunkCount, 1)
+
+            deleted = delete_document("resource-kb-delete", document.id, db)
+            self.assertEqual(deleted.fileId, file_id)
+            self.assertEqual(deleted.deletedDocumentCount, 1)
+            self.assertEqual(deleted.deletedChunkCount, 1)
+            self.assertEqual(deleted.deletedImportJobCount, 1)
+            self.assertTrue(deleted.deletedStorageObject)
+
+        with SessionLocal() as db:
+            self.assertEqual(db.query(KnowledgeFileRecord).filter(KnowledgeFileRecord.id == file_id).count(), 0)
+            self.assertEqual(db.query(KnowledgeDocumentRecord).filter(KnowledgeDocumentRecord.file_id == file_id).count(), 0)
+            self.assertEqual(db.query(KnowledgeChunkRecord).count(), 0)
+            self.assertEqual(db.query(KnowledgeImportJobRecord).filter(KnowledgeImportJobRecord.file_id == file_id).count(), 0)
+
+    def test_should_block_document_deletion_when_snapshot_exists(self) -> None:
+        file_id = self.upload_markdown(
+            "resource-kb-delete-blocked",
+            "refund.md",
+            "# 退款规则\n订单未发货时可以直接退款。",
+        )
+        snapshot_id = self.create_snapshot("resource-kb-delete-blocked", [])
+
+        with SessionLocal() as db:
+            document = db.query(KnowledgeDocumentRecord).filter(KnowledgeDocumentRecord.file_id == file_id).one()
+            preview = preview_document_deletion("resource-kb-delete-blocked", document.id, db)
+            self.assertFalse(preview.canDelete)
+            self.assertEqual([item.snapshotId for item in preview.blockers], [snapshot_id])
+            self.assertIn("all ready documents", preview.blockers[0].reason)
+
+            with self.assertRaises(HTTPException) as ctx:
+                delete_document("resource-kb-delete-blocked", document.id, db)
+            self.assertIn("referenced by snapshots", str(ctx.exception))
 
     def test_should_require_internal_token_for_http_endpoints(self) -> None:
         with TestClient(app) as client:

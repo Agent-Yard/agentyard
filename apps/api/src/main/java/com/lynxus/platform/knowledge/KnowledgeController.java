@@ -133,6 +133,17 @@ public class KnowledgeController {
         return ApiResponse.ok(knowledgeService.listDocuments(knowledgeBaseId));
     }
 
+    @GetMapping("/{knowledgeBaseId}/documents/{documentId}/deletion-preview")
+    public ApiResponse<?> previewDocumentDeletion(@PathVariable String knowledgeBaseId, @PathVariable String documentId) {
+        return ApiResponse.ok(knowledgeService.previewDocumentDeletion(knowledgeBaseId, documentId));
+    }
+
+    @DeleteMapping("/{knowledgeBaseId}/documents/{documentId}")
+    @RequireGovernanceWrite
+    public ApiResponse<?> deleteDocument(@PathVariable String knowledgeBaseId, @PathVariable String documentId) {
+        return ApiResponse.ok(knowledgeService.deleteDocument(knowledgeBaseId, documentId));
+    }
+
     @GetMapping("/{knowledgeBaseId}/snapshots")
     public ApiResponse<?> snapshots(@PathVariable String knowledgeBaseId) {
         return ApiResponse.ok(knowledgeService.listIndexSnapshots(knowledgeBaseId));
