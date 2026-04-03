@@ -35,6 +35,7 @@ const documents = ref<KnowledgeDocument[]>([]);
 const snapshots = ref<KnowledgeIndexSnapshot[]>([]);
 const releases = ref<KnowledgeRelease[]>([]);
 const uploading = ref(false);
+const uploadGuideOpen = ref(false);
 const creatingSnapshot = ref(false);
 const previewingRetrieval = ref(false);
 const retrievalPreviewSnapshotId = ref('');
@@ -55,6 +56,36 @@ const urlImportForm = reactive({
   url: '',
   title: '',
 });
+const knowledgeUploadAccept = '.pdf,.docx,.md,.txt,.html,.csv';
+const uploadFormatCards = [
+  {
+    title: '推荐优先',
+    formats: '.md / .txt / .html',
+    description: '纯文本最稳定，标题层级和段落结构越清晰，切分和检索效果越好。',
+  },
+  {
+    title: '表格数据',
+    formats: '.csv',
+    description: '首行应为表头，每行表达一条完整记录，避免把多类主题塞进同一张表。',
+  },
+  {
+    title: '办公文档',
+    formats: '.docx / .pdf',
+    description: '支持导入，但更依赖源文档排版质量；扫描件、双栏、复杂水印会降低解析效果。',
+  },
+] as const;
+const uploadContentRecommendations = [
+  '一份文件聚焦一个主题或流程，文件名直接表达内容，例如“退款规则.md”。',
+  'Markdown 使用明确标题层级，例如 # 一级主题、## 子主题；FAQ 采用“问题 + 回答”连续结构。',
+  'CSV 第一行写清字段名，每一行字段含义完整，不要留大量空列或混入说明段落。',
+  'PDF / DOCX 尽量提供可复制文本，减少截图、扫描页、页眉页脚重复内容和多栏排版。',
+  '文本、HTML、CSV 优先使用 UTF-8 编码，避免乱码导致导入后文本不可读。',
+] as const;
+const uploadContentWarnings = [
+  '仅包含图片的 PDF、截图拼接文档、拍照扫描件，通常无法提取有效文本。',
+  '把多个不相关制度、FAQ、表格混在同一文件里，会让切分结果和召回边界变差。',
+  '依赖颜色、批注、形状连线表达关键信息的文档，导入后这些语义可能丢失。',
+] as const;
 
 const selectedKnowledgeBase = computed(() =>
   props.knowledgeBases.find((item) => item.id === selectedKnowledgeBaseId.value) ?? props.knowledgeBases[0] ?? null,
@@ -359,8 +390,16 @@ async function handlePreviewRetrieval() {
               <a-row :gutter="[16, 16]">
                 <a-col :span="12">
                   <a-card size="small" title="文件上传">
+                    <template #extra>
+                      <a-button type="link" size="small" @click="uploadGuideOpen = true">格式说明</a-button>
+                    </template>
                     <a-space direction="vertical" style="width: 100%">
-                      <a-upload v-if="canManageGovernance" :before-upload="handleUpload" :show-upload-list="false">
+                      <a-upload
+                        v-if="canManageGovernance"
+                        :before-upload="handleUpload"
+                        :show-upload-list="false"
+                        :accept="knowledgeUploadAccept"
+                      >
                         <a-button type="primary" :loading="uploading">上传文件并导入</a-button>
                       </a-upload>
                       <a-alert
@@ -370,6 +409,9 @@ async function handlePreviewRetrieval() {
                         message="当前角色仅可查看知识内容"
                         description="文件导入需要治理写权限。"
                       />
+                      <a-space wrap :size="[0, 8]">
+                        <a-tag v-for="card in uploadFormatCards" :key="card.title" color="blue">{{ card.formats }}</a-tag>
+                      </a-space>
                       <a-typography-text type="secondary">提交后立即返回，后台异步解析并更新状态。</a-typography-text>
                     </a-space>
                   </a-card>
@@ -640,4 +682,67 @@ async function handlePreviewRetrieval() {
       </a-card>
     </a-col>
   </a-row>
+
+  <a-modal
+    :open="uploadGuideOpen"
+    title="文档格式说明"
+    width="760px"
+    @cancel="uploadGuideOpen = false"
+  >
+    <a-space direction="vertical" size="large" style="width: 100%">
+      <a-alert
+        type="info"
+        show-icon
+        message="当前支持上传 .pdf、.docx、.md、.txt、.html、.csv"
+        description="系统会先抽取文本，再按标题、段落或表格行切分为知识片段。结构越清晰，后续检索效果越稳定。"
+      />
+
+      <a-row :gutter="[16, 16]">
+        <a-col v-for="card in uploadFormatCards" :key="card.title" :span="8">
+          <a-card size="small" :title="card.title">
+            <a-space direction="vertical" size="small">
+              <a-typography-text strong>{{ card.formats }}</a-typography-text>
+              <a-typography-text type="secondary">{{ card.description }}</a-typography-text>
+            </a-space>
+          </a-card>
+        </a-col>
+      </a-row>
+
+      <a-card size="small" title="文件内容格式建议">
+        <a-list :data-source="uploadContentRecommendations" size="small" bordered>
+          <template #renderItem="{ item }">
+            <a-list-item>{{ item }}</a-list-item>
+          </template>
+        </a-list>
+      </a-card>
+
+      <a-card size="small" title="不建议上传的内容">
+        <a-list :data-source="uploadContentWarnings" size="small" bordered>
+          <template #renderItem="{ item }">
+            <a-list-item>{{ item }}</a-list-item>
+          </template>
+        </a-list>
+      </a-card>
+
+      <a-card size="small" title="推荐结构示例">
+        <a-typography-paragraph type="secondary">
+          例如 Markdown 可以按“主题 / 子主题 / FAQ”组织，方便系统按标题层级切分：
+        </a-typography-paragraph>
+        <pre style="margin: 0; padding: 12px; background: #f7f8fa; border-radius: 8px; overflow: auto"><code># 退款规则
+## 适用范围
+说明适用于哪些订单、渠道和时间限制。
+
+## 常见问题
+### 未发货能否退款
+可以，提交申请后原路退回。
+
+### 已发货如何处理
+说明退货地址、时限和审核条件。</code></pre>
+      </a-card>
+    </a-space>
+
+    <template #footer>
+      <a-button type="primary" @click="uploadGuideOpen = false">我知道了</a-button>
+    </template>
+  </a-modal>
 </template>
