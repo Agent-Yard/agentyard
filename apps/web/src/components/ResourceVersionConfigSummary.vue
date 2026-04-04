@@ -32,9 +32,6 @@ const toolOperationNames = computed(() =>
     <a-descriptions-item label="模型">{{ configuration.llmModel.modelId }}</a-descriptions-item>
     <a-descriptions-item label="Base URL">{{ configuration.llmModel.baseUrl }}</a-descriptions-item>
     <a-descriptions-item label="API Key 环境变量">{{ configuration.llmModel.apiKeyEnvVar }}</a-descriptions-item>
-    <a-descriptions-item label="Organization">{{ configuration.llmModel.organization }}</a-descriptions-item>
-    <a-descriptions-item label="Project">{{ configuration.llmModel.project }}</a-descriptions-item>
-    <a-descriptions-item label="Region">{{ configuration.llmModel.region }}</a-descriptions-item>
     <a-descriptions-item label="Temperature / Max Tokens">
       {{ configuration.llmModel.temperature }} / {{ configuration.llmModel.maxTokens }}
     </a-descriptions-item>

@@ -304,9 +304,6 @@ export interface LlmModelConfig {
   modelId: string;
   baseUrl: string;
   apiKeyEnvVar: string;
-  organization: string;
-  project: string;
-  region: string;
   temperature: number;
   maxTokens: number;
 }

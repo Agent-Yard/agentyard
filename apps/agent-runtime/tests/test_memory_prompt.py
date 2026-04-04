@@ -59,6 +59,7 @@ from lynxus_agent_runtime.main import (
     resolve_knowledge_binding,
     retrieve_knowledge,
     restore_state,
+    tool_history_for_prompt,
     validate_graph,
     validate_tool_result,
     workflow_result_from_state,
@@ -135,9 +136,6 @@ def make_model_resource(version_id: str = "model-v1") -> ResourceVersionSnapshot
                 modelId="gpt-test",
                 baseUrl="https://example.invalid",
                 apiKeyEnvVar="DUMMY_KEY",
-                organization="",
-                project="",
-                region="",
                 temperature=0.1,
                 maxTokens=512,
             ),
@@ -477,6 +475,7 @@ class MemoryPromptTests(unittest.TestCase):
         )
 
         outcome = build_tool_outcome(
+            "call-1",
             available_tool,
             {"status": "COMPLETED", "ticketId": "TICKET-1001", "reason": "需要人工复核"},
         )
@@ -484,6 +483,7 @@ class MemoryPromptTests(unittest.TestCase):
         self.assertEqual(
             outcome,
             {
+                "callId": "call-1",
                 "toolId": "resource:tool-v1:evaluate_refund",
                 "toolName": "退款策略工具.evaluate_refund",
                 "toolKind": "RESOURCE",
@@ -745,6 +745,55 @@ class MemoryPromptTests(unittest.TestCase):
             history,
             "[USER][2026-03-24 08:33] 用户: 订单号是 123\n[ASSISTANT][2026-03-24 08:34] 助手: 已收到订单号。",
         )
+
+    def test_build_conversation_history_trims_oldest_entries_when_over_budget(self) -> None:
+        long_text = "很长的上下文" * 1200
+        session_context = {
+            "history": [
+                {"role": "USER", "senderName": "用户", "content": "最早消息", "createdAt": "2026-03-24T08:31:20Z"},
+                {"role": "ASSISTANT", "senderName": "助手", "content": long_text, "createdAt": "2026-03-24T08:32:20Z"},
+                {"role": "USER", "senderName": "用户", "content": "最后消息", "createdAt": "2026-03-24T08:33:20Z"},
+            ]
+        }
+
+        history = build_conversation_history(session_context, "新的问题", 10)
+
+        self.assertNotIn("最早消息", history)
+        self.assertIn("最后消息", history)
+        self.assertLessEqual(len(history.encode("utf-8")), 8 * 1024)
+
+    def test_tool_history_for_prompt_keeps_recent_calls_and_truncates_large_payloads(self) -> None:
+        graph = GraphSnapshot(
+            executionMode="GRAPH",
+            nodes=[GraphNodeSnapshot(nodeKey="start", nodeName="开始", nodeType="START", description="开始")],
+            edges=[],
+        )
+        state = make_agent_state(make_assistant(True, 4).model_copy(update={"graph": graph}), graph)
+        for index in range(6):
+            state["tool_history"].append(
+                {
+                    "agentId": "agent-1",
+                    "callId": f"call-{index}",
+                    "toolId": f"resource:tool-v1:op-{index}",
+                    "toolName": f"tool-{index}",
+                    "toolKind": "RESOURCE",
+                    "providerType": "HTTP",
+                    "resourceId": "resource-tool",
+                    "resourceVersionId": "tool-v1",
+                    "resourceName": "工具",
+                    "operation": f"op-{index}",
+                    "arguments": {"payload": "a" * 2048},
+                    "result": {"payload": "b" * 4096},
+                    "createdAt": "2026-03-24T08:35:20Z",
+                }
+            )
+
+        prompt_rows = tool_history_for_prompt(state)
+
+        self.assertEqual(4, len(prompt_rows))
+        self.assertEqual(["call-2", "call-3", "call-4", "call-5"], [item["callId"] for item in prompt_rows])
+        self.assertTrue(str(prompt_rows[0]["arguments"]).endswith("...(truncated)"))
+        self.assertTrue(str(prompt_rows[0]["result"]).endswith("...(truncated)"))
 
     def test_build_runtime_context_block_contains_dynamic_context_with_minute_timestamps(self) -> None:
         prompt = build_runtime_context_block(
@@ -1362,6 +1411,75 @@ class MemoryPromptTests(unittest.TestCase):
 
         self.assertEqual(captured.exception.code, "MODEL_OUTPUT_INVALID")
 
+    def test_parse_agent_structured_response_rejects_missing_tool_call_id(self) -> None:
+        available_tools = make_available_tools([make_tool_resource()])
+        agent = make_agent(memory_window_size=4)
+        graph = GraphSnapshot(
+            executionMode="GRAPH",
+            nodes=[
+                GraphNodeSnapshot(
+                    nodeKey="agent-node",
+                    nodeName="节点",
+                    nodeType="AGENT",
+                    description="说明",
+                    agentId=agent.agentId,
+                )
+            ],
+            edges=[],
+        )
+
+        with self.assertRaises(AgentTurnError) as captured:
+            parse_agent_structured_response(
+                """{
+                  "decisionType": "TOOL_CALL",
+                  "toolRequests": [
+                    {"toolId": "resource:tool-v1:evaluate_refund", "arguments": {"question": "退款"}}
+                  ]
+                }""",
+                graph,
+                graph.nodes[0],
+                [],
+                available_tools,
+            )
+
+        self.assertEqual("TOOL_REQUEST_INVALID", captured.exception.code)
+        self.assertIn("callId", captured.exception.message)
+
+    def test_parse_agent_structured_response_rejects_duplicate_tool_call_ids(self) -> None:
+        available_tools = make_available_tools([make_tool_resource()])
+        agent = make_agent(memory_window_size=4)
+        graph = GraphSnapshot(
+            executionMode="GRAPH",
+            nodes=[
+                GraphNodeSnapshot(
+                    nodeKey="agent-node",
+                    nodeName="节点",
+                    nodeType="AGENT",
+                    description="说明",
+                    agentId=agent.agentId,
+                )
+            ],
+            edges=[],
+        )
+
+        with self.assertRaises(AgentTurnError) as captured:
+            parse_agent_structured_response(
+                """{
+                  "decisionType": "TOOL_CALL",
+                  "toolRequests": [
+                    {"callId": "call-1", "toolId": "resource:tool-v1:evaluate_refund", "arguments": {"question": "退款"}},
+                    {"callId": "call-1", "toolId": "resource:tool-v1:evaluate_refund", "arguments": {"question": "退款"}}
+                  ]
+                }""",
+                graph,
+                graph.nodes[0],
+                [],
+                available_tools,
+            )
+
+        self.assertEqual("TOOL_REQUEST_INVALID", captured.exception.code)
+        self.assertIn("duplicate", captured.exception.message)
+
     def test_parse_agent_structured_response_rejects_external_interaction_projection_fields(self) -> None:
         agent = make_agent(memory_window_size=4)
         graph = GraphSnapshot(
@@ -1662,6 +1780,7 @@ class MemoryPromptTests(unittest.TestCase):
               "skillReads": ["skill-v2"],
               "toolRequests": [
                 {
+                  "callId": "call-refund-1",
                   "toolId": "resource:tool-v1:evaluate_refund",
                   "arguments": {"question": "可以帮我退款吗"}
                 }
@@ -1688,6 +1807,8 @@ class MemoryPromptTests(unittest.TestCase):
 
         self.assertEqual(state["session_context"]["loadedSkillResourceVersionIds"], ["skill-v2"])
         self.assertEqual(len(state["tool_history"]), 1)
+        self.assertEqual("call-refund-1", state["tool_history"][0]["callId"])
+        self.assertEqual("call-refund-1", state["tool_calls"][0]["callId"])
         self.assertEqual(len(state["output_messages"]), 1)
         self.assertEqual(state["output_messages"][0]["payloadType"], "TEXT")
         self.assertEqual(state["output_messages"][0]["messageKey"], "agent-node:2:1")
@@ -1702,6 +1823,7 @@ class MemoryPromptTests(unittest.TestCase):
                 "reason": "订单符合规则，可直接退款。",
             },
         )
+        self.assertEqual("call-refund-1", state["latest_tool_outcome"]["callId"])
 
         first_prompt = mock_llm.await_args_list[0].args[1]
         second_prompt = mock_llm.await_args_list[1].args[1]
@@ -1965,14 +2087,14 @@ class MemoryPromptTests(unittest.TestCase):
               "decisionType": "TOOL_CALL",
               "message": "先创建工单。",
               "toolRequests": [
-                {"toolId": "resource:tool-v1:create_ticket", "arguments": {"question": "我要人工跟进"}}
+                {"callId": "call-ticket-1", "toolId": "resource:tool-v1:create_ticket", "arguments": {"question": "我要人工跟进"}}
               ]
             }""",
             """{
               "decisionType": "TOOL_CALL",
               "message": "补充人工说明。",
               "toolRequests": [
-                {"toolId": "resource:tool-v1:append_comment", "arguments": {"comment": "请尽快处理"}}
+                {"callId": "call-comment-1", "toolId": "resource:tool-v1:append_comment", "arguments": {"comment": "请尽快处理"}}
               ]
             }""",
             """{
@@ -2210,7 +2332,7 @@ class MemoryPromptTests(unittest.TestCase):
           "decisionType": "TOOL_CALL",
           "message": "调用工具",
           "toolRequests": [
-            {"toolId": "resource:tool-v1:evaluate_refund", "arguments": {"question": "可以帮我退款吗"}}
+            {"callId": "call-refund-1", "toolId": "resource:tool-v1:evaluate_refund", "arguments": {"question": "可以帮我退款吗"}}
           ]
         }"""
 

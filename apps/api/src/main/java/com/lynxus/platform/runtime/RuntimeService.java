@@ -1096,9 +1096,6 @@ public class RuntimeService {
                 configuration.llmModel().modelId(),
                 configuration.llmModel().baseUrl(),
                 configuration.llmModel().apiKeyEnvVar(),
-                configuration.llmModel().organization(),
-                configuration.llmModel().project(),
-                configuration.llmModel().region(),
                 configuration.llmModel().temperature(),
                 configuration.llmModel().maxTokens()
             ),

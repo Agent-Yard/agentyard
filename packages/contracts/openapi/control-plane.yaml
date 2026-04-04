@@ -1023,12 +1023,6 @@ components:
           type: string
         apiKeyEnvVar:
           type: string
-        organization:
-          type: string
-        project:
-          type: string
-        region:
-          type: string
         temperature:
           type: number
         maxTokens:
@@ -1933,6 +1927,8 @@ components:
     ToolOutcomeSummary:
       type: object
       properties:
+        callId:
+          type: string
         toolId:
           type: string
         toolName:
@@ -1978,6 +1974,8 @@ components:
     ToolRequest:
       type: object
       properties:
+        callId:
+          type: string
         toolId:
           type: string
         arguments:
@@ -2080,6 +2078,8 @@ components:
       type: object
       properties:
         id:
+          type: string
+        callId:
           type: string
         toolId:
           type: string

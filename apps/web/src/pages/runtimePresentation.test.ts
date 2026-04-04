@@ -82,19 +82,20 @@ describe('runtimePresentation helpers', () => {
           },
         ],
         skillReads: ['skill-v1'],
-        toolRequests: [{ toolId: 'resource:tool-v1:lookup', arguments: {} }],
+        toolRequests: [{ callId: 'call-1', toolId: 'resource:tool-v1:lookup', arguments: {} }],
         humanRequest: null,
         sessionStatePatch: null,
       },
       turnLogs: [],
     };
 
-    expect(workflowDecisionSummary(agentTurnState)).toBe('FINAL / route=default / tools=resource:tool-v1:lookup / skills=1 / outputs=TEXT, EXTERNAL_INTERACTION');
+    expect(workflowDecisionSummary(agentTurnState)).toBe('FINAL / route=default / tools=resource:tool-v1:lookup#call-1 / skills=1 / outputs=TEXT, EXTERNAL_INTERACTION');
   });
 
   it('formats builtin tool calls without resource names', () => {
     expect(toolCallTitle({
       id: 'tool-1',
+      callId: 'call-knowledge-1',
       toolId: 'builtin:knowledge_search',
       toolName: 'knowledge_search',
       toolKind: 'BUILTIN',
@@ -105,7 +106,7 @@ describe('runtimePresentation helpers', () => {
       status: 'COMPLETED',
       detail: 'ok',
       createdAt: '2026-04-02T00:00:00Z',
-    })).toBe('knowledge_search · knowledge_search · BUILTIN');
+    })).toBe('knowledge_search · knowledge_search · BUILTIN · call-knowledge-1');
   });
 
   it('keeps only the last assistant message for each workflow', () => {

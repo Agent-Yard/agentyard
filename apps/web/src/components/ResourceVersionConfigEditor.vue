@@ -64,9 +64,6 @@ function ensureConfigurationState(configuration: ResourceVersionConfiguration, r
       modelId: 'custom-compatible-model',
       baseUrl: 'http://localhost:11434/v1',
       apiKeyEnvVar: 'OPENAI_COMPATIBLE_API_KEY',
-      organization: 'compatible-lab',
-      project: 'default-project',
-      region: 'local',
       temperature: 0.2,
       maxTokens: 1200,
     };
@@ -278,26 +275,11 @@ function removeToolOperation(index: number) {
         </a-form-item>
       </a-col>
       <a-col :span="12">
-        <a-form-item label="Organization">
-          <a-input v-model:value="llmModel.organization" />
-        </a-form-item>
-      </a-col>
-      <a-col :span="8">
-        <a-form-item label="Project">
-          <a-input v-model:value="llmModel.project" />
-        </a-form-item>
-      </a-col>
-      <a-col :span="8">
-        <a-form-item label="Region">
-          <a-input v-model:value="llmModel.region" />
-        </a-form-item>
-      </a-col>
-      <a-col :span="4">
         <a-form-item label="Temperature">
           <a-input-number v-model:value="llmModel.temperature" :min="0" :max="2" :step="0.1" style="width: 100%" />
         </a-form-item>
       </a-col>
-      <a-col :span="4">
+      <a-col :span="12">
         <a-form-item label="Max Tokens">
           <a-input-number v-model:value="llmModel.maxTokens" :min="1" style="width: 100%" />
         </a-form-item>

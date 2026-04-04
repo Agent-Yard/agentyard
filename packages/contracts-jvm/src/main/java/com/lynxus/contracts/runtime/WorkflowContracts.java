@@ -234,9 +234,6 @@ public final class WorkflowContracts {
         String modelId,
         String baseUrl,
         String apiKeyEnvVar,
-        String organization,
-        String project,
-        String region,
         double temperature,
         int maxTokens
     ) {
@@ -456,6 +453,7 @@ public final class WorkflowContracts {
     }
 
     public record ToolRequest(
+        String callId,
         String toolId,
         Map<String, Object> arguments
     ) {
@@ -710,6 +708,7 @@ public final class WorkflowContracts {
 
     public record ToolInvocationSnapshot(
         String id,
+        String callId,
         String toolId,
         String toolName,
         ToolKind toolKind,
@@ -754,6 +753,7 @@ public final class WorkflowContracts {
     }
 
     public record ToolOutcomeSummary(
+        String callId,
         String toolId,
         String toolName,
         ToolKind toolKind,

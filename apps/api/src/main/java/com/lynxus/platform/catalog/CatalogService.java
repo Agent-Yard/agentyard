@@ -1835,9 +1835,6 @@ public class CatalogService {
                     envOrDefault("LYNXUS_OPENAI_COMPATIBLE_MODEL_ID", "custom-compatible-model"),
                     envOrDefault("LYNXUS_OPENAI_COMPATIBLE_BASE_URL", "http://localhost:11434/v1"),
                     envOrDefault("LYNXUS_OPENAI_COMPATIBLE_API_KEY_ENV_VAR", "OPENAI_COMPATIBLE_API_KEY"),
-                    envOrDefault("LYNXUS_OPENAI_COMPATIBLE_ORGANIZATION", "compatible-lab"),
-                    envOrDefault("LYNXUS_OPENAI_COMPATIBLE_PROJECT", "default-project"),
-                    envOrDefault("LYNXUS_OPENAI_COMPATIBLE_REGION", "local"),
                     0.2,
                     1200
                 ),

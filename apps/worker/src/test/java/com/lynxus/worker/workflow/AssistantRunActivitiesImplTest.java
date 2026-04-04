@@ -45,6 +45,7 @@ class AssistantRunActivitiesImplTest {
                 List.of(),
                 false,
                 new WorkflowContracts.ToolOutcomeSummary(
+                    "call-tool-1",
                     "resource-tool-ticket",
                     "工单协同 Tool",
                     WorkflowContracts.ToolKind.RESOURCE,
@@ -146,6 +147,7 @@ class AssistantRunActivitiesImplTest {
             List.of(),
             true,
             new WorkflowContracts.ToolOutcomeSummary(
+                "call-tool-2",
                 "resource-tool-ticket",
                 "工单协同 Tool",
                 WorkflowContracts.ToolKind.RESOURCE,

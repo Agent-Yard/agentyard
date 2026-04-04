@@ -821,6 +821,7 @@ class RuntimeServiceTest {
             List.of(),
             true,
             new WorkflowContracts.ToolOutcomeSummary(
+                "call-tool-1",
                 "resource-tool-ticket",
                 "工单协同 Tool",
                 WorkflowContracts.ToolKind.RESOURCE,

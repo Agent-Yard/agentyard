@@ -80,6 +80,7 @@ public final class ResourceAdapters {
             boolean humanHandoff = payload.contains("投诉") || payload.contains("人工");
             String ticketId = "TICKET-" + Math.abs(payload.hashCode() % 100000);
             return new ToolOutcomeSummary(
+                "local-tool-call",
                 toolName,
                 toolName,
                 ToolKind.RESOURCE,
@@ -104,6 +105,7 @@ public final class ResourceAdapters {
         @Override
         public ToolOutcomeSummary invoke(String toolName, String operation, String payload) {
             return new ToolOutcomeSummary(
+                "mock-tool-call",
                 toolName,
                 toolName,
                 ToolKind.RESOURCE,

@@ -107,7 +107,7 @@ export function workflowDecisionSummary(value?: WorkflowInstance['agentTurnState
     parts.push(`route=${decision.routeDecision}`);
   }
   if (decision.toolRequests.length) {
-    parts.push(`tools=${decision.toolRequests.map((item) => item.toolId).join(', ')}`);
+    parts.push(`tools=${decision.toolRequests.map((item) => `${item.toolId}#${item.callId}`).join(', ')}`);
   }
   if (decision.skillReads.length) {
     parts.push(`skills=${decision.skillReads.length}`);
@@ -120,7 +120,7 @@ export function workflowDecisionSummary(value?: WorkflowInstance['agentTurnState
 
 export function toolCallTitle(value: WorkflowInstance['toolCalls'][number]) {
   if (value.resourceName?.trim()) {
-    return `${value.resourceName} · ${value.operation}`;
+    return `${value.resourceName} · ${value.operation} · ${value.callId}`;
   }
-  return `${value.toolName} · ${value.operation} · ${value.toolKind}`;
+  return `${value.toolName} · ${value.operation} · ${value.toolKind} · ${value.callId}`;
 }

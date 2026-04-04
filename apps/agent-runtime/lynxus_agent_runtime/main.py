@@ -8,7 +8,7 @@ import time
 from contextlib import asynccontextmanager
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable, Dict, List, Optional, TypedDict
+from typing import Any, Awaitable, Callable, Dict, List, NotRequired, Optional, TypedDict
 from urllib.parse import urlparse
 
 import httpx
@@ -96,9 +96,6 @@ class LlmModelConfig(BaseModel):
     modelId: str
     baseUrl: str
     apiKeyEnvVar: str
-    organization: str
-    project: str
-    region: str
     temperature: float
     maxTokens: int
 
@@ -209,6 +206,12 @@ class LlmPromptPayload(TypedDict):
     instruction_block: str
     capability_block: str
     runtime_context_block: str
+    history_truncated: NotRequired[bool]
+    history_dropped_messages: NotRequired[int]
+    tool_history_kept_items: NotRequired[int]
+    tool_history_dropped_items: NotRequired[int]
+    tool_history_arguments_truncated: NotRequired[int]
+    tool_history_results_truncated: NotRequired[int]
 
 
 class SessionMessageSnapshot(BaseModel):
@@ -417,6 +420,7 @@ class WorkflowResumeRequest(BaseModel):
 
 class ToolInvocationSnapshot(BaseModel):
     id: str
+    callId: str
     toolId: str
     toolName: str
     toolKind: str
@@ -457,6 +461,7 @@ class WorkflowFailureSnapshot(BaseModel):
 
 
 class ToolOutcomeSummary(BaseModel):
+    callId: str
     toolId: str
     toolName: str
     toolKind: str
@@ -469,6 +474,7 @@ class ToolOutcomeSummary(BaseModel):
 
 class ToolExecutionRecord(BaseModel):
     agentId: str
+    callId: str
     toolId: str
     toolName: str
     toolKind: str
@@ -483,6 +489,7 @@ class ToolExecutionRecord(BaseModel):
 
 
 class ToolRequest(BaseModel):
+    callId: str
     toolId: str
     arguments: Dict[str, Any] = Field(default_factory=dict)
 
@@ -672,6 +679,10 @@ SESSION_STATE_OP_UPSERT = "UPSERT"
 SESSION_STATE_OP_REMOVE = "REMOVE"
 MAX_SESSION_STATE_PATCH_VALUE_BYTES = 16 * 1024
 MAX_SHARED_SESSION_STATE_BYTES = 64 * 1024
+MAX_PROMPT_HISTORY_BYTES = 8 * 1024
+MAX_PROMPT_TOOL_HISTORY_ITEMS = 4
+MAX_PROMPT_TOOL_ARGUMENT_BYTES = 1024
+MAX_PROMPT_TOOL_RESULT_BYTES = 3 * 1024
 FAILURE_CATEGORY_TIMEOUT = "TIMEOUT"
 FAILURE_CATEGORY_PROVIDER = "PROVIDER_FAILURE"
 FAILURE_CATEGORY_TOOL = "TOOL_FAILURE"
@@ -969,6 +980,7 @@ def append_node(state: AgentState, key: str, name: str, detail: str, status: str
 
 def record_tool_call(
     state: AgentState,
+    call_id: str,
     tool_id: str,
     tool_name: str,
     tool_kind: str,
@@ -981,6 +993,7 @@ def record_tool_call(
     state["tool_calls"].append(
         {
             "id": next_id("tool"),
+            "callId": call_id,
             "toolId": tool_id,
             "toolName": tool_name,
             "toolKind": tool_kind,
@@ -1378,11 +1391,16 @@ def latest_message_timestamp_for_prompt(session_context: Dict[str, Any]) -> str:
 
 
 def build_conversation_history(session_context: Dict[str, Any], question: str, window_size: int) -> str:
+    history, _ = build_conversation_history_with_budget(session_context, question, window_size)
+    return history
+
+
+def build_conversation_history_with_budget(session_context: Dict[str, Any], question: str, window_size: int) -> tuple[str, int]:
     if window_size <= 0:
-        return ""
+        return "", 0
     raw_history = session_context.get("history", [])
     if not isinstance(raw_history, list):
-        return ""
+        return "", 0
 
     history_entries: List[tuple[str, str, str, str]] = []
     for item in raw_history:
@@ -1400,12 +1418,17 @@ def build_conversation_history(session_context: Dict[str, Any], question: str, w
         history_entries = history_entries[:-1]
 
     if not history_entries:
-        return ""
+        return "", 0
     history_lines = []
-    for role, sender_name, content, created_at in history_entries[-window_size:]:
+    visible_entries = history_entries[-window_size:]
+    for role, sender_name, content, created_at in visible_entries:
         prefix = f"[{role}][{created_at}] " if created_at else f"[{role}] "
         history_lines.append(f"{prefix}{sender_name}: {content}")
-    return "\n".join(history_lines)
+    dropped_messages = max(0, len(history_entries) - len(visible_entries))
+    while history_lines and len("\n".join(history_lines).encode("utf-8")) > MAX_PROMPT_HISTORY_BYTES:
+        history_lines.pop(0)
+        dropped_messages += 1
+    return "\n".join(history_lines), dropped_messages
 
 
 def loaded_skill_version_ids(session_context: Dict[str, Any]) -> List[str]:
@@ -1587,6 +1610,27 @@ def apply_session_state_patch(state: AgentState, agent: AgentSnapshot, patch: Se
     validate_shared_state_size(shared_state)
 
 
+def truncate_text_to_bytes(text: str, max_bytes: int) -> str:
+    if max_bytes <= 0:
+        return ""
+    encoded = text.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return text
+    return encoded[:max_bytes].decode("utf-8", errors="ignore").rstrip()
+
+
+def truncate_prompt_value(value: Any, max_bytes: int) -> tuple[Any, bool]:
+    try:
+        serialized = json.dumps(value, ensure_ascii=False)
+    except (TypeError, ValueError):
+        serialized = str(value)
+    if len(serialized.encode("utf-8")) <= max_bytes:
+        return value, False
+    suffix = "...(truncated)"
+    allowed_bytes = max(max_bytes - len(suffix.encode("utf-8")), 0)
+    return truncate_text_to_bytes(serialized, allowed_bytes) + suffix, True
+
+
 def build_runtime_context_block(
     question: str,
     question_created_at: str,
@@ -1702,6 +1746,7 @@ def build_instruction_block() -> str:
         "skillReads": ["skillResourceVersionId; only when decisionType=SKILL_READ or TOOL_CALL"],
         "toolRequests": [
             {
+                "callId": "string; unique within this decision",
                 "toolId": "string",
                 "arguments": {"key": "value; only when decisionType=TOOL_CALL"},
             }
@@ -1890,11 +1935,17 @@ async def call_llm(model_resource: ResourceVersionSnapshot, prompt_payload: LlmP
 
     try:
         logger.info(
-            "llm request prepared provider=%s model=%s systemPromptChars=%s userPromptChars=%s",
+            "llm request prepared provider=%s model=%s systemPromptChars=%s userPromptChars=%s historyTruncated=%s historyDroppedMessages=%s toolHistoryKeptItems=%s toolHistoryDroppedItems=%s toolHistoryArgumentsTruncated=%s toolHistoryResultsTruncated=%s",
             model_config.providerType,
             model_config.modelId,
             len(prompt_payload["system_prompt"]),
             sum(len(message) for message in prompt_user_messages(prompt_payload)),
+            prompt_payload.get("history_truncated", False),
+            prompt_payload.get("history_dropped_messages", 0),
+            prompt_payload.get("tool_history_kept_items", 0),
+            prompt_payload.get("tool_history_dropped_items", 0),
+            prompt_payload.get("tool_history_arguments_truncated", 0),
+            prompt_payload.get("tool_history_results_truncated", 0),
         )
         user_messages = prompt_user_messages(prompt_payload)
         async with httpx.AsyncClient(timeout=LLM_REQUEST_TIMEOUT_SECONDS) as client:
@@ -1911,7 +1962,7 @@ async def call_llm(model_resource: ResourceVersionSnapshot, prompt_payload: LlmP
                     "temporary llm request payload provider=%s model=%s payload=%s",
                     model_config.providerType,
                     model_config.modelId,
-                    json.dumps(request_body, ensure_ascii=False),
+                    json.dumps(request_body, ensure_ascii=False, indent=2),
                 )
                 response = await client.post(
                     f"{model_config.baseUrl.rstrip('/')}/chat/completions",
@@ -1946,7 +1997,7 @@ async def call_llm(model_resource: ResourceVersionSnapshot, prompt_payload: LlmP
                     "temporary llm request payload provider=%s model=%s payload=%s",
                     model_config.providerType,
                     model_config.modelId,
-                    json.dumps(request_body, ensure_ascii=False),
+                    json.dumps(request_body, ensure_ascii=False, indent=2),
                 )
                 response = await client.post(
                     f"{model_config.baseUrl.rstrip('/')}/messages",
@@ -1988,7 +2039,7 @@ async def call_llm(model_resource: ResourceVersionSnapshot, prompt_payload: LlmP
                     "temporary llm request payload provider=%s model=%s payload=%s",
                     model_config.providerType,
                     model_config.modelId,
-                    json.dumps(request_body, ensure_ascii=False),
+                    json.dumps(request_body, ensure_ascii=False, indent=2),
                 )
                 response = await client.post(
                     f"{model_config.baseUrl.rstrip('/')}/models/{model_config.modelId}:generateContent?key={api_key}",
@@ -2302,12 +2353,35 @@ async def call_tool(
 
 
 def tool_history_for_prompt(state: AgentState) -> List[Dict[str, Any]]:
+    rows, _ = tool_history_for_prompt_with_budget(state)
+    return rows
+
+
+def tool_history_for_prompt_with_budget(state: AgentState) -> tuple[List[Dict[str, Any]], Dict[str, int]]:
     prompt_rows: List[Dict[str, Any]] = []
-    for item in state["tool_history"]:
+    raw_history = state["tool_history"]
+    kept_items = raw_history[-MAX_PROMPT_TOOL_HISTORY_ITEMS:]
+    dropped_items = max(0, len(raw_history) - len(kept_items))
+    arguments_truncated = 0
+    results_truncated = 0
+    for item in kept_items:
         if not isinstance(item, dict):
             continue
+        arguments, arguments_was_truncated = truncate_prompt_value(
+            item.get("arguments", {}),
+            MAX_PROMPT_TOOL_ARGUMENT_BYTES,
+        )
+        result, result_was_truncated = truncate_prompt_value(
+            item.get("result", {}),
+            MAX_PROMPT_TOOL_RESULT_BYTES,
+        )
+        if arguments_was_truncated:
+            arguments_truncated += 1
+        if result_was_truncated:
+            results_truncated += 1
         prompt_rows.append(
             {
+                "callId": item.get("callId", ""),
                 "toolId": item.get("toolId", ""),
                 "toolName": item.get("toolName", ""),
                 "toolKind": item.get("toolKind", ""),
@@ -2316,11 +2390,16 @@ def tool_history_for_prompt(state: AgentState) -> List[Dict[str, Any]]:
                 "resourceVersionId": item.get("resourceVersionId"),
                 "resourceName": item.get("resourceName"),
                 "operation": item.get("operation", ""),
-                "arguments": item.get("arguments", {}),
-                "result": item.get("result", {}),
+                "arguments": arguments,
+                "result": result,
             }
         )
-    return prompt_rows
+    return prompt_rows, {
+        "kept_items": len(prompt_rows),
+        "dropped_items": dropped_items,
+        "arguments_truncated": arguments_truncated,
+        "results_truncated": results_truncated,
+    }
 
 
 def default_route_key(graph: GraphSnapshot, node_key: str) -> Optional[str]:
@@ -2466,17 +2545,25 @@ def normalize_tool_requests(
     if not isinstance(raw_requests, list):
         raise AgentTurnError("MODEL_OUTPUT_INVALID", "toolRequests must be a list")
     normalized: List[ToolRequest] = []
+    seen_call_ids: set[str] = set()
     for raw_request in raw_requests:
         if not isinstance(raw_request, dict):
             raise AgentTurnError("TOOL_REQUEST_INVALID", "toolRequests items must be objects")
+        call_id = str(raw_request.get("callId", "")).strip()
         tool_id = str(raw_request.get("toolId", "")).strip()
         arguments = raw_request.get("arguments", {})
+        if not call_id:
+            raise AgentTurnError("TOOL_REQUEST_INVALID", "toolRequests.callId must be a non-empty string")
+        if call_id in seen_call_ids:
+            raise AgentTurnError("TOOL_REQUEST_INVALID", f"duplicate toolRequests.callId={call_id}")
+        seen_call_ids.add(call_id)
         if tool_id not in allowed_tool_ids:
             raise AgentTurnError("TOOL_REQUEST_INVALID", f"unknown toolId={tool_id}")
         if not isinstance(arguments, dict):
             raise AgentTurnError("TOOL_REQUEST_INVALID", "toolRequests.arguments must be an object")
         normalized.append(
             ToolRequest(
+                callId=call_id,
                 toolId=tool_id,
                 arguments=arguments,
             )
@@ -2683,14 +2770,16 @@ def parse_agent_structured_response(
 def store_tool_result(
     state: AgentState,
     agent: AgentSnapshot,
+    call_id: str,
     available_tool: AvailableTool,
     arguments: Dict[str, Any],
     result: Dict[str, Any],
 ) -> None:
-    outcome_summary = build_tool_outcome(available_tool, result)
+    outcome_summary = build_tool_outcome(call_id, available_tool, result)
     state["tool_history"].append(
         {
             "agentId": agent.agentId,
+            "callId": call_id,
             "toolId": available_tool.toolId,
             "toolName": available_tool.toolName,
             "toolKind": available_tool.toolKind,
@@ -2707,8 +2796,9 @@ def store_tool_result(
     state["latest_tool_outcome"] = outcome_summary
 
 
-def build_tool_outcome(available_tool: AvailableTool, result: Dict[str, Any]) -> Dict[str, Any]:
+def build_tool_outcome(call_id: str, available_tool: AvailableTool, result: Dict[str, Any]) -> Dict[str, Any]:
     return {
+        "callId": call_id,
         "toolId": available_tool.toolId,
         "toolName": available_tool.toolName,
         "toolKind": available_tool.toolKind,
@@ -2958,11 +3048,12 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
     skill_resources = resolve_skill_resources(assistant, agent)
     available_tools = available_tools_for_agent(assistant, agent, knowledge_binding)
     resource_index_by_version = resource_index(assistant)
-    conversation_history = build_conversation_history(
+    conversation_history, history_dropped_messages = build_conversation_history_with_budget(
         state["session_context"],
         state["question"],
         memory_window_for_agent(assistant, agent),
     )
+    history_truncated = history_dropped_messages > 0
 
     detail_lines = [agent.responsibility]
     route_key: Optional[str] = None
@@ -2995,6 +3086,7 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
         state["agent_turn_state"]["turnIndex"] = turn_index
         available_skills = available_skill_catalog(skill_resources)
         loaded_skills = loaded_skill_details(skill_resources, state["session_context"])
+        prompt_tool_history, tool_history_budget = tool_history_for_prompt_with_budget(state)
         prompt_blocks = build_structured_agent_prompt(
             state["question"],
             latest_message_timestamp_for_prompt(state["session_context"]),
@@ -3004,7 +3096,7 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
             agent_scope(state["session_context"], agent.agentId),
             available_skills,
             loaded_skills,
-            tool_history_for_prompt(state),
+            prompt_tool_history,
             state["resume_input"],
             available_tools,
             available_routes_for_prompt(graph, node.nodeKey),
@@ -3013,6 +3105,12 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
         prompt_payload: LlmPromptPayload = {
             "system_prompt": build_system_prompt(agent),
             **prompt_blocks,
+            "history_truncated": history_truncated,
+            "history_dropped_messages": history_dropped_messages,
+            "tool_history_kept_items": tool_history_budget["kept_items"],
+            "tool_history_dropped_items": tool_history_budget["dropped_items"],
+            "tool_history_arguments_truncated": tool_history_budget["arguments_truncated"],
+            "tool_history_results_truncated": tool_history_budget["results_truncated"],
         }
         state["agent_turn_state"]["phase"] = "CALL_MODEL"
         try:
@@ -3178,9 +3276,10 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
                 tool_resource = resource_index_by_version.get(available_tool.resourceVersionId or "")
                 try:
                     tool_result = await call_tool(available_tool, tool_request.arguments, knowledge_binding, resource_index_by_version)
-                    store_tool_result(state, agent, available_tool, tool_request.arguments, tool_result)
+                    store_tool_result(state, agent, tool_request.callId, available_tool, tool_request.arguments, tool_result)
                     record_tool_call(
                         state,
+                        tool_request.callId,
                         available_tool.toolId,
                         available_tool.toolName,
                         available_tool.toolKind,
@@ -3194,6 +3293,7 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
                 except AgentTurnError as exc:
                     record_tool_call(
                         state,
+                        tool_request.callId,
                         available_tool.toolId,
                         available_tool.toolName,
                         available_tool.toolKind,
@@ -3232,6 +3332,7 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
                 except WorkflowFailureError as exc:
                     record_tool_call(
                         state,
+                        tool_request.callId,
                         available_tool.toolId,
                         available_tool.toolName,
                         available_tool.toolKind,
@@ -3257,6 +3358,7 @@ async def execute_agent_node(state: AgentState, node: GraphNodeSnapshot) -> None
                 except Exception as exc:
                     record_tool_call(
                         state,
+                        tool_request.callId,
                         available_tool.toolId,
                         available_tool.toolName,
                         available_tool.toolKind,

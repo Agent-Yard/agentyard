@@ -125,6 +125,7 @@ export interface WorkflowFailureSnapshot {
 
 export interface ToolInvocationSnapshot {
   id: string;
+  callId: string;
   toolId: string;
   toolName: string;
   toolKind: ToolKind;
@@ -138,6 +139,7 @@ export interface ToolInvocationSnapshot {
 }
 
 export interface ToolOutcomeSummary {
+  callId: string;
   toolId: string;
   toolName: string;
   toolKind: ToolKind;
@@ -266,6 +268,7 @@ export interface SharedSessionState {
 }
 
 export interface ToolRequest {
+  callId: string;
   toolId: string;
   arguments: Record<string, unknown>;
 }

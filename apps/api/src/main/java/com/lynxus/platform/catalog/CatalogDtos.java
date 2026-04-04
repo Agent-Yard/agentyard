@@ -405,9 +405,6 @@ public final class CatalogDtos {
         String modelId,
         String baseUrl,
         String apiKeyEnvVar,
-        String organization,
-        String project,
-        String region,
         double temperature,
         int maxTokens
     ) {
