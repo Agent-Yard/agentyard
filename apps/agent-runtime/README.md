@@ -1,15 +1,14 @@
 # agent-runtime
 
-`agent-runtime` 是 Lynxus 的 Python 执行运行时，负责执行控制面下发的助手运行快照。
-
-默认情况下，已发布助手会按发布快照运行；未发布草稿在满足运行前置条件时，也会由控制面即时解析当前编排、资源和知识绑定并生成临时运行快照。当前实现里，草稿态并不天然禁止对话，只有缺少默认模型等关键前置条件时才会阻断启动。
+`agent-runtime` 是 Lynxus 的 Python 执行运行时，负责执行单个 owner agent 的单轮推理。
 
 当前职责包括：
 
-- 执行 `START / AGENT / HUMAN / END` 图节点
-- 调用知识库、Tool、LLM Model 和 Skill 资源
-- 在人工节点生成 checkpoint，并在恢复后继续推进
-- 返回 workflow 当前结果，包括节点轨迹、Tool 调用摘要和人工待办
+- 接收 `AgentTurnRequest`
+- 组装 `PromptInstruction + PromptRuntimeMessages + PromptCapabilities`
+- 在单轮推理内执行有上限的 `LLM -> tool_call -> tool_result -> final_decision` 循环
+- 返回新的 `sharedState` 快照
+- 通过内部鉴权和 `traceparent` 头保持服务间调用约束与链路日志
 
 ## 启动
 
@@ -25,19 +24,18 @@ pnpm local:agent-runtime
 
 ```bash
 uv run --package lynxus-agent-runtime uvicorn lynxus_agent_runtime.main:app --reload --host 127.0.0.1 --port 8090
-uv run --directory apps/agent-runtime --package lynxus-agent-runtime pytest tests/test_memory_prompt.py
+uv run --directory apps/agent-runtime --package lynxus-agent-runtime pytest tests/test_internal_auth.py
 ```
 
 [`scripts/local/agent-runtime.sh`](/Users/eric/projects/lynxus/scripts/local/agent-runtime.sh) 会直接使用 `uv run --package lynxus-agent-runtime ...`，因此需要先安装 `uv` 并在仓库根目录执行 `uv sync --all-packages`。
 
 ## 接口
 
-当前 runtime 暴露两个主要接口：
+当前 runtime 暴露的核心接口：
 
-- `POST /agent-runs/start`
-- `POST /agent-runs/resume`
+- `POST /agent-turns/execute`
 
-它们由 `apps/worker` 通过 HTTP 调用，不直接面向控制台页面。`agent-runtime` 本身不区分“发布快照”还是“草稿临时快照”，只消费控制面组装后的 `AssistantRunSnapshot` 并执行图节点。
+它由 `apps/worker` 通过 HTTP 调用，不直接面向控制台页面。
 
 ## 环境变量
 
@@ -61,5 +59,9 @@ uv run --directory apps/agent-runtime --package lynxus-agent-runtime pytest test
 
 ## 当前边界
 
-- 真实模型调用没有本地 fallback
-- 当前 Skill 资源承担“按需技能提示读取”职责，不再是独立 Prompt Template 资源
+- 当前 act loop 已接入 OpenAI-compatible function/tool calling
+- `AgentTurnRequest` 现在会携带 assistant release 冻结后的 model / skill / tool descriptor
+- `AgentTurnRequest` 也会携带冻结后的 knowledge binding；runtime 通过内部接口远程调用 knowledge-service 完成在线检索
+- tools 会以模型原生 function/tool definitions 暴露，并按 HTTP / MCP provider config 执行
+- skills 采用“目录先暴露，详情按需读取”的模式，模型可先返回 `skillReads` 请求具体 skill prompt
+- 未配置可用模型 provider 时，runtime 仍保留 deterministic fallback 作为降级路径

@@ -19,9 +19,9 @@ public class InMemoryCatalogRepository implements CatalogRepository {
             && snapshot.scenarios().isEmpty()
             && snapshot.assistants().isEmpty()
             && snapshot.agents().isEmpty()
+            && snapshot.playbooks().isEmpty()
             && snapshot.resources().isEmpty()
             && snapshot.resourceVersions().isEmpty()
-            && snapshot.assistantReleases().isEmpty()
-            && snapshot.orchestrations().isEmpty();
+            && snapshot.assistantReleases().isEmpty();
     }
 }

@@ -8,7 +8,6 @@ import type {
   Resource,
   Scenario,
   UpdateAssistantPayload,
-  WorkflowInstance,
 } from '../types';
 
 const props = defineProps<{
@@ -16,7 +15,6 @@ const props = defineProps<{
   scenarios: Scenario[];
   resources: Resource[];
   knowledgeBases: KnowledgeBase[];
-  workflows: WorkflowInstance[];
   catalogRevision: number;
   canManageGovernance: boolean;
 }>();
@@ -25,7 +23,6 @@ const emit = defineEmits<{
   createAssistant: [payload: CreateAssistantPayload];
   updateAssistant: [payload: { assistantId: string; data: UpdateAssistantPayload }];
   deleteAssistant: [assistantId: string];
-  openWorkflow: [workflowId: string];
 }>();
 
 const selectedAssistantId = ref('');
@@ -33,6 +30,22 @@ const createForm = reactive<CreateAssistantPayload>({
   scenarioId: '',
   name: '',
   description: '',
+  primaryAgentId: null,
+  ownerPolicy: {
+    maxOwnerSwitchesPerTurn: 3,
+  },
+  sessionPolicy: {
+    idleTimeout: 'PT30M',
+    maxWorkflowAge: 'P7D',
+    maxWorkflowHistoryEvents: 20000,
+  },
+  replyPolicy: {
+    ownerOnly: true,
+  },
+  playbookPolicy: {
+    timeoutPolicy: null,
+    retryPolicy: null,
+  },
   modelPolicy: {
     defaultModelResourceId: null,
   },
@@ -49,6 +62,22 @@ const editForm = reactive<UpdateAssistantPayload>({
   name: '',
   description: '',
   status: 'DRAFT',
+  primaryAgentId: null,
+  ownerPolicy: {
+    maxOwnerSwitchesPerTurn: 3,
+  },
+  sessionPolicy: {
+    idleTimeout: 'PT30M',
+    maxWorkflowAge: 'P7D',
+    maxWorkflowHistoryEvents: 20000,
+  },
+  replyPolicy: {
+    ownerOnly: true,
+  },
+  playbookPolicy: {
+    timeoutPolicy: null,
+    retryPolicy: null,
+  },
   modelPolicy: {
     defaultModelResourceId: null,
   },
@@ -71,11 +100,6 @@ const knowledgeBaseOptions = computed(() => props.knowledgeBases.map((item) => (
 const currentDraftModelResource = computed(() =>
   props.resources.find((item) => item.id === current.value?.modelPolicy.defaultModelResourceId) ?? null,
 );
-const latestWorkflowWithModelHits = computed(() =>
-  props.workflows.find((workflow) => workflow.assistantId === current.value?.id && workflow.modelHits.length > 0) ?? null,
-);
-const latestRuntimeModelHit = computed(() => latestWorkflowWithModelHits.value?.modelHits.at(-1) ?? null);
-
 const createModelHint = computed(() => {
   if (!modelResources.value.length) {
     return { type: 'warning' as const, message: '当前没有可用 LLM 资源，无法配置默认模型。' };
@@ -104,10 +128,6 @@ function resourceVersionLabel(resource: Resource | null | undefined) {
   return `${resource.name} @ ${version}`;
 }
 
-function sourceLabel(source: string) {
-  return source === 'AGENT_OVERRIDE' ? 'Agent Override' : 'Assistant Default';
-}
-
 const draftModelDescription = computed(() => {
   if (!current.value?.modelPolicy.defaultModelResourceId) {
     return '未配置';
@@ -122,14 +142,6 @@ const releaseModelDescription = computed(() => {
   }
   const provider = binding.providerType && binding.modelId ? `${binding.providerType} / ${binding.modelId}` : '模型配置未记录';
   return `${binding.resourceName} @ ${binding.resourceVersion} · ${provider}`;
-});
-
-const runtimeModelDescription = computed(() => {
-  const hit = latestRuntimeModelHit.value;
-  if (!hit || !latestWorkflowWithModelHits.value) {
-    return '暂无运行命中';
-  }
-  return `${hit.resourceName} @ ${hit.resourceVersion} · ${hit.providerType} / ${hit.modelId} · ${sourceLabel(hit.source)} · ${hit.nodeName}`;
 });
 
 watch(
@@ -155,6 +167,11 @@ watch(
     editForm.name = assistant.name;
     editForm.description = assistant.description;
     editForm.status = assistant.version.status;
+    editForm.primaryAgentId = assistant.primaryAgentId;
+    editForm.ownerPolicy = { ...assistant.ownerPolicy };
+    editForm.sessionPolicy = { ...assistant.sessionPolicy };
+    editForm.replyPolicy = { ...assistant.replyPolicy };
+    editForm.playbookPolicy = { ...assistant.playbookPolicy };
     editForm.modelPolicy = { ...assistant.modelPolicy };
     editForm.knowledgeAccessPolicy = { ...assistant.knowledgeAccessPolicy };
     editForm.memoryPolicy = { ...assistant.memoryPolicy };
@@ -340,12 +357,7 @@ function submitUpdate() {
           <a-descriptions :column="1" size="small">
             <a-descriptions-item label="草稿默认模型">{{ draftModelDescription }}</a-descriptions-item>
             <a-descriptions-item label="当前发布冻结模型">{{ releaseModelDescription }}</a-descriptions-item>
-            <a-descriptions-item label="最近一次运行命中模型">{{ runtimeModelDescription }}</a-descriptions-item>
           </a-descriptions>
-          <a-space v-if="latestWorkflowWithModelHits" style="margin-top: 12px">
-            <a-tag color="processing">Workflow {{ latestWorkflowWithModelHits.id }}</a-tag>
-            <a-button size="small" @click="emit('openWorkflow', latestWorkflowWithModelHits.id)">查看 Workflow 命中详情</a-button>
-          </a-space>
         </a-card>
 
         <a-form layout="vertical" :model="editForm" @finish="submitUpdate">

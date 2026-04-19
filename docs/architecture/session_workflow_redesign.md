@@ -175,6 +175,8 @@ session workflow 在执行动作前先发送 `accompanyingReply`。典型场景�
 
 - 执行单个 agent 的一轮推理
 - 在推理循环内部处理工具调用和知识库检索
+  - 知识库检索能力由 runtime 通过内部接口远程调用 `knowledge-service` 完成
+  - 不要求把 `knowledge-service` 的存储层、导入链路、索引构建链路整体并入 runtime
 - 在推理循环内部读写 `sharedState`（工具调用结果、中间推理产物、用户偏好摘要等认知性上下文可即时写入）
 - 返回结构化决策结果和更新后的 `sharedState` 给 session workflow
 
@@ -566,7 +568,8 @@ Session 观测以 `session event` 为主，playbook 观测以 `playbook run` 为
 |------|--------|------|
 | `apps/api` | Java Spring Boot | 控制面 API、目录管理、持久化投影、SSE 推送 |
 | `apps/worker` | Java Temporal | session workflow 状态机、playbook child workflow 编排、activity 调度 |
-| `apps/agent-runtime` | Python FastAPI | 单 agent 单轮推理、工具调用、知识库检索（合并 knowledge-service） |
+| `apps/agent-runtime` | Python FastAPI | 单 agent 单轮推理、工具调用、通过内部接口远程调用 knowledge-service 完成在线知识检索 |
+| `apps/knowledge-service` | Python FastAPI | 知识库导入、切片、索引快照构建、检索与 chunk read 数据接口 |
 | `apps/web` | Vue | 前端控制台 |
 | `packages/contracts-jvm` | Java | JVM 侧共享契约 |
 | `packages/contracts` | TypeScript | 前端共享契约 + OpenAPI |

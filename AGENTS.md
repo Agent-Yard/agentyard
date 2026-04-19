@@ -1,7 +1,7 @@
 ## Rules for this project
 - DO NOT CONSIDER COMPATIBILITY WHEN CODING, INCLUDING EXISTED DATA IN DATABASE
 - ANY MODIFICATIONS MUST BE CONSIDERED FROM A GLOBAL PERSPECTIVE, TAKING INTO ACCOUNT THE ENTIRE PROJECT, ALL MODULES, AND THE ASSOCIATED IMPACTS ON DOCUMENTATION.
-- DO NOT MODIFY FILES UNDER `docs/develop_record/`; they are historical records only.
+- DO NOT MODIFY FILES UNDER `docs/develop_record/` unless specifically asked; they are historical records only.
 
 ## Monorepo Current Layout
 
@@ -23,8 +23,9 @@ scripts/       Local startup wrappers and env loading
 docs/
   architecture/ current architecture and startup notes
   briefing/     project briefing files, no need to read this unless required
+  doing/        active execution docs and in-progress task context
   todo/         current backlog and next-step docs
-  develop_record/ working notes and refactor records, no need to read this unless required
+  develop_record/ archived working notes and completed refactor records, no need to read this unless required
 ```
 
 ## Test Commands

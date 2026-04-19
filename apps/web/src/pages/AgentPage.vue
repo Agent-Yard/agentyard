@@ -32,6 +32,10 @@ const createForm = reactive<CreateAgentPayload>({
   name: '',
   role: '',
   responsibility: '',
+  canOwnSession: true,
+  allowedActions: ['REPLY', 'NO_REPLY', 'SWITCH_OWNER', 'RUN_PLAYBOOK', 'SESSION_HUMAN_HANDOFF'],
+  switchableOwnerAgentIds: [],
+  playbookIds: [],
   executionPolicy: {
     inheritAssistantDefaults: true,
     modelResourceId: null,
@@ -48,6 +52,10 @@ const editForm = reactive<UpdateAgentPayload>({
   name: '',
   role: '',
   responsibility: '',
+  canOwnSession: true,
+  allowedActions: ['REPLY', 'NO_REPLY', 'SWITCH_OWNER', 'RUN_PLAYBOOK', 'SESSION_HUMAN_HANDOFF'],
+  switchableOwnerAgentIds: [],
+  playbookIds: [],
   executionPolicy: {
     inheritAssistantDefaults: true,
     modelResourceId: null,
@@ -70,10 +78,23 @@ const assistantAgents = computed(() =>
 const currentAgent = computed(() =>
   assistantAgents.value.find((item) => item.id === selectedAgentId.value) ?? assistantAgents.value[0],
 );
+const availableOwnerOptions = computed(() =>
+  assistantAgents.value.map((item) => ({ label: item.name, value: item.id })),
+);
+const availablePlaybookOptions = computed(() =>
+  (currentAssistant.value?.playbooks ?? []).map((item) => ({ label: item.name, value: item.id })),
+);
 const modelResources = computed(() => props.resources.filter((item) => item.type === 'LLM_MODEL'));
 const skillResources = computed(() => props.resources.filter((item) => item.type === 'SKILL'));
 const toolResources = computed(() => props.resources.filter((item) => item.type === 'TOOL'));
 const knowledgeBaseOptions = computed(() => props.knowledgeBases.map((item) => ({ label: item.name, value: item.id })));
+const actionOptions = [
+  { label: 'REPLY', value: 'REPLY' },
+  { label: 'NO_REPLY', value: 'NO_REPLY' },
+  { label: 'SWITCH_OWNER', value: 'SWITCH_OWNER' },
+  { label: 'RUN_PLAYBOOK', value: 'RUN_PLAYBOOK' },
+  { label: 'SESSION_HUMAN_HANDOFF', value: 'SESSION_HUMAN_HANDOFF' },
+];
 
 function toolOperationSummary(resource: Resource) {
   return resource.effectiveVersion?.configuration.tool?.operations?.map((operation) => operation.name).join(' / ')
@@ -138,6 +159,10 @@ watch(
     editForm.name = agent.name;
     editForm.role = agent.role;
     editForm.responsibility = agent.responsibility;
+    editForm.canOwnSession = agent.canOwnSession;
+    editForm.allowedActions = [...agent.allowedActions];
+    editForm.switchableOwnerAgentIds = [...agent.switchableOwnerAgentIds];
+    editForm.playbookIds = [...agent.playbookIds];
     editForm.executionPolicy = {
       ...agent.executionPolicy,
       skillResourceIds: [...agent.executionPolicy.skillResourceIds],
@@ -170,6 +195,9 @@ watch(
 function submitCreate() {
   emit('createAgent', {
     ...createForm,
+    allowedActions: [...createForm.allowedActions],
+    switchableOwnerAgentIds: [...createForm.switchableOwnerAgentIds],
+    playbookIds: [...createForm.playbookIds],
     executionPolicy: {
       ...createForm.executionPolicy,
       skillResourceIds: [...createForm.executionPolicy.skillResourceIds],
@@ -179,6 +207,10 @@ function submitCreate() {
   createForm.name = '';
   createForm.role = '';
   createForm.responsibility = '';
+  createForm.canOwnSession = true;
+  createForm.allowedActions = ['REPLY', 'NO_REPLY', 'SWITCH_OWNER', 'RUN_PLAYBOOK', 'SESSION_HUMAN_HANDOFF'];
+  createForm.switchableOwnerAgentIds = [];
+  createForm.playbookIds = [];
   createForm.executionPolicy.systemPrompt = '';
   createForm.executionPolicy.skillResourceIds = [];
   createForm.executionPolicy.toolResourceIds = [];
@@ -194,6 +226,10 @@ function submitSave() {
       name: editForm.name,
       role: editForm.role,
       responsibility: editForm.responsibility,
+      canOwnSession: editForm.canOwnSession,
+      allowedActions: [...editForm.allowedActions],
+      switchableOwnerAgentIds: [...editForm.switchableOwnerAgentIds],
+      playbookIds: [...editForm.playbookIds],
       executionPolicy: {
         ...editForm.executionPolicy,
         skillResourceIds: [...editForm.executionPolicy.skillResourceIds],
@@ -253,6 +289,21 @@ function submitSave() {
               mode="multiple"
               :options="toolResources.map((item) => ({ label: item.name, value: item.id }))"
             />
+          </a-form-item>
+          <a-row :gutter="[16, 16]">
+            <a-col :span="12">
+              <a-form-item label="允许动作">
+                <a-select v-model:value="createForm.allowedActions" mode="multiple" :options="actionOptions" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="可切换 Owner">
+                <a-select v-model:value="createForm.switchableOwnerAgentIds" mode="multiple" :options="availableOwnerOptions" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-form-item label="可启动 Playbook">
+            <a-select v-model:value="createForm.playbookIds" mode="multiple" :options="availablePlaybookOptions" />
           </a-form-item>
           <a-button type="primary" html-type="submit">创建智能体</a-button>
         </a-form>
@@ -373,6 +424,21 @@ function submitSave() {
               mode="multiple"
               :options="toolResources.map((item) => ({ label: item.name, value: item.id }))"
             />
+          </a-form-item>
+          <a-row :gutter="[16, 16]">
+            <a-col :span="12">
+              <a-form-item label="允许动作">
+                <a-select v-model:value="editForm.allowedActions" mode="multiple" :options="actionOptions" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="可切换 Owner">
+                <a-select v-model:value="editForm.switchableOwnerAgentIds" mode="multiple" :options="availableOwnerOptions" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-form-item label="可启动 Playbook">
+            <a-select v-model:value="editForm.playbookIds" mode="multiple" :options="availablePlaybookOptions" />
           </a-form-item>
 
           <a-form-item label="Tool 发布冻结">

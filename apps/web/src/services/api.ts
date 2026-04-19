@@ -3,21 +3,17 @@ import type {
   Assistant,
   BusinessDomain,
   CatalogSummary,
-  ConversationMessagePayload,
-  ConversationSession,
   CreateAssistantPayload,
   CreateAgentPayload,
-  CreateConversationSessionPayload,
+  CreateSessionPayload,
   CreateDomainPayload,
   CreateKnowledgeBasePayload,
   CreateKnowledgeReleasePayload,
+  CreatePlaybookPayload,
   CreateResourcePayload,
   CreateResourceVersionPayload,
   CreateScenarioPayload,
   DeletionImpactPreview,
-  ExternalInteractionCallbackPayload,
-  ExternalInteractionReturnPayload,
-  ExternalInteractionTask,
   KnowledgeBase,
   KnowledgeDocument,
   KnowledgeDocumentDeletionPreview,
@@ -33,21 +29,22 @@ import type {
   KnowledgeUploadSession,
   LogoutResponse,
   ObjectReferenceAnalysis,
+  Playbook,
   Resource,
   ResourceVersion,
   ReferenceObjectType,
   Scenario,
-  TaskInstance,
+  SessionRuntimeDetail,
+  SessionRuntimeSession,
   UpdateAssistantPayload,
   UpdateAgentPayload,
   UpdateDomainPayload,
   UpdateKnowledgeBasePayload,
-  UpdateOrchestrationPayload,
+  UpdatePlaybookPayload,
   UpdateResourcePayload,
   UpdateResourceVersionPayload,
   UpdateScenarioPayload,
   UserSession,
-  WorkflowInstance,
 } from '../types';
 
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api';
@@ -125,17 +122,21 @@ export const api = {
     request<ObjectReferenceAnalysis>(`/catalog/references/${objectType}/${objectId}`),
   getDeletionImpactPreview: (objectType: ReferenceObjectType, objectId: string) =>
     request<DeletionImpactPreview>(`/catalog/deletion-preview/${objectType}/${objectId}`),
-  getConversationSessions: () => request<ConversationSession[]>('/runtime/sessions'),
-  getExternalInteractionTask: (interactionTaskId: string) =>
-    request<ExternalInteractionTask>(`/runtime/interactions/${interactionTaskId}`),
-  acknowledgeExternalInteractionReturn: (interactionTaskId: string, payload: ExternalInteractionReturnPayload) =>
-    request<ExternalInteractionTask>(`/runtime/interactions/${interactionTaskId}/return`, jsonOptions('POST', payload)),
-  callbackExternalInteraction: (provider: string, payload: ExternalInteractionCallbackPayload) =>
-    request<ExternalInteractionTask>(`/runtime/interactions/callbacks/${provider}`, jsonOptions('POST', payload)),
-  createConversationSession: (payload: CreateConversationSessionPayload) =>
-    request<ConversationSession>('/runtime/sessions', jsonOptions('POST', payload)),
-  sendConversationMessage: (sessionId: string, payload: ConversationMessagePayload) =>
-    request<ConversationSession>(`/runtime/sessions/${sessionId}/messages`, jsonOptions('POST', payload)),
+  getRuntimeSessions: () => request<SessionRuntimeSession[]>('/session-runtime/sessions'),
+  getRuntimeSessionDetail: (sessionId: string) =>
+    request<SessionRuntimeDetail>(`/session-runtime/sessions/${sessionId}`),
+  createRuntimeSession: (payload: CreateSessionPayload) =>
+    request<SessionRuntimeSession>('/session-runtime/sessions', jsonOptions('POST', payload)),
+  sendRuntimeSessionMessage: (sessionId: string, payload: { customerId: string; message: string }) =>
+    request<SessionRuntimeSession>(`/session-runtime/sessions/${sessionId}/messages`, jsonOptions('POST', payload)),
+  humanReplyRuntimeSession: (sessionId: string, payload: { operatorId: string; message: string; payload?: Record<string, unknown> }) =>
+    request<SessionRuntimeSession>(`/session-runtime/sessions/${sessionId}/human-reply`, jsonOptions('POST', payload)),
+  resumeRuntimePlaybookWithHuman: (sessionId: string, payload: { playbookRunId: string; payload?: Record<string, unknown> }) =>
+    request<SessionRuntimeSession>(`/session-runtime/sessions/${sessionId}/human-resume`, jsonOptions('POST', payload)),
+  resumeRuntimePlaybookWithExternalCallback: (sessionId: string, payload: { playbookRunId: string; payload?: Record<string, unknown> }) =>
+    request<SessionRuntimeSession>(`/session-runtime/sessions/${sessionId}/external-callback`, jsonOptions('POST', payload)),
+  endRuntimeSessionHandoff: (sessionId: string) =>
+    request<SessionRuntimeSession>(`/session-runtime/sessions/${sessionId}/handoff/end`, jsonOptions('POST')),
   createDomain: (payload: CreateDomainPayload) => request<BusinessDomain>('/domains', jsonOptions('POST', payload)),
   updateDomain: (domainId: string, payload: UpdateDomainPayload) =>
     request<BusinessDomain>(`/domains/${domainId}`, jsonOptions('PUT', payload)),
@@ -152,6 +153,10 @@ export const api = {
   deleteAgent: (agentId: string) => request<Agent>(`/agents/${agentId}`, jsonOptions('DELETE')),
   updateAgent: (agentId: string, payload: UpdateAgentPayload) =>
     request<Agent>(`/agents/${agentId}`, jsonOptions('PUT', payload)),
+  createPlaybook: (payload: CreatePlaybookPayload) => request<Playbook>('/playbooks', jsonOptions('POST', payload)),
+  deletePlaybook: (playbookId: string) => request<Playbook>(`/playbooks/${playbookId}`, jsonOptions('DELETE')),
+  updatePlaybook: (playbookId: string, payload: UpdatePlaybookPayload) =>
+    request<Playbook>(`/playbooks/${playbookId}`, jsonOptions('PUT', payload)),
   createResource: (payload: CreateResourcePayload) => request<Resource>('/resources', jsonOptions('POST', payload)),
   deleteResource: (resourceId: string) => request<Resource>(`/resources/${resourceId}`, jsonOptions('DELETE')),
   updateResource: (resourceId: string, payload: UpdateResourcePayload) =>
@@ -214,14 +219,5 @@ export const api = {
     request<KnowledgeIndexSnapshot>(`/knowledge-bases/${knowledgeBaseId}/snapshots/${snapshotId}/retry`, jsonOptions('POST')),
   previewKnowledgeRetrieval: (knowledgeBaseId: string, payload: KnowledgeRetrievalPreviewRequest) =>
     request<KnowledgeRetrievalPreviewResult>(`/knowledge-bases/${knowledgeBaseId}/retrieval-preview`, jsonOptions('POST', payload)),
-  saveOrchestration: (assistantId: string, payload: UpdateOrchestrationPayload) =>
-    request(`/orchestrations/${assistantId}`, jsonOptions('PUT', payload)),
-  getTasks: () => request<TaskInstance[]>('/tasks'),
-  getWorkflows: () => request<WorkflowInstance[]>('/workflows'),
-  getWorkflow: (workflowId: string) => request<WorkflowInstance>(`/workflows/${workflowId}`),
   logout: () => request<LogoutResponse>('/auth/logout', jsonOptions('POST')),
-  launchTask: (payload: { scenarioId: string; assistantId: string; question: string; customerId: string }) =>
-    request<TaskInstance>('/tasks', jsonOptions('POST', payload)),
-  completeResumeAction: (workflowId: string, payload: { type: string; comment: string; userId: string; attributes: Record<string, string> }) =>
-    request<WorkflowInstance>(`/workflows/${workflowId}/resume`, jsonOptions('PATCH', payload)),
 };

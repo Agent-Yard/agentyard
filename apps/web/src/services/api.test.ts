@@ -40,12 +40,9 @@ describe('api client', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(
-      api.sendConversationMessage('session-1', {
+      api.sendRuntimeSessionMessage('session-1', {
         customerId: 'customer-1',
-        payloadType: 'TEXT',
-        payload: {
-          text: '第二条消息',
-        },
+        message: '第二条消息',
       }),
     ).rejects.toThrow('session has an active workflow');
     expect(fetchMock).toHaveBeenCalledOnce();
@@ -115,31 +112,32 @@ describe('api client', () => {
     );
   });
 
-  it('posts interaction return acknowledgements to the runtime interaction endpoint', async () => {
+  it('posts runtime session creation to the session-runtime endpoint', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({
         data: {
-          id: 'interaction-1',
-          type: 'GENERIC_REDIRECT',
-          status: 'RETURNED',
+          id: 'session-1',
+          scenarioId: 'scenario-1',
+          title: '默认会话',
           sessionId: 'session-1',
-          taskId: 'task-1',
-          workflowInstanceId: 'wf-1',
-          messageId: 'msg-1',
-          title: '完成外部操作',
-          instruction: '请返回系统继续处理。',
-          provider: 'demo',
-          providerReference: 'ref-1',
-          launchUrl: 'https://example.com',
-          returnToken: 'token-1',
-          returnPath: '/console/runtime',
-          expiresAt: null,
-          latestResult: null,
-          lastEventSource: 'FRONTEND_RETURN',
-          resumedAt: null,
+          customerId: 'customer-1',
+          assistantId: 'assistant-1',
+          assistantName: '助手',
+          assistantReleaseVersion: '1.0.0',
+          status: 'ACTIVE',
+          primaryAgentId: 'agent-1',
+          currentOwnerAgentId: 'agent-1',
+          activePlaybookRunId: null,
+          agentTurnActive: false,
+          sessionHumanHandoffActive: false,
+          pendingOwnerReevaluation: false,
+          draining: false,
+          sharedState: {},
+          idleDeadline: null,
           createdAt: '2026-04-01T00:00:00Z',
           updatedAt: '2026-04-01T00:00:00Z',
-          events: [],
+          endedAt: null,
+          latestEventSequence: 0,
         },
       }), {
         status: 200,
@@ -148,27 +146,21 @@ describe('api client', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    await api.acknowledgeExternalInteractionReturn('interaction-1', {
-      returnToken: 'token-1',
-      providerReference: 'ref-1',
-      dedupeKey: 'dedupe-1',
-      payload: {
-        status: 'returned',
-      },
+    await api.createRuntimeSession({
+      assistantId: 'assistant-1',
+      customerId: 'customer-1',
+      openingMessage: '你好',
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/runtime/interactions/interaction-1/return',
+      '/api/session-runtime/sessions',
       expect.objectContaining({
         credentials: 'include',
         method: 'POST',
         body: JSON.stringify({
-          returnToken: 'token-1',
-          providerReference: 'ref-1',
-          dedupeKey: 'dedupe-1',
-          payload: {
-            status: 'returned',
-          },
+          assistantId: 'assistant-1',
+          customerId: 'customer-1',
+          openingMessage: '你好',
         }),
       }),
     );

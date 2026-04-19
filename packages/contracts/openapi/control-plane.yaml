@@ -38,7 +38,7 @@ paths:
       summary: Get aggregate catalog summary
       responses:
         '200':
-          description: Aggregate catalog state with assistants, agents, resources, and orchestrations
+          description: Aggregate catalog state with assistants, agents, resources, and knowledge bases
   /catalog/references/{objectType}/{objectId}:
     get:
       summary: Get unified object reference analysis
@@ -141,6 +141,40 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/UpdateAgentRequest'
+  /playbooks:
+    get:
+      summary: List playbooks
+    post:
+      summary: Create playbook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePlaybookRequest'
+  /playbooks/{playbookId}:
+    get:
+      summary: Get playbook detail
+      parameters:
+        - in: path
+          name: playbookId
+          required: true
+          schema:
+            type: string
+    put:
+      summary: Update playbook
+      parameters:
+        - in: path
+          name: playbookId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePlaybookRequest'
   /resources:
     get:
       summary: List resources
@@ -621,64 +655,36 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/KnowledgeRetrievalPreviewResult'
-  /orchestrations:
+  /session-runtime/sessions:
     get:
-      summary: List assistant orchestration graphs
-  /orchestrations/{assistantId}:
-    get:
-      summary: Get assistant orchestration graph
-      parameters:
-        - in: path
-          name: assistantId
-          required: true
-          schema:
-            type: string
-    put:
-      summary: Save assistant orchestration graph
-      parameters:
-        - in: path
-          name: assistantId
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateOrchestrationRequest'
-  /tasks:
-    get:
-      summary: List task instances
-    post:
-      summary: Launch task with explicit assistant binding
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/TaskLaunchRequest'
+      summary: List session runtime sessions
       responses:
         '200':
-          description: Task instance created
+          description: Session list
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TaskInstance'
-  /runtime/sessions:
-    get:
-      summary: List conversation runtime sessions
+                type: array
+                items:
+                  $ref: '#/components/schemas/SessionRuntimeSession'
     post:
-      summary: Create a runtime session
+      summary: Create a session runtime session
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateConversationSessionRequest'
-  /runtime/sessions/{sessionId}:
+              $ref: '#/components/schemas/CreateSessionRequest'
+      responses:
+        '200':
+          description: Created session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionRuntimeSession'
+  /session-runtime/sessions/{sessionId}:
     get:
-      summary: Get runtime session detail
+      summary: Get session runtime detail
       parameters:
         - in: path
           name: sessionId
@@ -691,10 +697,10 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ConversationSession'
-  /runtime/sessions/{sessionId}/messages:
+                $ref: '#/components/schemas/SessionRuntimeDetail'
+  /session-runtime/sessions/{sessionId}/messages:
     post:
-      summary: Send a message to an existing runtime session
+      summary: Send a user message into an existing session
       parameters:
         - in: path
           name: sessionId
@@ -706,38 +712,22 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ConversationMessageRequest'
+              $ref: '#/components/schemas/SendSessionMessageRequest'
       responses:
         '200':
           description: Updated session state
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ConversationSession'
+                $ref: '#/components/schemas/SessionRuntimeSession'
         '409':
-          description: Session already has an active workflow
-  /runtime/interactions/{interactionTaskId}:
-    get:
-      summary: Get external interaction task detail
-      parameters:
-        - in: path
-          name: interactionTaskId
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: External interaction task detail
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ExternalInteractionTask'
-  /runtime/interactions/{interactionTaskId}/return:
+          description: Session is busy or rejected the message
+  /session-runtime/sessions/{sessionId}/human-resume:
     post:
-      summary: Acknowledge an external interaction browser return
+      summary: Resume a waiting playbook run with human input
       parameters:
         - in: path
-          name: interactionTaskId
+          name: sessionId
           required: true
           schema:
             type: string
@@ -746,20 +736,20 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ExternalInteractionReturnRequest'
+              $ref: '#/components/schemas/HumanResumeRequest'
       responses:
         '200':
-          description: Updated external interaction task
+          description: Updated session state
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ExternalInteractionTask'
-  /runtime/interactions/callbacks/{provider}:
+                $ref: '#/components/schemas/SessionRuntimeSession'
+  /session-runtime/sessions/{sessionId}/external-callback:
     post:
-      summary: Ingest a generic external interaction callback
+      summary: Resume a waiting playbook run with external callback payload
       parameters:
         - in: path
-          name: provider
+          name: sessionId
           required: true
           schema:
             type: string
@@ -768,42 +758,36 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ExternalInteractionCallbackRequest'
+              $ref: '#/components/schemas/ExternalCallbackRequest'
       responses:
         '200':
-          description: Updated external interaction task
+          description: Updated session state
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ExternalInteractionTask'
-  /workflows:
-    get:
-      summary: List workflow instances
-      responses:
-        '200':
-          description: Workflow list
-  /workflows/{workflowId}:
-    get:
-      summary: Get workflow detail
+                $ref: '#/components/schemas/SessionRuntimeSession'
+  /session-runtime/sessions/{sessionId}/handoff/end:
+    post:
+      summary: End session human handoff mode
       parameters:
         - in: path
-          name: workflowId
+          name: sessionId
           required: true
           schema:
             type: string
       responses:
         '200':
-          description: Workflow detail
+          description: Updated session state
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WorkflowInstance'
-  /workflows/{workflowId}/resume:
-    patch:
-      summary: Submit a structured resume action and continue or terminate the workflow
+                $ref: '#/components/schemas/SessionRuntimeSession'
+  /session-runtime/sessions/{sessionId}/human-reply:
+    post:
+      summary: Append a human operator reply during session handoff
       parameters:
         - in: path
-          name: workflowId
+          name: sessionId
           required: true
           schema:
             type: string
@@ -812,14 +796,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ResumeActionRequest'
+              $ref: '#/components/schemas/HumanOperatorReplyRequest'
       responses:
         '200':
-          description: Updated workflow state
+          description: Updated session state
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WorkflowInstance'
+                $ref: '#/components/schemas/SessionRuntimeSession'
 components:
   schemas:
     PlatformRole:
@@ -870,30 +854,6 @@ components:
     VersionStatus:
       type: string
       enum: [DRAFT, PUBLISHED]
-    TaskStatus:
-      type: string
-      enum: [PENDING, RUNNING, WAITING_RESUME, COMPLETED, FAILED, CANCELLED]
-    WorkflowStatus:
-      type: string
-      enum: [DRAFT, RUNNING, WAITING_RESUME, COMPLETED, FAILED, CANCELLED]
-    NodeStatus:
-      type: string
-      enum: [PENDING, RUNNING, WAITING_RESUME, COMPLETED, FAILED, CANCELLED]
-    PauseSource:
-      type: string
-      enum: [GRAPH_NODE, AGENT_REQUEST, EXTERNAL_INTERACTION, TIMEOUT_POLICY]
-    ResumeSource:
-      type: string
-      enum: [HUMAN, EXTERNAL_SYSTEM, TIMEOUT_POLICY]
-    ResumeActionType:
-      type: string
-      enum: [CONTINUE, TERMINATE]
-    ResumeInterventionStatus:
-      type: string
-      enum: [PENDING, APPLIED, FAILED]
-    OrchestrationNodeType:
-      type: string
-      enum: [START, AGENT, HUMAN, END]
     AssistantModelPolicy:
       type: object
       properties:
@@ -942,6 +902,96 @@ components:
           type: array
           items:
             type: string
+    PlaybookExecutionPolicy:
+      type: object
+      properties:
+        timeoutPolicy:
+          type: string
+          nullable: true
+        retryPolicy:
+          type: string
+          nullable: true
+    PlaybookNodeType:
+      type: string
+      enum: [STEP, TOOL_TASK, HUMAN_TASK, EXTERNAL_INTERACTION, END]
+    PlaybookNode:
+      type: object
+      properties:
+        nodeKey:
+          type: string
+        nodeName:
+          type: string
+        nodeType:
+          $ref: '#/components/schemas/PlaybookNodeType'
+        description:
+          type: string
+          nullable: true
+        scriptRef:
+          type: string
+          nullable: true
+        scriptVersion:
+          type: string
+          nullable: true
+        toolId:
+          type: string
+          nullable: true
+        toolOperation:
+          type: string
+          nullable: true
+        config:
+          type: object
+          additionalProperties: true
+    PlaybookEdge:
+      type: object
+      properties:
+        edgeKey:
+          type: string
+        sourceNodeKey:
+          type: string
+        targetNodeKey:
+          type: string
+        routeKey:
+          type: string
+          nullable: true
+        label:
+          type: string
+          nullable: true
+        defaultEdge:
+          type: boolean
+    Playbook:
+      type: object
+      properties:
+        id:
+          type: string
+        assistantId:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        inputSchema:
+          type: string
+          nullable: true
+        resultSchema:
+          type: string
+          nullable: true
+        executionPolicy:
+          $ref: '#/components/schemas/PlaybookExecutionPolicy'
+        allowHumanTask:
+          type: boolean
+        allowExternalInteraction:
+          type: boolean
+        entryNodeKey:
+          type: string
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlaybookNode'
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlaybookEdge'
     ResourceType:
       type: string
       enum: [TOOL, LLM_MODEL, SKILL]
@@ -1290,6 +1340,7 @@ components:
         - DOMAIN
         - SCENARIO
         - ASSISTANT
+        - PLAYBOOK
         - AGENT
         - RESOURCE
         - KNOWLEDGE_BASE
@@ -1691,63 +1742,6 @@ components:
           type: array
           items:
             type: string
-    HumanNodeConfig:
-      type: object
-      properties:
-        title:
-          type: string
-        instruction:
-          type: string
-        expectedAction:
-          type: string
-        resumeRouteKey:
-          type: string
-    OrchestrationNode:
-      type: object
-      properties:
-        nodeKey:
-          type: string
-        nodeName:
-          type: string
-        nodeType:
-          $ref: '#/components/schemas/OrchestrationNodeType'
-        description:
-          type: string
-        agentId:
-          type: string
-          nullable: true
-        humanNode:
-          allOf:
-            - $ref: '#/components/schemas/HumanNodeConfig'
-          nullable: true
-    OrchestrationEdge:
-      type: object
-      properties:
-        edgeKey:
-          type: string
-        sourceNodeKey:
-          type: string
-        targetNodeKey:
-          type: string
-        routeKey:
-          type: string
-        label:
-          type: string
-        defaultEdge:
-          type: boolean
-    UpdateOrchestrationRequest:
-      type: object
-      properties:
-        executionMode:
-          type: string
-        nodes:
-          type: array
-          items:
-            $ref: '#/components/schemas/OrchestrationNode'
-        edges:
-          type: array
-          items:
-            $ref: '#/components/schemas/OrchestrationEdge'
     CreateAssistantRequest:
       type: object
       properties:
@@ -1802,128 +1796,271 @@ components:
           type: string
         executionPolicy:
           $ref: '#/components/schemas/AgentExecutionPolicy'
-    TaskLaunchRequest:
+    CreatePlaybookRequest:
       type: object
-      required: [scenarioId, assistantId, question, customerId]
       properties:
-        scenarioId:
-          type: string
         assistantId:
           type: string
-        question:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        inputSchema:
+          type: string
+          nullable: true
+        resultSchema:
+          type: string
+          nullable: true
+        executionPolicy:
+          $ref: '#/components/schemas/PlaybookExecutionPolicy'
+        allowHumanTask:
+          type: boolean
+        allowExternalInteraction:
+          type: boolean
+        entryNodeKey:
+          type: string
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlaybookNode'
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlaybookEdge'
+    UpdatePlaybookRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        inputSchema:
+          type: string
+          nullable: true
+        resultSchema:
+          type: string
+          nullable: true
+        executionPolicy:
+          $ref: '#/components/schemas/PlaybookExecutionPolicy'
+        allowHumanTask:
+          type: boolean
+        allowExternalInteraction:
+          type: boolean
+        entryNodeKey:
+          type: string
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlaybookNode'
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlaybookEdge'
+    SessionRuntimeStatus:
+      type: string
+      enum: [IDLE, ACTIVE, DRAINING]
+    SessionActorType:
+      type: string
+      enum: [USER, AGENT, SYSTEM, HUMAN_OPERATOR, EXTERNAL_SYSTEM]
+    SessionEventType:
+      type: string
+      enum:
+        - USER_MESSAGE
+        - OWNER_REPLY
+        - HUMAN_OPERATOR_REPLY
+        - AGENT_DECISION_REJECTED
+        - AGENT_TURN_FAILED
+        - OWNER_SWITCH
+        - PLAYBOOK_STARTED
+        - PLAYBOOK_WAITING
+        - PLAYBOOK_RESUMED
+        - PLAYBOOK_COMPLETED
+        - SESSION_HUMAN_HANDOFF_STARTED
+        - SESSION_HUMAN_HANDOFF_ENDED
+        - HUMAN_RESUME_RECEIVED
+        - EXTERNAL_CALLBACK_RECEIVED
+    PlaybookRunStatus:
+      type: string
+      enum: [RUNNING, WAITING, SUCCEEDED, FAILED, CANCELLED]
+    CreateSessionRequest:
+      type: object
+      required: [assistantId, customerId]
+      properties:
+        assistantId:
           type: string
         customerId:
           type: string
-    ResumeActionRequest:
+        openingMessage:
+          type: string
+          nullable: true
+    SendSessionMessageRequest:
       type: object
-      required: [type, comment, userId, attributes]
+      required: [customerId, message]
       properties:
-        type:
-          $ref: '#/components/schemas/ResumeActionType'
-        comment:
+        customerId:
           type: string
-        userId:
+        message:
           type: string
-        attributes:
+    HumanResumeRequest:
+      type: object
+      required: [playbookRunId]
+      properties:
+        playbookRunId:
+          type: string
+        payload:
           type: object
-          additionalProperties:
-            type: string
-    ResumeContextSnapshot:
+          additionalProperties: true
+    ExternalCallbackRequest:
+      type: object
+      required: [playbookRunId]
+      properties:
+        playbookRunId:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+    HumanOperatorReplyRequest:
+      type: object
+      required: [operatorId, message]
+      properties:
+        operatorId:
+          type: string
+        message:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+    SessionEvent:
       type: object
       properties:
-        source:
-          $ref: '#/components/schemas/ResumeSource'
-        reasonCode:
+        eventId:
           type: string
-        interactionTaskId:
+        sessionId:
           type: string
-          nullable: true
-        interactionType:
-          type: string
-          nullable: true
-        timeoutPolicyKey:
-          type: string
-          nullable: true
-    ExecutionCheckpoint:
-      type: object
-      properties:
-        checkpointId:
-          type: string
-        currentNodeKey:
-          type: string
-        waitingNodeKey:
-          type: string
-        statePayload:
-          type: string
-        resumeContext:
-          allOf:
-            - $ref: '#/components/schemas/ResumeContextSnapshot'
-          nullable: true
-        resumeCount:
+        sequence:
           type: integer
-    ResumeTaskSnapshot:
+          format: int64
+        eventType:
+          $ref: '#/components/schemas/SessionEventType'
+        createdAt:
+          type: string
+          format: date-time
+        actorType:
+          $ref: '#/components/schemas/SessionActorType'
+        actorId:
+          type: string
+          nullable: true
+        payload:
+          type: object
+          additionalProperties: true
+        relatedPlaybookRunId:
+          type: string
+          nullable: true
+        relatedOwnerAgentId:
+          type: string
+          nullable: true
+    PlaybookRun:
       type: object
       properties:
-        nodeKey:
+        runId:
+          type: string
+        sessionId:
+          type: string
+        parentSessionEventId:
+          type: string
+        playbookId:
+          type: string
+        ownerAgentId:
+          type: string
+        status:
+          $ref: '#/components/schemas/PlaybookRunStatus'
+        input:
+          type: object
+          additionalProperties: true
+        result:
+          type: object
+          additionalProperties: true
+        failureReason:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        waitingReason:
+          type: string
+          nullable: true
+    SessionRuntimeSession:
+      type: object
+      properties:
+        id:
+          type: string
+        scenarioId:
           type: string
         title:
           type: string
-        instruction:
+        customerId:
           type: string
-        expectedAction:
+        assistantId:
           type: string
-        source:
-          $ref: '#/components/schemas/PauseSource'
-        allowedActions:
-          type: array
-          items:
-            $ref: '#/components/schemas/ResumeActionType'
-    PauseReasonSnapshot:
-      type: object
-      properties:
-        code:
+        assistantName:
           type: string
-        detail:
+        assistantReleaseVersion:
           type: string
-        source:
-          $ref: '#/components/schemas/PauseSource'
-    WorkflowFailureCategory:
-      type: string
-      enum:
-        - TIMEOUT
-        - PROVIDER_FAILURE
-        - TOOL_FAILURE
-        - PARSING_FAILURE
-        - VALIDATION_FAILURE
-        - CONFIGURATION_FAILURE
-        - RUNTIME_FAILURE
-        - UNKNOWN
-    WorkflowFailureSnapshot:
-      type: object
-      properties:
-        category:
-          $ref: '#/components/schemas/WorkflowFailureCategory'
-        code:
+        status:
+          $ref: '#/components/schemas/SessionRuntimeStatus'
+        primaryAgentId:
           type: string
-        rootCause:
+        currentOwnerAgentId:
           type: string
-        detail:
-          type: string
-        failedNodeKey:
+        activePlaybookRunId:
           type: string
           nullable: true
-        failedNodeName:
-          type: string
-          nullable: true
-        failedResourceId:
-          type: string
-          nullable: true
-        failedResourceName:
-          type: string
-          nullable: true
-        occurredAt:
+        agentTurnActive:
+          type: boolean
+        sessionHumanHandoffActive:
+          type: boolean
+        pendingOwnerReevaluation:
+          type: boolean
+        draining:
+          type: boolean
+        sharedState:
+          type: object
+          additionalProperties: true
+        idleDeadline:
           type: string
           format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: string
+          format: date-time
+          nullable: true
+        latestEventSequence:
+          type: integer
+          format: int64
+    SessionRuntimeDetail:
+      type: object
+      properties:
+        session:
+          $ref: '#/components/schemas/SessionRuntimeSession'
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionEvent'
+        playbookRuns:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlaybookRun'
     ToolOutcomeSummary:
       type: object
       properties:
@@ -1948,724 +2085,3 @@ components:
         result:
           type: object
           additionalProperties: true
-    SharedSessionState:
-      type: object
-      properties:
-        facts:
-          type: object
-          additionalProperties: true
-        artifacts:
-          type: object
-          additionalProperties: true
-        agentScopes:
-          type: object
-          additionalProperties:
-            type: object
-            additionalProperties: true
-    DecisionType:
-      type: string
-      enum: [FINAL, TOOL_CALL, SKILL_READ, HUMAN_HANDOFF]
-    SessionStatePatchTarget:
-      type: string
-      enum: [FACTS, ARTIFACTS, AGENT_SCOPE]
-    SessionStatePatchOpType:
-      type: string
-      enum: [UPSERT, REMOVE]
-    ToolRequest:
-      type: object
-      properties:
-        callId:
-          type: string
-        toolId:
-          type: string
-        arguments:
-          type: object
-          additionalProperties: true
-    HumanRequest:
-      type: object
-      properties:
-        title:
-          type: string
-        instruction:
-          type: string
-        expectedAction:
-          type: string
-    SessionStatePatchOp:
-      type: object
-      properties:
-        target:
-          $ref: '#/components/schemas/SessionStatePatchTarget'
-        op:
-          $ref: '#/components/schemas/SessionStatePatchOpType'
-        path:
-          type: array
-          items:
-            type: string
-        value:
-          nullable: true
-    SessionStatePatch:
-      type: object
-      properties:
-        ops:
-          type: array
-          items:
-            $ref: '#/components/schemas/SessionStatePatchOp'
-    StructuredAgentDecision:
-      type: object
-      properties:
-        decisionType:
-          $ref: '#/components/schemas/DecisionType'
-        routeDecision:
-          type: string
-          nullable: true
-        outputMessages:
-          type: array
-          items:
-            $ref: '#/components/schemas/OutputMessageDraft'
-        skillReads:
-          type: array
-          items:
-            type: string
-        toolRequests:
-          type: array
-          items:
-            $ref: '#/components/schemas/ToolRequest'
-        humanRequest:
-          allOf:
-            - $ref: '#/components/schemas/HumanRequest'
-          nullable: true
-        sessionStatePatch:
-          allOf:
-            - $ref: '#/components/schemas/SessionStatePatch'
-          nullable: true
-    AgentTurnLog:
-      type: object
-      properties:
-        turnIndex:
-          type: integer
-        phase:
-          type: string
-        decisionType:
-          allOf:
-            - $ref: '#/components/schemas/DecisionType'
-          nullable: true
-        loadedSkillsDelta:
-          type: integer
-        sessionStateOpsDelta:
-          type: integer
-        toolCallsDelta:
-          type: integer
-        routeSource:
-          type: string
-        failureReason:
-          type: string
-    AgentTurnState:
-      type: object
-      properties:
-        phase:
-          type: string
-        turnIndex:
-          type: integer
-        latestDecision:
-          allOf:
-            - $ref: '#/components/schemas/StructuredAgentDecision'
-          nullable: true
-        turnLogs:
-          type: array
-          items:
-            $ref: '#/components/schemas/AgentTurnLog'
-    ToolInvocationSnapshot:
-      type: object
-      properties:
-        id:
-          type: string
-        callId:
-          type: string
-        toolId:
-          type: string
-        toolName:
-          type: string
-        toolKind:
-          $ref: '#/components/schemas/ToolKind'
-        providerType:
-          type: string
-        resourceId:
-          type: string
-          nullable: true
-        resourceName:
-          type: string
-          nullable: true
-        operation:
-          type: string
-        status:
-          type: string
-        detail:
-          type: string
-        createdAt:
-          type: string
-          format: date-time
-    NodeExecution:
-      type: object
-      properties:
-        id:
-          type: string
-        workflowInstanceId:
-          type: string
-        nodeKey:
-          type: string
-        nodeName:
-          type: string
-        status:
-          $ref: '#/components/schemas/NodeStatus'
-        detail:
-          type: string
-        updatedAt:
-          type: string
-          format: date-time
-    ResumeIntervention:
-      type: object
-      properties:
-        id:
-          type: string
-        workflowInstanceId:
-          type: string
-        type:
-          $ref: '#/components/schemas/ResumeActionType'
-        source:
-          $ref: '#/components/schemas/ResumeSource'
-        userId:
-          type: string
-        comment:
-          type: string
-        attributes:
-          type: object
-          additionalProperties:
-            type: string
-        status:
-          $ref: '#/components/schemas/ResumeInterventionStatus'
-        createdAt:
-          type: string
-          format: date-time
-        appliedAt:
-          type: string
-          format: date-time
-          nullable: true
-        failureReason:
-          type: string
-          nullable: true
-    ModelSelectionSource:
-      type: string
-      enum: [ASSISTANT_DEFAULT, AGENT_OVERRIDE]
-    ModelHitSnapshot:
-      type: object
-      properties:
-        agentId:
-          type: string
-        agentName:
-          type: string
-        nodeKey:
-          type: string
-        nodeName:
-          type: string
-        source:
-          $ref: '#/components/schemas/ModelSelectionSource'
-        resourceId:
-          type: string
-        resourceName:
-          type: string
-        resourceVersionId:
-          type: string
-        resourceVersion:
-          type: string
-        providerType:
-          type: string
-        modelId:
-          type: string
-        turnIndex:
-          type: integer
-        capturedAt:
-          type: string
-          format: date-time
-    TaskInstance:
-      type: object
-      properties:
-        id:
-          type: string
-        scenarioId:
-          type: string
-        assistantId:
-          type: string
-        assistantName:
-          type: string
-        assistantReleaseVersion:
-          type: string
-        question:
-          type: string
-        customerId:
-          type: string
-        status:
-          $ref: '#/components/schemas/TaskStatus'
-        createdAt:
-          type: string
-          format: date-time
-        workflowInstanceId:
-          type: string
-    WorkflowInstance:
-      type: object
-      properties:
-        id:
-          type: string
-        taskId:
-          type: string
-        assistantId:
-          type: string
-        assistantName:
-          type: string
-        assistantReleaseVersion:
-          type: string
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-        status:
-          $ref: '#/components/schemas/WorkflowStatus'
-        summary:
-          type: string
-        currentNodeKey:
-          type: string
-          nullable: true
-        escalationRequired:
-          type: boolean
-        checkpoint:
-          allOf:
-            - $ref: '#/components/schemas/ExecutionCheckpoint'
-          nullable: true
-        resumeTask:
-          allOf:
-            - $ref: '#/components/schemas/ResumeTaskSnapshot'
-          nullable: true
-        pauseReason:
-          allOf:
-            - $ref: '#/components/schemas/PauseReasonSnapshot'
-          nullable: true
-        latestFailure:
-          allOf:
-            - $ref: '#/components/schemas/WorkflowFailureSnapshot'
-          nullable: true
-        latestToolOutcome:
-          allOf:
-            - $ref: '#/components/schemas/ToolOutcomeSummary'
-          nullable: true
-        resourceAnchors:
-          type: array
-          items:
-            type: string
-        nodes:
-          type: array
-          items:
-            $ref: '#/components/schemas/NodeExecution'
-        toolCalls:
-          type: array
-          items:
-            $ref: '#/components/schemas/ToolInvocationSnapshot'
-        modelHits:
-          type: array
-          items:
-            $ref: '#/components/schemas/ModelHitSnapshot'
-        resumeInterventions:
-          type: array
-          items:
-            $ref: '#/components/schemas/ResumeIntervention'
-        emittedMessageKeys:
-          type: array
-          items:
-            type: string
-        loadedSkillResourceVersionIds:
-          type: array
-          items:
-            type: string
-        sharedState:
-          $ref: '#/components/schemas/SharedSessionState'
-        agentTurnState:
-          allOf:
-            - $ref: '#/components/schemas/AgentTurnState'
-          nullable: true
-    ConversationPayloadType:
-      type: string
-      enum: [TEXT, EXTERNAL_INTERACTION]
-    ExternalInteractionType:
-      type: string
-      enum: [GENERIC_REDIRECT, PAYMENT_REDIRECT, FORM_REDIRECT, OAUTH_REDIRECT, EXTERNAL_CONFIRMATION, FILE_UPLOAD_PORTAL]
-    ExternalInteractionStatus:
-      type: string
-      enum: [CREATED, AWAITING_USER_ACTION, LAUNCHED, RETURNED, PROCESSING, SUCCEEDED, FAILED, CANCELLED, EXPIRED]
-    ExternalInteractionEventSource:
-      type: string
-      enum: [SYSTEM_CREATE, FRONTEND_RETURN, PROVIDER_CALLBACK]
-    ExternalInteractionEventType:
-      type: string
-      enum: [CREATED, RETURNED, CALLBACK_RECEIVED, RESUME_TRIGGERED, IGNORED]
-    ExternalInteractionOutcome:
-      type: string
-      enum: [SUCCEEDED, FAILED, CANCELLED, EXPIRED, PROCESSING, UNKNOWN]
-    ConversationAction:
-      type: object
-      properties:
-        label:
-          type: string
-        actionType:
-          type: string
-        url:
-          type: string
-          nullable: true
-        target:
-          type: string
-          nullable: true
-        parameters:
-          type: object
-          additionalProperties: true
-        disabled:
-          type: boolean
-    TextMessagePayload:
-      type: object
-      properties:
-        text:
-          type: string
-    ExternalInteractionMessageSpec:
-      type: object
-      properties:
-        interactionType:
-          $ref: '#/components/schemas/ExternalInteractionType'
-        title:
-          type: string
-        instruction:
-          type: string
-        provider:
-          type: string
-          nullable: true
-        providerReference:
-          type: string
-          nullable: true
-        launchUrl:
-          type: string
-          nullable: true
-        returnPath:
-          type: string
-          nullable: true
-        expiresAt:
-          type: string
-          format: date-time
-          nullable: true
-        primaryActionLabel:
-          type: string
-          nullable: true
-        secondaryActions:
-          type: array
-          items:
-            $ref: '#/components/schemas/ConversationAction'
-        displayHints:
-          type: object
-          additionalProperties: true
-    ExternalInteractionMessageProjection:
-      type: object
-      properties:
-        interactionTaskId:
-          type: string
-        status:
-          $ref: '#/components/schemas/ExternalInteractionStatus'
-        primaryAction:
-          allOf:
-            - $ref: '#/components/schemas/ConversationAction'
-          nullable: true
-        secondaryActions:
-          type: array
-          items:
-            $ref: '#/components/schemas/ConversationAction'
-        displayHints:
-          type: object
-          additionalProperties: true
-    ExternalInteractionMessagePayload:
-      type: object
-      properties:
-        spec:
-          $ref: '#/components/schemas/ExternalInteractionMessageSpec'
-        projection:
-          allOf:
-            - $ref: '#/components/schemas/ExternalInteractionMessageProjection'
-          nullable: true
-    WorkflowOutputMessage:
-      type: object
-      properties:
-        messageKey:
-          type: string
-        payloadType:
-          $ref: '#/components/schemas/ConversationPayloadType'
-        payload:
-          $ref: '#/components/schemas/ConversationPayload'
-        createdAt:
-          type: string
-          format: date-time
-    OutputMessageDraft:
-      type: object
-      properties:
-        payloadType:
-          $ref: '#/components/schemas/ConversationPayloadType'
-        payload:
-          $ref: '#/components/schemas/OutputMessagePayload'
-    OutputMessagePayload:
-      oneOf:
-        - $ref: '#/components/schemas/TextMessagePayload'
-        - $ref: '#/components/schemas/ExternalInteractionOutputPayload'
-    ExternalInteractionOutputPayload:
-      type: object
-      properties:
-        spec:
-          $ref: '#/components/schemas/ExternalInteractionMessageSpec'
-    ConversationPayload:
-      oneOf:
-        - $ref: '#/components/schemas/TextMessagePayload'
-        - $ref: '#/components/schemas/ExternalInteractionMessagePayload'
-    ConversationMessageInput:
-      type: object
-      properties:
-        payloadType:
-          $ref: '#/components/schemas/ConversationPayloadType'
-        payload:
-          $ref: '#/components/schemas/ConversationPayload'
-    ConversationMessageRequest:
-      type: object
-      properties:
-        customerId:
-          type: string
-        payloadType:
-          $ref: '#/components/schemas/ConversationPayloadType'
-        payload:
-          $ref: '#/components/schemas/ConversationPayload'
-    ExternalInteractionResult:
-      type: object
-      properties:
-        outcome:
-          $ref: '#/components/schemas/ExternalInteractionOutcome'
-        code:
-          type: string
-          nullable: true
-        summary:
-          type: string
-          nullable: true
-        rawProviderStatus:
-          type: string
-          nullable: true
-        attributes:
-          type: object
-          additionalProperties: true
-    ExternalInteractionEvent:
-      type: object
-      properties:
-        id:
-          type: string
-        interactionTaskId:
-          type: string
-        eventType:
-          $ref: '#/components/schemas/ExternalInteractionEventType'
-        eventSource:
-          $ref: '#/components/schemas/ExternalInteractionEventSource'
-        dedupeKey:
-          type: string
-        payload:
-          type: object
-          additionalProperties: true
-        result:
-          allOf:
-            - $ref: '#/components/schemas/ExternalInteractionResult'
-          nullable: true
-        createdAt:
-          type: string
-          format: date-time
-    ExternalInteractionTask:
-      type: object
-      properties:
-        id:
-          type: string
-        type:
-          $ref: '#/components/schemas/ExternalInteractionType'
-        status:
-          $ref: '#/components/schemas/ExternalInteractionStatus'
-        sessionId:
-          type: string
-        taskId:
-          type: string
-        workflowInstanceId:
-          type: string
-        messageId:
-          type: string
-        title:
-          type: string
-        instruction:
-          type: string
-        provider:
-          type: string
-          nullable: true
-        providerReference:
-          type: string
-          nullable: true
-        launchUrl:
-          type: string
-          nullable: true
-        returnToken:
-          type: string
-        returnPath:
-          type: string
-          nullable: true
-        expiresAt:
-          type: string
-          format: date-time
-          nullable: true
-        latestResult:
-          allOf:
-            - $ref: '#/components/schemas/ExternalInteractionResult'
-          nullable: true
-        lastEventSource:
-          $ref: '#/components/schemas/ExternalInteractionEventSource'
-        resumedAt:
-          type: string
-          format: date-time
-          nullable: true
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-        events:
-          type: array
-          items:
-            $ref: '#/components/schemas/ExternalInteractionEvent'
-    ExternalInteractionReturnRequest:
-      type: object
-      properties:
-        returnToken:
-          type: string
-        providerReference:
-          type: string
-          nullable: true
-        dedupeKey:
-          type: string
-          nullable: true
-        payload:
-          type: object
-          additionalProperties: true
-    ExternalInteractionCallbackRequest:
-      type: object
-      properties:
-        taskId:
-          type: string
-        providerReference:
-          type: string
-          nullable: true
-        dedupeKey:
-          type: string
-          nullable: true
-        payload:
-          type: object
-          additionalProperties: true
-        result:
-          allOf:
-            - $ref: '#/components/schemas/ExternalInteractionResult'
-          nullable: true
-    CreateConversationSessionRequest:
-      type: object
-      properties:
-        scenarioId:
-          type: string
-        assistantId:
-          type: string
-        customerId:
-          type: string
-        openingMessage:
-          allOf:
-            - $ref: '#/components/schemas/ConversationMessageInput'
-          nullable: true
-    ConversationMessage:
-      type: object
-      properties:
-        id:
-          type: string
-        messageKey:
-          type: string
-          nullable: true
-        sessionId:
-          type: string
-        role:
-          type: string
-        senderType:
-          type: string
-        senderId:
-          type: string
-        senderName:
-          type: string
-        payloadType:
-          $ref: '#/components/schemas/ConversationPayloadType'
-        payload:
-          $ref: '#/components/schemas/ConversationPayload'
-        createdAt:
-          type: string
-          format: date-time
-        taskId:
-          type: string
-          nullable: true
-        workflowInstanceId:
-          type: string
-          nullable: true
-    ConversationSession:
-      type: object
-      properties:
-        id:
-          type: string
-        scenarioId:
-          type: string
-        title:
-          type: string
-        customerId:
-          type: string
-        assistantId:
-          type: string
-        assistantName:
-          type: string
-        assistantReleaseVersion:
-          type: string
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-        messages:
-          type: array
-          items:
-            $ref: '#/components/schemas/ConversationMessage'
-        latestTaskId:
-          type: string
-          nullable: true
-        latestWorkflowInstanceId:
-          type: string
-          nullable: true
-        latestToolOutcome:
-          allOf:
-            - $ref: '#/components/schemas/ToolOutcomeSummary'
-          nullable: true
-        latestResumeTask:
-          allOf:
-            - $ref: '#/components/schemas/ResumeTaskSnapshot'
-          nullable: true
-        latestPauseReason:
-          allOf:
-            - $ref: '#/components/schemas/PauseReasonSnapshot'
-          nullable: true
-        loadedSkillResourceVersionIds:
-          type: array
-          items:
-            type: string
-        sharedState:
-          $ref: '#/components/schemas/SharedSessionState'

@@ -32,7 +32,7 @@ class ApiLogContextFilterTest {
     void shouldBindTraceUserSessionAndCustomerContextFromRequest() throws Exception {
         MockMvc mockMvc = mockMvc();
 
-        mockMvc.perform(post("/api/runtime/sessions/session-1/messages")
+        mockMvc.perform(post("/api/session-runtime/sessions/session-1/messages")
                 .contentType(MediaType.APPLICATION_JSON)
                 .header("traceparent", "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01")
                 .content("""
@@ -50,12 +50,13 @@ class ApiLogContextFilterTest {
     }
 
     @Test
-    void shouldBindWorkflowIdFromPath() throws Exception {
+    void shouldBindSessionIdFromDetailPath() throws Exception {
         MockMvc mockMvc = mockMvc();
 
-        mockMvc.perform(get("/api/workflows/wf-1"))
+        mockMvc.perform(get("/api/session-runtime/sessions/session-1"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.workflowId").value("wf-1"));
+            .andExpect(jsonPath("$.sessionId").value("session-1"))
+            .andExpect(jsonPath("$.workflowId").value("null"));
     }
 
     private MockMvc mockMvc() {
@@ -80,13 +81,13 @@ class ApiLogContextFilterTest {
 
     @RestController
     static class EchoController {
-        @PostMapping("/api/runtime/sessions/{sessionId}/messages")
+        @PostMapping("/api/session-runtime/sessions/{sessionId}/messages")
         Map<String, String> message(@PathVariable String sessionId, @RequestBody Map<String, Object> payload) {
             return snapshot();
         }
 
-        @GetMapping("/api/workflows/{workflowId}")
-        Map<String, String> workflow(@PathVariable String workflowId) {
+        @GetMapping("/api/session-runtime/sessions/{sessionId}")
+        Map<String, String> session(@PathVariable String sessionId) {
             return snapshot();
         }
 

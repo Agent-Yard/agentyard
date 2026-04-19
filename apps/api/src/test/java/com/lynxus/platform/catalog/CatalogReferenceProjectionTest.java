@@ -3,6 +3,7 @@ package com.lynxus.platform.catalog;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.lynxus.contracts.session.SessionContracts.AgentDecisionAction;
 import com.lynxus.contracts.runtime.WorkflowContracts.ResourceType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
 import com.lynxus.contracts.runtime.WorkflowContracts.VersionStatus;
@@ -24,7 +25,12 @@ class CatalogReferenceProjectionTest {
         AssistantDto assistant = new AssistantDto(
             "ast-1", "scn-1", "Test Assistant", "desc",
             new VersionDto("1.0.0", VersionStatus.PUBLISHED, Instant.now()),
-            List.of(), null, List.of(),
+            List.of(), List.of(), null, List.of(),
+            "agt-1",
+            new AssistantOwnerPolicyDto(3),
+            new AssistantSessionPolicyDto("PT30M", "P7D", 20_000),
+            new AssistantReplyPolicyDto(true),
+            new AssistantPlaybookPolicyDto(null, null),
             new AssistantModelPolicyDto("res-llm-1"),
             new KnowledgeAccessPolicyDto(true, "kb-1"),
             new MemoryPolicyDto(false, 0)
@@ -38,7 +44,17 @@ class CatalogReferenceProjectionTest {
                 5,
                 List.of("res-skill-1", "res-skill-2"),
                 List.of("res-tool-1")
-            )
+            ),
+            true,
+            List.of(
+                AgentDecisionAction.REPLY,
+                AgentDecisionAction.NO_REPLY,
+                AgentDecisionAction.SWITCH_OWNER,
+                AgentDecisionAction.RUN_PLAYBOOK,
+                AgentDecisionAction.SESSION_HUMAN_HANDOFF
+            ),
+            List.of(),
+            List.of()
         );
 
         AssistantReleaseDto release = new AssistantReleaseDto(
@@ -54,9 +70,21 @@ class CatalogReferenceProjectionTest {
                 "agt-1", "Test Agent", "worker", "handles requests",
                 agent.executionPolicy(),
                 new KnowledgeBindingSnapshotDto("kb-2", "知识库2", "kr-2", "1.0.0", "snap-2", 5, "HYBRID", 0.5),
+                true,
+                agent.allowedActions(),
+                List.of(),
+                List.of(),
                 List.of(), List.of()
             )),
-            null, assistant.modelPolicy(), assistant.knowledgeAccessPolicy(), assistant.memoryPolicy()
+            List.of(),
+            assistant.primaryAgentId(),
+            assistant.ownerPolicy(),
+            assistant.sessionPolicy(),
+            assistant.replyPolicy(),
+            assistant.playbookPolicy(),
+            assistant.modelPolicy(),
+            assistant.knowledgeAccessPolicy(),
+            assistant.memoryPolicy()
         );
 
         repository.save(new CatalogSnapshot(
@@ -65,9 +93,9 @@ class CatalogReferenceProjectionTest {
             List.of(assistant),
             List.of(agent),
             List.of(),
+            List.of(),
             Map.of(),
-            Map.of("ast-1", List.of(release)),
-            Map.of()
+            Map.of("ast-1", List.of(release))
         ));
     }
 

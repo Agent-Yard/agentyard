@@ -8,6 +8,7 @@ import type {
   CreateAgentPayload,
   CreateDomainPayload,
   CreateKnowledgeBasePayload,
+  CreatePlaybookPayload,
   CreateResourcePayload,
   CreateResourceVersionPayload,
   CreateScenarioPayload,
@@ -16,7 +17,7 @@ import type {
   UpdateAgentPayload,
   UpdateAssistantPayload,
   UpdateDomainPayload,
-  UpdateOrchestrationPayload,
+  UpdatePlaybookPayload,
   UpdateResourcePayload,
   UpdateResourceVersionPayload,
   UpdateScenarioPayload,
@@ -212,14 +213,34 @@ export function useCatalogActions(
     }
   }
 
-  async function handleSaveOrchestration(payload: { assistantId: string; data: UpdateOrchestrationPayload }) {
+  async function handleCreatePlaybook(payload: CreatePlaybookPayload) {
     try {
-      await api.saveOrchestration(payload.assistantId, payload.data);
+      await api.createPlaybook(payload);
       await refresh();
-      void message.success('编排设计已保存');
+      void message.success('Playbook 已创建');
     } catch (error) {
-      void message.error(errorMessage(error, '保存编排失败'));
+      void message.error(errorMessage(error, '创建 Playbook 失败'));
     }
+  }
+
+  async function handleSavePlaybook(payload: { playbookId: string; playbook: UpdatePlaybookPayload }) {
+    try {
+      await api.updatePlaybook(payload.playbookId, payload.playbook);
+      await refresh();
+      void message.success('Playbook 已保存');
+    } catch (error) {
+      void message.error(errorMessage(error, '保存 Playbook 失败'));
+    }
+  }
+
+  async function handleDeletePlaybook(playbookId: string) {
+    await openDeletionPreview({
+      objectType: 'PLAYBOOK',
+      objectId: playbookId,
+      successMessage: 'Playbook 已删除',
+      failureMessage: '删除 Playbook 失败',
+      execute: () => api.deletePlaybook(playbookId).then(() => undefined),
+    });
   }
 
   async function handleCreateKnowledgeBase(payload: CreateKnowledgeBasePayload) {
@@ -351,7 +372,9 @@ export function useCatalogActions(
     handleCreateAgent,
     handleDeleteAgent,
     handleSaveAgent,
-    handleSaveOrchestration,
+    handleCreatePlaybook,
+    handleSavePlaybook,
+    handleDeletePlaybook,
     handleCreateKnowledgeBase,
     handleDeleteKnowledgeBase,
     handleCreateResource,

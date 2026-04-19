@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.lynxus.contracts.runtime.WorkflowContracts.OrchestrationNodeType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ResourceType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
 import com.lynxus.contracts.runtime.WorkflowContracts.VersionStatus;
@@ -14,6 +13,7 @@ import com.lynxus.platform.knowledge.KnowledgeServiceClient;
 import com.lynxus.platform.knowledge.KnowledgeWorkflowGateway;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class CatalogServiceTest {
@@ -117,12 +117,17 @@ class CatalogServiceTest {
 
         CatalogDtos.ObjectReferenceAnalysisDto assistantAnalysis = fixture.service().objectReferences("ASSISTANT", fixture.assistantId());
         assertTrue(assistantAnalysis.relations().stream().anyMatch(relation -> relation.relationKind().equals("ASSISTANT_AGENT")));
+        assertTrue(assistantAnalysis.relations().stream().anyMatch(relation -> relation.relationKind().equals("ASSISTANT_PLAYBOOK")));
         assertTrue(assistantAnalysis.relations().stream().anyMatch(relation -> relation.relationKind().equals("ASSISTANT_PRIVATE_RESOURCE")));
         assertTrue(assistantAnalysis.relations().stream().anyMatch(relation -> relation.relationKind().equals("ASSISTANT_RELEASE")));
 
+        CatalogDtos.ObjectReferenceAnalysisDto playbookAnalysis = fixture.service().objectReferences("PLAYBOOK", fixture.playbookId());
+        assertTrue(playbookAnalysis.relations().stream().anyMatch(relation -> relation.relationKind().equals("PLAYBOOK_ASSISTANT")));
+        assertTrue(playbookAnalysis.relations().stream().anyMatch(relation -> relation.relationKind().equals("PLAYBOOK_AGENT_ENABLED")));
+        assertTrue(playbookAnalysis.relations().stream().anyMatch(relation -> relation.relationKind().equals("PLAYBOOK_RELEASE_FROZEN")));
+
         CatalogDtos.ObjectReferenceAnalysisDto agentAnalysis = fixture.service().objectReferences("AGENT", fixture.agentId());
         assertTrue(agentAnalysis.relations().stream().anyMatch(relation -> relation.relationKind().equals("AGENT_TOOL_ENABLED")));
-        assertTrue(agentAnalysis.relations().stream().anyMatch(relation -> relation.relationKind().equals("AGENT_ORCHESTRATION_NODE")));
         assertTrue(agentAnalysis.relations().stream().anyMatch(relation -> relation.relationKind().equals("AGENT_RELEASE_FROZEN")));
 
         CatalogDtos.ObjectReferenceAnalysisDto resourceAnalysis = fixture.service().objectReferences("RESOURCE", fixture.toolResourceId());
@@ -175,6 +180,14 @@ class CatalogServiceTest {
         IllegalStateException assistantError = assertThrows(IllegalStateException.class, () -> fixture.service().deleteAssistant(fixture.assistantId()));
         assertTrue(assistantError.getMessage().contains(assistantBlockerName));
 
+        String playbookBlockerName = fixture.service().objectReferences("PLAYBOOK", fixture.playbookId()).relations().stream()
+            .filter(relation -> relation.impactLevel().equals("BLOCKS_DELETION"))
+            .findFirst()
+            .orElseThrow()
+            .targetName();
+        IllegalStateException playbookError = assertThrows(IllegalStateException.class, () -> fixture.service().deletePlaybook(fixture.playbookId()));
+        assertTrue(playbookError.getMessage().contains(playbookBlockerName));
+
         String resourceBlockerName = fixture.service().objectReferences("RESOURCE", fixture.toolResourceId()).relations().stream()
             .filter(relation -> relation.impactLevel().equals("BLOCKS_DELETION"))
             .findFirst()
@@ -209,15 +222,18 @@ class CatalogServiceTest {
         CatalogDtos.DeletionImpactPreviewDto assistantPreview = fixture.service().deletionPreview("ASSISTANT", fixture.assistantId());
         assertFalse(assistantPreview.canDelete());
         assertTrue(assistantPreview.blockers().stream().anyMatch(relation -> relation.relationKind().equals("ASSISTANT_AGENT")));
-        assertTrue(assistantPreview.advisories().stream().anyMatch(relation -> relation.relationKind().equals("ASSISTANT_ORCHESTRATION")));
-        assertTrue(assistantPreview.cascadeDeletes().stream().anyMatch(item -> item.relationKind().equals("ASSISTANT_ORCHESTRATION")));
         assertTrue(assistantPreview.cascadeDeletes().stream().anyMatch(item -> item.relationKind().equals("ASSISTANT_RELEASE")));
+
+        CatalogDtos.DeletionImpactPreviewDto playbookPreview = fixture.service().deletionPreview("PLAYBOOK", fixture.playbookId());
+        assertFalse(playbookPreview.canDelete());
+        assertTrue(playbookPreview.blockers().stream().anyMatch(relation -> relation.relationKind().equals("PLAYBOOK_AGENT_ENABLED")));
+        assertTrue(playbookPreview.advisories().stream().anyMatch(relation -> relation.relationKind().equals("PLAYBOOK_RELEASE_FROZEN")));
+        assertTrue(playbookPreview.cascadeDeletes().isEmpty());
 
         CatalogDtos.DeletionImpactPreviewDto agentPreview = fixture.service().deletionPreview("AGENT", fixture.agentId());
         assertTrue(agentPreview.canDelete());
         assertTrue(agentPreview.blockers().isEmpty());
-        assertTrue(agentPreview.advisories().stream().anyMatch(relation -> relation.relationKind().equals("AGENT_ORCHESTRATION_NODE")));
-        assertTrue(agentPreview.cascadeDeletes().stream().anyMatch(item -> item.relationKind().equals("AGENT_ORCHESTRATION_NODE")));
+        assertTrue(agentPreview.cascadeDeletes().isEmpty());
 
         CatalogDtos.DeletionImpactPreviewDto resourcePreview = fixture.service().deletionPreview("RESOURCE", fixture.toolResourceId());
         assertFalse(resourcePreview.canDelete());
@@ -245,6 +261,9 @@ class CatalogServiceTest {
         assertFalse(fixture.service().deletionPreview("ASSISTANT", fixture.assistantId()).canDelete());
         assertThrows(IllegalStateException.class, () -> fixture.service().deleteAssistant(fixture.assistantId()));
 
+        assertFalse(fixture.service().deletionPreview("PLAYBOOK", fixture.playbookId()).canDelete());
+        assertThrows(IllegalStateException.class, () -> fixture.service().deletePlaybook(fixture.playbookId()));
+
         assertFalse(fixture.service().deletionPreview("RESOURCE", fixture.toolResourceId()).canDelete());
         assertThrows(IllegalStateException.class, () -> fixture.service().deleteResource(fixture.toolResourceId()));
 
@@ -254,65 +273,6 @@ class CatalogServiceTest {
         assertTrue(fixture.service().deletionPreview("AGENT", fixture.agentId()).canDelete());
         CatalogDtos.AgentDto deletedAgent = fixture.service().deleteAgent(fixture.agentId());
         assertEquals(fixture.agentId(), deletedAgent.id());
-    }
-
-    @Test
-    void shouldPreviewAgentDeletionAsOrchestrationResetWhenFallbackWillApply() {
-        CatalogService service = new CatalogService(new InMemoryCatalogRepository(), readySnapshotKnowledgeClient(), noopKnowledgeWorkflowGateway());
-        CatalogDtos.BusinessDomainDto domain = service.createDomain(new CatalogDtos.CreateDomainRequest("编排域", "测试编排回退"));
-        CatalogDtos.ScenarioDto scenario = service.createScenario(
-            new CatalogDtos.CreateScenarioRequest(domain.id(), "人工审批场景", "测试自定义编排")
-        );
-        CatalogDtos.AssistantDto assistant = service.createAssistant(
-            new CatalogDtos.CreateAssistantRequest(scenario.id(), "审批助手", "处理审批", null, null, null)
-        );
-        CatalogDtos.AgentDto firstAgent = service.createAgent(new CatalogDtos.CreateAgentRequest(
-            assistant.id(),
-            "执行智能体",
-            "executor",
-            "执行任务",
-            new CatalogDtos.AgentExecutionPolicyDto(true, null, "", false, false, null, 8, List.of(), List.of())
-        ));
-        CatalogDtos.AgentDto secondAgent = service.createAgent(new CatalogDtos.CreateAgentRequest(
-            assistant.id(),
-            "收尾智能体",
-            "closer",
-            "收尾任务",
-            new CatalogDtos.AgentExecutionPolicyDto(true, null, "", false, false, null, 8, List.of(), List.of())
-        ));
-
-        service.saveOrchestration(assistant.id(), new CatalogDtos.UpdateOrchestrationRequest(
-            "GRAPH",
-            List.of(
-                new CatalogDtos.OrchestrationNodeDto("start", "开始", OrchestrationNodeType.START, "接收请求", null, null),
-                new CatalogDtos.OrchestrationNodeDto("node-" + firstAgent.id(), firstAgent.name(), OrchestrationNodeType.AGENT, firstAgent.responsibility(), firstAgent.id(), null),
-                new CatalogDtos.OrchestrationNodeDto(
-                    "human-review",
-                    "人工审批",
-                    OrchestrationNodeType.HUMAN,
-                    "人工确认",
-                    null,
-                    new CatalogDtos.HumanNodeConfigDto("人工审批", "确认是否继续", "approve", "approved")
-                ),
-                new CatalogDtos.OrchestrationNodeDto("node-" + secondAgent.id(), secondAgent.name(), OrchestrationNodeType.AGENT, secondAgent.responsibility(), secondAgent.id(), null),
-                new CatalogDtos.OrchestrationNodeDto("end", "结束", OrchestrationNodeType.END, "完成", null, null)
-            ),
-            List.of(
-                new CatalogDtos.OrchestrationEdgeDto("edge-start-first", "start", "node-" + firstAgent.id(), "default", "进入执行", true),
-                new CatalogDtos.OrchestrationEdgeDto("edge-first-human", "node-" + firstAgent.id(), "human-review", "default", "提交审批", true),
-                new CatalogDtos.OrchestrationEdgeDto("edge-human-second", "human-review", "node-" + secondAgent.id(), "approved", "审批通过", false),
-                new CatalogDtos.OrchestrationEdgeDto("edge-second-end", "node-" + secondAgent.id(), "end", "default", "完成", true)
-            )
-        ));
-
-        CatalogDtos.DeletionImpactPreviewDto preview = service.deletionPreview("AGENT", firstAgent.id());
-        assertTrue(preview.cascadeDeletes().stream().anyMatch(item -> item.relationKind().equals("AGENT_ORCHESTRATION_RESET")));
-        assertFalse(preview.cascadeDeletes().stream().anyMatch(item -> item.relationKind().equals("AGENT_ORCHESTRATION_NODE")));
-
-        service.deleteAgent(firstAgent.id());
-        CatalogDtos.AssistantOrchestrationDto orchestration = service.getOrchestration(assistant.id());
-        assertEquals(List.of("start", "node-" + secondAgent.id(), "end"), orchestration.nodes().stream().map(CatalogDtos.OrchestrationNodeDto::nodeKey).toList());
-        assertFalse(orchestration.nodes().stream().anyMatch(node -> node.nodeType() == OrchestrationNodeType.HUMAN));
     }
 
     @Test
@@ -422,17 +382,14 @@ class CatalogServiceTest {
                 null
             )
         );
-        CatalogDtos.AssistantDto published = catalogService.updateAssistant(
+        catalogService.createAgent(new CatalogDtos.CreateAgentRequest(
             assistant.id(),
-            new CatalogDtos.UpdateAssistantRequest(
-                assistant.name(),
-                assistant.description(),
-                VersionStatus.PUBLISHED,
-                assistant.modelPolicy(),
-                assistant.knowledgeAccessPolicy(),
-                assistant.memoryPolicy()
-            )
-        );
+            "已发布执行智能体",
+            "owner",
+            "负责会话主处理",
+            new CatalogDtos.AgentExecutionPolicyDto(true, null, "", false, false, null, 8, List.of(), List.of())
+        ));
+        CatalogDtos.AssistantDto published = publishAssistant(catalogService, assistant);
 
         IllegalStateException error = assertThrows(
             IllegalStateException.class,
@@ -489,18 +446,15 @@ class CatalogServiceTest {
                 null
             )
         );
-
-        CatalogDtos.AssistantDto published = catalogService.updateAssistant(
+        catalogService.createAgent(new CatalogDtos.CreateAgentRequest(
             assistant.id(),
-            new CatalogDtos.UpdateAssistantRequest(
-                assistant.name(),
-                assistant.description(),
-                VersionStatus.PUBLISHED,
-                assistant.modelPolicy(),
-                assistant.knowledgeAccessPolicy(),
-                assistant.memoryPolicy()
-            )
-        );
+            "模型执行智能体",
+            "owner",
+            "负责模型会话",
+            new CatalogDtos.AgentExecutionPolicyDto(true, null, "", false, false, null, 8, List.of(), List.of())
+        ));
+
+        CatalogDtos.AssistantDto published = publishAssistant(catalogService, assistant);
 
         CatalogDtos.DefaultModelBindingDto binding = published.currentRelease().defaultModelBinding();
         assertNotNull(binding);
@@ -565,17 +519,7 @@ class CatalogServiceTest {
             new CatalogDtos.AgentExecutionPolicyDto(true, null, "", false, false, null, 8, List.of(), List.of(tool.id()))
         ));
 
-        CatalogDtos.AssistantDto publishedV1 = catalogService.updateAssistant(
-            assistant.id(),
-            new CatalogDtos.UpdateAssistantRequest(
-                assistant.name(),
-                assistant.description(),
-                VersionStatus.PUBLISHED,
-                assistant.modelPolicy(),
-                assistant.knowledgeAccessPolicy(),
-                assistant.memoryPolicy()
-            )
-        );
+        CatalogDtos.AssistantDto publishedV1 = publishAssistant(catalogService, assistant);
         CatalogDtos.AssistantReleaseDto releaseV1 = publishedV1.currentRelease();
         String frozenModelVersionId = releaseV1.defaultModelBinding().resourceVersionId();
         String frozenModelVersion = releaseV1.defaultModelBinding().resourceVersion();
@@ -618,17 +562,7 @@ class CatalogServiceTest {
             .effectiveVersion()
             .id());
 
-        CatalogDtos.AssistantDto publishedV2 = catalogService.updateAssistant(
-            assistant.id(),
-            new CatalogDtos.UpdateAssistantRequest(
-                unchangedRelease.name(),
-                unchangedRelease.description(),
-                VersionStatus.PUBLISHED,
-                unchangedRelease.modelPolicy(),
-                unchangedRelease.knowledgeAccessPolicy(),
-                unchangedRelease.memoryPolicy()
-            )
-        );
+        CatalogDtos.AssistantDto publishedV2 = publishAssistant(catalogService, unchangedRelease);
         CatalogDtos.AssistantReleaseResourceDto republishedToolBinding = publishedV2.currentRelease().resources().stream()
             .filter(item -> item.resourceId().equals(tool.id()))
             .findFirst()
@@ -699,17 +633,7 @@ class CatalogServiceTest {
             new CatalogDtos.AgentExecutionPolicyDto(true, null, "", true, false, knowledgeBase.id(), 8, List.of(), List.of())
         ));
 
-        CatalogDtos.AssistantDto publishedV1 = catalogService.updateAssistant(
-            assistant.id(),
-            new CatalogDtos.UpdateAssistantRequest(
-                assistant.name(),
-                assistant.description(),
-                VersionStatus.PUBLISHED,
-                assistant.modelPolicy(),
-                assistant.knowledgeAccessPolicy(),
-                assistant.memoryPolicy()
-            )
-        );
+        CatalogDtos.AssistantDto publishedV1 = publishAssistant(catalogService, assistant);
         CatalogDtos.KnowledgeBindingSnapshotDto frozenAssistantKnowledge = publishedV1.currentRelease().assistantKnowledgeBinding();
         CatalogDtos.KnowledgeBindingSnapshotDto frozenAgentKnowledge = publishedV1.currentRelease().agents().getFirst().knowledgeBinding();
         assertEquals(knowledgeV1.id(), frozenAssistantKnowledge.knowledgeReleaseId());
@@ -737,17 +661,7 @@ class CatalogServiceTest {
         assertEquals(frozenAgentKnowledge.knowledgeReleaseVersion(), unchangedRelease.currentRelease().agents().getFirst().knowledgeBinding().knowledgeReleaseVersion());
         assertEquals(knowledgeV2.id(), catalogService.getKnowledgeBase(knowledgeBase.id()).effectiveRelease().id());
 
-        CatalogDtos.AssistantDto publishedV2 = catalogService.updateAssistant(
-            assistant.id(),
-            new CatalogDtos.UpdateAssistantRequest(
-                unchangedRelease.name(),
-                unchangedRelease.description(),
-                VersionStatus.PUBLISHED,
-                unchangedRelease.modelPolicy(),
-                unchangedRelease.knowledgeAccessPolicy(),
-                unchangedRelease.memoryPolicy()
-            )
-        );
+        CatalogDtos.AssistantDto publishedV2 = publishAssistant(catalogService, unchangedRelease);
         assertEquals(knowledgeV2.id(), publishedV2.currentRelease().assistantKnowledgeBinding().knowledgeReleaseId());
         assertEquals(knowledgeV2.version(), publishedV2.currentRelease().assistantKnowledgeBinding().knowledgeReleaseVersion());
         assertEquals("snapshot-knowledge-v2", publishedV2.currentRelease().assistantKnowledgeBinding().snapshotId());
@@ -808,10 +722,7 @@ class CatalogServiceTest {
             new CatalogDtos.AgentExecutionPolicyDto(true, null, "", false, false, null, 8, List.of(), List.of(tool.id()))
         ));
 
-        CatalogDtos.AssistantDto published = catalogService.updateAssistant(
-            assistant.id(),
-            new CatalogDtos.UpdateAssistantRequest("交付助手", "处理交付跟进", VersionStatus.PUBLISHED, assistant.modelPolicy(), assistant.knowledgeAccessPolicy(), assistant.memoryPolicy())
-        );
+        CatalogDtos.AssistantDto published = publishAssistant(catalogService, assistant);
         assertEquals(VersionStatus.PUBLISHED, published.version().status());
         assertFalse(published.currentRelease().agents().getFirst().toolResourceVersionIds().isEmpty());
     }
@@ -1060,18 +971,98 @@ class CatalogServiceTest {
             "处理客服流转",
             new CatalogDtos.AgentExecutionPolicyDto(true, null, "", true, true, knowledgeBase.id(), 8, List.of(), List.of(tool.id()))
         ));
-        service.updateAssistant(
+        CatalogDtos.PlaybookDto playbook = service.createPlaybook(new CatalogDtos.CreatePlaybookRequest(
+            assistant.id(),
+            "退款受理",
+            "处理退款申请",
+            "{\"type\":\"object\"}",
+            "{\"type\":\"object\"}",
+            new CatalogDtos.PlaybookExecutionPolicyDto("PT5M", "PT30S"),
+            true,
+            true,
+            "start",
+            List.of(
+                new CatalogDtos.PlaybookNodeDto(
+                    "start",
+                    "开始",
+                    com.lynxus.contracts.session.SessionContracts.PlaybookNodeType.STEP,
+                    "",
+                    null,
+                    null,
+                    null,
+                    null,
+                    Map.of()
+                ),
+                new CatalogDtos.PlaybookNodeDto(
+                    "finish",
+                    "结束",
+                    com.lynxus.contracts.session.SessionContracts.PlaybookNodeType.END,
+                    "",
+                    null,
+                    null,
+                    null,
+                    null,
+                    Map.of()
+                )
+            ),
+            List.of(
+                new CatalogDtos.PlaybookEdgeDto("start-to-finish", "start", "finish", null, null, true)
+            )
+        ));
+        agent = service.updateAgent(
+            agent.id(),
+            new CatalogDtos.UpdateAgentRequest(
+                agent.name(),
+                agent.role(),
+                agent.responsibility(),
+                agent.executionPolicy(),
+                agent.canOwnSession(),
+                agent.allowedActions(),
+                agent.switchableOwnerAgentIds(),
+                List.of(playbook.id())
+            )
+        );
+        publishAssistant(service, service.updateAssistant(
             assistant.id(),
             new CatalogDtos.UpdateAssistantRequest(
                 assistant.name(),
                 assistant.description(),
-                VersionStatus.PUBLISHED,
+                VersionStatus.DRAFT,
                 assistant.modelPolicy(),
                 new CatalogDtos.KnowledgeAccessPolicyDto(true, knowledgeBase.id()),
                 assistant.memoryPolicy()
             )
+        ));
+        return new CustomerOpsFixture(service, domain.id(), scenario.id(), assistant.id(), agent.id(), playbook.id(), knowledgeBase.id(), tool.id());
+    }
+
+    private static CatalogDtos.AssistantDto publishAssistant(CatalogService service, CatalogDtos.AssistantDto assistant) {
+        CatalogDtos.AssistantDto current = service.getAssistant(assistant.id());
+        String primaryAgentId = current.primaryAgentId();
+        if (primaryAgentId == null || primaryAgentId.isBlank()) {
+            primaryAgentId = service.listAgents().stream()
+                .filter(agent -> agent.assistantId().equals(current.id()))
+                .filter(CatalogDtos.AgentDto::canOwnSession)
+                .map(CatalogDtos.AgentDto::id)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("assistant must have an owner-capable agent before publishing"));
+        }
+        return service.updateAssistant(
+            current.id(),
+            new CatalogDtos.UpdateAssistantRequest(
+                current.name(),
+                current.description(),
+                VersionStatus.PUBLISHED,
+                primaryAgentId,
+                current.ownerPolicy(),
+                current.sessionPolicy(),
+                current.replyPolicy(),
+                current.playbookPolicy(),
+                current.modelPolicy(),
+                current.knowledgeAccessPolicy(),
+                current.memoryPolicy()
+            )
         );
-        return new CustomerOpsFixture(service, domain.id(), scenario.id(), assistant.id(), agent.id(), knowledgeBase.id(), tool.id());
     }
 
     private record CustomerOpsFixture(
@@ -1080,6 +1071,7 @@ class CatalogServiceTest {
         String scenarioId,
         String assistantId,
         String agentId,
+        String playbookId,
         String knowledgeBaseId,
         String toolResourceId
     ) {

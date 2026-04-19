@@ -16,7 +16,7 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_USER: lynxus
       POSTGRES_PASSWORD: lynxus
-      LYNXUS_API_DATABASE: lynxus_api
+      LYNXUS_CORE_DATABASE: lynxus_core
       LYNXUS_KNOWLEDGE_DATABASE: lynxus_knowledge
     depends_on:
       - postgres
@@ -74,6 +74,13 @@ services:
       - ./temporal-ui-gateway/Caddyfile:/etc/caddy/Caddyfile:ro
     depends_on:
       - temporal-ui
+
+  sandbox:
+    image: ${LYNXUS_IMAGE_SANDBOX:-ghcr.io/agent-infra/sandbox:1.0.0.152}
+    security_opt:
+      - seccomp=unconfined
+    ports:
+      - "127.0.0.1:8092:8080"
 
 volumes:
   postgres_data:

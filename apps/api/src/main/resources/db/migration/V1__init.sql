@@ -133,11 +133,6 @@ create table catalog_assistant_releases (
     payload jsonb not null
 );
 
-create table catalog_orchestration (
-    assistant_id varchar(64) primary key,
-    payload jsonb not null
-);
-
 create table conversation_session (
     id varchar(64) primary key,
     scenario_id varchar(64) not null,

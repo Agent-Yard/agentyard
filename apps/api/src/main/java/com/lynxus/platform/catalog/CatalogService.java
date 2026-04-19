@@ -6,7 +6,7 @@ import com.lynxus.platform.knowledge.InMemoryKnowledgeRepository;
 import com.lynxus.platform.knowledge.KnowledgeService;
 import com.lynxus.platform.knowledge.KnowledgeServiceClient;
 import com.lynxus.platform.knowledge.KnowledgeWorkflowGateway;
-import com.lynxus.contracts.runtime.WorkflowContracts.OrchestrationNodeType;
+import com.lynxus.contracts.session.SessionContracts.AgentDecisionAction;
 import com.lynxus.contracts.runtime.WorkflowContracts.ResourceType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
 import com.lynxus.contracts.runtime.WorkflowContracts.ToolProviderType;
@@ -36,10 +36,10 @@ public class CatalogService {
     private final List<ScenarioDto> scenarios = new ArrayList<>();
     private final List<AssistantDto> assistants = new ArrayList<>();
     private final List<AgentDto> agents = new ArrayList<>();
+    private final List<PlaybookDto> playbooks = new ArrayList<>();
     private final List<ResourceDto> resources = new ArrayList<>();
     private final Map<String, List<StoredResourceVersion>> resourceVersions = new LinkedHashMap<>();
     private final Map<String, List<AssistantReleaseDto>> assistantReleases = new LinkedHashMap<>();
-    private final Map<String, AssistantOrchestrationDto> orchestrations = new LinkedHashMap<>();
 
     public CatalogService() {
         this(
@@ -83,7 +83,6 @@ public class CatalogService {
             listAgents(),
             listResources(),
             listKnowledgeBases(),
-            listOrchestrations(),
             resourceCenter(),
             resourceBlueprints()
         );
@@ -96,6 +95,7 @@ public class CatalogService {
             case "DOMAIN" -> analyzeDomainReferences(findDomain(objectId));
             case "SCENARIO" -> analyzeScenarioReferences(findScenario(objectId));
             case "ASSISTANT" -> analyzeAssistantReferences(findAssistant(objectId));
+            case "PLAYBOOK" -> analyzePlaybookReferences(findPlaybook(objectId));
             case "AGENT" -> analyzeAgentReferences(findAgent(objectId));
             case "RESOURCE" -> analyzeResourceReferences(toResourceView(findResource(objectId)));
             case "KNOWLEDGE_BASE" -> analyzeKnowledgeBaseReferences(getKnowledgeBase(objectId));
@@ -253,8 +253,14 @@ public class CatalogService {
             request.description(),
             new VersionDto("0.1.0", VersionStatus.DRAFT, Instant.now()),
             List.of(),
+            List.of(),
             null,
             List.of(),
+            normalizePrimaryAgentId(request.primaryAgentId()),
+            normalizeAssistantOwnerPolicy(request.ownerPolicy()),
+            normalizeAssistantSessionPolicy(request.sessionPolicy()),
+            normalizeAssistantReplyPolicy(request.replyPolicy()),
+            normalizeAssistantPlaybookPolicy(request.playbookPolicy()),
             normalizedModelPolicy,
             normalizeKnowledgeAccessPolicy(request.knowledgeAccessPolicy()),
             normalizeMemoryPolicy(request.memoryPolicy())
@@ -268,11 +274,31 @@ public class CatalogService {
         ensureLoaded();
         AssistantDto existing = findAssistant(assistantId);
         VersionStatus effectiveStatus = request.status() == null ? existing.version().status() : request.status();
-        AssistantModelPolicyDto normalizedModelPolicy = normalizeAssistantModelPolicy(request.modelPolicy());
+        String primaryAgentId = request.primaryAgentId() == null
+            ? existing.primaryAgentId()
+            : normalizePrimaryAgentId(request.primaryAgentId());
+        AssistantOwnerPolicyDto ownerPolicy = request.ownerPolicy() == null
+            ? existing.ownerPolicy()
+            : normalizeAssistantOwnerPolicy(request.ownerPolicy());
+        AssistantSessionPolicyDto sessionPolicy = request.sessionPolicy() == null
+            ? existing.sessionPolicy()
+            : normalizeAssistantSessionPolicy(request.sessionPolicy());
+        AssistantReplyPolicyDto replyPolicy = request.replyPolicy() == null
+            ? existing.replyPolicy()
+            : normalizeAssistantReplyPolicy(request.replyPolicy());
+        AssistantPlaybookPolicyDto playbookPolicy = request.playbookPolicy() == null
+            ? existing.playbookPolicy()
+            : normalizeAssistantPlaybookPolicy(request.playbookPolicy());
+        AssistantModelPolicyDto normalizedModelPolicy = request.modelPolicy() == null
+            ? existing.modelPolicy()
+            : normalizeAssistantModelPolicy(request.modelPolicy());
+        KnowledgeAccessPolicyDto knowledgeAccessPolicy = request.knowledgeAccessPolicy() == null
+            ? existing.knowledgeAccessPolicy()
+            : normalizeKnowledgeAccessPolicy(request.knowledgeAccessPolicy());
+        MemoryPolicyDto memoryPolicy = request.memoryPolicy() == null
+            ? existing.memoryPolicy()
+            : normalizeMemoryPolicy(request.memoryPolicy());
         validateAssistantModelPolicy(normalizedModelPolicy);
-        if (effectiveStatus == VersionStatus.PUBLISHED) {
-            ensureAssistantReadyForPublication(normalizedModelPolicy);
-        }
         VersionDto version = new VersionDto(
             effectiveStatus == VersionStatus.PUBLISHED ? nextAssistantReleaseVersion(existing.id()) : existing.version().version(),
             effectiveStatus,
@@ -285,14 +311,24 @@ public class CatalogService {
             request.description(),
             version,
             existing.agents(),
+            existing.playbooks(),
             existing.currentRelease(),
             existing.releases(),
+            primaryAgentId,
+            ownerPolicy,
+            sessionPolicy,
+            replyPolicy,
+            playbookPolicy,
             normalizedModelPolicy,
-            normalizeKnowledgeAccessPolicy(request.knowledgeAccessPolicy()),
-            normalizeMemoryPolicy(request.memoryPolicy())
+            knowledgeAccessPolicy,
+            memoryPolicy
         );
+        validateAssistantOwnerConfiguration(updated);
+        if (effectiveStatus == VersionStatus.PUBLISHED) {
+            ensureAssistantReadyForPublication(updated);
+        }
         replace(assistants, AssistantDto::id, updated);
-        if (request.status() == VersionStatus.PUBLISHED) {
+        if (effectiveStatus == VersionStatus.PUBLISHED) {
             createAssistantRelease(updated.id(), version.version(), VersionStatus.PUBLISHED);
         }
         persistState();
@@ -310,7 +346,6 @@ public class CatalogService {
         AssistantDto deleted = toAssistantView(existing);
         assistants.removeIf(item -> item.id().equals(assistantId));
         assistantReleases.remove(assistantId);
-        orchestrations.remove(assistantId);
         persistState();
         return deleted;
     }
@@ -323,6 +358,11 @@ public class CatalogService {
             .toList();
     }
 
+    public AssistantDto getAssistant(String assistantId) {
+        ensureLoaded();
+        return toAssistantView(findAssistant(assistantId));
+    }
+
     public AgentDto createAgent(CreateAgentRequest request) {
         ensureLoaded();
         AgentDto agent = new AgentDto(
@@ -331,9 +371,18 @@ public class CatalogService {
             request.name(),
             request.role(),
             request.responsibility(),
-            normalizeAgentExecutionPolicy(request.executionPolicy())
+            normalizeAgentExecutionPolicy(request.executionPolicy()),
+            request.canOwnSession(),
+            normalizeAllowedActions(request.allowedActions()),
+            request.switchableOwnerAgentIds() == null ? List.of() : List.copyOf(request.switchableOwnerAgentIds()),
+            request.playbookIds() == null ? List.of() : List.copyOf(request.playbookIds())
         );
+        validateAgentPlaybookReferences(agent.assistantId(), agent.playbookIds());
         agents.add(agent);
+        AssistantDto assistant = findAssistant(request.assistantId());
+        if (assistant.primaryAgentId() != null && !assistant.primaryAgentId().isBlank()) {
+            validateAssistantOwnerConfiguration(assistant);
+        }
         persistState();
         return agent;
     }
@@ -347,9 +396,18 @@ public class CatalogService {
             request.name(),
             request.role(),
             request.responsibility(),
-            normalizeAgentExecutionPolicy(request.executionPolicy())
+            normalizeAgentExecutionPolicy(request.executionPolicy()),
+            request.canOwnSession(),
+            normalizeAllowedActions(request.allowedActions()),
+            request.switchableOwnerAgentIds() == null ? List.of() : List.copyOf(request.switchableOwnerAgentIds()),
+            request.playbookIds() == null ? List.of() : List.copyOf(request.playbookIds())
         );
+        validateAgentPlaybookReferences(updated.assistantId(), updated.playbookIds());
         replace(agents, AgentDto::id, updated);
+        AssistantDto assistant = findAssistant(existing.assistantId());
+        if (assistant.primaryAgentId() != null && !assistant.primaryAgentId().isBlank()) {
+            validateAssistantOwnerConfiguration(assistant);
+        }
         persistState();
         return updated;
     }
@@ -362,7 +420,7 @@ public class CatalogService {
             throw new IllegalStateException(blocker);
         }
         agents.removeIf(item -> item.id().equals(agentId));
-        recycleOrchestrationAfterAgentDeletion(existing.assistantId(), agentId);
+        clearDeletedPrimaryAgent(existing.assistantId(), agentId);
         persistState();
         return existing;
     }
@@ -375,6 +433,77 @@ public class CatalogService {
     public AgentDto getAgent(String agentId) {
         ensureLoaded();
         return findAgent(agentId);
+    }
+
+    public List<PlaybookDto> listPlaybooks() {
+        ensureLoaded();
+        return playbooks.stream()
+            .sorted(Comparator.comparing(PlaybookDto::name))
+            .map(this::normalizePlaybook)
+            .toList();
+    }
+
+    public PlaybookDto getPlaybook(String playbookId) {
+        ensureLoaded();
+        return normalizePlaybook(findPlaybook(playbookId));
+    }
+
+    public PlaybookDto createPlaybook(CreatePlaybookRequest request) {
+        ensureLoaded();
+        findAssistant(request.assistantId());
+        PlaybookDto playbook = new PlaybookDto(
+            nextId("playbook"),
+            request.assistantId(),
+            requireText(request.name(), "playbook.name"),
+            normalizeOptionalText(request.description()),
+            normalizeOptionalText(request.inputSchema()),
+            normalizeOptionalText(request.resultSchema()),
+            normalizePlaybookExecutionPolicy(request.executionPolicy()),
+            request.allowHumanTask(),
+            request.allowExternalInteraction(),
+            requireText(request.entryNodeKey(), "playbook.entryNodeKey"),
+            request.nodes() == null ? List.of() : request.nodes().stream().map(this::normalizePlaybookNode).toList(),
+            request.edges() == null ? List.of() : request.edges().stream().map(this::normalizePlaybookEdge).toList()
+        );
+        validatePlaybookDefinition(playbook);
+        playbooks.add(playbook);
+        persistState();
+        return normalizePlaybook(playbook);
+    }
+
+    public PlaybookDto updatePlaybook(String playbookId, UpdatePlaybookRequest request) {
+        ensureLoaded();
+        PlaybookDto existing = findPlaybook(playbookId);
+        PlaybookDto updated = new PlaybookDto(
+            existing.id(),
+            existing.assistantId(),
+            requireText(request.name(), "playbook.name"),
+            normalizeOptionalText(request.description()),
+            normalizeOptionalText(request.inputSchema()),
+            normalizeOptionalText(request.resultSchema()),
+            normalizePlaybookExecutionPolicy(request.executionPolicy()),
+            request.allowHumanTask(),
+            request.allowExternalInteraction(),
+            requireText(request.entryNodeKey(), "playbook.entryNodeKey"),
+            request.nodes() == null ? List.of() : request.nodes().stream().map(this::normalizePlaybookNode).toList(),
+            request.edges() == null ? List.of() : request.edges().stream().map(this::normalizePlaybookEdge).toList()
+        );
+        validatePlaybookDefinition(updated);
+        replace(playbooks, PlaybookDto::id, updated);
+        persistState();
+        return normalizePlaybook(updated);
+    }
+
+    public PlaybookDto deletePlaybook(String playbookId) {
+        ensureLoaded();
+        PlaybookDto existing = findPlaybook(playbookId);
+        String blocker = findObjectDeletionBlocker("PLAYBOOK", playbookId);
+        if (blocker != null) {
+            throw new IllegalStateException(blocker);
+        }
+        playbooks.removeIf(item -> item.id().equals(playbookId));
+        persistState();
+        return normalizePlaybook(existing);
     }
 
     public ResourceDto createResource(CreateResourceRequest request) {
@@ -695,37 +824,6 @@ public class CatalogService {
         return knowledgeService.listIndexSnapshots(knowledgeBaseId);
     }
 
-    public List<AssistantOrchestrationDto> listOrchestrations() {
-        ensureLoaded();
-        return assistants.stream()
-            .sorted(Comparator.comparing(AssistantDto::name))
-            .map(assistant -> getOrCreateOrchestration(assistant.id()))
-            .toList();
-    }
-
-    public AssistantOrchestrationDto getOrchestration(String assistantId) {
-        ensureLoaded();
-        findAssistant(assistantId);
-        return getOrCreateOrchestration(assistantId);
-    }
-
-    public AssistantOrchestrationDto saveOrchestration(String assistantId, UpdateOrchestrationRequest request) {
-        ensureLoaded();
-        AssistantDto assistant = findAssistant(assistantId);
-        AssistantOrchestrationDto saved = synchronizeOrchestration(new AssistantOrchestrationDto(
-            assistant.id(),
-            assistant.name(),
-            assistant.scenarioId(),
-            request.executionMode(),
-            request.nodes(),
-            request.edges()
-        ));
-        validateOrchestration(saved);
-        orchestrations.put(assistantId, saved);
-        persistState();
-        return saved;
-    }
-
     public ResourceCenterDto resourceCenter() {
         ensureLoaded();
         List<ResourceReferenceDto> references = resources.stream()
@@ -809,8 +907,14 @@ public class CatalogService {
             assistant.description(),
             assistant.version(),
             assistantAgents,
+            playbooksForAssistant(assistant.id()),
             releases.isEmpty() ? null : releases.getFirst(),
             releases,
+            normalizePrimaryAgentId(assistant.primaryAgentId()),
+            normalizeAssistantOwnerPolicy(assistant.ownerPolicy()),
+            normalizeAssistantSessionPolicy(assistant.sessionPolicy()),
+            normalizeAssistantReplyPolicy(assistant.replyPolicy()),
+            normalizeAssistantPlaybookPolicy(assistant.playbookPolicy()),
             normalizeAssistantModelPolicy(assistant.modelPolicy()),
             normalizeKnowledgeAccessPolicy(assistant.knowledgeAccessPolicy()),
             normalizeMemoryPolicy(assistant.memoryPolicy())
@@ -837,263 +941,10 @@ public class CatalogService {
     }
 
     private List<AgentDto> orderAgentsForAssistant(String assistantId) {
-        AssistantOrchestrationDto orchestration = orchestrations.get(assistantId);
-        Map<String, Integer> orderIndex = new LinkedHashMap<>();
-        if (orchestration != null) {
-            int index = 0;
-            for (OrchestrationNodeDto node : orchestration.nodes()) {
-                if (node.agentId() != null && !node.agentId().isBlank()) {
-                    orderIndex.putIfAbsent(node.agentId(), index++);
-                }
-            }
-        }
         return agents.stream()
-            .filter(item -> item.assistantId().equals(assistantId))
-            .sorted(Comparator.comparingInt((AgentDto item) -> orderIndex.getOrDefault(item.id(), Integer.MAX_VALUE)).thenComparing(AgentDto::name))
-            .toList();
-    }
-
-    private AssistantOrchestrationDto getOrCreateOrchestration(String assistantId) {
-        AssistantOrchestrationDto current = orchestrations.computeIfAbsent(assistantId, this::buildDefaultOrchestration);
-        AssistantOrchestrationDto synced = synchronizeOrchestration(current);
-        orchestrations.put(assistantId, synced);
-        return synced;
-    }
-
-    private AssistantOrchestrationDto buildDefaultOrchestration(String assistantId) {
-        AssistantDto assistant = findAssistant(assistantId);
-        List<AgentDto> assistantAgents = agents.stream()
             .filter(item -> item.assistantId().equals(assistantId))
             .sorted(Comparator.comparing(AgentDto::name))
             .toList();
-
-        List<OrchestrationNodeDto> nodes = new ArrayList<>();
-        nodes.add(new OrchestrationNodeDto("start", "开始", OrchestrationNodeType.START, "接收用户消息。", null, null));
-        assistantAgents.forEach(agent -> nodes.add(toNode(agent)));
-        nodes.add(new OrchestrationNodeDto("end", "结束", OrchestrationNodeType.END, "流程结束。", null, null));
-
-        return new AssistantOrchestrationDto(
-            assistant.id(),
-            assistant.name(),
-            assistant.scenarioId(),
-            "GRAPH",
-            nodes,
-            buildSequentialEdges(nodes)
-        );
-    }
-
-    private AssistantOrchestrationDto synchronizeOrchestration(AssistantOrchestrationDto source) {
-        AssistantDto assistant = findAssistant(source.assistantId());
-        Map<String, OrchestrationNodeDto> existingAgentNodes = new LinkedHashMap<>();
-        List<OrchestrationNodeDto> syncedNodes = new ArrayList<>();
-
-        for (OrchestrationNodeDto node : source.nodes()) {
-            if (node.nodeType() == OrchestrationNodeType.AGENT && node.agentId() != null && !node.agentId().isBlank()) {
-                existingAgentNodes.put(node.agentId(), node);
-                continue;
-            }
-            syncedNodes.add(node);
-        }
-
-        List<AgentDto> assistantAgents = orderAgentsForSavedNodes(assistant.id(), existingAgentNodes);
-        List<OrchestrationNodeDto> rebuiltAgentNodes = assistantAgents.stream()
-            .map(agent -> {
-                OrchestrationNodeDto existing = existingAgentNodes.get(agent.id());
-                if (existing == null) {
-                    return toNode(agent);
-                }
-                return new OrchestrationNodeDto(
-                    existing.nodeKey(),
-                    agent.name(),
-                    OrchestrationNodeType.AGENT,
-                    existing.description() == null || existing.description().isBlank() ? agent.responsibility() : existing.description(),
-                    agent.id(),
-                    null
-                );
-            })
-            .toList();
-
-        List<OrchestrationNodeDto> finalNodes = new ArrayList<>();
-        boolean insertedAgents = false;
-        for (OrchestrationNodeDto node : syncedNodes) {
-            if (!insertedAgents && node.nodeType() == OrchestrationNodeType.END) {
-                finalNodes.addAll(rebuiltAgentNodes);
-                insertedAgents = true;
-            }
-            finalNodes.add(node);
-        }
-        if (!insertedAgents) {
-            finalNodes.addAll(rebuiltAgentNodes);
-        }
-
-        Map<String, OrchestrationNodeDto> nodesByKey = finalNodes.stream()
-            .collect(LinkedHashMap::new, (map, item) -> map.put(item.nodeKey(), item), Map::putAll);
-        List<OrchestrationEdgeDto> edges = source.edges().stream()
-            .filter(edge -> nodesByKey.containsKey(edge.sourceNodeKey()) && nodesByKey.containsKey(edge.targetNodeKey()))
-            .toList();
-        if (edges.isEmpty() && finalNodes.size() > 1) {
-            edges = buildSequentialEdges(finalNodes);
-        }
-
-        return new AssistantOrchestrationDto(
-            assistant.id(),
-            assistant.name(),
-            assistant.scenarioId(),
-            source.executionMode(),
-            finalNodes,
-            edges
-        );
-    }
-
-    private void recycleOrchestrationAfterAgentDeletion(String assistantId, String agentId) {
-        AgentDeletionOrchestrationImpact impact = computeAgentDeletionOrchestrationImpact(assistantId, agentId);
-        if (impact == null) {
-            return;
-        }
-        orchestrations.put(assistantId, impact.resulting());
-    }
-
-    private AgentDeletionOrchestrationImpact computeAgentDeletionOrchestrationImpact(String assistantId, String agentId) {
-        AssistantOrchestrationDto current = orchestrations.get(assistantId);
-        if (current == null) {
-            return null;
-        }
-
-        List<OrchestrationNodeDto> remainingNodes = current.nodes().stream()
-            .filter(node -> !(node.nodeType() == OrchestrationNodeType.AGENT && agentId.equals(node.agentId())))
-            .toList();
-        Set<String> remainingNodeKeys = remainingNodes.stream()
-            .map(OrchestrationNodeDto::nodeKey)
-            .collect(HashSet::new, Set::add, Set::addAll);
-        List<OrchestrationEdgeDto> remainingEdges = current.edges().stream()
-            .filter(edge -> remainingNodeKeys.contains(edge.sourceNodeKey()) && remainingNodeKeys.contains(edge.targetNodeKey()))
-            .toList();
-
-        AssistantOrchestrationDto candidate = synchronizeOrchestration(new AssistantOrchestrationDto(
-            assistantId,
-            current.assistantName(),
-            current.scenarioId(),
-            current.executionMode(),
-            remainingNodes,
-            remainingEdges
-        ));
-        try {
-            validateOrchestration(candidate);
-            return new AgentDeletionOrchestrationImpact(current, candidate, false);
-        } catch (IllegalArgumentException ignored) {
-            return new AgentDeletionOrchestrationImpact(current, buildDefaultOrchestration(assistantId), true);
-        }
-    }
-
-    private List<AgentDto> orderAgentsForSavedNodes(String assistantId, Map<String, OrchestrationNodeDto> existingNodes) {
-        Map<String, Integer> orderIndex = new LinkedHashMap<>();
-        int index = 0;
-        for (String agentId : existingNodes.keySet()) {
-            orderIndex.put(agentId, index++);
-        }
-        return agents.stream()
-            .filter(item -> item.assistantId().equals(assistantId))
-            .sorted(Comparator.comparingInt((AgentDto item) -> orderIndex.getOrDefault(item.id(), Integer.MAX_VALUE)).thenComparing(AgentDto::name))
-            .toList();
-    }
-
-    private void validateOrchestration(AssistantOrchestrationDto orchestration) {
-        List<OrchestrationNodeDto> nodes = orchestration.nodes();
-        List<OrchestrationEdgeDto> edges = orchestration.edges();
-        if (nodes.isEmpty()) {
-            throw new IllegalArgumentException("orchestration must define nodes");
-        }
-
-        Map<String, OrchestrationNodeDto> nodesByKey = nodes.stream()
-            .collect(LinkedHashMap::new, (map, item) -> {
-                if (map.put(item.nodeKey(), item) != null) {
-                    throw new IllegalArgumentException("duplicate nodeKey: " + item.nodeKey());
-                }
-            }, Map::putAll);
-        long startCount = nodes.stream().filter(node -> node.nodeType() == OrchestrationNodeType.START).count();
-        long endCount = nodes.stream().filter(node -> node.nodeType() == OrchestrationNodeType.END).count();
-        if (startCount != 1 || endCount < 1) {
-            throw new IllegalArgumentException("orchestration must contain exactly one START node and at least one END node");
-        }
-
-        Set<String> assistantAgentIds = agents.stream()
-            .filter(agent -> agent.assistantId().equals(orchestration.assistantId()))
-            .map(AgentDto::id)
-            .collect(HashSet::new, Set::add, Set::addAll);
-        for (OrchestrationNodeDto node : nodes) {
-            if (node.nodeType() == OrchestrationNodeType.AGENT && (node.agentId() == null || !assistantAgentIds.contains(node.agentId()))) {
-                throw new IllegalArgumentException("agent node references unknown agent: " + node.agentId());
-            }
-            if (node.nodeType() == OrchestrationNodeType.HUMAN && node.humanNode() == null) {
-                throw new IllegalArgumentException("human node requires humanNode config: " + node.nodeKey());
-            }
-        }
-
-        Map<String, List<OrchestrationEdgeDto>> outgoing = new LinkedHashMap<>();
-        Set<String> edgeKeys = new HashSet<>();
-        for (OrchestrationEdgeDto edge : edges) {
-            if (!edgeKeys.add(edge.edgeKey())) {
-                throw new IllegalArgumentException("duplicate edgeKey: " + edge.edgeKey());
-            }
-            if (!nodesByKey.containsKey(edge.sourceNodeKey()) || !nodesByKey.containsKey(edge.targetNodeKey())) {
-                throw new IllegalArgumentException("edge references missing nodes: " + edge.edgeKey());
-            }
-            if (edge.routeKey() == null || edge.routeKey().isBlank()) {
-                throw new IllegalArgumentException("edge routeKey is required: " + edge.edgeKey());
-            }
-            outgoing.computeIfAbsent(edge.sourceNodeKey(), __ -> new ArrayList<>()).add(edge);
-        }
-
-        for (OrchestrationNodeDto node : nodes) {
-            List<OrchestrationEdgeDto> nodeEdges = outgoing.getOrDefault(node.nodeKey(), List.of());
-            if (node.nodeType() != OrchestrationNodeType.END && nodeEdges.isEmpty()) {
-                throw new IllegalArgumentException("node has no outgoing edges: " + node.nodeKey());
-            }
-            if (node.nodeType() == OrchestrationNodeType.START) {
-                if (nodeEdges.size() != 1) {
-                    throw new IllegalArgumentException("START node must have exactly one outgoing edge: " + node.nodeKey());
-                }
-                OrchestrationEdgeDto startEdge = nodeEdges.getFirst();
-                if (!startEdge.defaultEdge() || !"default".equals(startEdge.routeKey())) {
-                    throw new IllegalArgumentException("START node outgoing edge must be routeKey=default and defaultEdge=true: " + startEdge.edgeKey());
-                }
-            }
-            Set<String> routeKeys = new HashSet<>();
-            for (OrchestrationEdgeDto edge : nodeEdges) {
-                if (edge.defaultEdge() && !"default".equals(edge.routeKey())) {
-                    throw new IllegalArgumentException("default edge must use routeKey=default: " + edge.edgeKey());
-                }
-                if (!edge.defaultEdge() && "default".equals(edge.routeKey())) {
-                    throw new IllegalArgumentException("non-default edge cannot use routeKey=default: " + edge.edgeKey());
-                }
-                if (!routeKeys.add(edge.routeKey())) {
-                    throw new IllegalArgumentException("duplicate routeKey for node " + node.nodeKey() + ": " + edge.routeKey());
-                }
-            }
-            long defaultCount = nodeEdges.stream().filter(OrchestrationEdgeDto::defaultEdge).count();
-            if (defaultCount > 1) {
-                throw new IllegalArgumentException("node has multiple default edges: " + node.nodeKey());
-            }
-            if (nodeEdges.size() > 1 && defaultCount == 0) {
-                throw new IllegalArgumentException("branching node requires a default edge: " + node.nodeKey());
-            }
-        }
-
-        Set<String> visited = new HashSet<>();
-        OrchestrationNodeDto startNode = nodes.stream().filter(node -> node.nodeType() == OrchestrationNodeType.START).findFirst().orElseThrow();
-        traverse(startNode.nodeKey(), outgoing, visited);
-        if (visited.size() != nodes.size()) {
-            throw new IllegalArgumentException("orchestration contains unreachable nodes");
-        }
-    }
-
-    private void traverse(String nodeKey, Map<String, List<OrchestrationEdgeDto>> outgoing, Set<String> visited) {
-        if (!visited.add(nodeKey)) {
-            return;
-        }
-        for (OrchestrationEdgeDto edge : outgoing.getOrDefault(nodeKey, List.of())) {
-            traverse(edge.targetNodeKey(), outgoing, visited);
-        }
     }
 
     private AssistantReleaseDto createAssistantRelease(String assistantId, String releaseVersion, VersionStatus status) {
@@ -1134,6 +985,10 @@ public class CatalogService {
                 agent.responsibility(),
                 agent.executionPolicy(),
                 resolveAgentKnowledgeBinding(assistantKnowledgeBinding, agent),
+                agent.canOwnSession(),
+                agent.allowedActions(),
+                agent.switchableOwnerAgentIds(),
+                agent.playbookIds(),
                 List.copyOf(skillResourceVersionIds),
                 List.copyOf(toolResourceVersionIds)
             ));
@@ -1150,7 +1005,12 @@ public class CatalogService {
             defaultModelBinding,
             List.copyOf(snapshotMap.values()),
             List.copyOf(releaseAgents),
-            getOrCreateOrchestration(assistantId),
+            playbooksForAssistant(assistantId),
+            assistant.primaryAgentId(),
+            assistant.ownerPolicy(),
+            assistant.sessionPolicy(),
+            assistant.replyPolicy(),
+            assistant.playbookPolicy(),
             assistant.modelPolicy(),
             assistant.knowledgeAccessPolicy(),
             assistant.memoryPolicy()
@@ -1241,10 +1101,20 @@ public class CatalogService {
         return ObjectReferenceAnalyzer.analyzeAssistant(
             toAssistantView(assistant),
             agents,
+            playbooks,
             listResources(),
             listKnowledgeBases(),
-            orchestrations.get(assistant.id()),
             assistantReleases.getOrDefault(assistant.id(), List.of())
+        );
+    }
+
+    private ObjectReferenceAnalysisDto analyzePlaybookReferences(PlaybookDto playbook) {
+        AssistantDto assistant = toAssistantView(findAssistant(playbook.assistantId()));
+        return ObjectReferenceAnalyzer.analyzePlaybook(
+            playbook,
+            assistant.name(),
+            agents,
+            assistantReleases.getOrDefault(playbook.assistantId(), List.of())
         );
     }
 
@@ -1255,7 +1125,6 @@ public class CatalogService {
             assistant.name(),
             listResources(),
             listKnowledgeBases(),
-            orchestrations.get(agent.assistantId()),
             assistantReleases.getOrDefault(agent.assistantId(), List.of())
         );
     }
@@ -1287,18 +1156,11 @@ public class CatalogService {
             .toList();
     }
 
-    private record AgentDeletionOrchestrationImpact(
-        AssistantOrchestrationDto current,
-        AssistantOrchestrationDto resulting,
-        boolean resetToDefault
-    ) {
-    }
-
     private List<DeletionCascadeItemDto> buildCascadeDeletes(String objectType, String objectId) {
         return switch (objectType) {
             case "DOMAIN", "SCENARIO" -> List.of();
             case "ASSISTANT" -> buildAssistantCascadeDeletes(objectId);
-            case "AGENT" -> buildAgentCascadeDeletes(objectId);
+            case "PLAYBOOK", "AGENT" -> List.of();
             case "RESOURCE" -> buildResourceCascadeDeletes(objectId);
             case "KNOWLEDGE_BASE" -> buildKnowledgeBaseCascadeDeletes(objectId);
             default -> throw new IllegalArgumentException("unsupported reference object type: " + objectType);
@@ -1308,20 +1170,6 @@ public class CatalogService {
     private List<DeletionCascadeItemDto> buildAssistantCascadeDeletes(String assistantId) {
         List<DeletionCascadeItemDto> cascadeDeletes = new ArrayList<>();
         AssistantDto assistant = toAssistantView(findAssistant(assistantId));
-        AssistantOrchestrationDto orchestration = orchestrations.get(assistantId);
-        if (orchestration != null) {
-            cascadeDeletes.add(new DeletionCascadeItemDto(
-                "DELETE",
-                "ASSISTANT_ORCHESTRATION",
-                "ORCHESTRATION",
-                orchestration.assistantId(),
-                orchestration.assistantName() + " 编排",
-                "删除助手后会同步删除该助手的编排定义。",
-                null,
-                null,
-                null
-            ));
-        }
         assistantReleases.getOrDefault(assistantId, List.of()).stream()
             .sorted(Comparator.comparing(AssistantReleaseDto::createdAt).reversed())
             .forEach(release -> cascadeDeletes.add(new DeletionCascadeItemDto(
@@ -1336,54 +1184,6 @@ public class CatalogService {
                 null
             )));
         return cascadeDeletes;
-    }
-
-    private List<DeletionCascadeItemDto> buildAgentCascadeDeletes(String agentId) {
-        AgentDto agent = findAgent(agentId);
-        AgentDeletionOrchestrationImpact impact = computeAgentDeletionOrchestrationImpact(agent.assistantId(), agentId);
-        if (impact == null) {
-            return List.of();
-        }
-
-        if (impact.resetToDefault()) {
-            long removedNodeCount = impact.current().nodes().stream()
-                .filter(node -> impact.resulting().nodes().stream().noneMatch(result -> result.nodeKey().equals(node.nodeKey())))
-                .count();
-            long removedEdgeCount = impact.current().edges().stream()
-                .filter(edge -> impact.resulting().edges().stream().noneMatch(result -> result.edgeKey().equals(edge.edgeKey())))
-                .count();
-            return List.of(new DeletionCascadeItemDto(
-                "REMOVE",
-                "AGENT_ORCHESTRATION_RESET",
-                "ORCHESTRATION",
-                impact.current().assistantId(),
-                impact.current().assistantName() + " 编排",
-                "删除智能体后当前编排将回退为默认顺序编排，并替换 " + removedNodeCount + " 个节点与 " + removedEdgeCount + " 条连线。",
-                null,
-                null,
-                null
-            ));
-        }
-
-        return impact.current().nodes().stream()
-            .filter(node -> agentId.equals(node.agentId()))
-            .map(node -> {
-                long affectedEdges = impact.current().edges().stream()
-                    .filter(edge -> node.nodeKey().equals(edge.sourceNodeKey()) || node.nodeKey().equals(edge.targetNodeKey()))
-                    .count();
-                return new DeletionCascadeItemDto(
-                    "REMOVE",
-                    "AGENT_ORCHESTRATION_NODE",
-                    "ORCHESTRATION_NODE",
-                    node.nodeKey(),
-                    impact.current().assistantName() + " / " + node.nodeName(),
-                    "删除智能体后会自动回收编排节点，并移除 " + affectedEdges + " 条关联连线。",
-                    null,
-                    null,
-                    null
-                );
-            })
-            .toList();
     }
 
     private List<DeletionCascadeItemDto> buildResourceCascadeDeletes(String resourceId) {
@@ -1535,9 +1335,14 @@ public class CatalogService {
             case "SCENARIO" -> "scenario still contains assistant: " + relation.targetName();
             case "ASSISTANT" -> switch (relation.relationKind()) {
                 case "ASSISTANT_AGENT" -> "assistant still contains agent: " + relation.targetName();
+                case "ASSISTANT_PLAYBOOK" -> "assistant still contains playbook: " + relation.targetName();
                 case "ASSISTANT_PRIVATE_RESOURCE" -> "assistant still owns resource: " + relation.targetName();
                 case "ASSISTANT_PRIVATE_KNOWLEDGE_BASE" -> "assistant still owns knowledge base: " + relation.targetName();
                 default -> "assistant is still referenced: " + relation.targetName();
+            };
+            case "PLAYBOOK" -> switch (relation.relationKind()) {
+                case "PLAYBOOK_AGENT_ENABLED" -> "playbook is still enabled on agent: " + relation.targetName();
+                default -> "playbook is still referenced: " + relation.targetName();
             };
             case "RESOURCE" -> switch (relation.relationKind()) {
                 case "ASSISTANT_DEFAULT_MODEL" -> "resource is used as assistant default model: " + relation.targetName();
@@ -1561,37 +1366,9 @@ public class CatalogService {
     private String normalizeReferenceObjectType(String objectType) {
         String normalized = objectType == null ? "" : objectType.trim().toUpperCase(Locale.ROOT);
         return switch (normalized) {
-            case "DOMAIN", "SCENARIO", "ASSISTANT", "AGENT", "RESOURCE", "KNOWLEDGE_BASE" -> normalized;
+            case "DOMAIN", "SCENARIO", "ASSISTANT", "PLAYBOOK", "AGENT", "RESOURCE", "KNOWLEDGE_BASE" -> normalized;
             default -> throw new IllegalArgumentException("unsupported reference object type: " + objectType);
         };
-    }
-
-    private OrchestrationNodeDto toNode(AgentDto agent) {
-        return new OrchestrationNodeDto(
-            "node-" + agent.id(),
-            agent.name(),
-            OrchestrationNodeType.AGENT,
-            agent.responsibility(),
-            agent.id(),
-            null
-        );
-    }
-
-    private List<OrchestrationEdgeDto> buildSequentialEdges(List<OrchestrationNodeDto> nodes) {
-        List<OrchestrationEdgeDto> edges = new ArrayList<>();
-        for (int i = 0; i < nodes.size() - 1; i++) {
-            OrchestrationNodeDto current = nodes.get(i);
-            OrchestrationNodeDto next = nodes.get(i + 1);
-            edges.add(new OrchestrationEdgeDto(
-                "edge-" + current.nodeKey() + "-" + next.nodeKey(),
-                current.nodeKey(),
-                next.nodeKey(),
-                "default",
-                current.nodeType() == OrchestrationNodeType.START ? "开始处理" : "默认流转",
-                true
-            ));
-        }
-        return edges;
     }
 
     private void restore(CatalogRepository.CatalogSnapshot snapshot) {
@@ -1608,8 +1385,14 @@ public class CatalogService {
                 assistant.description(),
                 assistant.version(),
                 assistant.agents(),
+                assistant.playbooks() == null ? List.of() : assistant.playbooks().stream().map(this::normalizePlaybook).toList(),
                 assistant.currentRelease(),
                 assistant.releases(),
+                normalizePrimaryAgentId(assistant.primaryAgentId()),
+                normalizeAssistantOwnerPolicy(assistant.ownerPolicy()),
+                normalizeAssistantSessionPolicy(assistant.sessionPolicy()),
+                normalizeAssistantReplyPolicy(assistant.replyPolicy()),
+                normalizeAssistantPlaybookPolicy(assistant.playbookPolicy()),
                 normalizeAssistantModelPolicy(assistant.modelPolicy()),
                 normalizeKnowledgeAccessPolicy(assistant.knowledgeAccessPolicy()),
                 normalizeMemoryPolicy(assistant.memoryPolicy())
@@ -1619,6 +1402,8 @@ public class CatalogService {
         resources.addAll(snapshot.resources());
         agents.clear();
         agents.addAll(snapshot.agents().stream().map(this::normalizeLoadedAgent).toList());
+        playbooks.clear();
+        playbooks.addAll(snapshot.playbooks().stream().map(this::normalizePlaybook).toList());
         resourceVersions.clear();
         snapshot.resourceVersions().forEach((resourceId, versions) -> {
             ResourceType resourceType = resources.stream()
@@ -1678,19 +1463,26 @@ public class CatalogService {
                             agent.responsibility(),
                             normalizeAgentExecutionPolicy(agent.executionPolicy()),
                             normalizeKnowledgeBindingSnapshot(agent.knowledgeBinding()),
+                            agent.canOwnSession(),
+                            normalizeAllowedActions(agent.allowedActions()),
+                            agent.switchableOwnerAgentIds(),
+                            agent.playbookIds(),
                             agent.skillResourceVersionIds(),
                             agent.toolResourceVersionIds()
                         ))
                         .toList(),
-                    release.orchestration(),
+                    release.playbooks() == null ? List.of() : release.playbooks().stream().map(this::normalizePlaybook).toList(),
+                    normalizePrimaryAgentId(release.primaryAgentId()),
+                    normalizeAssistantOwnerPolicy(release.ownerPolicy()),
+                    normalizeAssistantSessionPolicy(release.sessionPolicy()),
+                    normalizeAssistantReplyPolicy(release.replyPolicy()),
+                    normalizeAssistantPlaybookPolicy(release.playbookPolicy()),
                     normalizeAssistantModelPolicy(release.modelPolicy()),
                     normalizeKnowledgeAccessPolicy(release.knowledgeAccessPolicy()),
                     normalizeMemoryPolicy(release.memoryPolicy())
                 ))
                 .toList()
         ));
-        orchestrations.clear();
-        orchestrations.putAll(snapshot.orchestrations());
     }
 
     private AgentDto normalizeLoadedAgent(AgentDto agent) {
@@ -1717,8 +1509,102 @@ public class CatalogService {
                 normalizedPolicy.memoryWindowSize(),
                 List.copyOf(enabledSkillResourceIds),
                 List.copyOf(enabledToolResourceIds)
-            )
+            ),
+            agent.canOwnSession(),
+            normalizeAllowedActions(agent.allowedActions()),
+            agent.switchableOwnerAgentIds(),
+            agent.playbookIds()
         );
+    }
+
+    private List<PlaybookDto> playbooksForAssistant(String assistantId) {
+        return playbooks.stream()
+            .filter(item -> item.assistantId().equals(assistantId))
+            .sorted(Comparator.comparing(PlaybookDto::name))
+            .map(this::normalizePlaybook)
+            .toList();
+    }
+
+    private PlaybookDto normalizePlaybook(PlaybookDto playbook) {
+        return new PlaybookDto(
+            playbook.id(),
+            playbook.assistantId(),
+            playbook.name(),
+            playbook.description(),
+            normalizeOptionalText(playbook.inputSchema()),
+            normalizeOptionalText(playbook.resultSchema()),
+            normalizePlaybookExecutionPolicy(playbook.executionPolicy()),
+            playbook.allowHumanTask(),
+            playbook.allowExternalInteraction(),
+            playbook.entryNodeKey(),
+            playbook.nodes() == null ? List.of() : playbook.nodes().stream().map(this::normalizePlaybookNode).toList(),
+            playbook.edges() == null ? List.of() : playbook.edges().stream().map(this::normalizePlaybookEdge).toList()
+        );
+    }
+
+    private PlaybookExecutionPolicyDto normalizePlaybookExecutionPolicy(PlaybookExecutionPolicyDto policy) {
+        if (policy == null) {
+            return new PlaybookExecutionPolicyDto(null, null);
+        }
+        return new PlaybookExecutionPolicyDto(
+            normalizeOptionalText(policy.timeoutPolicy()),
+            normalizeOptionalText(policy.retryPolicy())
+        );
+    }
+
+    private PlaybookNodeDto normalizePlaybookNode(PlaybookNodeDto node) {
+        return new PlaybookNodeDto(
+            requireText(node.nodeKey(), "playbook.node.nodeKey"),
+            requireText(node.nodeName(), "playbook.node.nodeName"),
+            node.nodeType(),
+            normalizeOptionalText(node.description()),
+            normalizeOptionalText(node.scriptRef()),
+            normalizeOptionalText(node.scriptVersion()),
+            normalizeOptionalText(node.toolId()),
+            normalizeOptionalText(node.toolOperation()),
+            node.config() == null ? Map.of() : Map.copyOf(node.config())
+        );
+    }
+
+    private PlaybookEdgeDto normalizePlaybookEdge(PlaybookEdgeDto edge) {
+        return new PlaybookEdgeDto(
+            requireText(edge.edgeKey(), "playbook.edge.edgeKey"),
+            requireText(edge.sourceNodeKey(), "playbook.edge.sourceNodeKey"),
+            requireText(edge.targetNodeKey(), "playbook.edge.targetNodeKey"),
+            normalizeOptionalText(edge.routeKey()),
+            normalizeOptionalText(edge.label()),
+            edge.defaultEdge()
+        );
+    }
+
+    private void validatePlaybookDefinition(PlaybookDto playbook) {
+        if (playbook.nodes().isEmpty()) {
+            throw new IllegalStateException("playbook must contain at least one node");
+        }
+        Set<String> nodeKeys = new HashSet<>();
+        for (PlaybookNodeDto node : playbook.nodes()) {
+            if (!nodeKeys.add(node.nodeKey())) {
+                throw new IllegalStateException("duplicate playbook nodeKey: " + node.nodeKey());
+            }
+            if (node.nodeType() == null) {
+                throw new IllegalStateException("playbook nodeType is required");
+            }
+            if (!playbook.allowHumanTask() && node.nodeType() == com.lynxus.contracts.session.SessionContracts.PlaybookNodeType.HUMAN_TASK) {
+                throw new IllegalStateException("playbook does not allow HUMAN_TASK nodes");
+            }
+            if (!playbook.allowExternalInteraction()
+                && node.nodeType() == com.lynxus.contracts.session.SessionContracts.PlaybookNodeType.EXTERNAL_INTERACTION) {
+                throw new IllegalStateException("playbook does not allow EXTERNAL_INTERACTION nodes");
+            }
+        }
+        if (!nodeKeys.contains(playbook.entryNodeKey())) {
+            throw new IllegalStateException("playbook entryNodeKey must reference an existing node");
+        }
+        for (PlaybookEdgeDto edge : playbook.edges()) {
+            if (!nodeKeys.contains(edge.sourceNodeKey()) || !nodeKeys.contains(edge.targetNodeKey())) {
+                throw new IllegalStateException("playbook edge must reference existing nodes");
+            }
+        }
     }
 
     private void persistState() {
@@ -1727,10 +1613,10 @@ public class CatalogService {
             List.copyOf(scenarios),
             List.copyOf(assistants),
             List.copyOf(agents),
+            List.copyOf(playbooks),
             List.copyOf(resources),
             Map.copyOf(resourceVersions),
-            Map.copyOf(assistantReleases),
-            Map.copyOf(orchestrations)
+            Map.copyOf(assistantReleases)
         ));
     }
 
@@ -1767,6 +1653,28 @@ public class CatalogService {
             .filter(item -> item.id().equals(agentId))
             .findFirst()
             .orElseThrow(() -> new NoSuchElementException("agent not found: " + agentId));
+    }
+
+    private PlaybookDto findPlaybook(String playbookId) {
+        return playbooks.stream()
+            .filter(item -> item.id().equals(playbookId))
+            .findFirst()
+            .orElseThrow(() -> new NoSuchElementException("playbook not found: " + playbookId));
+    }
+
+    private void validateAgentPlaybookReferences(String assistantId, List<String> playbookIds) {
+        if (playbookIds == null || playbookIds.isEmpty()) {
+            return;
+        }
+        Set<String> allowedPlaybooks = playbooks.stream()
+            .filter(item -> item.assistantId().equals(assistantId))
+            .map(PlaybookDto::id)
+            .collect(java.util.stream.Collectors.toSet());
+        for (String playbookId : playbookIds) {
+            if (!allowedPlaybooks.contains(playbookId)) {
+                throw new IllegalStateException("agent references unknown playbook: " + playbookId);
+            }
+        }
     }
 
     private ResourceVersionDto findResourceVersion(String resourceId, String versionId) {
@@ -1981,6 +1889,47 @@ public class CatalogService {
         return new AssistantModelPolicyDto(defaultModelResourceId.trim());
     }
 
+    private String normalizePrimaryAgentId(String primaryAgentId) {
+        return normalizeOptionalText(primaryAgentId);
+    }
+
+    private AssistantOwnerPolicyDto normalizeAssistantOwnerPolicy(AssistantOwnerPolicyDto policy) {
+        if (policy == null) {
+            return new AssistantOwnerPolicyDto(3);
+        }
+        return new AssistantOwnerPolicyDto(policy.maxOwnerSwitchesPerTurn() <= 0 ? 3 : policy.maxOwnerSwitchesPerTurn());
+    }
+
+    private AssistantSessionPolicyDto normalizeAssistantSessionPolicy(AssistantSessionPolicyDto policy) {
+        if (policy == null) {
+            return new AssistantSessionPolicyDto("PT30M", "P7D", 20_000);
+        }
+        String idleTimeout = normalizeOptionalText(policy.idleTimeout());
+        String maxWorkflowAge = normalizeOptionalText(policy.maxWorkflowAge());
+        return new AssistantSessionPolicyDto(
+            idleTimeout == null ? "PT30M" : idleTimeout,
+            maxWorkflowAge == null ? "P7D" : maxWorkflowAge,
+            policy.maxWorkflowHistoryEvents() <= 0 ? 20_000 : policy.maxWorkflowHistoryEvents()
+        );
+    }
+
+    private AssistantReplyPolicyDto normalizeAssistantReplyPolicy(AssistantReplyPolicyDto policy) {
+        if (policy == null) {
+            return new AssistantReplyPolicyDto(true);
+        }
+        return new AssistantReplyPolicyDto(policy.ownerOnly());
+    }
+
+    private AssistantPlaybookPolicyDto normalizeAssistantPlaybookPolicy(AssistantPlaybookPolicyDto policy) {
+        if (policy == null) {
+            return new AssistantPlaybookPolicyDto(null, null);
+        }
+        return new AssistantPlaybookPolicyDto(
+            normalizeOptionalText(policy.timeoutPolicy()),
+            normalizeOptionalText(policy.retryPolicy())
+        );
+    }
+
     private KnowledgeAccessPolicyDto normalizeKnowledgeAccessPolicy(KnowledgeAccessPolicyDto policy) {
         if (policy == null) {
             String defaultKnowledgeBaseId = resolveDefaultKnowledgeBaseId(null);
@@ -2011,6 +1960,19 @@ public class CatalogService {
             policy.skillResourceIds() == null ? List.of() : List.copyOf(policy.skillResourceIds()),
             policy.toolResourceIds() == null ? List.of() : List.copyOf(policy.toolResourceIds())
         );
+    }
+
+    private List<AgentDecisionAction> normalizeAllowedActions(List<AgentDecisionAction> actions) {
+        if (actions == null || actions.isEmpty()) {
+            return List.of(
+                AgentDecisionAction.REPLY,
+                AgentDecisionAction.NO_REPLY,
+                AgentDecisionAction.SWITCH_OWNER,
+                AgentDecisionAction.RUN_PLAYBOOK,
+                AgentDecisionAction.SESSION_HUMAN_HANDOFF
+            );
+        }
+        return List.copyOf(actions);
     }
 
     private void validateResourceOwner(String domainId, String ownerType, String ownerId) {
@@ -2083,10 +2045,57 @@ public class CatalogService {
         }
     }
 
-    private void ensureAssistantReadyForPublication(AssistantModelPolicyDto policy) {
+    private void validateAssistantOwnerConfiguration(AssistantDto assistant) {
+        String primaryAgentId = assistant.primaryAgentId();
+        if (primaryAgentId == null || primaryAgentId.isBlank()) {
+            return;
+        }
+        AgentDto primaryAgent = agents.stream()
+            .filter(item -> item.assistantId().equals(assistant.id()))
+            .filter(item -> item.id().equals(primaryAgentId))
+            .findFirst()
+            .orElseThrow(() -> new IllegalArgumentException("assistant primaryAgentId must reference an existing agent under the same assistant"));
+        if (!primaryAgent.canOwnSession()) {
+            throw new IllegalArgumentException("assistant primaryAgentId must reference an agent with canOwnSession=true");
+        }
+    }
+
+    private void clearDeletedPrimaryAgent(String assistantId, String deletedAgentId) {
+        AssistantDto assistant = findAssistant(assistantId);
+        if (!deletedAgentId.equals(assistant.primaryAgentId())) {
+            return;
+        }
+        AssistantDto updated = new AssistantDto(
+            assistant.id(),
+            assistant.scenarioId(),
+            assistant.name(),
+            assistant.description(),
+            assistant.version(),
+            assistant.agents(),
+            assistant.playbooks(),
+            assistant.currentRelease(),
+            assistant.releases(),
+            null,
+            assistant.ownerPolicy(),
+            assistant.sessionPolicy(),
+            assistant.replyPolicy(),
+            assistant.playbookPolicy(),
+            assistant.modelPolicy(),
+            assistant.knowledgeAccessPolicy(),
+            assistant.memoryPolicy()
+        );
+        replace(assistants, AssistantDto::id, updated);
+    }
+
+    private void ensureAssistantReadyForPublication(AssistantDto assistant) {
+        AssistantModelPolicyDto policy = assistant.modelPolicy();
         if (policy == null || policy.defaultModelResourceId() == null || policy.defaultModelResourceId().isBlank()) {
             throw new IllegalStateException("assistant default model must be configured before publishing");
         }
+        if (assistant.primaryAgentId() == null || assistant.primaryAgentId().isBlank()) {
+            throw new IllegalStateException("assistant primaryAgentId must be configured before publishing");
+        }
+        validateAssistantOwnerConfiguration(assistant);
     }
 
     private DefaultModelBindingDto resolveDefaultModelBinding(AssistantDto assistant) {

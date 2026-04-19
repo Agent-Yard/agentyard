@@ -16,7 +16,7 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_USER: ${SPRING_DATASOURCE_USERNAME:-lynxus}
       POSTGRES_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-lynxus}
-      LYNXUS_API_DATABASE: lynxus_api
+      LYNXUS_CORE_DATABASE: lynxus_core
       LYNXUS_KNOWLEDGE_DATABASE: lynxus_knowledge
     depends_on:
       - postgres
@@ -123,6 +123,12 @@ services:
     depends_on:
       - knowledge-service
 
+  sandbox:
+    image: ${LYNXUS_IMAGE_SANDBOX:-ghcr.io/agent-infra/sandbox:1.0.0.152}
+    restart: unless-stopped
+    security_opt:
+      - seccomp=unconfined
+
   api:
     build:
       context: ../..
@@ -137,7 +143,7 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
       LYNXUS_API_PORT: 8080
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/lynxus_api
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/lynxus_core
       SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-lynxus}
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-lynxus}
       LYNXUS_AUTH_BOOTSTRAP_USERNAME: ${LYNXUS_AUTH_BOOTSTRAP_USERNAME:-admin}
@@ -172,7 +178,11 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
       LYNXUS_WORKER_PORT: 8081
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/lynxus_core
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-lynxus}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-lynxus}
       LYNXUS_AGENT_RUNTIME_BASE_URL: http://agent-runtime:8090
+      LYNXUS_SANDBOX_BASE_URL: http://sandbox:8080
       LYNXUS_KNOWLEDGE_SERVICE_BASE_URL: http://knowledge-service:8091
       LYNXUS_INTERNAL_AUTH_TOKEN: ${LYNXUS_INTERNAL_AUTH_TOKEN}
       LYNXUS_TEMPORAL_TARGET: temporal:7233
@@ -185,6 +195,8 @@ services:
       knowledge-service:
         condition: service_started
       agent-runtime:
+        condition: service_started
+      sandbox:
         condition: service_started
 
   web:

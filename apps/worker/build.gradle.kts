@@ -15,8 +15,10 @@ dependencies {
 
     implementation("org.springframework.boot:spring-boot-starter")
     implementation("org.springframework.boot:spring-boot-starter-jackson")
+    implementation("org.springframework.boot:spring-boot-starter-jdbc")
     implementation("org.springframework:spring-web")
     implementation("io.temporal:temporal-sdk:1.32.1")
+    implementation("org.postgresql:postgresql:42.7.7")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("io.temporal:temporal-testing:1.32.1")

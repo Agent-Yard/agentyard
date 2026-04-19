@@ -1,12 +1,10 @@
-import type { AssistantOrchestration } from './orchestration.types';
-
 export type Role = 'PLATFORM_ADMIN' | 'DOMAIN_ADMIN' | 'DEVELOPER' | 'BUSINESS_USER';
 export type ResourceType = 'TOOL' | 'LLM_MODEL' | 'SKILL';
 export type ToolProviderType = 'HTTP' | 'MCP';
 export type ShareScope = 'PRIVATE' | 'DOMAIN_SHARED';
 export type ResourceOwnerType = 'DOMAIN' | 'ASSISTANT';
 export type VersionStatus = 'DRAFT' | 'PUBLISHED';
-export type ReferenceObjectType = 'DOMAIN' | 'SCENARIO' | 'ASSISTANT' | 'AGENT' | 'RESOURCE' | 'KNOWLEDGE_BASE';
+export type ReferenceObjectType = 'DOMAIN' | 'SCENARIO' | 'ASSISTANT' | 'PLAYBOOK' | 'AGENT' | 'RESOURCE' | 'KNOWLEDGE_BASE';
 export type ReferenceRelationMode = 'DIRECT' | 'INDIRECT';
 export type ReferenceImpactLevel = 'BLOCKS_DELETION' | 'ADVISORY';
 export type KnowledgeFileStatus = 'UPLOADED' | 'IMPORTING' | 'IMPORTED' | 'FAILED';
@@ -15,6 +13,12 @@ export type KnowledgeImportSourceType = 'FILE_UPLOAD' | 'URL';
 export type KnowledgeIndexSnapshotStatus = 'QUEUED' | 'RUNNING' | 'READY' | 'FAILED';
 export type KnowledgeImportJobStage = 'QUEUED' | 'FETCHING_SOURCE' | 'PARSING' | 'CHUNKING' | 'PERSISTING' | 'SUCCEEDED' | 'FAILED';
 export type KnowledgeIndexSnapshotStage = 'QUEUED' | 'COLLECTING_DOCUMENTS' | 'INDEXING' | 'READY' | 'FAILED';
+export type AgentDecisionAction =
+  | 'REPLY'
+  | 'NO_REPLY'
+  | 'SWITCH_OWNER'
+  | 'RUN_PLAYBOOK'
+  | 'SESSION_HUMAN_HANDOFF';
 
 export interface UserSession {
   userId: string;
@@ -344,6 +348,25 @@ export interface AssistantModelPolicy {
   defaultModelResourceId: string | null;
 }
 
+export interface AssistantOwnerPolicy {
+  maxOwnerSwitchesPerTurn: number;
+}
+
+export interface AssistantSessionPolicy {
+  idleTimeout: string;
+  maxWorkflowAge: string;
+  maxWorkflowHistoryEvents: number;
+}
+
+export interface AssistantReplyPolicy {
+  ownerOnly: boolean;
+}
+
+export interface AssistantPlaybookPolicy {
+  timeoutPolicy: string | null;
+  retryPolicy: string | null;
+}
+
 export interface KnowledgeAccessPolicy {
   enabled: boolean;
   knowledgeBaseId: string | null;
@@ -366,6 +389,49 @@ export interface AgentExecutionPolicy {
   toolResourceIds: string[];
 }
 
+export interface PlaybookExecutionPolicy {
+  timeoutPolicy: string | null;
+  retryPolicy: string | null;
+}
+
+export type PlaybookNodeType = 'STEP' | 'TOOL_TASK' | 'HUMAN_TASK' | 'EXTERNAL_INTERACTION' | 'END';
+
+export interface PlaybookNode {
+  nodeKey: string;
+  nodeName: string;
+  nodeType: PlaybookNodeType;
+  description: string | null;
+  scriptRef: string | null;
+  scriptVersion: string | null;
+  toolId: string | null;
+  toolOperation: string | null;
+  config: Record<string, unknown>;
+}
+
+export interface PlaybookEdge {
+  edgeKey: string;
+  sourceNodeKey: string;
+  targetNodeKey: string;
+  routeKey: string | null;
+  label: string | null;
+  defaultEdge: boolean;
+}
+
+export interface Playbook {
+  id: string;
+  assistantId: string;
+  name: string;
+  description: string | null;
+  inputSchema: string | null;
+  resultSchema: string | null;
+  executionPolicy: PlaybookExecutionPolicy;
+  allowHumanTask: boolean;
+  allowExternalInteraction: boolean;
+  entryNodeKey: string;
+  nodes: PlaybookNode[];
+  edges: PlaybookEdge[];
+}
+
 export interface Agent {
   id: string;
   assistantId: string;
@@ -373,6 +439,10 @@ export interface Agent {
   role: string;
   responsibility: string;
   executionPolicy: AgentExecutionPolicy;
+  canOwnSession: boolean;
+  allowedActions: AgentDecisionAction[];
+  switchableOwnerAgentIds: string[];
+  playbookIds: string[];
 }
 
 export interface AssistantReleaseResource {
@@ -401,6 +471,10 @@ export interface AssistantReleaseAgent {
   responsibility: string;
   executionPolicy: AgentExecutionPolicy;
   knowledgeBinding: KnowledgeBindingSnapshot | null;
+  canOwnSession: boolean;
+  allowedActions: AgentDecisionAction[];
+  switchableOwnerAgentIds: string[];
+  playbookIds: string[];
   skillResourceVersionIds: string[];
   toolResourceVersionIds: string[];
 }
@@ -416,7 +490,12 @@ export interface AssistantRelease {
   defaultModelBinding: DefaultModelBinding | null;
   resources: AssistantReleaseResource[];
   agents: AssistantReleaseAgent[];
-  orchestration: AssistantOrchestration;
+  playbooks: Playbook[];
+  primaryAgentId: string | null;
+  ownerPolicy: AssistantOwnerPolicy;
+  sessionPolicy: AssistantSessionPolicy;
+  replyPolicy: AssistantReplyPolicy;
+  playbookPolicy: AssistantPlaybookPolicy;
   modelPolicy: AssistantModelPolicy;
   knowledgeAccessPolicy: KnowledgeAccessPolicy;
   memoryPolicy: MemoryPolicy;
@@ -429,8 +508,14 @@ export interface Assistant {
   description: string;
   version: Version;
   agents: Agent[];
+  playbooks: Playbook[];
   currentRelease: AssistantRelease | null;
   releases: AssistantRelease[];
+  primaryAgentId: string | null;
+  ownerPolicy: AssistantOwnerPolicy;
+  sessionPolicy: AssistantSessionPolicy;
+  replyPolicy: AssistantReplyPolicy;
+  playbookPolicy: AssistantPlaybookPolicy;
   modelPolicy: AssistantModelPolicy;
   knowledgeAccessPolicy: KnowledgeAccessPolicy;
   memoryPolicy: MemoryPolicy;
@@ -501,7 +586,6 @@ export interface CatalogSummary {
   agents: Agent[];
   resources: Resource[];
   knowledgeBases: KnowledgeBase[];
-  orchestrations: AssistantOrchestration[];
   resourceCenter: ResourceCenter;
   resourceBlueprints: ResourceBlueprint[];
 }
@@ -510,6 +594,11 @@ export interface CreateAssistantPayload {
   scenarioId: string;
   name: string;
   description: string;
+  primaryAgentId: string | null;
+  ownerPolicy: AssistantOwnerPolicy;
+  sessionPolicy: AssistantSessionPolicy;
+  replyPolicy: AssistantReplyPolicy;
+  playbookPolicy: AssistantPlaybookPolicy;
   modelPolicy: AssistantModelPolicy;
   knowledgeAccessPolicy: KnowledgeAccessPolicy;
   memoryPolicy: MemoryPolicy;
@@ -540,6 +629,11 @@ export interface UpdateAssistantPayload {
   name: string;
   description: string;
   status: VersionStatus;
+  primaryAgentId: string | null;
+  ownerPolicy: AssistantOwnerPolicy;
+  sessionPolicy: AssistantSessionPolicy;
+  replyPolicy: AssistantReplyPolicy;
+  playbookPolicy: AssistantPlaybookPolicy;
   modelPolicy: AssistantModelPolicy;
   knowledgeAccessPolicy: KnowledgeAccessPolicy;
   memoryPolicy: MemoryPolicy;
@@ -551,6 +645,24 @@ export interface CreateAgentPayload {
   role: string;
   responsibility: string;
   executionPolicy: AgentExecutionPolicy;
+  canOwnSession: boolean;
+  allowedActions: AgentDecisionAction[];
+  switchableOwnerAgentIds: string[];
+  playbookIds: string[];
+}
+
+export interface CreatePlaybookPayload {
+  assistantId: string;
+  name: string;
+  description: string | null;
+  inputSchema: string | null;
+  resultSchema: string | null;
+  executionPolicy: PlaybookExecutionPolicy;
+  allowHumanTask: boolean;
+  allowExternalInteraction: boolean;
+  entryNodeKey: string;
+  nodes: PlaybookNode[];
+  edges: PlaybookEdge[];
 }
 
 export interface CreateResourcePayload {
@@ -593,6 +705,23 @@ export interface UpdateAgentPayload {
   role: string;
   responsibility: string;
   executionPolicy: AgentExecutionPolicy;
+  canOwnSession: boolean;
+  allowedActions: AgentDecisionAction[];
+  switchableOwnerAgentIds: string[];
+  playbookIds: string[];
+}
+
+export interface UpdatePlaybookPayload {
+  name: string;
+  description: string | null;
+  inputSchema: string | null;
+  resultSchema: string | null;
+  executionPolicy: PlaybookExecutionPolicy;
+  allowHumanTask: boolean;
+  allowExternalInteraction: boolean;
+  entryNodeKey: string;
+  nodes: PlaybookNode[];
+  edges: PlaybookEdge[];
 }
 
 export interface CreateKnowledgeBasePayload {

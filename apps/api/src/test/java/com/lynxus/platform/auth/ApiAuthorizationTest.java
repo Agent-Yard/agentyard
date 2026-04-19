@@ -17,9 +17,9 @@ import com.lynxus.platform.shared.logging.ApiLogContextFilter;
 import com.lynxus.platform.catalog.CatalogController;
 import com.lynxus.platform.catalog.CatalogDtos;
 import com.lynxus.platform.catalog.CatalogService;
-import com.lynxus.platform.runtime.RuntimeController;
-import com.lynxus.platform.runtime.RuntimeDtos;
-import com.lynxus.platform.runtime.RuntimeService;
+import com.lynxus.platform.session.SessionRuntimeController;
+import com.lynxus.platform.session.SessionRuntimeDtos;
+import com.lynxus.platform.session.SessionRuntimeService;
 import com.lynxus.platform.shared.ApiExceptionHandler;
 import java.time.Instant;
 import java.util.List;
@@ -101,8 +101,8 @@ class ApiAuthorizationTest {
     @Test
     void shouldAllowBusinessUserRuntimeRequest() throws Exception {
         try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(TestConfig.class, AuthSecurityConfiguration.class)) {
-            RuntimeService runtimeService = context.getBean(RuntimeService.class);
-            when(runtimeService.createSession(any())).thenReturn(new RuntimeDtos.ConversationSessionDto(
+            SessionRuntimeService sessionRuntimeService = context.getBean(SessionRuntimeService.class);
+            when(sessionRuntimeService.createSession(any())).thenReturn(new SessionRuntimeDtos.SessionRuntimeSessionDto(
                 "session-1",
                 "scenario-1",
                 "默认会话",
@@ -110,34 +110,32 @@ class ApiAuthorizationTest {
                 "assistant-1",
                 "助手",
                 "1.0.0",
+                "IDLE",
+                "agent-1",
+                "agent-1",
+                null,
+                false,
+                false,
+                false,
+                false,
+                java.util.Map.of(),
+                null,
                 Instant.parse("2026-04-01T00:00:00Z"),
                 Instant.parse("2026-04-01T00:00:00Z"),
-                List.of(),
                 null,
-                null,
-                null,
-                null,
-                null,
-                List.of(),
-                com.lynxus.contracts.runtime.WorkflowContracts.SharedSessionState.empty()
+                0
             ));
 
             MockMvc mockMvc = mockMvc(context);
 
-            mockMvc.perform(post("/api/runtime/sessions")
+            mockMvc.perform(post("/api/session-runtime/sessions")
                     .with(user("business"))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content("""
                         {
-                          "scenarioId": "scenario-1",
                           "assistantId": "assistant-1",
                           "customerId": "customer-1",
-                          "openingMessage": {
-                            "payloadType": "TEXT",
-                            "payload": {
-                              "text": "你好"
-                            }
-                          }
+                          "openingMessage": "你好"
                         }
                         """))
                 .andExpect(status().isOk())
@@ -148,7 +146,7 @@ class ApiAuthorizationTest {
     private MockMvc mockMvc(AnnotationConfigApplicationContext context) {
         FilterChainProxy securityFilter = new FilterChainProxy(context.getBeansOfType(SecurityFilterChain.class).values().stream().toList());
         return MockMvcBuilders
-            .standaloneSetup(context.getBean(CatalogController.class), context.getBean(RuntimeController.class))
+            .standaloneSetup(context.getBean(CatalogController.class), context.getBean(SessionRuntimeController.class))
             .setControllerAdvice(context.getBean(ApiExceptionHandler.class))
             .addFilters(securityFilter)
             .build();
@@ -163,8 +161,8 @@ class ApiAuthorizationTest {
         }
 
         @Bean
-        RuntimeController runtimeController(RuntimeService runtimeService) {
-            return new RuntimeController(runtimeService);
+        SessionRuntimeController sessionRuntimeController(SessionRuntimeService sessionRuntimeService) {
+            return new SessionRuntimeController(sessionRuntimeService);
         }
 
         @Bean
@@ -173,8 +171,8 @@ class ApiAuthorizationTest {
         }
 
         @Bean
-        RuntimeService runtimeService() {
-            return mock(RuntimeService.class);
+        SessionRuntimeService sessionRuntimeService() {
+            return mock(SessionRuntimeService.class);
         }
 
         @Bean

@@ -60,42 +60,41 @@
 
 ## Worker 与 Runtime 分工
 
-- `apps/worker` 中的 `workflow` 包负责 Temporal workflow 与 activity 编排
+- `apps/worker` 中的 `session` / `workflow` 包分别负责 session workflow、playbook workflow 与知识库 workflow / activity 编排
 - `apps/worker` 中的 `runtime` 包负责通过 HTTP 调用 Python `agent-runtime`
-- `apps/agent-runtime` 负责解析运行快照、校验图、执行节点并返回 `WorkflowResult`
+- `apps/agent-runtime` 负责执行单个 owner agent 的单轮推理并返回 `AgentTurnResult`
 
 ## 运行链路
 
-当前运行链路已经是“运行快照驱动的单助手多智能体图编排”：
+当前运行链路已经切到 session workflow 模型：
 
-1. API 优先基于助手发布快照构建运行时 `AssistantRunSnapshot`；若无发布版则即时组装草稿临时快照
-2. Temporal workflow 调用 Python runtime `start`
-3. Python runtime 按 graph snapshot 动态执行 `START / AGENT / HUMAN / END`
-4. 若命中 `HUMAN` 节点，则返回 checkpoint 与 human task，workflow 等待 signal
-5. 收到人工动作后，workflow 调用 runtime `resume`
-6. 编排继续向后执行直到 `END` 或失败
+1. API 创建 `session` 并以 `primaryAgentId` 初始化 owner
+2. Temporal `SessionWorkflow` 接收用户消息 Update 并维护 `session event / playbook run / sharedState`
+3. worker 调用 Python runtime `/agent-turns/execute`
+4. Python runtime 仅执行当前 owner 的单轮决策，返回 `REPLY / NO_REPLY / SWITCH_OWNER / RUN_PLAYBOOK / SESSION_HUMAN_HANDOFF`
+5. 若 owner 启动 playbook，则由 `PlaybookWorkflow` 作为 child workflow 承担强流程
+6. playbook 终态结果回流 session event，再由 owner reevaluation 继续推进
 
 ## 当前实现策略
 
 - LLM、知识库、Tool provider 采用轻量 adapter，运行时只走真实 provider 调用
 - 知识库治理采用显式异步任务模型：文件 / URL 导入、解析切片、索引快照构建、失败重试与检索验证分层治理
 - 资源按“资源头 + 版本”建模，智能体绑定时必须显式锚定资源版本
-- 助手切换到 `PUBLISHED` 时会冻结资源版本、agent 执行配置和编排图快照，作为后续运行和审计的稳定锚点
+- 助手切换到 `PUBLISHED` 时会冻结资源版本和 agent 执行配置，作为后续运行和审计的稳定锚点
 - 前端资源区拆分为“资源目录”和“资源新建”两页
 - `资源目录`：聚焦资源清单、详情、版本流转、生效版本切换和结构化引用分析
 - `资源新建`：按知识库、Tool、LLM、Skill 四种蓝图维护结构化初始版本配置
 - `SKILL` 资源承担智能体按需读取的技能提示，不再使用独立 Prompt Template 资源
 - 认证采用本地开发态用户会话，不接真实 OIDC
-- 持久化采用 JSONB catalog store，工作流支持人工节点暂停恢复
+- 持久化采用 JSONB catalog store + `session/session_event/playbook_run` 运行态表
 - 控制面 API 优先提供真实接口消费，不再提供内置 demo 数据闭环
-- 前端在保留运行态页面的同时，强化了“智能体编排页”“资源目录页”“资源新建页”作为当前主入口
+- 前端运行态页面围绕 `session event / owner / playbook / handoff` 组织，不再暴露旧编排图页面
 - 当前系统层不做跨助手自动切换；一次会话只绑定一个助手，由调用方显式选择
 
 ## 当前边界
 
 - 认证仍以 mock 方案为主，真实 OIDC 尚未接入
-- 运行态投影已持久化到 PostgreSQL，但当前仍是投影模型而非完整 event log
-- workflow 启动链路已改为异步受理后返回，由控制台轮询收口运行结果
+- session 运行态已落盘为 `session/session_event/playbook_run`
 - 资源执行层优先保证本地联调和演示闭环，生产级安全治理仍需补齐
 - MinIO / pgvector 已进入知识导入与检索正式链路，但线上职责、备份与监控仍需继续补齐
 
@@ -112,6 +111,5 @@
 - Temporal SDK：1.32.1
 - FastAPI：0.115.12
 - Uvicorn：0.34.0
-- LangGraph：0.2.53
 - Ant Design Vue：4.2.6
 - PostgreSQL / Redis / MinIO / Temporal：通过本地 Docker 依赖接入

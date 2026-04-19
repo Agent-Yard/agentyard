@@ -19,8 +19,7 @@ import tools.jackson.databind.ObjectMapper;
 
 @Component
 public class ApiLogContextFilter extends OncePerRequestFilter {
-    private static final Pattern SESSION_PATH = Pattern.compile("/api/runtime/sessions/([^/]+)");
-    private static final Pattern WORKFLOW_PATH = Pattern.compile("/api/workflows/([^/]+)");
+    private static final Pattern SESSION_PATH = Pattern.compile("/api/session-runtime/sessions/([^/]+)");
     private final CurrentUserResolver currentUserResolver;
     private final ObjectMapper objectMapper;
 
@@ -37,11 +36,10 @@ public class ApiLogContextFilter extends OncePerRequestFilter {
         }
         TraceContext traceContext = TraceContext.fromTraceparent(request.getHeader(LogContextHeaders.TRACEPARENT));
         String sessionId = extractPath(SESSION_PATH, requestToUse.getRequestURI());
-        String workflowId = extractPath(WORKFLOW_PATH, requestToUse.getRequestURI());
         String customerId = extractCustomerId(requestToUse);
         String userId = resolveUserId();
         response.setHeader(LogContextHeaders.TRACEPARENT, traceContext.toTraceparent());
-        try (PlatformLogContext.Scope ignored = PlatformLogContext.open(traceContext, sessionId, workflowId, customerId, userId)) {
+        try (PlatformLogContext.Scope ignored = PlatformLogContext.open(traceContext, sessionId, null, customerId, userId)) {
             filterChain.doFilter(requestToUse, response);
         }
     }

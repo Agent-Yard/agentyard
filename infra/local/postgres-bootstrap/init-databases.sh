@@ -5,7 +5,7 @@ set -euo pipefail
 POSTGRES_HOST="${POSTGRES_HOST:-postgres}"
 POSTGRES_USER="${POSTGRES_USER:-lynxus}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-lynxus}"
-LYNXUS_API_DATABASE="${LYNXUS_API_DATABASE:-lynxus_api}"
+LYNXUS_CORE_DATABASE="${LYNXUS_CORE_DATABASE:-lynxus_core}"
 LYNXUS_KNOWLEDGE_DATABASE="${LYNXUS_KNOWLEDGE_DATABASE:-lynxus_knowledge}"
 
 export PGPASSWORD="$POSTGRES_PASSWORD"
@@ -37,7 +37,7 @@ enable_extension_if_missing() {
 }
 
 wait_for_postgres
-create_database_if_missing "$LYNXUS_API_DATABASE"
+create_database_if_missing "$LYNXUS_CORE_DATABASE"
 create_database_if_missing "$LYNXUS_KNOWLEDGE_DATABASE"
 enable_extension_if_missing "$LYNXUS_KNOWLEDGE_DATABASE" "vector"
 enable_extension_if_missing "$LYNXUS_KNOWLEDGE_DATABASE" "pg_trgm"

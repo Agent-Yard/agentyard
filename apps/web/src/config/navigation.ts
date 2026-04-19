@@ -3,13 +3,12 @@ export type PageKey =
   | 'scenario'
   | 'assistant'
   | 'agent'
-  | 'orchestration'
+  | 'playbook'
   | 'knowledge-library'
   | 'knowledge-create'
   | 'resource-library'
   | 'resource-create'
-  | 'runtime'
-  | 'workflow';
+  | 'runtime';
 
 export type SectionKey = 'design' | 'build' | 'knowledge' | 'resource' | 'runtime-observe';
 
@@ -23,7 +22,7 @@ export const sectionMeta: Record<SectionKey, { label: string; description: strin
   },
   build: {
     label: '助手构建',
-    description: '围绕助手、智能体和编排，完成核心协作链路配置。',
+    description: '围绕助手、智能体和运行策略，完成核心协作链路配置。',
   },
   knowledge: {
     label: '知识库',
@@ -68,12 +67,12 @@ export const pageMeta: Record<PageKey, { label: string; title: string; subtitle:
     section: 'build',
     path: `${consoleBasePath}/agents`,
   },
-  orchestration: {
-    label: '编排设计',
-    title: '智能体编排页',
-    subtitle: '以图形化方式组织助手内部协作主链和分支流转。',
+  playbook: {
+    label: 'Playbook',
+    title: 'Playbook 配置页',
+    subtitle: '维护强流程定义、节点、边以及等待点策略。',
     section: 'build',
-    path: `${consoleBasePath}/orchestrations`,
+    path: `${consoleBasePath}/playbooks`,
   },
   'knowledge-library': {
     label: '知识库目录',
@@ -106,16 +105,9 @@ export const pageMeta: Record<PageKey, { label: string; title: string; subtitle:
   runtime: {
     label: '会话运行',
     title: '运行时对话页',
-    subtitle: '选择一个助手发起持续对话，并观察其版本锚定运行链路。',
+    subtitle: '围绕 session event、当前 owner、playbook 和 handoff 观察运行状态。',
     section: 'runtime-observe',
     path: `${consoleBasePath}/runtime`,
-  },
-  workflow: {
-    label: '流程观测',
-    title: '流程实例详情页',
-    subtitle: '查看流程状态、节点流转、资源锚点与人工介入。',
-    section: 'runtime-observe',
-    path: `${consoleBasePath}/workflows`,
   },
 };
 
@@ -147,7 +139,7 @@ export const menuItems = [
     children: [
       { key: 'assistant', label: pageMeta.assistant.label },
       { key: 'agent', label: pageMeta.agent.label },
-      { key: 'orchestration', label: pageMeta.orchestration.label },
+      { key: 'playbook', label: pageMeta.playbook.label },
     ],
   },
   {
@@ -171,7 +163,6 @@ export const menuItems = [
     label: sectionMeta['runtime-observe'].label,
     children: [
       { key: 'runtime', label: pageMeta.runtime.label },
-      { key: 'workflow', label: pageMeta.workflow.label },
     ],
   },
 ];

@@ -1,10 +1,11 @@
 package com.lynxus.platform.catalog;
 
-import com.lynxus.contracts.runtime.WorkflowContracts.OrchestrationNodeType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ResourceType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
 import com.lynxus.contracts.runtime.WorkflowContracts.ToolProviderType;
 import com.lynxus.contracts.runtime.WorkflowContracts.VersionStatus;
+import com.lynxus.contracts.session.SessionContracts.AgentDecisionAction;
+import com.lynxus.contracts.session.SessionContracts.PlaybookNodeType;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -40,8 +41,14 @@ public final class CatalogDtos {
         String description,
         VersionDto version,
         List<AgentDto> agents,
+        List<PlaybookDto> playbooks,
         AssistantReleaseDto currentRelease,
         List<AssistantReleaseDto> releases,
+        String primaryAgentId,
+        AssistantOwnerPolicyDto ownerPolicy,
+        AssistantSessionPolicyDto sessionPolicy,
+        AssistantReplyPolicyDto replyPolicy,
+        AssistantPlaybookPolicyDto playbookPolicy,
         AssistantModelPolicyDto modelPolicy,
         KnowledgeAccessPolicyDto knowledgeAccessPolicy,
         MemoryPolicyDto memoryPolicy
@@ -59,7 +66,12 @@ public final class CatalogDtos {
         DefaultModelBindingDto defaultModelBinding,
         List<AssistantReleaseResourceDto> resources,
         List<AssistantReleaseAgentDto> agents,
-        AssistantOrchestrationDto orchestration,
+        List<PlaybookDto> playbooks,
+        String primaryAgentId,
+        AssistantOwnerPolicyDto ownerPolicy,
+        AssistantSessionPolicyDto sessionPolicy,
+        AssistantReplyPolicyDto replyPolicy,
+        AssistantPlaybookPolicyDto playbookPolicy,
         AssistantModelPolicyDto modelPolicy,
         KnowledgeAccessPolicyDto knowledgeAccessPolicy,
         MemoryPolicyDto memoryPolicy
@@ -94,6 +106,10 @@ public final class CatalogDtos {
         String responsibility,
         AgentExecutionPolicyDto executionPolicy,
         KnowledgeBindingSnapshotDto knowledgeBinding,
+        boolean canOwnSession,
+        List<AgentDecisionAction> allowedActions,
+        List<String> switchableOwnerAgentIds,
+        List<String> playbookIds,
         List<String> skillResourceVersionIds,
         List<String> toolResourceVersionIds
     ) {
@@ -105,7 +121,56 @@ public final class CatalogDtos {
         String name,
         String role,
         String responsibility,
-        AgentExecutionPolicyDto executionPolicy
+        AgentExecutionPolicyDto executionPolicy,
+        boolean canOwnSession,
+        List<AgentDecisionAction> allowedActions,
+        List<String> switchableOwnerAgentIds,
+        List<String> playbookIds
+    ) {
+    }
+
+    public record PlaybookExecutionPolicyDto(
+        String timeoutPolicy,
+        String retryPolicy
+    ) {
+    }
+
+    public record PlaybookNodeDto(
+        String nodeKey,
+        String nodeName,
+        PlaybookNodeType nodeType,
+        String description,
+        String scriptRef,
+        String scriptVersion,
+        String toolId,
+        String toolOperation,
+        Map<String, Object> config
+    ) {
+    }
+
+    public record PlaybookEdgeDto(
+        String edgeKey,
+        String sourceNodeKey,
+        String targetNodeKey,
+        String routeKey,
+        String label,
+        boolean defaultEdge
+    ) {
+    }
+
+    public record PlaybookDto(
+        String id,
+        String assistantId,
+        String name,
+        String description,
+        String inputSchema,
+        String resultSchema,
+        PlaybookExecutionPolicyDto executionPolicy,
+        boolean allowHumanTask,
+        boolean allowExternalInteraction,
+        String entryNodeKey,
+        List<PlaybookNodeDto> nodes,
+        List<PlaybookEdgeDto> edges
     ) {
     }
 
@@ -422,6 +487,29 @@ public final class CatalogDtos {
     ) {
     }
 
+    public record AssistantOwnerPolicyDto(
+        int maxOwnerSwitchesPerTurn
+    ) {
+    }
+
+    public record AssistantSessionPolicyDto(
+        String idleTimeout,
+        String maxWorkflowAge,
+        int maxWorkflowHistoryEvents
+    ) {
+    }
+
+    public record AssistantReplyPolicyDto(
+        boolean ownerOnly
+    ) {
+    }
+
+    public record AssistantPlaybookPolicyDto(
+        String timeoutPolicy,
+        String retryPolicy
+    ) {
+    }
+
     public record KnowledgeAccessPolicyDto(
         boolean enabled,
         String knowledgeBaseId
@@ -460,44 +548,6 @@ public final class CatalogDtos {
         String version,
         VersionStatus status,
         Instant updatedAt
-    ) {
-    }
-
-    public record HumanNodeConfigDto(
-        String title,
-        String instruction,
-        String expectedAction,
-        String resumeRouteKey
-    ) {
-    }
-
-    public record AssistantOrchestrationDto(
-        String assistantId,
-        String assistantName,
-        String scenarioId,
-        String executionMode,
-        List<OrchestrationNodeDto> nodes,
-        List<OrchestrationEdgeDto> edges
-    ) {
-    }
-
-    public record OrchestrationNodeDto(
-        String nodeKey,
-        String nodeName,
-        OrchestrationNodeType nodeType,
-        String description,
-        String agentId,
-        HumanNodeConfigDto humanNode
-    ) {
-    }
-
-    public record OrchestrationEdgeDto(
-        String edgeKey,
-        String sourceNodeKey,
-        String targetNodeKey,
-        String routeKey,
-        String label,
-        boolean defaultEdge
     ) {
     }
 
@@ -604,20 +654,74 @@ public final class CatalogDtos {
         String scenarioId,
         String name,
         String description,
+        String primaryAgentId,
+        AssistantOwnerPolicyDto ownerPolicy,
+        AssistantSessionPolicyDto sessionPolicy,
+        AssistantReplyPolicyDto replyPolicy,
+        AssistantPlaybookPolicyDto playbookPolicy,
         AssistantModelPolicyDto modelPolicy,
         KnowledgeAccessPolicyDto knowledgeAccessPolicy,
         MemoryPolicyDto memoryPolicy
     ) {
+        public CreateAssistantRequest(
+            String scenarioId,
+            String name,
+            String description,
+            AssistantModelPolicyDto modelPolicy,
+            KnowledgeAccessPolicyDto knowledgeAccessPolicy,
+            MemoryPolicyDto memoryPolicy
+        ) {
+            this(
+                scenarioId,
+                name,
+                description,
+                null,
+                null,
+                null,
+                null,
+                null,
+                modelPolicy,
+                knowledgeAccessPolicy,
+                memoryPolicy
+            );
+        }
     }
 
     public record UpdateAssistantRequest(
         String name,
         String description,
         VersionStatus status,
+        String primaryAgentId,
+        AssistantOwnerPolicyDto ownerPolicy,
+        AssistantSessionPolicyDto sessionPolicy,
+        AssistantReplyPolicyDto replyPolicy,
+        AssistantPlaybookPolicyDto playbookPolicy,
         AssistantModelPolicyDto modelPolicy,
         KnowledgeAccessPolicyDto knowledgeAccessPolicy,
         MemoryPolicyDto memoryPolicy
     ) {
+        public UpdateAssistantRequest(
+            String name,
+            String description,
+            VersionStatus status,
+            AssistantModelPolicyDto modelPolicy,
+            KnowledgeAccessPolicyDto knowledgeAccessPolicy,
+            MemoryPolicyDto memoryPolicy
+        ) {
+            this(
+                name,
+                description,
+                status,
+                null,
+                null,
+                null,
+                null,
+                null,
+                modelPolicy,
+                knowledgeAccessPolicy,
+                memoryPolicy
+            );
+        }
     }
 
     public record CreateAgentRequest(
@@ -625,15 +729,100 @@ public final class CatalogDtos {
         String name,
         String role,
         String responsibility,
-        AgentExecutionPolicyDto executionPolicy
+        AgentExecutionPolicyDto executionPolicy,
+        boolean canOwnSession,
+        List<AgentDecisionAction> allowedActions,
+        List<String> switchableOwnerAgentIds,
+        List<String> playbookIds
     ) {
+        public CreateAgentRequest(
+            String assistantId,
+            String name,
+            String role,
+            String responsibility,
+            AgentExecutionPolicyDto executionPolicy
+        ) {
+            this(
+                assistantId,
+                name,
+                role,
+                responsibility,
+                executionPolicy,
+                true,
+                List.of(
+                    AgentDecisionAction.REPLY,
+                    AgentDecisionAction.NO_REPLY,
+                    AgentDecisionAction.SWITCH_OWNER,
+                    AgentDecisionAction.RUN_PLAYBOOK,
+                    AgentDecisionAction.SESSION_HUMAN_HANDOFF
+                ),
+                List.of(),
+                List.of()
+            );
+        }
     }
 
     public record UpdateAgentRequest(
         String name,
         String role,
         String responsibility,
-        AgentExecutionPolicyDto executionPolicy
+        AgentExecutionPolicyDto executionPolicy,
+        boolean canOwnSession,
+        List<AgentDecisionAction> allowedActions,
+        List<String> switchableOwnerAgentIds,
+        List<String> playbookIds
+    ) {
+        public UpdateAgentRequest(
+            String name,
+            String role,
+            String responsibility,
+            AgentExecutionPolicyDto executionPolicy
+        ) {
+            this(
+                name,
+                role,
+                responsibility,
+                executionPolicy,
+                true,
+                List.of(
+                    AgentDecisionAction.REPLY,
+                    AgentDecisionAction.NO_REPLY,
+                    AgentDecisionAction.SWITCH_OWNER,
+                    AgentDecisionAction.RUN_PLAYBOOK,
+                    AgentDecisionAction.SESSION_HUMAN_HANDOFF
+                ),
+                List.of(),
+                List.of()
+            );
+        }
+    }
+
+    public record CreatePlaybookRequest(
+        String assistantId,
+        String name,
+        String description,
+        String inputSchema,
+        String resultSchema,
+        PlaybookExecutionPolicyDto executionPolicy,
+        boolean allowHumanTask,
+        boolean allowExternalInteraction,
+        String entryNodeKey,
+        List<PlaybookNodeDto> nodes,
+        List<PlaybookEdgeDto> edges
+    ) {
+    }
+
+    public record UpdatePlaybookRequest(
+        String name,
+        String description,
+        String inputSchema,
+        String resultSchema,
+        PlaybookExecutionPolicyDto executionPolicy,
+        boolean allowHumanTask,
+        boolean allowExternalInteraction,
+        String entryNodeKey,
+        List<PlaybookNodeDto> nodes,
+        List<PlaybookEdgeDto> edges
     ) {
     }
 
@@ -707,13 +896,6 @@ public final class CatalogDtos {
     ) {
     }
 
-    public record UpdateOrchestrationRequest(
-        String executionMode,
-        List<OrchestrationNodeDto> nodes,
-        List<OrchestrationEdgeDto> edges
-    ) {
-    }
-
     public record CatalogSummaryDto(
         List<BusinessDomainDto> domains,
         List<ScenarioDto> scenarios,
@@ -721,7 +903,6 @@ public final class CatalogDtos {
         List<AgentDto> agents,
         List<ResourceDto> resources,
         List<KnowledgeBaseDto> knowledgeBases,
-        List<AssistantOrchestrationDto> orchestrations,
         ResourceCenterDto resourceCenter,
         List<ResourceBlueprintDto> resourceBlueprints
     ) {

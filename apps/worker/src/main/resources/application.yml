@@ -1,6 +1,10 @@
 spring:
   application:
     name: lynxus-worker
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://127.0.0.1:5432/lynxus_core}
+    username: ${SPRING_DATASOURCE_USERNAME:lynxus}
+    password: ${SPRING_DATASOURCE_PASSWORD:lynxus}
 
 logging:
   structured:
@@ -19,6 +23,8 @@ server:
 lynxus:
   agent-runtime:
     base-url: ${LYNXUS_AGENT_RUNTIME_BASE_URL:http://127.0.0.1:8090}
+  sandbox:
+    base-url: ${LYNXUS_SANDBOX_BASE_URL:http://127.0.0.1:8092}
   knowledge-service:
     base-url: ${LYNXUS_KNOWLEDGE_SERVICE_BASE_URL:http://127.0.0.1:8091}
   internal-auth:

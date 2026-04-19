@@ -1,8 +1,14 @@
 package com.lynxus.worker.workflow;
 
-import com.lynxus.contracts.runtime.AssistantRunWorkflow;
+import com.lynxus.contracts.session.PlaybookWorkflow;
+import com.lynxus.contracts.session.SessionWorkflow;
 import com.lynxus.contracts.runtime.KnowledgeImportWorkflow;
 import com.lynxus.contracts.runtime.KnowledgeIndexBuildWorkflow;
+import com.lynxus.worker.session.AgentTurnActivitiesImpl;
+import com.lynxus.worker.session.SessionPersistenceActivitiesImpl;
+import com.lynxus.worker.session.PlaybookNodeActivitiesImpl;
+import com.lynxus.worker.session.PlaybookWorkflowImpl;
+import com.lynxus.worker.session.SessionWorkflowImpl;
 import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowClientOptions;
 import io.temporal.serviceclient.WorkflowServiceStubsOptions;
@@ -27,7 +33,9 @@ public class TemporalWorkerConfiguration {
     @Bean
     WorkerFactory workerFactory(
         WorkflowServiceStubs serviceStubs,
-        AssistantRunActivitiesImpl activities,
+        AgentTurnActivitiesImpl agentTurnActivities,
+        SessionPersistenceActivitiesImpl sessionPersistenceActivities,
+        PlaybookNodeActivitiesImpl playbookNodeActivities,
         KnowledgeActivitiesImpl knowledgeActivities,
         @Value("${lynxus.temporal.task-queue}") String taskQueue,
         @Value("${lynxus.temporal.namespace}") String namespace,
@@ -41,8 +49,12 @@ public class TemporalWorkerConfiguration {
         WorkerFactory factory = WorkerFactory.newInstance(workflowClient);
         Worker worker = factory.newWorker(taskQueue, workerOptions(workflowDeadlockDetectionTimeout));
         worker.registerWorkflowImplementationFactory(
-            AssistantRunWorkflow.class,
-            () -> new AssistantRunWorkflowImpl(activityStartToCloseTimeout)
+            SessionWorkflow.class,
+            () -> new SessionWorkflowImpl(activityStartToCloseTimeout)
+        );
+        worker.registerWorkflowImplementationFactory(
+            PlaybookWorkflow.class,
+            () -> new PlaybookWorkflowImpl(activityStartToCloseTimeout)
         );
         worker.registerWorkflowImplementationFactory(
             KnowledgeImportWorkflow.class,
@@ -52,7 +64,12 @@ public class TemporalWorkerConfiguration {
             KnowledgeIndexBuildWorkflow.class,
             () -> new KnowledgeIndexBuildWorkflowImpl(activityStartToCloseTimeout)
         );
-        worker.registerActivitiesImplementations(activities, knowledgeActivities);
+        worker.registerActivitiesImplementations(
+            knowledgeActivities,
+            agentTurnActivities,
+            sessionPersistenceActivities,
+            playbookNodeActivities
+        );
         factory.start();
         return factory;
     }

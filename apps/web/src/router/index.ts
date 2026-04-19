@@ -9,13 +9,12 @@ const consolePageComponents: Record<PageKey, () => Promise<unknown>> = {
   scenario: () => import('../pages/ScenarioPage.vue'),
   assistant: () => import('../pages/AssistantPage.vue'),
   agent: () => import('../pages/AgentPage.vue'),
-  orchestration: () => import('../pages/OrchestrationPage.vue'),
+  playbook: () => import('../pages/PlaybookPage.vue'),
   'knowledge-library': () => import('../pages/KnowledgeLibraryPage.vue'),
   'knowledge-create': () => import('../pages/KnowledgeCreatePage.vue'),
   'resource-library': () => import('../pages/ResourceLibraryPage.vue'),
   'resource-create': () => import('../pages/ResourceCreatePage.vue'),
   runtime: () => import('../pages/RuntimeConversationPage.vue'),
-  workflow: () => import('../pages/WorkflowPage.vue'),
 };
 
 const defaultConsolePath = pageMeta[defaultPageKey].path;

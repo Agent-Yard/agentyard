@@ -148,10 +148,10 @@ public interface CatalogRepository {
         List<ScenarioDto> scenarios,
         List<AssistantDto> assistants,
         List<AgentDto> agents,
+        List<PlaybookDto> playbooks,
         List<ResourceDto> resources,
         Map<String, List<StoredResourceVersion>> resourceVersions,
-        Map<String, List<AssistantReleaseDto>> assistantReleases,
-        Map<String, AssistantOrchestrationDto> orchestrations
+        Map<String, List<AssistantReleaseDto>> assistantReleases
     ) {
         public static CatalogSnapshot empty() {
             return new CatalogSnapshot(
@@ -160,7 +160,7 @@ public interface CatalogRepository {
                 List.of(),
                 List.of(),
                 List.of(),
-                Map.of(),
+                List.of(),
                 Map.of(),
                 Map.of()
             );

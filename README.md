@@ -84,7 +84,7 @@ docker compose up -d
 ```
 
 默认本地依赖包含 PostgreSQL、MinIO 和 Temporal。
-其中 PostgreSQL 会在本地自动准备独立的 `lynxus_api` 和 `lynxus_knowledge` 数据库，分别给 API 和 knowledge service 使用。
+其中 PostgreSQL 会在本地自动准备 `lynxus_core` 和 `lynxus_knowledge` 数据库，分别给 API/worker 核心链路与 knowledge service 使用。
 知识服务按当前实现默认要求 PostgreSQL 内已启用 `pgvector` 与 `pg_trgm`，不再保留 OpenSearch 或本地嵌入式检索回退。
 
 ### 2. 准备环境变量

@@ -145,6 +145,34 @@ public class CatalogController {
         return ApiResponse.ok(catalogService.deleteAgent(agentId));
     }
 
+    @GetMapping("/playbooks")
+    public ApiResponse<?> playbooks() {
+        return ApiResponse.ok(catalogService.listPlaybooks());
+    }
+
+    @GetMapping("/playbooks/{playbookId}")
+    public ApiResponse<?> playbook(@PathVariable String playbookId) {
+        return ApiResponse.ok(catalogService.getPlaybook(playbookId));
+    }
+
+    @PostMapping("/playbooks")
+    @RequireGovernanceWrite
+    public ApiResponse<?> createPlaybook(@RequestBody CreatePlaybookRequest request) {
+        return ApiResponse.ok(catalogService.createPlaybook(request));
+    }
+
+    @PutMapping("/playbooks/{playbookId}")
+    @RequireGovernanceWrite
+    public ApiResponse<?> updatePlaybook(@PathVariable String playbookId, @RequestBody UpdatePlaybookRequest request) {
+        return ApiResponse.ok(catalogService.updatePlaybook(playbookId, request));
+    }
+
+    @DeleteMapping("/playbooks/{playbookId}")
+    @RequireGovernanceWrite
+    public ApiResponse<?> deletePlaybook(@PathVariable String playbookId) {
+        return ApiResponse.ok(catalogService.deletePlaybook(playbookId));
+    }
+
     @GetMapping("/resources")
     public ApiResponse<?> resources() {
         return ApiResponse.ok(catalogService.listResources());
@@ -197,22 +225,6 @@ public class CatalogController {
     @GetMapping("/resource-blueprints")
     public ApiResponse<?> resourceBlueprints() {
         return ApiResponse.ok(catalogService.resourceBlueprints());
-    }
-
-    @GetMapping("/orchestrations")
-    public ApiResponse<?> orchestrations() {
-        return ApiResponse.ok(catalogService.listOrchestrations());
-    }
-
-    @GetMapping("/orchestrations/{assistantId}")
-    public ApiResponse<?> orchestration(@PathVariable String assistantId) {
-        return ApiResponse.ok(catalogService.getOrchestration(assistantId));
-    }
-
-    @PutMapping("/orchestrations/{assistantId}")
-    @RequireGovernanceWrite
-    public ApiResponse<?> saveOrchestration(@PathVariable String assistantId, @RequestBody UpdateOrchestrationRequest request) {
-        return ApiResponse.ok(catalogService.saveOrchestration(assistantId, request));
     }
 
     @PostMapping("/resources")

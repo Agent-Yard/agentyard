@@ -82,9 +82,9 @@ public final class ObjectReferenceAnalyzer {
     public static ObjectReferenceAnalysisDto analyzeAssistant(
         AssistantDto assistant,
         List<AgentDto> agents,
+        List<PlaybookDto> playbooks,
         List<ResourceDto> resources,
         List<KnowledgeBaseDto> knowledgeBases,
-        AssistantOrchestrationDto orchestration,
         List<AssistantReleaseDto> releases
     ) {
         List<ObjectReferenceRelationDto> relations = new ArrayList<>();
@@ -97,6 +97,18 @@ public final class ObjectReferenceAnalyzer {
                 "DIRECT",
                 "BLOCKS_DELETION",
                 "AGENT",
+                item.id(),
+                item.name()
+            )));
+        playbooks.stream()
+            .filter(item -> item.assistantId().equals(assistant.id()))
+            .sorted(Comparator.comparing(PlaybookDto::name))
+            .forEach(item -> relations.add(relation(
+                "ASSISTANT_PLAYBOOK",
+                "CONTAINS",
+                "DIRECT",
+                "BLOCKS_DELETION",
+                "PLAYBOOK",
                 item.id(),
                 item.name()
             )));
@@ -124,17 +136,6 @@ public final class ObjectReferenceAnalyzer {
                 item.id(),
                 item.name()
             )));
-        if (orchestration != null) {
-            relations.add(relation(
-                "ASSISTANT_ORCHESTRATION",
-                "STRUCTURE",
-                "DIRECT",
-                "ADVISORY",
-                "ORCHESTRATION",
-                orchestration.assistantId(),
-                orchestration.assistantName() + " 编排"
-            ));
-        }
         releases.stream()
             .sorted(Comparator.comparing(AssistantReleaseDto::createdAt).reversed())
             .forEach(release -> relations.add(relation(
@@ -155,12 +156,60 @@ public final class ObjectReferenceAnalyzer {
         return analysis("ASSISTANT", assistant.id(), assistant.name(), relations);
     }
 
+    public static ObjectReferenceAnalysisDto analyzePlaybook(
+        PlaybookDto playbook,
+        String assistantName,
+        List<AgentDto> agents,
+        List<AssistantReleaseDto> releases
+    ) {
+        List<ObjectReferenceRelationDto> relations = new ArrayList<>();
+        relations.add(relation(
+            "PLAYBOOK_ASSISTANT",
+            "BELONGS_TO",
+            "DIRECT",
+            "ADVISORY",
+            "ASSISTANT",
+            playbook.assistantId(),
+            assistantName
+        ));
+        agents.stream()
+            .filter(agent -> agent.assistantId().equals(playbook.assistantId()) && agent.playbookIds().contains(playbook.id()))
+            .sorted(Comparator.comparing(AgentDto::name))
+            .forEach(agent -> relations.add(relation(
+                "PLAYBOOK_AGENT_ENABLED",
+                "ACTIVE_BINDING",
+                "DIRECT",
+                "BLOCKS_DELETION",
+                "AGENT",
+                agent.id(),
+                agent.name()
+            )));
+        releases.stream()
+            .filter(release -> release.playbooks().stream().anyMatch(item -> item.id().equals(playbook.id())))
+            .sorted(Comparator.comparing(AssistantReleaseDto::createdAt).reversed())
+            .forEach(release -> relations.add(relation(
+                "PLAYBOOK_RELEASE_FROZEN",
+                "RELEASE_SNAPSHOT",
+                "INDIRECT",
+                "ADVISORY",
+                "ASSISTANT_RELEASE",
+                release.id(),
+                assistantName + "@" + release.releaseVersion(),
+                release.id(),
+                release.releaseVersion(),
+                null,
+                null,
+                null,
+                null
+            )));
+        return analysis("PLAYBOOK", playbook.id(), playbook.name(), relations);
+    }
+
     public static ObjectReferenceAnalysisDto analyzeAgent(
         AgentDto agent,
         String assistantName,
         List<ResourceDto> resources,
         List<KnowledgeBaseDto> knowledgeBases,
-        AssistantOrchestrationDto orchestration,
         List<AssistantReleaseDto> releases
     ) {
         List<ObjectReferenceRelationDto> relations = new ArrayList<>();
@@ -223,19 +272,6 @@ public final class ObjectReferenceAnalyzer {
                     ));
                 }
             }
-        }
-        if (orchestration != null) {
-            orchestration.nodes().stream()
-                .filter(node -> agent.id().equals(node.agentId()))
-                .forEach(node -> relations.add(relation(
-                    "AGENT_ORCHESTRATION_NODE",
-                    "STRUCTURE",
-                    "DIRECT",
-                    "ADVISORY",
-                    "ORCHESTRATION_NODE",
-                    node.nodeKey(),
-                    assistantName + " / " + node.nodeName()
-                )));
         }
         releases.stream()
             .filter(release -> release.agents().stream().anyMatch(item -> item.agentId().equals(agent.id())))

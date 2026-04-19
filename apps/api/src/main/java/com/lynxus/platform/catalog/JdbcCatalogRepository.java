@@ -40,10 +40,10 @@ public class JdbcCatalogRepository implements CatalogRepository {
             loadList("catalog_scenario", ScenarioDto.class),
             loadList("catalog_assistant", AssistantDto.class),
             loadList("catalog_agent", AgentDto.class),
+            loadList("catalog_playbook", PlaybookDto.class),
             loadList("catalog_resource", ResourceDto.class),
             loadMappedLists("catalog_resource_versions", "resource_id", RESOURCE_VERSION_LIST),
-            loadMappedLists("catalog_assistant_releases", "assistant_id", ASSISTANT_RELEASE_LIST),
-            loadMappedObjects("catalog_orchestration", "assistant_id", AssistantOrchestrationDto.class)
+            loadMappedLists("catalog_assistant_releases", "assistant_id", ASSISTANT_RELEASE_LIST)
         );
     }
 
@@ -54,10 +54,10 @@ public class JdbcCatalogRepository implements CatalogRepository {
         replaceRows("catalog_scenario", snapshot.scenarios());
         replaceRows("catalog_assistant", snapshot.assistants());
         replaceRows("catalog_agent", snapshot.agents());
+        replaceRows("catalog_playbook", snapshot.playbooks());
         replaceRows("catalog_resource", snapshot.resources());
         replaceMappedLists("catalog_resource_versions", "resource_id", snapshot.resourceVersions());
         replaceMappedLists("catalog_assistant_releases", "assistant_id", snapshot.assistantReleases());
-        replaceMappedObjects("catalog_orchestration", "assistant_id", snapshot.orchestrations());
 
         replaceResourceBindings(snapshot);
         replaceKnowledgeBindings(snapshot);

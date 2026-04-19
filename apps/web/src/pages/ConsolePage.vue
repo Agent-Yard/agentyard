@@ -1,13 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted } from 'vue';
 import { RouterView, useRoute, useRouter } from 'vue-router';
 import AppLayout from '../layouts/AppLayout.vue';
 import DeletionPreviewModal from '../components/DeletionPreviewModal.vue';
-import { pageMeta, pagePathByKey, resolvePageKeyFromPath, type PageKey, type SectionKey } from '../config/navigation';
+import { pageMeta, resolvePageKeyFromPath, type PageKey, type SectionKey } from '../config/navigation';
 import { useAppState } from '../composables/useAppState';
 import { useCatalogActions } from '../composables/useCatalogActions';
 import { useRuntimeActions } from '../composables/useRuntimeActions';
-import { useWorkflowPolling } from '../composables/useWorkflowPolling';
 import { api, isUnauthorizedError } from '../services/api';
 
 const route = useRoute();
@@ -18,13 +17,10 @@ const state = useAppState(currentPageKey);
 const catalogActions = useCatalogActions(state, state.refresh, state.errorMessage);
 const runtimeActions = useRuntimeActions(
   state,
-  { findSessionById: state.findSessionById, findWorkflowById: state.findWorkflowById },
+  { findSessionById: state.findSessionById },
   state.refresh,
   state.errorMessage,
 );
-
-useWorkflowPolling(state.workflows, state.refresh);
-const processedInteractionReturnKey = ref<string | null>(null);
 
 const currentView = computed(() => {
   const pageKey = currentPageKey.value;
@@ -60,7 +56,6 @@ const currentView = computed(() => {
         scenarios: state.catalog.value!.scenarios,
         resources: state.catalog.value!.resources,
         knowledgeBases: state.catalog.value!.knowledgeBases,
-        workflows: state.workflows.value,
         catalogRevision: state.catalogRevision.value,
         canManageGovernance: state.canManageGovernance.value,
       },
@@ -68,10 +63,6 @@ const currentView = computed(() => {
         createAssistant: catalogActions.handleCreateAssistant,
         updateAssistant: catalogActions.handleUpdateAssistant,
         deleteAssistant: catalogActions.handleDeleteAssistant,
-        openWorkflow: (workflowId: string) => {
-          state.selectedWorkflowId.value = workflowId;
-          void router.push(pagePathByKey.workflow);
-        },
       },
     },
     agent: {
@@ -89,14 +80,17 @@ const currentView = computed(() => {
         deleteAgent: catalogActions.handleDeleteAgent,
       },
     },
-    orchestration: {
+    playbook: {
       props: {
         assistants: state.catalog.value!.assistants,
-        orchestrations: state.catalog.value!.orchestrations,
-        resources: state.catalog.value!.resources,
+        catalogRevision: state.catalogRevision.value,
         canManageGovernance: state.canManageGovernance.value,
       },
-      handlers: { saveOrchestration: catalogActions.handleSaveOrchestration },
+      handlers: {
+        createPlaybook: catalogActions.handleCreatePlaybook,
+        savePlaybook: catalogActions.handleSavePlaybook,
+        deletePlaybook: catalogActions.handleDeletePlaybook,
+      },
     },
     'knowledge-library': {
       props: {
@@ -151,8 +145,7 @@ const currentView = computed(() => {
         scenarios: state.catalog.value!.scenarios,
         assistants: state.catalog.value!.assistants,
         sessions: state.conversationSessions.value,
-        tasks: state.tasks.value,
-        workflows: state.workflows.value,
+        sessionDetail: state.runtimeSessionDetail.value,
         creatingSession: state.creatingSession.value,
         sendingSessionId: state.sendingSessionId.value,
         preferredSessionId: state.runtimePreferredSessionId.value,
@@ -163,18 +156,6 @@ const currentView = computed(() => {
         selectSession: runtimeActions.handleSelectRuntimeSession,
         createSession: runtimeActions.handleCreateSession,
         sendMessage: runtimeActions.handleSendMessage,
-      },
-    },
-    workflow: {
-      props: {
-        workflow: state.currentWorkflow.value,
-        workflows: state.workflows.value,
-        selectedWorkflowId: state.selectedWorkflowId.value,
-        currentUserId: state.session.value?.userId ?? null,
-      },
-      handlers: {
-        selectWorkflow: runtimeActions.handleSelectWorkflow,
-        resumeAction: runtimeActions.handleResumeAction,
       },
     },
   } satisfies Record<PageKey, { props: Record<string, unknown>; handlers: Record<string, (...args: any[]) => any> }>;
@@ -190,22 +171,6 @@ function handleOpenChange(keys: string[]) {
   state.openKeys.value = keys as SectionKey[];
 }
 
-function queryValue(value: unknown): string | null {
-  if (Array.isArray(value)) {
-    return value.length ? String(value[0]) : null;
-  }
-  return value == null ? null : String(value);
-}
-
-function normalizedQueryPayload(query: Record<string, unknown>) {
-  return Object.fromEntries(
-    Object.entries(query).map(([key, value]) => [
-      key,
-      Array.isArray(value) ? value.map((item) => String(item)) : value == null ? null : String(value),
-    ]),
-  );
-}
-
 async function handleLogout() {
   const logoutResponse = await api.logout();
   window.location.assign(logoutResponse.postLogoutRedirectUrl || '/login');
@@ -218,30 +183,6 @@ onMounted(() => {
     }
   });
 });
-
-watch(
-  () => route.query,
-  (query) => {
-    const interactionTaskId = queryValue(query.interactionTaskId);
-    const returnToken = queryValue(query.returnToken);
-    if (!interactionTaskId || !returnToken) {
-      return;
-    }
-    const dedupeKey = queryValue(query.interactionDedupeKey) ?? `frontend-return:${interactionTaskId}:${returnToken}`;
-    if (processedInteractionReturnKey.value === dedupeKey) {
-      return;
-    }
-    processedInteractionReturnKey.value = dedupeKey;
-    void runtimeActions.handleInteractionReturn({
-      interactionTaskId,
-      returnToken,
-      providerReference: queryValue(query.providerReference),
-      dedupeKey,
-      queryPayload: normalizedQueryPayload(query as Record<string, unknown>),
-    });
-  },
-  { immediate: true },
-);
 </script>
 
 <template>
