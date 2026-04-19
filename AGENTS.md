@@ -3,7 +3,7 @@
 - ANY MODIFICATIONS MUST BE CONSIDERED FROM A GLOBAL PERSPECTIVE, TAKING INTO ACCOUNT THE ENTIRE PROJECT, ALL MODULES, AND THE ASSOCIATED IMPACTS ON DOCUMENTATION.
 - DO NOT MODIFY FILES UNDER `docs/develop_record/`; they are historical records only.
 
-## Monorepo Layout
+## Monorepo Current Layout
 
 ```text
 apps/
@@ -12,10 +12,12 @@ apps/
   web/         Vue + Ant Design Vue console
   agent-runtime/ Python execution runtime
   knowledge-service Knowledge base service
+demo/         Just for user demo data, no need to read this unless required
 packages/
   contracts/   OpenAPI spec and shared TypeScript contracts
   contracts-jvm/ Shared JVM workflow/runtime contracts
 infra/
+  dev/         Docker Compose for dev environment
   local/       Docker Compose for local development
 scripts/       Local startup wrappers and env loading
 docs/
@@ -25,7 +27,7 @@ docs/
   develop_record/ working notes and refactor records, no need to read this unless required
 ```
 
-## test commands
+## Test Commands
 - java uses ./gradlew
 - node uses command in local system
 - python uses `uv run` from project root workspace
