@@ -49,12 +49,14 @@ export function useRuntimeActions(
     state.runtimePreferredSessionId.value = payload.sessionId;
     state.runtimeSelectedSessionId.value = payload.sessionId;
     try {
-      await api.sendRuntimeSessionMessage(payload.sessionId, {
+      const session = await api.sendRuntimeSessionMessage(payload.sessionId, {
         customerId: payload.customerId,
         message: payload.message,
       });
+      state.runtimePreferredSessionId.value = session.id;
+      state.runtimeSelectedSessionId.value = session.id;
       await refresh();
-      helpers.findSessionById(payload.sessionId);
+      helpers.findSessionById(session.id);
       void router.push(pagePathByKey.runtime);
     } catch (error) {
       await refresh();

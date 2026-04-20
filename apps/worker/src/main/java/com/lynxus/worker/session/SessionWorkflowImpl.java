@@ -49,6 +49,28 @@ public class SessionWorkflowImpl implements SessionWorkflow {
     private static final String TURN_FAILED_REPLY = "当前处理遇到问题，请稍后再试";
     private static final int RECENT_EVENT_WINDOW = 20;
 
+    private record DecisionValidation(
+        AgentDecision decision,
+        String rejectReason,
+        boolean sessionHandoffIdempotent
+    ) {
+        private static DecisionValidation accepted(AgentDecision decision) {
+            return new DecisionValidation(decision, null, false);
+        }
+
+        private static DecisionValidation idempotentSessionHandoff(AgentDecision decision) {
+            return new DecisionValidation(decision, null, true);
+        }
+
+        private static DecisionValidation rejected(String rejectReason) {
+            return new DecisionValidation(null, rejectReason, false);
+        }
+
+        private boolean accepted() {
+            return decision != null;
+        }
+    }
+
     private final AgentTurnActivities activities;
     private final SessionPersistenceActivities persistenceActivities;
     private final JsonSchemaValidator jsonSchemaValidator;
@@ -143,11 +165,12 @@ public class SessionWorkflowImpl implements SessionWorkflow {
 
     @Override
     public SessionUserMessageUpdateResult submitUserMessage(UserMessage message) {
+        refreshDrainingState();
+        if (snapshot.draining() || ended) {
+            return new SessionUserMessageUpdateResult(SessionMessageDeliveryStatus.REJECTED, snapshot.sessionId(), "workflow draining");
+        }
         if (snapshot.agentTurnActive()) {
             return new SessionUserMessageUpdateResult(SessionMessageDeliveryStatus.BUSY, snapshot.sessionId(), "agent turn active");
-        }
-        if (snapshot.draining()) {
-            return new SessionUserMessageUpdateResult(SessionMessageDeliveryStatus.REJECTED, snapshot.sessionId(), "workflow draining");
         }
         String eventId = appendEvent(
             SessionEventType.USER_MESSAGE,
@@ -367,11 +390,24 @@ public class SessionWorkflowImpl implements SessionWorkflow {
                 pendingOwnerReevaluationTrigger != null,
                 snapshot.draining()
             ));
-            AgentDecision decision = result == null ? null : sanitizeDecision(owner, currentOwnerAgentId, activePlaybookRunId, switchCount, result.decision());
-            if (decision == null) {
-                emitDecisionRejected("agent decision rejected by runtime guardrail", result == null ? null : result.decision(), currentOwnerAgentId, activePlaybookRunId);
+            DecisionValidation validation = validateDecision(
+                owner,
+                currentOwnerAgentId,
+                activePlaybookRunId,
+                switchCount,
+                sessionHumanHandoffActive,
+                result == null ? null : result.decision()
+            );
+            if (!validation.accepted()) {
+                emitDecisionRejected(
+                    validation.rejectReason(),
+                    result == null ? null : result.decision(),
+                    currentOwnerAgentId,
+                    activePlaybookRunId
+                );
                 break;
             }
+            AgentDecision decision = validation.decision();
 
             if (decision.action() == AgentDecisionAction.REPLY) {
                 emitOwnerReply(decision.replyContent(), SessionActorType.AGENT, currentOwnerAgentId, activePlaybookRunId, currentOwnerAgentId);
@@ -416,7 +452,7 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             }
 
             if (decision.action() == AgentDecisionAction.SESSION_HUMAN_HANDOFF) {
-                if (sessionHumanHandoffActive) {
+                if (validation.sessionHandoffIdempotent()) {
                     break;
                 }
                 sessionHumanHandoffActive = true;
@@ -517,19 +553,32 @@ public class SessionWorkflowImpl implements SessionWorkflow {
         if (completedRun != null) {
             playbookRunsById.put(completedRun.runId(), completedRun);
             persistenceActivities.savePlaybookRun(completedRun);
+            Map<String, Object> playbookCompletedPayload = new LinkedHashMap<>();
+            playbookCompletedPayload.put("status", completedRun.status().name());
+            playbookCompletedPayload.put("result", completedRun.result());
+            if (completedRun.failureReason() != null) {
+                playbookCompletedPayload.put("failureReason", completedRun.failureReason());
+            }
             appendEvent(
                 SessionEventType.PLAYBOOK_COMPLETED,
                 SessionActorType.SYSTEM,
                 null,
-                Map.of("status", completedRun.status().name(), "result", completedRun.result(), "failureReason", completedRun.failureReason()),
+                playbookCompletedPayload,
                 completedRun.runId(),
                 completedRun.ownerAgentId()
             );
             if (!snapshot.sessionHumanHandoffActive()) {
+                Map<String, Object> reevaluationPayload = new LinkedHashMap<>();
+                reevaluationPayload.put("playbookRunId", completedRun.runId());
+                reevaluationPayload.put("status", completedRun.status().name());
+                reevaluationPayload.put("result", completedRun.result());
+                if (completedRun.failureReason() != null) {
+                    reevaluationPayload.put("failureReason", completedRun.failureReason());
+                }
                 pendingOwnerReevaluationTrigger = new SessionTrigger(
                     SessionTriggerType.PLAYBOOK_COMPLETED,
                     lastEventId(),
-                    Map.of("playbookRunId", completedRun.runId(), "status", completedRun.status().name(), "result", completedRun.result(), "failureReason", completedRun.failureReason())
+                    reevaluationPayload
                 );
             }
         }
@@ -551,97 +600,110 @@ public class SessionWorkflowImpl implements SessionWorkflow {
         }
     }
 
-    private AgentDecision sanitizeDecision(
+    private DecisionValidation validateDecision(
         AgentConfig owner,
         String currentOwnerAgentId,
         String activePlaybookRunId,
         int switchCount,
+        boolean sessionHumanHandoffActive,
         AgentDecision decision
     ) {
-        if (decision == null || !owner.allowedActions().contains(decision.action())) {
-            return null;
+        if (decision == null) {
+            return DecisionValidation.rejected("decision_missing");
+        }
+        if (!owner.allowedActions().contains(decision.action())) {
+            return DecisionValidation.rejected("action_not_allowed");
         }
         return switch (decision.action()) {
-            case REPLY -> decision.replyContent() == null || decision.replyContent().isBlank()
-                ? null
-                : (validReplyDecision(decision) ? decision : null);
-            case NO_REPLY -> validNoReplyDecision(decision) ? decision : null;
-            case SWITCH_OWNER -> validSwitchOwnerDecision(decision)
-                && canSwitchOwner(owner, decision.targetAgentId(), activePlaybookRunId, switchCount)
-                    ? decision
-                    : null;
-            case RUN_PLAYBOOK -> validRunPlaybookDecision(decision)
-                && canRunPlaybook(owner, decision.playbookId(), decision.playbookInput(), activePlaybookRunId)
-                    ? decision
-                    : null;
-            case SESSION_HUMAN_HANDOFF -> validSessionHandoffDecision(decision) ? decision : null;
+            case REPLY -> validateReplyDecision(decision);
+            case NO_REPLY -> DecisionValidation.accepted(decision);
+            case SWITCH_OWNER -> validateSwitchOwnerDecision(
+                owner,
+                decision,
+                activePlaybookRunId,
+                switchCount,
+                sessionHumanHandoffActive
+            );
+            case RUN_PLAYBOOK -> validateRunPlaybookDecision(owner, decision, activePlaybookRunId, sessionHumanHandoffActive);
+            case SESSION_HUMAN_HANDOFF -> sessionHumanHandoffActive
+                ? DecisionValidation.idempotentSessionHandoff(decision)
+                : DecisionValidation.accepted(decision);
         };
     }
 
-    private boolean canSwitchOwner(AgentConfig owner, String targetAgentId, String activePlaybookRunId, int switchCount) {
-        if (targetAgentId == null || targetAgentId.isBlank()) {
-            return false;
+    private DecisionValidation validateReplyDecision(AgentDecision decision) {
+        if (decision.replyContent() == null || decision.replyContent().isBlank()) {
+            return DecisionValidation.rejected("reply_content_required");
         }
-        if (activePlaybookRunId != null || snapshot.sessionHumanHandoffActive()) {
-            return false;
-        }
-        if (switchCount >= startRequest.assistant().ownerPolicy().maxOwnerSwitchesPerTurn()) {
-            return false;
-        }
-        if (!owner.switchableOwnerAgentIds().contains(targetAgentId)) {
-            return false;
-        }
-        AgentConfig targetAgent = agentsById.get(targetAgentId);
-        return targetAgent != null && targetAgent.canOwnSession();
+        return DecisionValidation.accepted(decision);
     }
 
-    private boolean canRunPlaybook(
+    private DecisionValidation validateSwitchOwnerDecision(
         AgentConfig owner,
-        String playbookId,
-        Map<String, Object> playbookInput,
-        String activePlaybookRunId
+        AgentDecision decision,
+        String activePlaybookRunId,
+        int switchCount,
+        boolean sessionHumanHandoffActive
     ) {
-        if (playbookId == null || playbookId.isBlank()) {
-            return false;
+        String targetAgentId = decision.targetAgentId();
+        if (targetAgentId == null || targetAgentId.isBlank()) {
+            return DecisionValidation.rejected("switch_owner_target_agent_id_required");
         }
-        if (activePlaybookRunId != null || snapshot.sessionHumanHandoffActive()) {
-            return false;
+        if (sessionHumanHandoffActive) {
+            return DecisionValidation.rejected("switch_owner_forbidden_during_handoff");
+        }
+        if (activePlaybookRunId != null) {
+            return DecisionValidation.rejected("switch_owner_forbidden_while_playbook_active");
+        }
+        if (switchCount >= startRequest.assistant().ownerPolicy().maxOwnerSwitchesPerTurn()) {
+            return DecisionValidation.rejected("owner_switch_limit_exceeded");
+        }
+        if (!owner.switchableOwnerAgentIds().contains(targetAgentId)) {
+            return DecisionValidation.rejected("switch_owner_target_not_allowed");
+        }
+        AgentConfig targetAgent = agentsById.get(targetAgentId);
+        if (targetAgent == null) {
+            return DecisionValidation.rejected("switch_owner_target_not_found");
+        }
+        if (!targetAgent.canOwnSession()) {
+            return DecisionValidation.rejected("switch_owner_target_cannot_own_session");
+        }
+        return DecisionValidation.accepted(decision);
+    }
+
+    private DecisionValidation validateRunPlaybookDecision(
+        AgentConfig owner,
+        AgentDecision decision,
+        String activePlaybookRunId,
+        boolean sessionHumanHandoffActive
+    ) {
+        String playbookId = decision.playbookId();
+        Map<String, Object> playbookInput = decision.playbookInput();
+        if (playbookId == null || playbookId.isBlank()) {
+            return DecisionValidation.rejected("run_playbook_playbook_id_required");
+        }
+        if (playbookInput == null) {
+            return DecisionValidation.rejected("run_playbook_input_required");
+        }
+        if (sessionHumanHandoffActive) {
+            return DecisionValidation.rejected("run_playbook_forbidden_during_handoff");
+        }
+        if (activePlaybookRunId != null) {
+            return DecisionValidation.rejected("run_playbook_forbidden_while_playbook_active");
         }
         if (!owner.playbookIds().contains(playbookId)) {
-            return false;
+            return DecisionValidation.rejected("run_playbook_not_allowed_for_owner");
         }
         PlaybookConfig playbook = playbooksById.get(playbookId);
         if (playbook == null) {
-            return false;
+            return DecisionValidation.rejected("run_playbook_not_found");
         }
         try {
-            jsonSchemaValidator.validate(playbook.inputSchema(), playbookInput == null ? Map.of() : playbookInput, "playbookInput");
-            return true;
+            jsonSchemaValidator.validate(playbook.inputSchema(), playbookInput, "playbookInput");
+            return DecisionValidation.accepted(decision);
         } catch (IllegalStateException error) {
-            return false;
+            return DecisionValidation.rejected("run_playbook_input_schema_invalid");
         }
-    }
-
-    private boolean validReplyDecision(AgentDecision decision) {
-        return decision.replyContent() != null && !decision.replyContent().isBlank();
-    }
-
-    private boolean validNoReplyDecision(AgentDecision decision) {
-        return true;
-    }
-
-    private boolean validSwitchOwnerDecision(AgentDecision decision) {
-        return decision.targetAgentId() != null && !decision.targetAgentId().isBlank();
-    }
-
-    private boolean validRunPlaybookDecision(AgentDecision decision) {
-        return decision.playbookId() != null
-            && !decision.playbookId().isBlank()
-            && decision.playbookInput() != null;
-    }
-
-    private boolean validSessionHandoffDecision(AgentDecision decision) {
-        return true;
     }
 
     private boolean shouldEmitAccompanyingReply(AgentDecision decision) {
@@ -854,30 +916,7 @@ public class SessionWorkflowImpl implements SessionWorkflow {
     }
 
     private void applyGuardrails() {
-        boolean shouldDrain = snapshot.draining() || guardrailExceeded();
-        if (!shouldDrain) {
-            return;
-        }
-        if (!snapshot.draining()) {
-            setSnapshot(new SessionSnapshot(
-                snapshot.sessionId(),
-                snapshot.assistantId(),
-                snapshot.assistantReleaseVersion(),
-                snapshot.primaryAgentId(),
-                snapshot.currentOwnerAgentId(),
-                snapshot.ownerSwitchCountInTurn(),
-                snapshot.sharedState(),
-                snapshot.activePlaybookRunId(),
-                snapshot.agentTurnActive(),
-                snapshot.sessionHumanHandoffActive(),
-                snapshot.pendingOwnerReevaluation(),
-                true,
-                snapshot.idleDeadline()
-            ));
-        }
-        if (!hasNonIdleExecution()) {
-            ended = true;
-        }
+        refreshDrainingState();
     }
 
     private boolean guardrailExceeded() {
@@ -887,8 +926,33 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             && !maxWorkflowAge.isZero()
             && !maxWorkflowAge.isNegative()
             && Workflow.currentTimeMillis() - workflowStartedAt.toEpochMilli() >= maxWorkflowAge.toMillis();
-        boolean historyExceeded = maxWorkflowHistoryEvents > 0 && events.size() >= maxWorkflowHistoryEvents;
+        boolean historyExceeded = maxWorkflowHistoryEvents > 0
+            && Workflow.getInfo().getHistoryLength() >= maxWorkflowHistoryEvents;
         return ageExceeded || historyExceeded;
+    }
+
+    private void refreshDrainingState() {
+        if (snapshot.draining() || !guardrailExceeded()) {
+            return;
+        }
+        setSnapshot(new SessionSnapshot(
+            snapshot.sessionId(),
+            snapshot.assistantId(),
+            snapshot.assistantReleaseVersion(),
+            snapshot.primaryAgentId(),
+            snapshot.currentOwnerAgentId(),
+            snapshot.ownerSwitchCountInTurn(),
+            snapshot.sharedState(),
+            snapshot.activePlaybookRunId(),
+            snapshot.agentTurnActive(),
+            snapshot.sessionHumanHandoffActive(),
+            snapshot.pendingOwnerReevaluation(),
+            true,
+            snapshot.idleDeadline()
+        ));
+        if (!hasNonIdleExecution()) {
+            ended = true;
+        }
     }
 
     private boolean shouldEndIdleSession() {

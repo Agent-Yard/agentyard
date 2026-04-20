@@ -102,7 +102,7 @@ class AgentRuntimePromptingTest(unittest.TestCase):
 
         self.assertEqual(result.decision.action, "SWITCH_OWNER")
         self.assertEqual(result.decision.targetAgentId, "agent-b")
-        self.assertEqual(result.sharedState["currentOwnerAgentId"], "agent-a")
+        self.assertNotIn("currentOwnerAgentId", result.sharedState)
 
     def test_should_hide_knowledge_binding_from_prompt_when_knowledge_is_disabled(self) -> None:
         request = AgentTurnRequest.model_validate(

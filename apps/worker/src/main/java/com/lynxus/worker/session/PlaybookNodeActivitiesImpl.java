@@ -86,6 +86,9 @@ public class PlaybookNodeActivitiesImpl implements PlaybookNodeActivities {
                     request.config()
                 )
             );
+            if (result.terminalStatus() == PlaybookRunStatus.CANCELLED) {
+                return failed("playbook tool task cannot emit CANCELLED directly");
+            }
             return new PlaybookNodeExecutionResult(
                 result.statePatch(),
                 result.routeKey(),
@@ -107,6 +110,9 @@ public class PlaybookNodeActivitiesImpl implements PlaybookNodeActivities {
             stringValue(request.config().get("routeKey"), null)
         );
         PlaybookRunStatus terminalStatus = parseStatus(result.get("terminalStatus"));
+        if (terminalStatus == PlaybookRunStatus.CANCELLED) {
+            return failed("playbook step cannot emit CANCELLED directly");
+        }
         String failureReason = firstNonBlank(
             stringValue(result.get("failureReason"), null),
             terminalStatus == null ? null : "playbook step failed"

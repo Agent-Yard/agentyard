@@ -165,7 +165,7 @@ public class PlaybookWorkflowImpl implements PlaybookWorkflow {
     private PlaybookRun completeAtEndNode(PlaybookNode node) {
         Map<String, Object> configuredResult = mapConfig(node.config().get("result"));
         String completionStatus = stringConfig(node.config().get("status"));
-        PlaybookRunStatus status = completionStatus == null ? PlaybookRunStatus.SUCCEEDED : PlaybookRunStatus.valueOf(completionStatus);
+        PlaybookRunStatus status = parseEndStatus(completionStatus);
         String failureReason = stringConfig(node.config().get("failureReason"));
         Map<String, Object> result = configuredResult.isEmpty() ? Map.copyOf(workingState) : configuredResult;
         if (status == PlaybookRunStatus.SUCCEEDED) {
@@ -298,5 +298,16 @@ public class PlaybookWorkflowImpl implements PlaybookWorkflow {
 
     private String defaultFailureReason(String failureReason) {
         return failureReason == null ? "playbook failed" : failureReason;
+    }
+
+    private PlaybookRunStatus parseEndStatus(String completionStatus) {
+        if (completionStatus == null) {
+            return PlaybookRunStatus.SUCCEEDED;
+        }
+        PlaybookRunStatus status = PlaybookRunStatus.valueOf(completionStatus);
+        if (status == PlaybookRunStatus.CANCELLED) {
+            throw new IllegalStateException("playbook END node cannot emit CANCELLED directly");
+        }
+        return status;
     }
 }

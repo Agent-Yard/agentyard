@@ -42,6 +42,52 @@ import org.junit.jupiter.api.Test;
 
 class SessionWorkflowImplTest {
     @Test
+    void submitUserMessage_shouldRejectWhenWorkflowTurnsDrainingAtGuardrail() {
+        try (TestWorkflowEnvironment environment = TestWorkflowEnvironment.newInstance()) {
+            Worker worker = environment.newWorker("session-tests-guardrail");
+            RecordingPersistenceActivities persistence = new RecordingPersistenceActivities();
+            worker.registerWorkflowImplementationTypes(SessionWorkflowImpl.class, PlaybookWorkflowImpl.class);
+            worker.registerActivitiesImplementations(
+                new RunPlaybookAgentTurnActivities(),
+                persistence,
+                new NoopPlaybookNodeActivities()
+            );
+            environment.start();
+
+            SessionWorkflow workflow = environment.getWorkflowClient().newWorkflowStub(
+                SessionWorkflow.class,
+                WorkflowOptions.newBuilder().setTaskQueue("session-tests-guardrail").setWorkflowId("session-1").build()
+            );
+            WorkflowClient.start(
+                workflow::run,
+                startRequestForAgentActionsAndPolicy(
+                    List.of(AgentDecisionAction.RUN_PLAYBOOK, AgentDecisionAction.NO_REPLY),
+                    Duration.ofHours(1),
+                    Duration.ofSeconds(2),
+                    20_000
+                )
+            );
+
+            assertEquals(
+                SessionMessageDeliveryStatus.ACCEPTED,
+                workflow.submitUserMessage(new UserMessage("msg-1", "customer-1", "start", Map.of())).status()
+            );
+
+            waitForEvent(environment, persistence, SessionEventType.PLAYBOOK_WAITING);
+            environment.sleep(Duration.ofSeconds(3));
+
+            assertEquals(
+                SessionMessageDeliveryStatus.REJECTED,
+                workflow.submitUserMessage(new UserMessage("msg-2", "customer-1", "follow up", Map.of())).status()
+            );
+
+            environment.sleep(Duration.ofSeconds(1));
+            assertEquals(1, countEvents(persistence.events(), SessionEventType.USER_MESSAGE));
+            assertTrue(workflow.currentSnapshot().draining());
+        }
+    }
+
+    @Test
     void resumeSignals_shouldAppendReceivedEventsOnlyAfterValidation() {
         try (TestWorkflowEnvironment environment = TestWorkflowEnvironment.newInstance()) {
             Worker worker = environment.newWorker("session-tests");
@@ -114,6 +160,10 @@ class SessionWorkflowImplTest {
             );
 
             waitForEvent(environment, persistence, SessionEventType.AGENT_DECISION_REJECTED);
+            assertEquals(
+                "run_playbook_playbook_id_required",
+                latestEventOfType(persistence.events(), SessionEventType.AGENT_DECISION_REJECTED).payload().get("rejectReason")
+            );
             assertEquals(0, countEvents(persistence.events(), SessionEventType.PLAYBOOK_STARTED));
         }
     }
@@ -171,9 +221,9 @@ class SessionWorkflowImplTest {
             );
 
             waitForEvent(environment, persistence, SessionEventType.AGENT_DECISION_REJECTED);
-            assertEquals("agent-1", workflow.currentSnapshot().sharedState().get("currentOwnerAgentId"));
+            assertEquals("malformed-run-playbook", workflow.currentSnapshot().sharedState().get("reviewMarker"));
             assertTrue(
-                persistence.firstOperationIndex("saveSession:sharedState.currentOwnerAgentId=agent-1")
+                persistence.firstOperationIndex("saveSession:sharedState.reviewMarker=malformed-run-playbook")
                     < persistence.firstOperationIndex("appendEvent:AGENT_DECISION_REJECTED")
             );
         }
@@ -206,6 +256,10 @@ class SessionWorkflowImplTest {
             );
 
             waitForEvent(environment, persistence, SessionEventType.AGENT_DECISION_REJECTED);
+            assertEquals(
+                "switch_owner_target_agent_id_required",
+                latestEventOfType(persistence.events(), SessionEventType.AGENT_DECISION_REJECTED).payload().get("rejectReason")
+            );
             assertEquals(0, countEvents(persistence.events(), SessionEventType.OWNER_SWITCH));
         }
     }
@@ -215,6 +269,15 @@ class SessionWorkflowImplTest {
     }
 
     private static SessionStartRequest startRequestForAgentActions(List<AgentDecisionAction> allowedActions) {
+        return startRequestForAgentActionsAndPolicy(allowedActions, Duration.ofHours(1), Duration.ofDays(7), 20_000);
+    }
+
+    private static SessionStartRequest startRequestForAgentActionsAndPolicy(
+        List<AgentDecisionAction> allowedActions,
+        Duration idleTimeout,
+        Duration maxWorkflowAge,
+        int maxWorkflowHistoryEvents
+    ) {
         return new SessionStartRequest(
             "session-1",
             "scenario-1",
@@ -226,7 +289,7 @@ class SessionWorkflowImplTest {
                 "2026.04.20",
                 "agent-1",
                 new SessionOwnerPolicy(3),
-                new SessionPolicy(Duration.ofHours(1), Duration.ofDays(7), 20_000),
+                new SessionPolicy(idleTimeout, maxWorkflowAge, maxWorkflowHistoryEvents),
                 new PlaybookExecutionPolicy(null, null)
             ),
             List.of(
@@ -313,6 +376,13 @@ class SessionWorkflowImplTest {
         return events.stream().filter(event -> event.eventType() == eventType).count();
     }
 
+    private static SessionEvent latestEventOfType(List<SessionEvent> events, SessionEventType eventType) {
+        return events.stream()
+            .filter(event -> event.eventType() == eventType)
+            .reduce((first, second) -> second)
+            .orElseThrow();
+    }
+
     private static final class RunPlaybookAgentTurnActivities implements AgentTurnActivities {
         @Override
         public AgentTurnResult executeTurn(AgentTurnRequest request) {
@@ -348,7 +418,7 @@ class SessionWorkflowImplTest {
                     Map.of("customerId", "customer-1"),
                     null
                 ),
-                Map.of("currentOwnerAgentId", request.currentOwner().agentId())
+                Map.of("reviewMarker", "malformed-run-playbook")
             );
         }
     }
@@ -365,7 +435,7 @@ class SessionWorkflowImplTest {
                     Map.of("customerId", "customer-1"),
                     null
                 ),
-                Map.of("currentOwnerAgentId", request.currentOwner().agentId())
+                Map.of("reviewMarker", "malformed-switch-owner")
             );
         }
     }
@@ -406,7 +476,7 @@ class SessionWorkflowImplTest {
 
         @Override
         public void saveSession(SessionRecord session) {
-            operations.add("saveSession:sharedState.currentOwnerAgentId=" + session.sharedState().get("currentOwnerAgentId"));
+            operations.add("saveSession:sharedState.reviewMarker=" + session.sharedState().get("reviewMarker"));
         }
 
         @Override

@@ -91,7 +91,22 @@ public class SessionRuntimeService {
     }
 
     public SessionRuntimeSessionDto sendMessage(String sessionId, SendSessionMessageRequest request) {
-        return dispatchLockService.withSessionLock(sessionId, () -> sendMessageInternal(sessionId, request, null));
+        SessionRuntimeSessionDto existing = repository.findSession(sessionId).orElseThrow();
+        SessionRuntimeSessionDto current = markEndedIfWorkflowClosed(existing);
+        if ("ENDED".equals(current.status())) {
+            return rolloverEndedSession(current, request);
+        }
+        try {
+            return dispatchLockService.withSessionLock(sessionId, () -> sendMessageInternal(sessionId, request, current));
+        } catch (ConflictException error) {
+            if (!"session has ended".equals(error.getMessage())) {
+                throw error;
+            }
+            SessionRuntimeSessionDto latest = repository.findSession(sessionId)
+                .map(this::markEndedIfWorkflowClosed)
+                .orElse(current);
+            return rolloverEndedSession(latest, request);
+        }
     }
 
     public SessionRuntimeSessionDto humanResume(String sessionId, HumanResumeRequest request) {
@@ -447,6 +462,23 @@ public class SessionRuntimeService {
             }
             throw error;
         }
+    }
+
+    private SessionRuntimeSessionDto rolloverEndedSession(
+        SessionRuntimeSessionDto endedSession,
+        SendSessionMessageRequest request
+    ) {
+        return dispatchLockService.withConversationLock(
+            endedSession.customerId(),
+            endedSession.assistantId(),
+            () -> createOrReuseSession(
+                new CreateSessionRequest(
+                    endedSession.assistantId(),
+                    endedSession.customerId(),
+                    request.message()
+                )
+            )
+        );
     }
 
     private SessionRuntimeSessionDto markEndedIfWorkflowClosed(SessionRuntimeSessionDto existing) {

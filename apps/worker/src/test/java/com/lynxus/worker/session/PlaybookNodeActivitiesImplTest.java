@@ -133,4 +133,42 @@ class PlaybookNodeActivitiesImplTest {
         );
         verify(sandboxGateway, never()).executePython(anyString(), anyString(), anyInt());
     }
+
+    @Test
+    void executeTool_shouldRejectDirectCancelledTerminalStatus() {
+        SessionAgentRuntimeGateway runtimeGateway = mock(SessionAgentRuntimeGateway.class);
+        when(runtimeGateway.executePlaybookToolTask(org.mockito.ArgumentMatchers.any())).thenReturn(
+            new com.lynxus.contracts.session.SessionContracts.PlaybookToolTaskResult(
+                Map.of(),
+                null,
+                PlaybookRunStatus.CANCELLED,
+                "cancelled by tool"
+            )
+        );
+        PlaybookNodeActivitiesImpl activities = new PlaybookNodeActivitiesImpl(
+            mock(SandboxGateway.class),
+            runtimeGateway,
+            new ObjectMapper()
+        );
+
+        PlaybookNodeActivities.PlaybookNodeExecutionResult result = activities.executeTool(
+            new PlaybookNodeActivities.PlaybookNodeExecutionRequest(
+                "session-1",
+                "run-1",
+                "playbook-1",
+                "tool-1",
+                "Tool 1",
+                null,
+                null,
+                null,
+                "tool-ref",
+                "invoke",
+                Map.of(),
+                Map.of()
+            )
+        );
+
+        assertEquals(PlaybookRunStatus.FAILED, result.terminalStatus());
+        assertEquals("playbook tool task cannot emit CANCELLED directly", result.failureReason());
+    }
 }

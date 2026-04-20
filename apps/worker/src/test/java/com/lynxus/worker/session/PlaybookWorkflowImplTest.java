@@ -54,6 +54,36 @@ class PlaybookWorkflowImplTest {
         }
     }
 
+    @Test
+    void run_shouldFailWhenEndNodeTriesToEmitCancelled() {
+        try (TestWorkflowEnvironment environment = TestWorkflowEnvironment.newInstance()) {
+            Worker worker = environment.newWorker("playbook-tests-cancelled-end");
+            worker.registerWorkflowImplementationTypes(PlaybookWorkflowImpl.class);
+            worker.registerActivitiesImplementations(new NoopPlaybookNodeActivities());
+            environment.start();
+
+            PlaybookWorkflow workflow = environment.getWorkflowClient().newWorkflowStub(
+                PlaybookWorkflow.class,
+                WorkflowOptions.newBuilder().setTaskQueue("playbook-tests-cancelled-end").build()
+            );
+
+            PlaybookRun result = workflow.run(
+                new PlaybookStartRequest(
+                    "session-1",
+                    "run-1",
+                    "event-1",
+                    "agent-1",
+                    ownerAgent(),
+                    cancelledEndPlaybook(),
+                    Map.of("orderId", "ord-1")
+                )
+            );
+
+            assertEquals(PlaybookRunStatus.FAILED, result.status());
+            assertTrue(result.failureReason().contains("playbook END node cannot emit CANCELLED directly"));
+        }
+    }
+
     private static PlaybookConfig invalidResultPlaybook() {
         return new PlaybookConfig(
             "playbook-1",
@@ -76,6 +106,34 @@ class PlaybookWorkflowImplTest {
                     null,
                     null,
                     Map.of("result", Map.of("orderId", "ord-1"))
+                )
+            ),
+            List.of()
+        );
+    }
+
+    private static PlaybookConfig cancelledEndPlaybook() {
+        return new PlaybookConfig(
+            "playbook-2",
+            "Cancel",
+            "Invalid cancel playbook",
+            "{\"type\":\"object\"}",
+            "{\"type\":\"object\"}",
+            new PlaybookExecutionPolicy(null, null),
+            false,
+            false,
+            "finish",
+            List.of(
+                new PlaybookNode(
+                    "finish",
+                    "Finish",
+                    PlaybookNodeType.END,
+                    "",
+                    null,
+                    null,
+                    null,
+                    null,
+                    Map.of("status", "CANCELLED")
                 )
             ),
             List.of()

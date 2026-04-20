@@ -305,5 +305,4 @@ def _updated_shared_state(request: AgentTurnRequest) -> dict[str, Any]:
     shared_state = dict(request.sharedState)
     if request.trigger.triggerType == "USER_MESSAGE":
         shared_state["lastUserMessage"] = request.trigger.payload.get("text")
-    shared_state["currentOwnerAgentId"] = request.currentOwner.agentId
     return shared_state

@@ -87,7 +87,7 @@ class SessionRuntimeServiceTest {
     }
 
     @Test
-    void sendMessage_rejectsClosedSessionAndPersistsEndedStatus() {
+    void sendMessage_marksClosedSessionEndedAndRollsOverToNewSession() {
         SessionWorkflowGateway gateway = mock(SessionWorkflowGateway.class);
         CatalogService catalogService = mock(CatalogService.class);
         SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
@@ -97,19 +97,60 @@ class SessionRuntimeServiceTest {
             repository,
             new SessionDispatchLockService()
         );
+        CatalogDtos.AssistantDto assistant = assistant("ast-1");
         SessionRuntimeDtos.SessionRuntimeSessionDto existing = session("session-closed", "IDLE", null);
 
+        when(catalogService.getAssistant("ast-1")).thenReturn(assistant);
         when(repository.findSession("session-closed")).thenReturn(java.util.Optional.of(existing));
-        when(gateway.isWorkflowOpen("session-closed")).thenReturn(false);
-
-        ConflictException error = assertThrows(
-            ConflictException.class,
-            () -> service.sendMessage("session-closed", new SendSessionMessageRequest("customer-1", "你好"))
+        when(repository.findActiveSession("customer-1", "ast-1")).thenReturn(java.util.Optional.empty());
+        when(repository.findSession(argThat(id -> !"session-closed".equals(id)))).thenReturn(java.util.Optional.empty());
+        when(gateway.isWorkflowOpen(any())).thenAnswer(invocation -> !"session-closed".equals(invocation.getArgument(0)));
+        when(gateway.submitUserMessage(any(), any())).thenReturn(
+            new SessionUserMessageUpdateResult(SessionMessageDeliveryStatus.ACCEPTED, "session-new", null)
         );
 
-        assertEquals("session has ended", error.getMessage());
+        SessionRuntimeDtos.SessionRuntimeSessionDto result = service.sendMessage(
+            "session-closed",
+            new SendSessionMessageRequest("customer-1", "你好")
+        );
+
+        assertNotEquals("session-closed", result.id());
         verify(repository).saveSession(argThat(session -> session.id().equals("session-closed") && "ENDED".equals(session.status())));
-        verify(gateway, never()).submitUserMessage(any(), any());
+        verify(gateway).start(any());
+        verify(gateway).submitUserMessage(argThat(id -> !"session-closed".equals(id)), any());
+    }
+
+    @Test
+    void sendMessage_rollsOverEndedSessionIntoNewSession() {
+        SessionWorkflowGateway gateway = mock(SessionWorkflowGateway.class);
+        CatalogService catalogService = mock(CatalogService.class);
+        SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
+        SessionRuntimeService service = new SessionRuntimeService(
+            gateway,
+            catalogService,
+            repository,
+            new SessionDispatchLockService()
+        );
+        CatalogDtos.AssistantDto assistant = assistant("ast-1");
+        SessionRuntimeDtos.SessionRuntimeSessionDto ended = session("session-ended", "ENDED", null);
+
+        when(catalogService.getAssistant("ast-1")).thenReturn(assistant);
+        when(repository.findSession("session-ended")).thenReturn(java.util.Optional.of(ended));
+        when(repository.findActiveSession("customer-1", "ast-1")).thenReturn(java.util.Optional.empty());
+        when(repository.findSession(argThat(id -> !"session-ended".equals(id)))).thenReturn(java.util.Optional.empty());
+        when(gateway.isWorkflowOpen(any())).thenAnswer(invocation -> !"session-ended".equals(invocation.getArgument(0)));
+        when(gateway.submitUserMessage(any(), any())).thenReturn(
+            new SessionUserMessageUpdateResult(SessionMessageDeliveryStatus.ACCEPTED, "session-new", null)
+        );
+
+        SessionRuntimeDtos.SessionRuntimeSessionDto result = service.sendMessage(
+            "session-ended",
+            new SendSessionMessageRequest("customer-1", "继续处理")
+        );
+
+        assertNotEquals("session-ended", result.id());
+        verify(gateway).start(any());
+        verify(gateway).submitUserMessage(argThat(id -> !"session-ended".equals(id)), any());
     }
 
     @Test
