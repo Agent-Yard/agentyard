@@ -22,13 +22,6 @@ from .tooling import execute_tool_call, load_skills, semantic_tool_definitions
 
 LOGGER = logging.getLogger("lynxus-agent-runtime")
 
-AGENT_ACTIONS = (
-    "REPLY",
-    "NO_REPLY",
-    "SWITCH_OWNER",
-    "RUN_PLAYBOOK",
-    "SESSION_HUMAN_HANDOFF",
-)
 DEFAULT_MAX_TOOL_STEPS = 4
 OPENAI_COMPATIBLE_PROVIDER_TYPES = {"OPENAI", "OPENAI_COMPATIBLE"}
 
@@ -47,17 +40,15 @@ class ProviderSettings:
 def execute_agent_turn(request: AgentTurnRequest) -> tuple[AgentTurnResult, PromptBundle]:
     prompt_bundle = build_prompt_bundle(request)
     result = _execute_via_openai_compatible(request, prompt_bundle)
-    if result is None:
-        result = _fallback_result(request)
     return result, prompt_bundle
 
 
 def _execute_via_openai_compatible(
     request: AgentTurnRequest, prompt_bundle: PromptBundle
-) -> AgentTurnResult | None:
+) -> AgentTurnResult:
     settings = _resolve_provider_settings(request)
     if settings is None:
-        return None
+        raise RuntimeError("no supported model provider configured for current owner")
 
     headers = {
         "Authorization": f"Bearer {settings.api_key}",
@@ -123,7 +114,7 @@ def _execute_via_openai_compatible(
                 shared_state = parsed.get("sharedState")
                 result = AgentTurnResult(
                     decision=AgentDecision.model_validate(decision_payload or {}),
-                    sharedState=shared_state if isinstance(shared_state, dict) else _updated_shared_state(request),
+                    sharedState=shared_state if isinstance(shared_state, dict) else dict(request.sharedState),
                 )
                 LOGGER.info(
                     "agent turn executed via openai-compatible provider",
@@ -141,7 +132,7 @@ def _execute_via_openai_compatible(
         raise ValueError("model did not return a final decision within loop step budget")
     except Exception as error:  # noqa: BLE001
         LOGGER.warning(
-            "openai-compatible execution failed, falling back to deterministic policy",
+            "openai-compatible execution failed",
             extra={
                 "sessionId": request.sessionId,
                 "assistantId": request.assistantId,
@@ -149,7 +140,7 @@ def _execute_via_openai_compatible(
                 "error": str(error),
             },
         )
-        return None
+        raise RuntimeError("agent turn execution failed") from error
 
 
 def _resolve_provider_settings(request: AgentTurnRequest) -> ProviderSettings | None:
@@ -242,67 +233,3 @@ def _extract_json_object(content: Any) -> Any:
         if start < 0 or end < start:
             raise
         return json.loads(text[start : end + 1])
-
-
-def _fallback_result(request: AgentTurnRequest) -> AgentTurnResult:
-    trigger_text = str(request.trigger.payload.get("text") or "").strip()
-    lowered = trigger_text.lower()
-    if "playbook" in lowered and "RUN_PLAYBOOK" in request.currentOwner.allowedActions and request.currentOwner.playbookIds:
-        return AgentTurnResult(
-            decision=AgentDecision(
-                action="RUN_PLAYBOOK",
-                playbookId=request.currentOwner.playbookIds[0],
-                playbookInput={"source": "fallback", "text": trigger_text},
-                accompanyingReply="已开始执行流程",
-            ),
-            sharedState=_updated_shared_state(request),
-        )
-    if trigger_text.startswith("/switch ") and "SWITCH_OWNER" in request.currentOwner.allowedActions:
-        target_agent_id = trigger_text.removeprefix("/switch ").strip()
-        if target_agent_id in request.currentOwner.switchableOwnerAgentIds:
-            return AgentTurnResult(
-                decision=AgentDecision(
-                    action="SWITCH_OWNER",
-                    targetAgentId=target_agent_id,
-                    accompanyingReply="已切换处理智能体",
-                ),
-                sharedState=_updated_shared_state(request),
-            )
-    if "人工" in trigger_text and "SESSION_HUMAN_HANDOFF" in request.currentOwner.allowedActions:
-        return AgentTurnResult(
-            decision=AgentDecision(
-                action="SESSION_HUMAN_HANDOFF",
-                accompanyingReply="已为你转接人工处理",
-            ),
-            sharedState=_updated_shared_state(request),
-        )
-    if "REPLY" in request.currentOwner.allowedActions:
-        return AgentTurnResult(
-            decision=AgentDecision(action="REPLY", replyContent="已收到，我来继续处理。"),
-            sharedState=_updated_shared_state(request),
-        )
-    if "NO_REPLY" in request.currentOwner.allowedActions:
-        return AgentTurnResult(
-            decision=AgentDecision(action="NO_REPLY"),
-            sharedState=_updated_shared_state(request),
-        )
-    fallback_action = "SWITCH_OWNER" if "SWITCH_OWNER" in request.currentOwner.allowedActions else AGENT_ACTIONS[0]
-    decision_payload: dict[str, Any] = {"action": fallback_action}
-    if fallback_action == "REPLY":
-        decision_payload["replyContent"] = "已收到，我来继续处理。"
-    if fallback_action == "SWITCH_OWNER" and request.currentOwner.switchableOwnerAgentIds:
-        decision_payload["targetAgentId"] = request.currentOwner.switchableOwnerAgentIds[0]
-    if fallback_action == "RUN_PLAYBOOK" and request.currentOwner.playbookIds:
-        decision_payload["playbookId"] = request.currentOwner.playbookIds[0]
-        decision_payload["playbookInput"] = {"source": "fallback"}
-    return AgentTurnResult(
-        decision=AgentDecision.model_validate(decision_payload),
-        sharedState=_updated_shared_state(request),
-    )
-
-
-def _updated_shared_state(request: AgentTurnRequest) -> dict[str, Any]:
-    shared_state = dict(request.sharedState)
-    if request.trigger.triggerType == "USER_MESSAGE":
-        shared_state["lastUserMessage"] = request.trigger.payload.get("text")
-    return shared_state

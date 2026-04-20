@@ -291,7 +291,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         self.assertEqual(request_log[4]["json"], {"subject": "退款申请"})
         self.assertIn("tools", request_log[0]["json"])
 
-    def test_should_fallback_when_loop_cannot_finish(self) -> None:
+    def test_should_fail_when_loop_cannot_finish(self) -> None:
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
         os.environ["LYNXUS_AGENT_RUNTIME_MAX_TOOL_STEPS"] = "1"
         request = AgentTurnRequest.model_validate(_request_payload())
@@ -326,10 +326,8 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         with patch("lynxus_agent_runtime.decisioning.httpx.Client", side_effect=factory), patch(
             "lynxus_agent_runtime.tooling.httpx.Client", side_effect=factory
         ):
-            result, _ = execute_agent_turn(request)
-
-        self.assertEqual(result.decision.action, "REPLY")
-        self.assertIn("lastUserMessage", result.sharedState)
+            with self.assertRaisesRegex(RuntimeError, "agent turn execution failed"):
+                execute_agent_turn(request)
 
         os.environ.pop("LYNXUS_AGENT_RUNTIME_MAX_TOOL_STEPS", None)
 

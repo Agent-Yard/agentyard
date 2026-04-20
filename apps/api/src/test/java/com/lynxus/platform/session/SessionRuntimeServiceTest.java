@@ -10,6 +10,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -239,6 +240,60 @@ class SessionRuntimeServiceTest {
 
         assertEquals("playbook run does not belong to session", error.getMessage());
         verify(gateway, never()).externalCallback(eq("session-1"), any());
+    }
+
+    @Test
+    void sendMessage_shouldWaitForPersistedSessionChangeBeforeReturning() {
+        SessionWorkflowGateway gateway = mock(SessionWorkflowGateway.class);
+        CatalogService catalogService = mock(CatalogService.class);
+        SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
+        SessionRuntimeService service = new SessionRuntimeService(
+            gateway,
+            catalogService,
+            repository,
+            new SessionDispatchLockService()
+        );
+        SessionRuntimeDtos.SessionRuntimeSessionDto existing = session("session-1", "IDLE", null);
+        SessionRuntimeDtos.SessionRuntimeSessionDto updated = new SessionRuntimeDtos.SessionRuntimeSessionDto(
+            existing.id(),
+            existing.scenarioId(),
+            existing.title(),
+            existing.customerId(),
+            existing.assistantId(),
+            existing.assistantName(),
+            existing.assistantReleaseVersion(),
+            "ACTIVE",
+            existing.primaryAgentId(),
+            existing.currentOwnerAgentId(),
+            existing.activePlaybookRunId(),
+            true,
+            existing.sessionHumanHandoffActive(),
+            existing.pendingOwnerReevaluation(),
+            existing.draining(),
+            existing.sharedState(),
+            existing.idleDeadline(),
+            existing.createdAt(),
+            existing.updatedAt().plusSeconds(1),
+            existing.endedAt(),
+            existing.latestEventSequence() + 1
+        );
+
+        when(repository.findSession("session-1"))
+            .thenReturn(java.util.Optional.of(existing))
+            .thenReturn(java.util.Optional.of(existing))
+            .thenReturn(java.util.Optional.of(updated));
+        when(gateway.isWorkflowOpen("session-1")).thenReturn(true);
+        when(gateway.submitUserMessage(any(), any())).thenReturn(
+            new SessionUserMessageUpdateResult(SessionMessageDeliveryStatus.ACCEPTED, "session-1", null)
+        );
+
+        SessionRuntimeDtos.SessionRuntimeSessionDto result = service.sendMessage(
+            "session-1",
+            new SendSessionMessageRequest("customer-1", "你好")
+        );
+
+        assertEquals(updated, result);
+        verify(repository, times(3)).findSession("session-1");
     }
 
     private static CatalogDtos.AssistantDto assistant(String assistantId) {

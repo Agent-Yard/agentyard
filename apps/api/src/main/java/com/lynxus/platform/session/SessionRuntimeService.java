@@ -520,10 +520,15 @@ public class SessionRuntimeService {
     }
 
     private SessionRuntimeSessionDto awaitPersistedSession(String sessionId, SessionRuntimeSessionDto fallback) {
+        SessionRuntimeSessionDto latestSeen = fallback;
         for (int attempt = 0; attempt < 20; attempt += 1) {
             Optional<SessionRuntimeSessionDto> persisted = repository.findSession(sessionId);
             if (persisted.isPresent()) {
-                return markEndedIfWorkflowClosed(persisted.orElseThrow());
+                SessionRuntimeSessionDto current = persisted.orElseThrow();
+                latestSeen = current;
+                if (hasObservableSessionChange(current, fallback)) {
+                    return markEndedIfWorkflowClosed(current);
+                }
             }
             try {
                 Thread.sleep(50L);
@@ -532,7 +537,14 @@ public class SessionRuntimeService {
                 break;
             }
         }
-        return markEndedIfWorkflowClosed(fallback);
+        return markEndedIfWorkflowClosed(latestSeen);
+    }
+
+    private static boolean hasObservableSessionChange(
+        SessionRuntimeSessionDto current,
+        SessionRuntimeSessionDto baseline
+    ) {
+        return !current.equals(baseline);
     }
 
     private void requirePlaybookRunInSession(String sessionId, String playbookRunId) {

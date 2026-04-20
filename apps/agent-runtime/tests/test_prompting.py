@@ -62,7 +62,7 @@ class AgentRuntimePromptingTest(unittest.TestCase):
         self.assertIn("sharedState", bundle.response_contract)
         self.assertIn("skillReads", bundle.response_contract)
 
-    def test_should_fallback_to_switch_owner_decision_when_provider_not_configured(self) -> None:
+    def test_should_fail_when_provider_not_configured(self) -> None:
         os.environ.pop("LYNXUS_OPENAI_COMPATIBLE_BASE_URL", None)
         os.environ.pop("LYNXUS_OPENAI_COMPATIBLE_MODEL_ID", None)
         request = AgentTurnRequest.model_validate(
@@ -98,11 +98,8 @@ class AgentRuntimePromptingTest(unittest.TestCase):
             }
         )
 
-        result, _ = execute_agent_turn(request)
-
-        self.assertEqual(result.decision.action, "SWITCH_OWNER")
-        self.assertEqual(result.decision.targetAgentId, "agent-b")
-        self.assertNotIn("currentOwnerAgentId", result.sharedState)
+        with self.assertRaisesRegex(RuntimeError, "no supported model provider configured"):
+            execute_agent_turn(request)
 
     def test_should_hide_knowledge_binding_from_prompt_when_knowledge_is_disabled(self) -> None:
         request = AgentTurnRequest.model_validate(
