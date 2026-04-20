@@ -42,6 +42,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import tools.jackson.databind.ObjectMapper;
 
 public class SessionWorkflowImpl implements SessionWorkflow {
@@ -282,13 +283,13 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             return;
         }
         PlaybookRun previousRun = playbookRunsById.get(update.run().runId());
-        playbookRunsById.put(update.run().runId(), update.run());
-        persistenceActivities.savePlaybookRun(update.run());
+        String sourceEventId = null;
         if (!update.run().runId().equals(snapshot.activePlaybookRunId())) {
+            persistPlaybookRun(update.run(), previousRun, null, null);
             return;
         }
         if (update.progressType() == PlaybookProgressType.WAITING && shouldAppendWaitingEvent(previousRun, update.run())) {
-            appendEvent(
+            sourceEventId = appendEvent(
                 SessionEventType.PLAYBOOK_WAITING,
                 SessionActorType.SYSTEM,
                 null,
@@ -303,7 +304,7 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             );
         }
         if (update.progressType() == PlaybookProgressType.RESUMED && shouldAppendResumedEvent(previousRun, update.run())) {
-            appendEvent(
+            sourceEventId = appendEvent(
                 SessionEventType.PLAYBOOK_RESUMED,
                 update.resumeSource() == PlaybookResumeSource.HUMAN ? SessionActorType.HUMAN_OPERATOR : SessionActorType.EXTERNAL_SYSTEM,
                 null,
@@ -317,6 +318,7 @@ public class SessionWorkflowImpl implements SessionWorkflow {
                 update.run().ownerAgentId()
             );
         }
+        persistPlaybookRun(update.run(), previousRun, sourceEventId, null);
         setSnapshot(copySnapshot(
             snapshot.sharedState(),
             snapshot.activePlaybookRunId(),
@@ -549,7 +551,7 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             null
         );
         playbookRunsById.put(runId, run);
-        persistenceActivities.savePlaybookRun(run);
+        persistPlaybookRun(run, null, startedEventId, ownerAgentId);
         activePlaybookWorkflowId = snapshot.sessionId() + ":" + runId;
         activePlaybookWorkflow = Workflow.newChildWorkflowStub(
             PlaybookWorkflow.class,
@@ -573,15 +575,14 @@ public class SessionWorkflowImpl implements SessionWorkflow {
     private void completeActivePlaybook(PlaybookRun completedRun) {
         String previousRunId = snapshot.activePlaybookRunId();
         if (completedRun != null) {
-            playbookRunsById.put(completedRun.runId(), completedRun);
-            persistenceActivities.savePlaybookRun(completedRun);
+            PlaybookRun previousRun = playbookRunsById.get(completedRun.runId());
             Map<String, Object> playbookCompletedPayload = new LinkedHashMap<>();
             playbookCompletedPayload.put("status", completedRun.status().name());
             playbookCompletedPayload.put("result", completedRun.result());
             if (completedRun.failureReason() != null) {
                 playbookCompletedPayload.put("failureReason", completedRun.failureReason());
             }
-            appendEvent(
+            String sourceEventId = appendEvent(
                 SessionEventType.PLAYBOOK_COMPLETED,
                 SessionActorType.SYSTEM,
                 null,
@@ -589,6 +590,7 @@ public class SessionWorkflowImpl implements SessionWorkflow {
                 completedRun.runId(),
                 completedRun.ownerAgentId()
             );
+            persistPlaybookRun(completedRun, previousRun, sourceEventId, null);
             if (!snapshot.sessionHumanHandoffActive() && !snapshot.draining()) {
                 Map<String, Object> reevaluationPayload = new LinkedHashMap<>();
                 reevaluationPayload.put("playbookRunId", completedRun.runId());
@@ -864,7 +866,57 @@ public class SessionWorkflowImpl implements SessionWorkflow {
         );
         events.add(event);
         persistenceActivities.appendEvent(event);
+        Map<String, Object> auditPayload = new LinkedHashMap<>();
+        auditPayload.put("sessionEventId", event.eventId());
+        auditPayload.put("sessionEventType", event.eventType().name());
+        auditPayload.put("actorType", event.actorType().name());
+        auditPayload.put("relatedPlaybookRunId", event.relatedPlaybookRunId());
+        auditPayload.put("relatedOwnerAgentId", event.relatedOwnerAgentId());
+        appendPlatformEvent("SESSION_EVENT_RECORDED", "SESSION", snapshot.sessionId(), event.actorId(), auditPayload, event.createdAt());
         return eventId;
+    }
+
+    private void persistPlaybookRun(PlaybookRun newRun, PlaybookRun previousRun, String sourceEventId, String actorId) {
+        playbookRunsById.put(newRun.runId(), newRun);
+        persistenceActivities.savePlaybookRun(newRun);
+        if (!shouldAppendPlaybookRunAuditEvent(previousRun, newRun)) {
+            return;
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("sessionId", newRun.sessionId());
+        payload.put("playbookId", newRun.playbookId());
+        payload.put("ownerAgentId", newRun.ownerAgentId());
+        payload.put("previousStatus", previousRun == null ? null : previousRun.status().name());
+        payload.put("currentStatus", newRun.status().name());
+        payload.put("waitingReason", newRun.waitingReason());
+        payload.put("parentSessionEventId", newRun.parentSessionEventId());
+        payload.put("sourceEventId", sourceEventId);
+        appendPlatformEvent("PLAYBOOK_RUN_STATUS_CHANGED", "PLAYBOOK_RUN", newRun.runId(), actorId, payload, newRun.updatedAt());
+    }
+
+    private boolean shouldAppendPlaybookRunAuditEvent(PlaybookRun previousRun, PlaybookRun newRun) {
+        return previousRun == null
+            || previousRun.status() != newRun.status()
+            || !Objects.equals(previousRun.waitingReason(), newRun.waitingReason());
+    }
+
+    private void appendPlatformEvent(
+        String eventType,
+        String aggregateType,
+        String aggregateId,
+        String actorId,
+        Map<String, Object> payload,
+        Instant occurredAt
+    ) {
+        persistenceActivities.appendPlatformEvent(new SessionPersistenceActivities.PlatformEventRecord(
+            "platform-event-" + Workflow.randomUUID(),
+            eventType,
+            aggregateType,
+            aggregateId,
+            actorId,
+            payload,
+            occurredAt
+        ));
     }
 
     private String lastEventId() {

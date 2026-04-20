@@ -81,6 +81,43 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DeletionImpactPreview'
+  /events:
+    get:
+      summary: List platform audit events
+      parameters:
+        - in: query
+          name: aggregateType
+          required: false
+          schema:
+            $ref: '#/components/schemas/PlatformAggregateType'
+        - in: query
+          name: aggregateId
+          required: false
+          schema:
+            type: string
+        - in: query
+          name: since
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+        - in: query
+          name: cursor
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Platform audit events
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformEventPage'
   /assistants:
     get:
       summary: List assistants
@@ -1449,6 +1486,39 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/DeletionCascadeItem'
+    PlatformAggregateType:
+      type: string
+      enum: [DOMAIN, SCENARIO, ASSISTANT, AGENT, PLAYBOOK, RESOURCE, KNOWLEDGE_BASE, SESSION, PLAYBOOK_RUN]
+    PlatformEvent:
+      type: object
+      properties:
+        id:
+          type: string
+        eventType:
+          type: string
+        aggregateType:
+          $ref: '#/components/schemas/PlatformAggregateType'
+        aggregateId:
+          type: string
+        actorId:
+          type: string
+          nullable: true
+        payload:
+          type: object
+          additionalProperties: true
+        occurredAt:
+          type: string
+          format: date-time
+    PlatformEventPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformEvent'
+        nextCursor:
+          type: string
+          nullable: true
     CreateKnowledgeBaseRequest:
       type: object
       properties:

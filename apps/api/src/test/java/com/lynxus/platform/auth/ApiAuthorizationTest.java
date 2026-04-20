@@ -17,6 +17,9 @@ import com.lynxus.platform.shared.logging.ApiLogContextFilter;
 import com.lynxus.platform.catalog.CatalogController;
 import com.lynxus.platform.catalog.CatalogDtos;
 import com.lynxus.platform.catalog.CatalogService;
+import com.lynxus.platform.event.PlatformEventController;
+import com.lynxus.platform.event.PlatformEventDtos;
+import com.lynxus.platform.event.PlatformEventService;
 import com.lynxus.platform.session.SessionRuntimeController;
 import com.lynxus.platform.session.SessionRuntimeDtos;
 import com.lynxus.platform.session.SessionRuntimeService;
@@ -143,10 +146,39 @@ class ApiAuthorizationTest {
         }
     }
 
+    @Test
+    void shouldRejectBusinessUserPlatformEventsQuery() throws Exception {
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(TestConfig.class, AuthSecurityConfiguration.class)) {
+            MockMvc mockMvc = mockMvc(context);
+
+            mockMvc.perform(get("/api/events").with(user("business")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.detail").value("Access is denied"));
+        }
+    }
+
+    @Test
+    void shouldAllowDeveloperPlatformEventsQuery() throws Exception {
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(TestConfig.class, AuthSecurityConfiguration.class)) {
+            PlatformEventService platformEventService = context.getBean(PlatformEventService.class);
+            when(platformEventService.listEvents(any(), any(), any(), any(), any())).thenReturn(new PlatformEventDtos.PlatformEventPageDto(List.of(), null));
+
+            MockMvc mockMvc = mockMvc(context);
+
+            mockMvc.perform(get("/api/events").with(user("developer")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+        }
+    }
+
     private MockMvc mockMvc(AnnotationConfigApplicationContext context) {
         FilterChainProxy securityFilter = new FilterChainProxy(context.getBeansOfType(SecurityFilterChain.class).values().stream().toList());
         return MockMvcBuilders
-            .standaloneSetup(context.getBean(CatalogController.class), context.getBean(SessionRuntimeController.class))
+            .standaloneSetup(
+                context.getBean(CatalogController.class),
+                context.getBean(SessionRuntimeController.class),
+                context.getBean(PlatformEventController.class)
+            )
             .setControllerAdvice(context.getBean(ApiExceptionHandler.class))
             .addFilters(securityFilter)
             .build();
@@ -166,6 +198,11 @@ class ApiAuthorizationTest {
         }
 
         @Bean
+        PlatformEventController platformEventController(PlatformEventService platformEventService) {
+            return new PlatformEventController(platformEventService);
+        }
+
+        @Bean
         CatalogService catalogService() {
             return mock(CatalogService.class);
         }
@@ -173,6 +210,11 @@ class ApiAuthorizationTest {
         @Bean
         SessionRuntimeService sessionRuntimeService() {
             return mock(SessionRuntimeService.class);
+        }
+
+        @Bean
+        PlatformEventService platformEventService() {
+            return mock(PlatformEventService.class);
         }
 
         @Bean

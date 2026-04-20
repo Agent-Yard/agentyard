@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
+import ObjectHistoryPanel from '../components/ObjectHistoryPanel.vue';
 import ObjectReferencePanel from '../components/ObjectReferencePanel.vue';
 import type {
   Assistant,
@@ -395,6 +396,13 @@ function normalizeText(value: string) {
           :object-id="currentPlaybook.id"
           :reload-key="`${catalogRevision}:${currentPlaybook.id}`"
           title="Playbook 引用分析"
+          style="margin-top: 16px"
+        />
+
+        <ObjectHistoryPanel
+          aggregate-type="PLAYBOOK"
+          :object-id="currentPlaybook.id"
+          :reload-key="`${catalogRevision}:${currentPlaybook.id}`"
           style="margin-top: 16px"
         />
       </a-card>

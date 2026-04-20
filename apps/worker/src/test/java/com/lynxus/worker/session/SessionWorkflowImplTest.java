@@ -43,6 +43,51 @@ import org.junit.jupiter.api.Test;
 
 class SessionWorkflowImplTest {
     @Test
+    void shouldAppendPlatformAuditEventsForSessionAndPlaybookRunTransitions() {
+        try (TestWorkflowEnvironment environment = TestWorkflowEnvironment.newInstance()) {
+            Worker worker = environment.newWorker("session-tests-platform-audit");
+            RecordingPersistenceActivities persistence = new RecordingPersistenceActivities();
+            worker.registerWorkflowImplementationTypes(SessionWorkflowImpl.class, PlaybookWorkflowImpl.class);
+            worker.registerActivitiesImplementations(new RunPlaybookAgentTurnActivities(), persistence, new NoopPlaybookNodeActivities());
+            environment.start();
+
+            SessionWorkflow workflow = environment.getWorkflowClient().newWorkflowStub(
+                SessionWorkflow.class,
+                WorkflowOptions.newBuilder()
+                    .setTaskQueue("session-tests-platform-audit")
+                    .setWorkflowId("session-1")
+                    .build()
+            );
+            WorkflowClient.start(
+                workflow::run,
+                startRequestForAgentActionsAndPolicy(
+                    List.of(AgentDecisionAction.RUN_PLAYBOOK, AgentDecisionAction.NO_REPLY),
+                    Duration.ofHours(1),
+                    Duration.ofMinutes(5),
+                    20_000
+                )
+            );
+
+            workflow.submitUserMessage(new UserMessage("msg-1", "customer-1", "start", Map.of()));
+            waitForEvent(environment, persistence, SessionEventType.PLAYBOOK_WAITING);
+
+            String activeRunId = workflow.currentSnapshot().activePlaybookRunId();
+            workflow.humanResume(new HumanResumeSignal("session-1", activeRunId, Map.of("approved", true)));
+            waitForEvent(environment, persistence, SessionEventType.PLAYBOOK_COMPLETED);
+
+            List<SessionPersistenceActivities.PlatformEventRecord> platformEvents = persistence.platformEvents();
+            assertTrue(platformEvents.stream().anyMatch(event -> "SESSION_EVENT_RECORDED".equals(event.eventType())));
+            assertEquals(
+                4,
+                platformEvents.stream().filter(event -> "PLAYBOOK_RUN_STATUS_CHANGED".equals(event.eventType())).count()
+            );
+            assertTrue(platformEvents.stream()
+                .filter(event -> "PLAYBOOK_RUN_STATUS_CHANGED".equals(event.eventType()))
+                .allMatch(event -> activeRunId.equals(event.aggregateId())));
+        }
+    }
+
+    @Test
     void drainingWorkflow_shouldEndAfterPlaybookCompletionWithoutOwnerReevaluation() {
         try (TestWorkflowEnvironment environment = TestWorkflowEnvironment.newInstance()) {
             Worker worker = environment.newWorker("session-tests-draining-playbook-completion");
@@ -624,6 +669,7 @@ class SessionWorkflowImplTest {
 
     private static final class RecordingPersistenceActivities implements SessionPersistenceActivities {
         private final List<SessionEvent> events = new CopyOnWriteArrayList<>();
+        private final List<PlatformEventRecord> platformEvents = new CopyOnWriteArrayList<>();
         private final ConcurrentMap<String, PlaybookRun> playbookRuns = new ConcurrentHashMap<>();
         private final List<String> operations = new CopyOnWriteArrayList<>();
 
@@ -639,12 +685,21 @@ class SessionWorkflowImplTest {
         }
 
         @Override
+        public void appendPlatformEvent(PlatformEventRecord event) {
+            platformEvents.add(event);
+        }
+
+        @Override
         public void savePlaybookRun(PlaybookRun playbookRun) {
             playbookRuns.put(playbookRun.runId(), playbookRun);
         }
 
         List<SessionEvent> events() {
             return new ArrayList<>(events);
+        }
+
+        List<PlatformEventRecord> platformEvents() {
+            return new ArrayList<>(platformEvents);
         }
 
         int firstOperationIndex(String operation) {

@@ -9,6 +9,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.lynxus.contracts.runtime.WorkflowContracts.ResourceType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
 import com.lynxus.contracts.runtime.WorkflowContracts.VersionStatus;
+import com.lynxus.platform.auth.AuthModels.AuthSource;
+import com.lynxus.platform.auth.AuthModels.PlatformUser;
+import com.lynxus.platform.auth.AuthModels.Role;
+import com.lynxus.platform.auth.AuthModels.UserStatus;
+import com.lynxus.platform.auth.CurrentUserResolver;
+import com.lynxus.platform.event.PlatformEventDtos.PlatformAggregateType;
+import com.lynxus.platform.event.PlatformEventRepository;
+import com.lynxus.platform.event.PlatformEventService;
 import com.lynxus.platform.knowledge.KnowledgeServiceClient;
 import com.lynxus.platform.knowledge.KnowledgeWorkflowGateway;
 import java.time.Instant;
@@ -17,6 +25,41 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class CatalogServiceTest {
+    @Test
+    void shouldRecordAssistantAndKnowledgeLifecycleEventsIntoPlatformLog() {
+        PlatformEventService platformEventService = new PlatformEventService(
+            new PlatformEventRepository.InMemoryPlatformEventRepository(),
+            testCurrentUserResolver()
+        );
+        CustomerOpsFixture fixture = customerOpsFixture(platformEventService);
+
+        List<String> assistantEventTypes = platformEventService.listEvents(
+            PlatformAggregateType.ASSISTANT,
+            fixture.assistantId(),
+            null,
+            50,
+            null
+        ).items().stream().map(item -> item.eventType()).toList();
+        List<String> knowledgeEventTypes = platformEventService.listEvents(
+            PlatformAggregateType.KNOWLEDGE_BASE,
+            fixture.knowledgeBaseId(),
+            null,
+            50,
+            null
+        ).items().stream().map(item -> item.eventType()).toList();
+
+        assertTrue(assistantEventTypes.contains("ASSISTANT_CREATED"));
+        assertTrue(assistantEventTypes.contains("ASSISTANT_UPDATED"));
+        assertTrue(assistantEventTypes.contains("ASSISTANT_RELEASE_PUBLISHED"));
+        assertTrue(knowledgeEventTypes.contains("KNOWLEDGE_BASE_CREATED"));
+        assertTrue(knowledgeEventTypes.contains("KNOWLEDGE_RELEASE_CREATED"));
+        assertTrue(knowledgeEventTypes.contains("KNOWLEDGE_RELEASE_PUBLISHED"));
+        assertTrue(platformEventService.listEvents(PlatformAggregateType.ASSISTANT, fixture.assistantId(), null, 1, null)
+            .items()
+            .stream()
+            .allMatch(item -> "user-test".equals(item.actorId())));
+    }
+
     @Test
     void shouldExposeEmptyCatalogSummaryWithoutSeededData() {
         CatalogService service = new CatalogService(
@@ -897,7 +940,16 @@ class CatalogServiceTest {
 
     @Test
     void shouldUpdateDraftResourceVersionInPlaceAndAllowDirectPublish() {
-        CatalogService catalogService = new CatalogService(new InMemoryCatalogRepository(), readySnapshotKnowledgeClient(), noopKnowledgeWorkflowGateway());
+        PlatformEventService platformEventService = new PlatformEventService(
+            new PlatformEventRepository.InMemoryPlatformEventRepository(),
+            testCurrentUserResolver()
+        );
+        CatalogService catalogService = new CatalogService(
+            new InMemoryCatalogRepository(),
+            readySnapshotKnowledgeClient(),
+            noopKnowledgeWorkflowGateway(),
+            platformEventService
+        );
         CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("运营域", "承载运营资源"));
         CatalogDtos.ResourceDto resource = catalogService.createResource(
             new CatalogDtos.CreateResourceRequest(
@@ -944,6 +996,16 @@ class CatalogServiceTest {
             .findFirst()
             .orElseThrow();
         assertEquals("直接发布的版本", reloaded.effectiveVersion().summary());
+
+        List<String> eventTypes = platformEventService.listEvents(
+            PlatformAggregateType.RESOURCE,
+            resource.id(),
+            null,
+            20,
+            null
+        ).items().stream().map(item -> item.eventType()).toList();
+        assertTrue(eventTypes.contains("RESOURCE_VERSION_UPDATED"));
+        assertTrue(eventTypes.contains("RESOURCE_VERSION_PUBLISHED"));
     }
 
     private static KnowledgeServiceClient readySnapshotKnowledgeClient() {
@@ -985,10 +1047,15 @@ class CatalogServiceTest {
     }
 
     private static CustomerOpsFixture customerOpsFixture() {
+        return customerOpsFixture(PlatformEventService.disabled());
+    }
+
+    private static CustomerOpsFixture customerOpsFixture(PlatformEventService platformEventService) {
         CatalogService service = new CatalogService(
             new InMemoryCatalogRepository(),
             readySnapshotKnowledgeClient(),
-            noopKnowledgeWorkflowGateway()
+            noopKnowledgeWorkflowGateway(),
+            platformEventService
         );
         CatalogDtos.BusinessDomainDto domain = service.createDomain(new CatalogDtos.CreateDomainRequest("客服运营域", "承载客服体验数据"));
         CatalogDtos.ScenarioDto scenario = service.createScenario(
@@ -1179,5 +1246,22 @@ class CatalogServiceTest {
         String knowledgeBaseId,
         String toolResourceId
     ) {
+    }
+
+    private static CurrentUserResolver testCurrentUserResolver() {
+        return () -> new PlatformUser(
+            "user-test",
+            "tester",
+            "Tester",
+            "tester@example.com",
+            AuthSource.LOCAL_BOOTSTRAP,
+            null,
+            null,
+            UserStatus.ACTIVE,
+            Instant.parse("2026-04-01T00:00:00Z"),
+            Instant.parse("2026-04-01T00:00:00Z"),
+            Instant.parse("2026-04-01T00:00:00Z"),
+            List.of(Role.DEVELOPER)
+        );
     }
 }

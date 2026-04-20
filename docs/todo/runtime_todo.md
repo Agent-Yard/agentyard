@@ -78,21 +78,21 @@
 2. 为 playbook run 增加按状态、waiting reason 的快捷筛选
 3. 在 UI 中补“仅看用户可见消息 / 仅看系统事件 / 仅看 playbook 事件”视图
 
-## 4. 审计账本与运行投影仍未分层
+## 4. 审计账本与运行投影分层已落地
 
 当前状态：
 
-- `session_runtime_event` 已经是 append-only 时间线
-- 但它当前仍承担运行查询主视图，而不是完整审计账本
+- 已新增独立 `platform_event` 审计账本，并通过 `GET /api/events` 提供统一分页查询入口
+- `session_runtime_event` 继续承担运行态时间线查询主视图，`platform_event` 单独承载跨对象审计
+- `session event / playbook run` 状态变化与控制面关键治理操作已经落入统一 audit 模型
 
-当前缺口：
+保留边界：
 
-1. 没有统一的跨对象审计查询入口
-2. 没有把 catalog 变更和 session runtime 事件放到统一 audit 模型下
-3. 运维告警、失败统计和合规追踪仍主要依赖日志而不是事件查询
+1. 本期仍不做 event sourcing，业务投影继续由运行代码显式维护
+2. 审计 payload 首版只保留定位与追责字段，不保留完整对象快照
+3. 运行会话页仍使用 runtime timeline；对象治理页新增统一“操作历史”面板
 
-下一步：
+后续增量：
 
-1. 在全局事件日志方案里把 `session event / playbook run` 纳入统一审计边界
-2. 为关键运行事件补 actor、来源、聚合键和查询接口
-3. 明确“运行投影”和“审计事件”的保留策略与职责分工
+1. 若后续引入归档/恢复，把 archive 类事件补入同一账本
+2. 审计查询与历史列表若增长明显，再补更强的筛选与聚合能力

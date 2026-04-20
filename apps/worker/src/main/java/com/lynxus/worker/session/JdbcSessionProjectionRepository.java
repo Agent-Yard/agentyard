@@ -93,6 +93,24 @@ public class JdbcSessionProjectionRepository {
         );
     }
 
+    public void appendPlatformEvent(SessionPersistenceActivities.PlatformEventRecord event) {
+        jdbcTemplate.update(
+            """
+                insert into platform_event (
+                    id, event_type, aggregate_type, aggregate_id, actor_id, payload, occurred_at
+                ) values (?, ?, ?, ?, ?, cast(? as jsonb), ?)
+                on conflict (id) do nothing
+                """,
+            event.id(),
+            event.eventType(),
+            event.aggregateType(),
+            event.aggregateId(),
+            event.actorId(),
+            writeJson(event.payload()),
+            toTimestamp(event.occurredAt())
+        );
+    }
+
     public void savePlaybookRun(PlaybookRun playbookRun) {
         jdbcTemplate.update(
             """

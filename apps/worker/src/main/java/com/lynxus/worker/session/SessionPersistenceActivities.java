@@ -14,6 +14,8 @@ public interface SessionPersistenceActivities {
 
     void appendEvent(SessionEvent event);
 
+    void appendPlatformEvent(PlatformEventRecord event);
+
     void savePlaybookRun(PlaybookRun playbookRun);
 
     record SessionRecord(
@@ -40,6 +42,20 @@ public interface SessionPersistenceActivities {
     ) {
         public SessionRecord {
             sharedState = immutableObjectMap(sharedState);
+        }
+    }
+
+    record PlatformEventRecord(
+        String id,
+        String eventType,
+        String aggregateType,
+        String aggregateId,
+        String actorId,
+        Map<String, Object> payload,
+        Instant occurredAt
+    ) {
+        public PlatformEventRecord {
+            payload = immutableObjectMap(payload);
         }
     }
 

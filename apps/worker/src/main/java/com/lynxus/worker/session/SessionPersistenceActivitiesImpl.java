@@ -23,6 +23,11 @@ public class SessionPersistenceActivitiesImpl implements SessionPersistenceActiv
     }
 
     @Override
+    public void appendPlatformEvent(PlatformEventRecord event) {
+        repository.appendPlatformEvent(event);
+    }
+
+    @Override
     public void savePlaybookRun(PlaybookRun playbookRun) {
         repository.savePlaybookRun(playbookRun);
     }

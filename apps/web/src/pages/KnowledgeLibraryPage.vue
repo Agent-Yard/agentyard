@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { message } from 'ant-design-vue';
+import ObjectHistoryPanel from '../components/ObjectHistoryPanel.vue';
 import ObjectReferencePanel from '../components/ObjectReferencePanel.vue';
 import { hasActiveKnowledgeOperations, knowledgeSourceLabel, knowledgeStatusColor } from './knowledgeWorkspace';
 import { api } from '../services/api';
@@ -738,6 +739,14 @@ async function handlePreviewRetrieval() {
             <ObjectReferencePanel
               :object-id="selectedKnowledgeBase?.id"
               object-type="KNOWLEDGE_BASE"
+              :reload-key="catalogRevision"
+            />
+          </a-tab-pane>
+
+          <a-tab-pane key="history" tab="操作历史">
+            <ObjectHistoryPanel
+              :object-id="selectedKnowledgeBase?.id"
+              aggregate-type="KNOWLEDGE_BASE"
               :reload-key="catalogRevision"
             />
           </a-tab-pane>

@@ -30,6 +30,8 @@ import type {
   LogoutResponse,
   ObjectReferenceAnalysis,
   Playbook,
+  PlatformAggregateType,
+  PlatformEventPage,
   Resource,
   ResourceVersion,
   ReferenceObjectType,
@@ -122,6 +124,32 @@ export const api = {
     request<ObjectReferenceAnalysis>(`/catalog/references/${objectType}/${objectId}`),
   getDeletionImpactPreview: (objectType: ReferenceObjectType, objectId: string) =>
     request<DeletionImpactPreview>(`/catalog/deletion-preview/${objectType}/${objectId}`),
+  listPlatformEvents: (params: {
+    aggregateType?: PlatformAggregateType;
+    aggregateId?: string;
+    since?: string;
+    limit?: number;
+    cursor?: string;
+  }) => {
+    const query = new URLSearchParams();
+    if (params.aggregateType) {
+      query.set('aggregateType', params.aggregateType);
+    }
+    if (params.aggregateId) {
+      query.set('aggregateId', params.aggregateId);
+    }
+    if (params.since) {
+      query.set('since', params.since);
+    }
+    if (params.limit != null) {
+      query.set('limit', String(params.limit));
+    }
+    if (params.cursor) {
+      query.set('cursor', params.cursor);
+    }
+    const suffix = query.size > 0 ? `?${query.toString()}` : '';
+    return request<PlatformEventPage>(`/events${suffix}`);
+  },
   getRuntimeSessions: () => request<SessionRuntimeSession[]>('/session-runtime/sessions'),
   getRuntimeSessionDetail: (sessionId: string) =>
     request<SessionRuntimeDetail>(`/session-runtime/sessions/${sessionId}`),

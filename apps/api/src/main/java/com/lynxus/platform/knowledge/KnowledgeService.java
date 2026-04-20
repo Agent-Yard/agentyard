@@ -4,6 +4,8 @@ import static com.lynxus.platform.catalog.CatalogDtos.*;
 
 import com.lynxus.platform.catalog.CatalogRepository;
 import com.lynxus.platform.catalog.ObjectReferenceAnalyzer;
+import com.lynxus.platform.event.PlatformEventDtos.PlatformAggregateType;
+import com.lynxus.platform.event.PlatformEventService;
 import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
 import com.lynxus.contracts.runtime.WorkflowContracts.VersionStatus;
 import java.time.Instant;
@@ -23,6 +25,7 @@ public class KnowledgeService {
     private final CatalogRepository catalogRepository;
     private final KnowledgeServiceClient knowledgeServiceClient;
     private final KnowledgeWorkflowGateway knowledgeWorkflowGateway;
+    private final PlatformEventService platformEventService;
     private boolean initialized;
     private final List<KnowledgeBaseDto> knowledgeBases = new ArrayList<>();
     private final Map<String, List<KnowledgeReleaseDto>> knowledgeReleases = new LinkedHashMap<>();
@@ -32,7 +35,8 @@ public class KnowledgeService {
             new InMemoryKnowledgeRepository(),
             new com.lynxus.platform.catalog.InMemoryCatalogRepository(),
             new KnowledgeServiceClient("http://127.0.0.1:8091", "in-memory-internal-token"),
-            new NoOpKnowledgeWorkflowGateway()
+            new NoOpKnowledgeWorkflowGateway(),
+            PlatformEventService.disabled()
         );
     }
 
@@ -41,12 +45,23 @@ public class KnowledgeService {
         KnowledgeRepository repository,
         CatalogRepository catalogRepository,
         KnowledgeServiceClient knowledgeServiceClient,
-        KnowledgeWorkflowGateway knowledgeWorkflowGateway
+        KnowledgeWorkflowGateway knowledgeWorkflowGateway,
+        PlatformEventService platformEventService
     ) {
         this.repository = repository;
         this.catalogRepository = catalogRepository;
         this.knowledgeServiceClient = knowledgeServiceClient;
         this.knowledgeWorkflowGateway = knowledgeWorkflowGateway;
+        this.platformEventService = platformEventService;
+    }
+
+    public KnowledgeService(
+        KnowledgeRepository repository,
+        CatalogRepository catalogRepository,
+        KnowledgeServiceClient knowledgeServiceClient,
+        KnowledgeWorkflowGateway knowledgeWorkflowGateway
+    ) {
+        this(repository, catalogRepository, knowledgeServiceClient, knowledgeWorkflowGateway, PlatformEventService.disabled());
     }
 
     public List<KnowledgeBaseDto> listKnowledgeBases() {
@@ -92,6 +107,7 @@ public class KnowledgeService {
         );
         knowledgeBases.add(knowledgeBase);
         persistState();
+        recordKnowledgeEvent("KNOWLEDGE_BASE_CREATED", PlatformAggregateType.KNOWLEDGE_BASE, knowledgeBase.id(), Map.of("name", knowledgeBase.name()));
         return toKnowledgeBaseView(knowledgeBase);
     }
 
@@ -115,6 +131,7 @@ public class KnowledgeService {
         );
         replace(knowledgeBases, KnowledgeBaseDto::id, updated);
         persistState();
+        recordKnowledgeEvent("KNOWLEDGE_BASE_UPDATED", PlatformAggregateType.KNOWLEDGE_BASE, updated.id(), Map.of("name", updated.name()));
         return toKnowledgeBaseView(updated);
     }
 
@@ -128,6 +145,12 @@ public class KnowledgeService {
         knowledgeBases.removeIf(item -> item.id().equals(knowledgeBaseId));
         knowledgeReleases.remove(knowledgeBaseId);
         persistState();
+        recordKnowledgeEvent(
+            "KNOWLEDGE_BASE_DELETED",
+            PlatformAggregateType.KNOWLEDGE_BASE,
+            existing.id(),
+            Map.of("name", existing.name(), "deletedObjectId", existing.id(), "deletedObjectName", existing.name())
+        );
         return existing;
     }
 
@@ -137,6 +160,12 @@ public class KnowledgeService {
         knowledgeBases.removeIf(item -> item.id().equals(knowledgeBaseId));
         knowledgeReleases.remove(knowledgeBaseId);
         persistState();
+        recordKnowledgeEvent(
+            "KNOWLEDGE_BASE_DELETED",
+            PlatformAggregateType.KNOWLEDGE_BASE,
+            existing.id(),
+            Map.of("name", existing.name(), "deletedObjectId", existing.id(), "deletedObjectName", existing.name())
+        );
         return existing;
     }
 
@@ -186,6 +215,32 @@ public class KnowledgeService {
         updated.add(created);
         knowledgeReleases.put(knowledgeBaseId, updated);
         persistState();
+        recordKnowledgeEvent(
+            "KNOWLEDGE_RELEASE_CREATED",
+            PlatformAggregateType.KNOWLEDGE_BASE,
+            knowledgeBaseId,
+            Map.of(
+                "name", findKnowledgeBase(knowledgeBaseId).name(),
+                "releaseId", created.id(),
+                "version", created.version(),
+                "status", created.status().name(),
+                "snapshotId", created.snapshotId()
+            )
+        );
+        if (created.status() == VersionStatus.PUBLISHED) {
+            recordKnowledgeEvent(
+                "KNOWLEDGE_RELEASE_PUBLISHED",
+                PlatformAggregateType.KNOWLEDGE_BASE,
+                knowledgeBaseId,
+                Map.of(
+                    "name", findKnowledgeBase(knowledgeBaseId).name(),
+                    "releaseId", created.id(),
+                    "version", created.version(),
+                    "status", created.status().name(),
+                    "snapshotId", created.snapshotId()
+                )
+            );
+        }
         return created;
     }
 
@@ -209,7 +264,20 @@ public class KnowledgeService {
             .toList();
         knowledgeReleases.put(knowledgeBaseId, updated);
         persistState();
-        return updated.stream().filter(item -> item.id().equals(releaseId)).findFirst().orElseThrow();
+        KnowledgeReleaseDto publishedRelease = updated.stream().filter(item -> item.id().equals(releaseId)).findFirst().orElseThrow();
+        recordKnowledgeEvent(
+            "KNOWLEDGE_RELEASE_PUBLISHED",
+            PlatformAggregateType.KNOWLEDGE_BASE,
+            knowledgeBaseId,
+            Map.of(
+                "name", findKnowledgeBase(knowledgeBaseId).name(),
+                "releaseId", publishedRelease.id(),
+                "version", publishedRelease.version(),
+                "status", publishedRelease.status().name(),
+                "snapshotId", publishedRelease.snapshotId()
+            )
+        );
+        return publishedRelease;
     }
 
     public KnowledgeReleaseDto deleteKnowledgeRelease(String knowledgeBaseId, String releaseId) {
@@ -226,6 +294,18 @@ public class KnowledgeService {
                 .toList()
         );
         persistState();
+        recordKnowledgeEvent(
+            "KNOWLEDGE_RELEASE_DELETED",
+            PlatformAggregateType.KNOWLEDGE_BASE,
+            knowledgeBaseId,
+            Map.of(
+                "name", findKnowledgeBase(knowledgeBaseId).name(),
+                "releaseId", existing.id(),
+                "version", existing.version(),
+                "status", existing.status().name(),
+                "snapshotId", existing.snapshotId()
+            )
+        );
         return existing;
     }
 
@@ -450,6 +530,10 @@ public class KnowledgeService {
 
     private void persistState() {
         repository.save(new KnowledgeRepository.KnowledgeSnapshot(List.copyOf(knowledgeBases), Map.copyOf(knowledgeReleases)));
+    }
+
+    private void recordKnowledgeEvent(String eventType, PlatformAggregateType aggregateType, String aggregateId, Map<String, Object> payload) {
+        platformEventService.recordControlEvent(eventType, aggregateType, aggregateId, payload);
     }
 
     private CatalogRepository.CatalogSnapshot catalogSnapshot() {

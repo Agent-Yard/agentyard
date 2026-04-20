@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
+import ObjectHistoryPanel from '../components/ObjectHistoryPanel.vue';
 import ObjectReferencePanel from '../components/ObjectReferencePanel.vue';
 import ResourceVersionConfigEditor from '../components/ResourceVersionConfigEditor.vue';
 import ResourceVersionConfigSummary from '../components/ResourceVersionConfigSummary.vue';
@@ -328,6 +329,14 @@ function submitUpdateDraftVersion() {
               v-if="selectedResource"
               style="margin-top: 16px"
               object-type="RESOURCE"
+              :object-id="selectedResource.id"
+              :reload-key="catalogRevision"
+            />
+
+            <ObjectHistoryPanel
+              v-if="selectedResource"
+              style="margin-top: 16px"
+              aggregate-type="RESOURCE"
               :object-id="selectedResource.id"
               :reload-key="catalogRevision"
             />

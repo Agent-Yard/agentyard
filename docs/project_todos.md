@@ -20,15 +20,15 @@
 
 ### 2.1 平台事件日志
 
-现状：`session_runtime_event` 已经是 append-only 时间线，但它当前仍承担运行查询主视图，而不是完整审计账本；catalog 控制面变更也没有统一事件记录。
+状态：已完成。已新增独立 `platform_event` 审计账本、`GET /api/events` 分页查询接口，以及控制台对象详情页“操作历史”面板；`session_runtime_event / playbook_run` 已纳入统一审计边界，但仍保留运行投影职责。
 
-目标：
+本次落地：
 
 1. 新增 `platform_event` 表（append-only）：`id / event_type / aggregate_type / aggregate_id / actor_id / payload / occurred_at`
-2. 控制面关键操作写事件：创建、更新、删除、发布、归档
+2. 控制面关键操作写事件：创建、更新、删除、发布
 3. 把 `session_runtime_event / playbook_run` 状态变化纳入统一审计边界（运行投影与审计事件分层）
 4. 暂不做 event sourcing（投影仍由业务代码维护），事件日志只用于审计和排障
-5. 提供 `GET /api/events?aggregateType=&aggregateId=&since=` 查询接口
+5. 提供 `GET /api/events?aggregateType=&aggregateId=&since=&limit=&cursor=` 查询接口
 6. 控制台对象详情页增加“操作历史”面板
 
 为什么不做 event sourcing：当前阶段投影模型够用，event sourcing 的复杂度不值得。但 append-only 事件日志几乎零成本，却能解决审计、排障、合规三大问题。

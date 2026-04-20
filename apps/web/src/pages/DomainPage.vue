@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
+import ObjectHistoryPanel from '../components/ObjectHistoryPanel.vue';
 import ObjectReferencePanel from '../components/ObjectReferencePanel.vue';
 import type { BusinessDomain, CreateDomainPayload, UpdateDomainPayload } from '../types';
 
@@ -199,6 +200,14 @@ function submitUpdate() {
         v-if="current"
         style="margin-top: 16px"
         object-type="DOMAIN"
+        :object-id="current.id"
+        :reload-key="catalogRevision"
+      />
+
+      <ObjectHistoryPanel
+        v-if="current"
+        style="margin-top: 16px"
+        aggregate-type="DOMAIN"
         :object-id="current.id"
         :reload-key="catalogRevision"
       />

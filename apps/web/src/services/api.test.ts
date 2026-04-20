@@ -166,6 +166,36 @@ describe('api client', () => {
     );
   });
 
+  it('queries platform events with aggregate filters and cursor pagination', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        data: {
+          items: [],
+          nextCursor: 'cursor-2',
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.listPlatformEvents({
+      aggregateType: 'ASSISTANT',
+      aggregateId: 'assistant-1',
+      limit: 20,
+      cursor: 'cursor-1',
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/events?aggregateType=ASSISTANT&aggregateId=assistant-1&limit=20&cursor=cursor-1',
+      expect.objectContaining({
+        credentials: 'include',
+        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
+      }),
+    );
+  });
+
   it('posts logout through the authenticated session endpoint', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({

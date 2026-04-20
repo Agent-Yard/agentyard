@@ -2,6 +2,8 @@ package com.lynxus.platform.catalog;
 
 import static com.lynxus.platform.catalog.CatalogDtos.*;
 
+import com.lynxus.platform.event.PlatformEventDtos.PlatformAggregateType;
+import com.lynxus.platform.event.PlatformEventService;
 import com.lynxus.platform.knowledge.InMemoryKnowledgeRepository;
 import com.lynxus.platform.knowledge.KnowledgeService;
 import com.lynxus.platform.knowledge.KnowledgeServiceClient;
@@ -31,6 +33,7 @@ import org.springframework.stereotype.Service;
 public class CatalogService {
     private final CatalogRepository repository;
     private final KnowledgeService knowledgeService;
+    private final PlatformEventService platformEventService;
     private boolean initialized;
     private final List<BusinessDomainDto> domains = new ArrayList<>();
     private final List<ScenarioDto> scenarios = new ArrayList<>();
@@ -46,28 +49,45 @@ public class CatalogService {
             new InMemoryCatalogRepository(),
             new InMemoryKnowledgeRepository(),
             new KnowledgeServiceClient("http://127.0.0.1:8091", "in-memory-internal-token"),
-            new NoOpKnowledgeWorkflowGateway()
+            new NoOpKnowledgeWorkflowGateway(),
+            PlatformEventService.disabled()
         );
     }
 
-    @Autowired
     public CatalogService(CatalogRepository repository, KnowledgeService knowledgeService) {
+        this(repository, knowledgeService, PlatformEventService.disabled());
+    }
+
+    @Autowired
+    public CatalogService(CatalogRepository repository, KnowledgeService knowledgeService, PlatformEventService platformEventService) {
         this.repository = repository;
         this.knowledgeService = knowledgeService;
+        this.platformEventService = platformEventService;
     }
 
     public CatalogService(CatalogRepository repository, KnowledgeServiceClient knowledgeServiceClient, KnowledgeWorkflowGateway knowledgeWorkflowGateway) {
-        this(repository, new InMemoryKnowledgeRepository(), knowledgeServiceClient, knowledgeWorkflowGateway);
+        this(repository, new InMemoryKnowledgeRepository(), knowledgeServiceClient, knowledgeWorkflowGateway, PlatformEventService.disabled());
+    }
+
+    public CatalogService(
+        CatalogRepository repository,
+        KnowledgeServiceClient knowledgeServiceClient,
+        KnowledgeWorkflowGateway knowledgeWorkflowGateway,
+        PlatformEventService platformEventService
+    ) {
+        this(repository, new InMemoryKnowledgeRepository(), knowledgeServiceClient, knowledgeWorkflowGateway, platformEventService);
     }
 
     CatalogService(
         CatalogRepository repository,
         com.lynxus.platform.knowledge.KnowledgeRepository knowledgeRepository,
         KnowledgeServiceClient knowledgeServiceClient,
-        KnowledgeWorkflowGateway knowledgeWorkflowGateway
+        KnowledgeWorkflowGateway knowledgeWorkflowGateway,
+        PlatformEventService platformEventService
     ) {
         this.repository = repository;
-        this.knowledgeService = new KnowledgeService(knowledgeRepository, repository, knowledgeServiceClient, knowledgeWorkflowGateway);
+        this.platformEventService = platformEventService;
+        this.knowledgeService = new KnowledgeService(knowledgeRepository, repository, knowledgeServiceClient, knowledgeWorkflowGateway, platformEventService);
     }
 
     public KnowledgeService knowledgeService() {
@@ -147,6 +167,7 @@ public class CatalogService {
         );
         domains.add(domain);
         persistState();
+        recordCatalogEvent("DOMAIN_CREATED", PlatformAggregateType.DOMAIN, domain.id(), Map.of("name", domain.name()));
         return toDomainView(domain);
     }
 
@@ -165,6 +186,7 @@ public class CatalogService {
         );
         replace(domains, BusinessDomainDto::id, updated);
         persistState();
+        recordCatalogEvent("DOMAIN_UPDATED", PlatformAggregateType.DOMAIN, updated.id(), Map.of("name", updated.name()));
         return toDomainView(updated);
     }
 
@@ -177,6 +199,12 @@ public class CatalogService {
         }
         domains.removeIf(item -> item.id().equals(domainId));
         persistState();
+        recordCatalogEvent(
+            "DOMAIN_DELETED",
+            PlatformAggregateType.DOMAIN,
+            existing.id(),
+            Map.of("name", existing.name(), "deletedObjectId", existing.id(), "deletedObjectName", existing.name())
+        );
         return toDomainView(existing);
     }
 
@@ -209,6 +237,7 @@ public class CatalogService {
         );
         scenarios.add(scenario);
         persistState();
+        recordCatalogEvent("SCENARIO_CREATED", PlatformAggregateType.SCENARIO, scenario.id(), Map.of("name", scenario.name()));
         return toScenarioView(scenario);
     }
 
@@ -227,6 +256,7 @@ public class CatalogService {
         );
         replace(scenarios, ScenarioDto::id, updated);
         persistState();
+        recordCatalogEvent("SCENARIO_UPDATED", PlatformAggregateType.SCENARIO, updated.id(), Map.of("name", updated.name()));
         return toScenarioView(updated);
     }
 
@@ -239,6 +269,12 @@ public class CatalogService {
         }
         scenarios.removeIf(item -> item.id().equals(scenarioId));
         persistState();
+        recordCatalogEvent(
+            "SCENARIO_DELETED",
+            PlatformAggregateType.SCENARIO,
+            existing.id(),
+            Map.of("name", existing.name(), "deletedObjectId", existing.id(), "deletedObjectName", existing.name())
+        );
         return toScenarioView(existing);
     }
 
@@ -267,6 +303,7 @@ public class CatalogService {
         );
         assistants.add(assistant);
         persistState();
+        recordCatalogEvent("ASSISTANT_CREATED", PlatformAggregateType.ASSISTANT, assistant.id(), Map.of("name", assistant.name()));
         return toAssistantView(assistant);
     }
 
@@ -327,11 +364,26 @@ public class CatalogService {
         if (effectiveStatus == VersionStatus.PUBLISHED) {
             ensureAssistantReadyForPublication(updated);
         }
+        AssistantReleaseDto publishedRelease = null;
         replace(assistants, AssistantDto::id, updated);
         if (effectiveStatus == VersionStatus.PUBLISHED) {
-            createAssistantRelease(updated.id(), version.version(), VersionStatus.PUBLISHED);
+            publishedRelease = createAssistantRelease(updated.id(), version.version(), VersionStatus.PUBLISHED);
         }
         persistState();
+        recordCatalogEvent("ASSISTANT_UPDATED", PlatformAggregateType.ASSISTANT, updated.id(), Map.of("name", updated.name()));
+        if (publishedRelease != null) {
+            recordCatalogEvent(
+                "ASSISTANT_RELEASE_PUBLISHED",
+                PlatformAggregateType.ASSISTANT,
+                updated.id(),
+                Map.of(
+                    "name", updated.name(),
+                    "releaseId", publishedRelease.id(),
+                    "version", publishedRelease.releaseVersion(),
+                    "status", publishedRelease.status().name()
+                )
+            );
+        }
         return toAssistantView(updated);
     }
 
@@ -347,6 +399,12 @@ public class CatalogService {
         assistants.removeIf(item -> item.id().equals(assistantId));
         assistantReleases.remove(assistantId);
         persistState();
+        recordCatalogEvent(
+            "ASSISTANT_DELETED",
+            PlatformAggregateType.ASSISTANT,
+            deleted.id(),
+            Map.of("name", deleted.name(), "deletedObjectId", deleted.id(), "deletedObjectName", deleted.name())
+        );
         return deleted;
     }
 
@@ -384,6 +442,7 @@ public class CatalogService {
             validateAssistantOwnerConfiguration(assistant);
         }
         persistState();
+        recordCatalogEvent("AGENT_CREATED", PlatformAggregateType.AGENT, agent.id(), Map.of("name", agent.name()));
         return agent;
     }
 
@@ -409,6 +468,7 @@ public class CatalogService {
             validateAssistantOwnerConfiguration(assistant);
         }
         persistState();
+        recordCatalogEvent("AGENT_UPDATED", PlatformAggregateType.AGENT, updated.id(), Map.of("name", updated.name()));
         return updated;
     }
 
@@ -422,6 +482,12 @@ public class CatalogService {
         agents.removeIf(item -> item.id().equals(agentId));
         clearDeletedPrimaryAgent(existing.assistantId(), agentId);
         persistState();
+        recordCatalogEvent(
+            "AGENT_DELETED",
+            PlatformAggregateType.AGENT,
+            existing.id(),
+            Map.of("name", existing.name(), "deletedObjectId", existing.id(), "deletedObjectName", existing.name())
+        );
         return existing;
     }
 
@@ -468,6 +534,7 @@ public class CatalogService {
         validatePlaybookDefinition(playbook);
         playbooks.add(playbook);
         persistState();
+        recordCatalogEvent("PLAYBOOK_CREATED", PlatformAggregateType.PLAYBOOK, playbook.id(), Map.of("name", playbook.name()));
         return normalizePlaybook(playbook);
     }
 
@@ -491,6 +558,7 @@ public class CatalogService {
         validatePlaybookDefinition(updated);
         replace(playbooks, PlaybookDto::id, updated);
         persistState();
+        recordCatalogEvent("PLAYBOOK_UPDATED", PlatformAggregateType.PLAYBOOK, updated.id(), Map.of("name", updated.name()));
         return normalizePlaybook(updated);
     }
 
@@ -503,6 +571,12 @@ public class CatalogService {
         }
         playbooks.removeIf(item -> item.id().equals(playbookId));
         persistState();
+        recordCatalogEvent(
+            "PLAYBOOK_DELETED",
+            PlatformAggregateType.PLAYBOOK,
+            existing.id(),
+            Map.of("name", existing.name(), "deletedObjectId", existing.id(), "deletedObjectName", existing.name())
+        );
         return normalizePlaybook(existing);
     }
 
@@ -534,6 +608,7 @@ public class CatalogService {
                 ? new CreateResourceVersionRequest("初始版本", VersionStatus.DRAFT, defaultConfiguration(resource.type()))
                 : normalizeInitialVersionRequest(resource.type(), request.initialVersion())
         );
+        recordCatalogEvent("RESOURCE_CREATED", PlatformAggregateType.RESOURCE, resource.id(), Map.of("name", resource.name()));
         return toResourceView(resource);
     }
 
@@ -565,6 +640,7 @@ public class CatalogService {
         );
         replace(resources, ResourceDto::id, updated);
         persistState();
+        recordCatalogEvent("RESOURCE_UPDATED", PlatformAggregateType.RESOURCE, updated.id(), Map.of("name", updated.name()));
         return toResourceView(updated);
     }
 
@@ -606,6 +682,20 @@ public class CatalogService {
         existingVersions.add(created);
         resourceVersions.put(resourceId, existingVersions);
         persistState();
+        recordCatalogEvent(
+            "RESOURCE_VERSION_CREATED",
+            PlatformAggregateType.RESOURCE,
+            resource.id(),
+            Map.of("name", resource.name(), "versionId", created.id(), "version", created.version(), "status", created.status().name())
+        );
+        if (created.status() == VersionStatus.PUBLISHED) {
+            recordCatalogEvent(
+                "RESOURCE_VERSION_PUBLISHED",
+                PlatformAggregateType.RESOURCE,
+                resource.id(),
+                Map.of("name", resource.name(), "versionId", created.id(), "version", created.version(), "status", created.status().name())
+            );
+        }
         return toResourceVersionDto(created);
     }
 
@@ -662,11 +752,36 @@ public class CatalogService {
             .toList();
         resourceVersions.put(resourceId, updatedVersions);
         persistState();
-        return updatedVersions.stream()
+        ResourceVersionDto updatedVersion = updatedVersions.stream()
             .filter(item -> item.id().equals(versionId))
             .map(this::toResourceVersionDto)
             .findFirst()
             .orElseThrow();
+        recordCatalogEvent(
+            "RESOURCE_VERSION_UPDATED",
+            PlatformAggregateType.RESOURCE,
+            resource.id(),
+            Map.of(
+                "name", resource.name(),
+                "versionId", updatedVersion.id(),
+                "version", updatedVersion.version(),
+                "status", updatedVersion.status().name()
+            )
+        );
+        if (updatedVersion.status() == VersionStatus.PUBLISHED) {
+            recordCatalogEvent(
+                "RESOURCE_VERSION_PUBLISHED",
+                PlatformAggregateType.RESOURCE,
+                resource.id(),
+                Map.of(
+                    "name", resource.name(),
+                    "versionId", updatedVersion.id(),
+                    "version", updatedVersion.version(),
+                    "status", updatedVersion.status().name()
+                )
+            );
+        }
+        return updatedVersion;
     }
 
     public ResourceVersionDto publishResourceVersion(String resourceId, String versionId) {
@@ -689,11 +804,23 @@ public class CatalogService {
             .toList();
         resourceVersions.put(resourceId, updatedVersions);
         persistState();
-        return updatedVersions.stream()
+        ResourceVersionDto publishedVersion = updatedVersions.stream()
             .filter(item -> item.id().equals(versionId))
             .map(this::toResourceVersionDto)
             .findFirst()
             .orElseThrow();
+        recordCatalogEvent(
+            "RESOURCE_VERSION_PUBLISHED",
+            PlatformAggregateType.RESOURCE,
+            resource.id(),
+            Map.of(
+                "name", resource.name(),
+                "versionId", publishedVersion.id(),
+                "version", publishedVersion.version(),
+                "status", publishedVersion.status().name()
+            )
+        );
+        return publishedVersion;
     }
 
     public ResourceVersionDto deleteResourceVersion(String resourceId, String versionId) {
@@ -717,6 +844,12 @@ public class CatalogService {
             .toList();
         resourceVersions.put(resourceId, updatedVersions);
         persistState();
+        recordCatalogEvent(
+            "RESOURCE_VERSION_DELETED",
+            PlatformAggregateType.RESOURCE,
+            resource.id(),
+            Map.of("name", resource.name(), "versionId", version.id(), "version", version.version(), "status", version.status().name())
+        );
         return version;
     }
 
@@ -783,6 +916,12 @@ public class CatalogService {
         resources.removeIf(item -> item.id().equals(resourceId));
         resourceVersions.remove(resourceId);
         persistState();
+        recordCatalogEvent(
+            "RESOURCE_DELETED",
+            PlatformAggregateType.RESOURCE,
+            deleted.id(),
+            Map.of("name", deleted.name(), "deletedObjectId", deleted.id(), "deletedObjectName", deleted.name())
+        );
         return deleted;
     }
 
@@ -869,6 +1008,10 @@ public class CatalogService {
         restore(repository.load());
         initialized = true;
         persistState(); // backfill reference projection tables
+    }
+
+    private void recordCatalogEvent(String eventType, PlatformAggregateType aggregateType, String aggregateId, Map<String, Object> payload) {
+        platformEventService.recordControlEvent(eventType, aggregateType, aggregateId, payload);
     }
 
     private BusinessDomainDto toDomainView(BusinessDomainDto domain) {

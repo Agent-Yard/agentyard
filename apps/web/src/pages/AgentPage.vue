@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
+import ObjectHistoryPanel from '../components/ObjectHistoryPanel.vue';
 import ObjectReferencePanel from '../components/ObjectReferencePanel.vue';
 import type {
   Agent,
@@ -486,6 +487,14 @@ function submitSave() {
         v-if="currentAgent"
         style="margin-top: 16px"
         object-type="AGENT"
+        :object-id="currentAgent.id"
+        :reload-key="catalogRevision"
+      />
+
+      <ObjectHistoryPanel
+        v-if="currentAgent"
+        style="margin-top: 16px"
+        aggregate-type="AGENT"
         :object-id="currentAgent.id"
         :reload-key="catalogRevision"
       />

@@ -5,6 +5,16 @@ export type ShareScope = 'PRIVATE' | 'DOMAIN_SHARED';
 export type ResourceOwnerType = 'DOMAIN' | 'ASSISTANT';
 export type VersionStatus = 'DRAFT' | 'PUBLISHED';
 export type ReferenceObjectType = 'DOMAIN' | 'SCENARIO' | 'ASSISTANT' | 'PLAYBOOK' | 'AGENT' | 'RESOURCE' | 'KNOWLEDGE_BASE';
+export type PlatformAggregateType =
+  | 'DOMAIN'
+  | 'SCENARIO'
+  | 'ASSISTANT'
+  | 'AGENT'
+  | 'PLAYBOOK'
+  | 'RESOURCE'
+  | 'KNOWLEDGE_BASE'
+  | 'SESSION'
+  | 'PLAYBOOK_RUN';
 export type ReferenceRelationMode = 'DIRECT' | 'INDIRECT';
 export type ReferenceImpactLevel = 'BLOCKS_DELETION' | 'ADVISORY';
 export type KnowledgeFileStatus = 'UPLOADED' | 'IMPORTING' | 'IMPORTED' | 'FAILED';
@@ -270,6 +280,21 @@ export interface DeletionImpactPreview {
   blockers: ObjectReferenceRelation[];
   advisories: ObjectReferenceRelation[];
   cascadeDeletes: DeletionCascadeItem[];
+}
+
+export interface PlatformEvent {
+  id: string;
+  eventType: string;
+  aggregateType: PlatformAggregateType;
+  aggregateId: string;
+  actorId: string | null;
+  payload: Record<string, unknown>;
+  occurredAt: string;
+}
+
+export interface PlatformEventPage {
+  items: PlatformEvent[];
+  nextCursor: string | null;
 }
 
 export interface ToolOperation {
