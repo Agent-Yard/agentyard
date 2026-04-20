@@ -21,11 +21,12 @@ infra/
   local/       Docker Compose for local development
 scripts/       Local startup wrappers and env loading
 docs/
-  architecture/ current architecture and startup notes
-  briefing/     project briefing files, no need to read this unless required
-  doing/        active execution docs and in-progress task context
-  todo/         current backlog and next-step docs
-  develop_record/ archived working notes and completed refactor records, no need to read this unless required
+  architecture/      current architecture and startup notes
+  briefing/          project briefing files, no need to read this unless required
+  doing/             active execution docs and in-progress task context
+  project_todos.md   general todo document of this project
+  todo/              current detailed todo docs
+  develop_record/    archived working notes and completed refactor records, no need to read this unless required
 ```
 
 ## Test Commands
