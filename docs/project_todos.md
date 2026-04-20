@@ -8,20 +8,9 @@
 
 ## 阶段一：工程基座（Engineering Foundation）
 
-> 已完成：身份与请求级鉴权（§旧 1.1）、关键路径测试（§旧 1.2）、结构化日志统一（§旧 1.4）。详见末尾“已完成工作回顾”。
+> 已完成：身份与请求级鉴权（§旧 1.1）、关键路径测试（§旧 1.2）、结构化日志统一（§旧 1.4）、CI 流水线（当前 1.1）。详见末尾“已完成工作回顾”。
 
-### 1.1 CI 流水线
-
-现状：仓库尚无 `.github/workflows/`，PR 没有自动化门禁。
-
-目标（GitHub Actions，单 workflow 文件）：
-
-1. Java：`./gradlew check`（compile + test）
-2. Node：`pnpm install && pnpm lint && pnpm build`
-3. Python：`uv sync --all-packages && uv run --all-packages pytest`
-4. 门禁：PR 不过 CI 不能合并
-
-依赖：阶段一关键路径测试已落地（§旧 1.2），CI 已具备执行价值。
+阶段一主线已清零：仓库已补齐单文件 GitHub Actions workflow，覆盖 Java `./gradlew check`、Node `pnpm install && pnpm lint && pnpm build`、Python `uv sync --all-packages && uv run --all-packages pytest` 三条门禁链路。
 
 ---
 
@@ -357,9 +346,6 @@
 ## 依赖关系总览
 
 ```
-阶段一：工程基座
-  1.1 CI 流水线 ◄── 已有测试集合后才有意义
-
 阶段二：运行态成熟
   2.1 事件日志 ◄──── 已就绪的鉴权（actor_id 来源）
   2.2 SSE 推送
@@ -393,6 +379,7 @@
 详细过程留档见 `docs/develop_record/`。本次清理移除以下已完成的主线条目：
 
 - [x] 阶段一 1.1 真实身份与请求级鉴权：OIDC 登录流、API auth filter、前端登录页与托管会话、跨服务 internal token、四角色粗粒度 RBAC（`PLATFORM_ADMIN / DOMAIN_ADMIN / DEVELOPER / BUSINESS_USER`）
+- [x] 阶段一 当前 1.1 CI 流水线：新增单文件 GitHub Actions workflow，并行执行 Java `./gradlew check`、Node `pnpm install && pnpm lint && pnpm build`、Python `uv sync --all-packages && uv run --all-packages pytest`
 - [x] 阶段一 1.2 关键路径测试：编排图校验器单测、发布快照冻结逻辑单测、Session/Playbook Workflow 集成测试、Agent Runtime 单轮推理单测、Knowledge Service 导入链路单测
 - [x] 阶段一 1.4 结构化日志统一：Java/Python 服务统一结构化输出，统一透传 trace / session / workflow / customer / user 上下文
 - [x] 阶段二 2.4 草稿默认模型策略收敛：`defaultModelResourceId` 显式化、发布前阻断校验、发布快照新增 `defaultModelBinding`、Runtime 预检对齐

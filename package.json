@@ -23,7 +23,9 @@
     "dev:source:knowledge-service": "./scripts/dev/knowledge-service.sh",
     "dev:source:agent-runtime": "./scripts/dev/agent-runtime.sh",
     "dev:source:web": "./scripts/dev/web.sh",
+    "build": "pnpm build:web",
     "build:web": "pnpm --filter @lynxus/web build",
+    "lint": "pnpm lint:web",
     "test:web": "pnpm --filter @lynxus/web test",
     "lint:web": "pnpm --filter @lynxus/web lint"
   }
