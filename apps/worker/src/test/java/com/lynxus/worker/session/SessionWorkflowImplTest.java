@@ -29,6 +29,7 @@ import com.lynxus.contracts.session.SessionContracts.UserMessage;
 import com.lynxus.contracts.session.SessionWorkflow;
 import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowOptions;
+import io.temporal.client.WorkflowStub;
 import io.temporal.testing.TestWorkflowEnvironment;
 import io.temporal.worker.Worker;
 import java.time.Duration;
@@ -41,6 +42,97 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.Test;
 
 class SessionWorkflowImplTest {
+    @Test
+    void drainingWorkflow_shouldEndAfterPlaybookCompletionWithoutOwnerReevaluation() {
+        try (TestWorkflowEnvironment environment = TestWorkflowEnvironment.newInstance()) {
+            Worker worker = environment.newWorker("session-tests-draining-playbook-completion");
+            RecordingPersistenceActivities persistence = new RecordingPersistenceActivities();
+            RecordingRunPlaybookAgentTurnActivities activities = new RecordingRunPlaybookAgentTurnActivities();
+            worker.registerWorkflowImplementationTypes(SessionWorkflowImpl.class, PlaybookWorkflowImpl.class);
+            worker.registerActivitiesImplementations(activities, persistence, new NoopPlaybookNodeActivities());
+            environment.start();
+
+            SessionWorkflow workflow = environment.getWorkflowClient().newWorkflowStub(
+                SessionWorkflow.class,
+                WorkflowOptions.newBuilder()
+                    .setTaskQueue("session-tests-draining-playbook-completion")
+                    .setWorkflowId("session-1")
+                    .build()
+            );
+            WorkflowClient.start(
+                workflow::run,
+                startRequestForAgentActionsAndPolicy(
+                    List.of(AgentDecisionAction.RUN_PLAYBOOK, AgentDecisionAction.NO_REPLY),
+                    Duration.ofHours(1),
+                    Duration.ofSeconds(2),
+                    20_000
+                )
+            );
+
+            assertEquals(
+                SessionMessageDeliveryStatus.ACCEPTED,
+                workflow.submitUserMessage(new UserMessage("msg-1", "customer-1", "start", Map.of())).status()
+            );
+
+            waitForEvent(environment, persistence, SessionEventType.PLAYBOOK_WAITING);
+            environment.sleep(Duration.ofSeconds(3));
+            assertTrue(workflow.currentSnapshot().draining());
+
+            String activeRunId = workflow.currentSnapshot().activePlaybookRunId();
+            workflow.humanResume(new HumanResumeSignal("session-1", activeRunId, Map.of("approved", true)));
+
+            waitForEvent(environment, persistence, SessionEventType.PLAYBOOK_COMPLETED);
+            SessionSnapshot finalSnapshot = waitForWorkflowCompletion(environment, workflow);
+
+            assertTrue(finalSnapshot.draining());
+            assertEquals(null, finalSnapshot.activePlaybookRunId());
+            assertEquals(List.of(SessionTriggerType.USER_MESSAGE), activities.triggerTypes());
+        }
+    }
+
+    @Test
+    void drainingWorkflow_shouldEndWhenHumanHandoffLeavesSafePoint() {
+        try (TestWorkflowEnvironment environment = TestWorkflowEnvironment.newInstance()) {
+            Worker worker = environment.newWorker("session-tests-draining-handoff-end");
+            RecordingPersistenceActivities persistence = new RecordingPersistenceActivities();
+            worker.registerWorkflowImplementationTypes(SessionWorkflowImpl.class);
+            worker.registerActivitiesImplementations(new HandoffAgentTurnActivities(), persistence);
+            environment.start();
+
+            SessionWorkflow workflow = environment.getWorkflowClient().newWorkflowStub(
+                SessionWorkflow.class,
+                WorkflowOptions.newBuilder()
+                    .setTaskQueue("session-tests-draining-handoff-end")
+                    .setWorkflowId("session-1")
+                    .build()
+            );
+            WorkflowClient.start(
+                workflow::run,
+                startRequestForAgentActionsAndPolicy(
+                    List.of(AgentDecisionAction.SESSION_HUMAN_HANDOFF),
+                    Duration.ofHours(1),
+                    Duration.ofSeconds(2),
+                    20_000
+                )
+            );
+
+            assertEquals(
+                SessionMessageDeliveryStatus.ACCEPTED,
+                workflow.submitUserMessage(new UserMessage("msg-1", "customer-1", "start", Map.of())).status()
+            );
+
+            waitForEvent(environment, persistence, SessionEventType.SESSION_HUMAN_HANDOFF_STARTED);
+            environment.sleep(Duration.ofSeconds(3));
+            assertTrue(workflow.currentSnapshot().draining());
+
+            workflow.endHumanHandoff();
+
+            SessionSnapshot finalSnapshot = waitForWorkflowCompletion(environment, workflow);
+            assertTrue(finalSnapshot.draining());
+            assertEquals(false, finalSnapshot.sessionHumanHandoffActive());
+        }
+    }
+
     @Test
     void submitUserMessage_shouldRejectWhenWorkflowTurnsDrainingAtGuardrail() {
         try (TestWorkflowEnvironment environment = TestWorkflowEnvironment.newInstance()) {
@@ -372,6 +464,20 @@ class SessionWorkflowImplTest {
         );
     }
 
+    private static SessionSnapshot waitForWorkflowCompletion(
+        TestWorkflowEnvironment environment,
+        SessionWorkflow workflow
+    ) {
+        WorkflowStub stub = WorkflowStub.fromTyped(workflow);
+        for (int attempt = 0; attempt < 20; attempt += 1) {
+            if (stub.describe().getCloseTime() != null) {
+                return stub.getResult(SessionSnapshot.class);
+            }
+            environment.sleep(Duration.ofMillis(200));
+        }
+        throw new AssertionError("expected workflow to complete");
+    }
+
     private static long countEvents(List<SessionEvent> events, SessionEventType eventType) {
         return events.stream().filter(event -> event.eventType() == eventType).count();
     }
@@ -401,6 +507,53 @@ class SessionWorkflowImplTest {
             }
             return new AgentTurnResult(
                 new AgentDecision(AgentDecisionAction.NO_REPLY, null, null, null, Map.of(), null),
+                Map.of()
+            );
+        }
+    }
+
+    private static final class RecordingRunPlaybookAgentTurnActivities implements AgentTurnActivities {
+        private final List<SessionTriggerType> triggerTypes = new CopyOnWriteArrayList<>();
+
+        @Override
+        public AgentTurnResult executeTurn(AgentTurnRequest request) {
+            triggerTypes.add(request.trigger().triggerType());
+            if (request.trigger().triggerType() == SessionTriggerType.USER_MESSAGE) {
+                return new AgentTurnResult(
+                    new AgentDecision(
+                        AgentDecisionAction.RUN_PLAYBOOK,
+                        null,
+                        null,
+                        "playbook-1",
+                        Map.of("customerId", "customer-1"),
+                        null
+                    ),
+                    Map.of()
+                );
+            }
+            return new AgentTurnResult(
+                new AgentDecision(AgentDecisionAction.NO_REPLY, null, null, null, Map.of(), null),
+                Map.of()
+            );
+        }
+
+        List<SessionTriggerType> triggerTypes() {
+            return new ArrayList<>(triggerTypes);
+        }
+    }
+
+    private static final class HandoffAgentTurnActivities implements AgentTurnActivities {
+        @Override
+        public AgentTurnResult executeTurn(AgentTurnRequest request) {
+            return new AgentTurnResult(
+                new AgentDecision(
+                    AgentDecisionAction.SESSION_HUMAN_HANDOFF,
+                    null,
+                    null,
+                    null,
+                    Map.of(),
+                    null
+                ),
                 Map.of()
             );
         }

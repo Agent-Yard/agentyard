@@ -150,6 +150,10 @@ public class SessionWorkflowImpl implements SessionWorkflow {
         ));
         while (!ended) {
             applyGuardrails();
+            if (shouldEndDrainingSession()) {
+                ended = true;
+                continue;
+            }
             if (shouldEndIdleSession()) {
                 ended = true;
                 continue;
@@ -254,6 +258,7 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             false,
             snapshot.draining()
         ));
+        endWorkflowIfDrainingSafePointReached();
     }
 
     @Override
@@ -493,6 +498,23 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             pendingOwnerReevaluationTrigger != null,
             snapshot.draining()
         ));
+        if (snapshot.draining()) {
+            if (pendingOwnerReevaluationTrigger != null) {
+                pendingOwnerReevaluationTrigger = null;
+                setSnapshot(copySnapshot(
+                    snapshot.sharedState(),
+                    snapshot.activePlaybookRunId(),
+                    snapshot.currentOwnerAgentId(),
+                    snapshot.ownerSwitchCountInTurn(),
+                    false,
+                    snapshot.sessionHumanHandoffActive(),
+                    false,
+                    snapshot.draining()
+                ));
+            }
+            endWorkflowIfDrainingSafePointReached();
+            return;
+        }
         if (snapshot.sessionHumanHandoffActive() || pendingOwnerReevaluationTrigger == null) {
             return;
         }
@@ -567,7 +589,7 @@ public class SessionWorkflowImpl implements SessionWorkflow {
                 completedRun.runId(),
                 completedRun.ownerAgentId()
             );
-            if (!snapshot.sessionHumanHandoffActive()) {
+            if (!snapshot.sessionHumanHandoffActive() && !snapshot.draining()) {
                 Map<String, Object> reevaluationPayload = new LinkedHashMap<>();
                 reevaluationPayload.put("playbookRunId", completedRun.runId());
                 reevaluationPayload.put("status", completedRun.status().name());
@@ -595,6 +617,10 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             pendingOwnerReevaluationTrigger != null,
             snapshot.draining()
         ));
+        if (snapshot.draining()) {
+            endWorkflowIfDrainingSafePointReached();
+            return;
+        }
         if (!snapshot.agentTurnActive() && previousRunId != null && pendingOwnerReevaluationTrigger != null) {
             finishTurn();
         }
@@ -950,9 +976,7 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             true,
             snapshot.idleDeadline()
         ));
-        if (!hasNonIdleExecution()) {
-            ended = true;
-        }
+        endWorkflowIfDrainingSafePointReached();
     }
 
     private boolean shouldEndIdleSession() {
@@ -960,6 +984,16 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             && snapshot.idleDeadline() != null
             && !snapshot.draining()
             && Workflow.currentTimeMillis() >= snapshot.idleDeadline().toEpochMilli();
+    }
+
+    private boolean shouldEndDrainingSession() {
+        return snapshot.draining() && !hasNonIdleExecution();
+    }
+
+    private void endWorkflowIfDrainingSafePointReached() {
+        if (shouldEndDrainingSession()) {
+            ended = true;
+        }
     }
 
     private boolean hasNonIdleExecution() {

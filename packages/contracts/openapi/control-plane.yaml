@@ -1860,7 +1860,7 @@ components:
             $ref: '#/components/schemas/PlaybookEdge'
     SessionRuntimeStatus:
       type: string
-      enum: [IDLE, ACTIVE, DRAINING]
+      enum: [IDLE, ACTIVE, DRAINING, ENDED]
     SessionActorType:
       type: string
       enum: [USER, AGENT, SYSTEM, HUMAN_OPERATOR, EXTERNAL_SYSTEM]
