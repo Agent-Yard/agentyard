@@ -1,6 +1,6 @@
 # External Interaction 集成说明
 
-本文件以 `docs/architecture/session_workflow_redesign.md` 为准，说明在 session workflow 新架构下如何承载站外交互。
+本文件直接描述当前代码实现下，external interaction 在 `session-runtime` 体系中的位置、边界和接入约束。
 
 ## 1. 当前结论
 
@@ -60,4 +60,4 @@
 
 - 不允许重新引入旧 `external_interaction_task` 投影模型。
 - 不允许让前端或 provider callback 直接驱动旧 workflow resume 语义。
-- 所有新实现都必须与 session workflow 文档中的 owner/playbook/event 模型一致。
+- 所有新实现都必须与当前代码中的 `session / session_event / playbook_run` 模型一致。

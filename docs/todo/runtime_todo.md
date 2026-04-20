@@ -1,165 +1,91 @@
 # Runtime TODO
 
-这份文档记录当前运行链路仍待补齐的工作项。
-和 `docs/develop_record/` 中的重构留档不同，这里只保留“当前仍有效”的待办。
+这份文档只记录在 `session-runtime` 新架构下仍然有效的待办。
+凡是基于旧 `task / workflow instance / resume action / outputMessages` 主模型的事项，都不再保留。
 
-## 1. 已完成：API 启动/恢复链路改为异步观测
-
-当前状态：
-
-- `POST /api/tasks`
-- `POST /api/runtime/sessions/{sessionId}/messages`
-- `PATCH /api/workflows/{workflowId}/human-action`
-
-这些链路现在都只负责提交命令并立即返回已受理投影，不再同步等待 workflow 暴露首个业务结果。
-
-当前实现细节：
-
-- gateway 暴露 `start(...)`、`submitHumanAction(...)` 和 `currentResult()`
-- API 先落 `session/task/workflow` 初始投影，再提交 workflow 或 signal
-- 前端主入口统一依赖 workflow 列表/详情轮询收口
-- `WAITING_HUMAN / COMPLETED / FAILED / CANCELLED` 全部通过运行态观测自然传播
-
-本次交付：
-
-- `sendMessage` / `launchTask` 立即返回受理后的运行标识和占位消息
-- 人工恢复链路改为立即返回“恢复处理中”的 workflow 投影
-- “workflow did not expose a result before timeout” 已不再是 API 层产品语义
-
-剩余相关工作：
-
-1. 视需要在轮询之上再补 SSE / WebSocket 实时推送
-2. 为异步观测链路补更细的失败码和恢复态可观测信息（见 §3）
-3. 视流量与体验需求决定是否把全局轮询拆成按 workflow 增量订阅
-
-## 2. 已完成：草稿默认模型语义收敛
+## 1. 订阅式运行观测仍未落地
 
 当前状态：
 
-- Assistant 草稿默认模型已显式收敛为 `defaultModelResourceId`，主链路不再自动挑选第一个可用 `LLM_MODEL`
-- 发布前会强制校验默认模型是否已配置；未配置时直接阻断发布
-- Runtime 只在“无 `currentRelease` 的草稿助手且未配置默认模型”时阻断运行；已有发布版时继续使用发布快照里的冻结模型绑定
-- `AssistantRelease` 已新增 `defaultModelBinding`，明确保存发布时冻结的模型资源与版本信息
-- `WorkflowResult / WorkflowInstance` 已新增 `modelHits`，agent-runtime 会在真实发起模型调用前记录命中快照
-- 控制台已能分别展示：
-  - 草稿默认模型
-  - 当前发布冻结模型
-  - 最近一次 / 当前 workflow 的实际模型命中
+- 运行入口已收敛为 `/api/session-runtime/...`
+- Web 运行页当前通过 `GET /api/session-runtime/sessions` 和 `GET /api/session-runtime/sessions/{sessionId}` 轮询刷新
+- session 权威投影已经落到：
+  - `session_runtime_session`
+  - `session_runtime_event`
+  - `session_runtime_playbook_run`
 
-说明：
+当前缺口：
 
-1. 本轮按项目规则不对旧 `providerResourceId` 数据或旧 release snapshot 做兼容与回填
-2. 旧库若仍保留历史快照，需要通过重建本地/开发数据来获得新语义
+1. 没有 `session` 级 SSE / WebSocket 推送
+2. owner reply、playbook waiting / resumed / completed、handoff 状态变化不能即时推到前端
+3. 当前轮询粒度是整份 detail，延迟和资源消耗都偏高
 
-## 3. 已完成：增强 workflow 失败可观测性
+下一步：
 
-当前状态：
+1. 基于 `docs/todo/sse_plan.md` 补 `GET /api/session-runtime/sessions/{sessionId}/stream`
+2. 先覆盖运行会话页，再评估是否扩展到全局 session 列表
+3. 保持“完整快照推送”，避免重新发明 delta 协议
 
-- `WorkflowResult` / `WorkflowInstance` 已新增 `latestFailure`
-- `latestFailure` 已持久化到 `workflow_instance.latest_failure jsonb`
-- Web 流程观测页和会话页都能直接展示 `category / code / rootCause / failedNode / failedResource / occurredAt`
-- 错误转人工时同时保留：
-  - `pauseReason`：表达“为什么当前在等人工”
-  - `latestFailure`：表达“最近一次结构化失败诊断”
-
-当前规则：
-
-1. `FAILED` workflow 会保留结构化 failure snapshot
-2. 因错误进入 `WAITING_HUMAN` 的 workflow 也会保留结构化 failure snapshot
-3. 纯业务暂停不写 `latestFailure`：
-   - `GRAPH_HUMAN_NODE`
-   - `HUMAN_HANDOFF_REQUESTED`
-4. workflow 后续恢复或完成后，当前投影不会主动清空 `latestFailure`；在完整审计表出现前，它承担最近一次排障线索沉淀
-
-当前覆盖的失败分类：
-
-- `TIMEOUT`
-- `PROVIDER_FAILURE`
-- `TOOL_FAILURE`
-- `PARSING_FAILURE`
-- `VALIDATION_FAILURE`
-- `CONFIGURATION_FAILURE`
-- `RUNTIME_FAILURE`
-- `UNKNOWN`
-
-## 4. 已完成：持久化 runtime 会话与运行观测投影
+## 2. 人工接管与恢复操作台还不完整
 
 当前状态：
 
-- catalog 已经落到 PostgreSQL
-- `ConversationSession / ConversationMessage / TaskInstance / WorkflowInstance / HumanIntervention` 已落 PostgreSQL
-- `RuntimeService` 已切换为 repository 驱动，数据库投影是运行态权威数据源
-- API 启动时会读取数据库中的非终态 workflow，并主动向 Temporal 查询 `currentResult()` 做对账
+- API 已支持：
+  - `POST /api/session-runtime/sessions/{sessionId}/human-reply`
+  - `POST /api/session-runtime/sessions/{sessionId}/human-resume`
+  - `POST /api/session-runtime/sessions/{sessionId}/external-callback`
+  - `POST /api/session-runtime/sessions/{sessionId}/handoff/end`
+- Worker 已支持：
+  - handoff 期间写 `HUMAN_OPERATOR_REPLY`
+  - playbook 等待态的人工作业恢复
+  - 外部回调恢复
 
-本次交付：
+当前缺口：
 
-- workflow 启动、等待人工、恢复、完成、失败都会增量落库
-- 会话消息更新与人工处理记录会同步回写数据库
-- 控制台刷新、API 重启后仍能稳定查询 runtime 业务视图
+1. Web 运行页还只有会话创建、消息发送、事件查看和 playbook run 查看
+2. 没有针对 handoff、human resume、external callback 的内置操作面板
+3. 人工操作与事件时间线之间缺少针对性的视图收口
 
-剩余相关工作：
+下一步：
 
-1. 为失败原因补齐结构化错误码、root cause 和失败资源字段（见 §3）
-2. 视需要从当前投影模型升级到更完整的事件日志 / 审计模型
-3. 继续评估更细粒度的 runtime 事件流，而不只依赖当前主投影
+1. 在运行页补人工回复、结束 handoff、恢复 waiting playbook 的表单
+2. 对 `PLAYBOOK_WAITING` / `SESSION_HUMAN_HANDOFF_STARTED` 增加明确操作提示
+3. 区分“业务用户发送消息”和“人工操作员处理会话”两类入口
 
-## 5. 把 agent 结构化决策升级为共享契约
+## 3. 长 session 历史仍缺分页和派生视图
 
 当前状态：
 
-- `agent-runtime` 已经在内部使用结构化决策载荷
-- `packages/contracts`、`packages/contracts-jvm` 和 OpenAPI 已补齐：
-  - `DecisionType`
-  - `StructuredAgentDecision`
-  - `ToolRequest`
-  - `HumanRequest`
-  - `SessionStatePatch`
-  - `SessionStatePatchOp`
-  - `AgentTurnLog`
-  - `AgentTurnState`
-- `WorkflowResult` / `WorkflowInstance` 已增加 `agentTurnState`
-- 前端 workflow 观测页已能查看 `phase / turnIndex / latestDecision / turnLogs`
+- `GET /api/session-runtime/sessions/{sessionId}` 直接返回完整 `events + playbookRuns`
+- 运行页直接展示完整时间线和全部 playbook run
 
-后续目标：
+当前缺口：
 
-1. 把当前“最新 turn state”继续升级为更完整的历史审计模型
-2. 在失败观测中复用共享决策契约，统一失败码与决策上下文
-3. 为跨服务 schema 演进补版本策略和更细的集成测试
+1. session 历史增长后，整量返回 detail 会越来越重
+2. 当前没有按 event type、owner、playbook run 的过滤与聚合能力
+3. 排障时仍需人工在完整事件流里找等待点、拒绝决策和失败回合
 
-## 6. 拆开“内部协作输出”和“用户可见回复”
+下一步：
 
-当前问题：
+1. 为 session event 增加分页、过滤和按类型聚合查询
+2. 为 playbook run 增加按状态、waiting reason 的快捷筛选
+3. 在 UI 中补“仅看用户可见消息 / 仅看系统事件 / 仅看 playbook 事件”视图
 
-- 多级 agent 编排下，每个 AGENT 节点只要产出 `outputMessages`，控制面就会把这些消息全部投影到会话消息流
-- 用户最终看到的是“内部协作过程中的多层输出叠加”，而不是单一助手对外给出的最终回复
-- 当前前端已临时做“同一 workflow 只展示最后一条 assistant 消息”的收口，但这只是展示层止血，不是语义层修复
+## 4. 审计账本与运行投影仍未分层
 
-目标语义：
+当前状态：
 
-1. 内部 agent 节点默认只产出共享状态、结构化结论和运行观测，不直接生成用户可见消息
-2. 用户对话窗口只展示最终对外回复，以及必要的外部交互卡片
-3. workflow 观测页仍然保留完整节点轨迹、决策日志和内部中间产物，不能因为会话收口而丢失可观测性
+- `session_runtime_event` 已经是 append-only 时间线
+- 但它当前仍承担运行查询主视图，而不是完整审计账本
 
-建议方向：
+当前缺口：
 
-1. 把“节点完成输出”和“用户可见回复”拆成两个通道，而不是继续共用 `outputMessages`
-2. 中间 AGENT 节点主要通过 `sharedState / artifacts / agentScope` 传递结果
-3. 只允许显式的对外回复边界产出会话消息
-4. `EXTERNAL_INTERACTION` 继续作为用户侧可见输出保留，但也应视为“对外回复通道”的一部分
+1. 没有统一的跨对象审计查询入口
+2. 没有把 catalog 变更和 session runtime 事件放到统一 audit 模型下
+3. 运维告警、失败统计和合规追踪仍主要依赖日志而不是事件查询
 
-落地时需要明确的设计决策：
+下一步：
 
-1. 对外回复边界采用什么建模：
-   - 新增专门的 REPLY 节点
-   - 允许最终执行节点声明“本节点对外回复”
-   - 统一由 END 节点负责生成最终回复
-2. `WorkflowResult` 是否保留当前累计 `outputMessages` 语义，还是拆成：
-   - internal outputs（仅观测）
-   - public outputs（投影到 session）
-3. Web 会话页、API 投影层、agent-runtime 提示词和共享契约需要同步调整，不能只改其中一层
-
-验收标准：
-
-1. 多级 agent 协作场景下，会话窗口每轮只出现单一最终回复，不再出现中间 agent 的层层话术
-2. workflow 观测页仍能查看完整内部节点输出、路由、工具结果和共享状态变化
-3. 外部交互卡片仍可正常进入会话流并保持恢复链路不变
+1. 在全局事件日志方案里把 `session event / playbook run` 纳入统一审计边界
+2. 为关键运行事件补 actor、来源、聚合键和查询接口
+3. 明确“运行投影”和“审计事件”的保留策略与职责分工

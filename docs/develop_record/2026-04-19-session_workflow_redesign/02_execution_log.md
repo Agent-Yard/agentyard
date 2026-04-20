@@ -5,7 +5,7 @@
 ### 记录 001：建立执行框架并完成首轮全局盘点
 
 - 动作：
-  - 通读 `docs/architecture/session_workflow_redesign.md`
+  - 通读 `docs/develop_record/session_workflow_redesign.md`
   - 盘点以下模块与文档：
     - `apps/api`
     - `apps/worker`
@@ -261,7 +261,7 @@
 ### 记录 029：按逐句审计结果重新收敛实施边界
 
 - 背景：
-  - 逐句核查 `docs/architecture/session_workflow_redesign.md` 后，发现 playbook 执行层、worker 主动持久化、retry/timeout 与 runtime prompt context 仍未达到最终设计要求
+  - 逐句核查 `docs/develop_record/session_workflow_redesign.md` 后，发现 playbook 执行层、worker 主动持久化、retry/timeout 与 runtime prompt context 仍未达到最终设计要求
   - 用户进一步确认了四个关键实现决策：
     - `STEP` 由 worker 通过受限 sandbox 执行
     - `TOOL_TASK` 统一在 runtime 执行，不在 worker 直接执行业务 tool
@@ -426,7 +426,7 @@
   - 通过 Temporal query 暴露 `snapshot + events + playbookRuns`
   - 由 API 在用户消息/查询路径同步 projection 到控制面持久化
 - 设计依据：
-  - `docs/architecture/session_workflow_redesign.md` §3.1, §3.3, §5, §6, §7, §9
+  - `docs/develop_record/session_workflow_redesign.md` §3.1, §3.3, §5, §6, §7, §9
 
 ### 记录 014：打通 worker session projection 与 API 同步入口
 
@@ -486,7 +486,7 @@
     - `humanResume / externalCallback / handoff end` 的命中校验与幂等
   - 最后把 `apps/agent-runtime` 从命令式占位规则推进到真实单轮推理输入/输出结构
 - 设计依据：
-  - `docs/architecture/session_workflow_redesign.md` §3.2, §3.3, §5.1, §5.2, §6, §9.3, §9.5
+  - `docs/develop_record/session_workflow_redesign.md` §3.2, §3.3, §5.1, §5.2, §6, §9.3, §9.5
 - 下一步：
   - 先改 worker contracts/implementation，再回补 runtime 与验证
 
@@ -788,7 +788,7 @@
 ### 记录 026：完成 knowledge 远程检索闭环并恢复最终验收
 
 - 已改内容：
-  - `docs/architecture/session_workflow_redesign.md`
+  - `docs/develop_record/session_workflow_redesign.md`
     - 明确 runtime 通过内部接口远程调用 knowledge-service 完成在线检索
     - 不再要求把 knowledge-service 的存储层、导入链路、索引构建链路整体并入 runtime
     - 模块划分中补足 knowledge-service 的离线 ingest / indexing / retrieval data API 职责
@@ -854,7 +854,7 @@
 ### 记录 029：按设计文档逐句审计后重新打开最终验收
 
 - 动作：
-  - 重新通读 `docs/architecture/session_workflow_redesign.md` 全文
+  - 重新通读 `docs/develop_record/session_workflow_redesign.md` 全文
   - 按章节核查 `packages/contracts*`、`apps/api`、`apps/worker`、`apps/agent-runtime`、`apps/web`
 - 关键发现：
   - `RUN_PLAYBOOK` 只校验 playbook 存在性和白名单，未校验 `playbookInput` 是否符合 `inputSchema`

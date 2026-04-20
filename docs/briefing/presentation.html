@@ -242,10 +242,10 @@ flowchart LR
             <div class="diagram-hint">点击放大，可拖拽查看</div>
           </div>
           <div class="foot-grid">
-            <div class="foot-card">控制面 API 负责目录数据、资源治理、知识聚合、发布快照和运行聚合。</div>
-            <div class="foot-card">流程 Worker 负责 workflow 执行、长流程托管和人工恢复。</div>
+            <div class="foot-card">控制面 API 负责目录治理、发布快照和 `session-runtime` 聚合查询。</div>
+            <div class="foot-card">流程 Worker 负责 `SessionWorkflow` 主状态机、`PlaybookWorkflow` 子流程和恢复信号处理。</div>
             <div class="foot-card">知识服务负责导入、切片、索引快照构建和检索。</div>
-            <div class="foot-card">智能体运行时负责执行控制面下发的运行快照，并完成图节点和资源调用。</div>
+            <div class="foot-card">智能体运行时负责执行单个 owner agent 的单轮推理，并完成 tool / skill / knowledge 调用。</div>
           </div>
         </section>
 
@@ -270,18 +270,19 @@ flowchart LR
   end
 
   subgraph S3[运行态]
-    E[流程执行]
-    F[智能体运行时]
+    E[Session Workflow]
+    F[Owner Agent Turn]
     G[知识检索 / 技能 / 工具 / 模型]
-    K[运行观测]
+    K[Session Event / Playbook Run 观测]
     D --> E --> F --> G
   end
 
-  G --> H{是否进入人工节点}
-  H -- 是 --> I[人工待办 / 检查点]
-  I --> J[人工恢复信号]
+  F --> H{是否启动 Playbook}
+  H -- 是 --> I[Playbook Child Workflow]
+  I --> J[等待人工 / 外部回调]
   J --> E
   H -- 否 --> K
+  I --> K
 
   classDef config fill:#e6f4f1,stroke:#0f766e,color:#12322f,stroke-width:1.5px;
   classDef release fill:#fff4df,stroke:#d97706,color:#5f370e,stroke-width:1.5px;
@@ -300,9 +301,9 @@ flowchart LR
               <h3>闭环价值</h3>
               <ul>
                 <li>配置态、发布态、运行态已明显分层</li>
-                <li>运行实例可定位到具体资源版本和图快照</li>
-                <li>复杂链路可被 workflow 承接而不是散落在接口调用中</li>
-                <li>人工节点成为系统能力，而不是线下补救动作</li>
+                <li>运行实例可定位到具体 release、owner 和 playbook 定义</li>
+                <li>复杂链路由 session workflow 和 playbook 承接，而不是散落在接口调用中</li>
+                <li>人工接管与恢复已成为系统能力，而不是线下补救动作</li>
               </ul>
             </div>
             <div class="panel accent-green">
@@ -333,19 +334,19 @@ flowchart LR
             </article>
             <article class="capability">
               <h3>发布冻结</h3>
-              <p>助手发布时冻结资源版本、知识绑定、执行策略和图快照。</p>
+              <p>助手发布时冻结资源版本、知识绑定、owner/session/playbook 策略和 playbook 定义。</p>
             </article>
             <article class="capability">
-              <h3>图编排执行</h3>
-              <p>支持 <code>START / AGENT / HUMAN / END</code> 显式图执行与节点路由。</p>
+              <h3>Session 主状态机</h3>
+              <p>支持当前 owner、shared state、handoff、idle timer 与 playbook 生命周期管理。</p>
             </article>
             <article class="capability">
               <h3>长流程托管</h3>
-              <p>基于 Temporal 实现 <code>start / signal / resume</code> 的长流程管理。</p>
+              <p>基于 Temporal 实现 `SessionWorkflow` 与 `PlaybookWorkflow` 的长流程托管、等待与恢复。</p>
             </article>
             <article class="capability">
               <h3>运行观测</h3>
-              <p>会话、任务、工作流、节点轨迹、失败诊断、模型命中和人工介入可回看。</p>
+              <p>当前 owner、session event、playbook run、handoff 和 shared state 可回看。</p>
             </article>
             <article class="capability">
               <h3>知识工作台</h3>
@@ -397,24 +398,24 @@ flowchart LR
           </div>
           <div class="decision-stack">
             <div class="decision-card">
-              <h3>运行快照作为执行锚点</h3>
-              <p>优先解决配置漂移和运行回溯问题；已发布助手复用发布快照，未发布草稿在满足前置条件时即时组装临时快照。</p>
+              <h3>发布快照作为执行锚点</h3>
+              <p>优先解决配置漂移和运行回溯问题；当前运行只基于已发布 assistant release 启动。</p>
             </div>
             <div class="decision-card">
               <h3>知识库提升为一级治理对象</h3>
               <p>独立管理内容导入、索引快照、发布版本和引用关系，避免知识能力继续附着在助手草稿配置中。</p>
             </div>
             <div class="decision-card">
-              <h3>运行图显式化</h3>
-              <p>将协作结构、人工节点和路由关系从 Prompt 或代码分支中抽离出来，提升可解释性和可观测性。</p>
+              <h3>Session 成为唯一会话控制中心</h3>
+              <p>owner、handoff、idle timer、pending reevaluation 和 active playbook 全部收口到 `SessionWorkflow`。</p>
             </div>
             <div class="decision-card">
-              <h3>可恢复暂停保留为一等能力</h3>
-              <p>不追求全自动闭环，而是面向企业复杂链路保留人工节点和站外交互后的统一恢复能力。</p>
+              <h3>Playbook 下沉为强流程子工作流</h3>
+              <p>复杂业务流程由 child workflow 承担，owner 只负责是否调用与如何消费结果。</p>
             </div>
             <div class="decision-card">
               <h3>命令受理与结果观测解耦</h3>
-              <p>运行入口先落投影再提交 workflow，避免 API 同步等待首个结果，为后续 SSE 或事件订阅预留清晰边界。</p>
+              <p>运行入口先提交命令，再通过 session detail 观察结果，避免 API 同步等待首个业务结果。</p>
             </div>
             <div class="decision-card">
               <h3>保留长期平台边界</h3>
@@ -434,8 +435,8 @@ flowchart LR
               <ul>
                 <li>默认单租户，复杂租户治理仅保留模型边界</li>
                 <li>认证已具备 API Session 与 OIDC 边界，开发态仍保留 bootstrap 登录旁路</li>
-                <li>运行态主投影已落 PostgreSQL，并在 API 启动时与 Temporal 对账</li>
-                <li>运行入口已改为异步受理返回，前端仍主要靠轮询收口</li>
+                <li>运行态主投影已落 PostgreSQL，API 读取 session 时会按需向 Temporal 校验 workflow 是否仍开放</li>
+                <li>运行入口已改为 session-runtime 异步受理返回，前端仍主要靠轮询收口</li>
                 <li>external interaction 已入模，但 provider 与 callback 治理仍待继续补齐</li>
               </ul>
             </div>
@@ -464,7 +465,7 @@ flowchart LR
             <div class="roadmap-card">
               <span>01</span>
               <h3>订阅式运行观测</h3>
-              <p>在现有 runtime 投影基础上补 SSE 或事件推送，增强 workflow 历史和恢复态查询能力。</p>
+              <p>在现有 session-runtime 投影基础上补 SSE 或事件推送，增强 session event 和 playbook run 的即时观测能力。</p>
             </div>
             <div class="roadmap-card">
               <span>02</span>
@@ -487,7 +488,7 @@ flowchart LR
               <h3>近期优先级更高</h3>
               <ul>
                 <li>SSE 或订阅式运行观测</li>
-                <li>workflow 历史与恢复态查询能力</li>
+                <li>session event / playbook run 历史与恢复态查询能力</li>
                 <li>真实身份体系替换开发旁路</li>
               </ul>
             </div>

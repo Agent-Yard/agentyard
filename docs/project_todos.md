@@ -31,8 +31,8 @@
 
 1. [x] **编排图校验器单测**：合法图 / 非法图 / 边界情况，防止发布出非法拓扑
 2. [x] **发布快照冻结逻辑单测**：确保资源版本锚点和知识版本在快照中被正确冻结
-3. [x] **Workflow start → signal → resume 集成测试**：使用 Temporal TestWorkflowEnvironment，覆盖正常完成、人工恢复、失败三条路径
-4. [x] **Agent Runtime 图执行单测**：给定快照 JSON，验证节点推进顺序和输出结构
+3. [x] **SessionWorkflow / PlaybookWorkflow 集成测试**：使用 Temporal TestWorkflowEnvironment，覆盖用户消息、playbook 等待恢复、终态回流三条路径
+4. [x] **Agent Runtime 单轮推理单测**：给定 `AgentTurnRequest`，验证 tool calling、skill 读取和结构化决策输出
 5. [x] **Knowledge Service 导入链路单测**：source → import job → document → snapshot 状态机流转
 
 技术方案：Java 用 JUnit 5 + Testcontainers（PostgreSQL）；Python 用 pytest + httpx AsyncClient；前端暂不要求测试。
@@ -85,7 +85,7 @@
 
 1. 新增 `platform_event` 表（append-only）：`id / event_type / aggregate_type / aggregate_id / actor_id / payload / occurred_at`
 2. 控制面关键操作写事件：创建、更新、删除、发布、归档
-3. 运行态关键操作写事件：workflow 启动、暂停、恢复、完成、失败
+3. 运行态关键操作写事件：session 创建、owner reply / switch、playbook waiting / resumed / completed、handoff 开始 / 结束
 4. 暂不做 event sourcing（投影仍由业务代码维护），事件日志只用于审计和排障
 5. 提供 `GET /api/events?aggregateType=&aggregateId=&since=` 查询接口
 6. 控制台对象详情页增加"操作历史"面板
@@ -94,30 +94,33 @@
 
 ### 2.2 SSE 实时推送替代部分轮询
 
-现状：全局 3 秒轮询，浪费资源且延迟不稳定。
+现状：运行会话页当前通过拉取 `session detail` 轮询刷新，浪费资源且延迟不稳定。
 
 目标：
 
-1. API 新增 `GET /api/runtime/sessions/{sessionId}/stream`（SSE endpoint）
-2. 推送事件：新消息、workflow 状态变更、人工干预请求
+1. API 新增 `GET /api/session-runtime/sessions/{sessionId}/stream`（SSE endpoint）
+2. 推送内容围绕 `session / session event / playbook run`，不再暴露旧 `task / workflow instance`
 3. 前端运行态页面优先使用 SSE，降级回轮询
 4. 非运行态页面（catalog 管理）保持按需刷新，不需要 SSE
 
 为什么选 SSE 而非 WebSocket：单向推送足够；SSE 天然支持断线重连和 `Last-Event-ID`；不需要额外的连接管理复杂度。
 
-### 2.3 Workflow 恢复模型泛化
+### 2.3 Session / Playbook 恢复链路产品化
 
-现状：已完成全链路恢复模型泛化。共享契约、API、Worker、Agent Runtime、Web 统一采用 `ResumeAction` / `WAITING_RESUME` 语义，并在 checkpoint 中显式记录 `resumeContext`。
+现状：底层恢复链路已经切到 `session workflow + playbook waiting` 语义；API、Worker 和契约层已经统一采用：
 
-完成内容：
+- `POST /api/session-runtime/sessions/{sessionId}/human-resume`
+- `POST /api/session-runtime/sessions/{sessionId}/external-callback`
+- `POST /api/session-runtime/sessions/{sessionId}/handoff/end`
+- `POST /api/session-runtime/sessions/{sessionId}/human-reply`
 
-1. [x] `ResumeAction` 统一包含 `type + source`，支持 `HUMAN / EXTERNAL_SYSTEM / TIMEOUT_POLICY`
-2. [x] `PauseReason` / `ResumeTask` 的 `source` 统一改为通用挂起来源枚举，并预留 `EXTERNAL_INTERACTION_REQUIRED`
-3. [x] Workflow checkpoint 显式记录 `resumeContext`（包含 interactionTaskId / interactionType / timeoutPolicyKey 等）
-4. [x] API 恢复入口统一为 `/workflows/{workflowId}/resume`，移除旧 `human-action` 语义
-5. [x] 运行态主状态统一改为 `WAITING_RESUME`，前后端观测与恢复表单同步更新
+下一步目标：
 
-为什么提前做：这是 external interaction（§2.5）的前置依赖，也让 workflow 模型更准确。
+1. 在 Web 运行页补齐人工接管、human resume、external callback 的操作面板
+2. 把等待态和人工接管态从“仅看事件时间线”升级为“事件 + 操作台”组合体验
+3. 对过期恢复、幂等命中和错误恢复结果补更明确的用户可见反馈
+
+为什么单列：这是 external interaction（§2.5）和人工处理闭环真正可用的前置条件。
 
 ### 2.4 草稿默认模型策略收敛
 
@@ -130,39 +133,41 @@
 3. 发布前新增阻断校验：未配置 `defaultModelResourceId` 的 Assistant 不能发布
 4. 发布快照新增 `defaultModelBinding`，显式冻结发布时实际绑定的模型资源、版本、provider 和 modelId
 5. Runtime 预检改为：
-   `currentRelease` 存在时继续按冻结发布版运行；只有“未发布草稿且未配置默认模型”才阻断 `launchTask / sendMessage`
-6. `WorkflowResult / WorkflowInstance` 新增 `modelHits`，agent-runtime 在真实发起 LLM 调用前记录模型命中快照
+   `currentRelease` 存在时继续按冻结发布版运行；只有“未发布草稿且未配置默认模型”才阻断 `createSession / sendMessage`
+6. owner agent 命中的模型信息已经冻结在 release descriptor 中，后续如需补运行态 `modelHits`，应直接挂到 session / playbook 观测模型下，而不是回退到旧 `WorkflowResult`
 7. 控制台已拆开展示三层语义：
-   草稿默认模型、当前发布冻结模型、最近一次运行命中模型；Workflow 页也可查看本次运行的完整模型命中明细
+   草稿默认模型、当前发布冻结模型；运行态命中明细后续应放在 session runtime 观测区补齐
 
 ### 2.5 External Interaction 一等能力
 
-现状：已完成第一步通用框架，并进一步收敛为 runtime 统一消息出口。共享契约、OpenAPI、API Runtime DTO、`external_interaction_task / event` 持久化、interaction card 渲染、前端回跳 ack、后端 callback ingest 与基于 `ResumeAction` 的立即恢复链路均已落地。当前协议约束为：前端回跳不是可信结果信源；`RETURNED` 或 `PROCESSING` 的首次有效事件都会立即恢复 workflow；是否在恢复后调用工具确认真实结果，属于 assistant / workflow 配置逻辑，不由系统层硬编码。第二步的 provider adapter、签名校验和主动查单补偿仍未实现。 
+现状：external interaction 已经不再作为独立 runtime 主模型存在，而是 playbook 的等待点之一。当前代码已经具备：
+
+- playbook `EXTERNAL_INTERACTION` 节点
+- session runtime 外部回调入口
+- `PLAYBOOK_WAITING / EXTERNAL_CALLBACK_RECEIVED / PLAYBOOK_RESUMED` 事件链路
+
+但 provider adapter、签名校验和主动查单补偿仍未实现。
 
 目标（分两步）：
 
 **第一步 — 通用框架：**
 
-1. [x] 共享契约引入 `ExternalInteractionType / Status / Task / Result / Event`
-2. [x] `ConversationMessage` 切换为统一的 `payloadType + payload` 消息模型，文本消息也使用 `TEXT` payload 表达
-3. [x] RuntimeService 新增 interaction task 创建 / 查询 / return / callback、幂等事件表与状态机
-4. [x] Workflow 使用泛化后的 `ResumeAction` 处理 external interaction 恢复；恢复载荷统一放入 `ResumeAction.attributes`
-5. [x] 前端支持 interaction 卡片渲染、回跳参数解析、状态轮询
-6. [x] 持久化：`external_interaction_task` + `external_interaction_event` 表
-7. [x] `WorkflowResult` 收敛为“流程状态 + 累计 outputMessages”，assistant 文本输出与 `EXTERNAL_INTERACTION` 共用统一出站协议
-8. [x] `conversation_message` 增加 `message_key`，workflow 投影改为按 `(workflow_instance_id, messageKey)` 幂等落消息
-9. [x] interaction task 创建闭环改为：agent-runtime 发出 `EXTERNAL_INTERACTION` output message，控制面 API 在消费 workflow 结果时内部创建 task 和卡片投影
+1. [x] Playbook 支持 `EXTERNAL_INTERACTION` 等待节点
+2. [x] `SessionWorkflow` 支持 `external-callback` Signal 并写入 `EXTERNAL_CALLBACK_RECEIVED`
+3. [x] `playbook_run.waitingReason` 已成为恢复目标校验的权威状态
+4. [x] 外部回调恢复后会继续推进 playbook，并在终态时回流 owner reevaluation
+5. [ ] 若业务需要对外暴露交互卡片或回跳链接，必须直接挂在 session / playbook 模型上，而不是重建旧 `external_interaction_task`
 
 当前实现说明：
 
-- 已提供 `GET /api/runtime/interactions/{taskId}`、`POST /api/runtime/interactions/{taskId}/return`、`POST /api/runtime/interactions/callbacks/{provider}`
-- interaction 创建由控制面 API 内部负责，不对外暴露单独的公共创建入口
-- runtime 出站统一采用 `WorkflowResult.outputMessages`；当前先落地 `TEXT` 与 `EXTERNAL_INTERACTION`
-- `outputMessages` 采用 workflow 级累计 append-only 语义，`messageKey` 在单 workflow 内唯一且不可变
-- `ExternalInteractionTask` 是唯一真相源；卡片消息只是 task 的展示投影
-- 首次有效 `FRONTEND_RETURN` 会把 task 推进到 `RETURNED` 并立即触发 `EXTERNAL_SYSTEM` resume
-- 首次有效 `PROVIDER_CALLBACK` 会把 task 推进到 `PROCESSING`，如有可信结果则一并写入 `latestResult`，并立即触发 `EXTERNAL_SYSTEM` resume
-- 后续重复 return/callback 只记事件，不重复 resume
+- 当前公开入口是 `POST /api/session-runtime/sessions/{sessionId}/external-callback`
+- 回调恢复目标必须同时命中：
+  - 正确 `sessionId`
+  - 正确 `playbookRunId`
+  - 当前 `playbook_run.status = WAITING`
+  - 当前 `waitingReason` 属于 `external_interaction:*`
+- 不满足条件的回调只能视为无效 / 过期 / 重复请求，不得再次推进状态机
+- 如果未来需要面向前端暴露站外交互卡片，也必须把它当成 session 运行时间线的一部分，而不是独立 runtime 子系统
 
 **第二步 — 首个真实 provider：**
 
@@ -170,7 +175,7 @@
 8. Provider adapter 抽象、webhook 签名校验、幂等处理
 9. 主动查单补偿机制
 
-依赖：2.3（恢复模型泛化）。
+依赖：2.3（Session / Playbook 恢复链路产品化）。
 
 ### 2.6 软删除与生命周期治理
 
@@ -216,8 +221,8 @@
 2. Python 服务接入 opentelemetry-python（FastAPI 自动 instrument）
 3. 统一 trace context 传播：API → Worker → Agent Runtime / Knowledge Service
 4. 关键业务指标（Micrometer / OTel Metrics）：
-   - Workflow 启动/完成/失败计数与耗时
-   - Agent 节点执行耗时
+   - Session / Playbook 启动、完成、失败计数与耗时
+   - Agent turn 执行耗时
    - Knowledge 检索延迟与命中率
    - API 请求延迟 P50/P95/P99
 5. 推荐后端：Grafana Tempo（trace）+ Prometheus（metrics）+ Grafana（dashboard）
@@ -294,9 +299,9 @@
 
 ### 4.5 成本治理与 SLO
 
-1. Workflow 级别成本归因（token 消耗、工具调用次数）
+1. Session / Playbook 级别成本归因（token 消耗、工具调用次数）
 2. 按 assistant / scenario / domain 聚合成本报表
-3. SLO 定义与告警：workflow 完成率、P95 延迟、失败率阈值
+3. SLO 定义与告警：session 成功率、playbook 完成率、P95 延迟、失败率阈值
 4. 配额管理：按租户/用户设置用量上限
 
 ### 4.6 知识检索质量治理
@@ -322,39 +327,49 @@
 
 - Vue Router 已引入，`/login` 与 `/console/...` 以及控制台 11 个菜单页均已具备真实路由
 - 当前已支持：浏览器前进后退、URL 直接访问菜单页、路由级懒加载，首屏体积已较单页模式收敛
-- 后续待补的是对象级深链能力：如 workflow / session / knowledge / resource 的选中对象通过 URL 直达与恢复
+- 后续待补的是对象级深链能力：如 session / playbook / knowledge / resource 的选中对象通过 URL 直达与恢复
 
-### C. 消息 payload 结构化（阶段二 §2.5 前置）
+### C. Session Event Payload 规范化
 
 现状：
 
-- 已完成统一消息 payload 改造：对外 `ConversationMessage` / `ConversationMessageRequest` / `CreateConversationSessionRequest` 已统一采用 `payloadType + payload`
-- 运行态内部存储与 `SessionContext` 保留 `content`，用于 LLM 上下文、列表摘要和历史回放文本语义
+- 当前运行态对外主模型已经是 `SessionRuntimeDetail`
+- 用户消息、owner 回复、playbook 进度、handoff、恢复信号都通过 `SessionEvent.payload` 表达结构化事实
+- Web 运行页已经直接渲染 `SessionEvent` 与 `PlaybookRun`
 
 统一目标：
 
-- 持久化消息、API 返回消息、前端渲染消息统一采用 `payloadType + payload` 模型
-- 文本消息不再特殊对待，改为 `payloadType = TEXT`，通过结构化 `payload` 表达
-- `content` 不再作为对外 canonical message 字段，只作为内部持久化和运行时文本投影保留
+- 让各类 `SessionEventType` 的 payload schema 明确化、稳定化
+- 避免继续依赖“某个字段碰巧存在”的弱约定来渲染运行页
+- 为后续 SSE、审计查询和外部集成提供稳定契约
 
-v1 类型：
+优先类型：
 
-- `TEXT`：承载普通对话文本
-- `EXTERNAL_INTERACTION`：承载外部交互卡片及其关联 task 信息
-- `RICH_CARD / CODE_BLOCK` 等只保留为后续扩展方向，本阶段不定义具体 schema
+- `USER_MESSAGE`
+- `OWNER_REPLY`
+- `OWNER_SWITCH`
+- `PLAYBOOK_STARTED`
+- `PLAYBOOK_WAITING`
+- `PLAYBOOK_RESUMED`
+- `PLAYBOOK_COMPLETED`
+- `SESSION_HUMAN_HANDOFF_STARTED`
+- `SESSION_HUMAN_HANDOFF_ENDED`
+- `HUMAN_RESUME_RECEIVED`
+- `EXTERNAL_CALLBACK_RECEIVED`
 
 跨层影响：
 
-- `packages/contracts`、OpenAPI、API Runtime DTO、`conversation_message` 表、Worker / Agent Runtime `SessionContext`、Web 消息渲染层已同步切换到统一消息 payload
-- 数据库存储已采用 `payload_type + payload_json + content` 双层模型：payload 负责 canonical 语义，content 负责内部文本语义
-- 后续 external interaction 需要直接复用这套消息基座，而不是再引入旁路字段或把 JSON 塞回文本
+- `packages/contracts-jvm` 中的 `SessionContracts.SessionEvent`
+- OpenAPI 与 TypeScript contracts
+- API `session-runtime` DTO
+- Web 运行页事件渲染逻辑
+- 后续 SSE event payload 与审计查询接口
 
 实施顺序：
 
-1. [x] 已完成统一消息契约与存储模型
-2. [x] 已完成前端渲染切到 payload
-3. 下一步接 `EXTERNAL_INTERACTION` 的 task / card / return 流程
-4. 最后扩展其他消息类型
+1. 先为高频事件补显式 schema 和最小字段集
+2. 再让 Web 运行页按 event type 做稳定渲染，而不是直接打印任意 JSON
+3. 最后再把这套 schema 复用到 SSE 和审计查询
 
 ### D. API 版本策略（阶段三之前确定）
 
@@ -403,7 +418,7 @@ v1 类型：
 
 以下工作项已在前序开发中完成，不再列为 TODO（详见 `docs/develop_record/2026-03-project_todos_snapshot.md`）：
 
-- [x] P0.1 运行态持久化：session/task/workflow/humanIntervention 落库
+- [x] P0.1 运行态持久化：session / session_event / playbook_run 落库
 - [x] P0.2 同步等待改异步 + 轮询观测闭环
 - [x] P1.1 结构化决策契约对齐
 - [x] P1.2 Workflow 失败可观测性：结构化错误码 + root cause

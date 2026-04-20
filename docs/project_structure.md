@@ -17,19 +17,25 @@
 ### 业务场景
 
 定义：面向具体业务目标的交付与使用单元。
-职责：承载业务入口、流程目标、运行观测。
+职责：承载业务入口、助手归属与运行观测入口。
 主要使用者：域管理员、场景负责人、业务用户。
 
 ### 助手
 
-定义：业务场景下的一套执行编排与协作单元。
-职责：组织多个智能体协作，承接模型策略、知识能力策略、内存策略、发布和运行锚点冻结。
+定义：业务场景下的一套协作配置与发布单元。
+职责：组织 owner agent、playbook、默认模型绑定、发布冻结与运行入口。
 主要使用者：域管理员、开发者。
 
 ### 智能体
 
-定义：助手内部面向某类任务的最小执行主体。
-职责：执行具体推理、决策、路由、Skill 读取和 Tool 调用。
+定义：助手内部面向某类职责的执行角色。
+职责：执行单轮推理，读取 skill / tool / knowledge，并决定回复、切换 owner、启动 playbook 或人工接管。
+主要使用者：开发者。
+
+### Playbook
+
+定义：被 owner agent 调用的强业务流程单元。
+职责：承载结构化输入输出、节点遍历、等待点、恢复和终态结果。
 主要使用者：开发者。
 
 ### 资源
@@ -61,10 +67,8 @@
 
 - `ownerType / ownerId`
 - `shareScope`
-- 智能体执行策略中的 `skillResourceIds / toolResourceIds`
+- agent 执行策略中的 `skillResourceVersionIds / toolResourceVersionIds`
 - 助手发布后的 release resources
-
----
 
 ### 发布快照
 
@@ -73,45 +77,51 @@
 当前发布快照会冻结：
 
 - 助手发布版本
-- 助手模型 / 知识能力 / memory 策略
+- `primaryAgentId`
+- owner policy / session policy / playbook policy
 - agent 执行配置
 - 资源版本锚点
-- 可执行图快照
+- playbook 定义
 
-运行时优先基于发布快照启动；未发布草稿在满足前置条件时，由控制面即时解析当前配置并生成临时运行快照。
-
----
+运行时只基于发布快照启动，不再以草稿临时快照承接主链。
 
 ### 运行实例
 
-作用：表达会话、任务、流程、节点和人工介入的运行态。
+作用：表达会话控制、事件时间线和强流程执行态。
 
 当前主要运行对象包括：
 
-- 会话 Session
-- 任务 Task
-- 工作流 Workflow Instance
-- 节点执行记录
-- 人工介入记录
-- Human checkpoint
-- Tool 结果摘要
-- Tool 调用记录
+- `Session`
+- `SessionEvent`
+- `PlaybookRun`
+- `sharedState`
 
-这样才能把“定义态”和“运行态”真正分开。
+其中：
+
+- `Session` 持有当前 owner、handoff、idle deadline 与活跃 playbook 等权威状态
+- `SessionEvent` 记录用户消息、owner 回复、owner switch、playbook 等待/恢复/完成、handoff 开始/结束等事实
+- `PlaybookRun` 记录一次 playbook 执行实例的输入、结果、等待原因与终态
+
+旧的 `Task / Workflow Instance / Human checkpoint` 已不再作为当前主设计基准。
 
 ---
 
-## 3. 可执行图结构
+## 3. 可执行结构
 
-当前助手编排采用显式图模型：
+当前助手运行采用“两层能力模型”：
 
-- 节点类型：`START / AGENT / HUMAN / END`
-- 边模型：`sourceNodeKey / targetNodeKey / routeKey / defaultEdge`
-- HUMAN 节点可生成人工待办与 checkpoint
-- AGENT 节点内部负责知识工具调用、Skill 读取、LLM 调用、Tool 调用和路由决策
+- `Owner Agent`
+  - 接收用户消息或系统触发
+  - 执行单轮推理
+  - 决定 `REPLY / NO_REPLY / SWITCH_OWNER / RUN_PLAYBOOK / SESSION_HUMAN_HANDOFF`
+- `Playbook`
+  - 由 owner 显式启动
+  - 作为 Temporal child workflow 运行
+  - 节点类型为 `STEP / TOOL_TASK / HUMAN_TASK / EXTERNAL_INTERACTION / END`
+  - 可挂起、恢复并返回结构化结果
 
 ## 4. 一句话总结
 
 当前可以把 Lynxus 理解为：
 
-**一个以业务域和业务场景为治理入口、以助手运行快照为执行锚点、以多智能体图编排为执行核心、以资源版本化、Skill / Tool 复用和人工介入为关键治理能力的平台原型。**
+**一个以业务域和业务场景为治理入口、以发布快照为配置锚点、以 session-owner-playbook 为运行主线、以资源版本化与可恢复强流程为核心能力的平台原型。**

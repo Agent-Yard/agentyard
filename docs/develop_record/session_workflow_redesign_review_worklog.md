@@ -2,7 +2,7 @@
 
 ## 范围
 
-- 目标文档：`docs/architecture/session_workflow_redesign.md`
+- 目标文档：`docs/develop_record/session_workflow_redesign.md`
 - 目标：审阅设计文档本身，而不是审阅当前项目实现是否与文档一致
 - 方法：
   - 按章节逐段阅读，并保留行号引用
@@ -97,7 +97,7 @@
 
 ### Finding 1: 设计文档已修复
 
-- 已直接修改 `docs/architecture/session_workflow_redesign.md`
+- 已直接修改 `docs/develop_record/session_workflow_redesign.md`
 - 本次修复采取的方案是：
   - 保持 `pendingOwnerReevaluation` 为布尔值
   - 明确其为“一次性触发语义”
@@ -139,7 +139,7 @@
 
 ### Finding 2: 设计文档已对齐
 
-- 已直接修改 `docs/architecture/session_workflow_redesign.md`
+- 已直接修改 `docs/develop_record/session_workflow_redesign.md`
 - 本次修复内容：
   - 在 `§2.4 Session 上下文恢复` 中明确：恢复 `sharedState` 仅用于认知性会话上下文，不承担操作性状态恢复
   - 在 `§3.2 sharedState 读写语义` 中明确：`sharedState` 只承载认知性上下文，不得作为 owner 路由、权限判断、playbook 生命周期、handoff 状态、外部回调处理、业务推进条件的权威依据
@@ -163,7 +163,7 @@
 
 ### Finding 3: 设计文档已对齐
 
-- 已直接修改 `docs/architecture/session_workflow_redesign.md`
+- 已直接修改 `docs/develop_record/session_workflow_redesign.md`
 - 本次修复内容：
   - 在 `§3.3 Playbook 终态处理` 中明确：若处于 handoff，playbook 终态只暴露给人工侧处理，并作为历史上下文保留；handoff 结束后也不会补偿触发自动 reevaluation
   - 在 `§9.4 Session Human Handoff` 中明确：
@@ -176,7 +176,7 @@
 
 ### Finding 4: 设计文档已对齐
 
-- 已直接修改 `docs/architecture/session_workflow_redesign.md`
+- 已直接修改 `docs/develop_record/session_workflow_redesign.md`
 - 本次修复内容：
   - 在 `§5.2 SWITCH_OWNER 专属校验` 中补充 `activePlaybookRunId == null`
   - 明确这条校验就是 playbook 活跃期间禁止 `switch_owner` 的权威落点
@@ -225,7 +225,7 @@
 
 ### Finding 5: 设计文档已对齐
 
-- 已直接修改 `docs/architecture/session_workflow_redesign.md`
+- 已直接修改 `docs/develop_record/session_workflow_redesign.md`
 - 本次修复内容：
   - 在 `§2.4 Session 生命周期` 中新增 workflow guardrail 语义
   - 在 `§4.1 Assistant 配置` 中新增 `sessionPolicy.maxWorkflowAge` 与 `sessionPolicy.maxWorkflowHistoryEvents`
@@ -246,7 +246,7 @@
 
 ### Finding 6: 设计文档已对齐
 
-- 已直接修改 `docs/architecture/session_workflow_redesign.md`
+- 已直接修改 `docs/develop_record/session_workflow_redesign.md`
 - 本次修复内容：
   - 在 `§3.3 Playbook Workflow` 中将 `STEP` 明确为“配置即代码”的脚本化节点，并规定其通过 activity 调用受限沙箱执行
   - 明确 Temporal workflow 的确定性边界：workflow 只做图遍历、状态转移、等待与路由，不直接执行动态脚本
@@ -265,7 +265,7 @@
 
 ### Finding 7: 设计文档已对齐
 
-- 已直接修改 `docs/architecture/session_workflow_redesign.md`
+- 已直接修改 `docs/develop_record/session_workflow_redesign.md`
 - 本次修复内容：
   - 在 `§2.4 Session 生命周期` 中明确：用户消息投递链路必须按 `sessionId` 串行化，并在检查活跃 workflow / 创建新 workflow / 投递消息期间持有 session 级锁
   - 在 `§2.5 Temporal 消息入口` 中明确：理论上同一用户 / 同一 session 不存在并发用户消息投递到创建链路的情况
@@ -357,7 +357,7 @@
 
 ### Finding 8: 设计文档已初步对齐
 
-- 已直接修改 `docs/architecture/session_workflow_redesign.md`
+- 已直接修改 `docs/develop_record/session_workflow_redesign.md`
 - 本次修复内容：
   - 将 `agent-runtime` 对外签名从 `ConversationContext` 收敛为 `PromptEnvelope`
   - 在 `§3.2 Agent Runtime` 中新增：
@@ -427,7 +427,7 @@
 
 ### Finding 8: 设计文档已更新到新方向
 
-- 已直接修改 `docs/architecture/session_workflow_redesign.md`
+- 已直接修改 `docs/develop_record/session_workflow_redesign.md`
 - 本次修复内容：
   - 将 `agent-runtime` 输入模型从上一版的纯文本 `PromptEnvelope` 改为混合式 `LlmInputEnvelope`
   - 明确：
@@ -453,7 +453,7 @@
 
 ### Finding 8: 设计文档已补充 provider 适配原则
 
-- 已直接修改 `docs/architecture/session_workflow_redesign.md`
+- 已直接修改 `docs/develop_record/session_workflow_redesign.md`
 - 本次修复内容：
   - 在 `§3.2 Agent Runtime` 中新增 provider role / tool calling 适配原则
   - 明确内部以语义层抽象输入元素，而不是直接绑定某一家 provider 的 role 集合
@@ -470,7 +470,7 @@
 
 ### Finding 9: 设计文档已对齐
 
-- 已直接修改 `docs/architecture/session_workflow_redesign.md`
+- 已直接修改 `docs/develop_record/session_workflow_redesign.md`
 - 本次修复内容：
   - 从 `§4.1 Assistant 配置` 中删除 `ownerPolicy.allowOwnerSwitch`
 - 这样处理后：
@@ -486,7 +486,7 @@
 
 ### Finding 10: 设计文档已对齐
 
-- 已直接修改 `docs/architecture/session_workflow_redesign.md`
+- 已直接修改 `docs/develop_record/session_workflow_redesign.md`
 - 本次修复内容：
   - 从 `§4.3 Playbook 配置` 中删除 `callableByAgentIds`
   - 从 `§5.2 RUN_PLAYBOOK 专属校验` 中删除 `currentOwnerAgentId ∈ playbook.callableByAgentIds`
@@ -519,7 +519,7 @@
 
 ### Finding 11: 设计文档已对齐
 
-- 已直接修改 `docs/architecture/session_workflow_redesign.md`
+- 已直接修改 `docs/develop_record/session_workflow_redesign.md`
 - 本次修复内容：
   - 在 `§3.3 Playbook Workflow` 中补充：进入等待点时写 `PLAYBOOK_WAITING`，恢复执行时写 `PLAYBOOK_RESUMED`
   - 在 `§6.1 Session Event` 中新增这两个事件类型与 payload 约束
@@ -538,7 +538,7 @@
 
 ### Finding 12: 设计文档已对齐
 
-- 已直接修改 `docs/architecture/session_workflow_redesign.md`
+- 已直接修改 `docs/develop_record/session_workflow_redesign.md`
 - 本次修复内容：
   - 在 `§2.1` / `§2.4` / `§9.1` / `§9.6` / `§10` 中去掉“idle 后恢复同一 session”的表述
   - 明确 idle 超时意味着当前 session 结束，后续进入创建新 session / 新 workflow
@@ -573,7 +573,7 @@
 
 ### Finding 13: 设计文档已对齐
 
-- 已直接修改 `docs/architecture/session_workflow_redesign.md`
+- 已直接修改 `docs/develop_record/session_workflow_redesign.md`
 - 本次修复内容：
   - 在 `§2.5 Temporal 消息入口` 中新增 Signal 校验与幂等原则
   - 在 `§9.4 Session Human Handoff` 中将 `SESSION_HANDOFF_END` 明确为幂等 Signal

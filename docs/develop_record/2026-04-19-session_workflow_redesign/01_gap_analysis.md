@@ -2,7 +2,7 @@
 
 ## 1. 分析基线
 
-- 设计基线：`docs/architecture/session_workflow_redesign.md`
+- 设计基线：`docs/develop_record/session_workflow_redesign.md`
 - 盘点范围：
   - `apps/api`
   - `apps/worker`

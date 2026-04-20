@@ -111,7 +111,7 @@ docker build \
 - 公共字段：`service`、`traceId`、`spanId`、`sessionId`、`workflowId`、`customerId`、`userId`
 - 字段语义：`customerId` 表示业务客户或外部终端用户；`userId` 表示平台系统用户
 - 跨服务透传头：`traceparent`、`X-Lynxus-Session-Id`、`X-Lynxus-Workflow-Id`、`X-Lynxus-Customer-Id`、`X-Lynxus-User-Id`
-- Web 运行态语义：会话对话页默认把当前登录用户当作 `customerId`；流程观测页的人工恢复默认把当前登录用户当作 `userId`
+- Web 运行态语义：业务用户在会话页发消息时使用 `customerId`；若后续补人工接管操作台，`human-reply / human-resume / handoff-end` 这类操作应写平台侧 `userId / operatorId`
 
 本地开发日志格式切换约定：
 
@@ -145,8 +145,8 @@ SPRING_PROFILES_ACTIVE=default pnpm local:worker
 - 前端开发服务通过 Vite 代理将 `/api` 转发到 `http://127.0.0.1:8080`
 - 控制台未登录时会跳转 `/login`；开发态可通过 `/api/auth/dev-bootstrap-login` 建立本地 bootstrap 会话
 - 前端不再回退到内置 mock 数据；后端未启动时页面请求会直接报错
-- API 启动时会对数据库中的非终态 runtime workflow 主动向 Temporal 做一次对账
-- Worker 会消费同一 Temporal namespace / task queue 下的 assistant run workflow
+- API 在读取 session 列表、session 详情和投递消息前，会按需向 Temporal 检查对应 session workflow 是否仍开放，并在必要时把已结束会话标记为 `ENDED`
+- Worker 会消费同一 Temporal namespace / task queue 下的 `SessionWorkflow` 与 `PlaybookWorkflow`
 - [agent-runtime.sh](/Users/eric/projects/lynxus/scripts/local/agent-runtime.sh) 默认监听 `127.0.0.1:8090`，仅供本机 `worker` 调用
 - [knowledge-service.sh](/Users/eric/projects/lynxus/scripts/local/knowledge-service.sh) 默认监听 `127.0.0.1:8091`，仅供本机 `api / worker / agent-runtime` 调用
 - [web.sh](/Users/eric/projects/lynxus/scripts/local/web.sh) 默认监听 `0.0.0.0:5173`，便于开发时从局域网设备访问
@@ -162,7 +162,7 @@ SPRING_PROFILES_ACTIVE=default pnpm local:worker
 - 知识库支持文件上传和 URL 导入；导入任务与索引快照都通过知识服务异步推进
 - Web 知识库工作台会轮询展示导入 / 快照状态，并支持失败重试与检索验证
 - 若命中真实模型资源，必须在根目录 `.env` 提供对应 API key
-- `sendMessage` / `launchTask` 当前已改为异步受理后返回，由运行态观测页轮询收口
+- `createSession` / `sendMessage` / `human-resume` / `external-callback` / `human-reply` 当前都通过 `/api/session-runtime/...` 入口受理，运行结果由会话页轮询收口
 - `BUSINESS_USER` 只保留目录只读与运行态使用；目录治理写操作需要 `PLATFORM_ADMIN / DOMAIN_ADMIN / DEVELOPER`
 
 ## 后续扩展方向

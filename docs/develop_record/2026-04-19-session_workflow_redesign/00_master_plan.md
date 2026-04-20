@@ -3,7 +3,7 @@
 ## 0. 任务定义
 
 - 任务名称：Session Workflow 大重构
-- 唯一设计基准：`docs/architecture/session_workflow_redesign.md`
+- 唯一设计基准：`docs/develop_record/session_workflow_redesign.md`
 - 总体原则：
   - 现有实现凡与设计文档冲突，直接按设计重做
   - 不考虑向前兼容、数据兼容、接口兼容、灰度迁移或历史数据保留

@@ -2,30 +2,30 @@
 
 ## 阶段定位
 
-当前代码库已经不是“只验证概念能否成立”的最小 MVP，而是一个可本地联调、具备真实运行编排能力的平台原型。
+当前代码库已经不是“验证概念是否成立”的最小 MVP，而是一个可本地联调、具备真实治理与运行主链的平台原型。
+
 更贴切的描述是：
 
-- 单租户默认的企业智能体平台原型
-- 运行快照驱动的单助手多智能体运行系统
-- 面向后续持久化、权限、可观测和生产化治理扩展的代码底座
+- 默认单租户的企业智能体平台原型
+- 以 assistant release 为配置锚点的运行系统
+- 以 `session workflow + owner agent + playbook workflow` 为核心主线的代码底座
 
 ## 当前重心
 
-当前实现主要围绕配置态、发布态与运行态三条主线：
+当前实现主要围绕三条主线：
 
-- 智能体编排：表达助手内部节点、交接顺序和资源依赖
-- 资源管理：表达资源归属、共享范围、版本体系、最新版本 / 生效版本语义和绑定锚点
-- 运行时会话：由调用方选择一个助手后持续对话，并沉淀任务与流程轨迹
-- 助手发布：发布时冻结当前资源绑定版本，生成可回溯的发布快照
+- 配置治理：业务域、场景、助手、agent、playbook、知识库、资源
+- 发布冻结：把运行必需的资源版本与流程定义冻结进 assistant release
+- 运行执行：以 session 为中心承载 owner、shared state、playbook、handoff 与观测
 
 ## 应用划分
 
-- `apps/web`：Vue 控制台，承接配置态页面、运行态页面和开发态用户会话展示
-- `apps/api`：Spring Boot 控制面 API，负责目录、发布、会话和运行实例聚合
-- `apps/worker`：Temporal workflow worker，负责长流程托管与人工恢复
-- `apps/agent-runtime`：Python 执行运行时，负责图编排、资源调用和节点推进
+- `apps/web`：Vue 控制台，承接配置态页面、知识与资源工作台、运行态页面
+- `apps/api`：Spring Boot 控制面 API，负责目录治理、发布、认证与 `session-runtime` 聚合查询
+- `apps/worker`：Temporal worker，负责 `SessionWorkflow`、`PlaybookWorkflow` 与知识相关 workflow / activity
+- `apps/agent-runtime`：Python 执行运行时，负责单个 owner agent 的单轮推理
 - `apps/knowledge-service`：Python 知识服务，负责知识源对象、导入任务、文档切片、索引快照与检索数据
-- `packages/contracts-jvm`：JVM 侧共享 workflow / runtime 契约
+- `packages/contracts-jvm`：JVM 侧共享 session / playbook / runtime 契约
 - `packages/contracts`：TypeScript 合同类型与 OpenAPI 文档
 - `scripts`：本地开发启动脚本与环境变量装载
 - `infra/local`：本地 Docker 依赖
@@ -34,67 +34,80 @@
 
 - `apps/api`、`apps/worker`、`packages/contracts-jvm` 由根目录 Gradle 多项目管理
 - `apps/web`、`packages/contracts` 由 pnpm workspace 管理
-- `apps/agent-runtime` 独立用 Python 虚拟环境运行
+- `apps/agent-runtime`、`apps/knowledge-service` 通过根目录 `uv` workspace 管理
 
 ## 前端导航
 
-控制台导航按四个一级分区组织，并在分区下展开二级页面：
+控制台导航当前按五个一级分区组织：
 
 - `平台设计`：业务域、业务场景
-- `助手构建`：助手配置、智能体、编排设计
-- `资源与发布`：资源目录、资源新建
-- `运行与观测`：会话运行、流程观测
+- `助手构建`：助手配置、智能体、Playbook
+- `知识库`：知识库目录、知识库新建
+- `能力资源`：资源目录、资源新建
+- `运行与观测`：会话运行
 
 ## API 代码分区
 
-`apps/api` 当前更接近按职责分包，而不是完整 DDD 模块化拆分：
+`apps/api` 当前按职责分包：
 
-- `catalog`：业务域、场景、助手、智能体、资源、资源版本、编排、发布快照
-- `runtime`：会话、任务、工作流、人工动作、Temporal gateway
-- `auth`：开发态用户会话接口
+- `catalog`：业务域、场景、助手、智能体、playbook、资源、资源版本、发布快照
+- `knowledge`：知识库治理、导入聚合、发布与检索验证
+- `session`：`session-runtime` API、session repository、Temporal gateway、投递串行化
+- `auth`：OIDC / bootstrap 登录与用户会话
 - `system`：健康检查和依赖状态接口
-- `shared`：统一响应和异常处理
+- `shared`：统一响应、异常处理与通用基础设施
 - `config`：Web 跨域等基础配置
 
-目录数据当前通过 `JdbcCatalogRepository` 落到 PostgreSQL JSONB；知识服务的结构化存储使用独立数据库；运行态 `session / message / task / workflow / humanIntervention` 投影也已落到 PostgreSQL，并在 API 启动时对账 Temporal。
+目录数据当前通过 `JdbcCatalogRepository` 落到 PostgreSQL JSONB；知识服务的结构化存储使用独立数据库；运行态已经落到 PostgreSQL 的：
+
+- `session_runtime_session`
+- `session_runtime_event`
+- `session_runtime_playbook_run`
 
 ## Worker 与 Runtime 分工
 
-- `apps/worker` 中的 `session` / `workflow` 包分别负责 session workflow、playbook workflow 与知识库 workflow / activity 编排
-- `apps/worker` 中的 `runtime` 包负责通过 HTTP 调用 Python `agent-runtime`
-- `apps/agent-runtime` 负责执行单个 owner agent 的单轮推理并返回 `AgentTurnResult`
+- `apps/worker/src/main/java/com/lynxus/worker/session`
+  - 负责 `SessionWorkflowImpl`
+  - 负责 `PlaybookWorkflowImpl`
+  - 负责 session / playbook 持久化 activity
+- `apps/worker/src/main/java/com/lynxus/worker/runtime`
+  - 负责通过 HTTP 调用 Python `agent-runtime` 与 `knowledge-service`
+- `apps/agent-runtime`
+  - 负责执行单个 owner agent 的一轮推理
+  - 返回 `AgentTurnResult(decision, sharedState)`
 
 ## 运行链路
 
 当前运行链路已经切到 session workflow 模型：
 
-1. API 创建 `session` 并以 `primaryAgentId` 初始化 owner
-2. Temporal `SessionWorkflow` 接收用户消息 Update 并维护 `session event / playbook run / sharedState`
+1. API 创建 `session`，并以 assistant release 的 `primaryAgentId` 初始化 owner
+2. `SessionWorkflow` 接收用户消息 Update，并维护 owner、shared state、handoff、idle timer、playbook 生命周期
 3. worker 调用 Python runtime `/agent-turns/execute`
-4. Python runtime 仅执行当前 owner 的单轮决策，返回 `REPLY / NO_REPLY / SWITCH_OWNER / RUN_PLAYBOOK / SESSION_HUMAN_HANDOFF`
+4. Python runtime 只执行当前 owner 的单轮决策，返回：
+   - `REPLY`
+   - `NO_REPLY`
+   - `SWITCH_OWNER`
+   - `RUN_PLAYBOOK`
+   - `SESSION_HUMAN_HANDOFF`
 5. 若 owner 启动 playbook，则由 `PlaybookWorkflow` 作为 child workflow 承担强流程
-6. playbook 终态结果回流 session event，再由 owner reevaluation 继续推进
+6. playbook 的等待、恢复和终态结果写入 `session event / playbook run`
+7. 非 handoff 状态下，playbook 终态会触发 owner reevaluation 继续推进
 
 ## 当前实现策略
 
-- LLM、知识库、Tool provider 采用轻量 adapter，运行时只走真实 provider 调用
-- 知识库治理采用显式异步任务模型：文件 / URL 导入、解析切片、索引快照构建、失败重试与检索验证分层治理
-- 资源按“资源头 + 版本”建模，智能体绑定时必须显式锚定资源版本
-- 助手切换到 `PUBLISHED` 时会冻结资源版本和 agent 执行配置，作为后续运行和审计的稳定锚点
-- 前端资源区拆分为“资源目录”和“资源新建”两页
-- `资源目录`：聚焦资源清单、详情、版本流转、生效版本切换和结构化引用分析
-- `资源新建`：按知识库、Tool、LLM、Skill 四种蓝图维护结构化初始版本配置
-- `SKILL` 资源承担智能体按需读取的技能提示，不再使用独立 Prompt Template 资源
-- 认证采用本地开发态用户会话，不接真实 OIDC
+- 发布版 assistant release 是运行唯一配置锚点
+- owner agent 的知识检索、tool calling、skill 读取都发生在 `agent-runtime` 内部推理循环
+- playbook 只承担强业务流程，不重复承载 owner 推理
+- `sharedState` 只承载认知性上下文，不承载 owner / handoff / playbook 生命周期这类操作性权威状态
 - 持久化采用 JSONB catalog store + `session/session_event/playbook_run` 运行态表
-- 控制面 API 优先提供真实接口消费，不再提供内置 demo 数据闭环
-- 前端运行态页面围绕 `session event / owner / playbook / handoff` 组织，不再暴露旧编排图页面
-- 当前系统层不做跨助手自动切换；一次会话只绑定一个助手，由调用方显式选择
+- 前端运行态页面围绕 `session event / owner / playbook / handoff` 组织，不再暴露旧 workflow 观测页
+- 当前系统层不做跨 assistant 自动切换；一次 session 只绑定一个 assistant
 
 ## 当前边界
 
-- 认证仍以 mock 方案为主，真实 OIDC 尚未接入
-- session 运行态已落盘为 `session/session_event/playbook_run`
+- 认证已经进入 OIDC-first 模式，但开发态仍保留 bootstrap 登录旁路
+- session 运行态已落盘，但还没有订阅式更新
+- Web 运行页仍缺人工操作面板
 - 资源执行层优先保证本地联调和演示闭环，生产级安全治理仍需补齐
 - MinIO / pgvector 已进入知识导入与检索正式链路，但线上职责、备份与监控仍需继续补齐
 
@@ -112,4 +125,4 @@
 - FastAPI：0.115.12
 - Uvicorn：0.34.0
 - Ant Design Vue：4.2.6
-- PostgreSQL / Redis / MinIO / Temporal：通过本地 Docker 依赖接入
+- PostgreSQL / MinIO / Temporal：通过本地 Docker 依赖接入
