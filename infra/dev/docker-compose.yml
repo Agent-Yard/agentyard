@@ -38,6 +38,32 @@ services:
     volumes:
       - minio_data:/data
 
+  redis:
+    image: ${LYNXUS_IMAGE_REDIS:-redis:7.4-alpine}
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --save
+      - "60"
+      - "1"
+      - --loglevel
+      - warning
+      - --requirepass
+      - ${LYNXUS_REDIS_PASSWORD:-lynxus}
+    environment:
+      REDIS_PASSWORD: ${LYNXUS_REDIS_PASSWORD:-lynxus}
+    ports:
+      - "${LYNXUS_DEV_REDIS_BIND_ADDRESS:-127.0.0.1}:${LYNXUS_DEV_REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - redis-cli --pass "$${REDIS_PASSWORD}" ping | grep PONG
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   temporal:
     image: ${LYNXUS_IMAGE_TEMPORAL:-temporalio/auto-setup:1.28.1}
     restart: unless-stopped
@@ -116,12 +142,21 @@ services:
       LYNXUS_INTERNAL_AUTH_TOKEN: ${LYNXUS_INTERNAL_AUTH_TOKEN}
       LYNXUS_LOG_FORMAT: ${LYNXUS_LOG_FORMAT:-json}
       LYNXUS_KNOWLEDGE_SERVICE_BASE_URL: http://knowledge-service:8091
+      LYNXUS_REDIS_HOST: redis
+      LYNXUS_REDIS_PORT: 6379
+      LYNXUS_REDIS_DATABASE: ${LYNXUS_REDIS_DATABASE:-0}
+      LYNXUS_REDIS_USERNAME: ${LYNXUS_REDIS_USERNAME:-}
+      LYNXUS_REDIS_PASSWORD: ${LYNXUS_REDIS_PASSWORD:-lynxus}
+      LYNXUS_REDIS_SSL_ENABLED: ${LYNXUS_REDIS_SSL_ENABLED:-false}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       OPENAI_COMPATIBLE_API_KEY: ${OPENAI_COMPATIBLE_API_KEY:-}
     depends_on:
-      - knowledge-service
+      knowledge-service:
+        condition: service_started
+      redis:
+        condition: service_healthy
 
   sandbox:
     image: ${LYNXUS_IMAGE_SANDBOX:-ghcr.io/agent-infra/sandbox:1.0.0.152}
@@ -146,6 +181,12 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/lynxus_core
       SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-lynxus}
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-lynxus}
+      LYNXUS_REDIS_HOST: redis
+      LYNXUS_REDIS_PORT: 6379
+      LYNXUS_REDIS_DATABASE: ${LYNXUS_REDIS_DATABASE:-0}
+      LYNXUS_REDIS_USERNAME: ${LYNXUS_REDIS_USERNAME:-}
+      LYNXUS_REDIS_PASSWORD: ${LYNXUS_REDIS_PASSWORD:-lynxus}
+      LYNXUS_REDIS_SSL_ENABLED: ${LYNXUS_REDIS_SSL_ENABLED:-false}
       LYNXUS_AUTH_BOOTSTRAP_USERNAME: ${LYNXUS_AUTH_BOOTSTRAP_USERNAME:-admin}
       LYNXUS_AUTH_DEFAULT_ROLE: ${LYNXUS_AUTH_DEFAULT_ROLE:-BUSINESS_USER}
       LYNXUS_AUTH_DEV_BOOTSTRAP_ENABLED: ${LYNXUS_AUTH_DEV_BOOTSTRAP_ENABLED:-true}
@@ -168,6 +209,8 @@ services:
         condition: service_started
       knowledge-service:
         condition: service_started
+      redis:
+        condition: service_healthy
 
   worker:
     build:
@@ -181,6 +224,12 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/lynxus_core
       SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-lynxus}
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-lynxus}
+      LYNXUS_REDIS_HOST: redis
+      LYNXUS_REDIS_PORT: 6379
+      LYNXUS_REDIS_DATABASE: ${LYNXUS_REDIS_DATABASE:-0}
+      LYNXUS_REDIS_USERNAME: ${LYNXUS_REDIS_USERNAME:-}
+      LYNXUS_REDIS_PASSWORD: ${LYNXUS_REDIS_PASSWORD:-lynxus}
+      LYNXUS_REDIS_SSL_ENABLED: ${LYNXUS_REDIS_SSL_ENABLED:-false}
       LYNXUS_AGENT_RUNTIME_BASE_URL: http://agent-runtime:8090
       LYNXUS_SANDBOX_BASE_URL: http://sandbox:8080
       LYNXUS_KNOWLEDGE_SERVICE_BASE_URL: http://knowledge-service:8091
@@ -196,6 +245,8 @@ services:
         condition: service_started
       agent-runtime:
         condition: service_started
+      redis:
+        condition: service_healthy
       sandbox:
         condition: service_started
 
@@ -217,3 +268,4 @@ services:
 volumes:
   postgres_data:
   minio_data:
+  redis_data:

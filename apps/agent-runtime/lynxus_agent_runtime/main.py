@@ -16,6 +16,7 @@ from lynxus_common import (
 
 from .decisioning import execute_agent_turn
 from .models import AgentTurnRequest, AgentTurnResult, PlaybookToolTaskRequest, PlaybookToolTaskResult
+from .redis_support import RedisSettings, create_redis_client
 from .tooling import execute_playbook_tool_task
 
 LOGGER = logging.getLogger("lynxus-agent-runtime")
@@ -33,10 +34,24 @@ def require_internal_bearer(authorization: str | None = Header(default=None, ali
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
+async def lifespan(app: FastAPI):
     global LOGGER
     LOGGER = configure_structured_logging("agent-runtime", "LYNXUS_AGENT_RUNTIME_LOG_LEVEL", "lynxus-agent-runtime")
+    redis_settings = RedisSettings.from_env()
+    redis_client = create_redis_client(redis_settings)
+    await redis_client.ping()
+    LOGGER.info(
+        "redis connectivity verified",
+        extra={
+            "redisHost": redis_settings.host,
+            "redisPort": redis_settings.port,
+            "redisDatabase": redis_settings.database,
+            "redisSslEnabled": redis_settings.ssl_enabled,
+        },
+    )
+    app.state.redis_client = redis_client
     yield
+    await redis_client.aclose()
     clear_log_context()
 
 

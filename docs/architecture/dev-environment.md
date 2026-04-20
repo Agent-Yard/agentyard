@@ -96,6 +96,7 @@
 - PostgreSQL
 - PostgreSQL bootstrap 初始化器
 - MinIO
+- Redis
 - Temporal
 - Temporal UI + Basic Auth gateway
 - API
@@ -110,6 +111,7 @@
 - 直连 API：`http://<server-host>:18080/api`
 - Temporal UI：`http://<server-host>:8088`
 - MinIO Console：默认仅监听 `127.0.0.1:9001`
+- Redis：默认仅监听 `127.0.0.1:6379`
 
 ## 宿主机绑定清单
 
@@ -119,6 +121,7 @@
 - API：`0.0.0.0:18080 -> container:8080`
 - Temporal UI Gateway：`0.0.0.0:8088 -> container:8088`
 - MinIO Console：`127.0.0.1:9001 -> container:9001`
+- Redis：`127.0.0.1:6379 -> container:6379`
 
 以下服务默认不绑定宿主机，只在 Docker 网络内互通：
 
@@ -136,6 +139,7 @@
 - `LYNXUS_DEV_API_BIND_ADDRESS`
 - `LYNXUS_DEV_TEMPORAL_UI_BIND_ADDRESS`
 - `LYNXUS_DEV_MINIO_CONSOLE_BIND_ADDRESS`
+- `LYNXUS_DEV_REDIS_BIND_ADDRESS`
 
 如果需要调整，修改 `.env.dev` 中的：
 
@@ -145,10 +149,12 @@
 - `LYNXUS_DEV_API_PORT`
 - `LYNXUS_DEV_TEMPORAL_UI_BIND_ADDRESS`
 - `LYNXUS_DEV_TEMPORAL_UI_PORT`
+- `LYNXUS_DEV_REDIS_BIND_ADDRESS`
+- `LYNXUS_DEV_REDIS_PORT`
 
 ## 当前约束
 
 - `dev` 仍然是开发环境，不是生产发布方案
 - 容器编排默认直接 `build` 当前工作树，不包含镜像仓库发布流程
 - 如果关闭开发态 bootstrap 登录，当前必须补齐 OIDC 客户端注册，否则 API 会按现有校验逻辑拒绝启动
-- MinIO、PostgreSQL、Temporal 的备份、高可用和监控仍不在这套配置里
+- MinIO、PostgreSQL、Redis、Temporal 的备份、高可用和监控仍不在这套配置里

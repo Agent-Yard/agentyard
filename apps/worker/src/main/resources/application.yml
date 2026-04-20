@@ -5,6 +5,16 @@ spring:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://127.0.0.1:5432/lynxus_core}
     username: ${SPRING_DATASOURCE_USERNAME:lynxus}
     password: ${SPRING_DATASOURCE_PASSWORD:lynxus}
+  data:
+    redis:
+      host: ${LYNXUS_REDIS_HOST:127.0.0.1}
+      port: ${LYNXUS_REDIS_PORT:6379}
+      database: ${LYNXUS_REDIS_DATABASE:0}
+      username: ${LYNXUS_REDIS_USERNAME:}
+      password: ${LYNXUS_REDIS_PASSWORD:lynxus}
+      ssl:
+        enabled: ${LYNXUS_REDIS_SSL_ENABLED:false}
+      timeout: ${LYNXUS_REDIS_TIMEOUT:3s}
 
 logging:
   structured:
@@ -29,6 +39,8 @@ lynxus:
     base-url: ${LYNXUS_KNOWLEDGE_SERVICE_BASE_URL:http://127.0.0.1:8091}
   internal-auth:
     token: ${LYNXUS_INTERNAL_AUTH_TOKEN}
+  redis:
+    health-check-enabled: ${LYNXUS_REDIS_HEALTH_CHECK_ENABLED:true}
   temporal:
     target: ${LYNXUS_TEMPORAL_TARGET:127.0.0.1:7233}
     namespace: ${LYNXUS_TEMPORAL_NAMESPACE:default}

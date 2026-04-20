@@ -8,6 +8,7 @@ dependencies = [
     "httpx==0.28.1",
     "lynxus-python-common",
     "pydantic",
+    "redis[hiredis]==6.0.0",
     "structlog",
     "uvicorn",
 ]

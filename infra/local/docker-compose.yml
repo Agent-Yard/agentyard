@@ -37,6 +37,31 @@ services:
       - "127.0.0.1:9001:9001"
     volumes:
       - minio_data:/data
+
+  redis:
+    image: ${LYNXUS_IMAGE_REDIS:-redis:7.4-alpine}
+    command:
+      - redis-server
+      - --save
+      - "60"
+      - "1"
+      - --loglevel
+      - warning
+      - --requirepass
+      - ${LYNXUS_REDIS_PASSWORD:-lynxus}
+    environment:
+      REDIS_PASSWORD: ${LYNXUS_REDIS_PASSWORD:-lynxus}
+    ports:
+      - "127.0.0.1:${LYNXUS_REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - redis-cli --pass "$${REDIS_PASSWORD}" ping | grep PONG
+      interval: 5s
+      timeout: 3s
+      retries: 20
   temporal:
     image: ${LYNXUS_IMAGE_TEMPORAL:-temporalio/auto-setup:1.28.1}
     environment:
@@ -85,3 +110,4 @@ services:
 volumes:
   postgres_data:
   minio_data:
+  redis_data:
