@@ -5,6 +5,7 @@
 - 范围只覆盖运行会话页，即 [RuntimeConversationPage.vue](/Users/eric/projects/lynxus/apps/web/src/pages/RuntimeConversationPage.vue)。
 - 目标是把当前“轮询 `session detail`”升级为“优先 SSE、失败降级轮询”。
 - SSE 主模型必须对齐当前 session workflow 架构，只围绕 `session / session event / playbook run` 推送，不重新引入旧 `task / workflow instance` 语义。
+- 说明：截至 2026-04-20，平台基础设施已完成共享 Redis 接入；但本方案这一版仍不实现基于 Redis 的 SSE 跨实例广播，相关能力继续归属 `docs/project_todos.md` §3.7。
 
 ## Public APIs / Interfaces
 
@@ -88,4 +89,4 @@
 - 不覆盖全局 session 列表实时化
 - 不做细粒度 delta 协议
 - 不把 SSE 扩展到 catalog 页面
-- 不在本期引入 Redis / MQ / 持久事件总线
+- 不在本期实现基于 Redis / MQ / 持久事件总线的 SSE 跨实例广播

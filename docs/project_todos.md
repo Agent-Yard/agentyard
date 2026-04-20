@@ -173,7 +173,7 @@
 4. Knowledge Service：基于 `PostgreSQL + pgvector + pg_trgm + tsvector` 持续优化检索质量与索引性能
    - 当前方案保留 `LEXICAL / VECTOR / HYBRID` 三种模式，embedding 由 OpenAI-compatible `/embeddings` 提供
    - 关注大规模 chunk 量级下的索引参数、查询延迟与 embedding 成本
-5. 缓存策略：catalog 热数据（发布快照）考虑进程内缓存或 Redis（多实例场景下的共享与失效协议详见 §3.6）
+5. 缓存策略：catalog 热数据（发布快照）考虑进程内缓存或 Redis（多实例场景下的共享与失效协议详见 §3.7）
 
 ### 3.5 安全加固
 
@@ -181,7 +181,7 @@
 
 1. API 输入校验全覆盖（Spring Validation 已引入，确保无遗漏）
 2. CORS 收紧为生产域名白名单
-3. Rate limiting：API 层引入基础限流（Bucket4j 或 API Gateway 层面；多实例场景需走 Redis backend，详见 §3.6）
+3. Rate limiting：API 层引入基础限流（Bucket4j 或 API Gateway 层面；多实例场景需走 Redis backend，详见 §3.7）
 4. SQL 注入防护审计（当前 JDBC template 需确认参数化查询无遗漏）
 5. 前端 XSS 防护：确保用户输入内容展示时经过转义
 6. Webhook 签名校验（§2.4 external interaction 依赖）
@@ -192,6 +192,7 @@
 ### 3.6 隐私保护与数据安全映射层
 
 > 这是企业级交付的硬底线，也是改动 Agent Runtime 调用契约的底层能力，必须早于多实例扩容、多租户隔离等上层议题落地。
+> 详细实施方案见 `docs/todo/privacy_mapping_plan.md`。
 
 现状：
 
@@ -247,6 +248,12 @@
 
 ### 3.7 多实例部署一致性与共享状态
 
+状态（截至 2026-04-20）：
+
+- 已完成 Redis 基础接入：`infra/local` 与 `infra/dev` 已提供共享 Redis service；`api`、`worker`、`agent-runtime` 已接入统一 `LYNXUS_REDIS_*` 配置并在启动期执行连通性校验
+- 尚未完成生产级交付：生产 compose / K8s manifest、TLS、Secret 注入策略仍待补齐
+- 尚未完成业务级能力：SSE 跨实例广播、共享缓存失效、分布式限流、Spring Session、幂等键、分布式锁都还没有落地到 Redis
+
 现状：API / Worker / Agent Runtime / Knowledge Service 当前都隐式假设单实例运行，多处依赖进程内状态：
 
 - API 的 SSE 连接注册表与 replay buffer（§2.2）
@@ -277,7 +284,9 @@
 
 实施顺序建议：
 
-1. 先把 Redis 引入 infra 编排（local / dev / 生产 compose / K8s manifest），统一连接配置、密码与 TLS
+1. Redis 基础接入先行
+   - 2026-04-20 已完成 `infra/local` / `infra/dev` 以及 `api` / `worker` / `agent-runtime` 的基础接入
+   - 生产 compose / K8s manifest、TLS、Secret 注入仍待补齐
 2. 优先解决 §2.2 SSE 跨实例广播，因为这是阻断 API 多实例部署的最硬约束
 3. 再做登录态后端化，让负载均衡可以无粘性
 4. 缓存与限流走在“引入热点 / 出现压力”后再做
