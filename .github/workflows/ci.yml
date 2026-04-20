@@ -15,6 +15,7 @@ jobs:
   java:
     name: Java Check
     runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     steps:
       - name: Checkout
@@ -30,8 +31,64 @@ jobs:
       - name: Ensure Gradle wrapper is executable
         run: chmod +x ./gradlew
 
-      - name: Run Gradle check
-        run: ./gradlew check --no-daemon
+      - name: Run worker tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew :apps:worker:test --no-daemon --console=plain --stacktrace &
+          gradle_pid=$!
+          (
+            sleep 900
+            if kill -0 "${gradle_pid}" 2>/dev/null; then
+              echo "Gradle worker test step exceeded 15 minutes; dumping JVM state"
+              ps -ef | grep -E '[j]ava|[g]radle' || true
+              jps -lv || true
+              for pid in $(jps | awk '{print $1}'); do
+                echo "Thread dump for JVM ${pid}"
+                jcmd "${pid}" Thread.print || true
+              done
+              kill -TERM "${gradle_pid}" || true
+            fi
+          ) &
+          watchdog_pid=$!
+          set +e
+          wait "${gradle_pid}"
+          status=$?
+          set -e
+          kill "${watchdog_pid}" 2>/dev/null || true
+          wait "${watchdog_pid}" 2>/dev/null || true
+          exit "${status}"
+
+      - name: Run api tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew :apps:api:test --no-daemon --console=plain --stacktrace &
+          gradle_pid=$!
+          (
+            sleep 900
+            if kill -0 "${gradle_pid}" 2>/dev/null; then
+              echo "Gradle api test step exceeded 15 minutes; dumping JVM state"
+              ps -ef | grep -E '[j]ava|[g]radle' || true
+              jps -lv || true
+              for pid in $(jps | awk '{print $1}'); do
+                echo "Thread dump for JVM ${pid}"
+                jcmd "${pid}" Thread.print || true
+              done
+              kill -TERM "${gradle_pid}" || true
+            fi
+          ) &
+          watchdog_pid=$!
+          set +e
+          wait "${gradle_pid}"
+          status=$?
+          set -e
+          kill "${watchdog_pid}" 2>/dev/null || true
+          wait "${watchdog_pid}" 2>/dev/null || true
+          exit "${status}"
+
+      - name: Run contracts check
+        run: ./gradlew :packages:contracts-jvm:check --no-daemon --console=plain --stacktrace
 
   node:
     name: Node Lint And Build
