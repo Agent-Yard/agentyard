@@ -1,49 +1,11 @@
 # Catalog TODO
 
-这份文档记录当前控制面目录侧仍待补齐的工作项。
-和 `docs/develop_record/` 中的过程留档不同，这里只保留“当前仍有效”的待办。
+> 这份文档只保留控制面目录侧“当前仍待办”的细节项，作为 [`docs/project_todos.md`](../project_todos.md) §2.5 / §2.7 的详细补充。
+> 已完成的主线条目（统一对象级引用分析、删除前影响预览）已沉淀到主 todos 的“已完成工作回顾”，详细过程见 `docs/develop_record/`。
 
-## 1. 统一对象级引用分析
+## 1. 软删除、归档与治理视图
 
-现状：
-
-- 已新增统一对象引用分析接口 `GET /api/catalog/references/{objectType}/{objectId}`
-- 已覆盖 `domain / scenario / assistant / agent / resource / knowledge_base`
-- 已明确 `DIRECT / INDIRECT` 与 `BLOCKS_DELETION / ADVISORY` 两组治理语义
-- 资源中心和知识库旧引用接口已复用同一分析结果，删除阻断文案也改为从统一分析派生
-- Web 端 `Domain / Scenario / Assistant / Agent / Resource / Knowledge Library` 详情页都已接入统一引用分析面板
-
-对后续工作的意义：
-
-1. `P2.2` 删除前影响预览可以直接复用该协议，不需要再重新设计对象关系模型
-2. `P2.5` 资源治理视图增强可以继续沿用同一关系语义和上下文字段
-3. 后续若补批量分析，只需要在同一返回结构上扩展批量入口，而不需要推翻当前接口
-
-## 2. 删除前影响预览
-
-现状：
-
-- 已新增统一删除影响预览接口 `GET /api/catalog/deletion-preview/{objectType}/{objectId}`
-- 已覆盖 `domain / scenario / assistant / agent / resource / knowledge_base` 六类一级对象删除
-- Web 删除入口已统一改为“先看预览，再确认删除”
-- 预览结构已区分：
-  - `blockers`：阻断删除的对象清单
-  - `advisories`：受影响的发布快照 / 编排 / 绑定关系
-  - `cascadeDeletes`：自动级联回收清单
-
-当前边界：
-
-- 本轮只覆盖一级对象删除，不包含资源版本删除和知识发布版本删除
-- 现有真实删除语义保持不变，预览只是把既有规则前置和结构化
-- 批量删除接口尚未实现，但可以直接复用当前单对象预览结构
-
-后续目标：
-
-1. 把资源版本删除、知识发布版本删除也纳入统一预览能力
-2. 在批量删除场景直接复用当前 `DeletionImpactPreview` 结构做批量聚合
-3. 与后续软删除 / 归档能力联动，沉淀删除前快照和操作审计
-
-## 3. 软删除、归档与治理视图
+> 对应主 todos §2.5。
 
 现状：
 
@@ -63,18 +25,33 @@
 2. 控制台主视图默认隐藏归档对象，并提供归档筛选或独立视图
 3. 为归档对象保留基础元数据、操作人、操作时间、操作原因和删除前引用快照
 
-## 4. 知识库真实导入与检索链路
+## 2. 删除影响预览的剩余覆盖
+
+> 对应主 todos §2.7 第 1-2 项。
 
 现状：
 
-- 当前知识库资源已经收敛为“文档集合 + 默认召回数”，并已具备真实执行语义
-- 已支持两类知识源：文件上传、URL 导入
-- 知识服务已补齐稳定运维模型：
-  - `source object -> import job -> document -> index snapshot` 四层对象
-  - 导入任务显式状态机、阶段、进度、失败原因、手动重试
-  - 索引快照显式状态机、阶段、进度、失败原因、手动重试
+- 已新增统一删除影响预览接口 `GET /api/catalog/deletion-preview/{objectType}/{objectId}`
+- 已覆盖 `domain / scenario / assistant / agent / resource / knowledge_base` 六类一级对象删除
+- 预览结构已区分 `blockers / advisories / cascadeDeletes`
+
+当前边界与后续目标：
+
+1. 把资源版本删除、知识发布版本删除也纳入统一预览能力
+2. 在批量删除场景直接复用当前 `DeletionImpactPreview` 结构做批量聚合
+3. 与软删除 / 归档能力联动，沉淀删除前快照和操作审计
+
+## 3. 知识库检索治理增量
+
+> 对应主 todos §2.7 第 4 项与 §4.6。
+
+现状：
+
+- 知识库资源已收敛为“文档集合 + 默认召回数”，并具备真实执行语义
+- 已支持文件上传、URL 导入两类知识源
+- 知识服务已补齐稳定运维模型：`source object -> import job -> document -> index snapshot` 四层对象、显式状态机、阶段、进度、失败原因、手动重试
 - 控制台知识库工作台已支持后台轮询观测、失败重试和基于 `READY` snapshot 的检索验证
-- `agent-runtime` 当前仍只消费“已发布知识版本绑定的 READY snapshot”，运行态语义保持稳定
+- `agent-runtime` 仍只消费“已发布知识版本绑定的 READY snapshot”
 
 后续目标：
 
@@ -82,12 +59,14 @@
 2. 评估是否需要把自动重试、自动快照构建或更高级生命周期治理纳入后续阶段
 3. 若后续重新引入新的外部知识源类型，必须继续复用当前任务模型，而不是回到配置占位字段
 
-## 5. 资源治理视图继续补强
+## 4. 资源治理视图继续补强
+
+> 对应主 todos §2.7 第 3 项与 §4.2。
 
 现状：
 
-- 当前资源目录已经支持版本流转、生效版本和结构化引用分析
-- 资源新建页也已经按 `KNOWLEDGE_BASE / TOOL / LLM_MODEL / SKILL` 四类蓝图收敛
+- 当前资源目录已支持版本流转、生效版本和结构化引用分析
+- 资源新建页已按 `KNOWLEDGE_BASE / TOOL / LLM_MODEL / SKILL` 四类蓝图收敛
 
 当前缺口：
 

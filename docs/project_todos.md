@@ -2,44 +2,17 @@
 
 > 目标：从当前可运行原型演进到可交付生产环境的企业级 Agent 编排平台。
 > 原则：每一阶段交付后系统都应该是"可用的"，不做半成品堆砌。
+> 本文件只保留“当前仍待办”的事项。已完成工作不再罗列在主线，统一沉淀到末尾的“已完成工作回顾”段，详细过程留档见 `docs/develop_record/`。
 
 ---
 
 ## 阶段一：工程基座（Engineering Foundation）
 
-> 目标：让代码库具备持续演进的基本保障。没有这一层，后续所有功能都在沙上建塔。
+> 已完成：身份与请求级鉴权（§旧 1.1）、关键路径测试（§旧 1.2）、结构化日志统一（§旧 1.4）。详见末尾“已完成工作回顾”。
 
-### 1.1 真实身份与请求级鉴权
+### 1.1 CI 流水线
 
-现状：已完成 OIDC-first 登录流首版、API 请求级鉴权、前端登录页与 API 托管会话；已补齐跨服务 internal token 与首版粗粒度 RBAC，当前保留四角色模型并按治理写权限收口。
-
-目标：
-
-1. [x] 引入标准化 OIDC 登录流；Lynxus 核心只依赖 OIDC 协议，不内置 Keycloak / Casdoor 等特定 IdP
-2. [x] API 层统一 auth filter：校验 session / JWT，注入 `SecurityContext`
-3. [x] 前端补登录页、API 托管会话、401 拦截与自动跳转
-4. [x] Agent Runtime 与 Knowledge Service 的服务间调用引入 internal token 校验（不走 OIDC，走共享密钥或 service account）
-5. [x] 预留 RBAC 注解，并按当前四角色实现首版粗粒度权限：`PLATFORM_ADMIN / DOMAIN_ADMIN / DEVELOPER` 可治理写，`BUSINESS_USER` 仅运行态与只读访问
-
-为什么排最前：没有 auth 的系统不能交给任何真实用户，也无法做审计。
-
-### 1.2 关键路径测试
-
-现状：几乎零测试覆盖。
-
-目标（不追求覆盖率，只保护关键路径）：
-
-1. [x] **编排图校验器单测**：合法图 / 非法图 / 边界情况，防止发布出非法拓扑
-2. [x] **发布快照冻结逻辑单测**：确保资源版本锚点和知识版本在快照中被正确冻结
-3. [x] **SessionWorkflow / PlaybookWorkflow 集成测试**：使用 Temporal TestWorkflowEnvironment，覆盖用户消息、playbook 等待恢复、终态回流三条路径
-4. [x] **Agent Runtime 单轮推理单测**：给定 `AgentTurnRequest`，验证 tool calling、skill 读取和结构化决策输出
-5. [x] **Knowledge Service 导入链路单测**：source → import job → document → snapshot 状态机流转
-
-技术方案：Java 用 JUnit 5 + Testcontainers（PostgreSQL）；Python 用 pytest + httpx AsyncClient；前端暂不要求测试。
-
-### 1.3 CI 流水线
-
-现状：无 CI。
+现状：仓库尚无 `.github/workflows/`，PR 没有自动化门禁。
 
 目标（GitHub Actions，单 workflow 文件）：
 
@@ -48,28 +21,7 @@
 3. Python：`uv sync --all-packages && uv run --all-packages pytest`
 4. 门禁：PR 不过 CI 不能合并
 
-依赖：1.2 测试先有内容，CI 才有意义。
-
-### 1.4 结构化日志统一
-
-现状：已完成四个后端服务的结构化日志统一。Java 服务在默认 profile 下输出结构化 JSON，本地 `local` profile 保留可读文本；Python 服务统一切到 `structlog` + `contextvars`，默认本地 `console`、非本地 `json`。
-
-目标：
-
-1. [x] Java 服务统一结构化日志输出，包含 `service / traceId / spanId / sessionId / workflowId / customerId / userId / level / message`
-2. [x] Python 服务统一采用 `structlog`，通过共享初始化模块与 `contextvars` 注入上下文
-3. [x] API、Worker、Agent Runtime、Knowledge Service 统一透传 `traceparent`、`X-Lynxus-Session-Id`、`X-Lynxus-Workflow-Id`、`X-Lynxus-Customer-Id`、`X-Lynxus-User-Id`
-4. [x] Workflow 输入上下文扩展 `traceId / sessionId / workflowId / customerId / userId`，由 API 显式传给 Worker，不依赖线程黑盒传播
-5. [x] 本地开发保留可读格式：Java 通过 `local` profile，Python 通过 `LYNXUS_LOG_FORMAT=console|json`
-
-落地说明：
-
-- `customerId` 表示业务客户或外部终端用户，允许为空；`userId` 表示平台系统用户，仅在存在平台认证上下文时写入
-- API 请求入口会绑定日志上下文，Worker 在 workflow/activity 边界恢复上下文，Python 服务在 FastAPI middleware 中绑定并清理上下文
-- Web 运行态表单语义已对齐：会话对话使用 `customerId`，流程观测里的人工恢复使用 `userId`
-- Agent Runtime 与 Knowledge Service 已移除高噪音 prompt/response 整段日志，改为摘要型结构化日志，降低敏感信息暴露风险
-
-为什么放基座：后续 OTel、审计、排障全部依赖结构化日志。
+依赖：阶段一关键路径测试已落地（§旧 1.2），CI 已具备执行价值。
 
 ---
 
@@ -79,31 +31,34 @@
 
 ### 2.1 平台事件日志
 
-现状：只有投影表，没有变更事件记录。投影表只保留最新态，无法回溯"谁在什么时候做了什么"。
+现状：`session_runtime_event` 已经是 append-only 时间线，但它当前仍承担运行查询主视图，而不是完整审计账本；catalog 控制面变更也没有统一事件记录。
 
 目标：
 
 1. 新增 `platform_event` 表（append-only）：`id / event_type / aggregate_type / aggregate_id / actor_id / payload / occurred_at`
 2. 控制面关键操作写事件：创建、更新、删除、发布、归档
-3. 运行态关键操作写事件：session 创建、owner reply / switch、playbook waiting / resumed / completed、handoff 开始 / 结束
+3. 把 `session_runtime_event / playbook_run` 状态变化纳入统一审计边界（运行投影与审计事件分层）
 4. 暂不做 event sourcing（投影仍由业务代码维护），事件日志只用于审计和排障
 5. 提供 `GET /api/events?aggregateType=&aggregateId=&since=` 查询接口
-6. 控制台对象详情页增加"操作历史"面板
+6. 控制台对象详情页增加“操作历史”面板
 
 为什么不做 event sourcing：当前阶段投影模型够用，event sourcing 的复杂度不值得。但 append-only 事件日志几乎零成本，却能解决审计、排障、合规三大问题。
 
 ### 2.2 SSE 实时推送替代部分轮询
 
-现状：运行会话页当前通过拉取 `session detail` 轮询刷新，浪费资源且延迟不稳定。
+现状：运行会话页通过 `GET /api/session-runtime/sessions/{sessionId}` 整量轮询刷新；owner reply、playbook waiting / resumed / completed、handoff 状态变化都不能即时推到前端。详细方案已沉淀在 `docs/todo/sse_plan.md`。
 
 目标：
 
 1. API 新增 `GET /api/session-runtime/sessions/{sessionId}/stream`（SSE endpoint）
-2. 推送内容围绕 `session / session event / playbook run`，不再暴露旧 `task / workflow instance`
-3. 前端运行态页面优先使用 SSE，降级回轮询
-4. 非运行态页面（catalog 管理）保持按需刷新，不需要 SSE
+2. 推送主模型对齐当前 session workflow：只围绕 `session / session event / playbook run`，不重新引入旧 `task / workflow instance` 语义
+3. 首连接发完整 `SESSION_SNAPSHOT`，后续推 `SESSION_UPDATED`；支持 `Last-Event-ID` replay，缓存 miss 时退回最新快照
+4. 前端运行会话页优先 SSE，失败降级回轮询；不为事件设计独立 delta 协议，仍用完整 detail 覆盖
+5. 非运行态页面（catalog 管理）保持按需刷新，不需要 SSE
 
 为什么选 SSE 而非 WebSocket：单向推送足够；SSE 天然支持断线重连和 `Last-Event-ID`；不需要额外的连接管理复杂度。
+
+> 多实例部署下，连接注册表与 replay buffer 必须下沉到共享层，详见 §3.6。
 
 ### 2.3 Session / Playbook 恢复链路产品化
 
@@ -114,72 +69,33 @@
 - `POST /api/session-runtime/sessions/{sessionId}/handoff/end`
 - `POST /api/session-runtime/sessions/{sessionId}/human-reply`
 
+但 Web 运行页只有会话创建、消息发送、事件查看和 playbook run 查看，没有针对 handoff / human resume / external callback 的内置操作面板。
+
 下一步目标：
 
-1. 在 Web 运行页补齐人工接管、human resume、external callback 的操作面板
-2. 把等待态和人工接管态从“仅看事件时间线”升级为“事件 + 操作台”组合体验
-3. 对过期恢复、幂等命中和错误恢复结果补更明确的用户可见反馈
+1. 在 Web 运行页补人工回复、结束 handoff、恢复 waiting playbook 的操作面板
+2. 对 `PLAYBOOK_WAITING / SESSION_HUMAN_HANDOFF_STARTED` 增加明确操作提示，把等待态和人工接管态从“仅看事件时间线”升级为“事件 + 操作台”组合体验
+3. 区分“业务用户发送消息”和“人工操作员处理会话”两类入口
+4. 对过期恢复、幂等命中和错误恢复结果补更明确的用户可见反馈
 
-为什么单列：这是 external interaction（§2.5）和人工处理闭环真正可用的前置条件。
+为什么单列：这是 external interaction（§2.4）和人工处理闭环真正可用的前置条件。
 
-### 2.4 草稿默认模型策略收敛
+### 2.4 External Interaction 第二步：首个真实 provider
 
-现状：已完成。草稿默认模型不再使用“取第一个可用 LLM”的隐式策略。
+现状：通用框架已落地，包括 playbook `EXTERNAL_INTERACTION` 等待节点、`SessionWorkflow` 的 `external-callback` Signal、`waitingReason` 权威校验、回调恢复后回流 owner reevaluation。当前公开入口为 `POST /api/session-runtime/sessions/{sessionId}/external-callback`，回调必须命中 `sessionId / playbookRunId / WAITING / waitingReason ∈ external_interaction:*` 四元约束，否则视为无效。
 
-完成内容：
+下一步目标：
 
-1. Assistant 草稿模型策略统一改为显式 `defaultModelResourceId`，Catalog / OpenAPI / Web 类型与引用分析同步收敛
-2. `CatalogService` 不再自动选择第一个 `LLM_MODEL`；草稿未配置默认模型时保持 `null`
-3. 发布前新增阻断校验：未配置 `defaultModelResourceId` 的 Assistant 不能发布
-4. 发布快照新增 `defaultModelBinding`，显式冻结发布时实际绑定的模型资源、版本、provider 和 modelId
-5. Runtime 预检改为：
-   `currentRelease` 存在时继续按冻结发布版运行；只有“未发布草稿且未配置默认模型”才阻断 `createSession / sendMessage`
-6. owner agent 命中的模型信息已经冻结在 release descriptor 中，后续如需补运行态 `modelHits`，应直接挂到 session / playbook 观测模型下，而不是回退到旧 `WorkflowResult`
-7. 控制台已拆开展示三层语义：
-   草稿默认模型、当前发布冻结模型；运行态命中明细后续应放在 session runtime 观测区补齐
+1. 接入一个真实支付或 OAuth provider，端到端跑通业务场景
+2. 抽象 Provider adapter，落地 webhook 签名校验与幂等处理
+3. 主动查单补偿机制，覆盖 webhook 丢失 / 延迟场景
+4. 若业务需要对外暴露交互卡片或回跳链接，必须直接挂在 session / playbook 模型上，而不是重建旧 `external_interaction_task`
 
-### 2.5 External Interaction 一等能力
+依赖：§2.3（恢复链路产品化）。
 
-现状：external interaction 已经不再作为独立 runtime 主模型存在，而是 playbook 的等待点之一。当前代码已经具备：
+### 2.5 软删除与生命周期治理
 
-- playbook `EXTERNAL_INTERACTION` 节点
-- session runtime 外部回调入口
-- `PLAYBOOK_WAITING / EXTERNAL_CALLBACK_RECEIVED / PLAYBOOK_RESUMED` 事件链路
-
-但 provider adapter、签名校验和主动查单补偿仍未实现。
-
-目标（分两步）：
-
-**第一步 — 通用框架：**
-
-1. [x] Playbook 支持 `EXTERNAL_INTERACTION` 等待节点
-2. [x] `SessionWorkflow` 支持 `external-callback` Signal 并写入 `EXTERNAL_CALLBACK_RECEIVED`
-3. [x] `playbook_run.waitingReason` 已成为恢复目标校验的权威状态
-4. [x] 外部回调恢复后会继续推进 playbook，并在终态时回流 owner reevaluation
-5. [ ] 若业务需要对外暴露交互卡片或回跳链接，必须直接挂在 session / playbook 模型上，而不是重建旧 `external_interaction_task`
-
-当前实现说明：
-
-- 当前公开入口是 `POST /api/session-runtime/sessions/{sessionId}/external-callback`
-- 回调恢复目标必须同时命中：
-  - 正确 `sessionId`
-  - 正确 `playbookRunId`
-  - 当前 `playbook_run.status = WAITING`
-  - 当前 `waitingReason` 属于 `external_interaction:*`
-- 不满足条件的回调只能视为无效 / 过期 / 重复请求，不得再次推进状态机
-- 如果未来需要面向前端暴露站外交互卡片，也必须把它当成 session 运行时间线的一部分，而不是独立 runtime 子系统
-
-**第二步 — 首个真实 provider：**
-
-7. 接入一个真实支付或 OAuth provider
-8. Provider adapter 抽象、webhook 签名校验、幂等处理
-9. 主动查单补偿机制
-
-依赖：2.3（Session / Playbook 恢复链路产品化）。
-
-### 2.6 软删除与生命周期治理
-
-现状：全部硬删除，删除后不可恢复。
+现状：核心目录对象全部硬删除，删除后不可恢复；发布快照和资源版本能保留一部分历史锚点，但缺少统一生命周期模型。
 
 目标：
 
@@ -190,26 +106,45 @@
 5. 归档对象的引用关系保留，但不参与新的绑定和发布
 6. 彻底清理作为独立管理员操作，需二次确认
 
+### 2.6 长 Session 历史分页与派生视图
+
+现状：`GET /api/session-runtime/sessions/{sessionId}` 直接返回完整 `events + playbookRuns`，运行页直接展示完整时间线。session 历史增长后，整量返回 detail 会越来越重；当前没有按 event type、owner、playbook run 的过滤与聚合能力。
+
+下一步目标：
+
+1. 为 session event 增加分页、过滤和按类型聚合查询
+2. 为 playbook run 增加按状态、waiting reason 的快捷筛选
+3. 在 UI 中补“仅看用户可见消息 / 仅看系统事件 / 仅看 playbook 事件”视图
+
+### 2.7 Catalog 治理增量
+
+> 这部分原本散落在 `docs/todo/catalog_todo.md`，主线工作已完成，仅保留下列增量。
+
+1. 把资源版本删除、知识发布版本删除也纳入统一 `DeletionImpactPreview` 能力
+2. 在批量删除场景直接复用当前预览结构做批量聚合
+3. 资源治理：补齐版本 diff 与变更摘要、强化“资源变更影响哪些已发布助手”的可视化、为后续批量发布 / 归档 / 替换资源锚点预留入口
+4. 知识库：在当前稳定 source/job/document/snapshot 链路上，补检索治理能力（召回评估、对比测试、命中质量分析）
+
 ---
 
 ## 阶段三：生产加固（Production Hardening）
 
 > 目标：让系统可以部署到真实环境并稳定运行。
 
-### 3.1 容器化与部署
+### 3.1 部署配套补齐
 
-现状：只有 docker-compose 用于本地依赖，应用本身无容器镜像。
+现状：
 
-目标：
+- 五个应用（api / worker / web / agent-runtime / knowledge-service）均已具备 Dockerfile（多阶段构建）
+- API 已暴露 `/api/system/health`
+- 本地依赖通过 `infra/local`、`infra/dev` 提供 docker-compose 编排
 
-1. 为每个应用编写 Dockerfile（多阶段构建）
-   - API + Worker：Gradle build → JRE 运行镜像
-   - Web：pnpm build → Nginx 静态文件
-   - Agent Runtime + Knowledge Service：uv build → Python slim 镜像
-2. 编写生产级 docker-compose（所有应用 + 依赖一键启动）
-3. 编写 Kubernetes manifests（Deployment / Service / ConfigMap / Secret / Ingress）
-4. 每个服务实现 health check endpoint（readiness + liveness）
-5. 每个服务实现 graceful shutdown
+待补：
+
+1. 编写生产级 docker-compose（所有应用 + 依赖一键启动）
+2. 编写 Kubernetes manifests（Deployment / Service / ConfigMap / Secret / Ingress）
+3. 完善 readiness / liveness 区分，Python 服务补健康端点
+4. 各服务统一 graceful shutdown（Spring `server.shutdown=graceful`、FastAPI lifespan、Temporal worker drain）
 
 ### 3.2 OpenTelemetry 统一观测
 
@@ -227,7 +162,7 @@
    - API 请求延迟 P50/P95/P99
 5. 推荐后端：Grafana Tempo（trace）+ Prometheus（metrics）+ Grafana（dashboard）
 
-依赖：1.4 结构化日志先到位，OTel 日志 bridge 才能统一。
+依赖：结构化日志已就绪，OTel 日志 bridge 可直接复用现有上下文字段。
 
 ### 3.3 数据安全与备份
 
@@ -243,14 +178,13 @@
 
 目标：
 
-1. API 分页审计：确保所有列表接口支持分页，数据库查询有索引
+1. API 分页审计：确保所有列表接口支持分页，数据库查询有索引（与 §2.6 协同）
 2. 连接池配置：HikariCP（Java）、SQLAlchemy pool（Python）参数调优
 3. 前端：继续优化路由级代码分割（Vue Router 已引入，控制台菜单页已完成真实路由）
 4. Knowledge Service：基于 `PostgreSQL + pgvector + pg_trgm + tsvector` 持续优化检索质量与索引性能
-   - 优势：减少基础设施依赖，数据库与检索链路统一运维
-   - 当前方案：保留 `LEXICAL / VECTOR / HYBRID` 三种模式，embedding 由 OpenAI-compatible `/embeddings` 提供
-   - 关注点：大规模 chunk 量级下持续评估索引参数、查询延迟与 embedding 成本
-5. 缓存策略：catalog 热数据（发布快照）考虑进程内缓存或 Redis
+   - 当前方案保留 `LEXICAL / VECTOR / HYBRID` 三种模式，embedding 由 OpenAI-compatible `/embeddings` 提供
+   - 关注大规模 chunk 量级下的索引参数、查询延迟与 embedding 成本
+5. 缓存策略：catalog 热数据（发布快照）考虑进程内缓存或 Redis（多实例场景下的共享与失效协议详见 §3.6）
 
 ### 3.5 安全加固
 
@@ -258,11 +192,50 @@
 
 1. API 输入校验全覆盖（Spring Validation 已引入，确保无遗漏）
 2. CORS 收紧为生产域名白名单
-3. Rate limiting：API 层引入基础限流（Bucket4j 或 API Gateway 层面）
+3. Rate limiting：API 层引入基础限流（Bucket4j 或 API Gateway 层面；多实例场景需走 Redis backend，详见 §3.6）
 4. SQL 注入防护审计（当前 JDBC template 需确认参数化查询无遗漏）
 5. 前端 XSS 防护：确保用户输入内容展示时经过转义
-6. Webhook 签名校验（§2.5 external interaction 依赖）
+6. Webhook 签名校验（§2.4 external interaction 依赖）
 7. 文件上传安全：类型白名单、大小限制、病毒扫描（可选）
+
+### 3.6 多实例部署一致性与共享状态
+
+现状：API / Worker / Agent Runtime / Knowledge Service 当前都隐式假设单实例运行，多处依赖进程内状态：
+
+- API 的 SSE 连接注册表与 replay buffer（§2.2）
+- API 进程内 catalog 热数据缓存（§3.4 候选）
+- 限流计数（§3.5 候选）
+- OIDC / 平台用户的会话存储
+- 请求级幂等去重、webhook 去重缓存
+
+直接横向扩容会出现：
+
+- 实例 A 上写入的运行事件无法推送给连接在实例 B 的 SSE 客户端
+- 缓存不一致（实例 A 失效后实例 B 仍返回旧版发布快照）
+- 单机限流被绕过
+- 用户登录态在另一实例失效，被强制重登（依赖粘性会话才能勉强工作）
+- 同一 webhook / external-callback 在多实例间重复处理
+
+目标：统一引入 Redis 作为共享状态层，让各模块支持无粘性多实例部署。
+
+1. **SSE 跨实例广播**：基于 Redis Pub/Sub 把 `session updated` 事件分发到所有 API 实例；`Last-Event-ID` replay buffer 下沉到 Redis（按 `sessionId` 维度，附带 TTL）
+2. **Catalog 缓存共享与失效**：发布快照等热数据走 Redis，发布事件触发跨实例失效广播；进程内可保留二级缓存，但必须订阅失效信号
+3. **分布式限流**：Bucket4j 接 Redis backend，或在 API Gateway 层统一限流
+4. **登录态后端化**：Spring Session + Redis，去掉对粘性会话的依赖；前端托管会话与 OIDC 回调链路对齐
+5. **幂等键 / 去重**：Webhook、external-callback、关键写操作的幂等键统一存 Redis（带 TTL），避免重复推进状态机
+6. **分布式锁**：API 层短时操作（如同一 sessionId 的 owner reevaluation 触发节流）走 Redis 锁；session 级长时串行化优先依赖 Temporal workflow 单例约束，不再叠加 Redis 锁
+7. **Worker 多实例**：Worker 本身依赖 Temporal 任务队列分发，无需 Redis；但 activity 内若引入进程内缓存或限流，必须复用同一套 Redis 通道
+8. **Python 服务**：Agent Runtime / Knowledge Service 当前无显著进程内状态；如未来引入缓存或限流，统一接 Redis，不要各自重建
+
+实施顺序建议：
+
+1. 先把 Redis 引入 infra 编排（local / dev / 生产 compose / K8s manifest），统一连接配置、密码与 TLS
+2. 优先解决 §2.2 SSE 跨实例广播，因为这是阻断 API 多实例部署的最硬约束
+3. 再做登录态后端化，让负载均衡可以无粘性
+4. 缓存与限流走在“引入热点 / 出现压力”后再做
+5. 幂等与分布式锁随 §2.4 external interaction 真实 provider 接入一起补齐
+
+依赖：与 §2.2（SSE）、§3.1（部署配套）、§3.4（缓存）、§3.5（限流）协同；§4.4 多租户隔离也在多实例就绪后才有规模化意义。
 
 ---
 
@@ -272,7 +245,9 @@
 
 ### 4.1 RBAC 细粒度权限
 
-1. 扩展角色体系：`admin / editor / viewer` + 自定义角色
+> 当前已实现 `PLATFORM_ADMIN / DOMAIN_ADMIN / DEVELOPER / BUSINESS_USER` 四角色粗粒度模型。下一步演进：
+
+1. 扩展角色体系：自定义角色
 2. 对象级权限：谁能编辑哪个 domain / assistant
 3. 操作级权限：谁能发布、谁能删除
 4. 权限 UI：角色管理、成员管理、权限分配
@@ -280,7 +255,7 @@
 ### 4.2 资源治理增强
 
 1. 版本 diff 与变更摘要
-2. "资源变更影响哪些已发布助手"可视化
+2. “资源变更影响哪些已发布助手”可视化
 3. 批量操作：批量发布、批量归档、批量替换资源锚点
 4. 资源版本和知识发布版本的删除预览
 
@@ -325,9 +300,9 @@
 
 ### B. Vue Router 持续完善
 
-- Vue Router 已引入，`/login` 与 `/console/...` 以及控制台 11 个菜单页均已具备真实路由
-- 当前已支持：浏览器前进后退、URL 直接访问菜单页、路由级懒加载，首屏体积已较单页模式收敛
-- 后续待补的是对象级深链能力：如 session / playbook / knowledge / resource 的选中对象通过 URL 直达与恢复
+- Vue Router 已引入，`/login` 与 `/console/...` 以及控制台菜单页均已具备真实路由
+- 当前已支持：浏览器前进后退、URL 直接访问菜单页、路由级懒加载
+- 后续待补：对象级深链能力，如 session / playbook / knowledge / resource 的选中对象通过 URL 直达与恢复
 
 ### C. Session Event Payload 规范化
 
@@ -383,50 +358,56 @@
 
 ```
 阶段一：工程基座
-  1.1 身份与鉴权 ─────────────────────────────────────┐
-  1.2 关键路径测试                                      │
-       └── 1.3 CI 流水线                                │
-  1.4 结构化日志 ──────────────────────────────┐        │
-                                                │        │
-阶段二：运行态成熟                              │        │
-  2.1 事件日志 ◄──── 1.1（需要 actor_id）──────┤        │
-  2.2 SSE 推送                                  │        │
-  2.3 恢复模型泛化                              │        │
-       └── 2.5 External Interaction ◄── 2.3    │        │
-  2.4 草稿模型策略                              │        │
-  2.6 软删除 ◄──── 2.1（归档事件记录）          │        │
-                                                │        │
-阶段三：生产加固                                │        │
-  3.1 容器化与部署                              │        │
-  3.2 OTel 观测 ◄──── 1.4（结构化日志）────────┘        │
-  3.3 数据安全                                           │
-  3.4 性能优化                                           │
-  3.5 安全加固 ◄──── 1.1（请求级鉴权）──────────────────┘
+  1.1 CI 流水线 ◄── 已有测试集合后才有意义
+
+阶段二：运行态成熟
+  2.1 事件日志 ◄──── 已就绪的鉴权（actor_id 来源）
+  2.2 SSE 推送
+  2.3 恢复链路产品化
+       └── 2.4 External Interaction 第二步 ◄── 2.3
+  2.5 软删除 ◄──── 2.1（归档事件记录）
+  2.6 长 Session 分页
+  2.7 Catalog 治理增量
+
+阶段三：生产加固
+  3.1 部署配套补齐
+  3.2 OTel 观测 ◄──── 已就绪的结构化日志
+  3.3 数据安全
+  3.4 性能优化 ◄──── 与 2.6 协同
+  3.5 安全加固 ◄──── 已就绪的请求级鉴权 + 2.4 webhook 签名校验
+  3.6 多实例一致性 ◄──── 2.2 / 3.1 / 3.4 / 3.5 协同（统一引入 Redis）
 
 阶段四：平台演进
-  4.1 RBAC ◄──── 1.1
+  4.1 RBAC 细粒度 ◄──── 已就绪的粗粒度 RBAC
   4.2 资源治理增强
-  4.3 灰度发布 ◄──── 2.6（需要快照 diff）
-  4.4 多租户 ◄──── 1.1 + 3.1
+  4.3 灰度发布 ◄──── 2.5（需要快照 diff）
+  4.4 多租户 ◄──── 已就绪的鉴权 + 3.1 + 3.6
   4.5 成本与 SLO ◄──── 3.2（需要 metrics）
   4.6 知识检索质量
 ```
 
 ---
 
-## 已完成工作回顾（本块仅作旧记录参考，不再改动）
+## 已完成工作回顾（仅作历史索引，不再改动）
 
-以下工作项已在前序开发中完成，不再列为 TODO（详见 `docs/develop_record/2026-03-project_todos_snapshot.md`）：
+详细过程留档见 `docs/develop_record/`。本次清理移除以下已完成的主线条目：
 
-- [x] P0.1 运行态持久化：session / session_event / playbook_run 落库
-- [x] P0.2 同步等待改异步 + 轮询观测闭环
-- [x] P1.1 结构化决策契约对齐
-- [x] P1.2 Workflow 失败可观测性：结构化错误码 + root cause
-- [x] P1.3 JSONB catalog store 关键路径关系模型化
-- [x] P1.4 主链路移除 demo/seed
-- [x] P2.1 统一对象级引用分析接口
-- [x] P2.2 删除前影响预览
-- [x] P2.3 知识库真实导入与检索链路
-- [x] P2.4 身份与权限体系 Phase 1
-- [x] P3.1 前端大文件拆分
-- [x] P3.3 Python 服务共享依赖管理（uv workspace）
+- [x] 阶段一 1.1 真实身份与请求级鉴权：OIDC 登录流、API auth filter、前端登录页与托管会话、跨服务 internal token、四角色粗粒度 RBAC（`PLATFORM_ADMIN / DOMAIN_ADMIN / DEVELOPER / BUSINESS_USER`）
+- [x] 阶段一 1.2 关键路径测试：编排图校验器单测、发布快照冻结逻辑单测、Session/Playbook Workflow 集成测试、Agent Runtime 单轮推理单测、Knowledge Service 导入链路单测
+- [x] 阶段一 1.4 结构化日志统一：Java/Python 服务统一结构化输出，统一透传 trace / session / workflow / customer / user 上下文
+- [x] 阶段二 2.4 草稿默认模型策略收敛：`defaultModelResourceId` 显式化、发布前阻断校验、发布快照新增 `defaultModelBinding`、Runtime 预检对齐
+- [x] 阶段二 2.5 第一步 External Interaction 通用框架：playbook `EXTERNAL_INTERACTION` 节点、`external-callback` Signal、`waitingReason` 权威校验、回调恢复回流 owner
+- [x] 阶段三 3.1 部分：五个应用 Dockerfile（多阶段构建）与 `/api/system/health` 健康端点
+- [x] 历史 P0/P1/P2/P3 工作（详见 `docs/develop_record/2026-03-project_todos_snapshot.md`）：
+  - P0.1 运行态持久化：session / session_event / playbook_run 落库
+  - P0.2 同步等待改异步 + 轮询观测闭环
+  - P1.1 结构化决策契约对齐
+  - P1.2 Workflow 失败可观测性：结构化错误码 + root cause
+  - P1.3 JSONB catalog store 关键路径关系模型化
+  - P1.4 主链路移除 demo/seed
+  - P2.1 统一对象级引用分析接口
+  - P2.2 删除前影响预览
+  - P2.3 知识库真实导入与检索链路
+  - P2.4 身份与权限体系 Phase 1
+  - P3.1 前端大文件拆分
+  - P3.3 Python 服务共享依赖管理（uv workspace）

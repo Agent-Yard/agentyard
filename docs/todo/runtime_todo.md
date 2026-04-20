@@ -1,7 +1,14 @@
 # Runtime TODO
 
-这份文档只记录在 `session-runtime` 新架构下仍然有效的待办。
-凡是基于旧 `task / workflow instance / resume action / outputMessages` 主模型的事项，都不再保留。
+> 这份文档是 [`docs/project_todos.md`](../project_todos.md) §2.1 / §2.2 / §2.3 / §2.6 的详细补充，记录 `session-runtime` 新架构下仍然有效的实施细节。
+> 凡是基于旧 `task / workflow instance / resume action / outputMessages` 主模型的事项，都不再保留。
+
+各章节与主 todos 的对应关系：
+
+- §1 SSE 推送 ↔ 主 todos §2.2
+- §2 人工接管与恢复操作台 ↔ 主 todos §2.3
+- §3 长 session 历史分页 ↔ 主 todos §2.6
+- §4 审计账本与运行投影分层 ↔ 主 todos §2.1
 
 ## 1. 订阅式运行观测仍未落地
 
