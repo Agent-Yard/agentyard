@@ -66,6 +66,7 @@ function ensureConfigurationState(configuration: ResourceVersionConfiguration, r
       apiKeyEnvVar: 'OPENAI_COMPATIBLE_API_KEY',
       temperature: 0.2,
       maxTokens: 1200,
+      privateDeployment: false,
     };
     return;
   }
@@ -282,6 +283,11 @@ function removeToolOperation(index: number) {
       <a-col :span="12">
         <a-form-item label="Max Tokens">
           <a-input-number v-model:value="llmModel.maxTokens" :min="1" style="width: 100%" />
+        </a-form-item>
+      </a-col>
+      <a-col :span="12">
+        <a-form-item label="Private Deployment">
+          <a-switch v-model:checked="llmModel.privateDeployment" />
         </a-form-item>
       </a-col>
     </a-row>

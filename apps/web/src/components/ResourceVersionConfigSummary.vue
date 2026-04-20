@@ -35,6 +35,9 @@ const toolOperationNames = computed(() =>
     <a-descriptions-item label="Temperature / Max Tokens">
       {{ configuration.llmModel.temperature }} / {{ configuration.llmModel.maxTokens }}
     </a-descriptions-item>
+    <a-descriptions-item label="Private Deployment">
+      {{ configuration.llmModel.privateDeployment ? '是' : '否' }}
+    </a-descriptions-item>
   </a-descriptions>
 
   <a-descriptions v-else-if="resourceType === 'SKILL' && configuration.skill" :column="1" size="small">

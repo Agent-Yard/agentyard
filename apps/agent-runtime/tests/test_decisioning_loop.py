@@ -6,7 +6,8 @@ from unittest.mock import patch
 os.environ.setdefault("LYNXUS_INTERNAL_AUTH_TOKEN", "test-internal-token")
 
 from lynxus_agent_runtime.decisioning import execute_agent_turn
-from lynxus_agent_runtime.models import AgentTurnRequest
+from lynxus_agent_runtime.data_security.rules import SanitizationResult
+from lynxus_agent_runtime.models import AgentTurnRequest, PrivacyMappingTelemetry
 from lynxus_agent_runtime.openai_adapter import render_openai_tool_definitions
 from lynxus_agent_runtime.tooling import execute_tool_call, resource_tool_function_name, semantic_tool_definitions
 
@@ -59,6 +60,55 @@ class _FakeClient:
 
     def request(self, method: str, url: str, **kwargs) -> _FakeResponse:
         return self._transport.handle(method.upper(), url, kwargs)
+
+
+class _FakePrivacyStore:
+    def __init__(self, policy) -> None:
+        self._summary = PrivacyMappingTelemetry(
+            enabled=policy.enabled,
+            privacyModelResourceId=None if policy.model_binding is None else policy.model_binding.resourceId,
+            privacyModelResourceName=None if policy.model_binding is None else policy.model_binding.resourceName,
+            sanitizeCountByChannel={},
+            restoreCountByChannel={},
+            entityTypeBreakdown={},
+            placeholderCount=0,
+            unresolvedPlaceholderCount=0,
+            blockedEventCount=0,
+            lastProcessedAt=None,
+        )
+
+    def ensure_mapping(self, entity_type: str, raw_value: str):  # noqa: ANN001
+        self._summary.placeholderCount += 1
+        self._summary.entityTypeBreakdown[entity_type] = self._summary.entityTypeBreakdown.get(entity_type, 0) + 1
+        return type(
+            "MappingEntry",
+            (),
+            {
+                "placeholder_id": f"[{entity_type}_{self._summary.placeholderCount:03d}]",
+                "raw_value": raw_value,
+                "entity_type": entity_type,
+                "created": True,
+            },
+        )()
+
+    def restore_placeholder(self, placeholder_id: str) -> str | None:
+        return None
+
+    def record_sanitize(self, channel: str, new_placeholder_count: int, entity_type_breakdown: dict[str, int]) -> None:
+        self._summary.sanitizeCountByChannel[channel] = self._summary.sanitizeCountByChannel.get(channel, 0) + 1
+
+    def record_restore(self, channel: str, unresolved_count: int) -> None:
+        self._summary.restoreCountByChannel[channel] = self._summary.restoreCountByChannel.get(channel, 0) + 1
+        self._summary.unresolvedPlaceholderCount += unresolved_count
+
+    def record_blocked(self) -> None:
+        self._summary.blockedEventCount += 1
+
+    def summary_telemetry(self) -> PrivacyMappingTelemetry:
+        return self._summary
+
+    def close(self) -> None:
+        return None
 
 
 def _request_payload() -> dict:
@@ -173,6 +223,24 @@ def _request_payload() -> dict:
         },
         "recentEvents": [],
     }
+
+
+def _enable_privacy_mapping(payload: dict) -> dict:
+    payload["effectivePrivacyMappingEnabled"] = True
+    payload["effectivePrivacyModelBinding"] = {
+        "resourceId": "privacy-model-1",
+        "resourceName": "Private Mapping Model",
+        "resourceVersionId": "privacy-model-ver-1",
+        "resourceVersion": "1.0.0",
+        "providerType": "OPENAI_COMPATIBLE",
+        "modelId": "gpt-private",
+        "baseUrl": "https://privacy.example",
+        "apiKeyEnvVar": "TEST_PRIVATE_API_KEY",
+        "temperature": 0,
+        "maxTokens": 256,
+        "privateDeployment": True,
+    }
+    return payload
 
 
 class AgentRuntimeDecisionLoopTest(unittest.TestCase):
@@ -429,3 +497,76 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         self.assertIn("Output JSON schema:", create_ticket["function"]["description"])
         self.assertIn("\"ticketId\"", create_ticket["function"]["description"])
         self.assertIn("\"status\"", create_ticket["function"]["description"])
+
+    def test_should_fail_closed_when_sanitized_prompt_leaks_sensitive_value(self) -> None:
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        request_log: list[dict] = []
+        payload = _enable_privacy_mapping(_request_payload())
+        payload["trigger"]["payload"]["text"] = "我的邮箱是 alice@example.com"
+        request = AgentTurnRequest.model_validate(payload)
+        transport = _FakeTransport([], request_log)
+        factory = lambda *args, **kwargs: _FakeClient(transport)
+
+        original_sanitize_value = __import__(
+            "lynxus_agent_runtime.data_security.mapper",
+            fromlist=["sanitize_value"],
+        ).sanitize_value
+
+        def leaking_sanitize(value, store):  # noqa: ANN001
+            if isinstance(value, str) and "alice@example.com" in value:
+                return SanitizationResult(value, {}, 0)
+            return original_sanitize_value(value, store)
+
+        with patch("lynxus_agent_runtime.decisioning.httpx.Client", side_effect=factory), patch(
+            "lynxus_agent_runtime.data_security.pipeline.SessionPrivacyMapStore",
+            _FakePrivacyStore,
+        ), patch("lynxus_agent_runtime.data_security.mapper.sanitize_value", side_effect=leaking_sanitize):
+            with self.assertRaisesRegex(RuntimeError, "agent turn execution failed"):
+                execute_agent_turn(request)
+
+        self.assertFalse(any(entry["url"] == "https://runtime.example/chat/completions" for entry in request_log))
+
+    def test_should_fail_closed_when_private_rewriter_api_key_is_missing(self) -> None:
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        os.environ.pop("TEST_PRIVATE_API_KEY", None)
+        request_log: list[dict] = []
+        payload = _enable_privacy_mapping(_request_payload())
+        payload["trigger"]["payload"]["text"] = "customer Alice Johnson needs a refund"
+        request = AgentTurnRequest.model_validate(payload)
+        transport = _FakeTransport([], request_log)
+        factory = lambda *args, **kwargs: _FakeClient(transport)
+
+        with patch("lynxus_agent_runtime.decisioning.httpx.Client", side_effect=factory), patch(
+            "lynxus_agent_runtime.data_security.pipeline.SessionPrivacyMapStore",
+            _FakePrivacyStore,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "agent turn execution failed"):
+                execute_agent_turn(request)
+
+        self.assertFalse(any(entry["url"] == "https://runtime.example/chat/completions" for entry in request_log))
+
+    def test_should_fail_closed_when_rewriter_returns_raw_sensitive_text(self) -> None:
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        os.environ["TEST_PRIVATE_API_KEY"] = "private-secret"
+        request_log: list[dict] = []
+        payload = _enable_privacy_mapping(_request_payload())
+        payload["trigger"]["payload"]["text"] = "customer Alice Johnson needs a refund"
+        request = AgentTurnRequest.model_validate(payload)
+        transport = _FakeTransport([], request_log)
+        factory = lambda *args, **kwargs: _FakeClient(transport)
+
+        with patch("lynxus_agent_runtime.decisioning.httpx.Client", side_effect=factory), patch(
+            "lynxus_agent_runtime.data_security.pipeline.SessionPrivacyMapStore",
+            _FakePrivacyStore,
+        ), patch(
+            "lynxus_agent_runtime.data_security.mapper.PrivateLlmRewriter.rewrite",
+            return_value=type(
+                "RewriteResult",
+                (),
+                {"value": "customer Alice Johnson", "entity_type_breakdown": {}, "new_placeholder_count": 0},
+            )(),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "agent turn execution failed"):
+                execute_agent_turn(request)
+
+        self.assertFalse(any(entry["url"] == "https://runtime.example/chat/completions" for entry in request_log))

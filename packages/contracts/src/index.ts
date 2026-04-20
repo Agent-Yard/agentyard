@@ -12,7 +12,8 @@ export type PlatformAggregateType =
   | 'RESOURCE'
   | 'KNOWLEDGE_BASE'
   | 'SESSION'
-  | 'PLAYBOOK_RUN';
+  | 'PLAYBOOK_RUN'
+  | 'SESSION_PRIVACY_MAPPING';
 export type ReferenceRelationMode = 'DIRECT' | 'INDIRECT';
 export type ReferenceImpactLevel = 'BLOCKS_DELETION' | 'ADVISORY';
 export type KnowledgeFileStatus = 'UPLOADED' | 'IMPORTING' | 'IMPORTED' | 'FAILED';
@@ -340,6 +341,7 @@ export interface LlmModelDescriptor {
   apiKeyEnvVar: string;
   temperature: number;
   maxTokens: number;
+  privateDeployment: boolean;
 }
 
 export interface KnowledgeBindingDescriptor {
@@ -414,6 +416,8 @@ export interface OwnerAgentConfig {
   role: string;
   responsibility: string;
   model: LlmModelDescriptor | null;
+  effectivePrivacyModelBinding: LlmModelDescriptor | null;
+  effectivePrivacyMappingEnabled: boolean;
   systemPrompt: string;
   knowledgeEnabled: boolean;
   knowledgeBaseId: string | null;
@@ -505,6 +509,27 @@ export interface SessionTrigger {
   payload: Record<string, unknown>;
 }
 
+export type PrivacyChannel =
+  | 'PROMPT_INSTRUCTION'
+  | 'PROMPT_RUNTIME_MESSAGE'
+  | 'SKILL_PAYLOAD'
+  | 'MODEL_TOOL_ARGUMENT'
+  | 'TOOL_RESULT'
+  | 'MODEL_FINAL_RESPONSE';
+
+export interface PrivacyMappingTelemetry {
+  enabled: boolean;
+  privacyModelResourceId: string | null;
+  privacyModelResourceName: string | null;
+  sanitizeCountByChannel: Record<PrivacyChannel, number>;
+  restoreCountByChannel: Record<PrivacyChannel, number>;
+  entityTypeBreakdown: Record<string, number>;
+  placeholderCount: number;
+  unresolvedPlaceholderCount: number;
+  blockedEventCount: number;
+  lastProcessedAt: string | null;
+}
+
 export interface AgentDecision {
   action: AgentDecisionAction;
   replyContent: string | null;
@@ -523,6 +548,8 @@ export interface AgentTurnRequestV2 {
   availablePlaybooks: PlaybookConfig[];
   activePlaybook: ActivePlaybookSummary | null;
   sharedState: Record<string, unknown>;
+  effectivePrivacyModelBinding: LlmModelDescriptor | null;
+  effectivePrivacyMappingEnabled: boolean;
   trigger: SessionTrigger;
   recentEvents: SessionEvent[];
 }
@@ -530,6 +557,7 @@ export interface AgentTurnRequestV2 {
 export interface AgentTurnResultV2 {
   decision: AgentDecision;
   sharedState: Record<string, unknown>;
+  mappingTelemetry: PrivacyMappingTelemetry | null;
 }
 
 export interface SessionUserMessageUpdateResult {

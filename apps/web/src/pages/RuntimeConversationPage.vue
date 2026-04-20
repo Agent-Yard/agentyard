@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
+import { api } from '../services/api';
 import type {
   Assistant,
+  PrivacyMappingSummary,
   PlaybookRun,
   Scenario,
   SessionEvent,
@@ -34,6 +36,7 @@ const createForm = reactive({
   openingMessage: '',
 });
 const messageDraft = ref('');
+const privacySummary = ref<PrivacyMappingSummary | null>(null);
 
 const currentSession = computed(() =>
   props.sessions.find((item) => item.id === props.selectedSessionId) ?? props.sessions[0] ?? null,
@@ -86,6 +89,18 @@ watch(
     if (sessionId && props.sessions.some((item) => item.id === sessionId) && sessionId !== props.selectedSessionId) {
       emit('selectSession', sessionId);
     }
+  },
+  { immediate: true },
+);
+
+watch(
+  () => currentSession.value?.id,
+  async (sessionId) => {
+    if (!sessionId) {
+      privacySummary.value = null;
+      return;
+    }
+    privacySummary.value = await api.getRuntimeSessionPrivacyMappingSummary(sessionId);
   },
   { immediate: true },
 );
@@ -294,6 +309,22 @@ function formatSharedState(value: Record<string, unknown> | null | undefined) {
               {{ isCurrentSessionSending ? '发送中...' : '发送消息' }}
             </a-button>
           </a-form>
+        </a-card>
+
+        <a-card v-if="currentSession" title="隐私映射">
+          <a-descriptions :column="2" bordered size="small">
+            <a-descriptions-item label="是否开启">{{ privacySummary?.enabled ? '开启' : '关闭' }}</a-descriptions-item>
+            <a-descriptions-item label="映射模型">{{ privacySummary?.privacyModelName ?? '未配置' }}</a-descriptions-item>
+            <a-descriptions-item label="Placeholder 总量">{{ privacySummary?.placeholderCount ?? 0 }}</a-descriptions-item>
+            <a-descriptions-item label="阻断次数">{{ privacySummary?.blockedEventCount ?? 0 }}</a-descriptions-item>
+            <a-descriptions-item label="未解析占位符">{{ privacySummary?.unresolvedPlaceholderCount ?? 0 }}</a-descriptions-item>
+            <a-descriptions-item label="最近处理时间">
+              {{ privacySummary?.lastProcessedAt ?? '无' }}
+            </a-descriptions-item>
+            <a-descriptions-item label="实体分布" :span="2">
+              <pre class="runtime-json">{{ JSON.stringify(privacySummary?.entityTypeBreakdown ?? {}, null, 2) }}</pre>
+            </a-descriptions-item>
+          </a-descriptions>
         </a-card>
 
         <a-card v-if="currentDetail" title="Session Event">

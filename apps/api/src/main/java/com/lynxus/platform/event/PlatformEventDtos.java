@@ -26,7 +26,8 @@ public final class PlatformEventDtos {
         RESOURCE,
         KNOWLEDGE_BASE,
         SESSION,
-        PLAYBOOK_RUN
+        PLAYBOOK_RUN,
+        SESSION_PRIVACY_MAPPING
     }
 
     public record PlatformEventDto(

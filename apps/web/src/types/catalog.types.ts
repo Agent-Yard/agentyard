@@ -14,7 +14,8 @@ export type PlatformAggregateType =
   | 'RESOURCE'
   | 'KNOWLEDGE_BASE'
   | 'SESSION'
-  | 'PLAYBOOK_RUN';
+  | 'PLAYBOOK_RUN'
+  | 'SESSION_PRIVACY_MAPPING';
 export type ReferenceRelationMode = 'DIRECT' | 'INDIRECT';
 export type ReferenceImpactLevel = 'BLOCKS_DELETION' | 'ADVISORY';
 export type KnowledgeFileStatus = 'UPLOADED' | 'IMPORTING' | 'IMPORTED' | 'FAILED';
@@ -335,6 +336,7 @@ export interface LlmModelConfig {
   apiKeyEnvVar: string;
   temperature: number;
   maxTokens: number;
+  privateDeployment: boolean;
 }
 
 export interface SkillConfig {
@@ -405,6 +407,8 @@ export interface MemoryPolicy {
 export interface AgentExecutionPolicy {
   inheritAssistantDefaults: boolean;
   modelResourceId: string | null;
+  privacyModelResourceId: string | null;
+  privacyMappingEnabled: boolean | null;
   systemPrompt: string;
   knowledgeEnabled: boolean;
   inheritAssistantKnowledge: boolean;
@@ -496,6 +500,8 @@ export interface AssistantReleaseAgent {
   responsibility: string;
   executionPolicy: AgentExecutionPolicy;
   knowledgeBinding: KnowledgeBindingSnapshot | null;
+  effectivePrivacyModelBinding: DefaultModelBinding | null;
+  effectivePrivacyMappingEnabled: boolean;
   canOwnSession: boolean;
   allowedActions: AgentDecisionAction[];
   switchableOwnerAgentIds: string[];
@@ -513,6 +519,8 @@ export interface AssistantRelease {
   publishedAt: string | null;
   assistantKnowledgeBinding: KnowledgeBindingSnapshot | null;
   defaultModelBinding: DefaultModelBinding | null;
+  privacyModelBinding: DefaultModelBinding | null;
+  privacyMappingEnabled: boolean;
   resources: AssistantReleaseResource[];
   agents: AssistantReleaseAgent[];
   playbooks: Playbook[];
@@ -542,6 +550,8 @@ export interface Assistant {
   replyPolicy: AssistantReplyPolicy;
   playbookPolicy: AssistantPlaybookPolicy;
   modelPolicy: AssistantModelPolicy;
+  privacyModelResourceId: string | null;
+  privacyMappingEnabled: boolean;
   knowledgeAccessPolicy: KnowledgeAccessPolicy;
   memoryPolicy: MemoryPolicy;
 }
@@ -625,6 +635,8 @@ export interface CreateAssistantPayload {
   replyPolicy: AssistantReplyPolicy;
   playbookPolicy: AssistantPlaybookPolicy;
   modelPolicy: AssistantModelPolicy;
+  privacyModelResourceId: string | null;
+  privacyMappingEnabled: boolean;
   knowledgeAccessPolicy: KnowledgeAccessPolicy;
   memoryPolicy: MemoryPolicy;
 }
@@ -660,6 +672,8 @@ export interface UpdateAssistantPayload {
   replyPolicy: AssistantReplyPolicy;
   playbookPolicy: AssistantPlaybookPolicy;
   modelPolicy: AssistantModelPolicy;
+  privacyModelResourceId: string | null;
+  privacyMappingEnabled: boolean;
   knowledgeAccessPolicy: KnowledgeAccessPolicy;
   memoryPolicy: MemoryPolicy;
 }

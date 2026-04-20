@@ -136,6 +136,20 @@ public final class ObjectReferenceAnalyzer {
                 item.id(),
                 item.name()
             )));
+        if (assistant.privacyModelResourceId() != null) {
+            ResourceDto resource = findById(resources, assistant.privacyModelResourceId(), ResourceDto::id);
+            if (resource != null) {
+                relations.add(relation(
+                    "ASSISTANT_PRIVACY_MODEL",
+                    "ACTIVE_BINDING",
+                    "DIRECT",
+                    "ADVISORY",
+                    "RESOURCE",
+                    resource.id(),
+                    resource.name()
+                ));
+            }
+        }
         releases.stream()
             .sorted(Comparator.comparing(AssistantReleaseDto::createdAt).reversed())
             .forEach(release -> relations.add(relation(
@@ -218,6 +232,20 @@ public final class ObjectReferenceAnalyzer {
             if (resource != null) {
                 relations.add(relation(
                     "AGENT_OVERRIDE_MODEL",
+                    "ACTIVE_BINDING",
+                    "DIRECT",
+                    "ADVISORY",
+                    "RESOURCE",
+                    resource.id(),
+                    resource.name()
+                ));
+            }
+        }
+        if (agent.executionPolicy() != null && agent.executionPolicy().privacyModelResourceId() != null) {
+            ResourceDto resource = findById(resources, agent.executionPolicy().privacyModelResourceId(), ResourceDto::id);
+            if (resource != null) {
+                relations.add(relation(
+                    "AGENT_PRIVACY_MODEL_OVERRIDE",
                     "ACTIVE_BINDING",
                     "DIRECT",
                     "ADVISORY",

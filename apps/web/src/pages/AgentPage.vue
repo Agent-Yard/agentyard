@@ -40,6 +40,8 @@ const createForm = reactive<CreateAgentPayload>({
   executionPolicy: {
     inheritAssistantDefaults: true,
     modelResourceId: null,
+    privacyModelResourceId: null,
+    privacyMappingEnabled: null,
     systemPrompt: '',
     knowledgeEnabled: false,
     inheritAssistantKnowledge: true,
@@ -60,6 +62,8 @@ const editForm = reactive<UpdateAgentPayload>({
   executionPolicy: {
     inheritAssistantDefaults: true,
     modelResourceId: null,
+    privacyModelResourceId: null,
+    privacyMappingEnabled: null,
     systemPrompt: '',
     knowledgeEnabled: false,
     inheritAssistantKnowledge: true,
@@ -86,6 +90,13 @@ const availablePlaybookOptions = computed(() =>
   (currentAssistant.value?.playbooks ?? []).map((item) => ({ label: item.name, value: item.id })),
 );
 const modelResources = computed(() => props.resources.filter((item) => item.type === 'LLM_MODEL'));
+const privateModelResources = computed(() =>
+  modelResources.value.filter(
+    (item) =>
+      item.effectiveVersion?.configuration.llmModel?.privateDeployment
+      || item.latestVersion?.configuration.llmModel?.privateDeployment,
+  ),
+);
 const skillResources = computed(() => props.resources.filter((item) => item.type === 'SKILL'));
 const toolResources = computed(() => props.resources.filter((item) => item.type === 'TOOL'));
 const knowledgeBaseOptions = computed(() => props.knowledgeBases.map((item) => ({ label: item.name, value: item.id })));
@@ -96,6 +107,41 @@ const actionOptions = [
   { label: 'RUN_PLAYBOOK', value: 'RUN_PLAYBOOK' },
   { label: 'SESSION_HUMAN_HANDOFF', value: 'SESSION_HUMAN_HANDOFF' },
 ];
+const privacyModeOptions = [
+  { label: '继承助手', value: 'INHERIT' },
+  { label: '强制开启', value: 'ENABLED' },
+  { label: '强制关闭', value: 'DISABLED' },
+];
+
+const createPrivacyMode = computed({
+  get: () => {
+    if (createForm.executionPolicy.privacyMappingEnabled === true) {
+      return 'ENABLED';
+    }
+    if (createForm.executionPolicy.privacyMappingEnabled === false) {
+      return 'DISABLED';
+    }
+    return 'INHERIT';
+  },
+  set: (value: string) => {
+    createForm.executionPolicy.privacyMappingEnabled = value === 'INHERIT' ? null : value === 'ENABLED';
+  },
+});
+
+const editPrivacyMode = computed({
+  get: () => {
+    if (editForm.executionPolicy.privacyMappingEnabled === true) {
+      return 'ENABLED';
+    }
+    if (editForm.executionPolicy.privacyMappingEnabled === false) {
+      return 'DISABLED';
+    }
+    return 'INHERIT';
+  },
+  set: (value: string) => {
+    editForm.executionPolicy.privacyMappingEnabled = value === 'INHERIT' ? null : value === 'ENABLED';
+  },
+});
 
 function toolOperationSummary(resource: Resource) {
   return resource.effectiveVersion?.configuration.tool?.operations?.map((operation) => operation.name).join(' / ')
@@ -193,6 +239,32 @@ watch(
   { immediate: true },
 );
 
+watch(
+  () => [createForm.executionPolicy.privacyMappingEnabled, privateModelResources.value],
+  () => {
+    if (createForm.executionPolicy.privacyMappingEnabled === true && !createForm.executionPolicy.privacyModelResourceId) {
+      createForm.executionPolicy.privacyModelResourceId = privateModelResources.value[0]?.id ?? null;
+    }
+    if (createForm.executionPolicy.privacyMappingEnabled !== true) {
+      createForm.executionPolicy.privacyModelResourceId = null;
+    }
+  },
+  { immediate: true },
+);
+
+watch(
+  () => [editForm.executionPolicy.privacyMappingEnabled, privateModelResources.value],
+  () => {
+    if (editForm.executionPolicy.privacyMappingEnabled === true && !editForm.executionPolicy.privacyModelResourceId) {
+      editForm.executionPolicy.privacyModelResourceId = privateModelResources.value[0]?.id ?? null;
+    }
+    if (editForm.executionPolicy.privacyMappingEnabled !== true) {
+      editForm.executionPolicy.privacyModelResourceId = null;
+    }
+  },
+  { immediate: true },
+);
+
 function submitCreate() {
   emit('createAgent', {
     ...createForm,
@@ -213,6 +285,9 @@ function submitCreate() {
   createForm.switchableOwnerAgentIds = [];
   createForm.playbookIds = [];
   createForm.executionPolicy.systemPrompt = '';
+  createForm.executionPolicy.modelResourceId = null;
+  createForm.executionPolicy.privacyModelResourceId = null;
+  createForm.executionPolicy.privacyMappingEnabled = null;
   createForm.executionPolicy.skillResourceIds = [];
   createForm.executionPolicy.toolResourceIds = [];
 }
@@ -271,6 +346,23 @@ function submitSave() {
                   v-model:value="createForm.executionPolicy.modelResourceId"
                   allow-clear
                   :options="modelResources.map((item) => ({ label: item.name, value: item.id }))"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="隐私映射策略">
+                <a-select v-model:value="createPrivacyMode" :options="privacyModeOptions" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="[16, 16]">
+            <a-col :span="12">
+              <a-form-item label="私有映射模型">
+                <a-select
+                  v-model:value="createForm.executionPolicy.privacyModelResourceId"
+                  allow-clear
+                  :disabled="createForm.executionPolicy.privacyMappingEnabled !== true"
+                  :options="privateModelResources.map((item) => ({ label: item.name, value: item.id }))"
                 />
               </a-form-item>
             </a-col>
@@ -388,6 +480,24 @@ function submitSave() {
               </a-form-item>
             </a-col>
             <a-col :span="12">
+              <a-form-item label="隐私映射策略">
+                <a-select v-model:value="editPrivacyMode" :options="privacyModeOptions" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <a-row :gutter="[16, 16]">
+            <a-col :span="12">
+              <a-form-item label="私有映射模型">
+                <a-select
+                  v-model:value="editForm.executionPolicy.privacyModelResourceId"
+                  allow-clear
+                  :disabled="editForm.executionPolicy.privacyMappingEnabled !== true"
+                  :options="privateModelResources.map((item) => ({ label: item.name, value: item.id }))"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
               <a-form-item label="挂载技能">
                 <a-select
                   v-model:value="editForm.executionPolicy.skillResourceIds"
@@ -475,6 +585,14 @@ function submitSave() {
             style="margin-bottom: 16px"
             :message="`当前发布冻结知识：${currentAssistant.currentRelease?.agents.find((item) => item.agentId === currentAgent.id)?.knowledgeBinding?.knowledgeBaseName}`"
             :description="`版本 ${currentAssistant.currentRelease?.agents.find((item) => item.agentId === currentAgent.id)?.knowledgeBinding?.knowledgeReleaseVersion} · 快照 ${currentAssistant.currentRelease?.agents.find((item) => item.agentId === currentAgent.id)?.knowledgeBinding?.snapshotId}`"
+          />
+          <a-alert
+            v-if="currentAssistant?.currentRelease?.agents.find((item) => item.agentId === currentAgent.id)?.effectivePrivacyMappingEnabled"
+            type="info"
+            show-icon
+            style="margin-bottom: 16px"
+            :message="`当前发布冻结隐私映射：${currentAssistant.currentRelease?.agents.find((item) => item.agentId === currentAgent.id)?.effectivePrivacyModelBinding?.resourceName ?? '未命名私有模型'}`"
+            :description="`版本 ${currentAssistant.currentRelease?.agents.find((item) => item.agentId === currentAgent.id)?.effectivePrivacyModelBinding?.resourceVersion ?? '-'}`"
           />
 
           <a-space v-if="canManageGovernance">

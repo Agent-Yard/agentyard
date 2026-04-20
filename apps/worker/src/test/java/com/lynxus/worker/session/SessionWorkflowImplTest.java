@@ -20,6 +20,7 @@ import com.lynxus.contracts.session.SessionContracts.PlaybookRun;
 import com.lynxus.contracts.session.SessionContracts.SessionEvent;
 import com.lynxus.contracts.session.SessionContracts.SessionEventType;
 import com.lynxus.contracts.session.SessionContracts.SessionMessageDeliveryStatus;
+import com.lynxus.contracts.session.SessionContracts.PrivacyMappingTelemetry;
 import com.lynxus.contracts.session.SessionContracts.SessionOwnerPolicy;
 import com.lynxus.contracts.session.SessionContracts.SessionPolicy;
 import com.lynxus.contracts.session.SessionContracts.SessionSnapshot;
@@ -33,6 +34,7 @@ import io.temporal.client.WorkflowStub;
 import io.temporal.testing.TestWorkflowEnvironment;
 import io.temporal.worker.Worker;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -335,6 +337,57 @@ class SessionWorkflowImplTest {
     }
 
     @Test
+    void privacyMappingAuditEvents_shouldUsePerTurnTelemetryInsteadOfSessionCumulativeCounts() {
+        try (TestWorkflowEnvironment environment = TestWorkflowEnvironment.newInstance()) {
+            Worker worker = environment.newWorker("session-tests-privacy-telemetry");
+            RecordingPersistenceActivities persistence = new RecordingPersistenceActivities();
+            worker.registerWorkflowImplementationTypes(SessionWorkflowImpl.class);
+            worker.registerActivitiesImplementations(new PrivacyTelemetryAgentTurnActivities(), persistence);
+            environment.start();
+
+            SessionWorkflow workflow = environment.getWorkflowClient().newWorkflowStub(
+                SessionWorkflow.class,
+                WorkflowOptions.newBuilder()
+                    .setTaskQueue("session-tests-privacy-telemetry")
+                    .setWorkflowId("session-privacy-telemetry")
+                    .build()
+            );
+            WorkflowClient.start(workflow::run, startRequestForAgentActions(List.of(AgentDecisionAction.NO_REPLY)));
+
+            assertEquals(
+                SessionMessageDeliveryStatus.ACCEPTED,
+                workflow.submitUserMessage(new UserMessage("msg-1", "customer-1", "first", Map.of())).status()
+            );
+            waitForPlatformEventCount(environment, persistence, "PRIVACY_OUTBOUND_SANITIZED", 1);
+
+            assertEquals(
+                SessionMessageDeliveryStatus.ACCEPTED,
+                workflow.submitUserMessage(new UserMessage("msg-2", "customer-1", "second", Map.of())).status()
+            );
+            waitForPlatformEventCount(environment, persistence, "PRIVACY_OUTBOUND_SANITIZED", 2);
+
+            List<SessionPersistenceActivities.PlatformEventRecord> privacyEvents = persistence.platformEvents().stream()
+                .filter(event -> "SESSION_PRIVACY_MAPPING".equals(event.aggregateType()))
+                .toList();
+            assertEquals(
+                1,
+                privacyEvents.stream().filter(event -> "PRIVACY_MAPPING_CREATED".equals(event.eventType())).count()
+            );
+            assertEquals(
+                2,
+                privacyEvents.stream().filter(event -> "PRIVACY_OUTBOUND_SANITIZED".equals(event.eventType())).count()
+            );
+            assertEquals(
+                List.of(1, 0),
+                privacyEvents.stream()
+                    .filter(event -> "PRIVACY_OUTBOUND_SANITIZED".equals(event.eventType()))
+                    .map(event -> ((Number) event.payload().get("placeholderCount")).intValue())
+                    .toList()
+            );
+        }
+    }
+
+    @Test
     void rejectedDecision_shouldPersistSharedStateBeforeRejectionEvent() {
         try (TestWorkflowEnvironment environment = TestWorkflowEnvironment.newInstance()) {
             Worker worker = environment.newWorker("session-tests-shared-state-order");
@@ -436,6 +489,8 @@ class SessionWorkflowImplTest {
                     "support",
                     "Handle the session",
                     null,
+                    null,
+                    false,
                     "",
                     false,
                     null,
@@ -454,6 +509,8 @@ class SessionWorkflowImplTest {
                     "specialist",
                     "Take over escalated sessions",
                     null,
+                    null,
+                    false,
                     "",
                     false,
                     null,
@@ -509,6 +566,25 @@ class SessionWorkflowImplTest {
         );
     }
 
+    private static void waitForPlatformEventCount(
+        TestWorkflowEnvironment environment,
+        RecordingPersistenceActivities persistence,
+        String eventType,
+        long expectedCount
+    ) {
+        for (int attempt = 0; attempt < 20; attempt += 1) {
+            long actualCount = persistence.platformEvents().stream().filter(event -> eventType.equals(event.eventType())).count();
+            if (actualCount >= expectedCount) {
+                return;
+            }
+            environment.sleep(Duration.ofMillis(200));
+        }
+        throw new AssertionError(
+            "expected platform event count not reached: " + eventType + ", actual events="
+                + persistence.platformEvents().stream().map(SessionPersistenceActivities.PlatformEventRecord::eventType).toList()
+        );
+    }
+
     private static SessionSnapshot waitForWorkflowCompletion(
         TestWorkflowEnvironment environment,
         SessionWorkflow workflow
@@ -547,12 +623,14 @@ class SessionWorkflowImplTest {
                         Map.of("customerId", "customer-1"),
                         null
                     ),
-                    Map.of()
+                    Map.of(),
+                    null
                 );
             }
             return new AgentTurnResult(
                 new AgentDecision(AgentDecisionAction.NO_REPLY, null, null, null, Map.of(), null),
-                Map.of()
+                Map.of(),
+                null
             );
         }
     }
@@ -573,12 +651,14 @@ class SessionWorkflowImplTest {
                         Map.of("customerId", "customer-1"),
                         null
                     ),
-                    Map.of()
+                    Map.of(),
+                    null
                 );
             }
             return new AgentTurnResult(
                 new AgentDecision(AgentDecisionAction.NO_REPLY, null, null, null, Map.of(), null),
-                Map.of()
+                Map.of(),
+                null
             );
         }
 
@@ -599,7 +679,8 @@ class SessionWorkflowImplTest {
                     Map.of(),
                     null
                 ),
-                Map.of()
+                Map.of(),
+                null
             );
         }
     }
@@ -616,7 +697,8 @@ class SessionWorkflowImplTest {
                     Map.of("customerId", "customer-1"),
                     null
                 ),
-                Map.of("reviewMarker", "malformed-run-playbook")
+                Map.of("reviewMarker", "malformed-run-playbook"),
+                null
             );
         }
     }
@@ -633,7 +715,8 @@ class SessionWorkflowImplTest {
                     Map.of("customerId", "customer-1"),
                     null
                 ),
-                Map.of("reviewMarker", "malformed-switch-owner")
+                Map.of("reviewMarker", "malformed-switch-owner"),
+                null
             );
         }
     }
@@ -650,7 +733,47 @@ class SessionWorkflowImplTest {
                     Map.of("customerId", "customer-1"),
                     "ignored accompanying reply"
                 ),
-                Map.of()
+                Map.of(),
+                null
+            );
+        }
+    }
+
+    private static final class PrivacyTelemetryAgentTurnActivities implements AgentTurnActivities {
+        private int turnCount = 0;
+
+        @Override
+        public AgentTurnResult executeTurn(AgentTurnRequest request) {
+            turnCount += 1;
+            PrivacyMappingTelemetry telemetry = turnCount == 1
+                ? new PrivacyMappingTelemetry(
+                    true,
+                    "privacy-model-1",
+                    "Private Model",
+                    Map.of("PROMPT_RUNTIME_MESSAGE", 1),
+                    Map.of(),
+                    Map.of("PERSON", 1),
+                    1,
+                    0,
+                    0,
+                    Instant.parse("2026-04-20T12:00:00Z")
+                )
+                : new PrivacyMappingTelemetry(
+                    true,
+                    "privacy-model-1",
+                    "Private Model",
+                    Map.of("PROMPT_RUNTIME_MESSAGE", 1),
+                    Map.of(),
+                    Map.of(),
+                    0,
+                    0,
+                    0,
+                    Instant.parse("2026-04-20T12:01:00Z")
+                );
+            return new AgentTurnResult(
+                new AgentDecision(AgentDecisionAction.NO_REPLY, null, null, null, Map.of(), null),
+                Map.of(),
+                telemetry
             );
         }
     }

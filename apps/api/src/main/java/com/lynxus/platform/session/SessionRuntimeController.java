@@ -36,6 +36,11 @@ public class SessionRuntimeController {
         return ApiResponse.ok(sessionRuntimeService.getSessionDetail(sessionId));
     }
 
+    @GetMapping("/sessions/{sessionId}/privacy-mapping-summary")
+    public ApiResponse<?> privacyMappingSummary(@PathVariable String sessionId) {
+        return ApiResponse.ok(sessionRuntimeService.getPrivacyMappingSummary(sessionId));
+    }
+
     @PostMapping("/sessions/{sessionId}/messages")
     public ApiResponse<?> sendMessage(@PathVariable String sessionId, @RequestBody SendSessionMessageRequest request) {
         return ApiResponse.ok(sessionRuntimeService.sendMessage(sessionId, request));

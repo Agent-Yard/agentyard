@@ -27,11 +27,17 @@ public interface CatalogRepository {
             if (a.modelPolicy() != null && resourceId.equals(a.modelPolicy().defaultModelResourceId())) {
                 refs.add(new ResourceBindingRef("ASSISTANT", a.id(), resourceId, "ASSISTANT_DEFAULT_MODEL"));
             }
+            if (resourceId.equals(a.privacyModelResourceId())) {
+                refs.add(new ResourceBindingRef("ASSISTANT", a.id(), resourceId, "ASSISTANT_PRIVACY_MODEL"));
+            }
         }
         for (AgentDto a : snapshot.agents()) {
             if (a.executionPolicy() == null) continue;
             if (resourceId.equals(a.executionPolicy().modelResourceId())) {
                 refs.add(new ResourceBindingRef("AGENT", a.id(), resourceId, "AGENT_OVERRIDE_MODEL"));
+            }
+            if (resourceId.equals(a.executionPolicy().privacyModelResourceId())) {
+                refs.add(new ResourceBindingRef("AGENT", a.id(), resourceId, "AGENT_PRIVACY_MODEL_OVERRIDE"));
             }
             if (a.executionPolicy().skillResourceIds() != null && a.executionPolicy().skillResourceIds().contains(resourceId)) {
                 refs.add(new ResourceBindingRef("AGENT", a.id(), resourceId, "AGENT_SKILL_ENABLED"));
@@ -109,11 +115,17 @@ public interface CatalogRepository {
             if (a.modelPolicy() != null && a.modelPolicy().defaultModelResourceId() != null) {
                 refs.add(new ResourceBindingRef("ASSISTANT", a.id(), a.modelPolicy().defaultModelResourceId(), "ASSISTANT_DEFAULT_MODEL"));
             }
+            if (a.privacyModelResourceId() != null) {
+                refs.add(new ResourceBindingRef("ASSISTANT", a.id(), a.privacyModelResourceId(), "ASSISTANT_PRIVACY_MODEL"));
+            }
         }
         for (AgentDto a : snapshot.agents()) {
             if (a.executionPolicy() == null) continue;
             if (a.executionPolicy().modelResourceId() != null) {
                 refs.add(new ResourceBindingRef("AGENT", a.id(), a.executionPolicy().modelResourceId(), "AGENT_OVERRIDE_MODEL"));
+            }
+            if (a.executionPolicy().privacyModelResourceId() != null) {
+                refs.add(new ResourceBindingRef("AGENT", a.id(), a.executionPolicy().privacyModelResourceId(), "AGENT_PRIVACY_MODEL_OVERRIDE"));
             }
             if (a.executionPolicy().skillResourceIds() != null) {
                 for (String sid : a.executionPolicy().skillResourceIds()) {

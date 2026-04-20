@@ -370,6 +370,8 @@ public class SessionWorkflowImpl implements SessionWorkflow {
                     startRequest.playbooks(),
                     activePlaybookSummary(activePlaybookRunId),
                     sharedState,
+                    owner.effectivePrivacyModelBinding(),
+                    owner.effectivePrivacyMappingEnabled(),
                     trigger,
                     recentEvents()
                 ));
@@ -387,6 +389,9 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             }
 
             sharedState = result == null ? sharedState : result.sharedState();
+            if (result != null && result.mappingTelemetry() != null) {
+                appendPrivacyMappingAuditEvents(currentOwnerAgentId, result.mappingTelemetry());
+            }
             setSnapshot(copySnapshot(
                 sharedState,
                 activePlaybookRunId,
@@ -917,6 +922,67 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             payload,
             occurredAt
         ));
+    }
+
+    private void appendPrivacyMappingAuditEvents(
+        String actorId,
+        com.lynxus.contracts.session.SessionContracts.PrivacyMappingTelemetry telemetry
+    ) {
+        Map<String, Object> basePayload = new LinkedHashMap<>();
+        basePayload.put("sessionId", snapshot.sessionId());
+        basePayload.put("agentId", actorId);
+        basePayload.put("privacyModelResourceId", telemetry.privacyModelResourceId());
+        basePayload.put("privacyModelResourceName", telemetry.privacyModelResourceName());
+        basePayload.put("entityTypeBreakdown", telemetry.entityTypeBreakdown());
+        basePayload.put("placeholderCount", telemetry.placeholderCount());
+        basePayload.put("unresolvedPlaceholderCount", telemetry.unresolvedPlaceholderCount());
+        basePayload.put("blockedEventCount", telemetry.blockedEventCount());
+        basePayload.put("sanitizeCountByChannel", telemetry.sanitizeCountByChannel());
+        basePayload.put("restoreCountByChannel", telemetry.restoreCountByChannel());
+        basePayload.put("lastProcessedAt", telemetry.lastProcessedAt() == null ? null : telemetry.lastProcessedAt().toString());
+
+        int sanitizeCount = telemetry.sanitizeCountByChannel().values().stream().mapToInt(Integer::intValue).sum();
+        int restoreCount = telemetry.restoreCountByChannel().values().stream().mapToInt(Integer::intValue).sum();
+        if (telemetry.placeholderCount() > 0) {
+            appendPlatformEvent(
+                "PRIVACY_MAPPING_CREATED",
+                "SESSION_PRIVACY_MAPPING",
+                snapshot.sessionId(),
+                actorId,
+                basePayload,
+                now()
+            );
+        }
+        if (sanitizeCount > 0) {
+            appendPlatformEvent(
+                "PRIVACY_OUTBOUND_SANITIZED",
+                "SESSION_PRIVACY_MAPPING",
+                snapshot.sessionId(),
+                actorId,
+                basePayload,
+                now()
+            );
+        }
+        if (restoreCount > 0) {
+            appendPlatformEvent(
+                "PRIVACY_INBOUND_RESTORED",
+                "SESSION_PRIVACY_MAPPING",
+                snapshot.sessionId(),
+                actorId,
+                basePayload,
+                now()
+            );
+        }
+        if (telemetry.blockedEventCount() > 0 || telemetry.unresolvedPlaceholderCount() > 0) {
+            appendPlatformEvent(
+                "PRIVACY_MAPPING_BLOCKED",
+                "SESSION_PRIVACY_MAPPING",
+                snapshot.sessionId(),
+                actorId,
+                basePayload,
+                now()
+            );
+        }
     }
 
     private String lastEventId() {

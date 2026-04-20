@@ -36,6 +36,19 @@ export interface SessionRuntimeDetail {
   playbookRuns: PlaybookRun[];
 }
 
+export interface PrivacyMappingSummary {
+  enabled: boolean;
+  privacyModelResourceId: string | null;
+  privacyModelName: string | null;
+  sanitizeCountByChannel: Record<string, number>;
+  restoreCountByChannel: Record<string, number>;
+  entityTypeBreakdown: Record<string, number>;
+  placeholderCount: number;
+  unresolvedPlaceholderCount: number;
+  blockedEventCount: number;
+  lastProcessedAt: string | null;
+}
+
 export interface CreateSessionPayload {
   assistantId: string;
   customerId: string;

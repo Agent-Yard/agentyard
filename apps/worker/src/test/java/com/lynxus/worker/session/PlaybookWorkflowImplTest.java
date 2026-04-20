@@ -147,6 +147,8 @@ class PlaybookWorkflowImplTest {
             "support",
             "Handle the session",
             null,
+            null,
+            false,
             "",
             false,
             null,

@@ -8,6 +8,7 @@ from typing import Any
 
 import httpx
 
+from .data_security import build_privacy_pipeline
 from .openai_adapter import (
     assistant_tool_call_message,
     parse_openai_tool_calls,
@@ -16,7 +17,7 @@ from .openai_adapter import (
     tool_result_message,
 )
 from .models import AgentDecision, AgentTurnRequest, AgentTurnResult
-from .prompting import build_prompt_bundle, loaded_skill_runtime_message, render_openai_messages
+from .prompting import PromptBundle, build_prompt_bundle, loaded_skill_runtime_message, render_openai_messages
 from .semantic import SemanticMessage, SemanticToolCall, SemanticToolResult
 from .tooling import execute_tool_call, load_skills, semantic_tool_definitions
 
@@ -49,6 +50,7 @@ def _execute_via_openai_compatible(
     settings = _resolve_provider_settings(request)
     if settings is None:
         raise RuntimeError("no supported model provider configured for current owner")
+    privacy_pipeline = build_privacy_pipeline(request)
 
     headers = {
         "Authorization": f"Bearer {settings.api_key}",
@@ -59,13 +61,27 @@ def _execute_via_openai_compatible(
     if settings.project:
         headers["OpenAI-Project"] = settings.project
 
-    messages = render_openai_messages(prompt_bundle)
-    tools = render_openai_tool_definitions(semantic_tool_definitions(request))
-    loaded_skill_ids: set[str] = set()
-    max_steps = _max_tool_steps()
-    tool_call_count = 0
-    skill_read_count = 0
     try:
+        sanitized_bundle = PromptBundle(
+            instruction=privacy_pipeline.sanitize_outbound("PROMPT_INSTRUCTION", prompt_bundle.instruction),
+            runtime_messages=[
+                SemanticMessage(
+                    kind=message.kind,
+                    content=privacy_pipeline.sanitize_outbound("PROMPT_RUNTIME_MESSAGE", message.content),
+                    tool_calls=message.tool_calls,
+                    tool_call_id=message.tool_call_id,
+                )
+                for message in prompt_bundle.runtime_messages
+            ],
+            capabilities=prompt_bundle.capabilities,
+            response_contract=prompt_bundle.response_contract,
+        )
+        messages = render_openai_messages(sanitized_bundle)
+        tools = render_openai_tool_definitions(semantic_tool_definitions(request))
+        loaded_skill_ids: set[str] = set()
+        max_steps = _max_tool_steps()
+        tool_call_count = 0
+        skill_read_count = 0
         with httpx.Client(timeout=20.0) as client:
             for step in range(max_steps + 1):
                 payload: dict[str, Any] = {
@@ -89,7 +105,18 @@ def _execute_via_openai_compatible(
                     messages.append(render_openai_runtime_message(assistant_tool_call_message(content, semantic_tool_calls)))
                     for tool_call in semantic_tool_calls:
                         tool_call_count += 1
-                        tool_result = _execute_model_tool_call(request, tool_call)
+                        restored_arguments = privacy_pipeline.restore_inbound("MODEL_TOOL_ARGUMENT", tool_call.arguments)
+                        restored_tool_call = SemanticToolCall(
+                            call_id=tool_call.call_id,
+                            tool_name=tool_call.tool_name,
+                            arguments=restored_arguments,
+                        )
+                        raw_tool_result = _execute_model_tool_call(request, restored_tool_call)
+                        tool_result = (
+                            raw_tool_result
+                            if tool_call.tool_name in {"knowledge_search", "knowledge_read"}
+                            else privacy_pipeline.sanitize_outbound("TOOL_RESULT", raw_tool_result)
+                        )
                         messages.append(render_openai_runtime_message(tool_result_message(SemanticToolResult(tool_call.call_id, tool_result))))
                     continue
 
@@ -108,13 +135,16 @@ def _execute_via_openai_compatible(
                             )
                         )
                     )
-                    messages.append(render_openai_runtime_message(loaded_skill_runtime_message(load_skills(request, requested_ids))))
+                    loaded_skills = privacy_pipeline.sanitize_outbound("SKILL_PAYLOAD", load_skills(request, requested_ids))
+                    messages.append(render_openai_runtime_message(loaded_skill_runtime_message(loaded_skills)))
                     continue
+                parsed = privacy_pipeline.restore_inbound("MODEL_FINAL_RESPONSE", parsed)
                 decision_payload = parsed.get("decision")
                 shared_state = parsed.get("sharedState")
                 result = AgentTurnResult(
                     decision=AgentDecision.model_validate(decision_payload or {}),
                     sharedState=shared_state if isinstance(shared_state, dict) else dict(request.sharedState),
+                    mappingTelemetry=privacy_pipeline.telemetry(),
                 )
                 LOGGER.info(
                     "agent turn executed via openai-compatible provider",
@@ -126,8 +156,10 @@ def _execute_via_openai_compatible(
                         "toolLoopSteps": step,
                         "toolCallCount": tool_call_count,
                         "skillReadCount": skill_read_count,
+                        "privacyMappingEnabled": privacy_pipeline.enabled,
                     },
                 )
+                privacy_pipeline.close()
                 return result
         raise ValueError("model did not return a final decision within loop step budget")
     except Exception as error:  # noqa: BLE001
@@ -138,8 +170,10 @@ def _execute_via_openai_compatible(
                 "assistantId": request.assistantId,
                 "ownerAgentId": request.currentOwner.agentId,
                 "error": str(error),
+                "privacyMappingEnabled": privacy_pipeline.enabled,
             },
         )
+        privacy_pipeline.close()
         raise RuntimeError("agent turn execution failed") from error
 
 

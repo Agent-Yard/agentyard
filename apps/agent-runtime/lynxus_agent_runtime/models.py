@@ -11,6 +11,8 @@ class AgentConfig(BaseModel):
     role: str
     responsibility: str
     model: "LlmModelDescriptor | None" = None
+    effectivePrivacyModelBinding: "LlmModelDescriptor | None" = None
+    effectivePrivacyMappingEnabled: bool = False
     systemPrompt: str = ""
     knowledgeEnabled: bool = False
     knowledgeBaseId: str | None = None
@@ -35,6 +37,7 @@ class LlmModelDescriptor(BaseModel):
     apiKeyEnvVar: str
     temperature: float = 0
     maxTokens: int = 0
+    privateDeployment: bool = False
 
 
 class SkillDescriptor(BaseModel):
@@ -115,6 +118,19 @@ class SessionTrigger(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
+class PrivacyMappingTelemetry(BaseModel):
+    enabled: bool = False
+    privacyModelResourceId: str | None = None
+    privacyModelResourceName: str | None = None
+    sanitizeCountByChannel: dict[str, int] = Field(default_factory=dict)
+    restoreCountByChannel: dict[str, int] = Field(default_factory=dict)
+    entityTypeBreakdown: dict[str, int] = Field(default_factory=dict)
+    placeholderCount: int = 0
+    unresolvedPlaceholderCount: int = 0
+    blockedEventCount: int = 0
+    lastProcessedAt: str | None = None
+
+
 class SessionEvent(BaseModel):
     eventId: str
     sessionId: str
@@ -163,6 +179,8 @@ class AgentTurnRequest(BaseModel):
     availablePlaybooks: list[PlaybookConfig] = Field(default_factory=list)
     activePlaybook: ActivePlaybookSummary | None = None
     sharedState: dict[str, Any] = Field(default_factory=dict)
+    effectivePrivacyModelBinding: LlmModelDescriptor | None = None
+    effectivePrivacyMappingEnabled: bool = False
     trigger: SessionTrigger
     recentEvents: list[SessionEvent] = Field(default_factory=list)
 
@@ -170,6 +188,7 @@ class AgentTurnRequest(BaseModel):
 class AgentTurnResult(BaseModel):
     decision: AgentDecision
     sharedState: dict[str, Any] = Field(default_factory=dict)
+    mappingTelemetry: PrivacyMappingTelemetry | None = None
 
 
 class PlaybookToolTaskRequest(BaseModel):

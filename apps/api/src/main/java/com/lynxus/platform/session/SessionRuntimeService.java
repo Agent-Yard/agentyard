@@ -42,7 +42,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 
 import static com.lynxus.platform.session.SessionRuntimeDtos.*;
 
@@ -52,6 +56,9 @@ public class SessionRuntimeService {
     private final CatalogService catalogService;
     private final SessionRuntimeRepository repository;
     private final SessionDispatchLockService dispatchLockService;
+    private final StringRedisTemplate redisTemplate;
+    private final ObjectMapper objectMapper;
+    private final String privacySummaryKeyPrefix;
 
     public SessionRuntimeService(
         SessionWorkflowGateway sessionWorkflowGateway,
@@ -59,10 +66,33 @@ public class SessionRuntimeService {
         SessionRuntimeRepository repository,
         SessionDispatchLockService dispatchLockService
     ) {
+        this(
+            sessionWorkflowGateway,
+            catalogService,
+            repository,
+            dispatchLockService,
+            new StringRedisTemplate(),
+            new ObjectMapper(),
+            "privacy:session"
+        );
+    }
+
+    public SessionRuntimeService(
+        SessionWorkflowGateway sessionWorkflowGateway,
+        CatalogService catalogService,
+        SessionRuntimeRepository repository,
+        SessionDispatchLockService dispatchLockService,
+        StringRedisTemplate redisTemplate,
+        ObjectMapper objectMapper,
+        @Value("${lynxus.privacy.session-store-key-prefix:privacy:session}") String privacySummaryKeyPrefix
+    ) {
         this.sessionWorkflowGateway = sessionWorkflowGateway;
         this.catalogService = catalogService;
         this.repository = repository;
         this.dispatchLockService = dispatchLockService;
+        this.redisTemplate = redisTemplate;
+        this.objectMapper = objectMapper;
+        this.privacySummaryKeyPrefix = privacySummaryKeyPrefix;
     }
 
     public List<SessionRuntimeSessionDto> listSessions() {
@@ -80,6 +110,31 @@ public class SessionRuntimeService {
             repository.listEvents(sessionId),
             repository.listPlaybookRuns(sessionId)
         );
+    }
+
+    public PrivacyMappingSummaryDto getPrivacyMappingSummary(String sessionId) {
+        String payload = redisTemplate.opsForValue().get(privacySummaryKey(sessionId));
+        if (payload == null || payload.isBlank()) {
+            return new PrivacyMappingSummaryDto(false, null, null, Map.of(), Map.of(), Map.of(), 0, 0, 0, null);
+        }
+        try {
+            Map<String, Object> summary = objectMapper.readValue(payload, new TypeReference<Map<String, Object>>() {
+            });
+            return new PrivacyMappingSummaryDto(
+                Boolean.TRUE.equals(summary.get("enabled")),
+                summary.get("privacyModelResourceId") == null ? null : String.valueOf(summary.get("privacyModelResourceId")),
+                summary.get("privacyModelName") == null ? null : String.valueOf(summary.get("privacyModelName")),
+                intMap(summary.get("sanitizeCountByChannel")),
+                intMap(summary.get("restoreCountByChannel")),
+                intMap(summary.get("entityTypeBreakdown")),
+                intValue(summary.get("placeholderCount")),
+                intValue(summary.get("unresolvedPlaceholderCount")),
+                intValue(summary.get("blockedEventCount")),
+                summary.get("lastProcessedAt") == null ? null : Instant.parse(String.valueOf(summary.get("lastProcessedAt")))
+            );
+        } catch (Exception error) { // noqa: BLE001
+            throw new IllegalStateException("failed to read privacy mapping summary", error);
+        }
     }
 
     public SessionRuntimeSessionDto createSession(CreateSessionRequest request) {
@@ -191,6 +246,8 @@ public class SessionRuntimeService {
             agent.role(),
             agent.responsibility(),
             resolveModelDescriptor(agent, release, resourcesByVersionId),
+            resolvePrivacyModelDescriptor(agent, release, resourcesByVersionId),
+            agent.effectivePrivacyMappingEnabled(),
             agent.executionPolicy().systemPrompt(),
             agent.executionPolicy().knowledgeEnabled(),
             agent.executionPolicy().knowledgeBaseId(),
@@ -252,7 +309,36 @@ public class SessionRuntimeService {
             config.baseUrl(),
             config.apiKeyEnvVar(),
             config.temperature(),
-            config.maxTokens()
+            config.maxTokens(),
+            config.privateDeployment()
+        );
+    }
+
+    private LlmModelDescriptor resolvePrivacyModelDescriptor(
+        AssistantReleaseAgentDto agent,
+        AssistantReleaseDto release,
+        Map<String, AssistantReleaseResourceDto> resourcesByVersionId
+    ) {
+        if (!agent.effectivePrivacyMappingEnabled() || agent.effectivePrivacyModelBinding() == null) {
+            return null;
+        }
+        AssistantReleaseResourceDto resource = resourcesByVersionId.get(agent.effectivePrivacyModelBinding().resourceVersionId());
+        if (resource == null || resource.configuration() == null || resource.configuration().llmModel() == null) {
+            return null;
+        }
+        LlmModelConfigDto config = resource.configuration().llmModel();
+        return new LlmModelDescriptor(
+            resource.resourceId(),
+            resource.resourceName(),
+            resource.resourceVersionId(),
+            resource.resourceVersion(),
+            config.providerType(),
+            config.modelId(),
+            config.baseUrl(),
+            config.apiKeyEnvVar(),
+            config.temperature(),
+            config.maxTokens(),
+            config.privateDeployment()
         );
     }
 
@@ -423,6 +509,31 @@ public class SessionRuntimeService {
             updated.id(),
             () -> sendMessageInternal(updated.id(), new SendSessionMessageRequest(request.customerId(), openingMessage), updated)
         );
+    }
+
+    private String privacySummaryKey(String sessionId) {
+        return privacySummaryKeyPrefix + ":" + sessionId + ":summary";
+    }
+
+    private static Map<String, Integer> intMap(Object rawValue) {
+        if (!(rawValue instanceof Map<?, ?> map)) {
+            return Map.of();
+        }
+        Map<String, Integer> result = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            result.put(String.valueOf(entry.getKey()), intValue(entry.getValue()));
+        }
+        return Map.copyOf(result);
+    }
+
+    private static int intValue(Object rawValue) {
+        if (rawValue instanceof Number number) {
+            return number.intValue();
+        }
+        if (rawValue == null) {
+            return 0;
+        }
+        return Integer.parseInt(String.valueOf(rawValue));
     }
 
     private Optional<SessionRuntimeSessionDto> findReusableActiveSession(String customerId, String assistantId) {

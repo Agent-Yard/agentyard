@@ -25,6 +25,13 @@ public final class SessionContracts {
         return Collections.unmodifiableMap(new LinkedHashMap<>(source));
     }
 
+    private static Map<String, Integer> immutableIntegerMap(Map<String, Integer> source) {
+        if (source == null || source.isEmpty()) {
+            return Map.of();
+        }
+        return Collections.unmodifiableMap(new LinkedHashMap<>(source));
+    }
+
     public enum SessionMessageDeliveryStatus {
         ACCEPTED,
         BUSY,
@@ -139,7 +146,8 @@ public final class SessionContracts {
         String baseUrl,
         String apiKeyEnvVar,
         double temperature,
-        int maxTokens
+        int maxTokens,
+        boolean privateDeployment
     ) {
     }
 
@@ -217,6 +225,8 @@ public final class SessionContracts {
         String role,
         String responsibility,
         LlmModelDescriptor model,
+        LlmModelDescriptor effectivePrivacyModelBinding,
+        boolean effectivePrivacyMappingEnabled,
         String systemPrompt,
         boolean knowledgeEnabled,
         String knowledgeBaseId,
@@ -343,6 +353,25 @@ public final class SessionContracts {
         }
     }
 
+    public record PrivacyMappingTelemetry(
+        boolean enabled,
+        String privacyModelResourceId,
+        String privacyModelResourceName,
+        Map<String, Integer> sanitizeCountByChannel,
+        Map<String, Integer> restoreCountByChannel,
+        Map<String, Integer> entityTypeBreakdown,
+        int placeholderCount,
+        int unresolvedPlaceholderCount,
+        int blockedEventCount,
+        Instant lastProcessedAt
+    ) {
+        public PrivacyMappingTelemetry {
+            sanitizeCountByChannel = immutableIntegerMap(sanitizeCountByChannel);
+            restoreCountByChannel = immutableIntegerMap(restoreCountByChannel);
+            entityTypeBreakdown = immutableIntegerMap(entityTypeBreakdown);
+        }
+    }
+
     public record AgentDecision(
         AgentDecisionAction action,
         String replyContent,
@@ -365,6 +394,8 @@ public final class SessionContracts {
         List<PlaybookConfig> availablePlaybooks,
         ActivePlaybookSummary activePlaybook,
         Map<String, Object> sharedState,
+        LlmModelDescriptor effectivePrivacyModelBinding,
+        boolean effectivePrivacyMappingEnabled,
         SessionTrigger trigger,
         List<SessionEvent> recentEvents
     ) {
@@ -378,7 +409,8 @@ public final class SessionContracts {
 
     public record AgentTurnResult(
         AgentDecision decision,
-        Map<String, Object> sharedState
+        Map<String, Object> sharedState,
+        PrivacyMappingTelemetry mappingTelemetry
     ) {
         public AgentTurnResult {
             sharedState = immutableObjectMap(sharedState);

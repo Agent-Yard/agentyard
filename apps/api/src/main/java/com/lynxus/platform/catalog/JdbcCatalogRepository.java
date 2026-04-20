@@ -231,12 +231,18 @@ public class JdbcCatalogRepository implements CatalogRepository {
             if (assistant.modelPolicy() != null && assistant.modelPolicy().defaultModelResourceId() != null) {
                 insertResourceBinding("ASSISTANT", assistant.id(), assistant.modelPolicy().defaultModelResourceId(), "ASSISTANT_DEFAULT_MODEL");
             }
+            if (assistant.privacyModelResourceId() != null) {
+                insertResourceBinding("ASSISTANT", assistant.id(), assistant.privacyModelResourceId(), "ASSISTANT_PRIVACY_MODEL");
+            }
         }
         for (AgentDto agent : snapshot.agents()) {
             AgentExecutionPolicyDto policy = agent.executionPolicy();
             if (policy == null) continue;
             if (policy.modelResourceId() != null) {
                 insertResourceBinding("AGENT", agent.id(), policy.modelResourceId(), "AGENT_OVERRIDE_MODEL");
+            }
+            if (policy.privacyModelResourceId() != null) {
+                insertResourceBinding("AGENT", agent.id(), policy.privacyModelResourceId(), "AGENT_PRIVACY_MODEL_OVERRIDE");
             }
             for (String skillId : safe(policy.skillResourceIds())) {
                 insertResourceBinding("AGENT", agent.id(), skillId, "AGENT_SKILL_ENABLED");

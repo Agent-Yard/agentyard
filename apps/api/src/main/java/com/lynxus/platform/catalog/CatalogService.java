@@ -282,6 +282,7 @@ public class CatalogService {
         ensureLoaded();
         AssistantModelPolicyDto normalizedModelPolicy = normalizeAssistantModelPolicy(request.modelPolicy());
         validateAssistantModelPolicy(normalizedModelPolicy);
+        validatePrivacyModelResourceId(request.privacyModelResourceId(), "assistant privacyModelResourceId");
         AssistantDto assistant = new AssistantDto(
             nextId("assistant"),
             request.scenarioId(),
@@ -298,6 +299,8 @@ public class CatalogService {
             normalizeAssistantReplyPolicy(request.replyPolicy()),
             normalizeAssistantPlaybookPolicy(request.playbookPolicy()),
             normalizedModelPolicy,
+            normalizeOptionalText(request.privacyModelResourceId()),
+            request.privacyMappingEnabled(),
             normalizeKnowledgeAccessPolicy(request.knowledgeAccessPolicy()),
             normalizeMemoryPolicy(request.memoryPolicy())
         );
@@ -329,6 +332,8 @@ public class CatalogService {
         AssistantModelPolicyDto normalizedModelPolicy = request.modelPolicy() == null
             ? existing.modelPolicy()
             : normalizeAssistantModelPolicy(request.modelPolicy());
+        String privacyModelResourceId = normalizeOptionalText(request.privacyModelResourceId());
+        boolean privacyMappingEnabled = request.privacyMappingEnabled();
         KnowledgeAccessPolicyDto knowledgeAccessPolicy = request.knowledgeAccessPolicy() == null
             ? existing.knowledgeAccessPolicy()
             : normalizeKnowledgeAccessPolicy(request.knowledgeAccessPolicy());
@@ -336,6 +341,7 @@ public class CatalogService {
             ? existing.memoryPolicy()
             : normalizeMemoryPolicy(request.memoryPolicy());
         validateAssistantModelPolicy(normalizedModelPolicy);
+        validatePrivacyModelResourceId(privacyModelResourceId, "assistant privacyModelResourceId");
         VersionDto version = new VersionDto(
             effectiveStatus == VersionStatus.PUBLISHED ? nextAssistantReleaseVersion(existing.id()) : existing.version().version(),
             effectiveStatus,
@@ -357,6 +363,8 @@ public class CatalogService {
             replyPolicy,
             playbookPolicy,
             normalizedModelPolicy,
+            privacyModelResourceId,
+            privacyMappingEnabled,
             knowledgeAccessPolicy,
             memoryPolicy
         );
@@ -435,6 +443,7 @@ public class CatalogService {
             request.switchableOwnerAgentIds() == null ? List.of() : List.copyOf(request.switchableOwnerAgentIds()),
             request.playbookIds() == null ? List.of() : List.copyOf(request.playbookIds())
         );
+        validatePrivacyModelResourceId(agent.executionPolicy().privacyModelResourceId(), "agent privacyModelResourceId");
         validateAgentPlaybookReferences(agent.assistantId(), agent.playbookIds());
         agents.add(agent);
         AssistantDto assistant = findAssistant(request.assistantId());
@@ -461,6 +470,7 @@ public class CatalogService {
             request.switchableOwnerAgentIds() == null ? List.of() : List.copyOf(request.switchableOwnerAgentIds()),
             request.playbookIds() == null ? List.of() : List.copyOf(request.playbookIds())
         );
+        validatePrivacyModelResourceId(updated.executionPolicy().privacyModelResourceId(), "agent privacyModelResourceId");
         validateAgentPlaybookReferences(updated.assistantId(), updated.playbookIds());
         replace(agents, AgentDto::id, updated);
         AssistantDto assistant = findAssistant(existing.assistantId());
@@ -1059,6 +1069,8 @@ public class CatalogService {
             normalizeAssistantReplyPolicy(assistant.replyPolicy()),
             normalizeAssistantPlaybookPolicy(assistant.playbookPolicy()),
             normalizeAssistantModelPolicy(assistant.modelPolicy()),
+            normalizeOptionalText(assistant.privacyModelResourceId()),
+            assistant.privacyMappingEnabled(),
             normalizeKnowledgeAccessPolicy(assistant.knowledgeAccessPolicy()),
             normalizeMemoryPolicy(assistant.memoryPolicy())
         );
@@ -1094,12 +1106,20 @@ public class CatalogService {
         AssistantDto assistant = findAssistant(assistantId);
         Map<String, AssistantReleaseResourceDto> snapshotMap = new LinkedHashMap<>();
         DefaultModelBindingDto defaultModelBinding = resolveDefaultModelBinding(assistant);
+        DefaultModelBindingDto privacyModelBinding = resolvePrivacyModelBinding(assistant);
         captureEffectiveResource(snapshotMap, assistant.modelPolicy().defaultModelResourceId(), "ASSISTANT_DEFAULT_MODEL");
+        captureEffectiveResource(snapshotMap, assistant.privacyModelResourceId(), "ASSISTANT_PRIVACY_MODEL");
         KnowledgeBindingSnapshotDto assistantKnowledgeBinding = resolveAssistantKnowledgeBinding(assistant);
 
         List<AssistantReleaseAgentDto> releaseAgents = new ArrayList<>();
         for (AgentDto agent : orderAgentsForAssistant(assistantId)) {
             captureEffectiveResource(snapshotMap, agent.executionPolicy().modelResourceId(), agent.name());
+            String effectivePrivacyModelResourceId = resolveEffectivePrivacyModelResourceId(assistant, agent);
+            boolean effectivePrivacyMappingEnabled = resolveEffectivePrivacyMappingEnabled(assistant, agent);
+            DefaultModelBindingDto effectivePrivacyModelBinding = effectivePrivacyMappingEnabled
+                ? resolvePrivacyModelBinding(assistant, agent)
+                : null;
+            captureEffectiveResource(snapshotMap, effectivePrivacyModelResourceId, agent.name() + "_PRIVACY_MODEL");
 
             List<String> skillResourceVersionIds = new ArrayList<>();
             for (String skillResourceId : agent.executionPolicy().skillResourceIds()) {
@@ -1128,6 +1148,8 @@ public class CatalogService {
                 agent.responsibility(),
                 agent.executionPolicy(),
                 resolveAgentKnowledgeBinding(assistantKnowledgeBinding, agent),
+                effectivePrivacyModelBinding,
+                effectivePrivacyMappingEnabled,
                 agent.canOwnSession(),
                 agent.allowedActions(),
                 agent.switchableOwnerAgentIds(),
@@ -1146,6 +1168,8 @@ public class CatalogService {
             status == VersionStatus.PUBLISHED ? Instant.now() : null,
             assistantKnowledgeBinding,
             defaultModelBinding,
+            privacyModelBinding,
+            assistant.privacyMappingEnabled(),
             List.copyOf(snapshotMap.values()),
             List.copyOf(releaseAgents),
             playbooksForAssistant(assistantId),
@@ -1537,6 +1561,8 @@ public class CatalogService {
                 normalizeAssistantReplyPolicy(assistant.replyPolicy()),
                 normalizeAssistantPlaybookPolicy(assistant.playbookPolicy()),
                 normalizeAssistantModelPolicy(assistant.modelPolicy()),
+                normalizeOptionalText(assistant.privacyModelResourceId()),
+                assistant.privacyMappingEnabled(),
                 normalizeKnowledgeAccessPolicy(assistant.knowledgeAccessPolicy()),
                 normalizeMemoryPolicy(assistant.memoryPolicy())
             ))
@@ -1587,6 +1613,8 @@ public class CatalogService {
                     release.publishedAt(),
                     normalizeKnowledgeBindingSnapshot(release.assistantKnowledgeBinding()),
                     normalizeDefaultModelBinding(release.defaultModelBinding()),
+                    normalizeDefaultModelBinding(release.privacyModelBinding()),
+                    release.privacyMappingEnabled(),
                     release.resources().stream()
                         .map(resource -> new AssistantReleaseResourceDto(
                             resource.resourceId(),
@@ -1606,6 +1634,8 @@ public class CatalogService {
                             agent.responsibility(),
                             normalizeAgentExecutionPolicy(agent.executionPolicy()),
                             normalizeKnowledgeBindingSnapshot(agent.knowledgeBinding()),
+                            normalizeDefaultModelBinding(agent.effectivePrivacyModelBinding()),
+                            agent.effectivePrivacyMappingEnabled(),
                             agent.canOwnSession(),
                             normalizeAllowedActions(agent.allowedActions()),
                             agent.switchableOwnerAgentIds(),
@@ -1645,6 +1675,8 @@ public class CatalogService {
             new AgentExecutionPolicyDto(
                 normalizedPolicy.inheritAssistantDefaults(),
                 normalizedPolicy.modelResourceId(),
+                normalizedPolicy.privacyModelResourceId(),
+                normalizedPolicy.privacyMappingEnabled(),
                 normalizedPolicy.systemPrompt(),
                 normalizedPolicy.knowledgeEnabled(),
                 normalizedPolicy.inheritAssistantKnowledge(),
@@ -1909,7 +1941,8 @@ public class CatalogService {
                     envOrDefault("LYNXUS_OPENAI_COMPATIBLE_BASE_URL", "http://localhost:11434/v1"),
                     envOrDefault("LYNXUS_OPENAI_COMPATIBLE_API_KEY_ENV_VAR", "OPENAI_COMPATIBLE_API_KEY"),
                     0.2,
-                    1200
+                    1200,
+                    false
                 ),
                 null
             );
@@ -2112,11 +2145,13 @@ public class CatalogService {
 
     private AgentExecutionPolicyDto normalizeAgentExecutionPolicy(AgentExecutionPolicyDto policy) {
         if (policy == null) {
-            return new AgentExecutionPolicyDto(true, null, "", false, true, null, 8, List.of(), List.of());
+            return new AgentExecutionPolicyDto(true, null, null, null, "", false, true, null, 8, List.of(), List.of());
         }
         return new AgentExecutionPolicyDto(
             policy.inheritAssistantDefaults(),
-            policy.modelResourceId(),
+            normalizeOptionalText(policy.modelResourceId()),
+            normalizeOptionalText(policy.privacyModelResourceId()),
+            policy.privacyMappingEnabled(),
             normalizeOptionalText(policy.systemPrompt()),
             policy.knowledgeEnabled(),
             policy.inheritAssistantKnowledge(),
@@ -2210,6 +2245,16 @@ public class CatalogService {
         }
     }
 
+    private void validatePrivacyModelResourceId(String resourceId, String fieldName) {
+        if (resourceId == null || resourceId.isBlank()) {
+            return;
+        }
+        ResourceDto resource = findResource(resourceId);
+        if (resource.type() != ResourceType.LLM_MODEL) {
+            throw new IllegalArgumentException(fieldName + " must reference an LLM_MODEL resource");
+        }
+    }
+
     private void validateAssistantOwnerConfiguration(AssistantDto assistant) {
         String primaryAgentId = assistant.primaryAgentId();
         if (primaryAgentId == null || primaryAgentId.isBlank()) {
@@ -2246,6 +2291,8 @@ public class CatalogService {
             assistant.replyPolicy(),
             assistant.playbookPolicy(),
             assistant.modelPolicy(),
+            assistant.privacyModelResourceId(),
+            assistant.privacyMappingEnabled(),
             assistant.knowledgeAccessPolicy(),
             assistant.memoryPolicy()
         );
@@ -2261,6 +2308,15 @@ public class CatalogService {
             throw new IllegalStateException("assistant primaryAgentId must be configured before publishing");
         }
         validateAssistantOwnerConfiguration(assistant);
+        if (assistant.privacyMappingEnabled()) {
+            resolvePrivacyModelBinding(assistant);
+        }
+        for (AgentDto agent : orderAgentsForAssistant(assistant.id())) {
+            if (!resolveEffectivePrivacyMappingEnabled(assistant, agent)) {
+                continue;
+            }
+            resolvePrivacyModelBinding(assistant, agent);
+        }
     }
 
     private DefaultModelBindingDto resolveDefaultModelBinding(AssistantDto assistant) {
@@ -2268,12 +2324,53 @@ public class CatalogService {
         if (resourceId == null || resourceId.isBlank()) {
             throw new IllegalStateException("assistant default model must be configured before publishing");
         }
+        return resolveLlmModelBinding(resourceId, false, "assistant default model");
+    }
+
+    private DefaultModelBindingDto resolvePrivacyModelBinding(AssistantDto assistant) {
+        if (!assistant.privacyMappingEnabled()) {
+            return null;
+        }
+        String resourceId = normalizeOptionalText(assistant.privacyModelResourceId());
+        if (resourceId == null || resourceId.isBlank()) {
+            throw new IllegalStateException("assistant privacy model must be configured when privacy mapping is enabled");
+        }
+        return resolveLlmModelBinding(resourceId, true, "assistant privacy model");
+    }
+
+    private DefaultModelBindingDto resolvePrivacyModelBinding(AssistantDto assistant, AgentDto agent) {
+        String resourceId = resolveEffectivePrivacyModelResourceId(assistant, agent);
+        if (resourceId == null || resourceId.isBlank()) {
+            throw new IllegalStateException("effective privacy model must be configured when privacy mapping is enabled");
+        }
+        return resolveLlmModelBinding(resourceId, true, "effective privacy model");
+    }
+
+    private String resolveEffectivePrivacyModelResourceId(AssistantDto assistant, AgentDto agent) {
+        String override = agent.executionPolicy() == null ? null : normalizeOptionalText(agent.executionPolicy().privacyModelResourceId());
+        if (override != null && !override.isBlank()) {
+            return override;
+        }
+        return normalizeOptionalText(assistant.privacyModelResourceId());
+    }
+
+    private boolean resolveEffectivePrivacyMappingEnabled(AssistantDto assistant, AgentDto agent) {
+        if (agent.executionPolicy() != null && agent.executionPolicy().privacyMappingEnabled() != null) {
+            return agent.executionPolicy().privacyMappingEnabled();
+        }
+        return assistant.privacyMappingEnabled();
+    }
+
+    private DefaultModelBindingDto resolveLlmModelBinding(String resourceId, boolean requirePrivateDeployment, String usageLabel) {
         ResourceDto resource = toResourceView(findResource(resourceId));
         if (resource.type() != ResourceType.LLM_MODEL) {
-            throw new IllegalArgumentException("assistant default model must reference an LLM_MODEL resource");
+            throw new IllegalArgumentException(usageLabel + " must reference an LLM_MODEL resource");
         }
         ResourceVersionDto version = effectiveVersion(resource);
         LlmModelConfigDto modelConfig = version.configuration() == null ? null : version.configuration().llmModel();
+        if (requirePrivateDeployment && (modelConfig == null || !modelConfig.privateDeployment())) {
+            throw new IllegalStateException(usageLabel + " must reference an LLM_MODEL resource with privateDeployment=true");
+        }
         return new DefaultModelBindingDto(
             resource.id(),
             resource.name(),

@@ -98,4 +98,23 @@ public final class SessionRuntimeDtos {
             playbookRuns = playbookRuns == null ? List.of() : List.copyOf(playbookRuns);
         }
     }
+
+    public record PrivacyMappingSummaryDto(
+        boolean enabled,
+        String privacyModelResourceId,
+        String privacyModelName,
+        Map<String, Integer> sanitizeCountByChannel,
+        Map<String, Integer> restoreCountByChannel,
+        Map<String, Integer> entityTypeBreakdown,
+        int placeholderCount,
+        int unresolvedPlaceholderCount,
+        int blockedEventCount,
+        Instant lastProcessedAt
+    ) {
+        public PrivacyMappingSummaryDto {
+            sanitizeCountByChannel = sanitizeCountByChannel == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(sanitizeCountByChannel));
+            restoreCountByChannel = restoreCountByChannel == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(restoreCountByChannel));
+            entityTypeBreakdown = entityTypeBreakdown == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(entityTypeBreakdown));
+        }
+    }
 }

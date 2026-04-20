@@ -192,47 +192,22 @@
 ### 3.6 隐私保护与数据安全映射层
 
 > 这是企业级交付的硬底线，也是改动 Agent Runtime 调用契约的底层能力，必须早于多实例扩容、多租户隔离等上层议题落地。
-> 详细实施方案见 `docs/todo/privacy_mapping_plan.md`。
+> 已完成实施方案归档见 `docs/develop_record/privacy_mapping_plan.md`。
 
-现状：
+状态：已完成。当前已落地 assistant / agent 级隐私映射配置、`LLM_MODEL.privateDeployment` 标记、assistant release 冻结快照、worker-runtime 契约扩展，以及 Agent Runtime 的统一数据安全管道。
 
-- Agent Runtime 直接把对话上下文与工具调用参数原样传给配置的 LLM provider
-- 知识检索召回的 chunk 也原样进入 prompt
-- 工具调用参数与返回结果同样原样落到 LLM 上下文与日志
-- 当前没有任何脱敏 / 标记化 / 还原层来阻断隐私数据离开企业边界
+本次已交付：
 
-风险：
+1. 出站脱敏、入站还原、tool arguments restore、tool result 再脱敏，已接入 owner turn 主链路
+2. session 级映射表已下沉 Redis，共享 `LYNXUS_REDIS_*` 基础设施；原值入库前已加密
+3. 审计事件、runtime summary endpoint 与运行页“隐私映射”统计卡片已打通
+4. 映射失败统一阻断；不再允许未完成脱敏内容继续出站
 
-- 金融、政务、医疗等强合规客户无法接入公网 LLM
-- 即便允许接入，也无法满足数据出境与审计要求
-- 一旦审计发现 PII 进了第三方模型上下文，整个平台不可交付
+当前边界：
 
-目标：在 Agent Runtime 与 LLM provider 之间引入“私有化 LLM 映射层”，作为可插拔的数据安全管道。出站脱敏、入站还原，保证公网 LLM 全程只看到占位符，企业边界内才看到原值。
-
-1. **私有化 LLM 作为脱敏代理**
-   - 私有化 LLM 部署在客户侧（VPC / 内网），具备实体识别 + 稳定占位映射能力
-   - 出站：把对话、检索 chunk、工具参数中的敏感实体替换为占位（如 `[PERSON_001] / [ACCOUNT_002] / [ORDER_003]`）
-   - 入站：把公网 LLM 返回中的占位还原为原始实体，再交给下游
-2. **映射表的会话级一致性**
-   - 同一 session / playbook run 内同一实体必须映射到同一占位，保证 LLM 的指代逻辑可用
-   - 映射表生命周期与 session 绑定，session 终态后按策略清理或归档；映射表本身不出企业边界
-3. **配置粒度**
-   - 按 assistant / scenario / domain 配置策略：白名单领域可关、敏感领域必开
-   - 支持选择 provider：纯本地规则、私有化 LLM、二者级联兜底
-4. **覆盖范围（出入站对称）**
-   - 用户消息、owner reply、playbook 中间产物
-   - 知识检索召回的 chunk
-   - 工具调用参数（出站）与工具返回（入站）
-   - LLM prompt 与 response
-5. **审计与排障**
-   - 记录每次映射事件：`session_id / event_id / entity_type / 占位 ID`，但不存原值
-   - 控制台提供“映射统计”和“高频实体类型”视图，不暴露具体内容
-   - 线上排障必须使用占位本身，不允许反查原值
-6. **性能与降级**
-   - 评估每轮 LLM 调用前后多一次私有化推理的延迟与成本
-   - 提供“映射失败阻断”与“映射失败透传”两种策略，由治理配置显式选择，不允许隐式降级
-7. **与既有 / 后续能力的衔接**
-   - 与 §3.5 安全加固协同：webhook / 文件上传是数据入口防护，本节是 LLM 上下文出口防护
+1. knowledge 链路首版只做 query restore，不对检索结果做 sanitize
+2. UI 首版复用 Assistant / Agent 页面维护配置，未单独拆分治理页
+3. 映射表仍是运行态安全状态，不作为长期业务数据模型
    - 与 §2.1 平台事件日志协同：映射事件作为独立 aggregate 进入审计账本
    - 与 §3.7 多实例一致性协同：会话级映射表必须支持跨实例共享（Redis）才能在多实例部署下保持还原能力
    - 为后续 §4.4 多租户预留策略下发通道：租户级配置在多租户落地时直接复用同一管道
@@ -454,6 +429,7 @@
 - [x] 阶段一 1.4 结构化日志统一：Java/Python 服务统一结构化输出，统一透传 trace / session / workflow / customer / user 上下文
 - [x] 阶段二 2.4 草稿默认模型策略收敛：`defaultModelResourceId` 显式化、发布前阻断校验、发布快照新增 `defaultModelBinding`、Runtime 预检对齐
 - [x] 阶段二 2.5 第一步 External Interaction 通用框架：playbook `EXTERNAL_INTERACTION` 节点、`external-callback` Signal、`waitingReason` 权威校验、回调恢复回流 owner
+- [x] 阶段三 3.6 隐私脱敏映射层：assistant / agent 配置、release freeze、Redis session map、运行态出站脱敏 / 入站还原、审计与运行页统计
 - [x] 阶段三 3.1 部分：五个应用 Dockerfile（多阶段构建）与 `/api/system/health` 健康端点
 - [x] 历史 P0/P1/P2/P3 工作（详见 `docs/develop_record/2026-03-project_todos_snapshot.md`）：
   - P0.1 运行态持久化：session / session_event / playbook_run 落库

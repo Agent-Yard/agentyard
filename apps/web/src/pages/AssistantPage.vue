@@ -50,6 +50,8 @@ const createForm = reactive<CreateAssistantPayload>({
   modelPolicy: {
     defaultModelResourceId: null,
   },
+  privacyModelResourceId: null,
+  privacyMappingEnabled: false,
   knowledgeAccessPolicy: {
     enabled: false,
     knowledgeBaseId: null,
@@ -82,6 +84,8 @@ const editForm = reactive<UpdateAssistantPayload>({
   modelPolicy: {
     defaultModelResourceId: null,
   },
+  privacyModelResourceId: null,
+  privacyMappingEnabled: false,
   knowledgeAccessPolicy: {
     enabled: false,
     knowledgeBaseId: null,
@@ -96,6 +100,13 @@ const current = computed(() =>
   props.assistants.find((item) => item.id === selectedAssistantId.value) ?? props.assistants[0],
 );
 const modelResources = computed(() => props.resources.filter((item) => item.type === 'LLM_MODEL'));
+const privateModelResources = computed(() =>
+  modelResources.value.filter(
+    (item) =>
+      item.effectiveVersion?.configuration.llmModel?.privateDeployment
+      || item.latestVersion?.configuration.llmModel?.privateDeployment,
+  ),
+);
 const knowledgeBaseOptions = computed(() => props.knowledgeBases.map((item) => ({ label: item.name, value: item.id })));
 
 const currentDraftModelResource = computed(() =>
@@ -145,6 +156,17 @@ const releaseModelDescription = computed(() => {
   return `${binding.resourceName} @ ${binding.resourceVersion} · ${provider}`;
 });
 
+const releasePrivacyDescription = computed(() => {
+  const release = current.value?.currentRelease;
+  if (!release?.privacyMappingEnabled) {
+    return '未启用';
+  }
+  if (!release.privacyModelBinding) {
+    return '已启用，但发布快照缺少私有模型';
+  }
+  return `${release.privacyModelBinding.resourceName} @ ${release.privacyModelBinding.resourceVersion}`;
+});
+
 watch(
   () => props.assistants,
   (assistants) => {
@@ -174,6 +196,8 @@ watch(
     editForm.replyPolicy = { ...assistant.replyPolicy };
     editForm.playbookPolicy = { ...assistant.playbookPolicy };
     editForm.modelPolicy = { ...assistant.modelPolicy };
+    editForm.privacyModelResourceId = assistant.privacyModelResourceId;
+    editForm.privacyMappingEnabled = assistant.privacyMappingEnabled;
     editForm.knowledgeAccessPolicy = { ...assistant.knowledgeAccessPolicy };
     editForm.memoryPolicy = { ...assistant.memoryPolicy };
   },
@@ -201,6 +225,43 @@ watch(
     }
   },
   { immediate: true },
+);
+
+watch(
+  privateModelResources,
+  (resources) => {
+    if (!resources.some((item) => item.id === createForm.privacyModelResourceId)) {
+      createForm.privacyModelResourceId = null;
+    }
+    if (!resources.some((item) => item.id === editForm.privacyModelResourceId)) {
+      editForm.privacyModelResourceId = null;
+    }
+  },
+  { immediate: true },
+);
+
+watch(
+  () => createForm.privacyMappingEnabled,
+  (enabled) => {
+    if (enabled && !createForm.privacyModelResourceId) {
+      createForm.privacyModelResourceId = privateModelResources.value[0]?.id ?? null;
+    }
+    if (!enabled) {
+      createForm.privacyModelResourceId = null;
+    }
+  },
+);
+
+watch(
+  () => editForm.privacyMappingEnabled,
+  (enabled) => {
+    if (enabled && !editForm.privacyModelResourceId) {
+      editForm.privacyModelResourceId = privateModelResources.value[0]?.id ?? null;
+    }
+    if (!enabled) {
+      editForm.privacyModelResourceId = null;
+    }
+  },
 );
 
 watch(
@@ -296,6 +357,24 @@ function submitUpdate() {
               placeholder="选择默认模型资源"
             />
           </a-form-item>
+          <a-row :gutter="[16, 16]">
+            <a-col :span="12">
+              <a-form-item label="启用隐私映射">
+                <a-switch v-model:checked="createForm.privacyMappingEnabled" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="私有映射模型">
+                <a-select
+                  v-model:value="createForm.privacyModelResourceId"
+                  allow-clear
+                  :disabled="!createForm.privacyMappingEnabled || !privateModelResources.length"
+                  :options="privateModelResources.map((item) => ({ label: item.name, value: item.id }))"
+                  placeholder="选择 privateDeployment 模型"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
           <a-alert
             v-if="createModelHint"
             :type="createModelHint.type"
@@ -358,6 +437,7 @@ function submitUpdate() {
           <a-descriptions :column="1" size="small">
             <a-descriptions-item label="草稿默认模型">{{ draftModelDescription }}</a-descriptions-item>
             <a-descriptions-item label="当前发布冻结模型">{{ releaseModelDescription }}</a-descriptions-item>
+            <a-descriptions-item label="当前发布隐私映射">{{ releasePrivacyDescription }}</a-descriptions-item>
           </a-descriptions>
         </a-card>
 
@@ -400,6 +480,24 @@ function submitUpdate() {
               placeholder="选择默认模型资源"
             />
           </a-form-item>
+          <a-row :gutter="[16, 16]">
+            <a-col :span="12">
+              <a-form-item label="启用隐私映射">
+                <a-switch v-model:checked="editForm.privacyMappingEnabled" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="私有映射模型">
+                <a-select
+                  v-model:value="editForm.privacyModelResourceId"
+                  allow-clear
+                  :disabled="!editForm.privacyMappingEnabled || !privateModelResources.length"
+                  :options="privateModelResources.map((item) => ({ label: item.name, value: item.id }))"
+                  placeholder="选择 privateDeployment 模型"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
           <a-alert
             v-if="editModelHint"
             :type="editModelHint.type"

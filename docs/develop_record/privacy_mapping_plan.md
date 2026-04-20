@@ -393,7 +393,7 @@ payload 只保留：
 3. Flyway 评估：如果 `LLM_MODEL` / Assistant / Agent 的策略字段以 JSONB 存储（catalog 当前形态），则无需新增迁移；只需 service 层读写；如以独立列存储，新增 V9 迁移
 4. `PlatformEventDtos` / 事件写入路径支持新 aggregate type 与事件类型
 5. `SessionRuntimeController` 新增 `GET /api/session-runtime/sessions/{sessionId}/privacy-mapping-summary`，直接读取 Redis summary
-6. 独立治理页相关 query / filter / save endpoint
+6. 首版复用 assistant / agent 现有 query / save endpoint，不为“独立治理页”单独新增专门接口；若后续出现跨对象批量治理需求，再补充聚合 query / filter endpoint
 7. 发布门禁校验（§3.2）与 `DeletionImpactPreview` 扩展：如私有 LLM 资源被隐私策略引用，删除预览必须显式列出依赖
 
 ### 8.3 `apps/worker`
@@ -420,8 +420,8 @@ payload 只保留：
 
 需要补：
 
-1. 独立“隐私治理”页面，用于维护 assistant/agent 级隐私映射配置
-2. 治理页支持按“私有 LLM”筛选资源
+1. assistant 页面维护 assistant 级默认隐私映射配置
+2. agent 页面维护 agent 级继承/覆盖隐私映射配置
 3. session runtime 页面只展示映射统计与状态，不承载配置编辑
 4. 全局操作历史页补 `SESSION_PRIVACY_MAPPING` aggregate type 过滤与展示文案
 
@@ -515,7 +515,7 @@ payload 只保留：
 1. 不新增资源类型；直接扩展现有 `LLM_MODEL` 资源，并增加 `privateDeployment` 配置。
 2. 不引入新的 domain/scenario 级继承链；直接复用现有 assistant 默认 + agent override 的 LLM 继承模式。
 3. 映射表原值必须加密后写入 Redis（首版平台级单一密钥，AES-GCM；密钥通过环境变量注入）。
-4. UI 采用独立治理页；运行页只展示统计与状态。
+4. UI 首版复用 Assistant / Agent 页面承载配置编辑；运行页只展示统计与状态。若后续出现跨对象盘点、批量治理或专门治理角色需求，再升级为独立治理页。
 5. 映射失败统一阻断，不提供 `PASSTHROUGH` 透传策略。
 6. 本方案引入的 Redis 与 §3.7 共用同一套基础设施，不单独部署仅供隐私映射使用的 Redis 实例。
 7. 私有映射模型资源若被任何已发布 assistant 的隐私策略引用，删除操作必须经过 `DeletionImpactPreview` 校验，与现有资源删除防护一致。

@@ -50,9 +50,52 @@ public final class CatalogDtos {
         AssistantReplyPolicyDto replyPolicy,
         AssistantPlaybookPolicyDto playbookPolicy,
         AssistantModelPolicyDto modelPolicy,
+        String privacyModelResourceId,
+        boolean privacyMappingEnabled,
         KnowledgeAccessPolicyDto knowledgeAccessPolicy,
         MemoryPolicyDto memoryPolicy
     ) {
+        public AssistantDto(
+            String id,
+            String scenarioId,
+            String name,
+            String description,
+            VersionDto version,
+            List<AgentDto> agents,
+            List<PlaybookDto> playbooks,
+            AssistantReleaseDto currentRelease,
+            List<AssistantReleaseDto> releases,
+            String primaryAgentId,
+            AssistantOwnerPolicyDto ownerPolicy,
+            AssistantSessionPolicyDto sessionPolicy,
+            AssistantReplyPolicyDto replyPolicy,
+            AssistantPlaybookPolicyDto playbookPolicy,
+            AssistantModelPolicyDto modelPolicy,
+            KnowledgeAccessPolicyDto knowledgeAccessPolicy,
+            MemoryPolicyDto memoryPolicy
+        ) {
+            this(
+                id,
+                scenarioId,
+                name,
+                description,
+                version,
+                agents,
+                playbooks,
+                currentRelease,
+                releases,
+                primaryAgentId,
+                ownerPolicy,
+                sessionPolicy,
+                replyPolicy,
+                playbookPolicy,
+                modelPolicy,
+                null,
+                false,
+                knowledgeAccessPolicy,
+                memoryPolicy
+            );
+        }
     }
 
     public record AssistantReleaseDto(
@@ -64,6 +107,8 @@ public final class CatalogDtos {
         Instant publishedAt,
         KnowledgeBindingSnapshotDto assistantKnowledgeBinding,
         DefaultModelBindingDto defaultModelBinding,
+        DefaultModelBindingDto privacyModelBinding,
+        boolean privacyMappingEnabled,
         List<AssistantReleaseResourceDto> resources,
         List<AssistantReleaseAgentDto> agents,
         List<PlaybookDto> playbooks,
@@ -76,6 +121,51 @@ public final class CatalogDtos {
         KnowledgeAccessPolicyDto knowledgeAccessPolicy,
         MemoryPolicyDto memoryPolicy
     ) {
+        public AssistantReleaseDto(
+            String id,
+            String assistantId,
+            String releaseVersion,
+            VersionStatus status,
+            Instant createdAt,
+            Instant publishedAt,
+            KnowledgeBindingSnapshotDto assistantKnowledgeBinding,
+            DefaultModelBindingDto defaultModelBinding,
+            List<AssistantReleaseResourceDto> resources,
+            List<AssistantReleaseAgentDto> agents,
+            List<PlaybookDto> playbooks,
+            String primaryAgentId,
+            AssistantOwnerPolicyDto ownerPolicy,
+            AssistantSessionPolicyDto sessionPolicy,
+            AssistantReplyPolicyDto replyPolicy,
+            AssistantPlaybookPolicyDto playbookPolicy,
+            AssistantModelPolicyDto modelPolicy,
+            KnowledgeAccessPolicyDto knowledgeAccessPolicy,
+            MemoryPolicyDto memoryPolicy
+        ) {
+            this(
+                id,
+                assistantId,
+                releaseVersion,
+                status,
+                createdAt,
+                publishedAt,
+                assistantKnowledgeBinding,
+                defaultModelBinding,
+                null,
+                false,
+                resources,
+                agents,
+                playbooks,
+                primaryAgentId,
+                ownerPolicy,
+                sessionPolicy,
+                replyPolicy,
+                playbookPolicy,
+                modelPolicy,
+                knowledgeAccessPolicy,
+                memoryPolicy
+            );
+        }
     }
 
     public record AssistantReleaseResourceDto(
@@ -106,6 +196,8 @@ public final class CatalogDtos {
         String responsibility,
         AgentExecutionPolicyDto executionPolicy,
         KnowledgeBindingSnapshotDto knowledgeBinding,
+        DefaultModelBindingDto effectivePrivacyModelBinding,
+        boolean effectivePrivacyMappingEnabled,
         boolean canOwnSession,
         List<AgentDecisionAction> allowedActions,
         List<String> switchableOwnerAgentIds,
@@ -113,6 +205,37 @@ public final class CatalogDtos {
         List<String> skillResourceVersionIds,
         List<String> toolResourceVersionIds
     ) {
+        public AssistantReleaseAgentDto(
+            String agentId,
+            String name,
+            String role,
+            String responsibility,
+            AgentExecutionPolicyDto executionPolicy,
+            KnowledgeBindingSnapshotDto knowledgeBinding,
+            boolean canOwnSession,
+            List<AgentDecisionAction> allowedActions,
+            List<String> switchableOwnerAgentIds,
+            List<String> playbookIds,
+            List<String> skillResourceVersionIds,
+            List<String> toolResourceVersionIds
+        ) {
+            this(
+                agentId,
+                name,
+                role,
+                responsibility,
+                executionPolicy,
+                knowledgeBinding,
+                null,
+                false,
+                canOwnSession,
+                allowedActions,
+                switchableOwnerAgentIds,
+                playbookIds,
+                skillResourceVersionIds,
+                toolResourceVersionIds
+            );
+        }
     }
 
     public record AgentDto(
@@ -471,8 +594,19 @@ public final class CatalogDtos {
         String baseUrl,
         String apiKeyEnvVar,
         double temperature,
-        int maxTokens
+        int maxTokens,
+        boolean privateDeployment
     ) {
+        public LlmModelConfigDto(
+            String providerType,
+            String modelId,
+            String baseUrl,
+            String apiKeyEnvVar,
+            double temperature,
+            int maxTokens
+        ) {
+            this(providerType, modelId, baseUrl, apiKeyEnvVar, temperature, maxTokens, false);
+        }
     }
 
     public record SkillConfigDto(
@@ -525,6 +659,8 @@ public final class CatalogDtos {
     public record AgentExecutionPolicyDto(
         boolean inheritAssistantDefaults,
         String modelResourceId,
+        String privacyModelResourceId,
+        Boolean privacyMappingEnabled,
         String systemPrompt,
         boolean knowledgeEnabled,
         boolean inheritAssistantKnowledge,
@@ -533,6 +669,31 @@ public final class CatalogDtos {
         List<String> skillResourceIds,
         List<String> toolResourceIds
     ) {
+        public AgentExecutionPolicyDto(
+            boolean inheritAssistantDefaults,
+            String modelResourceId,
+            String systemPrompt,
+            boolean knowledgeEnabled,
+            boolean inheritAssistantKnowledge,
+            String knowledgeBaseId,
+            int memoryWindowSize,
+            List<String> skillResourceIds,
+            List<String> toolResourceIds
+        ) {
+            this(
+                inheritAssistantDefaults,
+                modelResourceId,
+                null,
+                null,
+                systemPrompt,
+                knowledgeEnabled,
+                inheritAssistantKnowledge,
+                knowledgeBaseId,
+                memoryWindowSize,
+                skillResourceIds,
+                toolResourceIds
+            );
+        }
     }
 
     public record ResourceBlueprintDto(
@@ -660,6 +821,8 @@ public final class CatalogDtos {
         AssistantReplyPolicyDto replyPolicy,
         AssistantPlaybookPolicyDto playbookPolicy,
         AssistantModelPolicyDto modelPolicy,
+        String privacyModelResourceId,
+        boolean privacyMappingEnabled,
         KnowledgeAccessPolicyDto knowledgeAccessPolicy,
         MemoryPolicyDto memoryPolicy
     ) {
@@ -667,7 +830,50 @@ public final class CatalogDtos {
             String scenarioId,
             String name,
             String description,
+            String primaryAgentId,
+            AssistantOwnerPolicyDto ownerPolicy,
+            AssistantSessionPolicyDto sessionPolicy,
+            AssistantReplyPolicyDto replyPolicy,
+            AssistantPlaybookPolicyDto playbookPolicy,
             AssistantModelPolicyDto modelPolicy,
+            KnowledgeAccessPolicyDto knowledgeAccessPolicy,
+            MemoryPolicyDto memoryPolicy
+        ) {
+            this(
+                scenarioId,
+                name,
+                description,
+                primaryAgentId,
+                ownerPolicy,
+                sessionPolicy,
+                replyPolicy,
+                playbookPolicy,
+                modelPolicy,
+                null,
+                false,
+                knowledgeAccessPolicy,
+                memoryPolicy
+            );
+        }
+
+        public CreateAssistantRequest(
+            String scenarioId,
+            String name,
+            String description,
+            AssistantModelPolicyDto modelPolicy,
+            KnowledgeAccessPolicyDto knowledgeAccessPolicy,
+            MemoryPolicyDto memoryPolicy
+        ) {
+            this(scenarioId, name, description, modelPolicy, null, false, knowledgeAccessPolicy, memoryPolicy);
+        }
+
+        public CreateAssistantRequest(
+            String scenarioId,
+            String name,
+            String description,
+            AssistantModelPolicyDto modelPolicy,
+            String privacyModelResourceId,
+            boolean privacyMappingEnabled,
             KnowledgeAccessPolicyDto knowledgeAccessPolicy,
             MemoryPolicyDto memoryPolicy
         ) {
@@ -681,6 +887,8 @@ public final class CatalogDtos {
                 null,
                 null,
                 modelPolicy,
+                privacyModelResourceId,
+                privacyMappingEnabled,
                 knowledgeAccessPolicy,
                 memoryPolicy
             );
@@ -697,6 +905,8 @@ public final class CatalogDtos {
         AssistantReplyPolicyDto replyPolicy,
         AssistantPlaybookPolicyDto playbookPolicy,
         AssistantModelPolicyDto modelPolicy,
+        String privacyModelResourceId,
+        boolean privacyMappingEnabled,
         KnowledgeAccessPolicyDto knowledgeAccessPolicy,
         MemoryPolicyDto memoryPolicy
     ) {
@@ -704,7 +914,50 @@ public final class CatalogDtos {
             String name,
             String description,
             VersionStatus status,
+            String primaryAgentId,
+            AssistantOwnerPolicyDto ownerPolicy,
+            AssistantSessionPolicyDto sessionPolicy,
+            AssistantReplyPolicyDto replyPolicy,
+            AssistantPlaybookPolicyDto playbookPolicy,
             AssistantModelPolicyDto modelPolicy,
+            KnowledgeAccessPolicyDto knowledgeAccessPolicy,
+            MemoryPolicyDto memoryPolicy
+        ) {
+            this(
+                name,
+                description,
+                status,
+                primaryAgentId,
+                ownerPolicy,
+                sessionPolicy,
+                replyPolicy,
+                playbookPolicy,
+                modelPolicy,
+                null,
+                false,
+                knowledgeAccessPolicy,
+                memoryPolicy
+            );
+        }
+
+        public UpdateAssistantRequest(
+            String name,
+            String description,
+            VersionStatus status,
+            AssistantModelPolicyDto modelPolicy,
+            KnowledgeAccessPolicyDto knowledgeAccessPolicy,
+            MemoryPolicyDto memoryPolicy
+        ) {
+            this(name, description, status, modelPolicy, null, false, knowledgeAccessPolicy, memoryPolicy);
+        }
+
+        public UpdateAssistantRequest(
+            String name,
+            String description,
+            VersionStatus status,
+            AssistantModelPolicyDto modelPolicy,
+            String privacyModelResourceId,
+            boolean privacyMappingEnabled,
             KnowledgeAccessPolicyDto knowledgeAccessPolicy,
             MemoryPolicyDto memoryPolicy
         ) {
@@ -718,6 +971,8 @@ public final class CatalogDtos {
                 null,
                 null,
                 modelPolicy,
+                privacyModelResourceId,
+                privacyMappingEnabled,
                 knowledgeAccessPolicy,
                 memoryPolicy
             );

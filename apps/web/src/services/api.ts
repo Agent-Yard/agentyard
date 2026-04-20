@@ -37,6 +37,7 @@ import type {
   ReferenceObjectType,
   Scenario,
   SessionRuntimeDetail,
+  PrivacyMappingSummary,
   SessionRuntimeSession,
   UpdateAssistantPayload,
   UpdateAgentPayload,
@@ -153,6 +154,8 @@ export const api = {
   getRuntimeSessions: () => request<SessionRuntimeSession[]>('/session-runtime/sessions'),
   getRuntimeSessionDetail: (sessionId: string) =>
     request<SessionRuntimeDetail>(`/session-runtime/sessions/${sessionId}`),
+  getRuntimeSessionPrivacyMappingSummary: (sessionId: string) =>
+    request<PrivacyMappingSummary>(`/session-runtime/sessions/${sessionId}/privacy-mapping-summary`),
   createRuntimeSession: (payload: CreateSessionPayload) =>
     request<SessionRuntimeSession>('/session-runtime/sessions', jsonOptions('POST', payload)),
   sendRuntimeSessionMessage: (sessionId: string, payload: { customerId: string; message: string }) =>
