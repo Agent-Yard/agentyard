@@ -47,7 +47,7 @@ Owner 切换规则：
 Owner agent 可以返回以下控制动作（对应 `AgentDecision.action`）：
 
 - **`REPLY`**：直接产出用户可见回复
-- **`NO_REPLY`**：本 turn 不产生用户可见回复，仅结束推理回合。典型场景是 playbook 活跃期间 owner 判定当前用户消息无需即时回复（例如用户发送的是补充信息或闲聊），只需纳入上下文。不可携带 `accompanyingReply`
+- **`NO_REPLY`**：本 turn 不产生用户可见回复，仅结束推理回合。典型场景是 playbook 活跃期间 owner 判定当前用户消息无需即时回复（例如用户发送的是补充信息或闲聊），只需纳入上下文。若携带与该 action 无关的附加字段，运行时忽略
 - **`SWITCH_OWNER`**：将会话控制权转交给另一个 agent，当前用户消息转交新 owner 处理
 - **`RUN_PLAYBOOK`**：启动一个 playbook child workflow
   - `playbook workflow` 可以挂起、恢复、处理外部交互
@@ -195,7 +195,7 @@ session workflow 在执行动作前先发送 `accompanyingReply`。典型场景�
     - 当前触发源（用户消息 / playbook 完成 / 其他系统事件）
     - 当前用户消息或当前系统事件结果
     - 会话记忆窗口
-    - `sharedState` 中可暴露给当前 agent 的认知性上下文（`facts` / `artifacts` / 当前 agent 的 `agentScope`）
+    - `sharedState` 中可暴露给当前 agent 的认知性上下文（扁平 KV 视图中的最小必要子集）
     - 最近工具结果 / 恢复输入等临时运行时信息
   - 目标是更充分利用聊天模型的原生会话能力，同时将高频变化内容局限在消息尾部
 - `PromptCapabilities`
@@ -251,9 +251,9 @@ provider role / tool calling 适配原则：
 - `targetAgentId`（可选）：`SWITCH_OWNER` 时必填，为目标 owner agent 的 `agentId`；其他 action 不得携带
 - `playbookId`（可选）：`RUN_PLAYBOOK` 时必填，为目标 playbook 的 `playbookId`；其他 action 不得携带
 - `playbookInput`（可选）：`RUN_PLAYBOOK` 时必填，必须符合目标 playbook 的 `inputSchema`；其他 action 不得携带
-- `accompanyingReply`（可选）：控制动作前的附带回复消息，`SWITCH_OWNER`、`RUN_PLAYBOOK`、`SESSION_HUMAN_HANDOFF` 时可携带，session workflow 在执行动作前先发送给用户；`REPLY` / `NO_REPLY` 不允许携带
+- `accompanyingReply`（可选）：控制动作前的附带回复消息；仅当 action 为 `SWITCH_OWNER`、`RUN_PLAYBOOK`、`SESSION_HUMAN_HANDOFF` 且该字段非空时，session workflow 才会在执行动作前先发送给用户；其他 action 即使携带该字段，运行时也会忽略
 
-字段与 action 的对应关系由 §5.2 通用校验兜底：凡是出现"应携带字段缺失"或"不允许携带字段被填充"的情况，一律按校验失败走统一降级路径。
+字段与 action 的对应关系由 §5.2 通用校验兜底：必需字段缺失时按校验失败处理；与当前 action 无关的额外字段不作为拒绝条件，由运行时忽略。
 
 `sharedState` 读写语义：
 
@@ -284,7 +284,7 @@ Agent-runtime activity 异常处理：
 - 当前用户消息或当前系统事件结果必须位于 runtime messages 的最新位置，保证本轮触发语义清晰
 - 历史消息以原生 messages 形式保留窗口内最近若干条，并受字节预算限制
 - 工具结果以消息或 provider 支持的 tool result 形式注入，只保留近期结果，并受字节预算限制
-- `sharedState` 暴露时按 `facts` / `artifacts` / 当前 agent 的 `agentScope` 分区组织，但只暴露决策需要的最小子集
+- `sharedState` 暴露时保持扁平 KV 结构，只暴露决策需要的最小子集
 - 目标不是完整还原历史，而是提供足够决策所需的最小运行时上下文
 - 第一阶段按 OpenAI-compatible message 语义实现；后续若支持其他 provider，由 provider adapter 负责转换，不改变上层抽象
 
@@ -463,7 +463,7 @@ session workflow 收到 agent 返回的 `AgentDecision` 后，先执行运行时
 通用校验（所有 action）：
 
 - `decision.action ∈ currentOwner.allowedActions`
-- `AgentDecision` 字段形态与 `action` 匹配：`REPLY` 必填 `replyContent`；`SWITCH_OWNER` 必填 `targetAgentId`；`RUN_PLAYBOOK` 必填 `playbookId` 和 `playbookInput`；`SESSION_HUMAN_HANDOFF` / `NO_REPLY` 不得携带上述专属字段；`accompanyingReply` 的携带范围遵循 §3.2 定义
+- `AgentDecision` 满足当前 `action` 的必需字段：`REPLY` 必填 `replyContent`；`SWITCH_OWNER` 必填 `targetAgentId`；`RUN_PLAYBOOK` 必填 `playbookId` 和 `playbookInput`
 
 `SWITCH_OWNER` 专属校验：
 

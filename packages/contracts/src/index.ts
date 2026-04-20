@@ -522,6 +522,8 @@ export interface UserMessageV2 {
 
 export interface SessionStartRequestV2 {
   sessionId: string;
+  scenarioId: string;
+  sessionTitle: string;
   customerId: string;
   assistant: AssistantSessionConfig;
   agents: OwnerAgentConfig[];

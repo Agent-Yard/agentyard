@@ -138,11 +138,18 @@ function defaultNodesJson() {
         nodeName: '开始步骤',
         nodeType: 'STEP',
         description: '',
-        scriptRef: null,
-        scriptVersion: null,
+        scriptRef: 'playbook.start',
+        scriptVersion: 'v1',
         toolId: null,
         toolOperation: null,
-        config: {},
+        config: {
+          scriptVersions: {
+            v1: {
+              runtime: 'python',
+              code: "result = {'statePatch': {}, 'routeKey': None}",
+            },
+          },
+        },
       },
       {
         nodeKey: 'finish',

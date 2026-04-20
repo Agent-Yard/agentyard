@@ -59,6 +59,7 @@ uv run --directory apps/agent-runtime --package lynxus-agent-runtime pytest test
 
 ## 当前边界
 
+- runtime 内部先维护语义层消息 / tool 定义 / tool result，再渲染到 OpenAI-compatible 协议
 - 当前 act loop 已接入 OpenAI-compatible function/tool calling
 - `AgentTurnRequest` 现在会携带 assistant release 冻结后的 model / skill / tool descriptor
 - `AgentTurnRequest` 也会携带冻结后的 knowledge binding；runtime 通过内部接口远程调用 knowledge-service 完成在线检索

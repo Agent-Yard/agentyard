@@ -138,23 +138,19 @@ class AgentDecision(BaseModel):
     replyContent: str | None = None
     targetAgentId: str | None = None
     playbookId: str | None = None
-    playbookInput: dict[str, Any] = Field(default_factory=dict)
+    playbookInput: dict[str, Any] | None = None
     accompanyingReply: str | None = None
 
     @model_validator(mode="after")
     def validate_action_payload(self) -> "AgentDecision":
         if self.action == "REPLY" and not (self.replyContent or "").strip():
             raise ValueError("REPLY requires replyContent")
-        if self.action != "REPLY" and self.replyContent is not None:
-            raise ValueError("only REPLY may carry replyContent")
         if self.action == "SWITCH_OWNER" and not (self.targetAgentId or "").strip():
             raise ValueError("SWITCH_OWNER requires targetAgentId")
-        if self.action != "SWITCH_OWNER" and self.targetAgentId is not None:
-            raise ValueError("only SWITCH_OWNER may carry targetAgentId")
         if self.action == "RUN_PLAYBOOK" and not (self.playbookId or "").strip():
             raise ValueError("RUN_PLAYBOOK requires playbookId")
-        if self.action != "RUN_PLAYBOOK" and self.playbookId is not None:
-            raise ValueError("only RUN_PLAYBOOK may carry playbookId")
+        if self.action == "RUN_PLAYBOOK" and self.playbookInput is None:
+            raise ValueError("RUN_PLAYBOOK requires playbookInput")
         return self
 
 

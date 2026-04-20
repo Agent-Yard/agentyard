@@ -170,6 +170,13 @@ public class SessionWorkflowImpl implements SessionWorkflow {
 
     @Override
     public void humanResume(HumanResumeSignal signal) {
+        if (signal == null) {
+            return;
+        }
+        PlaybookRun run = playbookRunsById.get(signal.playbookRunId());
+        if (!canAcceptResumeSignal(signal.sessionId(), run, PlaybookWaitingType.HUMAN_TASK)) {
+            return;
+        }
         appendEvent(
             SessionEventType.HUMAN_RESUME_RECEIVED,
             SessionActorType.HUMAN_OPERATOR,
@@ -178,15 +185,18 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             signal.playbookRunId(),
             snapshot.currentOwnerAgentId()
         );
-        PlaybookRun run = playbookRunsById.get(signal.playbookRunId());
-        if (!canAcceptResumeSignal(run, PlaybookWaitingType.HUMAN_TASK) || activePlaybookWorkflow == null) {
-            return;
-        }
         activePlaybookWorkflow.resume(new PlaybookResumeSignal(signal.playbookRunId(), PlaybookResumeSource.HUMAN, signal.payload()));
     }
 
     @Override
     public void externalCallback(ExternalCallbackSignal signal) {
+        if (signal == null) {
+            return;
+        }
+        PlaybookRun run = playbookRunsById.get(signal.playbookRunId());
+        if (!canAcceptResumeSignal(signal.sessionId(), run, PlaybookWaitingType.EXTERNAL_INTERACTION)) {
+            return;
+        }
         appendEvent(
             SessionEventType.EXTERNAL_CALLBACK_RECEIVED,
             SessionActorType.EXTERNAL_SYSTEM,
@@ -195,10 +205,6 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             signal.playbookRunId(),
             snapshot.currentOwnerAgentId()
         );
-        PlaybookRun run = playbookRunsById.get(signal.playbookRunId());
-        if (!canAcceptResumeSignal(run, PlaybookWaitingType.EXTERNAL_INTERACTION) || activePlaybookWorkflow == null) {
-            return;
-        }
         activePlaybookWorkflow.resume(new PlaybookResumeSignal(signal.playbookRunId(), PlaybookResumeSource.EXTERNAL_SYSTEM, signal.payload()));
     }
 
@@ -351,6 +357,16 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             }
 
             sharedState = result == null ? sharedState : result.sharedState();
+            setSnapshot(copySnapshot(
+                sharedState,
+                activePlaybookRunId,
+                currentOwnerAgentId,
+                switchCount,
+                true,
+                sessionHumanHandoffActive,
+                pendingOwnerReevaluationTrigger != null,
+                snapshot.draining()
+            ));
             AgentDecision decision = result == null ? null : sanitizeDecision(owner, currentOwnerAgentId, activePlaybookRunId, switchCount, result.decision());
             if (decision == null) {
                 emitDecisionRejected("agent decision rejected by runtime guardrail", result == null ? null : result.decision(), currentOwnerAgentId, activePlaybookRunId);
@@ -365,7 +381,7 @@ public class SessionWorkflowImpl implements SessionWorkflow {
                 break;
             }
 
-            if (decision.accompanyingReply() != null && !decision.accompanyingReply().isBlank()) {
+            if (shouldEmitAccompanyingReply(decision)) {
                 emitOwnerReply(decision.accompanyingReply(), SessionActorType.AGENT, currentOwnerAgentId, activePlaybookRunId, currentOwnerAgentId);
             }
 
@@ -545,16 +561,19 @@ public class SessionWorkflowImpl implements SessionWorkflow {
         if (decision == null || !owner.allowedActions().contains(decision.action())) {
             return null;
         }
-        if (!isAccompanyingReplyAllowed(decision)) {
-            return null;
-        }
         return switch (decision.action()) {
             case REPLY -> decision.replyContent() == null || decision.replyContent().isBlank()
                 ? null
                 : (validReplyDecision(decision) ? decision : null);
             case NO_REPLY -> validNoReplyDecision(decision) ? decision : null;
-            case SWITCH_OWNER -> canSwitchOwner(owner, decision.targetAgentId(), activePlaybookRunId, switchCount) ? decision : null;
-            case RUN_PLAYBOOK -> canRunPlaybook(owner, decision.playbookId(), decision.playbookInput(), activePlaybookRunId) ? decision : null;
+            case SWITCH_OWNER -> validSwitchOwnerDecision(decision)
+                && canSwitchOwner(owner, decision.targetAgentId(), activePlaybookRunId, switchCount)
+                    ? decision
+                    : null;
+            case RUN_PLAYBOOK -> validRunPlaybookDecision(decision)
+                && canRunPlaybook(owner, decision.playbookId(), decision.playbookInput(), activePlaybookRunId)
+                    ? decision
+                    : null;
             case SESSION_HUMAN_HANDOFF -> validSessionHandoffDecision(decision) ? decision : null;
         };
     }
@@ -604,38 +623,42 @@ public class SessionWorkflowImpl implements SessionWorkflow {
     }
 
     private boolean validReplyDecision(AgentDecision decision) {
-        return decision.targetAgentId() == null
-            && decision.playbookId() == null
-            && (decision.playbookInput() == null || decision.playbookInput().isEmpty())
-            && decision.accompanyingReply() == null;
+        return decision.replyContent() != null && !decision.replyContent().isBlank();
     }
 
     private boolean validNoReplyDecision(AgentDecision decision) {
-        return decision.replyContent() == null
-            && decision.targetAgentId() == null
-            && decision.playbookId() == null
-            && (decision.playbookInput() == null || decision.playbookInput().isEmpty())
-            && decision.accompanyingReply() == null;
+        return true;
+    }
+
+    private boolean validSwitchOwnerDecision(AgentDecision decision) {
+        return decision.targetAgentId() != null && !decision.targetAgentId().isBlank();
+    }
+
+    private boolean validRunPlaybookDecision(AgentDecision decision) {
+        return decision.playbookId() != null
+            && !decision.playbookId().isBlank()
+            && decision.playbookInput() != null;
     }
 
     private boolean validSessionHandoffDecision(AgentDecision decision) {
-        return decision.replyContent() == null
-            && decision.targetAgentId() == null
-            && decision.playbookId() == null
-            && (decision.playbookInput() == null || decision.playbookInput().isEmpty());
+        return true;
     }
 
-    private boolean isAccompanyingReplyAllowed(AgentDecision decision) {
-        if (decision.accompanyingReply() == null) {
-            return true;
-        }
-        return decision.action() == AgentDecisionAction.SWITCH_OWNER
-            || decision.action() == AgentDecisionAction.RUN_PLAYBOOK
-            || decision.action() == AgentDecisionAction.SESSION_HUMAN_HANDOFF;
+    private boolean shouldEmitAccompanyingReply(AgentDecision decision) {
+        return decision.accompanyingReply() != null
+            && !decision.accompanyingReply().isBlank()
+            && (
+                decision.action() == AgentDecisionAction.SWITCH_OWNER
+                    || decision.action() == AgentDecisionAction.RUN_PLAYBOOK
+                    || decision.action() == AgentDecisionAction.SESSION_HUMAN_HANDOFF
+            );
     }
 
-    private boolean canAcceptResumeSignal(PlaybookRun run, PlaybookWaitingType waitingType) {
+    private boolean canAcceptResumeSignal(String signalSessionId, PlaybookRun run, PlaybookWaitingType waitingType) {
         if (run == null || activePlaybookWorkflow == null) {
+            return false;
+        }
+        if (signalSessionId == null || !snapshot.sessionId().equals(signalSessionId)) {
             return false;
         }
         if (!run.runId().equals(snapshot.activePlaybookRunId()) || run.status() != PlaybookRunStatus.WAITING) {

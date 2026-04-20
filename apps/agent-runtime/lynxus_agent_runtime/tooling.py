@@ -17,13 +17,14 @@ from .models import (
     ToolDescriptor,
     ToolOperationDescriptor,
 )
+from .semantic import SemanticToolDefinition
 
 _RESOURCE_TOOL_PREFIX = "resource_tool__"
 _KNOWLEDGE_SEARCH_TOOL = "knowledge_search"
 _KNOWLEDGE_READ_TOOL = "knowledge_read"
 
 
-def openai_tool_definitions(request: AgentTurnRequest) -> list[dict[str, Any]]:
+def semantic_tool_definitions(request: AgentTurnRequest) -> list[SemanticToolDefinition]:
     return [*_builtin_tool_definitions(resolve_knowledge_binding(request.currentOwner)), *_resource_tool_definitions(request)]
 
 
@@ -115,14 +116,6 @@ def execute_playbook_tool_task(request: PlaybookToolTaskRequest) -> PlaybookTool
     )
 
 
-def tool_result_message(tool_call_id: str, result: dict[str, Any]) -> dict[str, str]:
-    return {
-        "role": "tool",
-        "tool_call_id": tool_call_id,
-        "content": json.dumps(result, ensure_ascii=False),
-    }
-
-
 def resource_tool_function_name(tool: ToolDescriptor, operation: ToolOperationDescriptor) -> str:
     resource_segment = _sanitize_identifier(tool.resourceVersionId)
     operation_segment = _sanitize_identifier(operation.name)
@@ -167,14 +160,28 @@ def resolve_knowledge_binding(agent: AgentConfig) -> KnowledgeBindingDescriptor 
     return agent.knowledgeBinding
 
 
-def _builtin_tool_definitions(binding: KnowledgeBindingDescriptor | None) -> list[dict[str, Any]]:
+def _builtin_tool_definitions(binding: KnowledgeBindingDescriptor | None) -> list[SemanticToolDefinition]:
     definitions = [
-        _function_tool(
+        _semantic_tool(
             "get_owner_capabilities",
             "Read the current owner agent's action whitelist and mounted skill/tool directory.",
             {"type": "object", "properties": {}, "additionalProperties": False},
+            {
+                "type": "object",
+                "properties": {
+                    "ownerAgentId": {"type": "string"},
+                    "allowedActions": {"type": "array", "items": {"type": "string"}},
+                    "switchableOwnerAgentIds": {"type": "array", "items": {"type": "string"}},
+                    "playbookIds": {"type": "array", "items": {"type": "string"}},
+                    "skills": {"type": "array", "items": {"type": "object"}},
+                    "knowledgeBinding": {"type": ["object", "null"]},
+                    "tools": {"type": "array", "items": {"type": "object"}},
+                },
+                "required": ["ownerAgentId", "allowedActions", "switchableOwnerAgentIds", "playbookIds", "skills", "knowledgeBinding", "tools"],
+                "additionalProperties": False,
+            },
         ),
-        _function_tool(
+        _semantic_tool(
             "list_available_agents",
             "List agents available in the current assistant release.",
             {
@@ -185,8 +192,16 @@ def _builtin_tool_definitions(binding: KnowledgeBindingDescriptor | None) -> lis
                 },
                 "additionalProperties": False,
             },
+            {
+                "type": "object",
+                "properties": {
+                    "agents": {"type": "array", "items": {"type": "object"}},
+                },
+                "required": ["agents"],
+                "additionalProperties": False,
+            },
         ),
-        _function_tool(
+        _semantic_tool(
             "list_available_playbooks",
             "List playbooks available in the current assistant release.",
             {
@@ -196,13 +211,29 @@ def _builtin_tool_definitions(binding: KnowledgeBindingDescriptor | None) -> lis
                 },
                 "additionalProperties": False,
             },
+            {
+                "type": "object",
+                "properties": {
+                    "playbooks": {"type": "array", "items": {"type": "object"}},
+                },
+                "required": ["playbooks"],
+                "additionalProperties": False,
+            },
         ),
-        _function_tool(
+        _semantic_tool(
             "get_active_playbook",
             "Read the active playbook summary when a playbook is currently running.",
             {"type": "object", "properties": {}, "additionalProperties": False},
+            {
+                "type": "object",
+                "properties": {
+                    "activePlaybook": {"type": ["object", "null"]},
+                },
+                "required": ["activePlaybook"],
+                "additionalProperties": False,
+            },
         ),
-        _function_tool(
+        _semantic_tool(
             "list_recent_events",
             "Read recent session events for additional runtime context.",
             {
@@ -213,8 +244,16 @@ def _builtin_tool_definitions(binding: KnowledgeBindingDescriptor | None) -> lis
                 },
                 "additionalProperties": False,
             },
+            {
+                "type": "object",
+                "properties": {
+                    "events": {"type": "array", "items": {"type": "object"}},
+                },
+                "required": ["events"],
+                "additionalProperties": False,
+            },
         ),
-        _function_tool(
+        _semantic_tool(
             "get_shared_state",
             "Read the current sharedState snapshot or a selected key subset.",
             {
@@ -224,12 +263,21 @@ def _builtin_tool_definitions(binding: KnowledgeBindingDescriptor | None) -> lis
                 },
                 "additionalProperties": False,
             },
+            {
+                "type": "object",
+                "properties": {
+                    "sharedState": {"type": "object"},
+                    "missingKeys": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["sharedState"],
+                "additionalProperties": False,
+            },
         ),
     ]
     if binding is not None:
         definitions.insert(
             1,
-            _function_tool(
+            _semantic_tool(
                 _KNOWLEDGE_SEARCH_TOOL,
                 "Search the bound knowledge snapshot through knowledge-service before answering.",
                 {
@@ -243,11 +291,31 @@ def _builtin_tool_definitions(binding: KnowledgeBindingDescriptor | None) -> lis
                     "required": ["query"],
                     "additionalProperties": False,
                 },
+                {
+                    "type": "object",
+                    "properties": {
+                        "knowledgeBaseId": {"type": "string"},
+                        "knowledgeBaseName": {"type": "string"},
+                        "knowledgeReleaseId": {"type": "string"},
+                        "knowledgeReleaseVersion": {"type": "string"},
+                        "lowConfidence": {"type": "boolean"},
+                        "hits": {"type": "array", "items": {"type": "object"}},
+                    },
+                    "required": [
+                        "knowledgeBaseId",
+                        "knowledgeBaseName",
+                        "knowledgeReleaseId",
+                        "knowledgeReleaseVersion",
+                        "lowConfidence",
+                        "hits",
+                    ],
+                    "additionalProperties": False,
+                },
             ),
         )
         definitions.insert(
             2,
-            _function_tool(
+            _semantic_tool(
                 _KNOWLEDGE_READ_TOOL,
                 "Read full chunk content from the bound knowledge snapshot through knowledge-service.",
                 {
@@ -258,21 +326,40 @@ def _builtin_tool_definitions(binding: KnowledgeBindingDescriptor | None) -> lis
                     "required": ["chunkIds"],
                     "additionalProperties": False,
                 },
+                {
+                    "type": "object",
+                    "properties": {
+                        "knowledgeBaseId": {"type": "string"},
+                        "knowledgeBaseName": {"type": "string"},
+                        "knowledgeReleaseId": {"type": "string"},
+                        "knowledgeReleaseVersion": {"type": "string"},
+                        "chunks": {"type": "array", "items": {"type": "object"}},
+                    },
+                    "required": [
+                        "knowledgeBaseId",
+                        "knowledgeBaseName",
+                        "knowledgeReleaseId",
+                        "knowledgeReleaseVersion",
+                        "chunks",
+                    ],
+                    "additionalProperties": False,
+                },
             ),
         )
     return definitions
 
 
-def _resource_tool_definitions(request: AgentTurnRequest) -> list[dict[str, Any]]:
-    definitions: list[dict[str, Any]] = []
+def _resource_tool_definitions(request: AgentTurnRequest) -> list[SemanticToolDefinition]:
+    definitions: list[SemanticToolDefinition] = []
     for tool in request.currentOwner.tools:
         for operation in tool.operations:
             definitions.append(
-                _function_tool(
+                _semantic_tool(
                     resource_tool_function_name(tool, operation),
                     operation.description
                     or f"Invoke {tool.resourceName}.{operation.name} via {tool.providerType} provider.",
                     _parse_json_schema(operation.inputSchema),
+                    _parse_json_schema(operation.outputSchema),
                 )
             )
     return definitions
@@ -646,12 +733,10 @@ def _sanitize_identifier(value: str) -> str:
     return normalized or "anonymous"
 
 
-def _function_tool(name: str, description: str, parameters: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "type": "function",
-        "function": {
-            "name": name,
-            "description": description,
-            "parameters": parameters,
-        },
-    }
+def _semantic_tool(
+    name: str,
+    description: str,
+    parameters: dict[str, Any],
+    output_schema: dict[str, Any],
+) -> SemanticToolDefinition:
+    return SemanticToolDefinition(name=name, description=description, input_schema=parameters, output_schema=output_schema)

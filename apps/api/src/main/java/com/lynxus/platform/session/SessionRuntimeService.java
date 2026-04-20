@@ -96,6 +96,7 @@ public class SessionRuntimeService {
 
     public SessionRuntimeSessionDto humanResume(String sessionId, HumanResumeRequest request) {
         SessionRuntimeSessionDto existing = repository.findSession(sessionId).orElseThrow();
+        requirePlaybookRunInSession(sessionId, request.playbookRunId());
         sessionWorkflowGateway.humanResume(
             sessionId,
             new HumanResumeSignal(sessionId, request.playbookRunId(), request.payload())
@@ -105,6 +106,7 @@ public class SessionRuntimeService {
 
     public SessionRuntimeSessionDto externalCallback(String sessionId, ExternalCallbackRequest request) {
         SessionRuntimeSessionDto existing = repository.findSession(sessionId).orElseThrow();
+        requirePlaybookRunInSession(sessionId, request.playbookRunId());
         sessionWorkflowGateway.externalCallback(
             sessionId,
             new ExternalCallbackSignal(sessionId, request.playbookRunId(), request.payload())
@@ -499,6 +501,14 @@ public class SessionRuntimeService {
             }
         }
         return markEndedIfWorkflowClosed(fallback);
+    }
+
+    private void requirePlaybookRunInSession(String sessionId, String playbookRunId) {
+        boolean owned = repository.listPlaybookRuns(sessionId).stream()
+            .anyMatch(run -> run.runId().equals(playbookRunId));
+        if (!owned) {
+            throw new ConflictException("playbook run does not belong to session");
+        }
     }
 
     private AssistantReleaseDto resolveAssistantRelease(AssistantDto assistant) {

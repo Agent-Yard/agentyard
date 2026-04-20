@@ -7,7 +7,8 @@ os.environ.setdefault("LYNXUS_INTERNAL_AUTH_TOKEN", "test-internal-token")
 
 from lynxus_agent_runtime.decisioning import execute_agent_turn
 from lynxus_agent_runtime.models import AgentTurnRequest
-from lynxus_agent_runtime.tooling import execute_tool_call, openai_tool_definitions, resource_tool_function_name
+from lynxus_agent_runtime.openai_adapter import render_openai_tool_definitions
+from lynxus_agent_runtime.tooling import execute_tool_call, resource_tool_function_name, semantic_tool_definitions
 
 
 class _FakeResponse:
@@ -368,7 +369,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         payload["currentOwner"]["knowledgeEnabled"] = False
         request = AgentTurnRequest.model_validate(payload)
 
-        definitions = openai_tool_definitions(request)
+        definitions = render_openai_tool_definitions(semantic_tool_definitions(request))
         tool_names = {
             item["function"]["name"]
             for item in definitions
@@ -379,3 +380,54 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         self.assertNotIn("knowledge_search", tool_names)
         self.assertNotIn("knowledge_read", tool_names)
         self.assertIsNone(owner_capabilities["knowledgeBinding"])
+
+    def test_should_allow_reply_with_extra_accompanying_reply_field(self) -> None:
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        request = AgentTurnRequest.model_validate(_request_payload())
+        transport = _FakeTransport(
+            [
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "decision": {
+                                            "action": "REPLY",
+                                            "replyContent": "已收到",
+                                            "accompanyingReply": "这条不该阻断",
+                                        },
+                                        "sharedState": {"knownPreference": "email"},
+                                    },
+                                    ensure_ascii=False,
+                                )
+                            }
+                        }
+                    ]
+                }
+            ],
+            [],
+        )
+        factory = lambda *args, **kwargs: _FakeClient(transport)
+
+        with patch("lynxus_agent_runtime.decisioning.httpx.Client", side_effect=factory):
+            result, _ = execute_agent_turn(request)
+
+        self.assertEqual(result.decision.action, "REPLY")
+        self.assertEqual(result.decision.accompanyingReply, "这条不该阻断")
+
+    def test_rendered_tool_definitions_should_include_output_schema_metadata(self) -> None:
+        request = AgentTurnRequest.model_validate(_request_payload())
+
+        definitions = render_openai_tool_definitions(semantic_tool_definitions(request))
+        create_ticket = next(
+            item
+            for item in definitions
+            if item.get("type") == "function"
+            and isinstance(item.get("function"), dict)
+            and item["function"]["name"].endswith("create_ticket")
+        )
+
+        self.assertIn("Output JSON schema:", create_ticket["function"]["description"])
+        self.assertIn("\"ticketId\"", create_ticket["function"]["description"])
+        self.assertIn("\"status\"", create_ticket["function"]["description"])

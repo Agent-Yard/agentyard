@@ -24,6 +24,7 @@ import tools.jackson.databind.ObjectMapper;
 public class PlaybookWorkflowImpl implements PlaybookWorkflow {
     private final Duration defaultActivityStartToCloseTimeout;
     private final ObjectMapper objectMapper;
+    private final JsonSchemaValidator jsonSchemaValidator;
     private PlaybookRun currentRun;
     private PlaybookResumeSignal pendingResume;
     private PlaybookDefinition definition;
@@ -38,6 +39,7 @@ public class PlaybookWorkflowImpl implements PlaybookWorkflow {
     public PlaybookWorkflowImpl(Duration activityStartToCloseTimeout) {
         this.defaultActivityStartToCloseTimeout = activityStartToCloseTimeout;
         this.objectMapper = new ObjectMapper();
+        this.jsonSchemaValidator = new JsonSchemaValidator(objectMapper);
     }
 
     @Override
@@ -166,6 +168,9 @@ public class PlaybookWorkflowImpl implements PlaybookWorkflow {
         PlaybookRunStatus status = completionStatus == null ? PlaybookRunStatus.SUCCEEDED : PlaybookRunStatus.valueOf(completionStatus);
         String failureReason = stringConfig(node.config().get("failureReason"));
         Map<String, Object> result = configuredResult.isEmpty() ? Map.copyOf(workingState) : configuredResult;
+        if (status == PlaybookRunStatus.SUCCEEDED) {
+            validatePlaybookResult(result);
+        }
         this.currentRun = copyRun(
             status,
             null,
@@ -173,6 +178,14 @@ public class PlaybookWorkflowImpl implements PlaybookWorkflow {
             status == PlaybookRunStatus.FAILED ? defaultFailureReason(failureReason) : failureReason
         );
         return currentRun;
+    }
+
+    private void validatePlaybookResult(Map<String, Object> result) {
+        try {
+            jsonSchemaValidator.validate(startRequest.playbook().resultSchema(), result, "playbookResult");
+        } catch (IllegalStateException error) {
+            throw new IllegalStateException("playbook result failed resultSchema validation: " + error.getMessage(), error);
+        }
     }
 
     private PlaybookNodeActivities.PlaybookNodeExecutionRequest nodeRequest(PlaybookNode node) {

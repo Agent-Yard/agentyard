@@ -8,9 +8,17 @@ from typing import Any
 
 import httpx
 
+from .openai_adapter import (
+    assistant_tool_call_message,
+    parse_openai_tool_calls,
+    render_openai_tool_definitions,
+    render_openai_runtime_message,
+    tool_result_message,
+)
 from .models import AgentDecision, AgentTurnRequest, AgentTurnResult
-from .prompting import PromptBundle, build_prompt_bundle, loaded_skill_runtime_message, render_openai_messages
-from .tooling import execute_tool_call, load_skills, openai_tool_definitions, tool_result_message
+from .prompting import build_prompt_bundle, loaded_skill_runtime_message, render_openai_messages
+from .semantic import SemanticMessage, SemanticToolCall, SemanticToolResult
+from .tooling import execute_tool_call, load_skills, semantic_tool_definitions
 
 LOGGER = logging.getLogger("lynxus-agent-runtime")
 
@@ -61,7 +69,7 @@ def _execute_via_openai_compatible(
         headers["OpenAI-Project"] = settings.project
 
     messages = render_openai_messages(prompt_bundle)
-    tools = openai_tool_definitions(request)
+    tools = render_openai_tool_definitions(semantic_tool_definitions(request))
     loaded_skill_ids: set[str] = set()
     max_steps = _max_tool_steps()
     tool_call_count = 0
@@ -86,17 +94,12 @@ def _execute_via_openai_compatible(
                 message = response.json()["choices"][0]["message"]
                 tool_calls = message.get("tool_calls") or []
                 if tool_calls:
-                    messages.append(
-                        {
-                            "role": "assistant",
-                            "content": message.get("content") or "",
-                            "tool_calls": tool_calls,
-                        }
-                    )
-                    for tool_call in tool_calls:
+                    content, semantic_tool_calls = parse_openai_tool_calls(message)
+                    messages.append(render_openai_runtime_message(assistant_tool_call_message(content, semantic_tool_calls)))
+                    for tool_call in semantic_tool_calls:
                         tool_call_count += 1
                         tool_result = _execute_model_tool_call(request, tool_call)
-                        messages.append(tool_result_message(str(tool_call.get("id") or ""), tool_result))
+                        messages.append(render_openai_runtime_message(tool_result_message(SemanticToolResult(tool_call.call_id, tool_result))))
                     continue
 
                 parsed = _extract_json_object(message.get("content"))
@@ -107,12 +110,14 @@ def _execute_via_openai_compatible(
                     loaded_skill_ids.update(requested_ids)
                     skill_read_count += len(requested_ids)
                     messages.append(
-                        {
-                            "role": "assistant",
-                            "content": json.dumps({"skillReads": requested_ids}, ensure_ascii=False),
-                        }
+                        render_openai_runtime_message(
+                            SemanticMessage(
+                                kind="assistant_turn",
+                                content=json.dumps({"skillReads": requested_ids}, ensure_ascii=False),
+                            )
+                        )
                     )
-                    messages.append(loaded_skill_runtime_message(load_skills(request, requested_ids)))
+                    messages.append(render_openai_runtime_message(loaded_skill_runtime_message(load_skills(request, requested_ids))))
                     continue
                 decision_payload = parsed.get("decision")
                 shared_state = parsed.get("sharedState")
@@ -180,28 +185,8 @@ def _resolve_provider_settings(request: AgentTurnRequest) -> ProviderSettings | 
     )
 
 
-def _execute_model_tool_call(request: AgentTurnRequest, tool_call: dict[str, Any]) -> dict[str, Any]:
-    function_call = tool_call.get("function")
-    if not isinstance(function_call, dict):
-        raise ValueError("tool call must contain function payload")
-    tool_name = str(function_call.get("name") or "").strip()
-    if not tool_name:
-        raise ValueError("tool call function name is required")
-    raw_arguments = function_call.get("arguments") or "{}"
-    arguments = _parse_tool_arguments(raw_arguments)
-    return execute_tool_call(request, tool_name, arguments)
-
-
-def _parse_tool_arguments(raw_arguments: Any) -> dict[str, Any]:
-    if isinstance(raw_arguments, dict):
-        return raw_arguments
-    if not isinstance(raw_arguments, str):
-        raise ValueError("tool call arguments must be a JSON string")
-    text = raw_arguments.strip() or "{}"
-    parsed = json.loads(text)
-    if not isinstance(parsed, dict):
-        raise ValueError("tool call arguments must decode to a JSON object")
-    return parsed
+def _execute_model_tool_call(request: AgentTurnRequest, tool_call: SemanticToolCall) -> dict[str, Any]:
+    return execute_tool_call(request, tool_call.tool_name, tool_call.arguments)
 
 
 def _is_skill_read_request(parsed: dict[str, Any]) -> bool:

@@ -141,6 +141,104 @@ class CatalogServiceTest {
     }
 
     @Test
+    void shouldRejectStepNodeWithoutExplicitScriptIdentity() {
+        CustomerOpsFixture fixture = customerOpsFixture();
+
+        IllegalStateException error = assertThrows(
+            IllegalStateException.class,
+            () -> fixture.service().createPlaybook(
+                new CatalogDtos.CreatePlaybookRequest(
+                    fixture.assistantId(),
+                    "无版本 STEP",
+                    "缺少版本标识",
+                    "{\"type\":\"object\"}",
+                    "{\"type\":\"object\"}",
+                    new CatalogDtos.PlaybookExecutionPolicyDto("PT5M", "PT30S"),
+                    true,
+                    true,
+                    "start",
+                    List.of(
+                        new CatalogDtos.PlaybookNodeDto(
+                            "start",
+                            "开始",
+                            com.lynxus.contracts.session.SessionContracts.PlaybookNodeType.STEP,
+                            "",
+                            null,
+                            null,
+                            null,
+                            null,
+                            Map.of("code", "result = {'statePatch': {}, 'routeKey': None}")
+                        ),
+                        new CatalogDtos.PlaybookNodeDto(
+                            "finish",
+                            "结束",
+                            com.lynxus.contracts.session.SessionContracts.PlaybookNodeType.END,
+                            "",
+                            null,
+                            null,
+                            null,
+                            null,
+                            Map.of()
+                        )
+                    ),
+                    List.of(new CatalogDtos.PlaybookEdgeDto("start-to-finish", "start", "finish", null, null, true))
+                )
+            )
+        );
+
+        assertTrue(error.getMessage().contains("STEP node must define scriptRef and scriptVersion"));
+    }
+
+    @Test
+    void shouldRejectStepNodeWithoutVersionedScriptConfig() {
+        CustomerOpsFixture fixture = customerOpsFixture();
+
+        IllegalStateException error = assertThrows(
+            IllegalStateException.class,
+            () -> fixture.service().createPlaybook(
+                new CatalogDtos.CreatePlaybookRequest(
+                    fixture.assistantId(),
+                    "缺少版本脚本",
+                    "缺少 config.scriptVersions",
+                    "{\"type\":\"object\"}",
+                    "{\"type\":\"object\"}",
+                    new CatalogDtos.PlaybookExecutionPolicyDto("PT5M", "PT30S"),
+                    true,
+                    true,
+                    "start",
+                    List.of(
+                        new CatalogDtos.PlaybookNodeDto(
+                            "start",
+                            "开始",
+                            com.lynxus.contracts.session.SessionContracts.PlaybookNodeType.STEP,
+                            "",
+                            "refund.start",
+                            "2026.04.20",
+                            null,
+                            null,
+                            Map.of()
+                        ),
+                        new CatalogDtos.PlaybookNodeDto(
+                            "finish",
+                            "结束",
+                            com.lynxus.contracts.session.SessionContracts.PlaybookNodeType.END,
+                            "",
+                            null,
+                            null,
+                            null,
+                            null,
+                            Map.of()
+                        )
+                    ),
+                    List.of(new CatalogDtos.PlaybookEdgeDto("start-to-finish", "start", "finish", null, null, true))
+                )
+            )
+        );
+
+        assertTrue(error.getMessage().contains("STEP node must define config.scriptVersions"));
+    }
+
+    @Test
     void shouldKeepLegacyKnowledgeReferencesAlignedWithUnifiedAnalysis() {
         CustomerOpsFixture fixture = customerOpsFixture();
 
@@ -987,11 +1085,17 @@ class CatalogServiceTest {
                     "开始",
                     com.lynxus.contracts.session.SessionContracts.PlaybookNodeType.STEP,
                     "",
+                    "refund.start",
+                    "2026.04.20",
                     null,
                     null,
-                    null,
-                    null,
-                    Map.of()
+                    Map.of(
+                        "scriptVersions",
+                        Map.of(
+                            "2026.04.20",
+                            Map.of("runtime", "python", "code", "result = {'statePatch': {}, 'routeKey': None}")
+                        )
+                    )
                 ),
                 new CatalogDtos.PlaybookNodeDto(
                     "finish",

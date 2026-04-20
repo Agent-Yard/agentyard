@@ -5,6 +5,7 @@ import static com.lynxus.platform.session.SessionRuntimeDtos.SendSessionMessageR
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
@@ -13,6 +14,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.lynxus.contracts.runtime.WorkflowContracts.VersionStatus;
+import com.lynxus.contracts.session.SessionContracts.PlaybookRun;
+import com.lynxus.contracts.session.SessionContracts.PlaybookRunStatus;
 import com.lynxus.contracts.session.SessionContracts.SessionMessageDeliveryStatus;
 import com.lynxus.contracts.session.SessionContracts.SessionUserMessageUpdateResult;
 import com.lynxus.platform.catalog.CatalogDtos;
@@ -145,6 +148,56 @@ class SessionRuntimeServiceTest {
                 && "HTTP".equals(startRequest.agents().getFirst().tools().getFirst().providerType())
                 && "rv-tool-1".equals(startRequest.agents().getFirst().tools().getFirst().resourceVersionId())
         ));
+    }
+
+    @Test
+    void humanResume_shouldRejectPlaybookRunThatDoesNotBelongToSession() {
+        SessionWorkflowGateway gateway = mock(SessionWorkflowGateway.class);
+        CatalogService catalogService = mock(CatalogService.class);
+        SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
+        SessionRuntimeService service = new SessionRuntimeService(
+            gateway,
+            catalogService,
+            repository,
+            new SessionDispatchLockService()
+        );
+        SessionRuntimeDtos.SessionRuntimeSessionDto existing = session("session-1", "ACTIVE", null);
+
+        when(repository.findSession("session-1")).thenReturn(java.util.Optional.of(existing));
+        when(repository.listPlaybookRuns("session-1")).thenReturn(List.of(playbookRun("run-2", "session-2")));
+
+        ConflictException error = assertThrows(
+            ConflictException.class,
+            () -> service.humanResume("session-1", new SessionRuntimeDtos.HumanResumeRequest("run-1", Map.of()))
+        );
+
+        assertEquals("playbook run does not belong to session", error.getMessage());
+        verify(gateway, never()).humanResume(eq("session-1"), any());
+    }
+
+    @Test
+    void externalCallback_shouldRejectPlaybookRunThatDoesNotBelongToSession() {
+        SessionWorkflowGateway gateway = mock(SessionWorkflowGateway.class);
+        CatalogService catalogService = mock(CatalogService.class);
+        SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
+        SessionRuntimeService service = new SessionRuntimeService(
+            gateway,
+            catalogService,
+            repository,
+            new SessionDispatchLockService()
+        );
+        SessionRuntimeDtos.SessionRuntimeSessionDto existing = session("session-1", "ACTIVE", null);
+
+        when(repository.findSession("session-1")).thenReturn(java.util.Optional.of(existing));
+        when(repository.listPlaybookRuns("session-1")).thenReturn(List.of(playbookRun("run-2", "session-2")));
+
+        ConflictException error = assertThrows(
+            ConflictException.class,
+            () -> service.externalCallback("session-1", new SessionRuntimeDtos.ExternalCallbackRequest("run-1", Map.of()))
+        );
+
+        assertEquals("playbook run does not belong to session", error.getMessage());
+        verify(gateway, never()).externalCallback(eq("session-1"), any());
     }
 
     private static CatalogDtos.AssistantDto assistant(String assistantId) {
@@ -338,6 +391,24 @@ class SessionRuntimeServiceTest {
             now,
             endedAt,
             0
+        );
+    }
+
+    private static PlaybookRun playbookRun(String runId, String sessionId) {
+        Instant now = Instant.now();
+        return new PlaybookRun(
+            runId,
+            sessionId,
+            "event-1",
+            "playbook-1",
+            "agent-1",
+            PlaybookRunStatus.WAITING,
+            Map.of(),
+            Map.of(),
+            null,
+            now,
+            now,
+            "human_task:step-1"
         );
     }
 }

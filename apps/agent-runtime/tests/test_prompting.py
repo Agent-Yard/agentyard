@@ -55,8 +55,10 @@ class AgentRuntimePromptingTest(unittest.TestCase):
         self.assertIn("allowedActions", bundle.capabilities)
         self.assertEqual(bundle.capabilities["playbookIds"], ["pb-1"])
         self.assertIn("availableSkills", bundle.capabilities)
-        self.assertEqual(bundle.runtime_messages[-1]["role"], "user")
-        self.assertEqual(bundle.runtime_messages[-1]["content"], "hello")
+        self.assertEqual(bundle.runtime_messages[2].kind, "user_turn")
+        self.assertEqual(bundle.runtime_messages[2].content, "hi")
+        self.assertEqual(bundle.runtime_messages[-1].kind, "user_turn")
+        self.assertEqual(bundle.runtime_messages[-1].content, "hello")
         self.assertIn("sharedState", bundle.response_contract)
         self.assertIn("skillReads", bundle.response_contract)
 
@@ -181,8 +183,76 @@ class AgentRuntimePromptingTest(unittest.TestCase):
 
         bundle = build_prompt_bundle(request)
 
-        shared_state_payload = json.loads(bundle.runtime_messages[1]["content"].split(":\n", 1)[1])
-        recent_event_payload = json.loads(bundle.runtime_messages[2]["content"].split(":\n", 1)[1])
+        shared_state_payload = json.loads(bundle.runtime_messages[1].content.split(":\n", 1)[1])
         self.assertTrue(shared_state_payload["truncated"])
-        self.assertEqual(len(recent_event_payload), 2)
-        self.assertEqual([item["eventId"] for item in recent_event_payload], ["evt-4", "evt-5"])
+        self.assertEqual([message.kind for message in bundle.runtime_messages[2:4]], ["user_turn", "user_turn"])
+        self.assertEqual([message.content for message in bundle.runtime_messages[2:4]], ["msg-3", "msg-4"])
+
+    def test_should_render_recent_events_as_native_messages(self) -> None:
+        request = AgentTurnRequest.model_validate(
+            {
+                "sessionId": "session-1",
+                "assistantId": "assistant-1",
+                "assistantReleaseVersion": "2026.04.19",
+                "currentOwner": {
+                    "agentId": "agent-a",
+                    "name": "Agent A",
+                    "role": "support",
+                    "responsibility": "help the customer",
+                    "allowedActions": ["REPLY"],
+                },
+                "availableAgents": [],
+                "availablePlaybooks": [],
+                "sharedState": {},
+                "trigger": {
+                    "triggerType": "PLAYBOOK_COMPLETED",
+                    "eventId": "evt-4",
+                    "payload": {"playbookRunId": "run-1", "status": "SUCCEEDED"},
+                },
+                "recentEvents": [
+                    {
+                        "eventId": "evt-1",
+                        "sessionId": "session-1",
+                        "sequence": 1,
+                        "eventType": "USER_MESSAGE",
+                        "actorType": "USER",
+                        "payload": {"text": "我想退款"},
+                    },
+                    {
+                        "eventId": "evt-2",
+                        "sessionId": "session-1",
+                        "sequence": 2,
+                        "eventType": "OWNER_REPLY",
+                        "actorType": "AGENT",
+                        "payload": {"text": "我来帮你处理"},
+                    },
+                    {
+                        "eventId": "evt-3",
+                        "sessionId": "session-1",
+                        "sequence": 3,
+                        "eventType": "PLAYBOOK_STARTED",
+                        "actorType": "AGENT",
+                        "payload": {"runId": "run-1"},
+                    },
+                    {
+                        "eventId": "evt-4",
+                        "sessionId": "session-1",
+                        "sequence": 4,
+                        "eventType": "PLAYBOOK_COMPLETED",
+                        "actorType": "SYSTEM",
+                        "payload": {"playbookRunId": "run-1", "status": "SUCCEEDED"},
+                    },
+                ],
+            }
+        )
+
+        bundle = build_prompt_bundle(request)
+
+        self.assertEqual(bundle.runtime_messages[2].kind, "user_turn")
+        self.assertEqual(bundle.runtime_messages[2].content, "我想退款")
+        self.assertEqual(bundle.runtime_messages[3].kind, "assistant_turn")
+        self.assertEqual(bundle.runtime_messages[3].content, "我来帮你处理")
+        self.assertEqual(bundle.runtime_messages[4].kind, "system_event")
+        self.assertIn("PLAYBOOK_STARTED", bundle.runtime_messages[4].content)
+        self.assertEqual(bundle.runtime_messages[-1].kind, "system_event")
+        self.assertIn('"status": "SUCCEEDED"', bundle.runtime_messages[-1].content)

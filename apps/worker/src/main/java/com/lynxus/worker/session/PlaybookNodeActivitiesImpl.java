@@ -35,21 +35,27 @@ public class PlaybookNodeActivitiesImpl implements PlaybookNodeActivities {
 
     @Override
     public PlaybookNodeExecutionResult executeStep(PlaybookNodeExecutionRequest request) {
-        String runtime = stringValue(request.config().get("runtime"), "python").toLowerCase();
-        String code = stringValue(request.config().get("code"), null);
-        if (code == null || code.isBlank()) {
-            return failed("playbook step is missing config.code");
+        String scriptRef = stringValue(request.scriptRef(), null);
+        String scriptVersion = stringValue(request.scriptVersion(), null);
+        if (scriptRef == null || scriptVersion == null) {
+            return failed("playbook step must define scriptRef and scriptVersion");
         }
         try {
+            Map<String, Object> scriptConfig = resolveVersionedScriptConfig(request);
+            String runtime = stringValue(scriptConfig.get("runtime"), "python").toLowerCase();
+            String code = stringValue(scriptConfig.get("code"), null);
+            if (code == null || code.isBlank()) {
+                return failed("playbook step " + scriptRef + "@" + scriptVersion + " is missing versioned script code");
+            }
             SandboxExecutionResult execution = switch (runtime) {
                 case "python", "python3", "jupyter" -> sandboxGateway.executePython(
-                    buildPythonScript(request, code),
-                    stringValue(request.config().get("kernelName"), "python3.11"),
-                    intValue(request.config().get("timeoutSeconds"), 30)
+                    buildPythonScript(request, scriptConfig, code),
+                    stringValue(scriptConfig.get("kernelName"), "python3.11"),
+                    intValue(scriptConfig.get("timeoutSeconds"), 30)
                 );
                 case "node", "nodejs", "javascript" -> sandboxGateway.executeNode(
-                    buildNodeScript(request, code),
-                    intValue(request.config().get("timeoutSeconds"), 30)
+                    buildNodeScript(request, scriptConfig, code),
+                    intValue(scriptConfig.get("timeoutSeconds"), 30)
                 );
                 default -> throw new IllegalStateException("unsupported sandbox runtime: " + runtime);
             };
@@ -123,32 +129,58 @@ public class PlaybookNodeActivitiesImpl implements PlaybookNodeActivities {
         return result;
     }
 
-    private String buildPythonScript(PlaybookNodeExecutionRequest request, String code) {
+    private Map<String, Object> resolveVersionedScriptConfig(PlaybookNodeExecutionRequest request) {
+        Object rawScriptVersions = request.config().get("scriptVersions");
+        if (!(rawScriptVersions instanceof Map<?, ?> scriptVersions)) {
+            throw new IllegalStateException("playbook step config.scriptVersions must be an object");
+        }
+        Object rawVersionConfig = scriptVersions.get(request.scriptVersion());
+        if (!(rawVersionConfig instanceof Map<?, ?> versionConfig)) {
+            throw new IllegalStateException(
+                "playbook step " + request.scriptRef() + "@" + request.scriptVersion() + " is missing versioned script config"
+            );
+        }
+        return toStringObjectMap(versionConfig);
+    }
+
+    private String buildPythonScript(PlaybookNodeExecutionRequest request, Map<String, Object> scriptConfig, String code) {
         return """
             import json
             input_data = json.loads(%s)
             node_config = json.loads(%s)
+            script_config = json.loads(%s)
+            script_identity = json.loads(%s)
+            script_ref = script_identity["scriptRef"]
+            script_version = script_identity["scriptVersion"]
             result = {"statePatch": {}, "routeKey": None}
             %s
             print(%s + json.dumps(result, ensure_ascii=False))
             """.formatted(
             pythonString(request.input()),
             pythonString(request.config()),
+            pythonString(scriptConfig),
+            pythonString(Map.of("scriptRef", request.scriptRef(), "scriptVersion", request.scriptVersion())),
             code,
             pythonString(RESULT_MARKER)
         );
     }
 
-    private String buildNodeScript(PlaybookNodeExecutionRequest request, String code) {
+    private String buildNodeScript(PlaybookNodeExecutionRequest request, Map<String, Object> scriptConfig, String code) {
         return """
             const inputData = JSON.parse(%s);
             const nodeConfig = JSON.parse(%s);
+            const scriptConfig = JSON.parse(%s);
+            const scriptIdentity = JSON.parse(%s);
+            const scriptRef = scriptIdentity.scriptRef;
+            const scriptVersion = scriptIdentity.scriptVersion;
             let result = { statePatch: {}, routeKey: null };
             %s
             console.log(%s + JSON.stringify(result));
             """.formatted(
             javascriptString(request.input()),
             javascriptString(request.config()),
+            javascriptString(scriptConfig),
+            javascriptString(Map.of("scriptRef", request.scriptRef(), "scriptVersion", request.scriptVersion())),
             code,
             javascriptString(RESULT_MARKER)
         );

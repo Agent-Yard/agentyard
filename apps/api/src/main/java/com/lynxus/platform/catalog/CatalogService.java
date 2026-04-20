@@ -1589,6 +1589,9 @@ public class CatalogService {
             if (node.nodeType() == null) {
                 throw new IllegalStateException("playbook nodeType is required");
             }
+            if (node.nodeType() == com.lynxus.contracts.session.SessionContracts.PlaybookNodeType.STEP) {
+                validateStepNode(node);
+            }
             if (!playbook.allowHumanTask() && node.nodeType() == com.lynxus.contracts.session.SessionContracts.PlaybookNodeType.HUMAN_TASK) {
                 throw new IllegalStateException("playbook does not allow HUMAN_TASK nodes");
             }
@@ -1604,6 +1607,25 @@ public class CatalogService {
             if (!nodeKeys.contains(edge.sourceNodeKey()) || !nodeKeys.contains(edge.targetNodeKey())) {
                 throw new IllegalStateException("playbook edge must reference existing nodes");
             }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void validateStepNode(PlaybookNodeDto node) {
+        if (node.scriptRef() == null || node.scriptRef().isBlank() || node.scriptVersion() == null || node.scriptVersion().isBlank()) {
+            throw new IllegalStateException("STEP node must define scriptRef and scriptVersion");
+        }
+        Object rawScriptVersions = node.config().get("scriptVersions");
+        if (!(rawScriptVersions instanceof Map<?, ?> scriptVersions)) {
+            throw new IllegalStateException("STEP node must define config.scriptVersions");
+        }
+        Object rawVersionConfig = scriptVersions.get(node.scriptVersion());
+        if (!(rawVersionConfig instanceof Map<?, ?> versionConfig)) {
+            throw new IllegalStateException("STEP node scriptVersion must resolve to config.scriptVersions entry");
+        }
+        Object rawCode = ((Map<String, Object>) versionConfig).get("code");
+        if (!(rawCode instanceof String code) || code.isBlank()) {
+            throw new IllegalStateException("STEP node versioned script config must define non-empty code");
         }
     }
 
