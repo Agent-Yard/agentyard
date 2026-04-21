@@ -50,6 +50,7 @@ declare module 'vue' {
     ATypographyText: typeof import('ant-design-vue/es')['TypographyText']
     ATypographyTitle: typeof import('ant-design-vue/es')['TypographyTitle']
     AUpload: typeof import('ant-design-vue/es')['Upload']
+    CatalogFormDrawer: typeof import('./src/components/CatalogFormDrawer.vue')['default']
     DeletionPreviewModal: typeof import('./src/components/DeletionPreviewModal.vue')['default']
     ObjectHistoryPanel: typeof import('./src/components/ObjectHistoryPanel.vue')['default']
     ObjectReferencePanel: typeof import('./src/components/ObjectReferencePanel.vue')['default']

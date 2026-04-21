@@ -359,115 +359,117 @@ function submitUpdateDraftVersion() {
           </a-space>
         </template>
 
-        <a-card size="small" title="资源信息" style="margin-bottom: 16px">
-          <a-form layout="vertical" :model="resourceForm" @finish="submitUpdateResource">
-            <a-row :gutter="[16, 16]">
-              <a-col :span="12">
-                <a-form-item label="资源名称">
-                  <a-input v-model:value="resourceForm.name" />
-                </a-form-item>
-              </a-col>
-              <a-col :span="12">
-                <a-form-item label="资源类型">
-                  <a-input :value="selectedResource.type" disabled />
-                </a-form-item>
-              </a-col>
-            </a-row>
+        <div class="console-stack">
+          <a-card size="small" title="资源信息">
+            <a-form layout="vertical" :model="resourceForm" @finish="submitUpdateResource">
+              <a-row :gutter="[16, 16]">
+                <a-col :span="12">
+                  <a-form-item label="资源名称">
+                    <a-input v-model:value="resourceForm.name" />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="12">
+                  <a-form-item label="资源类型">
+                    <a-input :value="selectedResource.type" disabled />
+                  </a-form-item>
+                </a-col>
+              </a-row>
 
-            <a-row :gutter="[16, 16]">
-              <a-col :span="12">
-                <a-form-item label="共享范围">
-                  <a-select
-                    v-model:value="resourceForm.shareScope"
-                    :options="[
-                      { label: '域内共享', value: 'DOMAIN_SHARED' },
-                      { label: '私有', value: 'PRIVATE' },
-                    ]"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :span="12">
-                <a-form-item label="业务域">
-                  <a-select :value="selectedResource.domainId" :options="domainOptions" disabled />
-                </a-form-item>
-              </a-col>
-            </a-row>
+              <a-row :gutter="[16, 16]">
+                <a-col :span="12">
+                  <a-form-item label="共享范围">
+                    <a-select
+                      v-model:value="resourceForm.shareScope"
+                      :options="[
+                        { label: '域内共享', value: 'DOMAIN_SHARED' },
+                        { label: '私有', value: 'PRIVATE' },
+                      ]"
+                    />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="12">
+                  <a-form-item label="业务域">
+                    <a-select :value="selectedResource.domainId" :options="domainOptions" disabled />
+                  </a-form-item>
+                </a-col>
+              </a-row>
 
-            <a-row :gutter="[16, 16]">
-              <a-col :span="12">
-                <a-form-item label="归属类型">
-                  <a-segmented
-                    v-model:value="resourceForm.ownerType"
-                    :options="[
-                      { label: '业务域', value: 'DOMAIN' },
-                      { label: '助手私有', value: 'ASSISTANT' },
-                    ]"
-                    block
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :span="12">
-                <a-form-item label="归属对象">
-                  <a-select v-model:value="resourceForm.ownerId" :options="effectiveOwnerOptions" />
-                </a-form-item>
-              </a-col>
-            </a-row>
+              <a-row :gutter="[16, 16]">
+                <a-col :span="12">
+                  <a-form-item label="归属类型">
+                    <a-segmented
+                      v-model:value="resourceForm.ownerType"
+                      :options="[
+                        { label: '业务域', value: 'DOMAIN' },
+                        { label: '助手私有', value: 'ASSISTANT' },
+                      ]"
+                      block
+                    />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="12">
+                  <a-form-item label="归属对象">
+                    <a-select v-model:value="resourceForm.ownerId" :options="effectiveOwnerOptions" />
+                  </a-form-item>
+                </a-col>
+              </a-row>
 
-            <a-form-item label="摘要">
-              <a-textarea v-model:value="resourceForm.summary" :rows="3" />
-            </a-form-item>
+              <a-form-item label="摘要">
+                <a-textarea v-model:value="resourceForm.summary" :rows="3" />
+              </a-form-item>
 
-            <a-row :gutter="[16, 16]">
-              <a-col :span="12">
-                <a-form-item label="负责人">
-                  <a-input v-model:value="resourceForm.steward" />
-                </a-form-item>
-              </a-col>
-              <a-col :span="12">
-                <a-form-item label="标签">
-                  <a-select v-model:value="resourceForm.tags" mode="tags" />
-                </a-form-item>
-              </a-col>
-            </a-row>
+              <a-row :gutter="[16, 16]">
+                <a-col :span="12">
+                  <a-form-item label="负责人">
+                    <a-input v-model:value="resourceForm.steward" />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="12">
+                  <a-form-item label="标签">
+                    <a-select v-model:value="resourceForm.tags" mode="tags" />
+                  </a-form-item>
+                </a-col>
+              </a-row>
 
-            <a-button v-if="canManageGovernance" type="primary" html-type="submit">保存资源信息</a-button>
-          </a-form>
-        </a-card>
+              <a-button v-if="canManageGovernance" type="primary" html-type="submit">保存资源信息</a-button>
+            </a-form>
+          </a-card>
 
-        <a-row :gutter="[16, 16]">
+          <a-row :gutter="[16, 16]">
           <a-col :span="11">
-            <a-card size="small" title="版本列表">
-              <a-list :data-source="selectedResource.versions">
-                <template #renderItem="{ item }">
-                  <a-list-item class="clickable-item" @click="selectedVersionId = item.id">
-                    <a-list-item-meta :title="`v${item.version}`" :description="item.summary" />
-                    <a-space>
-                      <a-tag v-if="selectedVersionId === item.id" class="console-accent-tag">当前</a-tag>
-                      <a-tag :color="item.status === 'PUBLISHED' ? 'green' : 'gold'">{{ item.status }}</a-tag>
-                    </a-space>
-                  </a-list-item>
-                </template>
-              </a-list>
-            </a-card>
+            <div class="console-stack">
+              <a-card size="small" title="版本列表">
+                <a-list :data-source="selectedResource.versions">
+                  <template #renderItem="{ item }">
+                    <a-list-item class="clickable-item" @click="selectedVersionId = item.id">
+                      <a-list-item-meta :title="`v${item.version}`" :description="item.summary" />
+                      <a-space>
+                        <a-tag v-if="selectedVersionId === item.id" class="console-accent-tag">当前</a-tag>
+                        <a-tag :color="item.status === 'PUBLISHED' ? 'green' : 'gold'">{{ item.status }}</a-tag>
+                      </a-space>
+                    </a-list-item>
+                  </template>
+                </a-list>
+              </a-card>
 
-            <ObjectReferencePanel
-              v-if="selectedResource"
-              style="margin-top: 16px"
-              object-type="RESOURCE"
-              :object-id="selectedResource.id"
-              :reload-key="catalogRevision"
-            />
+              <ObjectReferencePanel
+                v-if="selectedResource"
+                object-type="RESOURCE"
+                :object-id="selectedResource.id"
+                :reload-key="catalogRevision"
+              />
 
-            <ObjectHistoryPanel
-              v-if="selectedResource"
-              style="margin-top: 16px"
-              aggregate-type="RESOURCE"
-              :object-id="selectedResource.id"
-              :reload-key="catalogRevision"
-            />
+              <ObjectHistoryPanel
+                v-if="selectedResource"
+                aggregate-type="RESOURCE"
+                :object-id="selectedResource.id"
+                :reload-key="catalogRevision"
+              />
+            </div>
           </a-col>
 
           <a-col :span="13">
+            <div class="console-stack">
             <a-card v-if="selectedVersion" size="small" :title="isDraftVersion ? '草稿版本编辑' : '当前版本详情'">
               <template #extra>
                 <a-space>
@@ -538,7 +540,7 @@ function submitUpdateDraftVersion() {
               </template>
             </a-card>
 
-            <a-card v-if="canManageGovernance" size="small" title="创建新版本" style="margin-top: 16px">
+            <a-card v-if="canManageGovernance" size="small" title="创建新版本">
               <a-form layout="vertical" :model="createVersionForm" @finish="submitCreateVersion">
                 <a-row :gutter="[16, 16]">
                   <a-col :span="12">
@@ -568,8 +570,10 @@ function submitUpdateDraftVersion() {
                 <a-button type="primary" html-type="submit">创建版本</a-button>
               </a-form>
             </a-card>
+            </div>
           </a-col>
-        </a-row>
+          </a-row>
+        </div>
       </a-card>
     </a-col>
   </a-row>
@@ -593,29 +597,31 @@ function submitUpdateDraftVersion() {
 
         <a-row :gutter="[16, 16]">
           <a-col :span="8">
-            <a-card size="small" title="能力资源蓝图">
-              <a-space direction="vertical" style="width: 100%">
-                <a-card
-                  v-for="blueprint in resourceBlueprints"
-                  :key="blueprint.type"
-                  size="small"
-                  class="clickable-item selectable-card"
-                  :class="{ 'selectable-card--active': createResourceForm.type === blueprint.type }"
-                  @click="applyBlueprint(blueprint.type)"
-                >
-                  <a-typography-title :level="5" style="margin: 0 0 8px 0">{{ blueprint.label }}</a-typography-title>
-                  <a-typography-text type="secondary">{{ blueprint.description }}</a-typography-text>
-                </a-card>
-              </a-space>
-            </a-card>
+            <div class="console-stack">
+              <a-card size="small" title="能力资源蓝图">
+                <a-space direction="vertical" style="width: 100%">
+                  <a-card
+                    v-for="blueprint in resourceBlueprints"
+                    :key="blueprint.type"
+                    size="small"
+                    class="clickable-item selectable-card"
+                    :class="{ 'selectable-card--active': createResourceForm.type === blueprint.type }"
+                    @click="applyBlueprint(blueprint.type)"
+                  >
+                    <a-typography-title :level="5" style="margin: 0 0 8px 0">{{ blueprint.label }}</a-typography-title>
+                    <a-typography-text type="secondary">{{ blueprint.description }}</a-typography-text>
+                  </a-card>
+                </a-space>
+              </a-card>
 
-            <a-card v-if="createCurrentBlueprint" size="small" title="当前类型需维护" style="margin-top: 16px">
-              <a-list :data-source="createCurrentBlueprint.maintainedFields" size="small">
-                <template #renderItem="{ item }">
-                  <a-list-item>{{ item }}</a-list-item>
-                </template>
-              </a-list>
-            </a-card>
+              <a-card v-if="createCurrentBlueprint" size="small" title="当前类型需维护">
+                <a-list :data-source="createCurrentBlueprint.maintainedFields" size="small">
+                  <template #renderItem="{ item }">
+                    <a-list-item>{{ item }}</a-list-item>
+                  </template>
+                </a-list>
+              </a-card>
+            </div>
           </a-col>
 
           <a-col :span="16">

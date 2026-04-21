@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
+import CatalogFormDrawer from '../components/CatalogFormDrawer.vue';
 import ObjectHistoryPanel from '../components/ObjectHistoryPanel.vue';
 import ObjectReferencePanel from '../components/ObjectReferencePanel.vue';
 import type { BusinessDomain, CreateDomainPayload, UpdateDomainPayload } from '../types';
@@ -18,6 +19,7 @@ const emit = defineEmits<{
 
 const selectedDomainId = ref('');
 const createDrawerOpen = ref(false);
+const editDrawerOpen = ref(false);
 const createForm = reactive<CreateDomainPayload>({
   name: '',
   description: '',
@@ -82,6 +84,16 @@ function submitUpdate() {
     },
   });
 }
+
+function openEditDrawer(domainId: string) {
+  selectedDomainId.value = domainId;
+  const domain = props.domains.find((item) => item.id === domainId);
+  if (domain) {
+    editForm.name = domain.name;
+    editForm.description = domain.description;
+  }
+  editDrawerOpen.value = true;
+}
 </script>
 
 <template>
@@ -118,6 +130,10 @@ function submitUpdate() {
               <a-space>
                 <a-tag class="console-accent-tag">{{ item.scenarios.length }} 场景</a-tag>
                 <a-tag>{{ item.resources.length }} 资源</a-tag>
+                <a-button v-if="canManageGovernance" type="link" size="small" @click.stop="openEditDrawer(item.id)">编辑</a-button>
+                <a-button v-if="canManageGovernance" type="link" size="small" danger @click.stop="emit('deleteDomain', item.id)">
+                  删除
+                </a-button>
               </a-space>
             </a-list-item>
           </template>
@@ -126,113 +142,112 @@ function submitUpdate() {
     </a-col>
 
     <a-col :span="15">
-      <a-card v-if="current" :title="current.name">
-        <template #extra>
-          <a-space>
-            <a-tag class="console-accent-tag">{{ current.scenarios.length }} 个场景</a-tag>
-            <a-tag>{{ current.resources.length }} 个资源</a-tag>
-          </a-space>
-        </template>
+      <div v-if="current" class="console-stack">
+        <a-card :title="current.name">
+          <template #extra>
+            <a-space>
+              <a-tag class="console-accent-tag">{{ current.scenarios.length }} 个场景</a-tag>
+              <a-tag>{{ current.resources.length }} 个资源</a-tag>
+            </a-space>
+          </template>
 
-        <a-descriptions :column="3" size="small">
-          <a-descriptions-item label="业务域 ID">{{ current.id }}</a-descriptions-item>
-          <a-descriptions-item label="助手数">
-            {{ current.scenarios.flatMap((item) => item.assistants).length }}
-          </a-descriptions-item>
-          <a-descriptions-item label="资源数">{{ current.resources.length }}</a-descriptions-item>
-          <a-descriptions-item label="描述" :span="3">
-            {{ current.description || '暂无说明' }}
-          </a-descriptions-item>
-        </a-descriptions>
+          <a-descriptions :column="3" size="small">
+            <a-descriptions-item label="业务域 ID">{{ current.id }}</a-descriptions-item>
+            <a-descriptions-item label="助手数">
+              {{ current.scenarios.flatMap((item) => item.assistants).length }}
+            </a-descriptions-item>
+            <a-descriptions-item label="资源数">{{ current.resources.length }}</a-descriptions-item>
+            <a-descriptions-item label="描述" :span="3">
+              {{ current.description || '暂无说明' }}
+            </a-descriptions-item>
+          </a-descriptions>
+        </a-card>
 
-        <a-divider />
+        <a-card title="当前域承载关系">
+          <a-row :gutter="[16, 16]">
+            <a-col :span="12">
+              <a-list header="业务场景" :data-source="current.scenarios" :locale="{ emptyText: '暂无场景' }">
+                <template #renderItem="{ item }">
+                  <a-list-item>
+                    <a-list-item-meta :title="item.name" :description="item.goal" />
+                    <a-tag>{{ item.assistants.length }} 助手</a-tag>
+                  </a-list-item>
+                </template>
+              </a-list>
+            </a-col>
+            <a-col :span="12">
+              <a-list header="域内资源" :data-source="current.resources" :locale="{ emptyText: '暂无资源' }">
+                <template #renderItem="{ item }">
+                  <a-list-item>
+                    <a-list-item-meta :title="item.name" :description="item.summary || '暂无摘要'" />
+                    <a-tag>{{ item.type }}</a-tag>
+                  </a-list-item>
+                </template>
+              </a-list>
+            </a-col>
+          </a-row>
+        </a-card>
 
-        <a-form layout="vertical" :model="editForm" @finish="submitUpdate">
-          <a-form-item label="业务域名称">
-            <a-input v-model:value="editForm.name" />
-          </a-form-item>
-          <a-form-item label="业务域说明">
-            <a-textarea v-model:value="editForm.description" :rows="4" />
-          </a-form-item>
-          <a-space v-if="canManageGovernance">
-            <a-button type="primary" html-type="submit">保存业务域</a-button>
-            <a-button danger @click="emit('deleteDomain', current.id)">删除业务域</a-button>
-          </a-space>
-        </a-form>
-      </a-card>
+        <ObjectReferencePanel
+          object-type="DOMAIN"
+          :object-id="current.id"
+          :reload-key="catalogRevision"
+        />
 
-      <a-card v-if="current" title="当前域承载关系">
-        <a-row :gutter="[16, 16]">
-          <a-col :span="12">
-            <a-list header="业务场景" :data-source="current.scenarios" :locale="{ emptyText: '暂无场景' }">
-              <template #renderItem="{ item }">
-                <a-list-item>
-                  <a-list-item-meta :title="item.name" :description="item.goal" />
-                  <a-tag>{{ item.assistants.length }} 助手</a-tag>
-                </a-list-item>
-              </template>
-            </a-list>
-          </a-col>
-          <a-col :span="12">
-            <a-list header="域内资源" :data-source="current.resources" :locale="{ emptyText: '暂无资源' }">
-              <template #renderItem="{ item }">
-                <a-list-item>
-                  <a-list-item-meta :title="item.name" :description="item.summary || '暂无摘要'" />
-                  <a-tag>{{ item.type }}</a-tag>
-                </a-list-item>
-              </template>
-            </a-list>
-          </a-col>
-        </a-row>
-      </a-card>
-
-      <ObjectReferencePanel
-        v-if="current"
-        style="margin-top: 16px"
-        object-type="DOMAIN"
-        :object-id="current.id"
-        :reload-key="catalogRevision"
-      />
-
-      <ObjectHistoryPanel
-        v-if="current"
-        style="margin-top: 16px"
-        aggregate-type="DOMAIN"
-        :object-id="current.id"
-        :reload-key="catalogRevision"
-      />
+        <ObjectHistoryPanel
+          aggregate-type="DOMAIN"
+          :object-id="current.id"
+          :reload-key="catalogRevision"
+        />
+      </div>
 
       <a-empty v-else description="暂无业务域，请先创建" />
     </a-col>
   </a-row>
 
-  <a-drawer
+  <CatalogFormDrawer
     :open="createDrawerOpen"
     title="新建业务域"
     :width="480"
-    destroy-on-close
+    kicker="01.01 / 平台设计 / 业务域"
     @close="createDrawerOpen = false"
   >
-    <div class="create-drawer">
-      <div class="create-drawer__kicker">01.01 / 平台设计 / 业务域</div>
-      <div class="create-drawer__body">
-        <a-form layout="vertical" :model="createForm" @finish="submitCreate">
-          <a-form-item label="业务域名称">
-            <a-input v-model:value="createForm.name" placeholder="例如：客户运营域" />
-          </a-form-item>
-          <a-form-item label="业务域说明">
-            <a-textarea
-              v-model:value="createForm.description"
-              :rows="6"
-              placeholder="描述域边界、职责范围和核心资产"
-            />
-          </a-form-item>
-          <div class="create-drawer__actions">
-            <a-button @click="createDrawerOpen = false">取消</a-button>
-            <a-button type="primary" html-type="submit">创建业务域</a-button>
-          </div>
-        </a-form>
+    <a-form layout="vertical" :model="createForm" @finish="submitCreate">
+      <a-form-item label="业务域名称">
+        <a-input v-model:value="createForm.name" placeholder="例如：客户运营域" />
+      </a-form-item>
+      <a-form-item label="业务域说明">
+        <a-textarea
+          v-model:value="createForm.description"
+          :rows="6"
+          placeholder="描述域边界、职责范围和核心资产"
+        />
+      </a-form-item>
+      <div class="create-drawer__actions">
+        <a-button @click="createDrawerOpen = false">取消</a-button>
+        <a-button type="primary" html-type="submit">创建业务域</a-button>
       </div>
-    </div>
-  </a-drawer>
+    </a-form>
+  </CatalogFormDrawer>
+
+  <CatalogFormDrawer
+    :open="editDrawerOpen"
+    title="编辑业务域"
+    :width="480"
+    kicker="01.01 / 平台设计 / 业务域"
+    @close="editDrawerOpen = false"
+  >
+    <a-form layout="vertical" :model="editForm" @finish="submitUpdate">
+      <a-form-item label="业务域名称">
+        <a-input v-model:value="editForm.name" />
+      </a-form-item>
+      <a-form-item label="业务域说明">
+        <a-textarea v-model:value="editForm.description" :rows="6" />
+      </a-form-item>
+      <div class="create-drawer__actions">
+        <a-button @click="editDrawerOpen = false">取消</a-button>
+        <a-button type="primary" html-type="submit">保存业务域</a-button>
+      </div>
+    </a-form>
+  </CatalogFormDrawer>
 </template>

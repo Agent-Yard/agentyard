@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
+import CatalogFormDrawer from '../components/CatalogFormDrawer.vue';
 import ObjectHistoryPanel from '../components/ObjectHistoryPanel.vue';
 import ObjectReferencePanel from '../components/ObjectReferencePanel.vue';
 import type {
@@ -28,6 +29,7 @@ const emit = defineEmits<{
 
 const selectedAssistantId = ref('');
 const createDrawerOpen = ref(false);
+const editDrawerOpen = ref(false);
 const createForm = reactive<CreateAssistantPayload>({
   scenarioId: '',
   name: '',
@@ -100,6 +102,12 @@ const editForm = reactive<UpdateAssistantPayload>({
 const current = computed(() =>
   props.assistants.find((item) => item.id === selectedAssistantId.value) ?? props.assistants[0],
 );
+const currentScenario = computed(() =>
+  props.scenarios.find((item) => item.id === current.value?.scenarioId) ?? null,
+);
+const currentPrimaryAgent = computed(() =>
+  current.value?.agents.find((item) => item.id === current.value?.primaryAgentId) ?? null,
+);
 const modelResources = computed(() => props.resources.filter((item) => item.type === 'LLM_MODEL'));
 const privateModelResources = computed(() =>
   modelResources.value.filter(
@@ -168,6 +176,29 @@ const releasePrivacyDescription = computed(() => {
   return `${release.privacyModelBinding.resourceName} @ ${release.privacyModelBinding.resourceVersion}`;
 });
 
+const currentKnowledgeBaseName = computed(() => {
+  if (!current.value?.knowledgeAccessPolicy.knowledgeBaseId) {
+    return '未配置';
+  }
+  return props.knowledgeBases.find((item) => item.id === current.value?.knowledgeAccessPolicy.knowledgeBaseId)?.name ?? current.value.knowledgeAccessPolicy.knowledgeBaseId;
+});
+
+function syncEditForm(assistant: Assistant) {
+  editForm.name = assistant.name;
+  editForm.description = assistant.description;
+  editForm.status = assistant.version.status;
+  editForm.primaryAgentId = assistant.primaryAgentId;
+  editForm.ownerPolicy = { ...assistant.ownerPolicy };
+  editForm.sessionPolicy = { ...assistant.sessionPolicy };
+  editForm.replyPolicy = { ...assistant.replyPolicy };
+  editForm.playbookPolicy = { ...assistant.playbookPolicy };
+  editForm.modelPolicy = { ...assistant.modelPolicy };
+  editForm.privacyModelResourceId = assistant.privacyModelResourceId;
+  editForm.privacyMappingEnabled = assistant.privacyMappingEnabled;
+  editForm.knowledgeAccessPolicy = { ...assistant.knowledgeAccessPolicy };
+  editForm.memoryPolicy = { ...assistant.memoryPolicy };
+}
+
 watch(
   () => props.assistants,
   (assistants) => {
@@ -188,19 +219,7 @@ watch(
     if (!assistant) {
       return;
     }
-    editForm.name = assistant.name;
-    editForm.description = assistant.description;
-    editForm.status = assistant.version.status;
-    editForm.primaryAgentId = assistant.primaryAgentId;
-    editForm.ownerPolicy = { ...assistant.ownerPolicy };
-    editForm.sessionPolicy = { ...assistant.sessionPolicy };
-    editForm.replyPolicy = { ...assistant.replyPolicy };
-    editForm.playbookPolicy = { ...assistant.playbookPolicy };
-    editForm.modelPolicy = { ...assistant.modelPolicy };
-    editForm.privacyModelResourceId = assistant.privacyModelResourceId;
-    editForm.privacyMappingEnabled = assistant.privacyMappingEnabled;
-    editForm.knowledgeAccessPolicy = { ...assistant.knowledgeAccessPolicy };
-    editForm.memoryPolicy = { ...assistant.memoryPolicy };
+    syncEditForm(assistant);
   },
   { immediate: true },
 );
@@ -317,6 +336,15 @@ function openCreateDrawer() {
   createDrawerOpen.value = true;
 }
 
+function openEditDrawer(assistantId: string) {
+  selectedAssistantId.value = assistantId;
+  const assistant = props.assistants.find((item) => item.id === assistantId);
+  if (assistant) {
+    syncEditForm(assistant);
+  }
+  editDrawerOpen.value = true;
+}
+
 function submitUpdate() {
   if (!current.value) {
     return;
@@ -342,15 +370,22 @@ function submitUpdate() {
   <a-row :gutter="[16, 16]">
     <a-col :span="10">
       <a-card title="助手列表">
-        <a-list :data-source="assistants">
+        <a-list :data-source="assistants" :locale="{ emptyText: '暂无助手' }">
           <template #renderItem="{ item }">
-            <a-list-item class="clickable-item" @click="selectedAssistantId = item.id">
-              <a-list-item-meta :title="item.name" :description="item.description" />
+            <a-list-item
+              class="clickable-item"
+              :class="{ 'graph-list-item--active': current?.id === item.id }"
+              @click="selectedAssistantId = item.id"
+            >
+              <a-list-item-meta :title="item.name" :description="item.description || '暂无描述'" />
               <a-space>
-                <a-tag v-if="selectedAssistantId === item.id" class="console-accent-tag">当前</a-tag>
                 <a-tag :color="item.version.status === 'PUBLISHED' ? 'green' : 'gold'">
                   {{ item.version.status }}
                 </a-tag>
+                <a-button v-if="canManageGovernance" type="link" size="small" @click.stop="openEditDrawer(item.id)">编辑</a-button>
+                <a-button v-if="canManageGovernance" type="link" size="small" danger @click.stop="emit('deleteAssistant', item.id)">
+                  删除
+                </a-button>
               </a-space>
             </a-list-item>
           </template>
@@ -359,15 +394,29 @@ function submitUpdate() {
     </a-col>
 
     <a-col :span="14">
-      <a-card v-if="current" :title="current.name">
-        <template #extra>
-          <a-space>
-            <a-tag class="console-accent-tag">{{ current.agents.length }} 个智能体</a-tag>
-            <a-button v-if="canManageGovernance" danger ghost @click="emit('deleteAssistant', current.id)">删除助手</a-button>
-          </a-space>
-        </template>
+      <div v-if="current" class="console-stack">
+        <a-card :title="current.name">
+          <template #extra>
+            <a-space>
+              <a-tag class="console-accent-tag">{{ current.agents.length }} 个智能体</a-tag>
+              <a-tag :color="current.version.status === 'PUBLISHED' ? 'green' : 'gold'">
+                {{ current.version.status }}
+              </a-tag>
+            </a-space>
+          </template>
 
-        <a-card size="small" title="模型语义" style="margin-bottom: 16px">
+          <a-descriptions :column="2" size="small">
+            <a-descriptions-item label="助手 ID">{{ current.id }}</a-descriptions-item>
+            <a-descriptions-item label="所属场景">{{ currentScenario?.name ?? current.scenarioId }}</a-descriptions-item>
+            <a-descriptions-item label="主智能体">{{ currentPrimaryAgent?.name ?? '未配置' }}</a-descriptions-item>
+            <a-descriptions-item label="默认知识库">{{ currentKnowledgeBaseName }}</a-descriptions-item>
+            <a-descriptions-item label="描述" :span="2">
+              {{ current.description || '暂无描述' }}
+            </a-descriptions-item>
+          </a-descriptions>
+        </a-card>
+
+        <a-card size="small" title="模型语义">
           <a-descriptions :column="1" size="small">
             <a-descriptions-item label="草稿默认模型">{{ draftModelDescription }}</a-descriptions-item>
             <a-descriptions-item label="当前发布冻结模型">{{ releaseModelDescription }}</a-descriptions-item>
@@ -375,215 +424,233 @@ function submitUpdate() {
           </a-descriptions>
         </a-card>
 
-        <a-form layout="vertical" :model="editForm" @finish="submitUpdate">
-          <a-form-item label="助手名称" name="name">
-            <a-input v-model:value="editForm.name" />
-          </a-form-item>
-          <a-form-item label="描述" name="description">
-            <a-textarea v-model:value="editForm.description" :rows="4" />
-          </a-form-item>
+        <a-card size="small" title="运行配置摘要">
+          <a-descriptions :column="2" size="small">
+            <a-descriptions-item label="知识能力">
+              {{ current.knowledgeAccessPolicy.enabled ? '已启用' : '未启用' }}
+            </a-descriptions-item>
+            <a-descriptions-item label="隐私映射">
+              {{ current.privacyMappingEnabled ? '已启用' : '未启用' }}
+            </a-descriptions-item>
+            <a-descriptions-item label="记忆窗口">
+              {{ current.memoryPolicy.windowSize }}
+            </a-descriptions-item>
+            <a-descriptions-item label="仅 Owner 回复">
+              {{ current.replyPolicy.ownerOnly ? '是' : '否' }}
+            </a-descriptions-item>
+          </a-descriptions>
+        </a-card>
 
-          <a-row :gutter="[16, 16]">
-            <a-col :span="12">
-              <a-form-item label="版本状态" name="status">
-                <a-select
-                  v-model:value="editForm.status"
-                  :options="[
-                    { label: '草稿', value: 'DRAFT' },
-                    { label: '已发布', value: 'PUBLISHED' },
-                  ]"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="所属场景">
-                <a-input
-                  :value="scenarios.find((item) => item.id === current.scenarioId)?.name ?? current.scenarioId"
-                  disabled
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
+        <a-alert
+          v-if="current?.currentRelease?.assistantKnowledgeBinding"
+          type="info"
+          show-icon
+          :message="`当前发布冻结知识：${current.currentRelease.assistantKnowledgeBinding.knowledgeBaseName} @ ${current.currentRelease.assistantKnowledgeBinding.knowledgeReleaseVersion}`"
+          :description="`运行时快照 ${current.currentRelease.assistantKnowledgeBinding.snapshotId} · ${current.currentRelease.assistantKnowledgeBinding.retrievalMode} · topK ${current.currentRelease.assistantKnowledgeBinding.defaultTopK}`"
+        />
 
-          <a-form-item label="草稿默认模型">
-            <a-select
-              v-model:value="editForm.modelPolicy.defaultModelResourceId"
-              allow-clear
-              :disabled="!modelResources.length"
-              :options="modelResources.map((item) => ({ label: item.name, value: item.id }))"
-              placeholder="选择默认模型资源"
-            />
-          </a-form-item>
-          <a-row :gutter="[16, 16]">
-            <a-col :span="12">
-              <a-form-item label="启用隐私映射">
-                <a-switch v-model:checked="editForm.privacyMappingEnabled" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="私有映射模型">
-                <a-select
-                  v-model:value="editForm.privacyModelResourceId"
-                  allow-clear
-                  :disabled="!editForm.privacyMappingEnabled || !privateModelResources.length"
-                  :options="privateModelResources.map((item) => ({ label: item.name, value: item.id }))"
-                  placeholder="选择 privateDeployment 模型"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <a-alert
-            v-if="editModelHint"
-            :type="editModelHint.type"
-            show-icon
-            :message="editModelHint.message"
-            style="margin-bottom: 16px"
-          />
+        <ObjectReferencePanel
+          object-type="ASSISTANT"
+          :object-id="current.id"
+          :reload-key="catalogRevision"
+        />
 
-          <a-row :gutter="[16, 16]">
-            <a-col :span="12">
-              <a-form-item label="知识能力">
-                <a-switch v-model:checked="editForm.knowledgeAccessPolicy.enabled" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="记忆窗口">
-                <a-input-number v-model:value="editForm.memoryPolicy.windowSize" :min="1" style="width: 100%" />
-              </a-form-item>
-            </a-col>
-          </a-row>
+        <ObjectHistoryPanel
+          aggregate-type="ASSISTANT"
+          :object-id="current.id"
+          :reload-key="catalogRevision"
+        />
+      </div>
 
-          <a-form-item label="默认知识库">
-            <a-select
-              v-model:value="editForm.knowledgeAccessPolicy.knowledgeBaseId"
-              :disabled="!editForm.knowledgeAccessPolicy.enabled"
-              allow-clear
-              :options="knowledgeBaseOptions"
-              placeholder="选择知识库"
-            />
-          </a-form-item>
-
-          <a-alert
-            v-if="current.currentRelease?.assistantKnowledgeBinding"
-            type="info"
-            show-icon
-            style="margin-bottom: 16px"
-            :message="`当前发布冻结知识：${current.currentRelease.assistantKnowledgeBinding.knowledgeBaseName} @ ${current.currentRelease.assistantKnowledgeBinding.knowledgeReleaseVersion}`"
-            :description="`运行时快照 ${current.currentRelease.assistantKnowledgeBinding.snapshotId} · ${current.currentRelease.assistantKnowledgeBinding.retrievalMode} · topK ${current.currentRelease.assistantKnowledgeBinding.defaultTopK}`"
-          />
-
-          <a-space v-if="canManageGovernance">
-            <a-button type="primary" html-type="submit">保存助手</a-button>
-          </a-space>
-        </a-form>
-      </a-card>
-
-      <ObjectReferencePanel
-        v-if="current"
-        style="margin-top: 16px"
-        object-type="ASSISTANT"
-        :object-id="current.id"
-        :reload-key="catalogRevision"
-      />
-
-      <ObjectHistoryPanel
-        v-if="current"
-        style="margin-top: 16px"
-        aggregate-type="ASSISTANT"
-        :object-id="current.id"
-        :reload-key="catalogRevision"
-      />
+      <a-empty v-else description="暂无助手，请先创建" />
     </a-col>
   </a-row>
 
-  <a-drawer
+  <CatalogFormDrawer
     :open="createDrawerOpen"
     title="新建助手"
     :width="680"
-    destroy-on-close
+    kicker="02.01 / 助手构建 / 助手配置"
     @close="createDrawerOpen = false"
   >
-    <div class="create-drawer">
-      <div class="create-drawer__kicker">02.01 / 助手构建 / 助手配置</div>
-      <div class="create-drawer__body">
-        <a-form layout="vertical" :model="createForm" @finish="submitCreate">
-          <a-form-item label="所属场景" name="scenarioId">
+    <a-form layout="vertical" :model="createForm" @finish="submitCreate">
+      <a-form-item label="所属场景" name="scenarioId">
+        <a-select
+          v-model:value="createForm.scenarioId"
+          :options="scenarios.map((item) => ({ label: item.name, value: item.id }))"
+        />
+      </a-form-item>
+      <a-form-item label="助手名称" name="name">
+        <a-input v-model:value="createForm.name" placeholder="例如：售后策略助手" />
+      </a-form-item>
+      <a-form-item label="描述" name="description">
+        <a-textarea
+          v-model:value="createForm.description"
+          :rows="4"
+          placeholder="说明该助手负责的业务目标和协作方式"
+        />
+      </a-form-item>
+      <a-form-item label="草稿默认模型">
+        <a-select
+          v-model:value="createForm.modelPolicy.defaultModelResourceId"
+          allow-clear
+          :disabled="!modelResources.length"
+          :options="modelResources.map((item) => ({ label: item.name, value: item.id }))"
+          placeholder="选择默认模型资源"
+        />
+      </a-form-item>
+      <a-row :gutter="[16, 16]">
+        <a-col :span="12">
+          <a-form-item label="启用隐私映射">
+            <a-switch v-model:checked="createForm.privacyMappingEnabled" />
+          </a-form-item>
+        </a-col>
+        <a-col :span="12">
+          <a-form-item label="私有映射模型">
             <a-select
-              v-model:value="createForm.scenarioId"
-              :options="scenarios.map((item) => ({ label: item.name, value: item.id }))"
-            />
-          </a-form-item>
-          <a-form-item label="助手名称" name="name">
-            <a-input v-model:value="createForm.name" placeholder="例如：售后策略助手" />
-          </a-form-item>
-          <a-form-item label="描述" name="description">
-            <a-textarea
-              v-model:value="createForm.description"
-              :rows="4"
-              placeholder="说明该助手负责的业务目标和协作方式"
-            />
-          </a-form-item>
-          <a-form-item label="草稿默认模型">
-            <a-select
-              v-model:value="createForm.modelPolicy.defaultModelResourceId"
+              v-model:value="createForm.privacyModelResourceId"
               allow-clear
-              :disabled="!modelResources.length"
-              :options="modelResources.map((item) => ({ label: item.name, value: item.id }))"
-              placeholder="选择默认模型资源"
+              :disabled="!createForm.privacyMappingEnabled || !privateModelResources.length"
+              :options="privateModelResources.map((item) => ({ label: item.name, value: item.id }))"
+              placeholder="选择 privateDeployment 模型"
             />
           </a-form-item>
-          <a-row :gutter="[16, 16]">
-            <a-col :span="12">
-              <a-form-item label="启用隐私映射">
-                <a-switch v-model:checked="createForm.privacyMappingEnabled" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="私有映射模型">
-                <a-select
-                  v-model:value="createForm.privacyModelResourceId"
-                  allow-clear
-                  :disabled="!createForm.privacyMappingEnabled || !privateModelResources.length"
-                  :options="privateModelResources.map((item) => ({ label: item.name, value: item.id }))"
-                  placeholder="选择 privateDeployment 模型"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <a-alert
-            v-if="createModelHint"
-            :type="createModelHint.type"
-            show-icon
-            :message="createModelHint.message"
-            style="margin-bottom: 16px"
-          />
-          <a-row :gutter="[16, 16]">
-            <a-col :span="12">
-              <a-form-item label="记忆窗口">
-                <a-input-number v-model:value="createForm.memoryPolicy.windowSize" :min="1" style="width: 100%" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="默认知识能力">
-                <a-switch v-model:checked="createForm.knowledgeAccessPolicy.enabled" />
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <a-form-item label="默认知识库">
-            <a-select
-              v-model:value="createForm.knowledgeAccessPolicy.knowledgeBaseId"
-              :disabled="!createForm.knowledgeAccessPolicy.enabled"
-              allow-clear
-              :options="knowledgeBaseOptions"
-              placeholder="选择知识库"
-            />
+        </a-col>
+      </a-row>
+      <a-alert
+        v-if="createModelHint"
+        :type="createModelHint.type"
+        show-icon
+        :message="createModelHint.message"
+        style="margin-bottom: 16px"
+      />
+      <a-row :gutter="[16, 16]">
+        <a-col :span="12">
+          <a-form-item label="记忆窗口">
+            <a-input-number v-model:value="createForm.memoryPolicy.windowSize" :min="1" style="width: 100%" />
           </a-form-item>
-          <div class="create-drawer__actions">
-            <a-button @click="createDrawerOpen = false">取消</a-button>
-            <a-button type="primary" html-type="submit">创建助手</a-button>
-          </div>
-        </a-form>
+        </a-col>
+        <a-col :span="12">
+          <a-form-item label="默认知识能力">
+            <a-switch v-model:checked="createForm.knowledgeAccessPolicy.enabled" />
+          </a-form-item>
+        </a-col>
+      </a-row>
+      <a-form-item label="默认知识库">
+        <a-select
+          v-model:value="createForm.knowledgeAccessPolicy.knowledgeBaseId"
+          :disabled="!createForm.knowledgeAccessPolicy.enabled"
+          allow-clear
+          :options="knowledgeBaseOptions"
+          placeholder="选择知识库"
+        />
+      </a-form-item>
+      <div class="create-drawer__actions">
+        <a-button @click="createDrawerOpen = false">取消</a-button>
+        <a-button type="primary" html-type="submit">创建助手</a-button>
       </div>
-    </div>
-  </a-drawer>
+    </a-form>
+  </CatalogFormDrawer>
+
+  <CatalogFormDrawer
+    :open="editDrawerOpen"
+    title="编辑助手"
+    :width="680"
+    kicker="02.01 / 助手构建 / 助手配置"
+    @close="editDrawerOpen = false"
+  >
+    <a-form layout="vertical" :model="editForm" @finish="submitUpdate">
+      <a-form-item label="助手名称" name="name">
+        <a-input v-model:value="editForm.name" />
+      </a-form-item>
+      <a-form-item label="描述" name="description">
+        <a-textarea v-model:value="editForm.description" :rows="4" />
+      </a-form-item>
+
+      <a-row :gutter="[16, 16]">
+        <a-col :span="12">
+          <a-form-item label="版本状态" name="status">
+            <a-select
+              v-model:value="editForm.status"
+              :options="[
+                { label: '草稿', value: 'DRAFT' },
+                { label: '已发布', value: 'PUBLISHED' },
+              ]"
+            />
+          </a-form-item>
+        </a-col>
+        <a-col :span="12">
+          <a-form-item label="所属场景">
+            <a-input
+              :value="scenarios.find((item) => item.id === current?.scenarioId)?.name ?? current?.scenarioId"
+              disabled
+            />
+          </a-form-item>
+        </a-col>
+      </a-row>
+
+      <a-form-item label="草稿默认模型">
+        <a-select
+          v-model:value="editForm.modelPolicy.defaultModelResourceId"
+          allow-clear
+          :disabled="!modelResources.length"
+          :options="modelResources.map((item) => ({ label: item.name, value: item.id }))"
+          placeholder="选择默认模型资源"
+        />
+      </a-form-item>
+      <a-row :gutter="[16, 16]">
+        <a-col :span="12">
+          <a-form-item label="启用隐私映射">
+            <a-switch v-model:checked="editForm.privacyMappingEnabled" />
+          </a-form-item>
+        </a-col>
+        <a-col :span="12">
+          <a-form-item label="私有映射模型">
+            <a-select
+              v-model:value="editForm.privacyModelResourceId"
+              allow-clear
+              :disabled="!editForm.privacyMappingEnabled || !privateModelResources.length"
+              :options="privateModelResources.map((item) => ({ label: item.name, value: item.id }))"
+              placeholder="选择 privateDeployment 模型"
+            />
+          </a-form-item>
+        </a-col>
+      </a-row>
+      <a-alert
+        v-if="editModelHint"
+        :type="editModelHint.type"
+        show-icon
+        :message="editModelHint.message"
+        style="margin-bottom: 16px"
+      />
+
+      <a-row :gutter="[16, 16]">
+        <a-col :span="12">
+          <a-form-item label="知识能力">
+            <a-switch v-model:checked="editForm.knowledgeAccessPolicy.enabled" />
+          </a-form-item>
+        </a-col>
+        <a-col :span="12">
+          <a-form-item label="记忆窗口">
+            <a-input-number v-model:value="editForm.memoryPolicy.windowSize" :min="1" style="width: 100%" />
+          </a-form-item>
+        </a-col>
+      </a-row>
+
+      <a-form-item label="默认知识库">
+        <a-select
+          v-model:value="editForm.knowledgeAccessPolicy.knowledgeBaseId"
+          :disabled="!editForm.knowledgeAccessPolicy.enabled"
+          allow-clear
+          :options="knowledgeBaseOptions"
+          placeholder="选择知识库"
+        />
+      </a-form-item>
+
+      <div class="create-drawer__actions">
+        <a-button @click="editDrawerOpen = false">取消</a-button>
+        <a-button type="primary" html-type="submit">保存助手</a-button>
+      </div>
+    </a-form>
+  </CatalogFormDrawer>
 </template>

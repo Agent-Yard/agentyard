@@ -328,20 +328,20 @@ function openEditor(playbookId?: string) {
           </a-col>
         </a-row>
 
-        <ObjectReferencePanel
-          :object-type="'PLAYBOOK'"
-          :object-id="currentPlaybook.id"
-          :reload-key="`${catalogRevision}:${currentPlaybook.id}`"
-          title="Playbook 引用分析"
-          style="margin-top: 16px"
-        />
+        <div class="console-stack">
+          <ObjectReferencePanel
+            :object-type="'PLAYBOOK'"
+            :object-id="currentPlaybook.id"
+            :reload-key="`${catalogRevision}:${currentPlaybook.id}`"
+            title="Playbook 引用分析"
+          />
 
-        <ObjectHistoryPanel
-          aggregate-type="PLAYBOOK"
-          :object-id="currentPlaybook.id"
-          :reload-key="`${catalogRevision}:${currentPlaybook.id}`"
-          style="margin-top: 16px"
-        />
+          <ObjectHistoryPanel
+            aggregate-type="PLAYBOOK"
+            :object-id="currentPlaybook.id"
+            :reload-key="`${catalogRevision}:${currentPlaybook.id}`"
+          />
+        </div>
       </a-card>
 
       <a-empty v-else description="当前助手下还没有 Playbook" />

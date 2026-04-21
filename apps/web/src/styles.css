@@ -60,10 +60,7 @@ body {
 
 body {
   font-family: var(--font-sans);
-  background:
-    radial-gradient(circle at top left, rgba(182, 109, 42, 0.08), transparent 26%),
-    radial-gradient(circle at top right, rgba(62, 109, 165, 0.08), transparent 24%),
-    linear-gradient(180deg, #f7f4ef 0%, #f2efe9 100%);
+  background: #f2efe9;
   color: var(--ink);
   font-size: 13px;
   line-height: 1.5;
@@ -95,9 +92,24 @@ pre,
 }
 
 .ant-app {
+  position: relative;
+  isolation: isolate;
   min-height: 100vh;
   color: var(--ink);
   background: transparent;
+}
+
+.ant-app::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at top left, rgba(182, 109, 42, 0.08), transparent 26%),
+    radial-gradient(circle at top right, rgba(62, 109, 165, 0.08), transparent 24%),
+    linear-gradient(180deg, #f7f4ef 0%, #f2efe9 100%);
+  background-repeat: no-repeat;
 }
 
 .console-shell {
@@ -866,6 +878,12 @@ pre,
   background: rgba(255, 255, 255, 0.8);
 }
 
+.console-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .selectable-card {
   border-color: var(--line);
   background: rgba(255, 255, 255, 0.7);
@@ -1201,6 +1219,8 @@ body .ant-alert-error .ant-alert-message {
 
 .console-page-body .ant-modal-footer,
 .ant-modal-footer {
+  margin-top: 0;
+  padding: 14px 18px 18px;
   border-top: 1px solid var(--line);
 }
 
