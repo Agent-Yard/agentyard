@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
+import CatalogFormDrawer from '../components/CatalogFormDrawer.vue';
 import ObjectHistoryPanel from '../components/ObjectHistoryPanel.vue';
 import ObjectReferencePanel from '../components/ObjectReferencePanel.vue';
+import PageHeadActions from '../components/PageHeadActions.vue';
 import { pageMeta } from '../config/navigation';
 import type {
   Assistant,
@@ -31,6 +33,7 @@ const router = useRouter();
 const selectedAssistantId = ref('');
 const selectedPlaybookId = ref('');
 const createDrawerOpen = ref(false);
+const editDrawerOpen = ref(false);
 
 const createForm = reactive({
   assistantId: '',
@@ -76,6 +79,16 @@ const graphSummary = computed(() => {
     entryNodeKey: currentPlaybook.value.entryNodeKey,
   };
 });
+
+function syncEditForm(playbook: NonNullable<typeof currentPlaybook.value>) {
+  editForm.name = playbook.name;
+  editForm.description = playbook.description ?? '';
+  editForm.inputSchema = playbook.inputSchema ?? '';
+  editForm.resultSchema = playbook.resultSchema ?? '';
+  editForm.executionPolicy = { ...playbook.executionPolicy };
+  editForm.allowHumanTask = playbook.allowHumanTask;
+  editForm.allowExternalInteraction = playbook.allowExternalInteraction;
+}
 
 watch(
   () => props.assistants,
@@ -131,13 +144,7 @@ watch(
       editForm.allowExternalInteraction = true;
       return;
     }
-    editForm.name = playbook.name;
-    editForm.description = playbook.description ?? '';
-    editForm.inputSchema = playbook.inputSchema ?? '';
-    editForm.resultSchema = playbook.resultSchema ?? '';
-    editForm.executionPolicy = { ...playbook.executionPolicy };
-    editForm.allowHumanTask = playbook.allowHumanTask;
-    editForm.allowExternalInteraction = playbook.allowExternalInteraction;
+    syncEditForm(playbook);
   },
   { immediate: true },
 );
@@ -157,6 +164,15 @@ function openCreateDrawer() {
   createForm.allowHumanTask = true;
   createForm.allowExternalInteraction = true;
   createDrawerOpen.value = true;
+}
+
+function openEditDrawer(playbookId: string) {
+  selectedPlaybookId.value = playbookId;
+  const playbook = assistantPlaybooks.value.find((item) => item.id === playbookId);
+  if (playbook) {
+    syncEditForm(playbook);
+  }
+  editDrawerOpen.value = true;
 }
 
 function submitCreate() {
@@ -214,9 +230,9 @@ function openEditor(playbookId?: string) {
 </script>
 
 <template>
-  <div v-if="canManageGovernance" class="page-inline-toolbar">
+  <PageHeadActions v-if="canManageGovernance">
     <a-button type="primary" @click="openCreateDrawer">新建 Playbook</a-button>
-  </div>
+  </PageHeadActions>
 
   <a-row :gutter="[16, 16]">
     <a-col :span="8">
@@ -229,11 +245,21 @@ function openEditor(playbookId?: string) {
             v-model:value="selectedAssistantId"
             :options="assistants.map((item) => ({ label: item.name, value: item.id }))"
           />
-          <a-list :data-source="assistantPlaybooks">
+          <a-list :data-source="assistantPlaybooks" :locale="{ emptyText: '当前助手下暂无 Playbook' }">
             <template #renderItem="{ item }">
-              <a-list-item class="clickable-item" @click="selectedPlaybookId = item.id">
+              <a-list-item
+                class="clickable-item"
+                :class="{ 'graph-list-item--active': currentPlaybook?.id === item.id }"
+                @click="selectedPlaybookId = item.id"
+              >
                 <a-list-item-meta :title="item.name" :description="`${item.entryNodeKey} · ${item.nodes.length} 节点`" />
-                <a-tag v-if="selectedPlaybookId === item.id" class="console-accent-tag">当前</a-tag>
+                <a-space>
+                  <a-tag v-if="selectedPlaybookId === item.id" class="console-accent-tag">当前</a-tag>
+                  <a-button v-if="canManageGovernance" type="link" size="small" @click.stop="openEditDrawer(item.id)">编辑</a-button>
+                  <a-button v-if="canManageGovernance" type="link" size="small" danger @click.stop="emit('deletePlaybook', item.id)">
+                    删除
+                  </a-button>
+                </a-space>
               </a-list-item>
             </template>
           </a-list>
@@ -242,179 +268,176 @@ function openEditor(playbookId?: string) {
     </a-col>
 
     <a-col :span="16">
-      <a-card v-if="currentPlaybook" :title="currentPlaybook.name">
-        <template #extra>
-          <a-space>
+      <div v-if="currentPlaybook" class="console-stack">
+        <a-card :title="currentPlaybook.name">
+          <template #extra>
             <a-tag class="console-accent-tag">{{ currentAssistant?.name ?? currentPlaybook.assistantId }}</a-tag>
-            <a-button @click="openEditor()">进入图编辑页</a-button>
-            <a-button v-if="canManageGovernance" type="primary" @click="submitSave">保存基础配置</a-button>
-            <a-button v-if="canManageGovernance" danger ghost @click="emit('deletePlaybook', currentPlaybook.id)">删除 Playbook</a-button>
-          </a-space>
-        </template>
+          </template>
 
-        <a-form layout="vertical" :model="editForm">
-          <a-row :gutter="[16, 16]">
-            <a-col :span="12">
-              <a-form-item label="名称">
-                <a-input v-model:value="editForm.name" :disabled="!canManageGovernance" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="入口节点">
-                <a-input :value="graphSummary?.entryNodeKey" disabled />
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <a-form-item label="描述">
-            <a-textarea v-model:value="editForm.description" :disabled="!canManageGovernance" :rows="3" />
-          </a-form-item>
-          <a-row :gutter="[16, 16]">
-            <a-col :span="12">
-              <a-form-item label="超时策略">
-                <a-input v-model:value="editForm.executionPolicy.timeoutPolicy" :disabled="!canManageGovernance" placeholder="可选" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="重试策略">
-                <a-input v-model:value="editForm.executionPolicy.retryPolicy" :disabled="!canManageGovernance" placeholder="可选" />
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <a-row :gutter="[16, 16]">
-            <a-col :span="12">
-              <a-form-item label="允许人工节点">
-                <a-switch v-model:checked="editForm.allowHumanTask" :disabled="!canManageGovernance" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="允许站外交互节点">
-                <a-switch v-model:checked="editForm.allowExternalInteraction" :disabled="!canManageGovernance" />
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <a-row :gutter="[16, 16]">
-            <a-col :span="12">
-              <a-form-item label="Input Schema">
-                <a-textarea v-model:value="editForm.inputSchema" :disabled="!canManageGovernance" :rows="4" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="Result Schema">
-                <a-textarea v-model:value="editForm.resultSchema" :disabled="!canManageGovernance" :rows="4" />
-              </a-form-item>
-            </a-col>
-          </a-row>
-        </a-form>
+          <a-descriptions :column="2" size="small">
+            <a-descriptions-item label="Playbook ID">{{ currentPlaybook.id }}</a-descriptions-item>
+            <a-descriptions-item label="入口节点">{{ graphSummary?.entryNodeKey ?? '-' }}</a-descriptions-item>
+            <a-descriptions-item label="超时策略">{{ currentPlaybook.executionPolicy.timeoutPolicy || '未配置' }}</a-descriptions-item>
+            <a-descriptions-item label="重试策略">{{ currentPlaybook.executionPolicy.retryPolicy || '未配置' }}</a-descriptions-item>
+            <a-descriptions-item label="允许人工节点">{{ currentPlaybook.allowHumanTask ? '是' : '否' }}</a-descriptions-item>
+            <a-descriptions-item label="允许站外交互节点">{{ currentPlaybook.allowExternalInteraction ? '是' : '否' }}</a-descriptions-item>
+            <a-descriptions-item label="描述" :span="2">{{ currentPlaybook.description || '暂无描述' }}</a-descriptions-item>
+            <a-descriptions-item label="Input Schema" :span="2">{{ currentPlaybook.inputSchema || '未配置' }}</a-descriptions-item>
+            <a-descriptions-item label="Result Schema" :span="2">{{ currentPlaybook.resultSchema || '未配置' }}</a-descriptions-item>
+          </a-descriptions>
+        </a-card>
 
-        <a-row :gutter="[16, 16]">
-          <a-col :span="8">
-            <a-card size="small" title="图定义概览">
+        <a-card size="small" title="编排概览">
+          <a-row :gutter="[24, 16]" align="middle">
+            <a-col :span="8">
               <a-space direction="vertical" style="width: 100%">
                 <div class="playbook-summary__line">节点数：{{ graphSummary?.nodeCount ?? 0 }}</div>
                 <div class="playbook-summary__line">连线数：{{ graphSummary?.edgeCount ?? 0 }}</div>
                 <div class="playbook-summary__line">入口节点：{{ graphSummary?.entryNodeKey ?? '-' }}</div>
               </a-space>
-            </a-card>
-          </a-col>
-          <a-col :span="16">
-            <a-card size="small" title="编排编辑">
+            </a-col>
+            <a-col :span="16">
               <a-space direction="vertical" style="width: 100%" size="middle">
                 <a-typography-text type="secondary">
                   在独立编排台中编辑节点、连线、条件路由和画布布局。
                 </a-typography-text>
                 <a-button type="primary" @click="openEditor()">打开可视化编排台</a-button>
               </a-space>
-            </a-card>
-          </a-col>
-        </a-row>
+            </a-col>
+          </a-row>
+        </a-card>
 
-        <div class="console-stack">
-          <ObjectReferencePanel
-            :object-type="'PLAYBOOK'"
-            :object-id="currentPlaybook.id"
-            :reload-key="`${catalogRevision}:${currentPlaybook.id}`"
-            title="Playbook 引用分析"
-          />
+        <ObjectReferencePanel
+          :object-type="'PLAYBOOK'"
+          :object-id="currentPlaybook.id"
+          :reload-key="`${catalogRevision}:${currentPlaybook.id}`"
+          title="Playbook 引用分析"
+        />
 
-          <ObjectHistoryPanel
-            aggregate-type="PLAYBOOK"
-            :object-id="currentPlaybook.id"
-            :reload-key="`${catalogRevision}:${currentPlaybook.id}`"
-          />
-        </div>
-      </a-card>
+        <ObjectHistoryPanel
+          aggregate-type="PLAYBOOK"
+          :object-id="currentPlaybook.id"
+          :reload-key="`${catalogRevision}:${currentPlaybook.id}`"
+        />
+      </div>
 
       <a-empty v-else description="当前助手下还没有 Playbook" />
     </a-col>
   </a-row>
 
-  <a-drawer
+  <CatalogFormDrawer
     :open="createDrawerOpen"
     title="新建 Playbook"
     :width="640"
-    destroy-on-close
+    kicker="02.03 / 助手构建 / Playbook"
     @close="createDrawerOpen = false"
   >
-    <div class="create-drawer">
-      <div class="create-drawer__kicker">02.03 / 助手构建 / Playbook</div>
-      <div class="create-drawer__body">
-        <a-alert
-          type="info"
-          show-icon
-          message="创建时会自动生成一个最小 starter graph"
-          description="创建完成后进入图编辑页继续补节点、配置连线和调整布局。"
+    <a-alert
+      type="info"
+      show-icon
+      message="创建时会自动生成一个最小 starter graph"
+      description="创建完成后进入图编辑页继续补节点、配置连线和调整布局。"
+    />
+    <a-form layout="vertical" :model="createForm" @finish="submitCreate">
+      <a-form-item label="所属助手">
+        <a-select
+          v-model:value="createForm.assistantId"
+          :options="assistants.map((item) => ({ label: item.name, value: item.id }))"
         />
-        <a-form layout="vertical" :model="createForm" @finish="submitCreate">
-          <a-form-item label="所属助手">
-            <a-select
-              v-model:value="createForm.assistantId"
-              :options="assistants.map((item) => ({ label: item.name, value: item.id }))"
-            />
+      </a-form-item>
+      <a-form-item label="名称">
+        <a-input v-model:value="createForm.name" placeholder="例如：退款受理流程" />
+      </a-form-item>
+      <a-form-item label="描述">
+        <a-textarea v-model:value="createForm.description" :rows="3" />
+      </a-form-item>
+      <a-row :gutter="[16, 16]">
+        <a-col :span="12">
+          <a-form-item label="超时策略">
+            <a-input v-model:value="createForm.executionPolicy.timeoutPolicy" placeholder="可选" />
           </a-form-item>
-          <a-form-item label="名称">
-            <a-input v-model:value="createForm.name" placeholder="例如：退款受理流程" />
+        </a-col>
+        <a-col :span="12">
+          <a-form-item label="重试策略">
+            <a-input v-model:value="createForm.executionPolicy.retryPolicy" placeholder="可选" />
           </a-form-item>
-          <a-form-item label="描述">
-            <a-textarea v-model:value="createForm.description" :rows="3" />
+        </a-col>
+      </a-row>
+      <a-row :gutter="[16, 16]">
+        <a-col :span="12">
+          <a-form-item label="允许人工节点">
+            <a-switch v-model:checked="createForm.allowHumanTask" />
           </a-form-item>
-          <a-row :gutter="[16, 16]">
-            <a-col :span="12">
-              <a-form-item label="超时策略">
-                <a-input v-model:value="createForm.executionPolicy.timeoutPolicy" placeholder="可选" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="重试策略">
-                <a-input v-model:value="createForm.executionPolicy.retryPolicy" placeholder="可选" />
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <a-row :gutter="[16, 16]">
-            <a-col :span="12">
-              <a-form-item label="允许人工节点">
-                <a-switch v-model:checked="createForm.allowHumanTask" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="允许站外交互节点">
-                <a-switch v-model:checked="createForm.allowExternalInteraction" />
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <a-form-item label="Input Schema">
-            <a-textarea v-model:value="createForm.inputSchema" :rows="3" />
+        </a-col>
+        <a-col :span="12">
+          <a-form-item label="允许站外交互节点">
+            <a-switch v-model:checked="createForm.allowExternalInteraction" />
           </a-form-item>
-          <a-form-item label="Result Schema">
-            <a-textarea v-model:value="createForm.resultSchema" :rows="3" />
-          </a-form-item>
-          <div class="create-drawer__actions">
-            <a-button @click="createDrawerOpen = false">取消</a-button>
-            <a-button type="primary" html-type="submit">创建 Playbook</a-button>
-          </div>
-        </a-form>
+        </a-col>
+      </a-row>
+      <a-form-item label="Input Schema">
+        <a-textarea v-model:value="createForm.inputSchema" :rows="3" />
+      </a-form-item>
+      <a-form-item label="Result Schema">
+        <a-textarea v-model:value="createForm.resultSchema" :rows="3" />
+      </a-form-item>
+      <div class="create-drawer__actions">
+        <a-button @click="createDrawerOpen = false">取消</a-button>
+        <a-button type="primary" html-type="submit">创建 Playbook</a-button>
       </div>
-    </div>
-  </a-drawer>
+    </a-form>
+  </CatalogFormDrawer>
+
+  <CatalogFormDrawer
+    :open="editDrawerOpen"
+    title="编辑 Playbook"
+    :width="640"
+    kicker="02.03 / 助手构建 / Playbook"
+    @close="editDrawerOpen = false"
+  >
+    <a-form layout="vertical" :model="editForm" @finish="submitSave">
+      <a-form-item label="名称">
+        <a-input v-model:value="editForm.name" />
+      </a-form-item>
+      <a-form-item label="描述">
+        <a-textarea v-model:value="editForm.description" :rows="3" />
+      </a-form-item>
+      <a-row :gutter="[16, 16]">
+        <a-col :span="12">
+          <a-form-item label="超时策略">
+            <a-input v-model:value="editForm.executionPolicy.timeoutPolicy" placeholder="可选" />
+          </a-form-item>
+        </a-col>
+        <a-col :span="12">
+          <a-form-item label="重试策略">
+            <a-input v-model:value="editForm.executionPolicy.retryPolicy" placeholder="可选" />
+          </a-form-item>
+        </a-col>
+      </a-row>
+      <a-row :gutter="[16, 16]">
+        <a-col :span="12">
+          <a-form-item label="允许人工节点">
+            <a-switch v-model:checked="editForm.allowHumanTask" />
+          </a-form-item>
+        </a-col>
+        <a-col :span="12">
+          <a-form-item label="允许站外交互节点">
+            <a-switch v-model:checked="editForm.allowExternalInteraction" />
+          </a-form-item>
+        </a-col>
+      </a-row>
+      <a-form-item label="Input Schema">
+        <a-textarea v-model:value="editForm.inputSchema" :rows="3" />
+      </a-form-item>
+      <a-form-item label="Result Schema">
+        <a-textarea v-model:value="editForm.resultSchema" :rows="3" />
+      </a-form-item>
+      <div class="create-drawer__actions">
+        <a-button @click="editDrawerOpen = false">取消</a-button>
+        <a-button type="primary" html-type="submit">保存基础配置</a-button>
+      </div>
+    </a-form>
+  </CatalogFormDrawer>
 </template>
 
 <style scoped>

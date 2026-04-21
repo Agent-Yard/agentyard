@@ -119,6 +119,7 @@ const currentView = computed(() => {
       },
       handlers: {
         createKnowledgeBase: catalogActions.handleCreateKnowledgeBase,
+        updateKnowledgeBase: catalogActions.handleUpdateKnowledgeBase,
         refreshCatalog: state.refresh,
         deleteKnowledgeBase: catalogActions.handleDeleteKnowledgeBase,
       },

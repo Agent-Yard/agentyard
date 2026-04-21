@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, provide, shallowRef } from 'vue';
+import { pageHeadActionsKey, type PageHeadActionsRegistration } from '../composables/pageHeadActions';
 import type { UserSession } from '../types';
 import { menuItems } from '../config/navigation';
 
@@ -43,6 +44,14 @@ const userInitials = computed(() => {
 });
 
 const environmentLabel = computed(() => import.meta.env.MODE || 'local');
+const pageHeadActions = shallowRef<PageHeadActionsRegistration | null>(null);
+const pageHeadActionsComponent = computed(() => (
+  pageHeadActions.value
+    ? { render: pageHeadActions.value.render }
+    : null
+));
+
+provide(pageHeadActionsKey, pageHeadActions);
 </script>
 
 <template>
@@ -146,6 +155,7 @@ const environmentLabel = computed(() => import.meta.env.MODE || 'local');
       <section class="console-page-head">
         <div class="console-page-head__kicker">
           <span class="console-page-head__index">{{ activeSectionKey || 'root' }}</span>
+          <span class="console-page-head__section">{{ currentSectionLabel }}</span>
           <span class="console-page-head__line"></span>
         </div>
 
@@ -156,7 +166,9 @@ const environmentLabel = computed(() => import.meta.env.MODE || 'local');
           </div>
 
           <div class="console-page-head__actions">
-            <span class="console-page-head__status">{{ currentSectionLabel }}</span>
+            <div v-if="pageHeadActionsComponent" class="console-page-head__action-slot">
+              <component :is="pageHeadActionsComponent" />
+            </div>
           </div>
         </div>
       </section>

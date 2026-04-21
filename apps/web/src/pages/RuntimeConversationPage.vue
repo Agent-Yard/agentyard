@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
+import PageHeadActions from '../components/PageHeadActions.vue';
 import { api } from '../services/api';
 import type {
   Assistant,
@@ -228,7 +229,7 @@ function formatSharedState(value: Record<string, unknown> | null | undefined) {
 </script>
 
 <template>
-  <div class="page-inline-toolbar">
+  <PageHeadActions>
     <a-button
       type="primary"
       :disabled="!currentCustomerId"
@@ -236,7 +237,7 @@ function formatSharedState(value: Record<string, unknown> | null | undefined) {
     >
       新建 Session
     </a-button>
-  </div>
+  </PageHeadActions>
 
   <a-row :gutter="[16, 16]">
     <a-col :span="7">

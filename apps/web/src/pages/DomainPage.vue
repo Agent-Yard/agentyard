@@ -3,6 +3,7 @@ import { computed, reactive, ref, watch } from 'vue';
 import CatalogFormDrawer from '../components/CatalogFormDrawer.vue';
 import ObjectHistoryPanel from '../components/ObjectHistoryPanel.vue';
 import ObjectReferencePanel from '../components/ObjectReferencePanel.vue';
+import PageHeadActions from '../components/PageHeadActions.vue';
 import type { BusinessDomain, CreateDomainPayload, UpdateDomainPayload } from '../types';
 
 const props = defineProps<{
@@ -97,9 +98,9 @@ function openEditDrawer(domainId: string) {
 </script>
 
 <template>
-  <div v-if="canManageGovernance" class="page-inline-toolbar">
+  <PageHeadActions v-if="canManageGovernance">
     <a-button type="primary" @click="createDrawerOpen = true">新建业务域</a-button>
-  </div>
+  </PageHeadActions>
 
   <a-row :gutter="[16, 16]">
     <a-col :span="6">

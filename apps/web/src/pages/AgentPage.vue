@@ -3,6 +3,7 @@ import { computed, reactive, ref, watch } from 'vue';
 import CatalogFormDrawer from '../components/CatalogFormDrawer.vue';
 import ObjectHistoryPanel from '../components/ObjectHistoryPanel.vue';
 import ObjectReferencePanel from '../components/ObjectReferencePanel.vue';
+import PageHeadActions from '../components/PageHeadActions.vue';
 import type {
   Agent,
   Assistant,
@@ -365,9 +366,9 @@ function submitSave() {
 </script>
 
 <template>
-  <div v-if="canManageGovernance" class="page-inline-toolbar">
+  <PageHeadActions v-if="canManageGovernance">
     <a-button type="primary" @click="openCreateDrawer">新建智能体</a-button>
-  </div>
+  </PageHeadActions>
 
   <a-row :gutter="[16, 16]">
     <a-col :span="9">

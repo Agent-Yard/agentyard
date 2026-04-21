@@ -17,6 +17,7 @@ import type {
   UpdateAgentPayload,
   UpdateAssistantPayload,
   UpdateDomainPayload,
+  UpdateKnowledgeBasePayload,
   UpdatePlaybookPayload,
   UpdateResourcePayload,
   UpdateResourceVersionPayload,
@@ -255,6 +256,17 @@ export function useCatalogActions(
     }
   }
 
+  async function handleUpdateKnowledgeBase(payload: { knowledgeBaseId: string; data: UpdateKnowledgeBasePayload }) {
+    try {
+      await api.updateKnowledgeBase(payload.knowledgeBaseId, payload.data);
+      await refresh();
+      state.knowledgeLibraryPreferredKnowledgeBaseId.value = payload.knowledgeBaseId;
+      void message.success('知识库已更新');
+    } catch (error) {
+      void message.error(errorMessage(error, '更新知识库失败'));
+    }
+  }
+
   async function handleDeleteKnowledgeBase(knowledgeBaseId: string) {
     await openDeletionPreview({
       objectType: 'KNOWLEDGE_BASE',
@@ -376,6 +388,7 @@ export function useCatalogActions(
     handleSavePlaybook,
     handleDeletePlaybook,
     handleCreateKnowledgeBase,
+    handleUpdateKnowledgeBase,
     handleDeleteKnowledgeBase,
     handleCreateResource,
     handleDeleteResource,

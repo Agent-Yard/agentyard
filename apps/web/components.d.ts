@@ -54,6 +54,7 @@ declare module 'vue' {
     DeletionPreviewModal: typeof import('./src/components/DeletionPreviewModal.vue')['default']
     ObjectHistoryPanel: typeof import('./src/components/ObjectHistoryPanel.vue')['default']
     ObjectReferencePanel: typeof import('./src/components/ObjectReferencePanel.vue')['default']
+    PageHeadActions: typeof import('./src/components/PageHeadActions.vue')['default']
     PageHeaderCard: typeof import('./src/components/PageHeaderCard.vue')['default']
     ResourceVersionConfigEditor: typeof import('./src/components/ResourceVersionConfigEditor.vue')['default']
     ResourceVersionConfigSummary: typeof import('./src/components/ResourceVersionConfigSummary.vue')['default']

@@ -3,6 +3,7 @@ import { computed, reactive, ref, watch } from 'vue';
 import CatalogFormDrawer from '../components/CatalogFormDrawer.vue';
 import ObjectHistoryPanel from '../components/ObjectHistoryPanel.vue';
 import ObjectReferencePanel from '../components/ObjectReferencePanel.vue';
+import PageHeadActions from '../components/PageHeadActions.vue';
 import type {
   Assistant,
   CreateAssistantPayload,
@@ -363,9 +364,9 @@ function submitUpdate() {
 </script>
 
 <template>
-  <div v-if="canManageGovernance" class="page-inline-toolbar">
+  <PageHeadActions v-if="canManageGovernance">
     <a-button type="primary" @click="openCreateDrawer">新建助手</a-button>
-  </div>
+  </PageHeadActions>
 
   <a-row :gutter="[16, 16]">
     <a-col :span="10">
