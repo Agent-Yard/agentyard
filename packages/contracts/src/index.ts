@@ -449,6 +449,12 @@ export interface PlaybookNode {
   toolId: string | null;
   toolOperation: string | null;
   config: Record<string, unknown>;
+  layout: PlaybookNodeLayout;
+}
+
+export interface PlaybookNodeLayout {
+  x: number;
+  y: number;
 }
 
 export interface PlaybookEdge {

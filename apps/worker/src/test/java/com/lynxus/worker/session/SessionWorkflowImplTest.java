@@ -15,6 +15,7 @@ import com.lynxus.contracts.session.SessionContracts.PlaybookConfig;
 import com.lynxus.contracts.session.SessionContracts.PlaybookEdge;
 import com.lynxus.contracts.session.SessionContracts.PlaybookExecutionPolicy;
 import com.lynxus.contracts.session.SessionContracts.PlaybookNode;
+import com.lynxus.contracts.session.SessionContracts.PlaybookNodeLayout;
 import com.lynxus.contracts.session.SessionContracts.PlaybookNodeType;
 import com.lynxus.contracts.session.SessionContracts.PlaybookRun;
 import com.lynxus.contracts.session.SessionContracts.SessionEvent;
@@ -541,8 +542,30 @@ class SessionWorkflowImplTest {
             false,
             "wait-human",
             List.of(
-                new PlaybookNode("wait-human", "Wait", PlaybookNodeType.HUMAN_TASK, "", null, null, null, null, Map.of()),
-                new PlaybookNode("finish", "Finish", PlaybookNodeType.END, "", null, null, null, null, Map.of("result", Map.of("approved", true)))
+                new PlaybookNode(
+                    "wait-human",
+                    "Wait",
+                    PlaybookNodeType.HUMAN_TASK,
+                    "",
+                    null,
+                    null,
+                    null,
+                    null,
+                    Map.of(),
+                    new PlaybookNodeLayout(120, 120)
+                ),
+                new PlaybookNode(
+                    "finish",
+                    "Finish",
+                    PlaybookNodeType.END,
+                    "",
+                    null,
+                    null,
+                    null,
+                    null,
+                    Map.of("result", Map.of("approved", true)),
+                    new PlaybookNodeLayout(420, 120)
+                )
             ),
             List.of(
                 new PlaybookEdge("wait-to-finish", "wait-human", "finish", null, null, true)

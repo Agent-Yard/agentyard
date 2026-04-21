@@ -258,6 +258,12 @@ public final class CatalogDtos {
     ) {
     }
 
+    public record PlaybookNodeLayoutDto(
+        int x,
+        int y
+    ) {
+    }
+
     public record PlaybookNodeDto(
         String nodeKey,
         String nodeName,
@@ -267,7 +273,8 @@ public final class CatalogDtos {
         String scriptVersion,
         String toolId,
         String toolOperation,
-        Map<String, Object> config
+        Map<String, Object> config,
+        PlaybookNodeLayoutDto layout
     ) {
     }
 

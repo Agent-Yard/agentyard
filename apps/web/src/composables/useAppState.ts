@@ -32,7 +32,7 @@ export function useAppState(currentPageKey: Ref<PageKey>) {
   let runtimeStreamLastEventId: string | null = null;
   let runtimePollingTimer: number | null = null;
 
-  const selectedKeys = computed(() => [currentPageKey.value]);
+  const selectedKeys = computed(() => [currentPageKey.value === 'playbook-editor' ? 'playbook' : currentPageKey.value]);
   const currentPageMeta = computed(() => pageMeta[currentPageKey.value]);
   const currentSectionMeta = computed(() => sectionMeta[currentPageMeta.value.section]);
   const canManageGovernance = computed(() => session.value?.currentRole !== 'BUSINESS_USER');

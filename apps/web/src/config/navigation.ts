@@ -4,6 +4,7 @@ export type PageKey =
   | 'assistant'
   | 'agent'
   | 'playbook'
+  | 'playbook-editor'
   | 'knowledge-library'
   | 'resource-library'
   | 'runtime';
@@ -71,6 +72,13 @@ export const pageMeta: Record<PageKey, { label: string; title: string; subtitle:
     subtitle: '维护强流程定义、节点、边以及等待点策略。',
     section: 'build',
     path: `${consoleBasePath}/playbooks`,
+  },
+  'playbook-editor': {
+    label: 'Playbook 编排',
+    title: 'Playbook 可视化编排页',
+    subtitle: '在独立编排台中编辑 DAG、节点属性、条件路由与画布布局。',
+    section: 'build',
+    path: `${consoleBasePath}/playbooks/editor`,
   },
   'knowledge-library': {
     label: '知识库目录',

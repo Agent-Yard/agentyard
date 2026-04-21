@@ -257,11 +257,18 @@ public final class SessionContracts {
         String scriptVersion,
         String toolId,
         String toolOperation,
-        Map<String, Object> config
+        Map<String, Object> config,
+        PlaybookNodeLayout layout
     ) {
         public PlaybookNode {
             config = immutableObjectMap(config);
         }
+    }
+
+    public record PlaybookNodeLayout(
+        int x,
+        int y
+    ) {
     }
 
     public record PlaybookEdge(

@@ -10,6 +10,7 @@ import com.lynxus.contracts.session.SessionContracts.PlaybookConfig;
 import com.lynxus.contracts.session.SessionContracts.PlaybookEdge;
 import com.lynxus.contracts.session.SessionContracts.PlaybookExecutionPolicy;
 import com.lynxus.contracts.session.SessionContracts.PlaybookNode;
+import com.lynxus.contracts.session.SessionContracts.PlaybookNodeLayout;
 import com.lynxus.contracts.session.SessionContracts.PlaybookNodeType;
 import com.lynxus.contracts.session.SessionContracts.PlaybookRun;
 import com.lynxus.contracts.session.SessionContracts.PlaybookRunStatus;
@@ -105,7 +106,8 @@ class PlaybookWorkflowImplTest {
                     null,
                     null,
                     null,
-                    Map.of("result", Map.of("orderId", "ord-1"))
+                    Map.of("result", Map.of("orderId", "ord-1")),
+                    new PlaybookNodeLayout(120, 120)
                 )
             ),
             List.of()
@@ -133,7 +135,8 @@ class PlaybookWorkflowImplTest {
                     null,
                     null,
                     null,
-                    Map.of("status", "CANCELLED")
+                    Map.of("status", "CANCELLED"),
+                    new PlaybookNodeLayout(120, 120)
                 )
             ),
             List.of()

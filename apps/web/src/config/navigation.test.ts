@@ -6,6 +6,7 @@ describe('navigation routing helpers', () => {
     expect(pagePathByKey.domain).toBe('/console/domains');
     expect(pagePathByKey['knowledge-library']).toBe('/console/knowledge');
     expect(pagePathByKey['resource-library']).toBe('/console/resources');
+    expect(pagePathByKey['playbook-editor']).toBe('/console/playbooks/editor');
     expect(pagePathByKey.runtime).toBe('/console/runtime');
   });
 
@@ -13,6 +14,7 @@ describe('navigation routing helpers', () => {
     expect(resolvePageKeyFromPath('/console/domains')).toBe('domain');
     expect(resolvePageKeyFromPath('/console/knowledge')).toBe('knowledge-library');
     expect(resolvePageKeyFromPath('/console/resources')).toBe('resource-library');
+    expect(resolvePageKeyFromPath('/console/playbooks/editor')).toBe('playbook-editor');
     expect(resolvePageKeyFromPath('/console/runtime/')).toBe('runtime');
   });
 

@@ -987,6 +987,13 @@ components:
     PlaybookNodeType:
       type: string
       enum: [STEP, TOOL_TASK, HUMAN_TASK, EXTERNAL_INTERACTION, END]
+    PlaybookNodeLayout:
+      type: object
+      properties:
+        x:
+          type: integer
+        y:
+          type: integer
     PlaybookNode:
       type: object
       properties:
@@ -1014,6 +1021,8 @@ components:
         config:
           type: object
           additionalProperties: true
+        layout:
+          $ref: '#/components/schemas/PlaybookNodeLayout'
     PlaybookEdge:
       type: object
       properties:

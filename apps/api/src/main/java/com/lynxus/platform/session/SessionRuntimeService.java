@@ -470,7 +470,11 @@ public class SessionRuntimeService {
                     node.scriptVersion(),
                     node.toolId(),
                     node.toolOperation(),
-                    node.config()
+                    node.config(),
+                    new com.lynxus.contracts.session.SessionContracts.PlaybookNodeLayout(
+                        node.layout().x(),
+                        node.layout().y()
+                    )
                 ))
                 .toList(),
             playbook.edges() == null ? List.of() : playbook.edges().stream()

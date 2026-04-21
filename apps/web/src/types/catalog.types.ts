@@ -425,6 +425,11 @@ export interface PlaybookExecutionPolicy {
 
 export type PlaybookNodeType = 'STEP' | 'TOOL_TASK' | 'HUMAN_TASK' | 'EXTERNAL_INTERACTION' | 'END';
 
+export interface PlaybookNodeLayout {
+  x: number;
+  y: number;
+}
+
 export interface PlaybookNode {
   nodeKey: string;
   nodeName: string;
@@ -435,6 +440,7 @@ export interface PlaybookNode {
   toolId: string | null;
   toolOperation: string | null;
   config: Record<string, unknown>;
+  layout: PlaybookNodeLayout;
 }
 
 export interface PlaybookEdge {

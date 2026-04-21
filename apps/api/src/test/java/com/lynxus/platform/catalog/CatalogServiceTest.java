@@ -278,7 +278,8 @@ class CatalogServiceTest {
                             null,
                             null,
                             null,
-                            Map.of("code", "result = {'statePatch': {}, 'routeKey': None}")
+                            Map.of("code", "result = {'statePatch': {}, 'routeKey': None}"),
+                            nodeLayout(120, 120)
                         ),
                         new CatalogDtos.PlaybookNodeDto(
                             "finish",
@@ -289,7 +290,8 @@ class CatalogServiceTest {
                             null,
                             null,
                             null,
-                            Map.of()
+                            Map.of(),
+                            nodeLayout(420, 120)
                         )
                     ),
                     List.of(new CatalogDtos.PlaybookEdgeDto("start-to-finish", "start", "finish", null, null, true))
@@ -327,7 +329,8 @@ class CatalogServiceTest {
                             "2026.04.20",
                             null,
                             null,
-                            Map.of()
+                            Map.of(),
+                            nodeLayout(120, 120)
                         ),
                         new CatalogDtos.PlaybookNodeDto(
                             "finish",
@@ -338,7 +341,8 @@ class CatalogServiceTest {
                             null,
                             null,
                             null,
-                            Map.of()
+                            Map.of(),
+                            nodeLayout(420, 120)
                         )
                     ),
                     List.of(new CatalogDtos.PlaybookEdgeDto("start-to-finish", "start", "finish", null, null, true))
@@ -347,6 +351,173 @@ class CatalogServiceTest {
         );
 
         assertTrue(error.getMessage().contains("STEP node must define config.scriptVersions"));
+    }
+
+    @Test
+    void shouldPersistPlaybookNodeLayout() {
+        CustomerOpsFixture fixture = customerOpsFixture();
+
+        CatalogDtos.PlaybookDto created = fixture.service().createPlaybook(
+            new CatalogDtos.CreatePlaybookRequest(
+                fixture.assistantId(),
+                "布局校验",
+                "保存节点坐标",
+                "{\"type\":\"object\"}",
+                "{\"type\":\"object\"}",
+                new CatalogDtos.PlaybookExecutionPolicyDto("PT5M", "PT30S"),
+                true,
+                true,
+                "start",
+                List.of(
+                    new CatalogDtos.PlaybookNodeDto(
+                        "start",
+                        "开始",
+                        com.lynxus.contracts.session.SessionContracts.PlaybookNodeType.STEP,
+                        "",
+                        "refund.start",
+                        "2026.04.20",
+                        null,
+                        null,
+                        Map.of(
+                            "scriptVersions",
+                            Map.of(
+                                "2026.04.20",
+                                Map.of("runtime", "python", "code", "result = {'statePatch': {}, 'routeKey': None}")
+                            )
+                        ),
+                        nodeLayout(180, 140)
+                    ),
+                    new CatalogDtos.PlaybookNodeDto(
+                        "finish",
+                        "结束",
+                        com.lynxus.contracts.session.SessionContracts.PlaybookNodeType.END,
+                        "",
+                        null,
+                        null,
+                        null,
+                        null,
+                        Map.of(),
+                        nodeLayout(480, 140)
+                    )
+                ),
+                List.of(new CatalogDtos.PlaybookEdgeDto("start-to-finish", "start", "finish", null, null, true))
+            )
+        );
+
+        assertEquals(180, created.nodes().get(0).layout().x());
+        assertEquals(140, created.nodes().get(0).layout().y());
+        assertEquals(480, fixture.service().getPlaybook(created.id()).nodes().get(1).layout().x());
+    }
+
+    @Test
+    void shouldRejectToolTaskNodeWithoutToolBinding() {
+        CustomerOpsFixture fixture = customerOpsFixture();
+
+        IllegalStateException error = assertThrows(
+            IllegalStateException.class,
+            () -> fixture.service().createPlaybook(
+                new CatalogDtos.CreatePlaybookRequest(
+                    fixture.assistantId(),
+                    "无效 Tool 节点",
+                    "缺少 Tool 绑定",
+                    "{\"type\":\"object\"}",
+                    "{\"type\":\"object\"}",
+                    new CatalogDtos.PlaybookExecutionPolicyDto("PT5M", "PT30S"),
+                    true,
+                    true,
+                    "tool-step",
+                    List.of(
+                        new CatalogDtos.PlaybookNodeDto(
+                            "tool-step",
+                            "工具节点",
+                            com.lynxus.contracts.session.SessionContracts.PlaybookNodeType.TOOL_TASK,
+                            "",
+                            null,
+                            null,
+                            null,
+                            null,
+                            Map.of(),
+                            nodeLayout(120, 120)
+                        ),
+                        new CatalogDtos.PlaybookNodeDto(
+                            "finish",
+                            "结束",
+                            com.lynxus.contracts.session.SessionContracts.PlaybookNodeType.END,
+                            "",
+                            null,
+                            null,
+                            null,
+                            null,
+                            Map.of(),
+                            nodeLayout(420, 120)
+                        )
+                    ),
+                    List.of(new CatalogDtos.PlaybookEdgeDto("tool-to-finish", "tool-step", "finish", null, null, true))
+                )
+            )
+        );
+
+        assertTrue(error.getMessage().contains("TOOL_TASK node must define toolId and toolOperation"));
+    }
+
+    @Test
+    void shouldRejectDuplicatePlaybookEdgeKeys() {
+        CustomerOpsFixture fixture = customerOpsFixture();
+
+        IllegalStateException error = assertThrows(
+            IllegalStateException.class,
+            () -> fixture.service().createPlaybook(
+                new CatalogDtos.CreatePlaybookRequest(
+                    fixture.assistantId(),
+                    "重复边",
+                    "edgeKey 冲突",
+                    "{\"type\":\"object\"}",
+                    "{\"type\":\"object\"}",
+                    new CatalogDtos.PlaybookExecutionPolicyDto("PT5M", "PT30S"),
+                    true,
+                    true,
+                    "start",
+                    List.of(
+                        new CatalogDtos.PlaybookNodeDto(
+                            "start",
+                            "开始",
+                            com.lynxus.contracts.session.SessionContracts.PlaybookNodeType.STEP,
+                            "",
+                            "refund.start",
+                            "2026.04.20",
+                            null,
+                            null,
+                            Map.of(
+                                "scriptVersions",
+                                Map.of(
+                                    "2026.04.20",
+                                    Map.of("runtime", "python", "code", "result = {'statePatch': {}, 'routeKey': None}")
+                                )
+                            ),
+                            nodeLayout(120, 120)
+                        ),
+                        new CatalogDtos.PlaybookNodeDto(
+                            "finish",
+                            "结束",
+                            com.lynxus.contracts.session.SessionContracts.PlaybookNodeType.END,
+                            "",
+                            null,
+                            null,
+                            null,
+                            null,
+                            Map.of(),
+                            nodeLayout(420, 120)
+                        )
+                    ),
+                    List.of(
+                        new CatalogDtos.PlaybookEdgeDto("start-to-finish", "start", "finish", null, null, true),
+                        new CatalogDtos.PlaybookEdgeDto("start-to-finish", "start", "finish", "retry", "重试", false)
+                    )
+                )
+            )
+        );
+
+        assertTrue(error.getMessage().contains("duplicate playbook edgeKey"));
     }
 
     @Test
@@ -1230,7 +1401,8 @@ class CatalogServiceTest {
                             "2026.04.20",
                             Map.of("runtime", "python", "code", "result = {'statePatch': {}, 'routeKey': None}")
                         )
-                    )
+                    ),
+                    nodeLayout(120, 120)
                 ),
                 new CatalogDtos.PlaybookNodeDto(
                     "finish",
@@ -1241,7 +1413,8 @@ class CatalogServiceTest {
                     null,
                     null,
                     null,
-                    Map.of()
+                    Map.of(),
+                    nodeLayout(420, 120)
                 )
             ),
             List.of(
@@ -1314,6 +1487,10 @@ class CatalogServiceTest {
         String knowledgeBaseId,
         String toolResourceId
     ) {
+    }
+
+    private static CatalogDtos.PlaybookNodeLayoutDto nodeLayout(int x, int y) {
+        return new CatalogDtos.PlaybookNodeLayoutDto(x, y);
     }
 
     private static CurrentUserResolver testCurrentUserResolver() {

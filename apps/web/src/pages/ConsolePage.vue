@@ -12,6 +12,8 @@ import { api, isUnauthorizedError } from '../services/api';
 const route = useRoute();
 const router = useRouter();
 const currentPageKey = computed(() => resolvePageKeyFromPath(route.path));
+const preferredAssistantId = computed(() => typeof route.query.assistantId === 'string' ? route.query.assistantId : null);
+const preferredPlaybookId = computed(() => typeof route.query.playbookId === 'string' ? route.query.playbookId : null);
 const state = useAppState(currentPageKey);
 
 const catalogActions = useCatalogActions(state, state.refresh, state.errorMessage);
@@ -85,9 +87,24 @@ const currentView = computed(() => {
         assistants: state.catalog.value!.assistants,
         catalogRevision: state.catalogRevision.value,
         canManageGovernance: state.canManageGovernance.value,
+        preferredAssistantId: preferredAssistantId.value,
+        preferredPlaybookId: preferredPlaybookId.value,
       },
       handlers: {
         createPlaybook: catalogActions.handleCreatePlaybook,
+        savePlaybook: catalogActions.handleSavePlaybook,
+        deletePlaybook: catalogActions.handleDeletePlaybook,
+      },
+    },
+    'playbook-editor': {
+      props: {
+        assistants: state.catalog.value!.assistants,
+        catalogRevision: state.catalogRevision.value,
+        canManageGovernance: state.canManageGovernance.value,
+        preferredAssistantId: preferredAssistantId.value,
+        preferredPlaybookId: preferredPlaybookId.value,
+      },
+      handlers: {
         savePlaybook: catalogActions.handleSavePlaybook,
         deletePlaybook: catalogActions.handleDeletePlaybook,
       },

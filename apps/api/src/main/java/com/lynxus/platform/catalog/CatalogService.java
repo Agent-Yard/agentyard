@@ -1812,8 +1812,16 @@ public class CatalogService {
             normalizeOptionalText(node.scriptVersion()),
             normalizeOptionalText(node.toolId()),
             normalizeOptionalText(node.toolOperation()),
-            node.config() == null ? Map.of() : Map.copyOf(node.config())
+            node.config() == null ? Map.of() : Map.copyOf(node.config()),
+            normalizePlaybookNodeLayout(node.layout())
         );
+    }
+
+    private PlaybookNodeLayoutDto normalizePlaybookNodeLayout(PlaybookNodeLayoutDto layout) {
+        if (layout == null) {
+            return new PlaybookNodeLayoutDto(0, 0);
+        }
+        return new PlaybookNodeLayoutDto(layout.x(), layout.y());
     }
 
     private PlaybookEdgeDto normalizePlaybookEdge(PlaybookEdgeDto edge) {
@@ -1832,6 +1840,7 @@ public class CatalogService {
             throw new IllegalStateException("playbook must contain at least one node");
         }
         Set<String> nodeKeys = new HashSet<>();
+        Set<String> edgeKeys = new HashSet<>();
         for (PlaybookNodeDto node : playbook.nodes()) {
             if (!nodeKeys.add(node.nodeKey())) {
                 throw new IllegalStateException("duplicate playbook nodeKey: " + node.nodeKey());
@@ -1839,8 +1848,14 @@ public class CatalogService {
             if (node.nodeType() == null) {
                 throw new IllegalStateException("playbook nodeType is required");
             }
+            if (node.layout() == null) {
+                throw new IllegalStateException("playbook node layout is required");
+            }
             if (node.nodeType() == com.lynxus.contracts.session.SessionContracts.PlaybookNodeType.STEP) {
                 validateStepNode(node);
+            }
+            if (node.nodeType() == com.lynxus.contracts.session.SessionContracts.PlaybookNodeType.TOOL_TASK) {
+                validateToolTaskNode(node);
             }
             if (!playbook.allowHumanTask() && node.nodeType() == com.lynxus.contracts.session.SessionContracts.PlaybookNodeType.HUMAN_TASK) {
                 throw new IllegalStateException("playbook does not allow HUMAN_TASK nodes");
@@ -1854,6 +1869,9 @@ public class CatalogService {
             throw new IllegalStateException("playbook entryNodeKey must reference an existing node");
         }
         for (PlaybookEdgeDto edge : playbook.edges()) {
+            if (!edgeKeys.add(edge.edgeKey())) {
+                throw new IllegalStateException("duplicate playbook edgeKey: " + edge.edgeKey());
+            }
             if (!nodeKeys.contains(edge.sourceNodeKey()) || !nodeKeys.contains(edge.targetNodeKey())) {
                 throw new IllegalStateException("playbook edge must reference existing nodes");
             }
@@ -1876,6 +1894,12 @@ public class CatalogService {
         Object rawCode = ((Map<String, Object>) versionConfig).get("code");
         if (!(rawCode instanceof String code) || code.isBlank()) {
             throw new IllegalStateException("STEP node versioned script config must define non-empty code");
+        }
+    }
+
+    private void validateToolTaskNode(PlaybookNodeDto node) {
+        if (node.toolId() == null || node.toolId().isBlank() || node.toolOperation() == null || node.toolOperation().isBlank()) {
+            throw new IllegalStateException("TOOL_TASK node must define toolId and toolOperation");
         }
     }
 
