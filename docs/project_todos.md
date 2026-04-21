@@ -17,39 +17,9 @@
 ## 阶段二：运行态成熟（Runtime Maturity）
 
 > 目标：让运行链路足够健壮，能承受真实业务场景而非仅 demo 演示。
+> 已完成：平台事件日志（§旧 2.1）、SSE 跨实例推送（§旧 2.2）。详见末尾“已完成工作回顾”。
 
-### 2.1 平台事件日志
-
-状态：已完成。已新增独立 `platform_event` 审计账本、`GET /api/events` 分页查询接口，以及控制台对象详情页“操作历史”面板；`session_runtime_event / playbook_run` 已纳入统一审计边界，但仍保留运行投影职责。
-
-本次落地：
-
-1. 新增 `platform_event` 表（append-only）：`id / event_type / aggregate_type / aggregate_id / actor_id / payload / occurred_at`
-2. 控制面关键操作写事件：创建、更新、删除、发布
-3. 把 `session_runtime_event / playbook_run` 状态变化纳入统一审计边界（运行投影与审计事件分层）
-4. 暂不做 event sourcing（投影仍由业务代码维护），事件日志只用于审计和排障
-5. 提供 `GET /api/events?aggregateType=&aggregateId=&since=&limit=&cursor=` 查询接口
-6. 控制台对象详情页增加“操作历史”面板
-
-为什么不做 event sourcing：当前阶段投影模型够用，event sourcing 的复杂度不值得。但 append-only 事件日志几乎零成本，却能解决审计、排障、合规三大问题。
-
-### 2.2 SSE 实时推送替代部分轮询
-
-现状：运行会话页通过 `GET /api/session-runtime/sessions/{sessionId}` 整量轮询刷新；owner reply、playbook waiting / resumed / completed、handoff 状态变化都不能即时推到前端。详细方案已沉淀在 `docs/todo/sse_plan.md`。
-
-目标：
-
-1. API 新增 `GET /api/session-runtime/sessions/{sessionId}/stream`（SSE endpoint）
-2. 推送主模型对齐当前 session workflow：只围绕 `session / session event / playbook run`，不重新引入旧 `task / workflow instance` 语义
-3. 首连接发完整 `SESSION_SNAPSHOT`，后续推 `SESSION_UPDATED`；支持 `Last-Event-ID` replay，缓存 miss 时退回最新快照
-4. 前端运行会话页优先 SSE，失败降级回轮询；不为事件设计独立 delta 协议，仍用完整 detail 覆盖
-5. 非运行态页面（catalog 管理）保持按需刷新，不需要 SSE
-
-为什么选 SSE 而非 WebSocket：单向推送足够；SSE 天然支持断线重连和 `Last-Event-ID`；不需要额外的连接管理复杂度。
-
-> 多实例部署下，连接注册表与 replay buffer 必须下沉到共享层，详见 §3.6。
-
-### 2.3 Session / Playbook 恢复链路产品化
+### 2.1 Session / Playbook 恢复链路产品化
 
 现状：底层恢复链路已经切到 `session workflow + playbook waiting` 语义；API、Worker 和契约层已经统一采用：
 
@@ -67,9 +37,9 @@
 3. 区分“业务用户发送消息”和“人工操作员处理会话”两类入口
 4. 对过期恢复、幂等命中和错误恢复结果补更明确的用户可见反馈
 
-为什么单列：这是 external interaction（§2.4）和人工处理闭环真正可用的前置条件。
+为什么单列：这是 external interaction（§2.2）和人工处理闭环真正可用的前置条件。
 
-### 2.4 External Interaction 第二步：首个真实 provider
+### 2.2 External Interaction 第二步：首个真实 provider
 
 现状：通用框架已落地，包括 playbook `EXTERNAL_INTERACTION` 等待节点、`SessionWorkflow` 的 `external-callback` Signal、`waitingReason` 权威校验、回调恢复后回流 owner reevaluation。当前公开入口为 `POST /api/session-runtime/sessions/{sessionId}/external-callback`，回调必须命中 `sessionId / playbookRunId / WAITING / waitingReason ∈ external_interaction:*` 四元约束，否则视为无效。
 
@@ -80,9 +50,9 @@
 3. 主动查单补偿机制，覆盖 webhook 丢失 / 延迟场景
 4. 若业务需要对外暴露交互卡片或回跳链接，必须直接挂在 session / playbook 模型上，而不是重建旧 `external_interaction_task`
 
-依赖：§2.3（恢复链路产品化）。
+依赖：§2.1（恢复链路产品化）。
 
-### 2.5 软删除与生命周期治理
+### 2.3 软删除与生命周期治理
 
 现状：核心目录对象全部硬删除，删除后不可恢复；发布快照和资源版本能保留一部分历史锚点，但缺少统一生命周期模型。
 
@@ -91,11 +61,11 @@
 1. 核心目录对象引入 `lifecycle_status`（`ACTIVE / ARCHIVED`）
 2. 删除操作改为归档（`ARCHIVED`），主视图默认过滤
 3. 提供归档视图、恢复入口
-4. 记录归档原因、操作人、操作时间（复用 §2.1 事件日志）
+4. 记录归档原因、操作人、操作时间（复用已落地的 platform event 审计账本）
 5. 归档对象的引用关系保留，但不参与新的绑定和发布
 6. 彻底清理作为独立管理员操作，需二次确认
 
-### 2.6 长 Session 历史分页与派生视图
+### 2.4 长 Session 历史分页与派生视图
 
 现状：`GET /api/session-runtime/sessions/{sessionId}` 直接返回完整 `events + playbookRuns`，运行页直接展示完整时间线。session 历史增长后，整量返回 detail 会越来越重；当前没有按 event type、owner、playbook run 的过滤与聚合能力。
 
@@ -105,7 +75,7 @@
 2. 为 playbook run 增加按状态、waiting reason 的快捷筛选
 3. 在 UI 中补“仅看用户可见消息 / 仅看系统事件 / 仅看 playbook 事件”视图
 
-### 2.7 Catalog 治理增量
+### 2.5 Catalog 治理增量
 
 > 这部分原本散落在 `docs/todo/catalog_todo.md`，主线工作已完成，仅保留下列增量。
 
@@ -167,13 +137,13 @@
 
 目标：
 
-1. API 分页审计：确保所有列表接口支持分页，数据库查询有索引（与 §2.6 协同）
+1. API 分页审计：确保所有列表接口支持分页，数据库查询有索引（与 §2.4 协同）
 2. 连接池配置：HikariCP（Java）、SQLAlchemy pool（Python）参数调优
 3. 前端：继续优化路由级代码分割（Vue Router 已引入，控制台菜单页已完成真实路由）
 4. Knowledge Service：基于 `PostgreSQL + pgvector + pg_trgm + tsvector` 持续优化检索质量与索引性能
    - 当前方案保留 `LEXICAL / VECTOR / HYBRID` 三种模式，embedding 由 OpenAI-compatible `/embeddings` 提供
    - 关注大规模 chunk 量级下的索引参数、查询延迟与 embedding 成本
-5. 缓存策略：catalog 热数据（发布快照）考虑进程内缓存或 Redis（多实例场景下的共享与失效协议详见 §3.7）
+5. 缓存策略：catalog 热数据（发布快照）考虑 Redis 共享缓存；失效协议已由 §3.6 的 `RedisInvalidationBus` 提供，待出现真实热点再铺开
 
 ### 3.5 安全加固
 
@@ -181,93 +151,35 @@
 
 1. API 输入校验全覆盖（Spring Validation 已引入，确保无遗漏）
 2. CORS 收紧为生产域名白名单
-3. Rate limiting：API 层引入基础限流（Bucket4j 或 API Gateway 层面；多实例场景需走 Redis backend，详见 §3.7）
+3. Rate limiting：API 层引入基础限流（Bucket4j + Redis backend，沿用 §3.6 共享能力层）
 4. SQL 注入防护审计（当前 JDBC template 需确认参数化查询无遗漏）
 5. 前端 XSS 防护：确保用户输入内容展示时经过转义
-6. Webhook 签名校验（§2.4 external interaction 依赖）
+6. Webhook 签名校验（§2.2 external interaction 依赖）
 7. 文件上传安全：类型白名单、大小限制、病毒扫描（可选）
 
-> 本节聚焦“数据入口”防护。LLM 上下文“数据出口”的隐私脱敏（防止 PII 流向公网 LLM）见 §3.6。
+> 本节聚焦“数据入口”防护。LLM 上下文“数据出口”的隐私脱敏（防止 PII 流向公网 LLM）已由隐私映射层交付，详见末尾「已完成工作回顾」与 `docs/develop_record/privacy_mapping_plan.md`。
 
-### 3.6 隐私保护与数据安全映射层
+### 3.6 多实例部署一致性与共享状态
 
-> 这是企业级交付的硬底线，也是改动 Agent Runtime 调用契约的底层能力，必须早于多实例扩容、多租户隔离等上层议题落地。
-> 已完成实施方案归档见 `docs/develop_record/privacy_mapping_plan.md`。
+状态（截至 2026-04-21）：shared-state refactor 已将多实例主干能力全面落地，详细盘点与剩余工作见 `docs/todo/multi_instance_plan.md`。
 
-状态：已完成。当前已落地 assistant / agent 级隐私映射配置、`LLM_MODEL.privateDeployment` 标记、assistant release 冻结快照、worker-runtime 契约扩展，以及 Agent Runtime 的统一数据安全管道。
+已完成的主干能力：
 
-本次已交付：
+- 共享模块 `packages/shared-redis-jvm`：统一 keyspace、JSON codec、Pub/Sub bus、分布式锁
+- API：`spring-session-data-redis` 接入 + `SessionRedisConfiguration`；`RedisIdempotencyService`、`RedisInvalidationBus`、`SharedStateInvalidationSubscriber` 收口
+- `SessionDispatchLockService` 从进程内 `ReentrantLock` 切到 `RedisLockService`
+- Session Runtime 跨实例流：`SessionRuntimeStreamService` + `SessionRuntimeReplayStore` + `SessionRuntimeChangeNoticePublisher`（API）与 `SessionRuntimeChangePublisher`（worker）通过 Redis Pub/Sub 协同；Web 侧 `EventSource` 已接入，轮询作为 fallback
+- `CatalogService` / `KnowledgeService` 去 JVM 内存镜像，切到 repository-first 读写；发布 / 更新通过 `RedisInvalidationBus` 广播失效
 
-1. 出站脱敏、入站还原、tool arguments restore、tool result 再脱敏，已接入 owner turn 主链路
-2. session 级映射表已下沉 Redis，共享 `LYNXUS_REDIS_*` 基础设施；原值入库前已加密
-3. 审计事件、runtime summary endpoint 与运行页“隐私映射”统计卡片已打通
-4. 映射失败统一阻断；不再允许未完成脱敏内容继续出站
+仍未闭环：
 
-当前边界：
+1. **分布式限流**：尚未引入 Bucket4j 或同级方案（与 §3.5 合并推进）
+2. **幂等覆盖面**：`RedisIdempotencyService` 已就位，但真实 webhook / `external-callback` / 高风险控制面写接口的幂等 key 规范尚未成体系接入（依赖 §2.2 第一个真实 provider）
+3. **多实例专项测试**：双 API / 双 Worker 环境的跨实例集成测试与故障注入仍未建立
+4. **生产交付面**：生产级 compose / K8s manifest、TLS、Secret 注入策略仍待补齐（与 §3.1 合并）
+5. **分层健康检查**：API 仅有 `/api/system/health`，尚未拆分 liveness / readiness；Knowledge Service 仍缺 `/healthz`；Agent Runtime `/healthz` 未暴露依赖状态
 
-1. knowledge 链路首版只做 query restore，不对检索结果做 sanitize
-2. UI 首版复用 Assistant / Agent 页面维护配置，未单独拆分治理页
-3. 映射表仍是运行态安全状态，不作为长期业务数据模型
-   - 与 §2.1 平台事件日志协同：映射事件作为独立 aggregate 进入审计账本
-   - 与 §3.7 多实例一致性协同：会话级映射表必须支持跨实例共享（Redis）才能在多实例部署下保持还原能力
-   - 为后续 §4.4 多租户预留策略下发通道：租户级配置在多租户落地时直接复用同一管道
-
-依赖：Agent Runtime 已稳定的单轮推理与工具调用契约。
-
-实施顺序建议：
-
-1. 先做规则引擎兜底（正则 + 字典）+ 配置开关，验证管道接入位置和对 Agent Runtime 契约的影响
-2. 再接入私有化 LLM，重点解决映射一致性与还原准确率
-3. 把工具调用参数与返回纳入同一管道
-4. 最后补审计、统计与控制台展示
-
-### 3.7 多实例部署一致性与共享状态
-
-状态（截至 2026-04-20）：
-
-- 已完成 Redis 基础接入：`infra/local` 与 `infra/dev` 已提供共享 Redis service；`api`、`worker`、`agent-runtime` 已接入统一 `LYNXUS_REDIS_*` 配置并在启动期执行连通性校验
-- 尚未完成生产级交付：生产 compose / K8s manifest、TLS、Secret 注入策略仍待补齐
-- 尚未完成业务级能力：SSE 跨实例广播、共享缓存失效、分布式限流、Spring Session、幂等键、分布式锁都还没有落地到 Redis
-
-现状：API / Worker / Agent Runtime / Knowledge Service 当前都隐式假设单实例运行，多处依赖进程内状态：
-
-- API 的 SSE 连接注册表与 replay buffer（§2.2）
-- API 进程内 catalog 热数据缓存（§3.4 候选）
-- 限流计数（§3.5 候选）
-- OIDC / 平台用户的会话存储
-- 请求级幂等去重、webhook 去重缓存
-- §3.6 隐私映射层的会话级映射表（出入站还原必须找到同一份映射，不能落到错误实例）
-
-直接横向扩容会出现：
-
-- 实例 A 上写入的运行事件无法推送给连接在实例 B 的 SSE 客户端
-- 缓存不一致（实例 A 失效后实例 B 仍返回旧版发布快照）
-- 单机限流被绕过
-- 用户登录态在另一实例失效，被强制重登（依赖粘性会话才能勉强工作）
-- 同一 webhook / external-callback 在多实例间重复处理
-
-目标：统一引入 Redis 作为共享状态层，让各模块支持无粘性多实例部署。
-
-1. **SSE 跨实例广播**：基于 Redis Pub/Sub 把 `session updated` 事件分发到所有 API 实例；`Last-Event-ID` replay buffer 下沉到 Redis（按 `sessionId` 维度，附带 TTL）
-2. **Catalog 缓存共享与失效**：发布快照等热数据走 Redis，发布事件触发跨实例失效广播；进程内可保留二级缓存，但必须订阅失效信号
-3. **分布式限流**：Bucket4j 接 Redis backend，或在 API Gateway 层统一限流
-4. **登录态后端化**：Spring Session + Redis，去掉对粘性会话的依赖；前端托管会话与 OIDC 回调链路对齐
-5. **幂等键 / 去重**：Webhook、external-callback、关键写操作的幂等键统一存 Redis（带 TTL），避免重复推进状态机
-6. **分布式锁**：API 层短时操作（如同一 sessionId 的 owner reevaluation 触发节流）走 Redis 锁；session 级长时串行化优先依赖 Temporal workflow 单例约束，不再叠加 Redis 锁
-7. **Worker 多实例**：Worker 本身依赖 Temporal 任务队列分发，无需 Redis；但 activity 内若引入进程内缓存或限流，必须复用同一套 Redis 通道
-8. **Python 服务**：Agent Runtime / Knowledge Service 当前无显著进程内状态；如未来引入缓存或限流，统一接 Redis，不要各自重建
-
-实施顺序建议：
-
-1. Redis 基础接入先行
-   - 2026-04-20 已完成 `infra/local` / `infra/dev` 以及 `api` / `worker` / `agent-runtime` 的基础接入
-   - 生产 compose / K8s manifest、TLS、Secret 注入仍待补齐
-2. 优先解决 §2.2 SSE 跨实例广播，因为这是阻断 API 多实例部署的最硬约束
-3. 再做登录态后端化，让负载均衡可以无粘性
-4. 缓存与限流走在“引入热点 / 出现压力”后再做
-5. 幂等与分布式锁随 §2.4 external interaction 真实 provider 接入一起补齐
-
-依赖：与 §2.2（SSE）、§3.1（部署配套）、§3.4（缓存）、§3.5（限流）协同；§4.4 多租户隔离也在多实例就绪后才有规模化意义。
+依赖：与 §3.1（部署配套）、§3.4（缓存）、§3.5（限流）协同；§4.4 多租户隔离也在多实例验证闭环后才有规模化意义。
 
 ---
 
@@ -390,29 +302,25 @@
 
 ```
 阶段二：运行态成熟
-  2.1 事件日志 ◄──── 已就绪的鉴权（actor_id 来源）
-  2.2 SSE 推送
-  2.3 恢复链路产品化
-       └── 2.4 External Interaction 第二步 ◄── 2.3
-  2.5 软删除 ◄──── 2.1（归档事件记录）
-  2.6 长 Session 分页
-  2.7 Catalog 治理增量
+  2.1 恢复链路产品化
+       └── 2.2 External Interaction 第二步 ◄── 2.1
+  2.3 软删除 ◄──── 已就绪的 platform event 审计账本（归档事件记录）
+  2.4 长 Session 分页
+  2.5 Catalog 治理增量
 
 阶段三：生产加固
   3.1 部署配套补齐
   3.2 OTel 观测 ◄──── 已就绪的结构化日志
   3.3 数据安全
-  3.4 性能优化 ◄──── 与 2.6 协同
-  3.5 安全加固 ◄──── 已就绪的请求级鉴权 + 2.4 webhook 签名校验
-  3.6 隐私脱敏映射层 ◄──── Agent Runtime 单轮推理契约 + 3.5 协同
-       └── 3.7 多实例一致性需为映射表提供共享通道
-  3.7 多实例一致性 ◄──── 2.2 / 3.1 / 3.4 / 3.5 / 3.6 协同（统一引入 Redis）
+  3.4 性能优化 ◄──── 与 2.4 协同
+  3.5 安全加固 ◄──── 已就绪的请求级鉴权 + 2.2 webhook 签名校验
+  3.6 多实例一致性剩余项 ◄──── 3.1 / 3.4 / 3.5 协同（Redis 基座已就绪）
 
 阶段四：平台演进
   4.1 RBAC 细粒度 ◄──── 已就绪的粗粒度 RBAC
   4.2 资源治理增强
-  4.3 灰度发布 ◄──── 2.5（需要快照 diff）
-  4.4 多租户 ◄──── 已就绪的鉴权 + 3.1 + 3.6（复用映射策略下发通道）+ 3.7
+  4.3 灰度发布 ◄──── 2.3（需要快照 diff）
+  4.4 多租户 ◄──── 已就绪的鉴权 + 3.1 + 3.6（复用共享状态基座与映射策略下发通道）
   4.5 成本与 SLO ◄──── 3.2（需要 metrics）
   4.6 知识检索质量
 ```
@@ -427,9 +335,12 @@
 - [x] 阶段一 当前 1.1 CI 流水线：新增单文件 GitHub Actions workflow，并行执行 Java `./gradlew check`、Node `pnpm install && pnpm lint && pnpm build`、Python `uv sync --all-packages && uv run --all-packages pytest`
 - [x] 阶段一 1.2 关键路径测试：编排图校验器单测、发布快照冻结逻辑单测、Session/Playbook Workflow 集成测试、Agent Runtime 单轮推理单测、Knowledge Service 导入链路单测
 - [x] 阶段一 1.4 结构化日志统一：Java/Python 服务统一结构化输出，统一透传 trace / session / workflow / customer / user 上下文
+- [x] 阶段二 旧 2.1 平台事件日志：`platform_event` 审计账本、`GET /api/events` 分页查询、控制台对象详情页「操作历史」面板、`session_runtime_event / playbook_run` 纳入统一审计边界
+- [x] 阶段二 旧 2.2 SSE 跨实例推送：`GET /api/session-runtime/sessions/{sessionId}/stream`、`SESSION_SNAPSHOT / SESSION_UPDATED` 契约、Redis replay buffer、Web `EventSource` 订阅（失败降级回轮询）
 - [x] 阶段二 2.4 草稿默认模型策略收敛：`defaultModelResourceId` 显式化、发布前阻断校验、发布快照新增 `defaultModelBinding`、Runtime 预检对齐
 - [x] 阶段二 2.5 第一步 External Interaction 通用框架：playbook `EXTERNAL_INTERACTION` 节点、`external-callback` Signal、`waitingReason` 权威校验、回调恢复回流 owner
-- [x] 阶段三 3.6 隐私脱敏映射层：assistant / agent 配置、release freeze、Redis session map、运行态出站脱敏 / 入站还原、审计与运行页统计
+- [x] 阶段三 旧 3.6 隐私脱敏映射层：assistant / agent 配置、release freeze、Redis session map、运行态出站脱敏 / 入站还原、审计与运行页统计
+- [x] 阶段三 3.6（多实例）主干：共享模块 `packages/shared-redis-jvm`（keyspace / codec / pub-sub / lock）、API 接入 `spring-session-data-redis` + `RedisIdempotencyService` + `RedisInvalidationBus`、`SessionDispatchLockService` 改走分布式锁、Session Runtime 跨实例流（`SessionRuntimeStreamService / ReplayStore / ChangeNoticePublisher` + worker `SessionRuntimeChangePublisher`）、`CatalogService / KnowledgeService` 去 JVM 内存镜像并接入跨实例失效
 - [x] 阶段三 3.1 部分：五个应用 Dockerfile（多阶段构建）与 `/api/system/health` 健康端点
 - [x] 历史 P0/P1/P2/P3 工作（详见 `docs/develop_record/2026-03-project_todos_snapshot.md`）：
   - P0.1 运行态持久化：session / session_event / playbook_run 落库

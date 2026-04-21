@@ -1,6 +1,6 @@
 # Lynxus 多实例与共享状态实施总方案
 
-> 本文不是 `docs/project_todos.md` §3.7 的简单展开，而是基于当前仓库真实代码、部署方式和服务边界整理出的完整实施方案。
+> 本文不是 `docs/project_todos.md` §3.6（多实例一致性）的简单展开，而是基于当前仓库真实代码、部署方式和服务边界整理出的完整实施方案。
 > 目标是让 Lynxus 从“可本地联调、默认单实例的平台原型”直接重构为“支持多实例、共享状态一致”的目标架构。
 
 ## 1. 目标与范围
@@ -47,17 +47,22 @@
 
 ## 2. 先说结论
 
-当前 Lynxus 并不是“只差把 Redis 接进 SSE”。
+截至 2026-04-21，本方案的前四项主干工作已经在本地落地：
 
-从代码现状看，真正阻断多实例的有五类问题：
+1. 共享状态能力层 `packages/shared-redis-jvm` 已抽出，`api` / `worker` 共同依赖
+2. API 已接入 `spring-session-data-redis`，`SessionDispatchLockService` 已改走 `RedisLockService`，并新增 `RedisIdempotencyService` / `RedisInvalidationBus`
+3. Session Runtime 跨实例流式链路已落地：`SessionRuntimeStreamService` + `SessionRuntimeReplayStore` + `SessionRuntimeChangeNoticePublisher`（API）与 `SessionRuntimeChangePublisher`（worker）通过 Redis Pub/Sub 协同
+4. `CatalogService` / `KnowledgeService` 已从进程内 JVM 镜像模型切换为 repository-first 读写，并开始接入 revision / invalidation 语义
 
-1. API 仍有明确的本地会话锁与 HTTP Session 假设
-2. `CatalogService` / `KnowledgeService` 把数据库快照镜像进了 JVM 内存并长期持有
-3. Redis 已接入，但只完成了连通性和隐私映射首个落点，尚未形成统一共享状态能力层
-4. 运行页仍是轮询模型，SSE 方案尚未落地，更没有跨实例广播
-5. 多实例验证缺失，现有测试基本仍是单实例单进程语义
+当前仍未闭环的主要缺口：
 
-所以，这项工作必须按“系统级收口”推进，而不是按功能点零散补丁推进。
+1. 幂等基座虽已就位，真实 provider webhook 与 external-callback 的幂等 key 规范还未成体系接入（依赖 §2.4 的第一个真实 provider）
+2. 分布式限流尚未落地
+3. 双实例一致性验证场景与测试矩阵尚未建立
+4. K8s manifest、TLS、Secret 注入等生产交付面尚未补齐（和主 todos §3.1 协同）
+5. 健康检查仍以 `/api/system/health`、`/healthz` 单点为主，readiness / liveness 与依赖检查未分层
+
+所以后续工作重心从“接 Redis”转为“验证多实例正确性 + 补齐生产交付和治理面”。
 
 ## 3. 当前项目真实状态盘点
 
@@ -112,99 +117,43 @@
 - Web 不是多实例一致性的核心问题
 - 但登录态和 SSE 接入方式必须与 API 多实例方案对齐
 
-### 3.2 当前明确阻断多实例的部分
+### 3.2 当前仍未闭环的部分
 
-#### API 的本地锁
+> §3.6 的主干阻断项（本地锁、Http Session、控制面内存镜像、Redis 能力层、SSE 跨实例广播）已经在最新一轮 refactor 中解决，下面只保留仍未闭环的缺口。
 
-[`SessionDispatchLockService`](../../apps/api/src/main/java/com/lynxus/platform/session/SessionDispatchLockService.java) 当前使用：
+#### 幂等基座接入面
 
-- `ConcurrentHashMap`
-- `ReentrantLock`
+`RedisIdempotencyService` 已提供统一幂等能力，但当前尚未真正覆盖：
 
-来保护：
+- 真实 provider webhook（依赖 §2.4）
+- `external-callback` 高并发场景
+- 高风险控制面写接口的显式 `Idempotency-Key`
 
-- 同一 `sessionId` 的消息投递窗口
-- 同一 `customerId + assistantId` 的 session 复用 / 创建窗口
+#### 分布式限流
 
-这在单实例下有效，在多实例下完全失效。
+代码里还没有落地任何限流实现，当前仓库仅具备了底层 Redis 能力，没有 Bucket4j 或同级方案。
 
-#### API 的登录态仍是本地 HttpSession 语义
+#### 多实例验证与故障注入测试
 
-[`AuthSecurityConfiguration`](../../apps/api/src/main/java/com/lynxus/platform/auth/AuthSecurityConfiguration.java) 当前使用：
+现有单元与集成测试仍以单进程语义为主，缺少：
 
-- `HttpSessionSecurityContextRepository`
-- `SessionCreationPolicy.IF_REQUIRED`
+- 双 API 实例共享 Session
+- 双 API 实例共享锁 / 幂等键
+- 双 API 实例 SSE replay / broadcast
+- Redis / 单实例故障场景
 
-但 `apps/api/build.gradle.kts` 里尚未引入 `spring-session-data-redis`，说明登录态仍然依赖当前节点的 servlet session 机制。
+#### 健康检查与服务治理
 
-结果：
+- API 仅有 `/api/system/health`，没有拆分 liveness / readiness
+- Knowledge Service 缺 `/healthz`
+- Agent Runtime `/healthz` 未暴露 Redis 等依赖状态
+- Worker 没有标准健康端点
 
-- 请求一旦分布到不同 API 实例，登录态就无法可靠共享
+#### 生产交付配套
 
-#### CatalogService / KnowledgeService 把数据库状态长期镜像在进程内
-
-[`CatalogService`](../../apps/api/src/main/java/com/lynxus/platform/catalog/CatalogService.java) 当前持有：
-
-- `initialized`
-- `domains`
-- `scenarios`
-- `assistants`
-- `agents`
-- `playbooks`
-- `resources`
-- `resourceVersions`
-- `assistantReleases`
-
-并通过 `ensureLoaded()` 首次加载后长期驻留进程内。
-
-[`KnowledgeService`](../../apps/api/src/main/java/com/lynxus/platform/knowledge/KnowledgeService.java) 当前也持有：
-
-- `initialized`
-- `knowledgeBases`
-- `knowledgeReleases`
-
-这意味着：
-
-- 实例 A 更新后，实例 B 可能继续用旧内存快照
-- 即使底层 PostgreSQL 是共享的，服务层读取语义仍是实例本地快照
-
-这不是“缓存策略选择”问题，而是当前服务建模本身仍偏单机。
-
-#### SSE 尚未落地，更没有跨实例广播
-
-当前运行页仍通过：
-
-- `GET /api/session-runtime/sessions`
-- `GET /api/session-runtime/sessions/{sessionId}`
-
-轮询刷新。
-
-而 `docs/todo/sse_plan.md` 里的首版方案仍默认：
-
-- API 进程内维护连接注册表
-- API 进程内维护 replay buffer
-
-所以即使 SSE 落地，如果不改模型，也仍然只适用于单实例。
-
-#### Redis 使用方式尚未收口为平台能力层
-
-目前代码里 Redis 的实际使用非常有限：
-
-- `apps/api`：连通性校验 + 读取隐私映射摘要
-- `apps/worker`：连通性校验
-- `apps/agent-runtime`：隐私映射 store
-
-但还没有统一的：
-
-- key 命名规范
-- TTL 规范
-- codec / 序列化规范
-- pub/sub 封装
-- 锁封装
-- 幂等封装
-- cache invalidation 封装
-
-继续让业务模块各自直接拼 Redis key，会把 3.7 做成新的技术债。
+- 生产级 compose / K8s manifest 尚未落地
+- TLS / Secret 注入策略尚未统一
+- Redis 在生产拓扑下的高可用部署和运维手册仍缺
 
 ### 3.3 当前支持多实例的基础已经存在
 
@@ -390,188 +339,41 @@ TTL 原则：
 
 ## 6. 分工作流实施方案
 
-### 工作流 A：共享状态基座
+> 工作流 A / B / C / D 已在 2026-04 前后的 shared-state refactor 中闭环。当前剩余工作集中在 E（服务治理与健康检查）、F（限流）、以及整体多实例验证。
 
-这是整个方案的起点。
+### 已完成：工作流 A 共享状态基座
 
-#### 目标
+交付情况：
 
-建立可复用、可监控、可测试的 Redis 能力层，而不是让业务模块各自接。
+- 共享模块 `packages/shared-redis-jvm` 已抽出，提供 `RedisKeyspace / RedisJsonCodec / RedisPubSubBus / RedisLockService`
+- API 侧补齐 `RedisIdempotencyService / RedisInvalidationBus / RedisSharedStateProperties / SharedStateInvalidationSubscriber`
+- Python 侧 `lynxus_agent_runtime.redis_support` 与隐私映射 store 已复用统一 keyspace
+- 基础指标已在 `SessionRuntimeStreamService` 等关键消费点通过 Micrometer 输出
 
-#### 交付
+### 已完成：工作流 B API 多实例会话去本地化
 
-1. API 新增统一 Redis 能力包
-2. 统一 `instanceId` 配置与日志字段
-3. 统一 keyspace、TTL、JSON codec
-4. 基础指标：
-   - pub/sub publish count
-   - subscriber lag
-   - lock acquire success/fail
-   - idempotency hit/miss
-   - cache hit/miss
-5. Redis 相关配置清单补齐到环境变量规范
+- B1：`apps/api/build.gradle.kts` 引入 `spring-session-data-redis`，`SessionRedisConfiguration` 固定 serializer
+- B2：`SessionDispatchLockService` 的 conversation / session 锁已切到 `RedisLockService + RedisKeyspace`，owner token、TTL、compare-and-delete 语义由共享能力层统一
+- B3：`RedisIdempotencyService` 已具备幂等能力；接入真实 webhook / `external-callback` / 控制面写接口的 `Idempotency-Key` 覆盖仍是后续工作（见 §3.2）
 
-#### 代码面
+### 已完成：工作流 C Session Runtime 跨实例推送
 
-- `apps/api/build.gradle.kts`
-- `apps/api/src/main/java/com/lynxus/platform/shared/redis/...`
-- `apps/agent-runtime/lynxus_agent_runtime/redis_support.py`
+- `SessionRuntimeStreamService` 维护本机 emitter 注册表
+- `SessionRuntimeReplayStore` 基于 Redis 保存 `SESSION_UPDATED` 事件，用于 `Last-Event-ID` replay
+- `SessionRuntimeChangeNoticePublisher`（API）和 `SessionRuntimeChangePublisher`（worker）通过 Redis Pub/Sub 协同广播 `SessionRuntimeChangeNotice`
+- Web 侧 `useAppState` 已通过 `EventSource` 订阅流式更新，轮询作为 fallback
+- 契约已抽出 `SessionRuntimeStreamEvent`、`SessionRuntimeChangeNotice`
 
-#### 完成标准
+### 已完成：工作流 D 控制面状态去内存化
 
-- 新能力具备单元测试
-- 业务模块不再新增裸 Redis key 拼接
+- `CatalogService` / `KnowledgeService` 已去除 `ensureLoaded()` 与进程内长期镜像，转向 repository-first 读写
+- `CatalogRepository` / `KnowledgeRepository` 提供更细粒度的 `upsert / delete / replace` 接口，`JdbcCatalogRepository` / `JdbcKnowledgeRepository` 承担事务 + revision 预留 + 派生引用刷新
+- 发布 / 更新关键路径通过 `RedisInvalidationBus` 发出失效信号，`SharedStateInvalidationSubscriber` 负责跨实例消费
 
-### 工作流 B：API 多实例会话去本地化
+后续仍需跟进：
 
-这是 3.7 的第一主线。
-
-#### 目标
-
-让 API 在多实例架构下不依赖本地会话和本地锁。
-
-#### 子任务 B1：Spring Session + Redis
-
-需要变更：
-
-1. `apps/api/build.gradle.kts` 引入 `spring-session-data-redis`
-2. 用 Redis 承载 Spring Security 会话
-3. 校准 cookie 策略：
-   - `HttpOnly`
-   - `Secure`
-   - `SameSite`
-4. 补跨实例登录集成测试
-
-当前代码依据：
-
-- `AuthSecurityConfiguration` 仍是 `HttpSessionSecurityContextRepository`
-- 前端已经假设 API 托管会话，不需要前端 token 改造
-
-#### 子任务 B2：本地锁替换为分布式锁
-
-需要替换：
-
-- `SessionDispatchLockService.withConversationLock`
-- `SessionDispatchLockService.withSessionLock`
-
-实现要求：
-
-1. owner token
-2. TTL
-3. compare-and-delete 释放
-4. 指标与超时日志
-
-不允许：
-
-- 裸 `DEL`
-- 不带过期时间的锁
-
-#### 子任务 B3：关键入口幂等化
-
-首批必须覆盖：
-
-- `external-callback`
-- 真实 provider webhook
-- 高风险控制面写接口
-
-策略：
-
-- webhook 优先使用 provider event id
-- 控制面写接口使用显式 `Idempotency-Key`
-
-### 工作流 C：Session Runtime 跨实例推送
-
-这是第二主线，也是 API 多实例用户体验能否成立的关键。
-
-#### 当前状态
-
-- 运行页仍轮询
-- `docs/todo/sse_plan.md` 仍是单实例方案
-
-#### 目标
-
-把 SSE 方案改造成真正支持多 API 实例。
-
-#### 方案
-
-1. 仍保持 `SESSION_SNAPSHOT / SESSION_UPDATED` 完整 detail 契约
-2. replay buffer 放 Redis，而不是本机内存
-3. session 更新通知走 Redis Pub/Sub
-4. API 实例只维护本机 emitter，不维护全局事实
-5. `Last-Event-ID` 重连优先读 Redis replay，miss 时回退快照
-
-#### 推荐事件流
-
-1. 任一 API 实例发现 session detail 已变化
-2. 重新加载权威 `SessionRuntimeDetail`
-3. 写入 `lynxus:sse:event:{sessionId}`
-4. 发布 `lynxus:sse:channel:session-updated`
-5. 所有 API 实例各自给本机连接的 `sessionId` 推送
-
-#### 与现有代码的边界
-
-- 不改 worker 持久化事实来源
-- 不引入独立消息总线
-- 不重新设计 delta 协议
-
-### 工作流 D：控制面状态去内存化
-
-这是整套方案最重要、也最容易被漏掉的部分。
-
-#### 当前问题
-
-`CatalogService` / `KnowledgeService` 当前是：
-
-- 首次 load
-- 驻留 JVM 内存
-- 所有读写都围绕这个内存镜像展开
-- 写回时再整体 `repository.save(...)`
-
-这会造成：
-
-1. 多实例读漂移
-2. 更新覆盖窗口难以控制
-3. 后续做共享缓存时职责混乱
-
-#### 目标
-
-把控制面读写模式改造成：
-
-1. repository-first
-2. 服务层不持有长期可变镜像
-3. 热点读可以附加共享缓存
-4. 缓存失效由发布 / 更新事件驱动
-
-#### 推荐落地方式
-
-##### D1：先改读路径
-
-- 列表 / 详情 / references / preview 等查询直接从 repository 读取
-- 保留 DTO 组装逻辑，但不保留长期驻留镜像
-
-##### D2：再改写路径
-
-- 将“读当前状态 -> 计算新快照 -> 保存”的逻辑改为显式事务边界
-- repository 保存后立刻发失效事件
-
-##### D3：最后按热点补缓存
-
-首批热点候选：
-
-- catalog summary
-- assistant release 展开结果
-- resource center
-- knowledge base release summary
-
-#### 注意事项
-
-`JdbcCatalogRepository.save(...)` / `JdbcKnowledgeRepository.save(...)` 当前是整表替换式写入。
-
-这意味着：
-
-- 首版缓存失效不能做得过细
-- 应优先使用对象域级或功能域级失效
-- 不要过早承诺“精确到对象字段”的缓存失效粒度
+- 首版失效粒度仍以对象域 / 功能域为主，精确到字段的失效不做过早承诺
+- 热点共享缓存尚未正式铺开，待出现真实热点再补（建议首批候选：catalog summary、assistant release 展开结果、resource center、knowledge base release summary）
 
 ### 工作流 E：服务治理与健康检查
 
@@ -624,44 +426,22 @@ TTL 原则：
 
 ## 7. 服务级落地顺序建议
 
-### Phase 0：共享状态基座
+### Phase 0~3：已完成
 
-必须先做，因为后续所有工作流都依赖它。
+- Phase 0 共享状态基座、Phase 1 API 会话去本地化（Spring Session + 分布式锁 + 幂等基座）、Phase 2 SSE 跨实例广播、Phase 3 Catalog / Knowledge 去内存化均已在 2026-04 前后的 shared-state refactor 中落地
 
-### Phase 1：API 多实例会话去本地化
+### Phase 4：限流、健康检查与 provider 协同（待做）
 
-先做：
+- 工作流 E（健康检查分层）
+- 工作流 F（Bucket4j + Redis 限流）
+- 随 §2.4 真实 provider 接入一并铺开 webhook 幂等与签名校验
 
-1. Spring Session
-2. 分布式锁
-3. 幂等基座
-
-原因：
-
-- 这是 API 多实例的硬门槛
-- 不解决这个，API 访问仍然绑定本地实例状态
-
-### Phase 2：SSE 跨实例广播
-
-紧接着做，因为它直接决定运行页多实例体验是否成立。
-
-### Phase 3：Catalog / Knowledge 去内存化
-
-这是系统性正确性的主修项。
-
-虽然对用户最不显眼，但不做这一步，多实例只是“看起来能跑”。
-
-### Phase 4：限流与 provider 协同
-
-放在后面，是因为它更依赖真实业务入口和流量模型。
-
-### Phase 5：双实例环境验证
-
-最后再进入：
+### Phase 5：双实例环境验证（待做）
 
 - 双 API / 双 Worker 环境
 - 故障注入验证
 - Redis / API / Worker 单点失效验证
+- 针对 SSE replay、分布式锁、幂等键、session 登录态的跨实例集成测试
 
 ## 8. 依赖与代码变更清单
 
@@ -784,20 +564,12 @@ TTL 原则：
 
 ## 11. 最终建议
 
-如果只从 `project_todos` 的文字出发，3.7 很容易被做成：
+原方案识别的五件必做事项，当前进度：
 
-- SSE + Redis Pub/Sub
-- Spring Session
-- 限流
+1. API 多实例会话去本地化 — 已完成
+2. Session Runtime 跨实例推送 — 已完成
+3. Catalog / Knowledge 去内存化 — 已完成
+4. Redis 共享状态能力层收口 — 已完成（`packages/shared-redis-jvm`）
+5. 多实例专项测试与双实例环境验证 — 仍待做
 
-然后宣称“多实例支持完成”。
-
-但从当前仓库实际实现看，这样做是不够的。真正必须一起完成的，是：
-
-1. API 多实例会话去本地化
-2. Session Runtime 跨实例推送
-3. Catalog / Knowledge 去内存化
-4. Redis 共享状态能力层收口
-5. 多实例专项测试与双实例环境验证
-
-只有这五件事一起闭环，Lynxus 才能从“默认单机原型”真正进入“可横向扩的系统”。
+剩余工作的重点已经从“把 Redis 接进来”转为“证明多实例正确性”和“补齐生产交付与治理面”：限流、分层健康检查、真实 provider 的 webhook 幂等、双实例集成测试与故障注入、生产 K8s / TLS / Secret 等运维基线。
