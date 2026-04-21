@@ -56,8 +56,11 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.lifecycle.Startables;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+
+import java.util.stream.Stream;
 
 import static com.lynxus.platform.session.SessionRuntimeDtos.SessionRuntimeSessionDto;
 
@@ -78,6 +81,7 @@ class MultiInstanceApiIntegrationTest {
 
     @BeforeAll
     static void startApplications() {
+        Startables.deepStart(Stream.of(postgres, redis)).join();
         apiA = startInstance("api-test-a");
         apiB = startInstance("api-test-b");
     }
@@ -86,6 +90,8 @@ class MultiInstanceApiIntegrationTest {
     static void stopApplications() {
         close(apiB);
         close(apiA);
+        redis.stop();
+        postgres.stop();
     }
 
     @BeforeEach
