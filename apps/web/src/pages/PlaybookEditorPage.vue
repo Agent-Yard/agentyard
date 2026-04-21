@@ -2,8 +2,6 @@
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { message } from 'ant-design-vue';
 import { useRouter } from 'vue-router';
-import ObjectHistoryPanel from '../components/ObjectHistoryPanel.vue';
-import ObjectReferencePanel from '../components/ObjectReferencePanel.vue';
 import { pageMeta } from '../config/navigation';
 import type {
   Assistant,
@@ -113,6 +111,13 @@ const currentAssistant = computed(() =>
   props.assistants.find((item) => item.id === selectedAssistantId.value) ?? props.assistants[0] ?? null,
 );
 const assistantPlaybooks = computed(() => currentAssistant.value?.playbooks ?? []);
+const assistantOptions = computed(() => props.assistants.map((item) => ({ label: item.name, value: item.id })));
+const playbookOptions = computed(() =>
+  assistantPlaybooks.value.map((item) => ({
+    label: `${item.name} · ${item.nodes.length} 节点`,
+    value: item.id,
+  })),
+);
 const currentPlaybook = computed(() =>
   assistantPlaybooks.value.find((item) => item.id === selectedPlaybookId.value) ?? assistantPlaybooks.value[0] ?? null,
 );
@@ -590,104 +595,58 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <a-row :gutter="[16, 16]">
-    <a-col :span="6">
-      <a-card title="助手视图">
-        <template #extra>
-          <a-tag class="console-accent-tag">{{ assistantPlaybooks.length }} 个流程</a-tag>
-        </template>
+  <a-card v-if="currentPlaybook" :title="currentPlaybook.name">
+    <template #extra>
+      <a-space wrap>
+        <a-button @click="openListPage()">返回列表页</a-button>
+        <a-button @click="exportModalOpen = true">导出 JSON</a-button>
+        <a-button v-if="canManageGovernance" @click="openImportModal">导入 JSON</a-button>
+        <a-button v-if="canManageGovernance" type="primary" @click="submitSave">
+          {{ isDirty ? '保存 Playbook' : '重新保存' }}
+        </a-button>
+        <a-button v-if="canManageGovernance" danger ghost @click="emit('deletePlaybook', currentPlaybook.id)">删除 Playbook</a-button>
+      </a-space>
+    </template>
 
-        <a-space direction="vertical" style="width: 100%">
+    <div class="playbook-workbench">
+      <div class="playbook-editor-toolbar">
+        <a-space wrap size="middle">
           <a-select
             v-model:value="selectedAssistantId"
-            :options="assistants.map((item) => ({ label: item.name, value: item.id }))"
+            class="playbook-editor-toolbar__select"
+            :options="assistantOptions"
+            placeholder="选择助手"
           />
-          <a-list :data-source="assistantPlaybooks">
-            <template #renderItem="{ item }">
-              <a-list-item class="clickable-item" @click="selectedPlaybookId = item.id">
-                <a-list-item-meta :title="item.name" :description="item.entryNodeKey" />
-                <a-tag v-if="selectedPlaybookId === item.id" class="console-accent-tag">当前</a-tag>
-              </a-list-item>
-            </template>
-          </a-list>
+          <a-select
+            v-model:value="selectedPlaybookId"
+            class="playbook-editor-toolbar__select playbook-editor-toolbar__select--wide"
+            :options="playbookOptions"
+            placeholder="选择 Playbook"
+          />
         </a-space>
-      </a-card>
-    </a-col>
+        <a-space wrap>
+          <a-tag class="console-accent-tag">{{ currentAssistant?.name ?? currentPlaybook.assistantId }}</a-tag>
+          <a-tag class="console-accent-tag">{{ draftNodes.length }} 节点</a-tag>
+          <a-tag class="console-accent-tag">{{ draftEdges.length }} 连线</a-tag>
+          <a-tag class="console-accent-tag">
+            {{ graphValidationPreview ? 'NEEDS CHECK' : 'VALID' }}
+          </a-tag>
+        </a-space>
+      </div>
 
-    <a-col :span="18">
-      <a-card v-if="currentPlaybook" :title="currentPlaybook.name">
-        <template #extra>
-          <a-space>
-            <a-tag class="console-accent-tag">{{ currentAssistant?.name ?? currentPlaybook.assistantId }}</a-tag>
-            <a-tag class="console-accent-tag">{{ draftNodes.length }} 节点</a-tag>
-            <a-tag class="console-accent-tag">{{ draftEdges.length }} 连线</a-tag>
-            <a-tag :class="graphValidationPreview ? 'console-accent-tag' : 'console-accent-tag'">
-              {{ graphValidationPreview ? 'NEEDS CHECK' : 'VALID' }}
-            </a-tag>
-            <a-button @click="openListPage()">返回列表页</a-button>
-            <a-button @click="exportModalOpen = true">导出 JSON</a-button>
-            <a-button v-if="canManageGovernance" @click="openImportModal">导入 JSON</a-button>
-            <a-button v-if="canManageGovernance" type="primary" @click="submitSave">
-              {{ isDirty ? '保存 Playbook' : '重新保存' }}
-            </a-button>
-            <a-button v-if="canManageGovernance" danger ghost @click="emit('deletePlaybook', currentPlaybook.id)">删除 Playbook</a-button>
-          </a-space>
-        </template>
+      <div class="playbook-editor-toolbar playbook-editor-toolbar--caption">
+        <a-typography-text type="secondary">
+          图编排页仅保留节点、连线与 Inspector 编辑；基础属性、引用关系和操作记录请回列表页查看。
+        </a-typography-text>
+      </div>
 
-        <div class="playbook-workbench">
+      <div class="playbook-workbench__content">
           <a-alert
             v-if="validationError"
             type="warning"
             show-icon
             :message="validationError"
           />
-
-          <a-form layout="vertical" :model="editForm">
-            <a-row :gutter="[16, 16]">
-              <a-col :span="8">
-                <a-form-item label="名称">
-                  <a-input v-model:value="editForm.name" :disabled="!canManageGovernance" />
-                </a-form-item>
-              </a-col>
-              <a-col :span="8">
-                <a-form-item label="超时策略">
-                  <a-input v-model:value="editForm.executionPolicy.timeoutPolicy" :disabled="!canManageGovernance" placeholder="例如：PT5M" />
-                </a-form-item>
-              </a-col>
-              <a-col :span="8">
-                <a-form-item label="重试策略">
-                  <a-input v-model:value="editForm.executionPolicy.retryPolicy" :disabled="!canManageGovernance" placeholder="例如：PT30S" />
-                </a-form-item>
-              </a-col>
-            </a-row>
-            <a-form-item label="描述">
-              <a-textarea v-model:value="editForm.description" :disabled="!canManageGovernance" :rows="2" />
-            </a-form-item>
-            <a-row :gutter="[16, 16]">
-              <a-col :span="12">
-                <a-form-item label="Input Schema">
-                  <a-textarea v-model:value="editForm.inputSchema" :disabled="!canManageGovernance" :rows="3" />
-                </a-form-item>
-              </a-col>
-              <a-col :span="12">
-                <a-form-item label="Result Schema">
-                  <a-textarea v-model:value="editForm.resultSchema" :disabled="!canManageGovernance" :rows="3" />
-                </a-form-item>
-              </a-col>
-            </a-row>
-            <a-row :gutter="[16, 16]">
-              <a-col :span="12">
-                <a-form-item label="允许人工节点">
-                  <a-switch v-model:checked="editForm.allowHumanTask" :disabled="!canManageGovernance" />
-                </a-form-item>
-              </a-col>
-              <a-col :span="12">
-                <a-form-item label="允许站外交互节点">
-                  <a-switch v-model:checked="editForm.allowExternalInteraction" :disabled="!canManageGovernance" />
-                </a-form-item>
-              </a-col>
-            </a-row>
-          </a-form>
 
           <div class="playbook-studio">
             <aside class="playbook-panel playbook-palette">
@@ -992,25 +951,11 @@ onBeforeUnmount(() => {
               </div>
             </aside>
           </div>
-
-          <ObjectReferencePanel
-            :object-type="'PLAYBOOK'"
-            :object-id="currentPlaybook.id"
-            :reload-key="`${catalogRevision}:${currentPlaybook.id}`"
-            title="Playbook 引用分析"
-          />
-
-          <ObjectHistoryPanel
-            aggregate-type="PLAYBOOK"
-            :object-id="currentPlaybook.id"
-            :reload-key="`${catalogRevision}:${currentPlaybook.id}`"
-          />
         </div>
-      </a-card>
+      </div>
+  </a-card>
 
-      <a-empty v-else description="当前助手下还没有 Playbook" />
-    </a-col>
-  </a-row>
+  <a-empty v-else description="当前助手下还没有 Playbook" />
 
   <a-modal
     :open="importModalOpen"
@@ -1061,6 +1006,33 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 18px;
+}
+
+.playbook-workbench__content {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.playbook-editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.playbook-editor-toolbar--caption {
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.playbook-editor-toolbar__select {
+  width: 220px;
+}
+
+.playbook-editor-toolbar__select--wide {
+  width: 320px;
 }
 
 .playbook-studio {
@@ -1284,6 +1256,15 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 1200px) {
+  .playbook-editor-toolbar {
+    align-items: flex-start;
+  }
+
+  .playbook-editor-toolbar__select,
+  .playbook-editor-toolbar__select--wide {
+    width: min(100%, 320px);
+  }
+
   .playbook-studio {
     grid-template-columns: 1fr;
   }
