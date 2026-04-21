@@ -66,6 +66,7 @@ public class SessionRuntimeService {
     private final RedisKeyspace redisKeyspace;
     private final RedisIdempotencyService idempotencyService;
     private final SessionRuntimeChangeNoticePublisher changeNoticePublisher;
+    private final ExternalCallbackIdempotencyKeyFactory externalCallbackIdempotencyKeyFactory;
 
     public SessionRuntimeService(
         SessionWorkflowGateway sessionWorkflowGateway,
@@ -89,7 +90,8 @@ public class SessionRuntimeService {
                     new io.micrometer.core.instrument.simple.SimpleMeterRegistry()
                 )
             ),
-            null
+            null,
+            new ExternalCallbackIdempotencyKeyFactory(new ObjectMapper())
         );
     }
 
@@ -103,7 +105,8 @@ public class SessionRuntimeService {
         ObjectMapper objectMapper,
         RedisKeyspace redisKeyspace,
         RedisIdempotencyService idempotencyService,
-        SessionRuntimeChangeNoticePublisher changeNoticePublisher
+        SessionRuntimeChangeNoticePublisher changeNoticePublisher,
+        ExternalCallbackIdempotencyKeyFactory externalCallbackIdempotencyKeyFactory
     ) {
         this.sessionWorkflowGateway = sessionWorkflowGateway;
         this.catalogService = catalogService;
@@ -114,6 +117,7 @@ public class SessionRuntimeService {
         this.redisKeyspace = redisKeyspace;
         this.idempotencyService = idempotencyService;
         this.changeNoticePublisher = changeNoticePublisher;
+        this.externalCallbackIdempotencyKeyFactory = externalCallbackIdempotencyKeyFactory;
     }
 
     public List<SessionRuntimeSessionDto> listSessions() {
@@ -196,7 +200,7 @@ public class SessionRuntimeService {
     }
 
     public SessionRuntimeSessionDto externalCallback(String sessionId, ExternalCallbackRequest request, String idempotencyKey) {
-        String effectiveIdempotencyKey = normalizeExternalCallbackIdempotencyKey(sessionId, request, idempotencyKey);
+        String effectiveIdempotencyKey = externalCallbackIdempotencyKeyFactory.resolve(sessionId, request, idempotencyKey);
         return idempotencyService.execute(
             redisKeyspace.idempotency("session-external-callback", effectiveIdempotencyKey),
             SessionRuntimeSessionDto.class,
@@ -533,17 +537,6 @@ public class SessionRuntimeService {
             updated.id(),
             () -> sendMessageInternal(updated.id(), new SendSessionMessageRequest(request.customerId(), openingMessage), updated)
         );
-    }
-
-    private String normalizeExternalCallbackIdempotencyKey(
-        String sessionId,
-        ExternalCallbackRequest request,
-        String idempotencyKey
-    ) {
-        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
-            return idempotencyKey.trim();
-        }
-        return sessionId + ":" + request.playbookRunId() + ":" + Integer.toHexString(request.payload().hashCode());
     }
 
     private SessionRuntimeSessionDto externalCallbackInternal(String sessionId, ExternalCallbackRequest request) {

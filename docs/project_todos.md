@@ -170,14 +170,15 @@
 - `SessionDispatchLockService` 从进程内 `ReentrantLock` 切到 `RedisLockService`
 - Session Runtime 跨实例流：`SessionRuntimeStreamService` + `SessionRuntimeReplayStore` + `SessionRuntimeChangeNoticePublisher`（API）与 `SessionRuntimeChangePublisher`（worker）通过 Redis Pub/Sub 协同；Web 侧 `EventSource` 已接入，轮询作为 fallback
 - `CatalogService` / `KnowledgeService` 去 JVM 内存镜像，切到 repository-first 读写；发布 / 更新通过 `RedisInvalidationBus` 广播失效
+- `external-callback` 幂等闭环：显式 `Idempotency-Key` 优先，缺失时由服务端按 `sessionId + playbookRunId + payload` 派生稳定 key；Web 侧 helper 与 OpenAPI 描述已对齐
+- API 双实例语义测试已建立：共享登录态、共享幂等键、分布式 session 锁、SSE 跨实例 broadcast / replay 已有自动化覆盖
 
 仍未闭环：
 
 1. **分布式限流**：尚未引入 Bucket4j 或同级方案（与 §3.5 合并推进）
-2. **幂等覆盖面**：`RedisIdempotencyService` 已就位，但真实 webhook / `external-callback` / 高风险控制面写接口的幂等 key 规范尚未成体系接入（依赖 §2.2 第一个真实 provider）
-3. **多实例专项测试**：双 API / 双 Worker 环境的跨实例集成测试与故障注入仍未建立
+2. **幂等覆盖面**：`external-callback` 已完成稳定 key 规范与跨实例验证；剩余缺口集中在真实 webhook 与高风险控制面写接口的体系化接入（依赖 §2.2 第一个真实 provider）
+3. **多实例专项测试**：API 双实例核心语义已覆盖；双 Worker 环境、Redis / API / Worker 故障注入与恢复验证仍未建立
 4. **生产交付面**：生产级 compose / K8s manifest、TLS、Secret 注入策略仍待补齐（与 §3.1 合并）
-5. **分层健康检查**：API 仅有 `/api/system/health`，尚未拆分 liveness / readiness；Knowledge Service 仍缺 `/healthz`；Agent Runtime `/healthz` 未暴露依赖状态
 
 依赖：与 §3.1（部署配套）、§3.4（缓存）、§3.5（限流）协同；§4.4 多租户隔离也在多实例验证闭环后才有规模化意义。
 

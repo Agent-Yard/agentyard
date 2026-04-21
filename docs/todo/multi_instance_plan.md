@@ -56,11 +56,11 @@
 
 当前仍未闭环的主要缺口：
 
-1. 幂等基座虽已就位，真实 provider webhook 与 external-callback 的幂等 key 规范还未成体系接入（依赖 §2.4 的第一个真实 provider）
+1. 幂等基座已覆盖 `external-callback`：显式 `Idempotency-Key` 与服务端 fallback key 规则已对齐并经双实例测试验证；剩余缺口集中在真实 provider webhook 与高风险控制面写接口
 2. 分布式限流尚未落地
-3. 双实例一致性验证场景与测试矩阵尚未建立
+3. 双实例一致性验证已覆盖 API 主干语义，但双 Worker 与故障注入矩阵仍未建立
 4. K8s manifest、TLS、Secret 注入等生产交付面尚未补齐（和主 todos §3.1 协同）
-5. 健康检查仍以 `/api/system/health`、`/healthz` 单点为主，readiness / liveness 与依赖检查未分层
+5. 健康检查主干已补齐：API 已拆出 `/api/system/health/live|ready`，worker / knowledge-service / agent-runtime 均已暴露健康端点；剩余重点不再在健康检查，而在限流、生产交付与故障注入验证
 
 所以后续工作重心从“接 Redis”转为“验证多实例正确性 + 补齐生产交付和治理面”。
 
@@ -126,7 +126,6 @@
 `RedisIdempotencyService` 已提供统一幂等能力，但当前尚未真正覆盖：
 
 - 真实 provider webhook（依赖 §2.4）
-- `external-callback` 高并发场景
 - 高风险控制面写接口的显式 `Idempotency-Key`
 
 #### 分布式限流
@@ -137,17 +136,15 @@
 
 现有单元与集成测试仍以单进程语义为主，缺少：
 
-- 双 API 实例共享 Session
-- 双 API 实例共享锁 / 幂等键
-- 双 API 实例 SSE replay / broadcast
+- 双 Worker 环境验证
 - Redis / 单实例故障场景
 
 #### 健康检查与服务治理
 
-- API 仅有 `/api/system/health`，没有拆分 liveness / readiness
-- Knowledge Service 缺 `/healthz`
-- Agent Runtime `/healthz` 未暴露 Redis 等依赖状态
-- Worker 没有标准健康端点
+- API 已提供 `/api/system/health`、`/api/system/health/live`、`/api/system/health/ready`
+- Knowledge Service 已提供 `/healthz`
+- Agent Runtime 已提供 `/healthz`
+- Worker 已提供 `/healthz`
 
 #### 生产交付配套
 
@@ -354,7 +351,7 @@ TTL 原则：
 
 - B1：`apps/api/build.gradle.kts` 引入 `spring-session-data-redis`，`SessionRedisConfiguration` 固定 serializer
 - B2：`SessionDispatchLockService` 的 conversation / session 锁已切到 `RedisLockService + RedisKeyspace`，owner token、TTL、compare-and-delete 语义由共享能力层统一
-- B3：`RedisIdempotencyService` 已具备幂等能力；接入真实 webhook / `external-callback` / 控制面写接口的 `Idempotency-Key` 覆盖仍是后续工作（见 §3.2）
+- B3：`RedisIdempotencyService` 已具备幂等能力；`external-callback` 已补齐稳定 key 规范、Web / OpenAPI 对齐与双实例验证，剩余仍待推进的是真实 webhook 与控制面写接口的 `Idempotency-Key` 覆盖（见 §3.2）
 
 ### 已完成：工作流 C Session Runtime 跨实例推送
 
@@ -377,14 +374,14 @@ TTL 原则：
 
 ### 工作流 E：服务治理与健康检查
 
-这部分不属于“共享状态”本身，但从当前代码状态看，必须与 3.7 同步补。
+这部分不属于“共享状态”本身，但多实例落地时必须一起补。当前主干已落地，后续不再是本专项的主要缺口。
 
 #### 当前状态
 
-- API 只有 `/api/system/health`，内容基本是静态返回
-- Agent Runtime 有 `/healthz`
-- Knowledge Service 没有显式 health/readiness endpoint
-- Worker 没有标准对外健康端点
+- API 已拆出 `/api/system/health/live` 与 `/api/system/health/ready`，并在 readiness 中探测 PostgreSQL / Redis / Temporal
+- Agent Runtime 保持 `/healthz`
+- Knowledge Service 已提供 `/healthz`
+- Worker 已提供 `/healthz`
 
 #### 为什么 3.7 必须带上它
 
@@ -394,12 +391,9 @@ TTL 原则：
 - 异常实例无法被及时隔离
 - API 与内部服务故障会变成随机请求失败
 
-#### 本轮建议
+#### 当前结论
 
-1. API：把当前 health 拆成 liveness / readiness
-2. Knowledge Service：补 `/healthz`，校验 PostgreSQL/MinIO/embedding config 基本可用
-3. Agent Runtime：保留 `/healthz`，增加 Redis dependency details
-4. Worker：至少补进程存活与 Temporal connectivity 验证
+健康检查分层已不再是多实例专项的阻断项；后续更值得投入的是限流、生产交付与故障注入。
 
 ### 工作流 F：多实例限流
 
@@ -430,18 +424,17 @@ TTL 原则：
 
 - Phase 0 共享状态基座、Phase 1 API 会话去本地化（Spring Session + 分布式锁 + 幂等基座）、Phase 2 SSE 跨实例广播、Phase 3 Catalog / Knowledge 去内存化均已在 2026-04 前后的 shared-state refactor 中落地
 
-### Phase 4：限流、健康检查与 provider 协同（待做）
+### Phase 4：限流与 provider 协同（待做）
 
-- 工作流 E（健康检查分层）
 - 工作流 F（Bucket4j + Redis 限流）
 - 随 §2.4 真实 provider 接入一并铺开 webhook 幂等与签名校验
 
 ### Phase 5：双实例环境验证（待做）
 
-- 双 API / 双 Worker 环境
+- 双 Worker 环境与 API/Worker 联动验证
 - 故障注入验证
 - Redis / API / Worker 单点失效验证
-- 针对 SSE replay、分布式锁、幂等键、session 登录态的跨实例集成测试
+- API 双实例核心语义已覆盖；剩余补齐双 Worker 与故障注入验证
 
 ## 8. 依赖与代码变更清单
 
@@ -487,7 +480,7 @@ TTL 原则：
 
 ## 9. 测试与验收矩阵
 
-当前仓库缺的不是普通单元测试，而是多实例语义测试。
+当前仓库缺的重点已经不是“是否有多实例语义测试”，而是把 API 双实例验证继续扩到双 Worker 与故障注入。
 
 ### 9.1 必须新增的测试层次
 
@@ -502,12 +495,17 @@ TTL 原则：
 
 #### API 集成测试
 
-至少要有：
+当前已覆盖：
 
 1. 双 API 实例共享 Redis Session
 2. 双 API 实例共享分布式锁
-3. 双 API 实例共享幂等键
+3. 双 API 实例共享幂等键（`external-callback`）
 4. 双 API 实例 SSE replay / broadcast
+
+仍需补：
+
+1. 双 Worker 环境联动
+2. Redis / API / Worker 故障注入
 
 #### 端到端场景测试
 
@@ -516,7 +514,7 @@ TTL 原则：
 1. 在实例 A 建立会话，在实例 B 请求 `/api/auth/session`
 2. SSE 连接在实例 B，session 更新由实例 A 触发
 3. 并发 createSession 不产生重复活跃 session
-4. 同一 webhook 打到两个实例只处理一次
+4. 同一 `external-callback` 打到两个实例只处理一次
 5. catalog 更新在另一实例立即可见
 
 ### 9.2 最低验收场景
@@ -570,6 +568,6 @@ TTL 原则：
 2. Session Runtime 跨实例推送 — 已完成
 3. Catalog / Knowledge 去内存化 — 已完成
 4. Redis 共享状态能力层收口 — 已完成（`packages/shared-redis-jvm`）
-5. 多实例专项测试与双实例环境验证 — 仍待做
+5. 多实例专项测试与双实例环境验证 — API 双实例核心语义已完成，双 Worker / 故障注入仍待做
 
-剩余工作的重点已经从“把 Redis 接进来”转为“证明多实例正确性”和“补齐生产交付与治理面”：限流、分层健康检查、真实 provider 的 webhook 幂等、双实例集成测试与故障注入、生产 K8s / TLS / Secret 等运维基线。
+剩余工作的重点已经从“把 Redis 接进来”进一步收敛为“补齐还未证明的那部分多实例正确性”和“补齐生产交付与治理面”：限流、真实 provider 的 webhook 幂等、双 Worker 与故障注入、生产 K8s / TLS / Secret 等运维基线。

@@ -823,7 +823,7 @@ paths:
           required: false
           schema:
             type: string
-          description: Reuse the same key to make repeated callback deliveries idempotent.
+          description: Explicit key wins; when omitted, the server derives a stable key from sessionId, playbookRunId, and payload.
       requestBody:
         required: true
         content:

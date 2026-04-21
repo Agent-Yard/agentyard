@@ -159,7 +159,7 @@ function externalCallbackIdempotencyKey(
   sessionId: string,
   payload: { playbookRunId: string; payload?: Record<string, unknown> },
 ): string {
-  // Keep the key stable across retries so duplicate deliveries converge on the same server-side record.
+  // Keep this aligned with the API-side ExternalCallbackIdempotencyKeyFactory fallback algorithm.
   const payloadSeed = stableStringify(payload.payload ?? {});
   return `external-callback:${sessionId}:${payload.playbookRunId}:${hashIdempotencySeed(payloadSeed)}`;
 }

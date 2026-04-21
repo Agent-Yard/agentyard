@@ -167,7 +167,7 @@ SPRING_PROFILES_ACTIVE=default pnpm local:worker
 - 知识库支持文件上传和 URL 导入；导入任务与索引快照都通过知识服务异步推进
 - Web 知识库工作台会轮询展示导入 / 快照状态，并支持失败重试与检索验证
 - 若命中真实模型资源，必须在根目录 `.env` 提供对应 API key
-- `createSession` / `sendMessage` / `human-resume` / `external-callback` / `human-reply` 当前都通过 `/api/session-runtime/...` 入口受理，运行结果由会话页轮询收口
+- `createSession` / `sendMessage` / `human-resume` / `external-callback` / `human-reply` 当前都通过 `/api/session-runtime/...` 入口受理；会话页优先通过 `EventSource` 接收运行态更新，轮询仅作 fallback
 - `BUSINESS_USER` 只保留目录只读与运行态使用；目录治理写操作需要 `PLATFORM_ADMIN / DOMAIN_ADMIN / DEVELOPER`
 
 ## 后续扩展方向
