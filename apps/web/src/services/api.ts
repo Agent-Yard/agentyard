@@ -101,13 +101,14 @@ async function readResponseData<T>(response: Response): Promise<T> {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const { headers: optionHeaders, ...requestOptions } = options ?? {};
   const response = await fetch(`${API_BASE}${path}`, {
     credentials: 'include',
+    ...requestOptions,
     headers: {
       'Content-Type': 'application/json',
-      ...(options?.headers ?? {}),
+      ...(optionHeaders ?? {}),
     },
-    ...options,
   });
   return readResponseData<T>(response);
 }
@@ -117,11 +118,14 @@ function jsonOptions(
   body?: unknown,
   headers?: HeadersInit,
 ): RequestInit {
-  return {
+  const options: RequestInit = {
     method,
-    headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   };
+  if (headers !== undefined) {
+    options.headers = headers;
+  }
+  return options;
 }
 
 function runtimeSessionStreamUrl(sessionId: string, lastEventId?: string | null) {

@@ -102,6 +102,7 @@ describe('api client', () => {
       '/api/knowledge-bases/knowledge-1/retrieval-preview',
       expect.objectContaining({
         credentials: 'include',
+        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
         method: 'POST',
         body: JSON.stringify({
           snapshotId: 'snapshot-1',
@@ -156,11 +157,105 @@ describe('api client', () => {
       '/api/session-runtime/sessions',
       expect.objectContaining({
         credentials: 'include',
+        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
         method: 'POST',
         body: JSON.stringify({
           assistantId: 'assistant-1',
           customerId: 'customer-1',
           openingMessage: '你好',
+        }),
+      }),
+    );
+  });
+
+  it('preserves the JSON content type when write requests do not provide custom headers', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        data: {
+          id: 'domain-1',
+          name: '客服域',
+          description: '处理客服相关流程',
+          scenarios: [],
+          resources: [],
+          knowledgeBases: [],
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.createDomain({
+      name: '客服域',
+      description: '处理客服相关流程',
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/domains',
+      expect.objectContaining({
+        credentials: 'include',
+        method: 'POST',
+        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          name: '客服域',
+          description: '处理客服相关流程',
+        }),
+      }),
+    );
+  });
+
+  it('merges default JSON headers with per-request idempotency headers', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        data: {
+          id: 'session-1',
+          scenarioId: 'scenario-1',
+          title: '默认会话',
+          sessionId: 'session-1',
+          customerId: 'customer-1',
+          assistantId: 'assistant-1',
+          assistantName: '助手',
+          assistantReleaseVersion: '1.0.0',
+          status: 'ACTIVE',
+          primaryAgentId: 'agent-1',
+          currentOwnerAgentId: 'agent-1',
+          activePlaybookRunId: null,
+          agentTurnActive: false,
+          sessionHumanHandoffActive: false,
+          pendingOwnerReevaluation: false,
+          draining: false,
+          sharedState: {},
+          idleDeadline: null,
+          createdAt: '2026-04-01T00:00:00Z',
+          updatedAt: '2026-04-01T00:00:00Z',
+          endedAt: null,
+          latestEventSequence: 0,
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.resumeRuntimePlaybookWithExternalCallback(
+      'session-1',
+      {
+        playbookRunId: 'playbook-run-1',
+        payload: { approved: true },
+      },
+      'custom-idempotency-key',
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/session-runtime/sessions/session-1/external-callback',
+      expect.objectContaining({
+        credentials: 'include',
+        method: 'POST',
+        headers: expect.objectContaining({
+          'Content-Type': 'application/json',
+          'Idempotency-Key': 'custom-idempotency-key',
         }),
       }),
     );
