@@ -5,9 +5,7 @@ export type PageKey =
   | 'agent'
   | 'playbook'
   | 'knowledge-library'
-  | 'knowledge-create'
   | 'resource-library'
-  | 'resource-create'
   | 'runtime';
 
 export type SectionKey = 'design' | 'build' | 'knowledge' | 'resource' | 'runtime-observe';
@@ -81,26 +79,12 @@ export const pageMeta: Record<PageKey, { label: string; title: string; subtitle:
     section: 'knowledge',
     path: `${consoleBasePath}/knowledge`,
   },
-  'knowledge-create': {
-    label: '知识库新建',
-    title: '知识库创建页',
-    subtitle: '创建知识库治理对象，后续再进入工作台维护内容与发布。',
-    section: 'knowledge',
-    path: `${consoleBasePath}/knowledge/new`,
-  },
   'resource-library': {
     label: '资源目录',
     title: '资源目录页',
     subtitle: '查看 Tool / LLM / Skill 的版本流转、生效状态和引用分析。',
     section: 'resource',
     path: `${consoleBasePath}/resources`,
-  },
-  'resource-create': {
-    label: '资源新建',
-    title: '资源新建页',
-    subtitle: '按资源类型维护结构化配置，创建可版本化的能力资源。',
-    section: 'resource',
-    path: `${consoleBasePath}/resources/new`,
   },
   runtime: {
     label: '会话运行',
@@ -147,7 +131,6 @@ export const menuItems = [
     label: sectionMeta.knowledge.label,
     children: [
       { key: 'knowledge-library', label: pageMeta['knowledge-library'].label },
-      { key: 'knowledge-create', label: pageMeta['knowledge-create'].label },
     ],
   },
   {
@@ -155,7 +138,6 @@ export const menuItems = [
     label: sectionMeta.resource.label,
     children: [
       { key: 'resource-library', label: pageMeta['resource-library'].label },
-      { key: 'resource-create', label: pageMeta['resource-create'].label },
     ],
   },
   {

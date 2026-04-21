@@ -67,7 +67,7 @@ function sectionTitle(relations: ObjectReferenceRelation[], emptyText: string, p
                     <a-typography-text strong>{{ item.targetName }}</a-typography-text>
                     <a-tag :color="impactColor(item)">{{ impactLabel(item) }}</a-tag>
                     <a-tag>{{ modeLabel(item) }}</a-tag>
-                    <a-tag color="blue">{{ relationLabel(item.relationKind) }}</a-tag>
+                    <a-tag class="console-accent-tag">{{ relationLabel(item.relationKind) }}</a-tag>
                   </a-space>
                   <a-typography-text type="secondary">{{ relationContext(item) }}</a-typography-text>
                 </a-space>
@@ -86,7 +86,7 @@ function sectionTitle(relations: ObjectReferenceRelation[], emptyText: string, p
                     <a-typography-text strong>{{ item.targetName }}</a-typography-text>
                     <a-tag :color="impactColor(item)">{{ impactLabel(item) }}</a-tag>
                     <a-tag>{{ modeLabel(item) }}</a-tag>
-                    <a-tag color="blue">{{ relationLabel(item.relationKind) }}</a-tag>
+                    <a-tag class="console-accent-tag">{{ relationLabel(item.relationKind) }}</a-tag>
                   </a-space>
                   <a-typography-text type="secondary">{{ relationContext(item) }}</a-typography-text>
                 </a-space>
@@ -104,7 +104,7 @@ function sectionTitle(relations: ObjectReferenceRelation[], emptyText: string, p
                   <a-space wrap>
                     <a-typography-text strong>{{ item.targetName }}</a-typography-text>
                     <a-tag :color="cascadeActionColor(item)">{{ cascadeActionLabel(item) }}</a-tag>
-                    <a-tag color="blue">{{ relationLabel(item.relationKind) }}</a-tag>
+                    <a-tag class="console-accent-tag">{{ relationLabel(item.relationKind) }}</a-tag>
                   </a-space>
                   <a-typography-text type="secondary">{{ cascadeContext(item) }}</a-typography-text>
                   <a-typography-text>{{ item.description }}</a-typography-text>

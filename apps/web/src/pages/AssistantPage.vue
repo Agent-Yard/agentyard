@@ -27,6 +27,7 @@ const emit = defineEmits<{
 }>();
 
 const selectedAssistantId = ref('');
+const createDrawerOpen = ref(false);
 const createForm = reactive<CreateAssistantPayload>({
   scenarioId: '',
   name: '',
@@ -306,8 +307,14 @@ function submitCreate() {
       knowledgeBaseId: createForm.knowledgeAccessPolicy.enabled ? createForm.knowledgeAccessPolicy.knowledgeBaseId : null,
     },
   });
+  createDrawerOpen.value = false;
   createForm.name = '';
   createForm.description = '';
+}
+
+function openCreateDrawer() {
+  createForm.scenarioId = current.value?.scenarioId ?? props.scenarios[0]?.id ?? '';
+  createDrawerOpen.value = true;
 }
 
 function submitUpdate() {
@@ -328,92 +335,19 @@ function submitUpdate() {
 </script>
 
 <template>
+  <div v-if="canManageGovernance" class="page-inline-toolbar">
+    <a-button type="primary" @click="openCreateDrawer">新建助手</a-button>
+  </div>
+
   <a-row :gutter="[16, 16]">
     <a-col :span="10">
-      <a-card v-if="canManageGovernance" title="新建助手">
-        <a-form layout="vertical" :model="createForm" @finish="submitCreate">
-          <a-form-item label="所属场景" name="scenarioId">
-            <a-select
-              v-model:value="createForm.scenarioId"
-              :options="scenarios.map((item) => ({ label: item.name, value: item.id }))"
-            />
-          </a-form-item>
-          <a-form-item label="助手名称" name="name">
-            <a-input v-model:value="createForm.name" placeholder="例如：售后策略助手" />
-          </a-form-item>
-          <a-form-item label="描述" name="description">
-            <a-textarea
-              v-model:value="createForm.description"
-              :rows="4"
-              placeholder="说明该助手负责的业务目标和协作方式"
-            />
-          </a-form-item>
-          <a-form-item label="草稿默认模型">
-            <a-select
-              v-model:value="createForm.modelPolicy.defaultModelResourceId"
-              allow-clear
-              :disabled="!modelResources.length"
-              :options="modelResources.map((item) => ({ label: item.name, value: item.id }))"
-              placeholder="选择默认模型资源"
-            />
-          </a-form-item>
-          <a-row :gutter="[16, 16]">
-            <a-col :span="12">
-              <a-form-item label="启用隐私映射">
-                <a-switch v-model:checked="createForm.privacyMappingEnabled" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="私有映射模型">
-                <a-select
-                  v-model:value="createForm.privacyModelResourceId"
-                  allow-clear
-                  :disabled="!createForm.privacyMappingEnabled || !privateModelResources.length"
-                  :options="privateModelResources.map((item) => ({ label: item.name, value: item.id }))"
-                  placeholder="选择 privateDeployment 模型"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <a-alert
-            v-if="createModelHint"
-            :type="createModelHint.type"
-            show-icon
-            :message="createModelHint.message"
-            style="margin-bottom: 16px"
-          />
-          <a-row :gutter="[16, 16]">
-            <a-col :span="12">
-              <a-form-item label="记忆窗口">
-                <a-input-number v-model:value="createForm.memoryPolicy.windowSize" :min="1" style="width: 100%" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="默认知识能力">
-                <a-switch v-model:checked="createForm.knowledgeAccessPolicy.enabled" />
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <a-form-item label="默认知识库">
-            <a-select
-              v-model:value="createForm.knowledgeAccessPolicy.knowledgeBaseId"
-              :disabled="!createForm.knowledgeAccessPolicy.enabled"
-              allow-clear
-              :options="knowledgeBaseOptions"
-              placeholder="选择知识库"
-            />
-          </a-form-item>
-          <a-button type="primary" html-type="submit">创建助手</a-button>
-        </a-form>
-      </a-card>
-
       <a-card title="助手列表">
         <a-list :data-source="assistants">
           <template #renderItem="{ item }">
             <a-list-item class="clickable-item" @click="selectedAssistantId = item.id">
               <a-list-item-meta :title="item.name" :description="item.description" />
               <a-space>
-                <a-tag v-if="selectedAssistantId === item.id" color="blue">当前</a-tag>
+                <a-tag v-if="selectedAssistantId === item.id" class="console-accent-tag">当前</a-tag>
                 <a-tag :color="item.version.status === 'PUBLISHED' ? 'green' : 'gold'">
                   {{ item.version.status }}
                 </a-tag>
@@ -428,7 +362,7 @@ function submitUpdate() {
       <a-card v-if="current" :title="current.name">
         <template #extra>
           <a-space>
-            <a-tag color="blue">{{ current.agents.length }} 个智能体</a-tag>
+            <a-tag class="console-accent-tag">{{ current.agents.length }} 个智能体</a-tag>
             <a-button v-if="canManageGovernance" danger ghost @click="emit('deleteAssistant', current.id)">删除助手</a-button>
           </a-space>
         </template>
@@ -561,4 +495,95 @@ function submitUpdate() {
       />
     </a-col>
   </a-row>
+
+  <a-drawer
+    :open="createDrawerOpen"
+    title="新建助手"
+    :width="680"
+    destroy-on-close
+    @close="createDrawerOpen = false"
+  >
+    <div class="create-drawer">
+      <div class="create-drawer__kicker">02.01 / 助手构建 / 助手配置</div>
+      <div class="create-drawer__body">
+        <a-form layout="vertical" :model="createForm" @finish="submitCreate">
+          <a-form-item label="所属场景" name="scenarioId">
+            <a-select
+              v-model:value="createForm.scenarioId"
+              :options="scenarios.map((item) => ({ label: item.name, value: item.id }))"
+            />
+          </a-form-item>
+          <a-form-item label="助手名称" name="name">
+            <a-input v-model:value="createForm.name" placeholder="例如：售后策略助手" />
+          </a-form-item>
+          <a-form-item label="描述" name="description">
+            <a-textarea
+              v-model:value="createForm.description"
+              :rows="4"
+              placeholder="说明该助手负责的业务目标和协作方式"
+            />
+          </a-form-item>
+          <a-form-item label="草稿默认模型">
+            <a-select
+              v-model:value="createForm.modelPolicy.defaultModelResourceId"
+              allow-clear
+              :disabled="!modelResources.length"
+              :options="modelResources.map((item) => ({ label: item.name, value: item.id }))"
+              placeholder="选择默认模型资源"
+            />
+          </a-form-item>
+          <a-row :gutter="[16, 16]">
+            <a-col :span="12">
+              <a-form-item label="启用隐私映射">
+                <a-switch v-model:checked="createForm.privacyMappingEnabled" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="私有映射模型">
+                <a-select
+                  v-model:value="createForm.privacyModelResourceId"
+                  allow-clear
+                  :disabled="!createForm.privacyMappingEnabled || !privateModelResources.length"
+                  :options="privateModelResources.map((item) => ({ label: item.name, value: item.id }))"
+                  placeholder="选择 privateDeployment 模型"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-alert
+            v-if="createModelHint"
+            :type="createModelHint.type"
+            show-icon
+            :message="createModelHint.message"
+            style="margin-bottom: 16px"
+          />
+          <a-row :gutter="[16, 16]">
+            <a-col :span="12">
+              <a-form-item label="记忆窗口">
+                <a-input-number v-model:value="createForm.memoryPolicy.windowSize" :min="1" style="width: 100%" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="默认知识能力">
+                <a-switch v-model:checked="createForm.knowledgeAccessPolicy.enabled" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-form-item label="默认知识库">
+            <a-select
+              v-model:value="createForm.knowledgeAccessPolicy.knowledgeBaseId"
+              :disabled="!createForm.knowledgeAccessPolicy.enabled"
+              allow-clear
+              :options="knowledgeBaseOptions"
+              placeholder="选择知识库"
+            />
+          </a-form-item>
+          <div class="create-drawer__actions">
+            <a-button @click="createDrawerOpen = false">取消</a-button>
+            <a-button type="primary" html-type="submit">创建助手</a-button>
+          </div>
+        </a-form>
+      </div>
+    </div>
+  </a-drawer>
 </template>

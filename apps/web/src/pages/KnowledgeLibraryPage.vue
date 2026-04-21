@@ -6,6 +6,8 @@ import ObjectReferencePanel from '../components/ObjectReferencePanel.vue';
 import { hasActiveKnowledgeOperations, knowledgeSourceLabel, knowledgeStatusColor } from './knowledgeWorkspace';
 import { api } from '../services/api';
 import type {
+  BusinessDomain,
+  CreateKnowledgeBasePayload,
   CreateKnowledgeReleasePayload,
   KnowledgeBase,
   KnowledgeDocument,
@@ -18,6 +20,7 @@ import type {
 } from '../types';
 
 const props = defineProps<{
+  domains: BusinessDomain[];
   knowledgeBases: KnowledgeBase[];
   preferredKnowledgeBaseId?: string | null;
   catalogRevision: number;
@@ -25,11 +28,13 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
+  createKnowledgeBase: [payload: CreateKnowledgeBasePayload];
   refreshCatalog: [];
   deleteKnowledgeBase: [knowledgeBaseId: string];
 }>();
 
 const selectedKnowledgeBaseId = ref('');
+const createDrawerOpen = ref(false);
 const loadingWorkspace = ref(false);
 const fileList = ref<KnowledgeFile[]>([]);
 const importJobs = ref<KnowledgeImportJob[]>([]);
@@ -49,6 +54,16 @@ const retrievalPreviewResult = ref<KnowledgeRetrievalPreviewResult | null>(null)
 const documentDeletionPreview = ref<KnowledgeDocumentDeletionPreview | null>(null);
 const documentDeletionOpen = ref(false);
 let workspacePollingTimer: number | null = null;
+const createForm = reactive<CreateKnowledgeBasePayload>({
+  domainId: '',
+  name: '',
+  shareScope: 'DOMAIN_SHARED',
+  ownerType: 'DOMAIN',
+  ownerId: '',
+  summary: '',
+  steward: '',
+  tags: [],
+});
 const releaseForm = reactive<CreateKnowledgeReleasePayload>({
   summary: '',
   status: 'DRAFT',
@@ -97,8 +112,41 @@ const uploadContentWarnings = [
 const selectedKnowledgeBase = computed(() =>
   props.knowledgeBases.find((item) => item.id === selectedKnowledgeBaseId.value) ?? props.knowledgeBases[0] ?? null,
 );
+const createOwnerOptions = computed(() => {
+  if (createForm.ownerType === 'ASSISTANT') {
+    return props.domains
+      .find((domain) => domain.id === createForm.domainId)
+      ?.scenarios.flatMap((scenario) => scenario.assistants.map((assistant) => ({ label: assistant.name, value: assistant.id })))
+      ?? [];
+  }
+  return props.domains.map((domain) => ({ label: domain.name, value: domain.id }));
+});
 const readySnapshots = computed(() => snapshots.value.filter((item) => item.status === 'READY'));
 const hasPendingOperations = computed(() => hasActiveKnowledgeOperations(importJobs.value, snapshots.value));
+
+function resetCreateForm() {
+  createForm.name = '';
+  createForm.summary = '';
+  createForm.steward = '';
+  createForm.tags = [];
+  createForm.domainId = selectedKnowledgeBase.value?.domainId ?? props.domains[0]?.id ?? '';
+  createForm.shareScope = 'DOMAIN_SHARED';
+  createForm.ownerType = 'DOMAIN';
+  createForm.ownerId = createForm.domainId;
+}
+
+function openCreateDrawer() {
+  if (!createDrawerOpen.value) {
+    resetCreateForm();
+  }
+  createDrawerOpen.value = true;
+}
+
+function submitCreateKnowledgeBase() {
+  emit('createKnowledgeBase', JSON.parse(JSON.stringify(createForm)));
+  createDrawerOpen.value = false;
+  resetCreateForm();
+}
 
 async function loadWorkspace() {
   if (!selectedKnowledgeBase.value) {
@@ -188,6 +236,47 @@ watch(selectedKnowledgeBaseId, () => {
   retrievalPreviewResult.value = null;
   void loadWorkspace();
 });
+
+watch(
+  () => props.domains,
+  (domains) => {
+    if (!createForm.domainId && domains.length) {
+      createForm.domainId = selectedKnowledgeBase.value?.domainId ?? domains[0].id;
+    }
+    if (!createForm.ownerId && domains.length && createForm.ownerType === 'DOMAIN') {
+      createForm.ownerId = createForm.domainId || domains[0].id;
+    }
+  },
+  { immediate: true },
+);
+
+watch(
+  () => createForm.ownerType,
+  (ownerType) => {
+    createForm.ownerId = ownerType === 'ASSISTANT'
+      ? createOwnerOptions.value[0]?.value ?? ''
+      : (createForm.domainId || props.domains[0]?.id || '');
+  },
+  { immediate: true },
+);
+
+watch(
+  () => createForm.domainId,
+  (domainId) => {
+    if (!domainId) {
+      return;
+    }
+    if (createForm.ownerType === 'DOMAIN') {
+      createForm.ownerId = domainId;
+      return;
+    }
+    if (!createOwnerOptions.value.some((option) => option.value === createForm.ownerId)) {
+      createForm.ownerId = createOwnerOptions.value[0]?.value ?? '';
+    }
+  },
+  { immediate: true },
+);
+
 
 onMounted(() => {
   startWorkspacePolling();
@@ -396,18 +485,22 @@ async function handlePreviewRetrieval() {
 </script>
 
 <template>
+  <div v-if="canManageGovernance" class="page-inline-toolbar">
+    <a-button type="primary" @click="openCreateDrawer">新建知识库</a-button>
+  </div>
+
   <a-row :gutter="[16, 16]">
     <a-col :span="7">
       <a-card title="知识库目录">
         <template #extra>
-          <a-tag color="blue">{{ knowledgeBases.length }} 个知识库</a-tag>
+          <a-tag class="console-accent-tag">{{ knowledgeBases.length }} 个知识库</a-tag>
         </template>
         <a-list :data-source="knowledgeBases">
           <template #renderItem="{ item }">
             <a-list-item class="clickable-item" @click="selectedKnowledgeBaseId = item.id">
               <a-list-item-meta :title="item.name" :description="item.summary || item.domainId" />
               <a-space>
-                <a-tag v-if="selectedKnowledgeBaseId === item.id" color="blue">当前</a-tag>
+                <a-tag v-if="selectedKnowledgeBaseId === item.id" class="console-accent-tag">当前</a-tag>
                 <a-tag :color="item.effectiveRelease ? 'green' : 'gold'">
                   {{ item.effectiveRelease ? item.effectiveRelease.version : '未发布' }}
                 </a-tag>
@@ -464,7 +557,7 @@ async function handlePreviewRetrieval() {
                         description="文件导入需要治理写权限。"
                       />
                       <a-space wrap :size="[0, 8]">
-                        <a-tag v-for="card in uploadFormatCards" :key="card.title" color="blue">{{ card.formats }}</a-tag>
+                        <a-tag v-for="card in uploadFormatCards" :key="card.title" class="console-accent-tag">{{ card.formats }}</a-tag>
                       </a-space>
                       <a-typography-text type="secondary">提交后立即返回，后台异步解析并更新状态。</a-typography-text>
                     </a-space>
@@ -542,7 +635,7 @@ async function handlePreviewRetrieval() {
                   <a-list-item-meta :title="item.title" :description="item.sourceUri || item.fileId" />
                   <a-space>
                     <a-tag>{{ item.status }}</a-tag>
-                    <a-tag color="blue">{{ item.chunkCount }} chunks</a-tag>
+                    <a-tag class="console-accent-tag">{{ item.chunkCount }} chunks</a-tag>
                     <a-button
                       v-if="canManageGovernance"
                       danger
@@ -638,7 +731,7 @@ async function handlePreviewRetrieval() {
                     <a-space direction="vertical" style="width: 100%">
                       <a-space wrap>
                         <a-typography-text strong>{{ item.documentTitle }}</a-typography-text>
-                        <a-tag color="blue">{{ item.score.toFixed(2) }}</a-tag>
+                        <a-tag class="console-accent-tag">{{ item.score.toFixed(2) }}</a-tag>
                         <a-tag v-if="item.headingPath">{{ item.headingPath }}</a-tag>
                       </a-space>
                       <a-typography-paragraph :ellipsis="{ rows: 3 }" style="margin-bottom: 0">
@@ -754,6 +847,95 @@ async function handlePreviewRetrieval() {
       </a-card>
     </a-col>
   </a-row>
+
+  <a-drawer
+    :open="createDrawerOpen"
+    title="新建知识库"
+    :width="640"
+    destroy-on-close
+    @close="createDrawerOpen = false"
+  >
+    <div class="create-drawer">
+      <div class="create-drawer__kicker">03.01 / 知识库 / 工作台</div>
+      <div class="create-drawer__body">
+        <a-alert
+          type="info"
+          show-icon
+          message="先完成知识库的名称、归属和共享策略"
+          description="创建完成后即可导入文档、生成快照并发布检索版本。"
+        />
+        <a-form layout="vertical" :model="createForm" @finish="submitCreateKnowledgeBase">
+          <a-row :gutter="[16, 16]">
+            <a-col :span="12">
+              <a-form-item label="知识库名称">
+                <a-input v-model:value="createForm.name" placeholder="例如：客服知识库" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="所属业务域">
+                <a-select
+                  v-model:value="createForm.domainId"
+                  :options="domains.map((item) => ({ label: item.name, value: item.id }))"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <a-row :gutter="[16, 16]">
+            <a-col :span="12">
+              <a-form-item label="共享范围">
+                <a-select
+                  v-model:value="createForm.shareScope"
+                  :options="[
+                    { label: '域内共享', value: 'DOMAIN_SHARED' },
+                    { label: '私有', value: 'PRIVATE' },
+                  ]"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="归属类型">
+                <a-segmented
+                  v-model:value="createForm.ownerType"
+                  :options="[
+                    { label: '业务域', value: 'DOMAIN' },
+                    { label: '助手私有', value: 'ASSISTANT' },
+                  ]"
+                  block
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <a-form-item label="归属对象">
+            <a-select v-model:value="createForm.ownerId" :options="createOwnerOptions" />
+          </a-form-item>
+
+          <a-form-item label="摘要">
+            <a-textarea v-model:value="createForm.summary" :rows="4" />
+          </a-form-item>
+
+          <a-row :gutter="[16, 16]">
+            <a-col :span="12">
+              <a-form-item label="负责人">
+                <a-input v-model:value="createForm.steward" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="标签">
+                <a-select v-model:value="createForm.tags" mode="tags" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <div class="create-drawer__actions">
+            <a-button @click="createDrawerOpen = false">取消</a-button>
+            <a-button type="primary" html-type="submit">创建知识库</a-button>
+          </div>
+        </a-form>
+      </div>
+    </div>
+  </a-drawer>
 
   <a-modal
     :open="documentDeletionOpen"

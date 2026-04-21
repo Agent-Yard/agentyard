@@ -26,6 +26,7 @@ const emit = defineEmits<{
 
 const selectedAssistantId = ref('');
 const selectedPlaybookId = ref('');
+const createDrawerOpen = ref(false);
 
 const createForm = reactive({
   assistantId: '',
@@ -208,6 +209,7 @@ function submitCreate() {
     nodes: parseNodes(createForm.nodesJson),
     edges: parseEdges(createForm.edgesJson),
   });
+  createDrawerOpen.value = false;
   createForm.name = '';
   createForm.description = '';
   createForm.inputSchema = '';
@@ -218,6 +220,11 @@ function submitCreate() {
   createForm.entryNodeKey = '';
   createForm.nodesJson = defaultNodesJson();
   createForm.edgesJson = defaultEdgesJson();
+}
+
+function openCreateDrawer() {
+  createForm.assistantId = currentAssistant.value?.id ?? props.assistants[0]?.id ?? '';
+  createDrawerOpen.value = true;
 }
 
 function submitSave() {
@@ -248,65 +255,12 @@ function normalizeText(value: string) {
 </script>
 
 <template>
+  <div v-if="canManageGovernance" class="page-inline-toolbar">
+    <a-button type="primary" @click="openCreateDrawer">新建 Playbook</a-button>
+  </div>
+
   <a-row :gutter="[16, 16]">
     <a-col :span="9">
-      <a-card v-if="canManageGovernance" title="新建 Playbook">
-        <a-form layout="vertical" :model="createForm" @finish="submitCreate">
-          <a-form-item label="所属助手">
-            <a-select
-              v-model:value="createForm.assistantId"
-              :options="assistants.map((item) => ({ label: item.name, value: item.id }))"
-            />
-          </a-form-item>
-          <a-form-item label="名称">
-            <a-input v-model:value="createForm.name" placeholder="例如：退款受理流程" />
-          </a-form-item>
-          <a-form-item label="描述">
-            <a-textarea v-model:value="createForm.description" :rows="3" />
-          </a-form-item>
-          <a-row :gutter="[16, 16]">
-            <a-col :span="12">
-              <a-form-item label="入口节点">
-                <a-input v-model:value="createForm.entryNodeKey" placeholder="start" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="超时策略">
-                <a-input v-model:value="createForm.executionPolicy.timeoutPolicy" placeholder="可选" />
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <a-form-item label="重试策略">
-            <a-input v-model:value="createForm.executionPolicy.retryPolicy" placeholder="可选" />
-          </a-form-item>
-          <a-row :gutter="[16, 16]">
-            <a-col :span="12">
-              <a-form-item label="允许人工节点">
-                <a-switch v-model:checked="createForm.allowHumanTask" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="允许站外交互节点">
-                <a-switch v-model:checked="createForm.allowExternalInteraction" />
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <a-form-item label="Input Schema">
-            <a-textarea v-model:value="createForm.inputSchema" :rows="3" />
-          </a-form-item>
-          <a-form-item label="Result Schema">
-            <a-textarea v-model:value="createForm.resultSchema" :rows="3" />
-          </a-form-item>
-          <a-form-item label="Nodes JSON">
-            <a-textarea v-model:value="createForm.nodesJson" :rows="12" />
-          </a-form-item>
-          <a-form-item label="Edges JSON">
-            <a-textarea v-model:value="createForm.edgesJson" :rows="8" />
-          </a-form-item>
-          <a-button type="primary" html-type="submit">创建 Playbook</a-button>
-        </a-form>
-      </a-card>
-
       <a-card title="助手视图">
         <a-space direction="vertical" style="width: 100%">
           <a-select
@@ -317,7 +271,7 @@ function normalizeText(value: string) {
             <template #renderItem="{ item }">
               <a-list-item class="clickable-item" @click="selectedPlaybookId = item.id">
                 <a-list-item-meta :title="item.name" :description="item.entryNodeKey" />
-                <a-tag v-if="selectedPlaybookId === item.id" color="blue">当前</a-tag>
+                <a-tag v-if="selectedPlaybookId === item.id" class="console-accent-tag">当前</a-tag>
               </a-list-item>
             </template>
           </a-list>
@@ -329,7 +283,7 @@ function normalizeText(value: string) {
       <a-card v-if="currentPlaybook" :title="currentPlaybook.name">
         <template #extra>
           <a-space>
-            <a-tag color="blue">{{ currentAssistant?.name ?? currentPlaybook.assistantId }}</a-tag>
+            <a-tag class="console-accent-tag">{{ currentAssistant?.name ?? currentPlaybook.assistantId }}</a-tag>
             <a-button v-if="canManageGovernance" danger ghost @click="emit('deletePlaybook', currentPlaybook.id)">删除 Playbook</a-button>
           </a-space>
         </template>
@@ -410,4 +364,75 @@ function normalizeText(value: string) {
       <a-empty v-else description="当前助手下还没有 Playbook" />
     </a-col>
   </a-row>
+
+  <a-drawer
+    :open="createDrawerOpen"
+    title="新建 Playbook"
+    :width="920"
+    destroy-on-close
+    @close="createDrawerOpen = false"
+  >
+    <div class="create-drawer">
+      <div class="create-drawer__kicker">02.03 / 助手构建 / Playbook</div>
+      <div class="create-drawer__body">
+        <a-form layout="vertical" :model="createForm" @finish="submitCreate">
+          <a-form-item label="所属助手">
+            <a-select
+              v-model:value="createForm.assistantId"
+              :options="assistants.map((item) => ({ label: item.name, value: item.id }))"
+            />
+          </a-form-item>
+          <a-form-item label="名称">
+            <a-input v-model:value="createForm.name" placeholder="例如：退款受理流程" />
+          </a-form-item>
+          <a-form-item label="描述">
+            <a-textarea v-model:value="createForm.description" :rows="3" />
+          </a-form-item>
+          <a-row :gutter="[16, 16]">
+            <a-col :span="12">
+              <a-form-item label="入口节点">
+                <a-input v-model:value="createForm.entryNodeKey" placeholder="start" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="超时策略">
+                <a-input v-model:value="createForm.executionPolicy.timeoutPolicy" placeholder="可选" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-form-item label="重试策略">
+            <a-input v-model:value="createForm.executionPolicy.retryPolicy" placeholder="可选" />
+          </a-form-item>
+          <a-row :gutter="[16, 16]">
+            <a-col :span="12">
+              <a-form-item label="允许人工节点">
+                <a-switch v-model:checked="createForm.allowHumanTask" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="允许站外交互节点">
+                <a-switch v-model:checked="createForm.allowExternalInteraction" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-form-item label="Input Schema">
+            <a-textarea v-model:value="createForm.inputSchema" :rows="3" />
+          </a-form-item>
+          <a-form-item label="Result Schema">
+            <a-textarea v-model:value="createForm.resultSchema" :rows="3" />
+          </a-form-item>
+          <a-form-item label="Nodes JSON">
+            <a-textarea v-model:value="createForm.nodesJson" :rows="14" />
+          </a-form-item>
+          <a-form-item label="Edges JSON">
+            <a-textarea v-model:value="createForm.edgesJson" :rows="10" />
+          </a-form-item>
+          <div class="create-drawer__actions">
+            <a-button @click="createDrawerOpen = false">取消</a-button>
+            <a-button type="primary" html-type="submit">创建 Playbook</a-button>
+          </div>
+        </a-form>
+      </div>
+    </div>
+  </a-drawer>
 </template>

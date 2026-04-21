@@ -35,6 +35,7 @@ const createForm = reactive({
   customerId: '',
   openingMessage: '',
 });
+const createModalOpen = ref(false);
 const messageDraft = ref('');
 const privacySummary = ref<PrivacyMappingSummary | null>(null);
 
@@ -125,6 +126,21 @@ function submitCreate() {
     customerId: createForm.customerId,
     openingMessage: createForm.openingMessage.trim(),
   });
+  createModalOpen.value = false;
+  createForm.openingMessage = '';
+}
+
+function openCreateModal() {
+  createForm.customerId = props.currentCustomerId ?? '';
+  createForm.openingMessage = '';
+  if (!createForm.scenarioId && props.scenarios.length > 0) {
+    createForm.scenarioId = props.scenarios[0].id;
+  }
+  createModalOpen.value = true;
+}
+
+function closeCreateModal() {
+  createModalOpen.value = false;
   createForm.openingMessage = '';
 }
 
@@ -212,49 +228,22 @@ function formatSharedState(value: Record<string, unknown> | null | undefined) {
 </script>
 
 <template>
+  <div class="page-inline-toolbar">
+    <a-button
+      type="primary"
+      :disabled="!currentCustomerId"
+      @click="openCreateModal"
+    >
+      新建 Session
+    </a-button>
+  </div>
+
   <a-row :gutter="[16, 16]">
     <a-col :span="7">
-      <a-card title="新建 Session">
-        <a-form layout="vertical" :model="createForm">
-          <a-form-item label="业务场景">
-            <a-select
-              v-model:value="createForm.scenarioId"
-              :disabled="creatingSession"
-              :options="scenarios.map((item) => ({ label: item.name, value: item.id }))"
-            />
-          </a-form-item>
-          <a-form-item label="助手">
-            <a-select
-              v-model:value="createForm.assistantId"
-              :disabled="creatingSession"
-              :options="availableAssistants.map((item) => ({ label: item.name, value: item.id }))"
-            />
-          </a-form-item>
-          <a-form-item label="客户 ID">
-            <a-input v-model:value="createForm.customerId" disabled />
-          </a-form-item>
-          <a-form-item label="开场消息">
-            <a-textarea v-model:value="createForm.openingMessage" :rows="4" :disabled="creatingSession" />
-          </a-form-item>
-          <a-alert
-            v-if="createAssistantBlockingMessage"
-            type="warning"
-            show-icon
-            :message="createAssistantBlockingMessage"
-            style="margin-bottom: 16px"
-          />
-          <a-button
-            type="primary"
-            :loading="creatingSession"
-            :disabled="!createForm.assistantId || !createForm.customerId || !!createAssistantBlockingMessage"
-            @click="submitCreate"
-          >
-            {{ creatingSession ? '正在创建...' : '创建 Session' }}
-          </a-button>
-        </a-form>
-      </a-card>
-
       <a-card title="Session 列表">
+        <template #extra>
+          <a-tag class="console-accent-tag">{{ sessions.length }} 个会话</a-tag>
+        </template>
         <a-list :data-source="sessions">
           <template #renderItem="{ item }">
             <a-list-item
@@ -277,7 +266,7 @@ function formatSharedState(value: Record<string, unknown> | null | undefined) {
         <a-card v-if="currentSession" :title="currentSession.title">
           <template #extra>
             <a-space>
-              <a-tag color="blue">{{ currentSession.assistantName }}</a-tag>
+              <a-tag class="console-accent-tag">{{ currentSession.assistantName }}</a-tag>
               <a-tag>{{ currentScenario?.name ?? currentSession.scenarioId }}</a-tag>
               <a-tag :color="statusColor(currentSession.status)">{{ currentSession.status }}</a-tag>
               <a-tag v-if="currentSession.sessionHumanHandoffActive" color="warning">HANDOFF</a-tag>
@@ -361,6 +350,63 @@ function formatSharedState(value: Record<string, unknown> | null | undefined) {
       </a-space>
     </a-col>
   </a-row>
+
+  <a-modal
+    :open="createModalOpen"
+    :footer="null"
+    width="560px"
+    @cancel="closeCreateModal"
+  >
+    <div class="create-modal">
+      <div class="create-modal__kicker">05.01 / 会话运行 / Session</div>
+      <div class="create-modal__body">
+        <a-form layout="vertical" :model="createForm">
+          <a-form-item label="业务场景">
+            <a-select
+              v-model:value="createForm.scenarioId"
+              :disabled="creatingSession"
+              :options="scenarios.map((item) => ({ label: item.name, value: item.id }))"
+            />
+          </a-form-item>
+          <a-form-item label="助手">
+            <a-select
+              v-model:value="createForm.assistantId"
+              :disabled="creatingSession"
+              :options="availableAssistants.map((item) => ({ label: item.name, value: item.id }))"
+            />
+          </a-form-item>
+          <a-form-item label="客户 ID">
+            <a-input v-model:value="createForm.customerId" disabled />
+          </a-form-item>
+          <a-form-item label="开场消息">
+            <a-textarea
+              v-model:value="createForm.openingMessage"
+              :rows="4"
+              :disabled="creatingSession"
+              placeholder="例如：帮我查一下最近这笔订单为什么还没发货。"
+            />
+          </a-form-item>
+          <a-alert
+            v-if="createAssistantBlockingMessage"
+            type="warning"
+            show-icon
+            :message="createAssistantBlockingMessage"
+          />
+          <div class="create-modal__actions">
+            <a-button @click="closeCreateModal">取消</a-button>
+            <a-button
+              type="primary"
+              :loading="creatingSession"
+              :disabled="!createForm.assistantId || !createForm.customerId || !!createAssistantBlockingMessage"
+              @click="submitCreate"
+            >
+              {{ creatingSession ? '正在创建...' : '创建 Session' }}
+            </a-button>
+          </div>
+        </a-form>
+      </div>
+    </div>
+  </a-modal>
 </template>
 
 <style scoped>

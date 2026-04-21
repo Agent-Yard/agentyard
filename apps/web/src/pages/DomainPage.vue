@@ -17,6 +17,7 @@ const emit = defineEmits<{
 }>();
 
 const selectedDomainId = ref('');
+const createDrawerOpen = ref(false);
 const createForm = reactive<CreateDomainPayload>({
   name: '',
   description: '',
@@ -64,6 +65,7 @@ function submitCreate() {
     name: createForm.name,
     description: createForm.description,
   });
+  createDrawerOpen.value = false;
   createForm.name = '';
   createForm.description = '';
 }
@@ -83,6 +85,10 @@ function submitUpdate() {
 </script>
 
 <template>
+  <div v-if="canManageGovernance" class="page-inline-toolbar">
+    <a-button type="primary" @click="createDrawerOpen = true">新建业务域</a-button>
+  </div>
+
   <a-row :gutter="[16, 16]">
     <a-col :span="6">
       <a-card><a-statistic title="业务域数" :value="domains.length" /></a-card>
@@ -100,22 +106,6 @@ function submitUpdate() {
 
   <a-row :gutter="[16, 16]">
     <a-col :span="9">
-      <a-card v-if="canManageGovernance" title="新建业务域">
-        <a-form layout="vertical" :model="createForm" @finish="submitCreate">
-          <a-form-item label="业务域名称">
-            <a-input v-model:value="createForm.name" placeholder="例如：客户运营域" />
-          </a-form-item>
-          <a-form-item label="业务域说明">
-            <a-textarea
-              v-model:value="createForm.description"
-              :rows="4"
-              placeholder="描述域边界、职责范围和核心资产"
-            />
-          </a-form-item>
-          <a-button type="primary" html-type="submit">创建业务域</a-button>
-        </a-form>
-      </a-card>
-
       <a-card title="业务域列表">
         <a-list :data-source="domains" :locale="{ emptyText: '暂无业务域' }">
           <template #renderItem="{ item }">
@@ -126,7 +116,7 @@ function submitUpdate() {
             >
               <a-list-item-meta :title="item.name" :description="item.description || '暂无说明'" />
               <a-space>
-                <a-tag color="blue">{{ item.scenarios.length }} 场景</a-tag>
+                <a-tag class="console-accent-tag">{{ item.scenarios.length }} 场景</a-tag>
                 <a-tag>{{ item.resources.length }} 资源</a-tag>
               </a-space>
             </a-list-item>
@@ -139,7 +129,7 @@ function submitUpdate() {
       <a-card v-if="current" :title="current.name">
         <template #extra>
           <a-space>
-            <a-tag color="blue">{{ current.scenarios.length }} 个场景</a-tag>
+            <a-tag class="console-accent-tag">{{ current.scenarios.length }} 个场景</a-tag>
             <a-tag>{{ current.resources.length }} 个资源</a-tag>
           </a-space>
         </template>
@@ -215,4 +205,34 @@ function submitUpdate() {
       <a-empty v-else description="暂无业务域，请先创建" />
     </a-col>
   </a-row>
+
+  <a-drawer
+    :open="createDrawerOpen"
+    title="新建业务域"
+    :width="480"
+    destroy-on-close
+    @close="createDrawerOpen = false"
+  >
+    <div class="create-drawer">
+      <div class="create-drawer__kicker">01.01 / 平台设计 / 业务域</div>
+      <div class="create-drawer__body">
+        <a-form layout="vertical" :model="createForm" @finish="submitCreate">
+          <a-form-item label="业务域名称">
+            <a-input v-model:value="createForm.name" placeholder="例如：客户运营域" />
+          </a-form-item>
+          <a-form-item label="业务域说明">
+            <a-textarea
+              v-model:value="createForm.description"
+              :rows="6"
+              placeholder="描述域边界、职责范围和核心资产"
+            />
+          </a-form-item>
+          <div class="create-drawer__actions">
+            <a-button @click="createDrawerOpen = false">取消</a-button>
+            <a-button type="primary" html-type="submit">创建业务域</a-button>
+          </div>
+        </a-form>
+      </div>
+    </div>
+  </a-drawer>
 </template>

@@ -23,6 +23,7 @@ const emit = defineEmits<{
 }>();
 
 const selectedScenarioId = ref('');
+const createDrawerOpen = ref(false);
 const createForm = reactive<CreateScenarioPayload>({
   domainId: '',
   name: '',
@@ -84,6 +85,7 @@ function submitCreate() {
     name: createForm.name,
     goal: createForm.goal,
   });
+  createDrawerOpen.value = false;
   createForm.name = '';
   createForm.goal = '';
 }
@@ -103,6 +105,10 @@ function submitUpdate() {
 </script>
 
 <template>
+  <div v-if="canManageGovernance" class="page-inline-toolbar">
+    <a-button type="primary" @click="createDrawerOpen = true">新建场景</a-button>
+  </div>
+
   <a-row :gutter="[16, 16]">
     <a-col :span="6">
       <a-card><a-statistic title="业务场景数" :value="scenarios.length" /></a-card>
@@ -120,28 +126,6 @@ function submitUpdate() {
 
   <a-row :gutter="[16, 16]">
     <a-col :span="9">
-      <a-card v-if="canManageGovernance" title="新建业务场景">
-        <a-form layout="vertical" :model="createForm" @finish="submitCreate">
-          <a-form-item label="所属业务域">
-            <a-select
-              v-model:value="createForm.domainId"
-              :options="domains.map((item) => ({ label: item.name, value: item.id }))"
-            />
-          </a-form-item>
-          <a-form-item label="场景名称">
-            <a-input v-model:value="createForm.name" placeholder="例如：客户投诉升级处理" />
-          </a-form-item>
-          <a-form-item label="场景目标">
-            <a-textarea
-              v-model:value="createForm.goal"
-              :rows="4"
-              placeholder="描述该场景要交付的业务结果"
-            />
-          </a-form-item>
-          <a-button type="primary" html-type="submit">创建场景</a-button>
-        </a-form>
-      </a-card>
-
       <a-card title="场景列表">
         <a-list :data-source="scenarios" :locale="{ emptyText: '暂无业务场景' }">
           <template #renderItem="{ item }">
@@ -170,7 +154,7 @@ function submitUpdate() {
       <a-card v-if="current" :title="current.name">
         <template #extra>
           <a-space>
-            <a-tag color="blue">{{ current.assistants.length }} 个助手</a-tag>
+            <a-tag class="console-accent-tag">{{ current.assistants.length }} 个助手</a-tag>
             <a-tag :color="current.version.status === 'PUBLISHED' ? 'green' : 'gold'">
               {{ current.version.version }}
             </a-tag>
@@ -236,4 +220,40 @@ function submitUpdate() {
       <a-empty v-else description="暂无业务场景，请先创建" />
     </a-col>
   </a-row>
+
+  <a-drawer
+    :open="createDrawerOpen"
+    title="新建业务场景"
+    :width="520"
+    destroy-on-close
+    @close="createDrawerOpen = false"
+  >
+    <div class="create-drawer">
+      <div class="create-drawer__kicker">01.02 / 平台设计 / 业务场景</div>
+      <div class="create-drawer__body">
+        <a-form layout="vertical" :model="createForm" @finish="submitCreate">
+          <a-form-item label="所属业务域">
+            <a-select
+              v-model:value="createForm.domainId"
+              :options="domains.map((item) => ({ label: item.name, value: item.id }))"
+            />
+          </a-form-item>
+          <a-form-item label="场景名称">
+            <a-input v-model:value="createForm.name" placeholder="例如：客户投诉升级处理" />
+          </a-form-item>
+          <a-form-item label="场景目标">
+            <a-textarea
+              v-model:value="createForm.goal"
+              :rows="6"
+              placeholder="描述该场景要交付的业务结果"
+            />
+          </a-form-item>
+          <div class="create-drawer__actions">
+            <a-button @click="createDrawerOpen = false">取消</a-button>
+            <a-button type="primary" html-type="submit">创建场景</a-button>
+          </div>
+        </a-form>
+      </div>
+    </div>
+  </a-drawer>
 </template>

@@ -6,9 +6,12 @@ import ResourceVersionConfigEditor from '../components/ResourceVersionConfigEdit
 import ResourceVersionConfigSummary from '../components/ResourceVersionConfigSummary.vue';
 import type {
   BusinessDomain,
+  CreateResourcePayload,
   CreateResourceVersionPayload,
   Resource,
+  ResourceBlueprint,
   ResourceCenter,
+  ResourceType,
   ResourceVersion,
   UpdateResourcePayload,
   UpdateResourceVersionPayload,
@@ -18,6 +21,7 @@ const props = defineProps<{
   domains: BusinessDomain[];
   resourceCenter: ResourceCenter;
   resources: Resource[];
+  resourceBlueprints: ResourceBlueprint[];
   preferredResourceId?: string | null;
   preferredVersionId?: string | null;
   catalogRevision: number;
@@ -25,6 +29,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
+  createResource: [payload: CreateResourcePayload];
   deleteResource: [resourceId: string];
   updateResource: [payload: { resourceId: string; resource: UpdateResourcePayload }];
   createResourceVersion: [payload: { resourceId: string; data: CreateResourceVersionPayload }];
@@ -35,6 +40,7 @@ const emit = defineEmits<{
 
 const selectedResourceId = ref('');
 const selectedVersionId = ref('');
+const createDrawerOpen = ref(false);
 const resourceForm = reactive<UpdateResourcePayload>({
   name: '',
   shareScope: 'DOMAIN_SHARED',
@@ -49,6 +55,27 @@ const createVersionForm = reactive<CreateResourceVersionPayload>({
   status: 'DRAFT',
   configuration: {
     type: 'TOOL',
+  },
+});
+function defaultConfiguration(type: ResourceType) {
+  const blueprint = props.resourceBlueprints.find((item) => item.type === type);
+  return blueprint ? JSON.parse(JSON.stringify(blueprint.defaultConfiguration)) : { type };
+}
+
+const createResourceForm = reactive<CreateResourcePayload>({
+  domainId: '',
+  name: '',
+  type: 'TOOL',
+  shareScope: 'DOMAIN_SHARED',
+  ownerType: 'DOMAIN',
+  ownerId: '',
+  summary: '',
+  steward: '',
+  tags: [],
+  initialVersion: {
+    summary: '初始版本',
+    status: 'DRAFT',
+    configuration: defaultConfiguration('TOOL'),
   },
 });
 const draftVersionForm = reactive<UpdateResourceVersionPayload>({
@@ -67,6 +94,9 @@ const selectedVersion = computed(() =>
   ?? selectedResource.value?.effectiveVersion
   ?? selectedResource.value?.latestVersion
   ?? null,
+);
+const createCurrentBlueprint = computed(() =>
+  props.resourceBlueprints.find((item) => item.type === createResourceForm.type) ?? props.resourceBlueprints[0],
 );
 const domainOptions = computed(() => {
   return props.domains.map((item) => ({ label: item.name, value: item.id }));
@@ -88,6 +118,15 @@ const effectiveOwnerOptions = computed(() => {
   }
   return [{ label: selectedResource.value.domainId, value: selectedResource.value.domainId }];
 });
+const createOwnerOptions = computed(() => {
+  if (createResourceForm.ownerType === 'ASSISTANT') {
+    return props.domains
+      .find((domain) => domain.id === createResourceForm.domainId)
+      ?.scenarios.flatMap((scenario) => scenario.assistants.map((assistant) => ({ label: assistant.name, value: assistant.id })))
+      ?? [];
+  }
+  return props.domains.map((domain) => ({ label: domain.name, value: domain.id }));
+});
 const isDraftVersion = computed(() => selectedVersion.value?.status === 'DRAFT');
 
 function cloneVersionConfiguration(version: ResourceVersion | null) {
@@ -95,6 +134,38 @@ function cloneVersionConfiguration(version: ResourceVersion | null) {
     return { type: selectedResource.value?.type ?? 'TOOL' } as CreateResourceVersionPayload['configuration'];
   }
   return JSON.parse(JSON.stringify(version.configuration));
+}
+
+function resetCreateResourceForm() {
+  createResourceForm.domainId = selectedResource.value?.domainId ?? props.domains[0]?.id ?? '';
+  createResourceForm.name = '';
+  createResourceForm.type = 'TOOL';
+  createResourceForm.shareScope = 'DOMAIN_SHARED';
+  createResourceForm.ownerType = 'DOMAIN';
+  createResourceForm.ownerId = createResourceForm.domainId;
+  createResourceForm.summary = '';
+  createResourceForm.steward = '';
+  createResourceForm.tags = [];
+  createResourceForm.initialVersion.summary = '初始版本';
+  createResourceForm.initialVersion.status = 'DRAFT';
+  createResourceForm.initialVersion.configuration = defaultConfiguration('TOOL');
+}
+
+function openCreateDrawer() {
+  if (!createDrawerOpen.value) {
+    resetCreateResourceForm();
+  }
+  createDrawerOpen.value = true;
+}
+
+function applyBlueprint(type: ResourceBlueprint['type']) {
+  createResourceForm.type = type;
+}
+
+function submitCreateResource() {
+  emit('createResource', JSON.parse(JSON.stringify(createResourceForm)));
+  createDrawerOpen.value = false;
+  resetCreateResourceForm();
 }
 
 watch(
@@ -167,6 +238,56 @@ watch(
   },
 );
 
+watch(
+  () => props.domains,
+  (domains) => {
+    if (!createResourceForm.domainId && domains.length) {
+      createResourceForm.domainId = selectedResource.value?.domainId ?? domains[0].id;
+    }
+    if (!createResourceForm.ownerId && domains.length && createResourceForm.ownerType === 'DOMAIN') {
+      createResourceForm.ownerId = createResourceForm.domainId || domains[0].id;
+    }
+  },
+  { immediate: true },
+);
+
+watch(
+  () => createResourceForm.ownerType,
+  (ownerType) => {
+    createResourceForm.ownerId = ownerType === 'ASSISTANT'
+      ? createOwnerOptions.value[0]?.value ?? ''
+      : (createResourceForm.domainId || props.domains[0]?.id || '');
+  },
+  { immediate: true },
+);
+
+watch(
+  () => createResourceForm.domainId,
+  (domainId) => {
+    if (!domainId) {
+      return;
+    }
+    if (createResourceForm.ownerType === 'DOMAIN') {
+      createResourceForm.ownerId = domainId;
+      return;
+    }
+    if (!createOwnerOptions.value.some((option) => option.value === createResourceForm.ownerId)) {
+      createResourceForm.ownerId = createOwnerOptions.value[0]?.value ?? '';
+    }
+  },
+  { immediate: true },
+);
+
+watch(
+  () => createResourceForm.type,
+  (type) => {
+    createResourceForm.initialVersion.configuration = defaultConfiguration(type);
+    createResourceForm.initialVersion.status = 'DRAFT';
+  },
+  { immediate: true },
+);
+
+
 function submitCreateVersion() {
   if (!selectedResource.value) {
     return;
@@ -200,12 +321,16 @@ function submitUpdateDraftVersion() {
 </script>
 
 <template>
+  <div v-if="canManageGovernance" class="page-inline-toolbar">
+    <a-button type="primary" @click="openCreateDrawer">新建资源</a-button>
+  </div>
+
   <a-row :gutter="[16, 16]">
     <a-col :span="8">
       <a-card title="能力资源目录">
         <template #extra>
           <a-space>
-            <a-tag color="blue">{{ resourceCenter.totalResources }} 个资源</a-tag>
+            <a-tag class="console-accent-tag">{{ resourceCenter.totalResources }} 个资源</a-tag>
             <a-tag>{{ resourceCenter.domainSharedResources }} 个域共享</a-tag>
           </a-space>
         </template>
@@ -214,7 +339,7 @@ function submitUpdateDraftVersion() {
             <a-list-item class="clickable-item" @click="selectedResourceId = item.id">
               <a-list-item-meta :title="item.name" :description="item.summary || item.type" />
               <a-space>
-                <a-tag v-if="selectedResourceId === item.id" color="blue">当前</a-tag>
+                <a-tag v-if="selectedResourceId === item.id" class="console-accent-tag">当前</a-tag>
                 <a-tag :color="item.type === 'TOOL' ? 'geekblue' : item.type === 'LLM_MODEL' ? 'green' : 'gold'">
                   {{ item.type }}
                 </a-tag>
@@ -317,7 +442,7 @@ function submitUpdateDraftVersion() {
                   <a-list-item class="clickable-item" @click="selectedVersionId = item.id">
                     <a-list-item-meta :title="`v${item.version}`" :description="item.summary" />
                     <a-space>
-                      <a-tag v-if="selectedVersionId === item.id" color="blue">当前</a-tag>
+                      <a-tag v-if="selectedVersionId === item.id" class="console-accent-tag">当前</a-tag>
                       <a-tag :color="item.status === 'PUBLISHED' ? 'green' : 'gold'">{{ item.status }}</a-tag>
                     </a-space>
                   </a-list-item>
@@ -448,4 +573,163 @@ function submitUpdateDraftVersion() {
       </a-card>
     </a-col>
   </a-row>
+
+  <a-drawer
+    :open="createDrawerOpen"
+    title="新建能力资源"
+    :width="980"
+    destroy-on-close
+    @close="createDrawerOpen = false"
+  >
+    <div class="create-drawer">
+      <div class="create-drawer__kicker">04.01 / 能力资源 / 资源目录</div>
+      <div class="create-drawer__body">
+        <a-alert
+          type="info"
+          show-icon
+          message="资源创建会同时落下一个初始版本"
+          description="请选择资源蓝图并补齐基础信息、归属策略和初始版本配置。"
+        />
+
+        <a-row :gutter="[16, 16]">
+          <a-col :span="8">
+            <a-card size="small" title="能力资源蓝图">
+              <a-space direction="vertical" style="width: 100%">
+                <a-card
+                  v-for="blueprint in resourceBlueprints"
+                  :key="blueprint.type"
+                  size="small"
+                  class="clickable-item selectable-card"
+                  :class="{ 'selectable-card--active': createResourceForm.type === blueprint.type }"
+                  @click="applyBlueprint(blueprint.type)"
+                >
+                  <a-typography-title :level="5" style="margin: 0 0 8px 0">{{ blueprint.label }}</a-typography-title>
+                  <a-typography-text type="secondary">{{ blueprint.description }}</a-typography-text>
+                </a-card>
+              </a-space>
+            </a-card>
+
+            <a-card v-if="createCurrentBlueprint" size="small" title="当前类型需维护" style="margin-top: 16px">
+              <a-list :data-source="createCurrentBlueprint.maintainedFields" size="small">
+                <template #renderItem="{ item }">
+                  <a-list-item>{{ item }}</a-list-item>
+                </template>
+              </a-list>
+            </a-card>
+          </a-col>
+
+          <a-col :span="16">
+            <a-form layout="vertical" :model="createResourceForm" @finish="submitCreateResource">
+              <a-row :gutter="[16, 16]">
+                <a-col :span="12">
+                  <a-form-item label="资源名称">
+                    <a-input v-model:value="createResourceForm.name" placeholder="例如：售后策略 Tool" />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="12">
+                  <a-form-item label="资源类型">
+                    <a-select
+                      v-model:value="createResourceForm.type"
+                      :options="resourceBlueprints.map((item) => ({ label: item.label, value: item.type }))"
+                    />
+                  </a-form-item>
+                </a-col>
+              </a-row>
+
+              <a-row :gutter="[16, 16]">
+                <a-col :span="12">
+                  <a-form-item label="所属业务域">
+                    <a-select
+                      v-model:value="createResourceForm.domainId"
+                      :options="domains.map((item) => ({ label: item.name, value: item.id }))"
+                    />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="12">
+                  <a-form-item label="共享范围">
+                    <a-select
+                      v-model:value="createResourceForm.shareScope"
+                      :options="[
+                        { label: '域内共享', value: 'DOMAIN_SHARED' },
+                        { label: '私有', value: 'PRIVATE' },
+                      ]"
+                    />
+                  </a-form-item>
+                </a-col>
+              </a-row>
+
+              <a-row :gutter="[16, 16]">
+                <a-col :span="12">
+                  <a-form-item label="归属类型">
+                    <a-segmented
+                      v-model:value="createResourceForm.ownerType"
+                      :options="[
+                        { label: '业务域', value: 'DOMAIN' },
+                        { label: '助手私有', value: 'ASSISTANT' },
+                      ]"
+                      block
+                    />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="12">
+                  <a-form-item label="归属对象">
+                    <a-select v-model:value="createResourceForm.ownerId" :options="createOwnerOptions" />
+                  </a-form-item>
+                </a-col>
+              </a-row>
+
+              <a-form-item label="摘要">
+                <a-textarea v-model:value="createResourceForm.summary" :rows="3" />
+              </a-form-item>
+
+              <a-row :gutter="[16, 16]">
+                <a-col :span="12">
+                  <a-form-item label="负责人">
+                    <a-input v-model:value="createResourceForm.steward" />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="12">
+                  <a-form-item label="标签">
+                    <a-select v-model:value="createResourceForm.tags" mode="tags" />
+                  </a-form-item>
+                </a-col>
+              </a-row>
+
+              <a-divider>初始版本</a-divider>
+
+              <a-row :gutter="[16, 16]">
+                <a-col :span="12">
+                  <a-form-item label="版本摘要">
+                    <a-input v-model:value="createResourceForm.initialVersion.summary" />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="12">
+                  <a-form-item label="状态">
+                    <a-select
+                      v-model:value="createResourceForm.initialVersion.status"
+                      :options="[
+                        { label: '草稿', value: 'DRAFT' },
+                        { label: '已发布', value: 'PUBLISHED' },
+                      ]"
+                    />
+                  </a-form-item>
+                </a-col>
+              </a-row>
+
+              <ResourceVersionConfigEditor
+                :resource-type="createResourceForm.type"
+                :configuration="createResourceForm.initialVersion.configuration"
+                snapshot-binding-mode="hidden"
+              />
+
+              <div class="create-drawer__actions">
+                <a-button @click="createDrawerOpen = false">取消</a-button>
+                <a-button type="primary" html-type="submit">创建资源</a-button>
+              </div>
+            </a-form>
+          </a-col>
+        </a-row>
+      </div>
+    </div>
+  </a-drawer>
 </template>

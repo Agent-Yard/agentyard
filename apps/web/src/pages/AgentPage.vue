@@ -28,6 +28,7 @@ const emit = defineEmits<{
 
 const selectedAssistantId = ref('');
 const selectedAgentId = ref('');
+const createDrawerOpen = ref(false);
 const createForm = reactive<CreateAgentPayload>({
   assistantId: '',
   name: '',
@@ -277,6 +278,7 @@ function submitCreate() {
       toolResourceIds: [...createForm.executionPolicy.toolResourceIds],
     },
   });
+  createDrawerOpen.value = false;
   createForm.name = '';
   createForm.role = '';
   createForm.responsibility = '';
@@ -290,6 +292,11 @@ function submitCreate() {
   createForm.executionPolicy.privacyMappingEnabled = null;
   createForm.executionPolicy.skillResourceIds = [];
   createForm.executionPolicy.toolResourceIds = [];
+}
+
+function openCreateDrawer() {
+  createForm.assistantId = currentAssistant.value?.id ?? props.assistants[0]?.id ?? '';
+  createDrawerOpen.value = true;
 }
 
 function submitSave() {
@@ -317,91 +324,12 @@ function submitSave() {
 </script>
 
 <template>
+  <div v-if="canManageGovernance" class="page-inline-toolbar">
+    <a-button type="primary" @click="openCreateDrawer">新建智能体</a-button>
+  </div>
+
   <a-row :gutter="[16, 16]">
     <a-col :span="9">
-      <a-card v-if="canManageGovernance" title="新建智能体">
-        <a-form layout="vertical" :model="createForm" @finish="submitCreate">
-          <a-form-item label="所属助手" name="assistantId">
-            <a-select
-              v-model:value="createForm.assistantId"
-              :options="assistants.map((item) => ({ label: item.name, value: item.id }))"
-            />
-          </a-form-item>
-          <a-form-item label="智能体名称" name="name">
-            <a-input v-model:value="createForm.name" placeholder="例如：投诉分流智能体" />
-          </a-form-item>
-          <a-form-item label="职责角色" name="role">
-            <a-input v-model:value="createForm.role" placeholder="例如：router / analyst / reviewer" />
-          </a-form-item>
-          <a-form-item label="职责说明" name="responsibility">
-            <a-textarea v-model:value="createForm.responsibility" :rows="4" />
-          </a-form-item>
-          <a-form-item label="System Prompt">
-            <a-textarea v-model:value="createForm.executionPolicy.systemPrompt" :rows="4" />
-          </a-form-item>
-          <a-row :gutter="[16, 16]">
-            <a-col :span="12">
-              <a-form-item label="模型覆盖">
-                <a-select
-                  v-model:value="createForm.executionPolicy.modelResourceId"
-                  allow-clear
-                  :options="modelResources.map((item) => ({ label: item.name, value: item.id }))"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="隐私映射策略">
-                <a-select v-model:value="createPrivacyMode" :options="privacyModeOptions" />
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <a-row :gutter="[16, 16]">
-            <a-col :span="12">
-              <a-form-item label="私有映射模型">
-                <a-select
-                  v-model:value="createForm.executionPolicy.privacyModelResourceId"
-                  allow-clear
-                  :disabled="createForm.executionPolicy.privacyMappingEnabled !== true"
-                  :options="privateModelResources.map((item) => ({ label: item.name, value: item.id }))"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="挂载技能">
-                <a-select
-                  v-model:value="createForm.executionPolicy.skillResourceIds"
-                  mode="multiple"
-                  :options="skillResources.map((item) => ({ label: item.name, value: item.id }))"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <a-form-item label="可用工具集">
-            <a-select
-              v-model:value="createForm.executionPolicy.toolResourceIds"
-              mode="multiple"
-              :options="toolResources.map((item) => ({ label: item.name, value: item.id }))"
-            />
-          </a-form-item>
-          <a-row :gutter="[16, 16]">
-            <a-col :span="12">
-              <a-form-item label="允许动作">
-                <a-select v-model:value="createForm.allowedActions" mode="multiple" :options="actionOptions" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="可切换 Owner">
-                <a-select v-model:value="createForm.switchableOwnerAgentIds" mode="multiple" :options="availableOwnerOptions" />
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <a-form-item label="可启动 Playbook">
-            <a-select v-model:value="createForm.playbookIds" mode="multiple" :options="availablePlaybookOptions" />
-          </a-form-item>
-          <a-button type="primary" html-type="submit">创建智能体</a-button>
-        </a-form>
-      </a-card>
-
       <a-card title="助手视图">
         <a-space direction="vertical" style="width: 100%">
           <a-select
@@ -412,7 +340,7 @@ function submitSave() {
             <template #renderItem="{ item }">
               <a-list-item class="clickable-item" @click="selectedAgentId = item.id">
                 <a-list-item-meta :title="item.name" :description="item.role" />
-                <a-tag v-if="selectedAgentId === item.id" color="blue">当前</a-tag>
+                <a-tag v-if="selectedAgentId === item.id" class="console-accent-tag">当前</a-tag>
               </a-list-item>
             </template>
           </a-list>
@@ -424,7 +352,7 @@ function submitSave() {
       <a-card v-if="currentAgent" :title="currentAgent.name">
         <template #extra>
           <a-space>
-            <a-tag color="blue">{{ currentAssistant?.name ?? currentAgent.assistantId }}</a-tag>
+            <a-tag class="console-accent-tag">{{ currentAssistant?.name ?? currentAgent.assistantId }}</a-tag>
             <a-button v-if="canManageGovernance" danger ghost @click="emit('deleteAgent', currentAgent.id)">删除智能体</a-button>
           </a-space>
         </template>
@@ -567,7 +495,7 @@ function submitSave() {
                       {{ editForm.executionPolicy.toolResourceIds.includes(resource.id) ? '已启用' : '未启用' }}
                     </a-tag>
                     <a-space>
-                      <a-tag color="blue">最新 {{ resource.latestVersion?.version ?? '-' }}</a-tag>
+                      <a-tag class="console-accent-tag">最新 {{ resource.latestVersion?.version ?? '-' }}</a-tag>
                       <a-tag color="green">生效 {{ resource.effectiveVersion?.version ?? '-' }}</a-tag>
                     </a-space>
                   </a-space>
@@ -618,4 +546,101 @@ function submitSave() {
       />
     </a-col>
   </a-row>
+
+  <a-drawer
+    :open="createDrawerOpen"
+    title="新建智能体"
+    :width="760"
+    destroy-on-close
+    @close="createDrawerOpen = false"
+  >
+    <div class="create-drawer">
+      <div class="create-drawer__kicker">02.02 / 助手构建 / 智能体</div>
+      <div class="create-drawer__body">
+        <a-form layout="vertical" :model="createForm" @finish="submitCreate">
+          <a-form-item label="所属助手" name="assistantId">
+            <a-select
+              v-model:value="createForm.assistantId"
+              :options="assistants.map((item) => ({ label: item.name, value: item.id }))"
+            />
+          </a-form-item>
+          <a-form-item label="智能体名称" name="name">
+            <a-input v-model:value="createForm.name" placeholder="例如：投诉分流智能体" />
+          </a-form-item>
+          <a-form-item label="职责角色" name="role">
+            <a-input v-model:value="createForm.role" placeholder="例如：router / analyst / reviewer" />
+          </a-form-item>
+          <a-form-item label="职责说明" name="responsibility">
+            <a-textarea v-model:value="createForm.responsibility" :rows="4" />
+          </a-form-item>
+          <a-form-item label="System Prompt">
+            <a-textarea v-model:value="createForm.executionPolicy.systemPrompt" :rows="4" />
+          </a-form-item>
+          <a-row :gutter="[16, 16]">
+            <a-col :span="12">
+              <a-form-item label="模型覆盖">
+                <a-select
+                  v-model:value="createForm.executionPolicy.modelResourceId"
+                  allow-clear
+                  :options="modelResources.map((item) => ({ label: item.name, value: item.id }))"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="隐私映射策略">
+                <a-select v-model:value="createPrivacyMode" :options="privacyModeOptions" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="[16, 16]">
+            <a-col :span="12">
+              <a-form-item label="私有映射模型">
+                <a-select
+                  v-model:value="createForm.executionPolicy.privacyModelResourceId"
+                  allow-clear
+                  :disabled="createForm.executionPolicy.privacyMappingEnabled !== true"
+                  :options="privateModelResources.map((item) => ({ label: item.name, value: item.id }))"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="挂载技能">
+                <a-select
+                  v-model:value="createForm.executionPolicy.skillResourceIds"
+                  mode="multiple"
+                  :options="skillResources.map((item) => ({ label: item.name, value: item.id }))"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-form-item label="可用工具集">
+            <a-select
+              v-model:value="createForm.executionPolicy.toolResourceIds"
+              mode="multiple"
+              :options="toolResources.map((item) => ({ label: item.name, value: item.id }))"
+            />
+          </a-form-item>
+          <a-row :gutter="[16, 16]">
+            <a-col :span="12">
+              <a-form-item label="允许动作">
+                <a-select v-model:value="createForm.allowedActions" mode="multiple" :options="actionOptions" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="可切换 Owner">
+                <a-select v-model:value="createForm.switchableOwnerAgentIds" mode="multiple" :options="availableOwnerOptions" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-form-item label="可启动 Playbook">
+            <a-select v-model:value="createForm.playbookIds" mode="multiple" :options="availablePlaybookOptions" />
+          </a-form-item>
+          <div class="create-drawer__actions">
+            <a-button @click="createDrawerOpen = false">取消</a-button>
+            <a-button type="primary" html-type="submit">创建智能体</a-button>
+          </div>
+        </a-form>
+      </div>
+    </div>
+  </a-drawer>
 </template>

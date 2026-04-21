@@ -11,9 +11,7 @@ const consolePageComponents: Record<PageKey, () => Promise<unknown>> = {
   agent: () => import('../pages/AgentPage.vue'),
   playbook: () => import('../pages/PlaybookPage.vue'),
   'knowledge-library': () => import('../pages/KnowledgeLibraryPage.vue'),
-  'knowledge-create': () => import('../pages/KnowledgeCreatePage.vue'),
   'resource-library': () => import('../pages/ResourceLibraryPage.vue'),
-  'resource-create': () => import('../pages/ResourceCreatePage.vue'),
   runtime: () => import('../pages/RuntimeConversationPage.vue'),
 };
 

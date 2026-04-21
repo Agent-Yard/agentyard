@@ -94,35 +94,31 @@ const currentView = computed(() => {
     },
     'knowledge-library': {
       props: {
+        domains: state.catalog.value!.domains,
         knowledgeBases: state.catalog.value!.knowledgeBases,
         preferredKnowledgeBaseId: state.knowledgeLibraryPreferredKnowledgeBaseId.value,
         catalogRevision: state.catalogRevision.value,
         canManageGovernance: state.canManageGovernance.value,
       },
       handlers: {
+        createKnowledgeBase: catalogActions.handleCreateKnowledgeBase,
         refreshCatalog: state.refresh,
         deleteKnowledgeBase: catalogActions.handleDeleteKnowledgeBase,
       },
-    },
-    'knowledge-create': {
-      props: {
-        domains: state.catalog.value!.domains,
-        assistants: state.catalog.value!.assistants,
-        canManageGovernance: state.canManageGovernance.value,
-      },
-      handlers: { createKnowledgeBase: catalogActions.handleCreateKnowledgeBase },
     },
     'resource-library': {
       props: {
         domains: state.catalog.value!.domains,
         resourceCenter: state.catalog.value!.resourceCenter,
         resources: state.catalog.value!.resources,
+        resourceBlueprints: state.catalog.value!.resourceBlueprints,
         preferredResourceId: state.resourceLibraryPreferredResourceId.value,
         preferredVersionId: state.resourceLibraryPreferredVersionId.value,
         catalogRevision: state.catalogRevision.value,
         canManageGovernance: state.canManageGovernance.value,
       },
       handlers: {
+        createResource: catalogActions.handleCreateResource,
         deleteResource: catalogActions.handleDeleteResource,
         updateResource: catalogActions.handleUpdateResource,
         createResourceVersion: catalogActions.handleCreateResourceVersion,
@@ -130,15 +126,6 @@ const currentView = computed(() => {
         deleteResourceVersion: catalogActions.handleDeleteResourceVersion,
         publishResourceVersion: catalogActions.handlePublishResourceVersion,
       },
-    },
-    'resource-create': {
-      props: {
-        domains: state.catalog.value!.domains,
-        assistants: state.catalog.value!.assistants,
-        resourceBlueprints: state.catalog.value!.resourceBlueprints,
-        canManageGovernance: state.canManageGovernance.value,
-      },
-      handlers: { createResource: catalogActions.handleCreateResource },
     },
     runtime: {
       props: {
