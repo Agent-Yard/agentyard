@@ -735,6 +735,34 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SessionRuntimeDetail'
+  /session-runtime/sessions/{sessionId}/stream:
+    get:
+      summary: Stream session runtime updates over SSE
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: lastEventId
+          required: false
+          schema:
+            type: string
+          description: Replay events after this SSE event id when reconnecting.
+        - in: header
+          name: Last-Event-ID
+          required: false
+          schema:
+            type: string
+          description: Standard SSE reconnection header. Overrides the query parameter when both are present.
+      responses:
+        '200':
+          description: Server-sent event stream of session snapshots and updates
+          content:
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/SessionRuntimeStreamEvent'
   /session-runtime/sessions/{sessionId}/messages:
     post:
       summary: Send a user message into an existing session
@@ -790,6 +818,12 @@ paths:
           required: true
           schema:
             type: string
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema:
+            type: string
+          description: Reuse the same key to make repeated callback deliveries idempotent.
       requestBody:
         required: true
         content:
@@ -841,6 +875,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SessionRuntimeSession'
+        '409':
+          description: Duplicate callback is already being processed
 components:
   schemas:
     PlatformRole:
@@ -2131,6 +2167,22 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PlaybookRun'
+    SessionRuntimeStreamEvent:
+      type: object
+      required: [id, type, occurredAt, sessionId, detail]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [SESSION_SNAPSHOT, SESSION_UPDATED]
+        occurredAt:
+          type: string
+          format: date-time
+        sessionId:
+          type: string
+        detail:
+          $ref: '#/components/schemas/SessionRuntimeDetail'
     ToolOutcomeSummary:
       type: object
       properties:

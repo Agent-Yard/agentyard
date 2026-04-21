@@ -1,4 +1,7 @@
 services:
+  # Shared dependency stack for local multi-instance validation.
+  # Start this compose file once, then launch multiple api/worker/runtime processes against the same
+  # PostgreSQL, Redis, Temporal, and MinIO endpoints from the workspace.
   postgres:
     image: ${LYNXUS_IMAGE_POSTGRES:-pgvector/pgvector:pg17}
     environment:

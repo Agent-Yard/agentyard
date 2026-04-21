@@ -7,6 +7,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import static com.lynxus.platform.event.PlatformEventDtos.*;
@@ -20,6 +21,7 @@ public class PlatformEventService {
     private final CurrentUserResolver currentUserResolver;
     private final boolean enabled;
 
+    @Autowired
     public PlatformEventService(PlatformEventRepository repository, CurrentUserResolver currentUserResolver) {
         this.repository = repository;
         this.currentUserResolver = currentUserResolver;

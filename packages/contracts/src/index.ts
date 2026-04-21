@@ -189,6 +189,14 @@ export interface PlatformEventPage {
   nextCursor: string | null;
 }
 
+export interface SessionRuntimeStreamEvent<Detail = unknown> {
+  id: string;
+  type: 'SESSION_SNAPSHOT' | 'SESSION_UPDATED';
+  occurredAt: string;
+  sessionId: string;
+  detail: Detail;
+}
+
 export interface KnowledgeUploadSession {
   id: string;
   knowledgeBaseId: string;

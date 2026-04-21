@@ -37,6 +37,7 @@ import type {
   ReferenceObjectType,
   Scenario,
   SessionRuntimeDetail,
+  SessionRuntimeStreamEvent,
   PrivacyMappingSummary,
   SessionRuntimeSession,
   UpdateAssistantPayload,
@@ -111,11 +112,56 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return readResponseData<T>(response);
 }
 
-function jsonOptions(method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown): RequestInit {
+function jsonOptions(
+  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+  body?: unknown,
+  headers?: HeadersInit,
+): RequestInit {
   return {
     method,
+    headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   };
+}
+
+function runtimeSessionStreamUrl(sessionId: string, lastEventId?: string | null) {
+  const url = new URL(`${API_BASE}/session-runtime/sessions/${sessionId}/stream`, window.location.origin);
+  if (lastEventId) {
+    url.searchParams.set('lastEventId', lastEventId);
+  }
+  return url.toString();
+}
+
+function stableStringify(value: unknown): string {
+  if (value == null) {
+    return 'null';
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(',')}]`;
+  }
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right));
+    return `{${entries.map(([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue)}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function hashIdempotencySeed(seed: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash ^= seed.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+function externalCallbackIdempotencyKey(
+  sessionId: string,
+  payload: { playbookRunId: string; payload?: Record<string, unknown> },
+): string {
+  // Keep the key stable across retries so duplicate deliveries converge on the same server-side record.
+  const payloadSeed = stableStringify(payload.payload ?? {});
+  return `external-callback:${sessionId}:${payload.playbookRunId}:${hashIdempotencySeed(payloadSeed)}`;
 }
 
 export const api = {
@@ -154,6 +200,26 @@ export const api = {
   getRuntimeSessions: () => request<SessionRuntimeSession[]>('/session-runtime/sessions'),
   getRuntimeSessionDetail: (sessionId: string) =>
     request<SessionRuntimeDetail>(`/session-runtime/sessions/${sessionId}`),
+  openRuntimeSessionStream: (
+    sessionId: string,
+    handlers: {
+      lastEventId?: string | null;
+      onEvent: (event: SessionRuntimeStreamEvent) => void;
+      onOpen?: () => void;
+      onError?: () => void;
+    },
+  ) => {
+    const eventSource = new EventSource(runtimeSessionStreamUrl(sessionId, handlers.lastEventId), { withCredentials: true });
+    const handleEvent = (rawEvent: Event) => {
+      const messageEvent = rawEvent as MessageEvent<string>;
+      handlers.onEvent(JSON.parse(messageEvent.data) as SessionRuntimeStreamEvent);
+    };
+    eventSource.addEventListener('SESSION_SNAPSHOT', handleEvent);
+    eventSource.addEventListener('SESSION_UPDATED', handleEvent);
+    eventSource.onopen = () => handlers.onOpen?.();
+    eventSource.onerror = () => handlers.onError?.();
+    return eventSource;
+  },
   getRuntimeSessionPrivacyMappingSummary: (sessionId: string) =>
     request<PrivacyMappingSummary>(`/session-runtime/sessions/${sessionId}/privacy-mapping-summary`),
   createRuntimeSession: (payload: CreateSessionPayload) =>
@@ -164,8 +230,17 @@ export const api = {
     request<SessionRuntimeSession>(`/session-runtime/sessions/${sessionId}/human-reply`, jsonOptions('POST', payload)),
   resumeRuntimePlaybookWithHuman: (sessionId: string, payload: { playbookRunId: string; payload?: Record<string, unknown> }) =>
     request<SessionRuntimeSession>(`/session-runtime/sessions/${sessionId}/human-resume`, jsonOptions('POST', payload)),
-  resumeRuntimePlaybookWithExternalCallback: (sessionId: string, payload: { playbookRunId: string; payload?: Record<string, unknown> }) =>
-    request<SessionRuntimeSession>(`/session-runtime/sessions/${sessionId}/external-callback`, jsonOptions('POST', payload)),
+  resumeRuntimePlaybookWithExternalCallback: (
+    sessionId: string,
+    payload: { playbookRunId: string; payload?: Record<string, unknown> },
+    idempotencyKey?: string,
+  ) =>
+    request<SessionRuntimeSession>(
+      `/session-runtime/sessions/${sessionId}/external-callback`,
+      jsonOptions('POST', payload, {
+        'Idempotency-Key': idempotencyKey ?? externalCallbackIdempotencyKey(sessionId, payload),
+      }),
+    ),
   endRuntimeSessionHandoff: (sessionId: string) =>
     request<SessionRuntimeSession>(`/session-runtime/sessions/${sessionId}/handoff/end`, jsonOptions('POST')),
   createDomain: (payload: CreateDomainPayload) => request<BusinessDomain>('/domains', jsonOptions('POST', payload)),

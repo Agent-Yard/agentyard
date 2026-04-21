@@ -31,6 +31,8 @@ server:
   port: ${LYNXUS_WORKER_PORT:8081}
 
 lynxus:
+  shared-state:
+    instance-id: ${LYNXUS_INSTANCE_ID:}
   agent-runtime:
     base-url: ${LYNXUS_AGENT_RUNTIME_BASE_URL:http://127.0.0.1:8090}
   sandbox:

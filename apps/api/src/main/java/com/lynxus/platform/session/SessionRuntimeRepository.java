@@ -14,6 +14,8 @@ public interface SessionRuntimeRepository {
 
     Optional<SessionRuntimeSessionDto> findActiveSession(String customerId, String assistantId);
 
+    Optional<SessionRuntimeChangeStamp> findSessionChangeStamp(String sessionId);
+
     void saveSession(SessionRuntimeSessionDto session);
 
     List<SessionEvent> listEvents(String sessionId);
@@ -25,4 +27,17 @@ public interface SessionRuntimeRepository {
     List<PlaybookRun> listPlaybookRuns(String sessionId);
 
     void savePlaybookRun(PlaybookRun playbookRun);
+
+    record SessionRuntimeChangeStamp(
+        String sessionId,
+        java.time.Instant sessionUpdatedAt,
+        long latestEventSequence,
+        java.time.Instant latestPlaybookRunUpdatedAt
+    ) {
+        public String fingerprint() {
+            long sessionMillis = sessionUpdatedAt == null ? 0L : sessionUpdatedAt.toEpochMilli();
+            long playbookMillis = latestPlaybookRunUpdatedAt == null ? 0L : latestPlaybookRunUpdatedAt.toEpochMilli();
+            return sessionId + ":" + sessionMillis + ":" + latestEventSequence + ":" + playbookMillis;
+        }
+    }
 }

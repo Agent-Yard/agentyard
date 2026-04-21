@@ -110,6 +110,7 @@ services:
     image: lynxus-knowledge-service:dev
     restart: unless-stopped
     environment:
+      LYNXUS_INSTANCE_ID: ${LYNXUS_KNOWLEDGE_INSTANCE_ID:-knowledge-service-1}
       LYNXUS_INTERNAL_AUTH_TOKEN: ${LYNXUS_INTERNAL_AUTH_TOKEN}
       LYNXUS_LOG_FORMAT: ${LYNXUS_LOG_FORMAT:-json}
       LYNXUS_KNOWLEDGE_DATABASE_URL: postgresql+psycopg://${SPRING_DATASOURCE_USERNAME:-lynxus}:${SPRING_DATASOURCE_PASSWORD:-lynxus}@postgres:5432/lynxus_knowledge
@@ -126,6 +127,45 @@ services:
       LYNXUS_MINIO_ENDPOINT: http://minio:9000
       LYNXUS_MINIO_ACCESS_KEY: ${LYNXUS_MINIO_ACCESS_KEY:-minioadmin}
       LYNXUS_MINIO_SECRET_KEY: ${LYNXUS_MINIO_SECRET_KEY:-minioadmin}
+    networks:
+      default:
+        aliases:
+          - knowledge-service-router
+    depends_on:
+      postgres-bootstrap:
+        condition: service_completed_successfully
+      minio:
+        condition: service_started
+
+  knowledge-service-2:
+    profiles: ["multi-instance"]
+    build:
+      context: ../..
+      dockerfile: apps/knowledge-service/Dockerfile
+    image: lynxus-knowledge-service:dev
+    restart: unless-stopped
+    environment:
+      LYNXUS_INSTANCE_ID: ${LYNXUS_KNOWLEDGE_INSTANCE_ID_SECONDARY:-knowledge-service-2}
+      LYNXUS_INTERNAL_AUTH_TOKEN: ${LYNXUS_INTERNAL_AUTH_TOKEN}
+      LYNXUS_LOG_FORMAT: ${LYNXUS_LOG_FORMAT:-json}
+      LYNXUS_KNOWLEDGE_DATABASE_URL: postgresql+psycopg://${SPRING_DATASOURCE_USERNAME:-lynxus}:${SPRING_DATASOURCE_PASSWORD:-lynxus}@postgres:5432/lynxus_knowledge
+      LYNXUS_KNOWLEDGE_STORAGE_MODE: ${LYNXUS_KNOWLEDGE_STORAGE_MODE:-minio}
+      LYNXUS_KNOWLEDGE_STORAGE_ROOT: ${LYNXUS_KNOWLEDGE_STORAGE_ROOT:-/tmp/lynxus-knowledge}
+      LYNXUS_KNOWLEDGE_MINIO_BUCKET: ${LYNXUS_KNOWLEDGE_MINIO_BUCKET:-lynxus-knowledge}
+      LYNXUS_KNOWLEDGE_DEFAULT_RETRIEVAL_MODE: ${LYNXUS_KNOWLEDGE_DEFAULT_RETRIEVAL_MODE:-HYBRID}
+      LYNXUS_KNOWLEDGE_EMBEDDING_BASE_URL: ${LYNXUS_KNOWLEDGE_EMBEDDING_BASE_URL:-}
+      LYNXUS_KNOWLEDGE_EMBEDDING_MODEL: ${LYNXUS_KNOWLEDGE_EMBEDDING_MODEL:-}
+      LYNXUS_KNOWLEDGE_EMBEDDING_API_KEY: ${LYNXUS_KNOWLEDGE_EMBEDDING_API_KEY:-}
+      LYNXUS_KNOWLEDGE_EMBEDDING_DIMENSIONS: ${LYNXUS_KNOWLEDGE_EMBEDDING_DIMENSIONS:-768}
+      LYNXUS_KNOWLEDGE_EMBEDDING_BATCH_SIZE: ${LYNXUS_KNOWLEDGE_EMBEDDING_BATCH_SIZE:-16}
+      LYNXUS_KNOWLEDGE_EMBEDDING_TIMEOUT_SECONDS: ${LYNXUS_KNOWLEDGE_EMBEDDING_TIMEOUT_SECONDS:-15}
+      LYNXUS_MINIO_ENDPOINT: http://minio:9000
+      LYNXUS_MINIO_ACCESS_KEY: ${LYNXUS_MINIO_ACCESS_KEY:-minioadmin}
+      LYNXUS_MINIO_SECRET_KEY: ${LYNXUS_MINIO_SECRET_KEY:-minioadmin}
+    networks:
+      default:
+        aliases:
+          - knowledge-service-router
     depends_on:
       postgres-bootstrap:
         condition: service_completed_successfully
@@ -139,9 +179,10 @@ services:
     image: lynxus-agent-runtime:dev
     restart: unless-stopped
     environment:
+      LYNXUS_INSTANCE_ID: ${LYNXUS_AGENT_RUNTIME_INSTANCE_ID:-agent-runtime-1}
       LYNXUS_INTERNAL_AUTH_TOKEN: ${LYNXUS_INTERNAL_AUTH_TOKEN}
       LYNXUS_LOG_FORMAT: ${LYNXUS_LOG_FORMAT:-json}
-      LYNXUS_KNOWLEDGE_SERVICE_BASE_URL: http://knowledge-service:8091
+      LYNXUS_KNOWLEDGE_SERVICE_BASE_URL: http://knowledge-service-router:8091
       LYNXUS_REDIS_HOST: redis
       LYNXUS_REDIS_PORT: 6379
       LYNXUS_REDIS_DATABASE: ${LYNXUS_REDIS_DATABASE:-0}
@@ -152,6 +193,42 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       OPENAI_COMPATIBLE_API_KEY: ${OPENAI_COMPATIBLE_API_KEY:-}
+    networks:
+      default:
+        aliases:
+          - agent-runtime-router
+    depends_on:
+      knowledge-service:
+        condition: service_started
+      redis:
+        condition: service_healthy
+
+  agent-runtime-2:
+    profiles: ["multi-instance"]
+    build:
+      context: ../..
+      dockerfile: apps/agent-runtime/Dockerfile
+    image: lynxus-agent-runtime:dev
+    restart: unless-stopped
+    environment:
+      LYNXUS_INSTANCE_ID: ${LYNXUS_AGENT_RUNTIME_INSTANCE_ID_SECONDARY:-agent-runtime-2}
+      LYNXUS_INTERNAL_AUTH_TOKEN: ${LYNXUS_INTERNAL_AUTH_TOKEN}
+      LYNXUS_LOG_FORMAT: ${LYNXUS_LOG_FORMAT:-json}
+      LYNXUS_KNOWLEDGE_SERVICE_BASE_URL: http://knowledge-service-router:8091
+      LYNXUS_REDIS_HOST: redis
+      LYNXUS_REDIS_PORT: 6379
+      LYNXUS_REDIS_DATABASE: ${LYNXUS_REDIS_DATABASE:-0}
+      LYNXUS_REDIS_USERNAME: ${LYNXUS_REDIS_USERNAME:-}
+      LYNXUS_REDIS_PASSWORD: ${LYNXUS_REDIS_PASSWORD:-lynxus}
+      LYNXUS_REDIS_SSL_ENABLED: ${LYNXUS_REDIS_SSL_ENABLED:-false}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OPENAI_COMPATIBLE_API_KEY: ${OPENAI_COMPATIBLE_API_KEY:-}
+    networks:
+      default:
+        aliases:
+          - agent-runtime-router
     depends_on:
       knowledge-service:
         condition: service_started
@@ -176,6 +253,7 @@ services:
       - path: ../../.env.dev.local
         required: false
     environment:
+      LYNXUS_INSTANCE_ID: ${LYNXUS_API_INSTANCE_ID:-api-1}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
       LYNXUS_API_PORT: 8080
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/lynxus_core
@@ -195,13 +273,71 @@ services:
       LYNXUS_MINIO_ENDPOINT: http://minio:9000
       LYNXUS_MINIO_ACCESS_KEY: ${LYNXUS_MINIO_ACCESS_KEY:-minioadmin}
       LYNXUS_MINIO_SECRET_KEY: ${LYNXUS_MINIO_SECRET_KEY:-minioadmin}
-      LYNXUS_KNOWLEDGE_SERVICE_BASE_URL: http://knowledge-service:8091
+      LYNXUS_KNOWLEDGE_SERVICE_BASE_URL: http://knowledge-service-router:8091
       LYNXUS_INTERNAL_AUTH_TOKEN: ${LYNXUS_INTERNAL_AUTH_TOKEN}
       LYNXUS_TEMPORAL_TARGET: temporal:7233
       LYNXUS_TEMPORAL_NAMESPACE: ${LYNXUS_TEMPORAL_NAMESPACE:-default}
       LYNXUS_TEMPORAL_TASK_QUEUE: ${LYNXUS_TEMPORAL_TASK_QUEUE:-lynxus-customer-ops}
+    networks:
+      default:
+        aliases:
+          - api-router
     ports:
       - "${LYNXUS_DEV_API_BIND_ADDRESS:-0.0.0.0}:${LYNXUS_DEV_API_PORT:-18080}:8080"
+    depends_on:
+      postgres-bootstrap:
+        condition: service_completed_successfully
+      temporal:
+        condition: service_started
+      knowledge-service:
+        condition: service_started
+      redis:
+        condition: service_healthy
+
+  api-2:
+    profiles: ["multi-instance"]
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    image: lynxus-api:dev
+    restart: unless-stopped
+    env_file:
+      - path: ../../.env.dev
+        required: false
+      - path: ../../.env.dev.local
+        required: false
+    environment:
+      LYNXUS_INSTANCE_ID: ${LYNXUS_API_INSTANCE_ID_SECONDARY:-api-2}
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
+      LYNXUS_API_PORT: 8080
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/lynxus_core
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-lynxus}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-lynxus}
+      LYNXUS_REDIS_HOST: redis
+      LYNXUS_REDIS_PORT: 6379
+      LYNXUS_REDIS_DATABASE: ${LYNXUS_REDIS_DATABASE:-0}
+      LYNXUS_REDIS_USERNAME: ${LYNXUS_REDIS_USERNAME:-}
+      LYNXUS_REDIS_PASSWORD: ${LYNXUS_REDIS_PASSWORD:-lynxus}
+      LYNXUS_REDIS_SSL_ENABLED: ${LYNXUS_REDIS_SSL_ENABLED:-false}
+      LYNXUS_AUTH_BOOTSTRAP_USERNAME: ${LYNXUS_AUTH_BOOTSTRAP_USERNAME:-admin}
+      LYNXUS_AUTH_DEFAULT_ROLE: ${LYNXUS_AUTH_DEFAULT_ROLE:-BUSINESS_USER}
+      LYNXUS_AUTH_DEV_BOOTSTRAP_ENABLED: ${LYNXUS_AUTH_DEV_BOOTSTRAP_ENABLED:-true}
+      LYNXUS_AUTH_LOGIN_SUCCESS_PATH: ${LYNXUS_AUTH_LOGIN_SUCCESS_PATH:-/}
+      LYNXUS_WEB_ALLOWED_ORIGINS: ${LYNXUS_WEB_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      LYNXUS_MINIO_ENDPOINT: http://minio:9000
+      LYNXUS_MINIO_ACCESS_KEY: ${LYNXUS_MINIO_ACCESS_KEY:-minioadmin}
+      LYNXUS_MINIO_SECRET_KEY: ${LYNXUS_MINIO_SECRET_KEY:-minioadmin}
+      LYNXUS_KNOWLEDGE_SERVICE_BASE_URL: http://knowledge-service-router:8091
+      LYNXUS_INTERNAL_AUTH_TOKEN: ${LYNXUS_INTERNAL_AUTH_TOKEN}
+      LYNXUS_TEMPORAL_TARGET: temporal:7233
+      LYNXUS_TEMPORAL_NAMESPACE: ${LYNXUS_TEMPORAL_NAMESPACE:-default}
+      LYNXUS_TEMPORAL_TASK_QUEUE: ${LYNXUS_TEMPORAL_TASK_QUEUE:-lynxus-customer-ops}
+    networks:
+      default:
+        aliases:
+          - api-router
+    ports:
+      - "${LYNXUS_DEV_API_BIND_ADDRESS_SECONDARY:-127.0.0.1}:${LYNXUS_DEV_API_PORT_SECONDARY:-18081}:8080"
     depends_on:
       postgres-bootstrap:
         condition: service_completed_successfully
@@ -219,6 +355,7 @@ services:
     image: lynxus-worker:dev
     restart: unless-stopped
     environment:
+      LYNXUS_INSTANCE_ID: ${LYNXUS_WORKER_INSTANCE_ID:-worker-1}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
       LYNXUS_WORKER_PORT: 8081
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/lynxus_core
@@ -230,9 +367,49 @@ services:
       LYNXUS_REDIS_USERNAME: ${LYNXUS_REDIS_USERNAME:-}
       LYNXUS_REDIS_PASSWORD: ${LYNXUS_REDIS_PASSWORD:-lynxus}
       LYNXUS_REDIS_SSL_ENABLED: ${LYNXUS_REDIS_SSL_ENABLED:-false}
-      LYNXUS_AGENT_RUNTIME_BASE_URL: http://agent-runtime:8090
+      LYNXUS_AGENT_RUNTIME_BASE_URL: http://agent-runtime-router:8090
       LYNXUS_SANDBOX_BASE_URL: http://sandbox:8080
-      LYNXUS_KNOWLEDGE_SERVICE_BASE_URL: http://knowledge-service:8091
+      LYNXUS_KNOWLEDGE_SERVICE_BASE_URL: http://knowledge-service-router:8091
+      LYNXUS_INTERNAL_AUTH_TOKEN: ${LYNXUS_INTERNAL_AUTH_TOKEN}
+      LYNXUS_TEMPORAL_TARGET: temporal:7233
+      LYNXUS_TEMPORAL_NAMESPACE: ${LYNXUS_TEMPORAL_NAMESPACE:-default}
+      LYNXUS_TEMPORAL_TASK_QUEUE: ${LYNXUS_TEMPORAL_TASK_QUEUE:-lynxus-customer-ops}
+      LYNXUS_TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT: ${LYNXUS_TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT:-PT2M}
+    depends_on:
+      temporal:
+        condition: service_started
+      knowledge-service:
+        condition: service_started
+      agent-runtime:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      sandbox:
+        condition: service_started
+
+  worker-2:
+    profiles: ["multi-instance"]
+    build:
+      context: ../..
+      dockerfile: apps/worker/Dockerfile
+    image: lynxus-worker:dev
+    restart: unless-stopped
+    environment:
+      LYNXUS_INSTANCE_ID: ${LYNXUS_WORKER_INSTANCE_ID_SECONDARY:-worker-2}
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
+      LYNXUS_WORKER_PORT: 8081
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/lynxus_core
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-lynxus}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-lynxus}
+      LYNXUS_REDIS_HOST: redis
+      LYNXUS_REDIS_PORT: 6379
+      LYNXUS_REDIS_DATABASE: ${LYNXUS_REDIS_DATABASE:-0}
+      LYNXUS_REDIS_USERNAME: ${LYNXUS_REDIS_USERNAME:-}
+      LYNXUS_REDIS_PASSWORD: ${LYNXUS_REDIS_PASSWORD:-lynxus}
+      LYNXUS_REDIS_SSL_ENABLED: ${LYNXUS_REDIS_SSL_ENABLED:-false}
+      LYNXUS_AGENT_RUNTIME_BASE_URL: http://agent-runtime-router:8090
+      LYNXUS_SANDBOX_BASE_URL: http://sandbox:8080
+      LYNXUS_KNOWLEDGE_SERVICE_BASE_URL: http://knowledge-service-router:8091
       LYNXUS_INTERNAL_AUTH_TOKEN: ${LYNXUS_INTERNAL_AUTH_TOKEN}
       LYNXUS_TEMPORAL_TARGET: temporal:7233
       LYNXUS_TEMPORAL_NAMESPACE: ${LYNXUS_TEMPORAL_NAMESPACE:-default}

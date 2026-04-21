@@ -19,12 +19,31 @@ import com.lynxus.platform.event.PlatformEventRepository;
 import com.lynxus.platform.event.PlatformEventService;
 import com.lynxus.platform.knowledge.KnowledgeServiceClient;
 import com.lynxus.platform.knowledge.KnowledgeWorkflowGateway;
+import com.lynxus.platform.shared.ConflictException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class CatalogServiceTest {
+    @Test
+    void shouldRejectCatalogWriteWhenAnotherInstanceCommitsDuringMutation() {
+        ConflictingCatalogRepository repository = new ConflictingCatalogRepository();
+        CatalogService service = new CatalogService(
+            repository,
+            readySnapshotKnowledgeClient(),
+            noopKnowledgeWorkflowGateway()
+        );
+
+        ConflictException error = assertThrows(
+            ConflictException.class,
+            () -> service.createDomain(new CatalogDtos.CreateDomainRequest("本地提交", "local"))
+        );
+
+        assertEquals("catalog changed on another instance; retry the request", error.getMessage());
+        assertEquals(List.of("远端提交"), service.listDomains().stream().map(CatalogDtos.BusinessDomainDto::name).toList());
+    }
+
     @Test
     void shouldRecordAssistantAndKnowledgeLifecycleEventsIntoPlatformLog() {
         PlatformEventService platformEventService = new PlatformEventService(
@@ -72,6 +91,55 @@ class CatalogServiceTest {
         assertTrue(summary.domains().isEmpty());
         assertTrue(summary.resources().isEmpty());
         assertTrue(summary.knowledgeBases().isEmpty());
+    }
+
+    @Test
+    void shouldKeepFreshCatalogReadsReadOnlyAtRevisionZero() {
+        ReadOnlyGuardCatalogRepository catalogRepository = new ReadOnlyGuardCatalogRepository();
+        ReadOnlyGuardKnowledgeRepository knowledgeRepository = new ReadOnlyGuardKnowledgeRepository();
+        CatalogService service = new CatalogService(
+            catalogRepository,
+            knowledgeRepository,
+            readySnapshotKnowledgeClient(),
+            noopKnowledgeWorkflowGateway(),
+            PlatformEventService.disabled(),
+            null
+        );
+
+        CatalogDtos.CatalogSummaryDto summary = service.summary();
+
+        assertTrue(summary.domains().isEmpty());
+        assertTrue(summary.knowledgeBases().isEmpty());
+        assertTrue(service.listDomains().isEmpty());
+        assertTrue(service.listKnowledgeBases().isEmpty());
+        assertEquals(0, service.resourceCenter().totalResources());
+        assertEquals(0L, catalogRepository.revision());
+        assertEquals(0L, knowledgeRepository.revision());
+        assertEquals(0, catalogRepository.writeAttempts());
+        assertEquals(0, knowledgeRepository.writeAttempts());
+    }
+
+    @Test
+    void shouldKeepCatalogAndKnowledgeReadsOnSingleSnapshotWithinSummary() {
+        com.lynxus.platform.knowledge.InMemoryKnowledgeRepository knowledgeRepository =
+            new com.lynxus.platform.knowledge.InMemoryKnowledgeRepository();
+        MutatingCatalogRepository catalogRepository = new MutatingCatalogRepository(knowledgeRepository);
+        CatalogService service = new CatalogService(
+            catalogRepository,
+            knowledgeRepository,
+            readySnapshotKnowledgeClient(),
+            noopKnowledgeWorkflowGateway(),
+            PlatformEventService.disabled(),
+            null
+        );
+
+        service.createDomain(new CatalogDtos.CreateDomainRequest("知识运营域", "承载知识沉淀"));
+
+        CatalogDtos.CatalogSummaryDto summary = service.summary();
+
+        assertTrue(summary.knowledgeBases().isEmpty());
+        assertEquals(1, service.listKnowledgeBases().size());
+        assertEquals("并发写入知识库", service.listKnowledgeBases().getFirst().name());
     }
 
     @Test
@@ -1263,5 +1331,86 @@ class CatalogServiceTest {
             Instant.parse("2026-04-01T00:00:00Z"),
             List.of(Role.DEVELOPER)
         );
+    }
+
+    private static final class ConflictingCatalogRepository extends InMemoryCatalogRepository {
+        private boolean injectConflict = true;
+
+        @Override
+        protected void commit(CatalogData working, long expectedRevision) {
+            if (injectConflict) {
+                injectConflict = false;
+                CatalogData remoteData = committedCopy();
+                remoteData.domains.clear();
+                remoteData.domains.add(new CatalogDtos.BusinessDomainDto("domain-remote", "远端提交", "remote", List.of(), List.of(), List.of()));
+                super.commit(remoteData, revision());
+            }
+            super.commit(working, expectedRevision);
+        }
+    }
+
+    private static final class MutatingCatalogRepository extends InMemoryCatalogRepository {
+        private final com.lynxus.platform.knowledge.InMemoryKnowledgeRepository knowledgeRepository;
+        private boolean injected;
+
+        private MutatingCatalogRepository(com.lynxus.platform.knowledge.InMemoryKnowledgeRepository knowledgeRepository) {
+            this.knowledgeRepository = knowledgeRepository;
+        }
+
+        @Override
+        public List<CatalogDtos.BusinessDomainDto> listDomains() {
+            List<CatalogDtos.BusinessDomainDto> domains = super.listDomains();
+            if (!injected && !domains.isEmpty()) {
+                injected = true;
+                knowledgeRepository.inWriteTransaction(() -> {
+                    knowledgeRepository.upsertKnowledgeBase(
+                        new CatalogDtos.KnowledgeBaseDto(
+                            "kb-concurrent",
+                            domains.getFirst().id(),
+                            "并发写入知识库",
+                            ShareScope.DOMAIN_SHARED,
+                            "DOMAIN",
+                            domains.getFirst().id(),
+                            "summary should not observe this write mid-flight",
+                            "知识运营",
+                            List.of("snapshot"),
+                            null,
+                            null,
+                            List.of()
+                        )
+                    );
+                    return null;
+                });
+            }
+            return domains;
+        }
+    }
+
+    private static final class ReadOnlyGuardCatalogRepository extends InMemoryCatalogRepository {
+        private int writeAttempts;
+
+        @Override
+        public <T> T inWriteTransaction(java.util.function.Supplier<T> action) {
+            writeAttempts += 1;
+            throw new AssertionError("catalog read path must not open a write transaction");
+        }
+
+        private int writeAttempts() {
+            return writeAttempts;
+        }
+    }
+
+    private static final class ReadOnlyGuardKnowledgeRepository extends com.lynxus.platform.knowledge.InMemoryKnowledgeRepository {
+        private int writeAttempts;
+
+        @Override
+        public <T> T inWriteTransaction(java.util.function.Supplier<T> action) {
+            writeAttempts += 1;
+            throw new AssertionError("knowledge read path must not open a write transaction");
+        }
+
+        private int writeAttempts() {
+            return writeAttempts;
+        }
     }
 }

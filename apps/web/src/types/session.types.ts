@@ -1,6 +1,7 @@
 import type {
   PlaybookRun as ContractsPlaybookRun,
   SessionEvent as ContractsSessionEvent,
+  SessionRuntimeStreamEvent as ContractsSessionRuntimeStreamEvent,
 } from '../../../../packages/contracts/src';
 
 export type SessionEvent = ContractsSessionEvent;
@@ -35,6 +36,8 @@ export interface SessionRuntimeDetail {
   events: SessionEvent[];
   playbookRuns: PlaybookRun[];
 }
+
+export type SessionRuntimeStreamEvent = ContractsSessionRuntimeStreamEvent<SessionRuntimeDetail>;
 
 export interface PrivacyMappingSummary {
   enabled: boolean;

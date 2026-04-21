@@ -87,6 +87,27 @@ public class JdbcSessionRuntimeRepository implements SessionRuntimeRepository {
     }
 
     @Override
+    public Optional<SessionRuntimeChangeStamp> findSessionChangeStamp(String sessionId) {
+        return jdbcTemplate.query(
+            """
+                select s.id,
+                       s.updated_at,
+                       coalesce((select max(sequence) from session_runtime_event e where e.session_id = s.id), 0) as latest_event_sequence,
+                       (select max(updated_at) from session_runtime_playbook_run p where p.session_id = s.id) as latest_playbook_run_updated_at
+                from session_runtime_session s
+                where s.id = ?
+                """,
+            (rs, rowNum) -> new SessionRuntimeChangeStamp(
+                rs.getString("id"),
+                toInstant(rs.getTimestamp("updated_at")),
+                rs.getLong("latest_event_sequence"),
+                toInstant(rs.getTimestamp("latest_playbook_run_updated_at"))
+            ),
+            sessionId
+        ).stream().findFirst();
+    }
+
+    @Override
     public void saveSession(SessionRuntimeSessionDto session) {
         jdbcTemplate.update(
             """

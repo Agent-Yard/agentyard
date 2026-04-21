@@ -46,3 +46,7 @@ def create_redis_client(settings: RedisSettings) -> Redis:
         socket_connect_timeout=3,
         socket_timeout=3,
     )
+
+
+def privacy_session_prefix() -> str:
+    return (os.getenv("LYNXUS_PRIVACY_SESSION_STORE_KEY_PREFIX") or "lynxus:privacy:session").strip() or "lynxus:privacy:session"

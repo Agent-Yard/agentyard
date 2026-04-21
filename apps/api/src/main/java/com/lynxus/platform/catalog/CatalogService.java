@@ -5,6 +5,7 @@ import static com.lynxus.platform.catalog.CatalogDtos.*;
 import com.lynxus.platform.event.PlatformEventDtos.PlatformAggregateType;
 import com.lynxus.platform.event.PlatformEventService;
 import com.lynxus.platform.knowledge.InMemoryKnowledgeRepository;
+import com.lynxus.platform.knowledge.KnowledgeRepository;
 import com.lynxus.platform.knowledge.KnowledgeService;
 import com.lynxus.platform.knowledge.KnowledgeServiceClient;
 import com.lynxus.platform.knowledge.KnowledgeWorkflowGateway;
@@ -25,6 +26,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -32,17 +34,10 @@ import org.springframework.stereotype.Service;
 @Service
 public class CatalogService {
     private final CatalogRepository repository;
+    private final KnowledgeRepository knowledgeRepository;
     private final KnowledgeService knowledgeService;
     private final PlatformEventService platformEventService;
-    private boolean initialized;
-    private final List<BusinessDomainDto> domains = new ArrayList<>();
-    private final List<ScenarioDto> scenarios = new ArrayList<>();
-    private final List<AssistantDto> assistants = new ArrayList<>();
-    private final List<AgentDto> agents = new ArrayList<>();
-    private final List<PlaybookDto> playbooks = new ArrayList<>();
-    private final List<ResourceDto> resources = new ArrayList<>();
-    private final Map<String, List<StoredResourceVersion>> resourceVersions = new LinkedHashMap<>();
-    private final Map<String, List<AssistantReleaseDto>> assistantReleases = new LinkedHashMap<>();
+    private final com.lynxus.platform.shared.redis.RedisInvalidationBus invalidationBus;
 
     public CatalogService() {
         this(
@@ -50,23 +45,31 @@ public class CatalogService {
             new InMemoryKnowledgeRepository(),
             new KnowledgeServiceClient("http://127.0.0.1:8091", "in-memory-internal-token"),
             new NoOpKnowledgeWorkflowGateway(),
-            PlatformEventService.disabled()
+            PlatformEventService.disabled(),
+            null
         );
     }
 
     public CatalogService(CatalogRepository repository, KnowledgeService knowledgeService) {
-        this(repository, knowledgeService, PlatformEventService.disabled());
+        this(repository, knowledgeService, PlatformEventService.disabled(), null);
     }
 
     @Autowired
-    public CatalogService(CatalogRepository repository, KnowledgeService knowledgeService, PlatformEventService platformEventService) {
+    public CatalogService(
+        CatalogRepository repository,
+        KnowledgeService knowledgeService,
+        PlatformEventService platformEventService,
+        com.lynxus.platform.shared.redis.RedisInvalidationBus invalidationBus
+    ) {
         this.repository = repository;
+        this.knowledgeRepository = knowledgeService.repository();
         this.knowledgeService = knowledgeService;
         this.platformEventService = platformEventService;
+        this.invalidationBus = invalidationBus;
     }
 
     public CatalogService(CatalogRepository repository, KnowledgeServiceClient knowledgeServiceClient, KnowledgeWorkflowGateway knowledgeWorkflowGateway) {
-        this(repository, new InMemoryKnowledgeRepository(), knowledgeServiceClient, knowledgeWorkflowGateway, PlatformEventService.disabled());
+        this(repository, new InMemoryKnowledgeRepository(), knowledgeServiceClient, knowledgeWorkflowGateway, PlatformEventService.disabled(), null);
     }
 
     public CatalogService(
@@ -75,7 +78,7 @@ public class CatalogService {
         KnowledgeWorkflowGateway knowledgeWorkflowGateway,
         PlatformEventService platformEventService
     ) {
-        this(repository, new InMemoryKnowledgeRepository(), knowledgeServiceClient, knowledgeWorkflowGateway, platformEventService);
+        this(repository, new InMemoryKnowledgeRepository(), knowledgeServiceClient, knowledgeWorkflowGateway, platformEventService, null);
     }
 
     CatalogService(
@@ -83,50 +86,117 @@ public class CatalogService {
         com.lynxus.platform.knowledge.KnowledgeRepository knowledgeRepository,
         KnowledgeServiceClient knowledgeServiceClient,
         KnowledgeWorkflowGateway knowledgeWorkflowGateway,
-        PlatformEventService platformEventService
+        PlatformEventService platformEventService,
+        com.lynxus.platform.shared.redis.RedisInvalidationBus invalidationBus
     ) {
         this.repository = repository;
+        this.knowledgeRepository = knowledgeRepository;
         this.platformEventService = platformEventService;
-        this.knowledgeService = new KnowledgeService(knowledgeRepository, repository, knowledgeServiceClient, knowledgeWorkflowGateway, platformEventService);
+        this.invalidationBus = invalidationBus;
+        this.knowledgeService = new KnowledgeService(
+            knowledgeRepository,
+            repository,
+            knowledgeServiceClient,
+            knowledgeWorkflowGateway,
+            platformEventService,
+            invalidationBus
+        );
     }
 
     public KnowledgeService knowledgeService() {
         return knowledgeService;
     }
 
-    public CatalogSummaryDto summary() {
-        ensureLoaded();
-        return new CatalogSummaryDto(
-            listDomains(),
-            listScenarios(),
-            listAssistants(),
-            listAgents(),
-            listResources(),
-            listKnowledgeBases(),
-            resourceCenter(),
-            resourceBlueprints()
+    private <T> T withReadState(Function<CatalogRepository, T> action) {
+        return repository.inReadTransaction(() -> action.apply(repository));
+    }
+
+    private <T> T withReadState(BiFunction<CatalogRepository, KnowledgeRepository, T> action) {
+        return repository.inReadTransaction(() ->
+            knowledgeRepository.inReadTransaction(() -> action.apply(repository, knowledgeRepository))
         );
     }
 
+    private <T> T withWriteState(Function<CatalogRepository, T> action) {
+        T result = repository.inWriteTransaction(() -> action.apply(repository));
+        if (invalidationBus != null) {
+            invalidationBus.publishCatalogInvalidated(repository.revision());
+        }
+        return result;
+    }
+
+    private List<BusinessDomainDto> domains(CatalogRepository repo) {
+        return repo.listDomains();
+    }
+
+    private List<ScenarioDto> scenarios(CatalogRepository repo) {
+        return repo.listScenarios();
+    }
+
+    private List<AssistantDto> assistants(CatalogRepository repo) {
+        return repo.listAssistants();
+    }
+
+    private List<AgentDto> agents(CatalogRepository repo) {
+        return repo.listAgents();
+    }
+
+    private List<PlaybookDto> playbooks(CatalogRepository repo) {
+        return repo.listPlaybooks();
+    }
+
+    private List<ResourceDto> resources(CatalogRepository repo) {
+        return repo.listResources();
+    }
+
+    private List<StoredResourceVersion> resourceVersions(CatalogRepository repo, String resourceId) {
+        return repo.listResourceVersions(resourceId);
+    }
+
+    private List<AssistantReleaseDto> assistantReleases(CatalogRepository repo, String assistantId) {
+        return repo.listAssistantReleases(assistantId);
+    }
+
+    private List<KnowledgeBaseDto> knowledgeBases(KnowledgeRepository repo) {
+        return repo.listKnowledgeBases().stream()
+            .sorted(Comparator.comparing(KnowledgeBaseDto::name))
+            .map(item -> toKnowledgeBaseView(repo, item))
+            .toList();
+    }
+
+    public CatalogSummaryDto summary() {
+        return withReadState((state, knowledgeState) -> new CatalogSummaryDto(
+            listDomains(state, knowledgeState),
+            listScenarios(state),
+            listAssistants(state),
+            listAgents(state),
+            listResources(state),
+            knowledgeBases(knowledgeState),
+            resourceCenter(state),
+            resourceBlueprints()
+        ));
+    }
+
     public ObjectReferenceAnalysisDto objectReferences(String objectType, String objectId) {
-        ensureLoaded();
+        return withReadState((state, knowledgeState) -> {
         String normalizedObjectType = normalizeReferenceObjectType(objectType);
         return switch (normalizedObjectType) {
-            case "DOMAIN" -> analyzeDomainReferences(findDomain(objectId));
-            case "SCENARIO" -> analyzeScenarioReferences(findScenario(objectId));
-            case "ASSISTANT" -> analyzeAssistantReferences(findAssistant(objectId));
-            case "PLAYBOOK" -> analyzePlaybookReferences(findPlaybook(objectId));
-            case "AGENT" -> analyzeAgentReferences(findAgent(objectId));
-            case "RESOURCE" -> analyzeResourceReferences(toResourceView(findResource(objectId)));
-            case "KNOWLEDGE_BASE" -> analyzeKnowledgeBaseReferences(getKnowledgeBase(objectId));
+            case "DOMAIN" -> analyzeDomainReferences(state, knowledgeState, findDomain(state, objectId));
+            case "SCENARIO" -> analyzeScenarioReferences(state, findScenario(state, objectId));
+            case "ASSISTANT" -> analyzeAssistantReferences(state, knowledgeState, findAssistant(state, objectId));
+            case "PLAYBOOK" -> analyzePlaybookReferences(state, findPlaybook(state, objectId));
+            case "AGENT" -> analyzeAgentReferences(state, knowledgeState, findAgent(state, objectId));
+            case "RESOURCE" -> analyzeResourceReferences(state, toResourceView(state, findResource(state, objectId)));
+            case "KNOWLEDGE_BASE" -> analyzeKnowledgeBaseReferences(state, toKnowledgeBaseView(knowledgeState, findKnowledgeBase(knowledgeState, objectId)));
             default -> throw new IllegalArgumentException("unsupported reference object type: " + objectType);
         };
+        });
     }
 
     public DeletionImpactPreviewDto deletionPreview(String objectType, String objectId) {
-        ensureLoaded();
+        return withReadState((state, knowledgeState) -> {
         String normalizedObjectType = normalizeReferenceObjectType(objectType);
-        ObjectReferenceAnalysisDto analysis = objectReferences(normalizedObjectType, objectId);
+        ObjectReferenceAnalysisDto analysis = objectReferences(state, knowledgeState, normalizedObjectType, objectId);
         List<ObjectReferenceRelationDto> blockers = relationsByImpactLevel(analysis, "BLOCKS_DELETION");
         List<ObjectReferenceRelationDto> advisories = relationsByImpactLevel(analysis, "ADVISORY");
         return new DeletionImpactPreviewDto(
@@ -136,27 +206,89 @@ public class CatalogService {
             blockers.isEmpty(),
             blockers,
             advisories,
-            buildCascadeDeletes(normalizedObjectType, objectId)
+            buildCascadeDeletes(state, knowledgeState, normalizedObjectType, objectId)
         );
+        });
     }
 
     public List<BusinessDomainDto> listDomains() {
-        ensureLoaded();
-        return domains.stream()
+        return withReadState((state, knowledgeState) -> domains(state).stream()
             .sorted(Comparator.comparing(BusinessDomainDto::name))
-            .map(this::toDomainView)
-            .toList();
+            .map(item -> toDomainView(state, knowledgeState, item))
+            .toList());
     }
 
     public BusinessDomainDto getDomain(String domainId) {
-        ensureLoaded();
-        return toDomainView(findDomain(domainId));
+        return withReadState((state, knowledgeState) -> toDomainView(state, knowledgeState, findDomain(state, domainId)));
+    }
+
+    private List<BusinessDomainDto> listDomains(CatalogRepository state, KnowledgeRepository knowledgeState) {
+        return domains(state).stream()
+            .sorted(Comparator.comparing(BusinessDomainDto::name))
+            .map(item -> toDomainView(state, knowledgeState, item))
+            .toList();
+    }
+
+    private List<ScenarioDto> listScenarios(CatalogRepository state) {
+        return scenarios(state).stream()
+            .sorted(Comparator.comparing(ScenarioDto::name))
+            .map(item -> toScenarioView(state, item))
+            .toList();
+    }
+
+    private List<AssistantDto> listAssistants(CatalogRepository state) {
+        return assistants(state).stream()
+            .sorted(Comparator.comparing(AssistantDto::name))
+            .map(item -> toAssistantView(state, item))
+            .toList();
+    }
+
+    private List<AgentDto> listAgents(CatalogRepository state) {
+        return agents(state).stream()
+            .sorted(Comparator.comparing(AgentDto::name))
+            .toList();
+    }
+
+    private List<ResourceDto> listResources(CatalogRepository state) {
+        return resources(state).stream()
+            .sorted(Comparator.comparing(ResourceDto::name))
+            .map(item -> toResourceView(state, item))
+            .toList();
+    }
+
+    private ResourceCenterDto resourceCenter(CatalogRepository state) {
+        List<ResourceReferenceDto> references = resources(state).stream()
+            .sorted(Comparator.comparing(ResourceDto::name))
+            .map(item -> toResourceView(state, item))
+            .flatMap(resource -> toResourceReferences(resource, analyzeResourceReferences(state, resource)).stream())
+            .toList();
+        long domainShared = resources(state).stream().filter(item -> item.shareScope() == ShareScope.DOMAIN_SHARED).count();
+        long privateCount = resources(state).stream().filter(item -> item.shareScope() == ShareScope.PRIVATE).count();
+        return new ResourceCenterDto(resources(state).size(), Math.toIntExact(domainShared), Math.toIntExact(privateCount), references);
+    }
+
+    private ObjectReferenceAnalysisDto objectReferences(
+        CatalogRepository state,
+        KnowledgeRepository knowledgeState,
+        String objectType,
+        String objectId
+    ) {
+        return switch (objectType) {
+            case "DOMAIN" -> analyzeDomainReferences(state, knowledgeState, findDomain(state, objectId));
+            case "SCENARIO" -> analyzeScenarioReferences(state, findScenario(state, objectId));
+            case "ASSISTANT" -> analyzeAssistantReferences(state, knowledgeState, findAssistant(state, objectId));
+            case "PLAYBOOK" -> analyzePlaybookReferences(state, findPlaybook(state, objectId));
+            case "AGENT" -> analyzeAgentReferences(state, knowledgeState, findAgent(state, objectId));
+            case "RESOURCE" -> analyzeResourceReferences(state, toResourceView(state, findResource(state, objectId)));
+            case "KNOWLEDGE_BASE" -> analyzeKnowledgeBaseReferences(state, toKnowledgeBaseView(knowledgeState, findKnowledgeBase(knowledgeState, objectId)));
+            default -> throw new IllegalArgumentException("unsupported reference object type: " + objectType);
+        };
     }
 
     public BusinessDomainDto createDomain(CreateDomainRequest request) {
-        ensureLoaded();
+        return withWriteState(state -> {
         String name = requireText(request.name(), "domain.name");
-        ensureUniqueDomainName(name, null);
+        ensureUniqueDomainName(state, name, null);
         BusinessDomainDto domain = new BusinessDomainDto(
             nextId("domain"),
             name,
@@ -165,17 +297,17 @@ public class CatalogService {
             List.of(),
             List.of()
         );
-        domains.add(domain);
-        persistState();
+        state.upsertDomain(domain);
         recordCatalogEvent("DOMAIN_CREATED", PlatformAggregateType.DOMAIN, domain.id(), Map.of("name", domain.name()));
-        return toDomainView(domain);
+        return toDomainView(state, knowledgeRepository, domain);
+        });
     }
 
     public BusinessDomainDto updateDomain(String domainId, UpdateDomainRequest request) {
-        ensureLoaded();
-        BusinessDomainDto existing = findDomain(domainId);
+        return withWriteState(state -> {
+        BusinessDomainDto existing = findDomain(state, domainId);
         String name = requireText(request.name(), "domain.name");
-        ensureUniqueDomainName(name, existing.id());
+        ensureUniqueDomainName(state, name, existing.id());
         BusinessDomainDto updated = new BusinessDomainDto(
             existing.id(),
             name,
@@ -184,49 +316,46 @@ public class CatalogService {
             existing.resources(),
             existing.knowledgeBases()
         );
-        replace(domains, BusinessDomainDto::id, updated);
-        persistState();
+        state.upsertDomain(updated);
         recordCatalogEvent("DOMAIN_UPDATED", PlatformAggregateType.DOMAIN, updated.id(), Map.of("name", updated.name()));
-        return toDomainView(updated);
+        return toDomainView(state, knowledgeRepository, updated);
+        });
     }
 
     public BusinessDomainDto deleteDomain(String domainId) {
-        ensureLoaded();
-        BusinessDomainDto existing = findDomain(domainId);
-        String blocker = findObjectDeletionBlocker("DOMAIN", domainId);
+        return withWriteState(state -> {
+        BusinessDomainDto existing = findDomain(state, domainId);
+        String blocker = findObjectDeletionBlocker(state, knowledgeRepository, "DOMAIN", domainId);
         if (blocker != null) {
             throw new IllegalStateException(blocker);
         }
-        domains.removeIf(item -> item.id().equals(domainId));
-        persistState();
+        state.deleteDomain(domainId);
         recordCatalogEvent(
             "DOMAIN_DELETED",
             PlatformAggregateType.DOMAIN,
             existing.id(),
             Map.of("name", existing.name(), "deletedObjectId", existing.id(), "deletedObjectName", existing.name())
         );
-        return toDomainView(existing);
+        return toDomainView(state, knowledgeRepository, existing);
+        });
     }
 
     public List<ScenarioDto> listScenarios() {
-        ensureLoaded();
-        return scenarios.stream()
-            .sorted(Comparator.comparing(ScenarioDto::name))
-            .map(this::toScenarioView)
-            .toList();
+        return withReadState(this::listScenarios);
     }
 
     public ScenarioDto getScenario(String scenarioId) {
-        ensureLoaded();
-        return toScenarioView(findScenario(scenarioId));
+        return withReadState(state -> {
+        return toScenarioView(state, findScenario(state, scenarioId));
+        });
     }
 
     public ScenarioDto createScenario(CreateScenarioRequest request) {
-        ensureLoaded();
+        return withWriteState(state -> {
         String domainId = requireText(request.domainId(), "scenario.domainId");
-        findDomain(domainId);
+        findDomain(state, domainId);
         String name = requireText(request.name(), "scenario.name");
-        ensureUniqueScenarioName(domainId, name, null);
+        ensureUniqueScenarioName(state, domainId, name, null);
         ScenarioDto scenario = new ScenarioDto(
             nextId("scenario"),
             domainId,
@@ -235,17 +364,17 @@ public class CatalogService {
             new VersionDto("0.1.0", VersionStatus.DRAFT, Instant.now()),
             List.of()
         );
-        scenarios.add(scenario);
-        persistState();
+        state.upsertScenario(scenario);
         recordCatalogEvent("SCENARIO_CREATED", PlatformAggregateType.SCENARIO, scenario.id(), Map.of("name", scenario.name()));
-        return toScenarioView(scenario);
+        return toScenarioView(state, scenario);
+        });
     }
 
     public ScenarioDto updateScenario(String scenarioId, UpdateScenarioRequest request) {
-        ensureLoaded();
-        ScenarioDto existing = findScenario(scenarioId);
+        return withWriteState(state -> {
+        ScenarioDto existing = findScenario(state, scenarioId);
         String name = requireText(request.name(), "scenario.name");
-        ensureUniqueScenarioName(existing.domainId(), name, existing.id());
+        ensureUniqueScenarioName(state, existing.domainId(), name, existing.id());
         ScenarioDto updated = new ScenarioDto(
             existing.id(),
             existing.domainId(),
@@ -254,35 +383,35 @@ public class CatalogService {
             existing.version(),
             existing.assistants()
         );
-        replace(scenarios, ScenarioDto::id, updated);
-        persistState();
+        state.upsertScenario(updated);
         recordCatalogEvent("SCENARIO_UPDATED", PlatformAggregateType.SCENARIO, updated.id(), Map.of("name", updated.name()));
-        return toScenarioView(updated);
+        return toScenarioView(state, updated);
+        });
     }
 
     public ScenarioDto deleteScenario(String scenarioId) {
-        ensureLoaded();
-        ScenarioDto existing = findScenario(scenarioId);
-        String blocker = findObjectDeletionBlocker("SCENARIO", scenarioId);
+        return withWriteState(state -> {
+        ScenarioDto existing = findScenario(state, scenarioId);
+        String blocker = findObjectDeletionBlocker(state, knowledgeRepository, "SCENARIO", scenarioId);
         if (blocker != null) {
             throw new IllegalStateException(blocker);
         }
-        scenarios.removeIf(item -> item.id().equals(scenarioId));
-        persistState();
+        state.deleteScenario(scenarioId);
         recordCatalogEvent(
             "SCENARIO_DELETED",
             PlatformAggregateType.SCENARIO,
             existing.id(),
             Map.of("name", existing.name(), "deletedObjectId", existing.id(), "deletedObjectName", existing.name())
         );
-        return toScenarioView(existing);
+        return toScenarioView(state, existing);
+        });
     }
 
     public AssistantDto createAssistant(CreateAssistantRequest request) {
-        ensureLoaded();
+        return withWriteState(state -> {
         AssistantModelPolicyDto normalizedModelPolicy = normalizeAssistantModelPolicy(request.modelPolicy());
-        validateAssistantModelPolicy(normalizedModelPolicy);
-        validatePrivacyModelResourceId(request.privacyModelResourceId(), "assistant privacyModelResourceId");
+        validateAssistantModelPolicy(state, normalizedModelPolicy);
+        validatePrivacyModelResourceId(state, request.privacyModelResourceId(), "assistant privacyModelResourceId");
         AssistantDto assistant = new AssistantDto(
             nextId("assistant"),
             request.scenarioId(),
@@ -304,15 +433,15 @@ public class CatalogService {
             normalizeKnowledgeAccessPolicy(request.knowledgeAccessPolicy()),
             normalizeMemoryPolicy(request.memoryPolicy())
         );
-        assistants.add(assistant);
-        persistState();
+        state.upsertAssistant(assistant);
         recordCatalogEvent("ASSISTANT_CREATED", PlatformAggregateType.ASSISTANT, assistant.id(), Map.of("name", assistant.name()));
-        return toAssistantView(assistant);
+        return toAssistantView(state, assistant);
+        });
     }
 
     public AssistantDto updateAssistant(String assistantId, UpdateAssistantRequest request) {
-        ensureLoaded();
-        AssistantDto existing = findAssistant(assistantId);
+        return withWriteState(state -> {
+        AssistantDto existing = findAssistant(state, assistantId);
         VersionStatus effectiveStatus = request.status() == null ? existing.version().status() : request.status();
         String primaryAgentId = request.primaryAgentId() == null
             ? existing.primaryAgentId()
@@ -340,10 +469,10 @@ public class CatalogService {
         MemoryPolicyDto memoryPolicy = request.memoryPolicy() == null
             ? existing.memoryPolicy()
             : normalizeMemoryPolicy(request.memoryPolicy());
-        validateAssistantModelPolicy(normalizedModelPolicy);
-        validatePrivacyModelResourceId(privacyModelResourceId, "assistant privacyModelResourceId");
+        validateAssistantModelPolicy(state, normalizedModelPolicy);
+        validatePrivacyModelResourceId(state, privacyModelResourceId, "assistant privacyModelResourceId");
         VersionDto version = new VersionDto(
-            effectiveStatus == VersionStatus.PUBLISHED ? nextAssistantReleaseVersion(existing.id()) : existing.version().version(),
+            effectiveStatus == VersionStatus.PUBLISHED ? nextAssistantReleaseVersion(state, existing.id()) : existing.version().version(),
             effectiveStatus,
             Instant.now()
         );
@@ -368,16 +497,15 @@ public class CatalogService {
             knowledgeAccessPolicy,
             memoryPolicy
         );
-        validateAssistantOwnerConfiguration(updated);
+        validateAssistantOwnerConfiguration(state, updated);
         if (effectiveStatus == VersionStatus.PUBLISHED) {
-            ensureAssistantReadyForPublication(updated);
+            ensureAssistantReadyForPublication(state, updated);
         }
         AssistantReleaseDto publishedRelease = null;
-        replace(assistants, AssistantDto::id, updated);
+        state.upsertAssistant(updated);
         if (effectiveStatus == VersionStatus.PUBLISHED) {
-            publishedRelease = createAssistantRelease(updated.id(), version.version(), VersionStatus.PUBLISHED);
+            publishedRelease = createAssistantRelease(state, updated.id(), version.version(), VersionStatus.PUBLISHED);
         }
-        persistState();
         recordCatalogEvent("ASSISTANT_UPDATED", PlatformAggregateType.ASSISTANT, updated.id(), Map.of("name", updated.name()));
         if (publishedRelease != null) {
             recordCatalogEvent(
@@ -392,21 +520,21 @@ public class CatalogService {
                 )
             );
         }
-        return toAssistantView(updated);
+        return toAssistantView(state, updated);
+        });
     }
 
     public AssistantDto deleteAssistant(String assistantId) {
-        ensureLoaded();
-        AssistantDto existing = findAssistant(assistantId);
-        String blocker = findObjectDeletionBlocker("ASSISTANT", assistantId);
+        return withWriteState(state -> {
+        AssistantDto existing = findAssistant(state, assistantId);
+        String blocker = findObjectDeletionBlocker(state, knowledgeRepository, "ASSISTANT", assistantId);
         if (blocker != null) {
             throw new IllegalStateException(blocker);
         }
 
-        AssistantDto deleted = toAssistantView(existing);
-        assistants.removeIf(item -> item.id().equals(assistantId));
-        assistantReleases.remove(assistantId);
-        persistState();
+        AssistantDto deleted = toAssistantView(state, existing);
+        state.deleteAssistant(assistantId);
+        state.deleteAssistantReleases(assistantId);
         recordCatalogEvent(
             "ASSISTANT_DELETED",
             PlatformAggregateType.ASSISTANT,
@@ -414,23 +542,21 @@ public class CatalogService {
             Map.of("name", deleted.name(), "deletedObjectId", deleted.id(), "deletedObjectName", deleted.name())
         );
         return deleted;
+        });
     }
 
     public List<AssistantDto> listAssistants() {
-        ensureLoaded();
-        return assistants.stream()
-            .sorted(Comparator.comparing(AssistantDto::name))
-            .map(this::toAssistantView)
-            .toList();
+        return withReadState(this::listAssistants);
     }
 
     public AssistantDto getAssistant(String assistantId) {
-        ensureLoaded();
-        return toAssistantView(findAssistant(assistantId));
+        return withReadState(state -> {
+        return toAssistantView(state, findAssistant(state, assistantId));
+        });
     }
 
     public AgentDto createAgent(CreateAgentRequest request) {
-        ensureLoaded();
+        return withWriteState(state -> {
         AgentDto agent = new AgentDto(
             nextId("agent"),
             request.assistantId(),
@@ -443,21 +569,21 @@ public class CatalogService {
             request.switchableOwnerAgentIds() == null ? List.of() : List.copyOf(request.switchableOwnerAgentIds()),
             request.playbookIds() == null ? List.of() : List.copyOf(request.playbookIds())
         );
-        validatePrivacyModelResourceId(agent.executionPolicy().privacyModelResourceId(), "agent privacyModelResourceId");
-        validateAgentPlaybookReferences(agent.assistantId(), agent.playbookIds());
-        agents.add(agent);
-        AssistantDto assistant = findAssistant(request.assistantId());
+        validatePrivacyModelResourceId(state, agent.executionPolicy().privacyModelResourceId(), "agent privacyModelResourceId");
+        validateAgentPlaybookReferences(state, agent.assistantId(), agent.playbookIds());
+        state.upsertAgent(agent);
+        AssistantDto assistant = findAssistant(state, request.assistantId());
         if (assistant.primaryAgentId() != null && !assistant.primaryAgentId().isBlank()) {
-            validateAssistantOwnerConfiguration(assistant);
+            validateAssistantOwnerConfiguration(state, assistant);
         }
-        persistState();
         recordCatalogEvent("AGENT_CREATED", PlatformAggregateType.AGENT, agent.id(), Map.of("name", agent.name()));
         return agent;
+        });
     }
 
     public AgentDto updateAgent(String agentId, UpdateAgentRequest request) {
-        ensureLoaded();
-        AgentDto existing = findAgent(agentId);
+        return withWriteState(state -> {
+        AgentDto existing = findAgent(state, agentId);
         AgentDto updated = new AgentDto(
             existing.id(),
             existing.assistantId(),
@@ -470,28 +596,27 @@ public class CatalogService {
             request.switchableOwnerAgentIds() == null ? List.of() : List.copyOf(request.switchableOwnerAgentIds()),
             request.playbookIds() == null ? List.of() : List.copyOf(request.playbookIds())
         );
-        validatePrivacyModelResourceId(updated.executionPolicy().privacyModelResourceId(), "agent privacyModelResourceId");
-        validateAgentPlaybookReferences(updated.assistantId(), updated.playbookIds());
-        replace(agents, AgentDto::id, updated);
-        AssistantDto assistant = findAssistant(existing.assistantId());
+        validatePrivacyModelResourceId(state, updated.executionPolicy().privacyModelResourceId(), "agent privacyModelResourceId");
+        validateAgentPlaybookReferences(state, updated.assistantId(), updated.playbookIds());
+        state.upsertAgent(updated);
+        AssistantDto assistant = findAssistant(state, existing.assistantId());
         if (assistant.primaryAgentId() != null && !assistant.primaryAgentId().isBlank()) {
-            validateAssistantOwnerConfiguration(assistant);
+            validateAssistantOwnerConfiguration(state, assistant);
         }
-        persistState();
         recordCatalogEvent("AGENT_UPDATED", PlatformAggregateType.AGENT, updated.id(), Map.of("name", updated.name()));
         return updated;
+        });
     }
 
     public AgentDto deleteAgent(String agentId) {
-        ensureLoaded();
-        AgentDto existing = findAgent(agentId);
-        String blocker = findObjectDeletionBlocker("AGENT", agentId);
+        return withWriteState(state -> {
+        AgentDto existing = findAgent(state, agentId);
+        String blocker = findObjectDeletionBlocker(state, knowledgeRepository, "AGENT", agentId);
         if (blocker != null) {
             throw new IllegalStateException(blocker);
         }
-        agents.removeIf(item -> item.id().equals(agentId));
-        clearDeletedPrimaryAgent(existing.assistantId(), agentId);
-        persistState();
+        state.deleteAgent(agentId);
+        clearDeletedPrimaryAgent(state, existing.assistantId(), agentId);
         recordCatalogEvent(
             "AGENT_DELETED",
             PlatformAggregateType.AGENT,
@@ -499,34 +624,37 @@ public class CatalogService {
             Map.of("name", existing.name(), "deletedObjectId", existing.id(), "deletedObjectName", existing.name())
         );
         return existing;
+        });
     }
 
     public List<AgentDto> listAgents() {
-        ensureLoaded();
-        return agents.stream().sorted(Comparator.comparing(AgentDto::name)).toList();
+        return withReadState(this::listAgents);
     }
 
     public AgentDto getAgent(String agentId) {
-        ensureLoaded();
-        return findAgent(agentId);
+        return withReadState(state -> {
+        return findAgent(state, agentId);
+        });
     }
 
     public List<PlaybookDto> listPlaybooks() {
-        ensureLoaded();
-        return playbooks.stream()
+        return withReadState(state -> {
+        return playbooks(state).stream()
             .sorted(Comparator.comparing(PlaybookDto::name))
             .map(this::normalizePlaybook)
             .toList();
+        });
     }
 
     public PlaybookDto getPlaybook(String playbookId) {
-        ensureLoaded();
-        return normalizePlaybook(findPlaybook(playbookId));
+        return withReadState(state -> {
+        return normalizePlaybook(findPlaybook(state, playbookId));
+        });
     }
 
     public PlaybookDto createPlaybook(CreatePlaybookRequest request) {
-        ensureLoaded();
-        findAssistant(request.assistantId());
+        return withWriteState(state -> {
+        findAssistant(state, request.assistantId());
         PlaybookDto playbook = new PlaybookDto(
             nextId("playbook"),
             request.assistantId(),
@@ -542,15 +670,15 @@ public class CatalogService {
             request.edges() == null ? List.of() : request.edges().stream().map(this::normalizePlaybookEdge).toList()
         );
         validatePlaybookDefinition(playbook);
-        playbooks.add(playbook);
-        persistState();
+        state.upsertPlaybook(playbook);
         recordCatalogEvent("PLAYBOOK_CREATED", PlatformAggregateType.PLAYBOOK, playbook.id(), Map.of("name", playbook.name()));
         return normalizePlaybook(playbook);
+        });
     }
 
     public PlaybookDto updatePlaybook(String playbookId, UpdatePlaybookRequest request) {
-        ensureLoaded();
-        PlaybookDto existing = findPlaybook(playbookId);
+        return withWriteState(state -> {
+        PlaybookDto existing = findPlaybook(state, playbookId);
         PlaybookDto updated = new PlaybookDto(
             existing.id(),
             existing.assistantId(),
@@ -566,21 +694,20 @@ public class CatalogService {
             request.edges() == null ? List.of() : request.edges().stream().map(this::normalizePlaybookEdge).toList()
         );
         validatePlaybookDefinition(updated);
-        replace(playbooks, PlaybookDto::id, updated);
-        persistState();
+        state.upsertPlaybook(updated);
         recordCatalogEvent("PLAYBOOK_UPDATED", PlatformAggregateType.PLAYBOOK, updated.id(), Map.of("name", updated.name()));
         return normalizePlaybook(updated);
+        });
     }
 
     public PlaybookDto deletePlaybook(String playbookId) {
-        ensureLoaded();
-        PlaybookDto existing = findPlaybook(playbookId);
-        String blocker = findObjectDeletionBlocker("PLAYBOOK", playbookId);
+        return withWriteState(state -> {
+        PlaybookDto existing = findPlaybook(state, playbookId);
+        String blocker = findObjectDeletionBlocker(state, knowledgeRepository, "PLAYBOOK", playbookId);
         if (blocker != null) {
             throw new IllegalStateException(blocker);
         }
-        playbooks.removeIf(item -> item.id().equals(playbookId));
-        persistState();
+        state.deletePlaybook(playbookId);
         recordCatalogEvent(
             "PLAYBOOK_DELETED",
             PlatformAggregateType.PLAYBOOK,
@@ -588,13 +715,14 @@ public class CatalogService {
             Map.of("name", existing.name(), "deletedObjectId", existing.id(), "deletedObjectName", existing.name())
         );
         return normalizePlaybook(existing);
+        });
     }
 
     public ResourceDto createResource(CreateResourceRequest request) {
-        ensureLoaded();
+        return withWriteState(state -> {
         String domainId = requireText(request.domainId(), "resource.domainId");
-        findDomain(domainId);
-        validateResourceOwner(domainId, request.ownerType(), request.ownerId());
+        findDomain(state, domainId);
+        validateResourceOwner(state, domainId, request.ownerType(), request.ownerId());
         String resourceId = nextId("resource");
         ResourceDto resource = new ResourceDto(
             resourceId,
@@ -611,28 +739,31 @@ public class CatalogService {
             null,
             List.of()
         );
-        resources.add(resource);
+        state.upsertResource(resource);
         createResourceVersion(
+            state,
             resourceId,
             request.initialVersion() == null
                 ? new CreateResourceVersionRequest("初始版本", VersionStatus.DRAFT, defaultConfiguration(resource.type()))
                 : normalizeInitialVersionRequest(resource.type(), request.initialVersion())
         );
         recordCatalogEvent("RESOURCE_CREATED", PlatformAggregateType.RESOURCE, resource.id(), Map.of("name", resource.name()));
-        return toResourceView(resource);
+        return toResourceView(state, resource);
+        });
     }
 
     public List<ResourceVersionDto> listResourceVersions(String resourceId) {
-        ensureLoaded();
-        findResource(resourceId);
-        return versionsFor(resourceId);
+        return withReadState(state -> {
+        findResource(state, resourceId);
+        return versionsFor(state, resourceId);
+        });
     }
 
     public ResourceDto updateResource(String resourceId, UpdateResourceRequest request) {
-        ensureLoaded();
-        ResourceDto existing = findResource(resourceId);
+        return withWriteState(state -> {
+        ResourceDto existing = findResource(state, resourceId);
         String name = requireText(request.name(), "resource.name");
-        validateResourceOwner(existing.domainId(), request.ownerType(), request.ownerId());
+        validateResourceOwner(state, existing.domainId(), request.ownerType(), request.ownerId());
         ResourceDto updated = new ResourceDto(
             existing.id(),
             existing.domainId(),
@@ -648,22 +779,31 @@ public class CatalogService {
             existing.effectiveVersion(),
             existing.versions()
         );
-        replace(resources, ResourceDto::id, updated);
-        persistState();
+        state.upsertResource(updated);
         recordCatalogEvent("RESOURCE_UPDATED", PlatformAggregateType.RESOURCE, updated.id(), Map.of("name", updated.name()));
-        return toResourceView(updated);
+        return toResourceView(state, updated);
+        });
     }
 
     public ResourceVersionDto createResourceVersion(String resourceId, CreateResourceVersionRequest request) {
-        ensureLoaded();
-        ResourceDto resource = findResource(resourceId);
+        return withWriteState(state -> {
+        return createResourceVersion(state, resourceId, request);
+        });
+    }
+
+    private ResourceVersionDto createResourceVersion(
+        CatalogRepository state,
+        String resourceId,
+        CreateResourceVersionRequest request
+    ) {
+        ResourceDto resource = findResource(state, resourceId);
         VersionStatus status = request.status() == null ? VersionStatus.DRAFT : request.status();
         ResourceVersionConfigurationDto normalizedConfiguration = normalizeConfiguration(resource.type(), request.configuration());
         String configDigest = generateConfigDigest(normalizedConfiguration);
         if (status == VersionStatus.PUBLISHED) {
             validateVersionReadyForActivation(resource.type(), normalizedConfiguration);
         }
-        List<StoredResourceVersion> existingVersions = storedVersionsFor(resourceId).stream()
+        List<StoredResourceVersion> existingVersions = storedVersionsFor(state, resourceId).stream()
             .map(version -> status == VersionStatus.PUBLISHED && version.status() == VersionStatus.PUBLISHED
                 ? new StoredResourceVersion(
                     version.id(),
@@ -690,8 +830,7 @@ public class CatalogService {
             normalizedConfiguration
         );
         existingVersions.add(created);
-        resourceVersions.put(resourceId, existingVersions);
-        persistState();
+        state.replaceResourceVersions(resourceId, existingVersions);
         recordCatalogEvent(
             "RESOURCE_VERSION_CREATED",
             PlatformAggregateType.RESOURCE,
@@ -710,9 +849,9 @@ public class CatalogService {
     }
 
     public ResourceVersionDto updateResourceVersion(String resourceId, String versionId, UpdateResourceVersionRequest request) {
-        ensureLoaded();
-        ResourceDto resource = findResource(resourceId);
-        StoredResourceVersion existing = storedVersionsFor(resourceId).stream()
+        return withWriteState(state -> {
+        ResourceDto resource = findResource(state, resourceId);
+        StoredResourceVersion existing = storedVersionsFor(state, resourceId).stream()
             .filter(item -> item.id().equals(versionId))
             .findFirst()
             .orElseThrow(() -> new NoSuchElementException("resource version not found: " + resourceId + "/" + versionId));
@@ -729,7 +868,7 @@ public class CatalogService {
         String configDigest = generateConfigDigest(normalizedConfiguration);
         Instant publishedAt = targetStatus == VersionStatus.PUBLISHED ? Instant.now() : null;
 
-        List<StoredResourceVersion> updatedVersions = storedVersionsFor(resourceId).stream()
+        List<StoredResourceVersion> updatedVersions = storedVersionsFor(state, resourceId).stream()
             .map(version -> {
                 if (version.id().equals(versionId)) {
                     return new StoredResourceVersion(
@@ -760,8 +899,7 @@ public class CatalogService {
                 return version;
             })
             .toList();
-        resourceVersions.put(resourceId, updatedVersions);
-        persistState();
+        state.replaceResourceVersions(resourceId, updatedVersions);
         ResourceVersionDto updatedVersion = updatedVersions.stream()
             .filter(item -> item.id().equals(versionId))
             .map(this::toResourceVersionDto)
@@ -792,14 +930,15 @@ public class CatalogService {
             );
         }
         return updatedVersion;
+        });
     }
 
     public ResourceVersionDto publishResourceVersion(String resourceId, String versionId) {
-        ensureLoaded();
-        ResourceDto resource = findResource(resourceId);
-        ResourceVersionDto targetVersion = findResourceVersion(resourceId, versionId);
+        return withWriteState(state -> {
+        ResourceDto resource = findResource(state, resourceId);
+        ResourceVersionDto targetVersion = findResourceVersion(state, resourceId, versionId);
         validateVersionReadyForActivation(resource.type(), targetVersion.configuration());
-        List<StoredResourceVersion> updatedVersions = storedVersionsFor(resourceId).stream()
+        List<StoredResourceVersion> updatedVersions = storedVersionsFor(state, resourceId).stream()
             .map(version -> new StoredResourceVersion(
                 version.id(),
                 version.resourceId(),
@@ -812,8 +951,7 @@ public class CatalogService {
                 version.configuration()
             ))
             .toList();
-        resourceVersions.put(resourceId, updatedVersions);
-        persistState();
+        state.replaceResourceVersions(resourceId, updatedVersions);
         ResourceVersionDto publishedVersion = updatedVersions.stream()
             .filter(item -> item.id().equals(versionId))
             .map(this::toResourceVersionDto)
@@ -831,29 +969,29 @@ public class CatalogService {
             )
         );
         return publishedVersion;
+        });
     }
 
     public ResourceVersionDto deleteResourceVersion(String resourceId, String versionId) {
-        ensureLoaded();
-        ResourceDto resource = toResourceView(findResource(resourceId));
-        ResourceVersionDto version = findResourceVersion(resourceId, versionId);
+        return withWriteState(state -> {
+        ResourceDto resource = toResourceView(state, findResource(state, resourceId));
+        ResourceVersionDto version = findResourceVersion(state, resourceId, versionId);
         if (resource.effectiveVersion() != null && resource.effectiveVersion().id().equals(versionId)) {
             throw new IllegalStateException("resource effective version cannot be deleted: " + resourceId + "/" + versionId);
         }
-        if (versionsFor(resourceId).size() <= 1) {
+        if (versionsFor(state, resourceId).size() <= 1) {
             throw new IllegalStateException("resource must keep at least one version: " + resourceId);
         }
 
-        String versionPinBlocker = findResourceVersionDeletionBlocker(resourceId, versionId);
+        String versionPinBlocker = findResourceVersionDeletionBlocker(state, knowledgeRepository, resourceId, versionId);
         if (versionPinBlocker != null) {
             throw new IllegalStateException(versionPinBlocker);
         }
 
-        List<StoredResourceVersion> updatedVersions = storedVersionsFor(resourceId).stream()
+        List<StoredResourceVersion> updatedVersions = storedVersionsFor(state, resourceId).stream()
             .filter(item -> !item.id().equals(versionId))
             .toList();
-        resourceVersions.put(resourceId, updatedVersions);
-        persistState();
+        state.replaceResourceVersions(resourceId, updatedVersions);
         recordCatalogEvent(
             "RESOURCE_VERSION_DELETED",
             PlatformAggregateType.RESOURCE,
@@ -861,71 +999,84 @@ public class CatalogService {
             Map.of("name", resource.name(), "versionId", version.id(), "version", version.version(), "status", version.status().name())
         );
         return version;
+        });
     }
 
     public List<ResourceDto> listResources() {
-        ensureLoaded();
-        return resources.stream()
-            .sorted(Comparator.comparing(ResourceDto::name))
-            .map(this::toResourceView)
-            .toList();
+        return withReadState(this::listResources);
     }
 
     public List<KnowledgeBaseDto> listKnowledgeBases() {
-        return knowledgeService.listKnowledgeBases();
+        return withReadState((state, knowledgeState) -> knowledgeBases(knowledgeState));
     }
 
     public KnowledgeBaseDto getKnowledgeBase(String knowledgeBaseId) {
-        return knowledgeService.getKnowledgeBase(knowledgeBaseId);
+        return withReadState((state, knowledgeState) -> toKnowledgeBaseView(knowledgeState, findKnowledgeBase(knowledgeState, knowledgeBaseId)));
     }
 
     public KnowledgeBaseDto createKnowledgeBase(CreateKnowledgeBaseRequest request) {
+        return withWriteState(state -> {
         return knowledgeService.createKnowledgeBase(request);
+        });
     }
 
     public KnowledgeBaseDto updateKnowledgeBase(String knowledgeBaseId, UpdateKnowledgeBaseRequest request) {
+        return withWriteState(state -> {
         return knowledgeService.updateKnowledgeBase(knowledgeBaseId, request);
+        });
     }
 
     public KnowledgeBaseDto deleteKnowledgeBase(String knowledgeBaseId) {
-        String blocker = findObjectDeletionBlocker("KNOWLEDGE_BASE", knowledgeBaseId);
+        return withWriteState(state -> {
+        String blocker = findObjectDeletionBlocker(state, knowledgeRepository, "KNOWLEDGE_BASE", knowledgeBaseId);
         if (blocker != null) {
             throw new IllegalStateException(blocker);
         }
         return knowledgeService.deleteKnowledgeBaseUnchecked(knowledgeBaseId);
+        });
     }
 
     public List<KnowledgeReleaseDto> listKnowledgeReleases(String knowledgeBaseId) {
-        return knowledgeService.listKnowledgeReleases(knowledgeBaseId);
+        return withReadState((state, knowledgeState) -> {
+            findKnowledgeBase(knowledgeState, knowledgeBaseId);
+            return knowledgeReleases(knowledgeState, knowledgeBaseId);
+        });
     }
 
     public KnowledgeReleaseDto createKnowledgeRelease(String knowledgeBaseId, CreateKnowledgeReleaseRequest request) {
+        return withWriteState(state -> {
         return knowledgeService.createKnowledgeRelease(knowledgeBaseId, request);
+        });
     }
 
     public KnowledgeReleaseDto publishKnowledgeRelease(String knowledgeBaseId, String releaseId) {
+        return withWriteState(state -> {
         return knowledgeService.publishKnowledgeRelease(knowledgeBaseId, releaseId);
+        });
     }
 
     public KnowledgeReleaseDto deleteKnowledgeRelease(String knowledgeBaseId, String releaseId) {
+        return withWriteState(state -> {
         return knowledgeService.deleteKnowledgeRelease(knowledgeBaseId, releaseId);
+        });
     }
 
     public List<KnowledgeReferenceDto> listKnowledgeReferences(String knowledgeBaseId) {
-        return toKnowledgeReferences(objectReferences("KNOWLEDGE_BASE", knowledgeBaseId));
+        return withReadState((state, knowledgeState) ->
+            toKnowledgeReferences(objectReferences(state, knowledgeState, "KNOWLEDGE_BASE", knowledgeBaseId))
+        );
     }
 
     public ResourceDto deleteResource(String resourceId) {
-        ensureLoaded();
-        ResourceDto deleted = toResourceView(findResource(resourceId));
-        String referenceBlocker = findObjectDeletionBlocker("RESOURCE", resourceId);
+        return withWriteState(state -> {
+        ResourceDto deleted = toResourceView(state, findResource(state, resourceId));
+        String referenceBlocker = findObjectDeletionBlocker(state, knowledgeRepository, "RESOURCE", resourceId);
         if (referenceBlocker != null) {
             throw new IllegalStateException(referenceBlocker);
         }
 
-        resources.removeIf(item -> item.id().equals(resourceId));
-        resourceVersions.remove(resourceId);
-        persistState();
+        state.deleteResource(resourceId);
+        state.deleteResourceVersions(resourceId);
         recordCatalogEvent(
             "RESOURCE_DELETED",
             PlatformAggregateType.RESOURCE,
@@ -933,10 +1084,13 @@ public class CatalogService {
             Map.of("name", deleted.name(), "deletedObjectId", deleted.id(), "deletedObjectName", deleted.name())
         );
         return deleted;
+        });
     }
 
     public KnowledgeUploadSessionDto createKnowledgeUploadSession(String knowledgeBaseId) {
+        return withWriteState(state -> {
         return knowledgeService.createUploadSession(knowledgeBaseId);
+        });
     }
 
     public KnowledgeUploadCompletionDto completeKnowledgeUpload(
@@ -946,46 +1100,53 @@ public class CatalogService {
         String contentType,
         byte[] payload
     ) {
+        return withWriteState(state -> {
         return knowledgeService.completeUpload(knowledgeBaseId, uploadSessionId, fileName, contentType, payload);
+        });
     }
 
     public KnowledgeUploadCompletionDto importKnowledgeUrl(String knowledgeBaseId, CreateKnowledgeUrlImportRequest request) {
+        return withWriteState(state -> {
         return knowledgeService.importUrl(knowledgeBaseId, request);
+        });
     }
 
     public List<KnowledgeFileDto> listKnowledgeFiles(String knowledgeBaseId) {
+        return withReadState(state -> {
         return knowledgeService.listFiles(knowledgeBaseId);
+        });
     }
 
     public List<KnowledgeImportJobDto> listKnowledgeImportJobs(String knowledgeBaseId) {
+        return withReadState(state -> {
         return knowledgeService.listImportJobs(knowledgeBaseId);
+        });
     }
 
     public List<KnowledgeDocumentDto> listKnowledgeDocuments(String knowledgeBaseId) {
+        return withReadState(state -> {
         return knowledgeService.listDocuments(knowledgeBaseId);
+        });
     }
 
     public KnowledgeIndexSnapshotDto createKnowledgeIndexSnapshot(String knowledgeBaseId, CreateKnowledgeIndexSnapshotRequest request) {
+        return withWriteState(state -> {
         return knowledgeService.createIndexSnapshot(knowledgeBaseId, request);
+        });
     }
 
     public List<KnowledgeIndexSnapshotDto> listKnowledgeIndexSnapshots(String knowledgeBaseId) {
+        return withReadState(state -> {
         return knowledgeService.listIndexSnapshots(knowledgeBaseId);
+        });
     }
 
     public ResourceCenterDto resourceCenter() {
-        ensureLoaded();
-        List<ResourceReferenceDto> references = resources.stream()
-            .sorted(Comparator.comparing(ResourceDto::name))
-            .map(this::toResourceView)
-            .flatMap(resource -> toResourceReferences(resource, analyzeResourceReferences(resource)).stream())
-            .toList();
-        long domainShared = resources.stream().filter(item -> item.shareScope() == ShareScope.DOMAIN_SHARED).count();
-        long privateCount = resources.stream().filter(item -> item.shareScope() == ShareScope.PRIVATE).count();
-        return new ResourceCenterDto(resources.size(), Math.toIntExact(domainShared), Math.toIntExact(privateCount), references);
+        return withReadState(this::resourceCenter);
     }
 
     public List<ResourceBlueprintDto> resourceBlueprints() {
+        return withReadState(state -> {
         return List.of(
             new ResourceBlueprintDto(
                 ResourceType.TOOL,
@@ -1009,48 +1170,42 @@ public class CatalogService {
                 defaultConfiguration(ResourceType.SKILL)
             )
         );
-    }
-
-    private synchronized void ensureLoaded() {
-        if (initialized) {
-            return;
-        }
-        restore(repository.load());
-        initialized = true;
-        persistState(); // backfill reference projection tables
+        });
     }
 
     private void recordCatalogEvent(String eventType, PlatformAggregateType aggregateType, String aggregateId, Map<String, Object> payload) {
         platformEventService.recordControlEvent(eventType, aggregateType, aggregateId, payload);
     }
 
-    private BusinessDomainDto toDomainView(BusinessDomainDto domain) {
-        List<ScenarioDto> domainScenarios = scenarios.stream()
+    private BusinessDomainDto toDomainView(CatalogRepository state, KnowledgeRepository knowledgeState, BusinessDomainDto domain) {
+        List<ScenarioDto> domainScenarios = scenarios(state).stream()
             .filter(item -> item.domainId().equals(domain.id()))
             .sorted(Comparator.comparing(ScenarioDto::name))
-            .map(this::toScenarioView)
+            .map(item -> toScenarioView(state, item))
             .toList();
-        List<ResourceDto> domainResources = resources.stream()
+        List<ResourceDto> domainResources = resources(state).stream()
             .filter(item -> item.domainId().equals(domain.id()))
             .sorted(Comparator.comparing(ResourceDto::name))
-            .map(this::toResourceView)
+            .map(item -> toResourceView(state, item))
             .toList();
-        List<KnowledgeBaseDto> domainKnowledgeBases = knowledgeService.listKnowledgeBasesByDomain(domain.id());
+        List<KnowledgeBaseDto> domainKnowledgeBases = knowledgeBases(knowledgeState).stream()
+            .filter(item -> item.domainId().equals(domain.id()))
+            .toList();
         return new BusinessDomainDto(domain.id(), domain.name(), domain.description(), domainScenarios, domainResources, domainKnowledgeBases);
     }
 
-    private ScenarioDto toScenarioView(ScenarioDto scenario) {
-        List<AssistantDto> scenarioAssistants = assistants.stream()
+    private ScenarioDto toScenarioView(CatalogRepository state, ScenarioDto scenario) {
+        List<AssistantDto> scenarioAssistants = assistants(state).stream()
             .filter(item -> item.scenarioId().equals(scenario.id()))
             .sorted(Comparator.comparing(AssistantDto::name))
-            .map(this::toAssistantView)
+            .map(item -> toAssistantView(state, item))
             .toList();
         return new ScenarioDto(scenario.id(), scenario.domainId(), scenario.name(), scenario.goal(), scenario.version(), scenarioAssistants);
     }
 
-    private AssistantDto toAssistantView(AssistantDto assistant) {
-        List<AgentDto> assistantAgents = orderAgentsForAssistant(assistant.id());
-        List<AssistantReleaseDto> releases = assistantReleases.getOrDefault(assistant.id(), List.of()).stream()
+    private AssistantDto toAssistantView(CatalogRepository state, AssistantDto assistant) {
+        List<AgentDto> assistantAgents = orderAgentsForAssistant(state, assistant.id());
+        List<AssistantReleaseDto> releases = assistantReleases(state, assistant.id()).stream()
             .sorted(Comparator.comparing(AssistantReleaseDto::createdAt).reversed())
             .toList();
         return new AssistantDto(
@@ -1060,7 +1215,7 @@ public class CatalogService {
             assistant.description(),
             assistant.version(),
             assistantAgents,
-            playbooksForAssistant(assistant.id()),
+            playbooksForAssistant(state, assistant.id()),
             releases.isEmpty() ? null : releases.getFirst(),
             releases,
             normalizePrimaryAgentId(assistant.primaryAgentId()),
@@ -1076,8 +1231,8 @@ public class CatalogService {
         );
     }
 
-    private ResourceDto toResourceView(ResourceDto resource) {
-        List<ResourceVersionDto> versions = versionsFor(resource.id());
+    private ResourceDto toResourceView(CatalogRepository state, ResourceDto resource) {
+        List<ResourceVersionDto> versions = versionsFor(state, resource.id());
         return new ResourceDto(
             resource.id(),
             resource.domainId(),
@@ -1095,49 +1250,83 @@ public class CatalogService {
         );
     }
 
-    private List<AgentDto> orderAgentsForAssistant(String assistantId) {
-        return agents.stream()
+    private KnowledgeBaseDto toKnowledgeBaseView(KnowledgeRepository repo, KnowledgeBaseDto knowledgeBase) {
+        List<KnowledgeReleaseDto> releases = knowledgeReleases(repo, knowledgeBase.id());
+        KnowledgeReleaseDto latestRelease = releases.isEmpty() ? null : releases.getLast();
+        KnowledgeReleaseDto effectiveRelease = releases.stream()
+            .filter(item -> item.status() == VersionStatus.PUBLISHED)
+            .reduce((__, item) -> item)
+            .orElse(null);
+        return new KnowledgeBaseDto(
+            knowledgeBase.id(),
+            knowledgeBase.domainId(),
+            knowledgeBase.name(),
+            knowledgeBase.shareScope(),
+            knowledgeBase.ownerType(),
+            knowledgeBase.ownerId(),
+            knowledgeBase.summary(),
+            knowledgeBase.steward(),
+            knowledgeBase.tags(),
+            latestRelease,
+            effectiveRelease,
+            releases
+        );
+    }
+
+    private KnowledgeBaseDto findKnowledgeBase(KnowledgeRepository repo, String knowledgeBaseId) {
+        return repo.findKnowledgeBase(knowledgeBaseId)
+            .orElseThrow(() -> new NoSuchElementException("knowledge base not found: " + knowledgeBaseId));
+    }
+
+    private List<KnowledgeReleaseDto> knowledgeReleases(KnowledgeRepository repo, String knowledgeBaseId) {
+        return repo.listKnowledgeReleases(knowledgeBaseId).stream()
+            .sorted(Comparator.comparing(KnowledgeReleaseDto::createdAt))
+            .toList();
+    }
+
+    private List<AgentDto> orderAgentsForAssistant(CatalogRepository state, String assistantId) {
+        return agents(state).stream()
             .filter(item -> item.assistantId().equals(assistantId))
             .sorted(Comparator.comparing(AgentDto::name))
             .toList();
     }
 
-    private AssistantReleaseDto createAssistantRelease(String assistantId, String releaseVersion, VersionStatus status) {
-        AssistantDto assistant = findAssistant(assistantId);
+    private AssistantReleaseDto createAssistantRelease(CatalogRepository state, String assistantId, String releaseVersion, VersionStatus status) {
+        AssistantDto assistant = findAssistant(state, assistantId);
         Map<String, AssistantReleaseResourceDto> snapshotMap = new LinkedHashMap<>();
-        DefaultModelBindingDto defaultModelBinding = resolveDefaultModelBinding(assistant);
-        DefaultModelBindingDto privacyModelBinding = resolvePrivacyModelBinding(assistant);
-        captureEffectiveResource(snapshotMap, assistant.modelPolicy().defaultModelResourceId(), "ASSISTANT_DEFAULT_MODEL");
-        captureEffectiveResource(snapshotMap, assistant.privacyModelResourceId(), "ASSISTANT_PRIVACY_MODEL");
+        DefaultModelBindingDto defaultModelBinding = resolveDefaultModelBinding(state, assistant);
+        DefaultModelBindingDto privacyModelBinding = resolvePrivacyModelBinding(state, assistant);
+        captureEffectiveResource(state, snapshotMap, assistant.modelPolicy().defaultModelResourceId(), "ASSISTANT_DEFAULT_MODEL");
+        captureEffectiveResource(state, snapshotMap, assistant.privacyModelResourceId(), "ASSISTANT_PRIVACY_MODEL");
         KnowledgeBindingSnapshotDto assistantKnowledgeBinding = resolveAssistantKnowledgeBinding(assistant);
 
         List<AssistantReleaseAgentDto> releaseAgents = new ArrayList<>();
-        for (AgentDto agent : orderAgentsForAssistant(assistantId)) {
-            captureEffectiveResource(snapshotMap, agent.executionPolicy().modelResourceId(), agent.name());
+        for (AgentDto agent : orderAgentsForAssistant(state, assistantId)) {
+            captureEffectiveResource(state, snapshotMap, agent.executionPolicy().modelResourceId(), agent.name());
             String effectivePrivacyModelResourceId = resolveEffectivePrivacyModelResourceId(assistant, agent);
             boolean effectivePrivacyMappingEnabled = resolveEffectivePrivacyMappingEnabled(assistant, agent);
             DefaultModelBindingDto effectivePrivacyModelBinding = effectivePrivacyMappingEnabled
-                ? resolvePrivacyModelBinding(assistant, agent)
+                ? resolvePrivacyModelBinding(state, assistant, agent)
                 : null;
-            captureEffectiveResource(snapshotMap, effectivePrivacyModelResourceId, agent.name() + "_PRIVACY_MODEL");
+            captureEffectiveResource(state, snapshotMap, effectivePrivacyModelResourceId, agent.name() + "_PRIVACY_MODEL");
 
             List<String> skillResourceVersionIds = new ArrayList<>();
             for (String skillResourceId : agent.executionPolicy().skillResourceIds()) {
-                ResourceDto skillResource = toResourceView(findResource(skillResourceId));
+                ResourceDto skillResource = toResourceView(state, findResource(state, skillResourceId));
                 if (skillResource.type() != ResourceType.SKILL) {
                     throw new IllegalStateException("agent skill must reference SKILL resource: " + agent.name() + " -> " + skillResource.name());
                 }
-                ResourceVersionDto version = effectiveVersion(skillResource);
+                ResourceVersionDto version = effectiveVersion(state, skillResource);
                 skillResourceVersionIds.add(version.id());
                 mergeReleaseResource(snapshotMap, skillResource, version, agent.name());
             }
             List<String> toolResourceVersionIds = new ArrayList<>();
             for (String toolResourceId : agent.executionPolicy().toolResourceIds()) {
-                ResourceDto toolResource = toResourceView(findResource(toolResourceId));
+                ResourceDto toolResource = toResourceView(state, findResource(state, toolResourceId));
                 if (toolResource.type() != ResourceType.TOOL) {
                     throw new IllegalStateException("agent tool must reference TOOL resource: " + agent.name() + " -> " + toolResource.name());
                 }
-                ResourceVersionDto version = effectiveVersion(toolResource);
+                ResourceVersionDto version = effectiveVersion(state, toolResource);
                 toolResourceVersionIds.add(version.id());
                 mergeReleaseResource(snapshotMap, toolResource, version, agent.name());
             }
@@ -1172,7 +1361,7 @@ public class CatalogService {
             assistant.privacyMappingEnabled(),
             List.copyOf(snapshotMap.values()),
             List.copyOf(releaseAgents),
-            playbooksForAssistant(assistantId),
+            playbooksForAssistant(state, assistantId),
             assistant.primaryAgentId(),
             assistant.ownerPolicy(),
             assistant.sessionPolicy(),
@@ -1182,9 +1371,9 @@ public class CatalogService {
             assistant.knowledgeAccessPolicy(),
             assistant.memoryPolicy()
         );
-        List<AssistantReleaseDto> releases = new ArrayList<>(assistantReleases.getOrDefault(assistantId, List.of()));
+        List<AssistantReleaseDto> releases = new ArrayList<>(assistantReleases(state, assistantId));
         releases.add(release);
-        assistantReleases.put(assistantId, releases);
+        state.replaceAssistantReleases(assistantId, releases);
         return release;
     }
 
@@ -1211,12 +1400,17 @@ public class CatalogService {
         return knowledgeService.resolveKnowledgeBinding(agent.executionPolicy().knowledgeBaseId());
     }
 
-    private void captureEffectiveResource(Map<String, AssistantReleaseResourceDto> snapshotMap, String resourceId, String boundAgent) {
+    private void captureEffectiveResource(
+        CatalogRepository state,
+        Map<String, AssistantReleaseResourceDto> snapshotMap,
+        String resourceId,
+        String boundAgent
+    ) {
         if (resourceId == null || resourceId.isBlank()) {
             return;
         }
-        ResourceDto resource = toResourceView(findResource(resourceId));
-        ResourceVersionDto version = effectiveVersion(resource);
+        ResourceDto resource = toResourceView(state, findResource(state, resourceId));
+        ResourceVersionDto version = effectiveVersion(state, resource);
         mergeReleaseResource(snapshotMap, resource, version, boundAgent);
     }
 
@@ -1256,64 +1450,64 @@ public class CatalogService {
         }
     }
 
-    private ObjectReferenceAnalysisDto analyzeDomainReferences(BusinessDomainDto domain) {
-        return ObjectReferenceAnalyzer.analyzeDomain(domain, scenarios, resources, listKnowledgeBases());
+    private ObjectReferenceAnalysisDto analyzeDomainReferences(CatalogRepository state, KnowledgeRepository knowledgeState, BusinessDomainDto domain) {
+        return ObjectReferenceAnalyzer.analyzeDomain(domain, scenarios(state), resources(state), knowledgeBases(knowledgeState));
     }
 
-    private ObjectReferenceAnalysisDto analyzeScenarioReferences(ScenarioDto scenario) {
-        return ObjectReferenceAnalyzer.analyzeScenario(scenario, assistants);
+    private ObjectReferenceAnalysisDto analyzeScenarioReferences(CatalogRepository state, ScenarioDto scenario) {
+        return ObjectReferenceAnalyzer.analyzeScenario(scenario, assistants(state));
     }
 
-    private ObjectReferenceAnalysisDto analyzeAssistantReferences(AssistantDto assistant) {
+    private ObjectReferenceAnalysisDto analyzeAssistantReferences(CatalogRepository state, KnowledgeRepository knowledgeState, AssistantDto assistant) {
         return ObjectReferenceAnalyzer.analyzeAssistant(
-            toAssistantView(assistant),
-            agents,
-            playbooks,
-            listResources(),
-            listKnowledgeBases(),
-            assistantReleases.getOrDefault(assistant.id(), List.of())
+            toAssistantView(state, assistant),
+            agents(state),
+            playbooks(state),
+            listResources(state),
+            knowledgeBases(knowledgeState),
+            assistantReleases(state, assistant.id())
         );
     }
 
-    private ObjectReferenceAnalysisDto analyzePlaybookReferences(PlaybookDto playbook) {
-        AssistantDto assistant = toAssistantView(findAssistant(playbook.assistantId()));
+    private ObjectReferenceAnalysisDto analyzePlaybookReferences(CatalogRepository state, PlaybookDto playbook) {
+        AssistantDto assistant = toAssistantView(state, findAssistant(state, playbook.assistantId()));
         return ObjectReferenceAnalyzer.analyzePlaybook(
             playbook,
             assistant.name(),
-            agents,
-            assistantReleases.getOrDefault(playbook.assistantId(), List.of())
+            agents(state),
+            assistantReleases(state, playbook.assistantId())
         );
     }
 
-    private ObjectReferenceAnalysisDto analyzeAgentReferences(AgentDto agent) {
-        AssistantDto assistant = toAssistantView(findAssistant(agent.assistantId()));
+    private ObjectReferenceAnalysisDto analyzeAgentReferences(CatalogRepository state, KnowledgeRepository knowledgeState, AgentDto agent) {
+        AssistantDto assistant = toAssistantView(state, findAssistant(state, agent.assistantId()));
         return ObjectReferenceAnalyzer.analyzeAgent(
             agent,
             assistant.name(),
-            listResources(),
-            listKnowledgeBases(),
-            assistantReleases.getOrDefault(agent.assistantId(), List.of())
+            listResources(state),
+            knowledgeBases(knowledgeState),
+            assistantReleases(state, agent.assistantId())
         );
     }
 
-    private ObjectReferenceAnalysisDto analyzeResourceReferences(ResourceDto resource) {
+    private ObjectReferenceAnalysisDto analyzeResourceReferences(CatalogRepository state, ResourceDto resource) {
         return ObjectReferenceAnalyzer.analyzeResource(
             resource,
             repository.findResourceBindings(resource.id()),
             repository.findReleaseResourceRefs(resource.id()),
-            this::resolveSourceName,
-            this::resolveAssistantReleaseName
+            sourceKey -> resolveSourceName(state, sourceKey),
+            ref -> resolveAssistantReleaseName(state, ref)
         );
     }
 
-    private ObjectReferenceAnalysisDto analyzeKnowledgeBaseReferences(KnowledgeBaseDto knowledgeBase) {
+    private ObjectReferenceAnalysisDto analyzeKnowledgeBaseReferences(CatalogRepository state, KnowledgeBaseDto knowledgeBase) {
         return ObjectReferenceAnalyzer.analyzeKnowledgeBase(
             knowledgeBase,
             repository.findKnowledgeBindings(knowledgeBase.id()),
             repository.findReleaseKnowledgeRefs(knowledgeBase.id()),
-            this::resolveSourceName,
-            this::resolveAssistantReleaseName,
-            this::findAssistantReleaseById
+            sourceKey -> resolveSourceName(state, sourceKey),
+            releaseId -> resolveAssistantReleaseName(state, releaseId),
+            releaseId -> findAssistantReleaseById(state, releaseId)
         );
     }
 
@@ -1323,21 +1517,26 @@ public class CatalogService {
             .toList();
     }
 
-    private List<DeletionCascadeItemDto> buildCascadeDeletes(String objectType, String objectId) {
+    private List<DeletionCascadeItemDto> buildCascadeDeletes(
+        CatalogRepository state,
+        KnowledgeRepository knowledgeState,
+        String objectType,
+        String objectId
+    ) {
         return switch (objectType) {
             case "DOMAIN", "SCENARIO" -> List.of();
-            case "ASSISTANT" -> buildAssistantCascadeDeletes(objectId);
+            case "ASSISTANT" -> buildAssistantCascadeDeletes(state, objectId);
             case "PLAYBOOK", "AGENT" -> List.of();
-            case "RESOURCE" -> buildResourceCascadeDeletes(objectId);
-            case "KNOWLEDGE_BASE" -> buildKnowledgeBaseCascadeDeletes(objectId);
+            case "RESOURCE" -> buildResourceCascadeDeletes(state, objectId);
+            case "KNOWLEDGE_BASE" -> buildKnowledgeBaseCascadeDeletes(knowledgeState, objectId);
             default -> throw new IllegalArgumentException("unsupported reference object type: " + objectType);
         };
     }
 
-    private List<DeletionCascadeItemDto> buildAssistantCascadeDeletes(String assistantId) {
+    private List<DeletionCascadeItemDto> buildAssistantCascadeDeletes(CatalogRepository state, String assistantId) {
         List<DeletionCascadeItemDto> cascadeDeletes = new ArrayList<>();
-        AssistantDto assistant = toAssistantView(findAssistant(assistantId));
-        assistantReleases.getOrDefault(assistantId, List.of()).stream()
+        AssistantDto assistant = toAssistantView(state, findAssistant(state, assistantId));
+        assistantReleases(state, assistantId).stream()
             .sorted(Comparator.comparing(AssistantReleaseDto::createdAt).reversed())
             .forEach(release -> cascadeDeletes.add(new DeletionCascadeItemDto(
                 "DELETE",
@@ -1353,9 +1552,9 @@ public class CatalogService {
         return cascadeDeletes;
     }
 
-    private List<DeletionCascadeItemDto> buildResourceCascadeDeletes(String resourceId) {
-        ResourceDto resource = toResourceView(findResource(resourceId));
-        return versionsFor(resourceId).stream()
+    private List<DeletionCascadeItemDto> buildResourceCascadeDeletes(CatalogRepository state, String resourceId) {
+        ResourceDto resource = toResourceView(state, findResource(state, resourceId));
+        return versionsFor(state, resourceId).stream()
             .map(version -> new DeletionCascadeItemDto(
                 "DELETE",
                 "RESOURCE_VERSION",
@@ -1370,8 +1569,8 @@ public class CatalogService {
             .toList();
     }
 
-    private List<DeletionCascadeItemDto> buildKnowledgeBaseCascadeDeletes(String knowledgeBaseId) {
-        KnowledgeBaseDto knowledgeBase = getKnowledgeBase(knowledgeBaseId);
+    private List<DeletionCascadeItemDto> buildKnowledgeBaseCascadeDeletes(KnowledgeRepository knowledgeState, String knowledgeBaseId) {
+        KnowledgeBaseDto knowledgeBase = toKnowledgeBaseView(knowledgeState, findKnowledgeBase(knowledgeState, knowledgeBaseId));
         return knowledgeBase.releases().stream()
             .filter(release -> release.status() == VersionStatus.DRAFT)
             .map(release -> new DeletionCascadeItemDto(
@@ -1388,16 +1587,16 @@ public class CatalogService {
             .toList();
     }
 
-    private String findObjectDeletionBlocker(String objectType, String objectId) {
-        ObjectReferenceAnalysisDto analysis = objectReferences(objectType, objectId);
+    private String findObjectDeletionBlocker(CatalogRepository state, KnowledgeRepository knowledgeState, String objectType, String objectId) {
+        ObjectReferenceAnalysisDto analysis = objectReferences(state, knowledgeState, objectType, objectId);
         return relationsByImpactLevel(analysis, "BLOCKS_DELETION").stream()
             .map(relation -> toDeletionMessage(analysis.objectType(), relation))
             .findFirst()
             .orElse(null);
     }
 
-    private String findResourceVersionDeletionBlocker(String resourceId, String versionId) {
-        return objectReferences("RESOURCE", resourceId).relations().stream()
+    private String findResourceVersionDeletionBlocker(CatalogRepository state, KnowledgeRepository knowledgeState, String resourceId, String versionId) {
+        return objectReferences(state, knowledgeState, "RESOURCE", resourceId).relations().stream()
             .filter(relation -> "BLOCKS_DELETION".equals(relation.impactLevel()))
             .filter(relation -> versionId.equals(relation.resourceVersionId()))
             .map(this::toResourceVersionDeletionMessage)
@@ -1441,51 +1640,47 @@ public class CatalogService {
             .toList();
     }
 
-    private String resolveSourceName(String sourceKey) {
+    private String resolveSourceName(CatalogRepository state, String sourceKey) {
         int separatorIndex = sourceKey.indexOf(':');
         if (separatorIndex < 0) {
             return sourceKey;
         }
-        return resolveSourceName(sourceKey.substring(0, separatorIndex), sourceKey.substring(separatorIndex + 1));
+        return resolveSourceName(state, sourceKey.substring(0, separatorIndex), sourceKey.substring(separatorIndex + 1));
     }
 
-    private String resolveSourceName(String sourceType, String sourceId) {
+    private String resolveSourceName(CatalogRepository state, String sourceType, String sourceId) {
         return switch (sourceType) {
-            case "ASSISTANT" -> assistants.stream()
+            case "ASSISTANT" -> assistants(state).stream()
                 .filter(a -> a.id().equals(sourceId)).findFirst()
                 .map(AssistantDto::name).orElse(sourceId);
-            case "AGENT" -> agents.stream()
+            case "AGENT" -> agents(state).stream()
                 .filter(a -> a.id().equals(sourceId)).findFirst()
                 .map(AgentDto::name).orElse(sourceId);
             default -> sourceId;
         };
     }
 
-    private AssistantReleaseDto findAssistantReleaseById(String releaseId) {
-        return assistantReleases.values().stream()
-            .flatMap(List::stream)
-            .filter(release -> release.id().equals(releaseId))
-            .findFirst()
-            .orElse(null);
+    private AssistantReleaseDto findAssistantReleaseById(CatalogRepository state, String releaseId) {
+        return state.findAssistantReleaseById(releaseId).orElse(null);
     }
 
-    private String resolveAssistantReleaseName(CatalogRepository.ReleaseResourceRef ref) {
-        AssistantDto assistant = toAssistantView(findAssistant(ref.assistantId()));
-        return assistant.name() + "@" + findReleaseVersion(ref.assistantId(), ref.releaseId());
+    private String resolveAssistantReleaseName(CatalogRepository state, CatalogRepository.ReleaseResourceRef ref) {
+        AssistantDto assistant = toAssistantView(state, findAssistant(state, ref.assistantId()));
+        return assistant.name() + "@" + findReleaseVersion(state, ref.assistantId(), ref.releaseId());
     }
 
-    private String resolveAssistantReleaseName(String releaseId) {
-        AssistantReleaseDto release = findAssistantReleaseById(releaseId);
+    private String resolveAssistantReleaseName(CatalogRepository state, String releaseId) {
+        AssistantReleaseDto release = findAssistantReleaseById(state, releaseId);
         if (release == null) {
             return releaseId;
         }
-        AssistantDto assistant = toAssistantView(findAssistant(release.assistantId()));
+        AssistantDto assistant = toAssistantView(state, findAssistant(state, release.assistantId()));
         return assistant.name() + "@" + release.releaseVersion();
     }
 
-    private String findReleaseVersion(String assistantId, String releaseId) {
-        List<AssistantReleaseDto> releases = assistantReleases.get(assistantId);
-        if (releases == null) return releaseId;
+    private String findReleaseVersion(CatalogRepository state, String assistantId, String releaseId) {
+        List<AssistantReleaseDto> releases = assistantReleases(state, assistantId);
+        if (releases.isEmpty()) return releaseId;
         return releases.stream()
             .filter(r -> r.id().equals(releaseId)).findFirst()
             .map(AssistantReleaseDto::releaseVersion).orElse(releaseId);
@@ -1538,133 +1733,13 @@ public class CatalogService {
         };
     }
 
-    private void restore(CatalogRepository.CatalogSnapshot snapshot) {
-        domains.clear();
-        domains.addAll(snapshot.domains());
-        scenarios.clear();
-        scenarios.addAll(snapshot.scenarios());
-        assistants.clear();
-        assistants.addAll(snapshot.assistants().stream()
-            .map(assistant -> new AssistantDto(
-                assistant.id(),
-                assistant.scenarioId(),
-                assistant.name(),
-                assistant.description(),
-                assistant.version(),
-                assistant.agents(),
-                assistant.playbooks() == null ? List.of() : assistant.playbooks().stream().map(this::normalizePlaybook).toList(),
-                assistant.currentRelease(),
-                assistant.releases(),
-                normalizePrimaryAgentId(assistant.primaryAgentId()),
-                normalizeAssistantOwnerPolicy(assistant.ownerPolicy()),
-                normalizeAssistantSessionPolicy(assistant.sessionPolicy()),
-                normalizeAssistantReplyPolicy(assistant.replyPolicy()),
-                normalizeAssistantPlaybookPolicy(assistant.playbookPolicy()),
-                normalizeAssistantModelPolicy(assistant.modelPolicy()),
-                normalizeOptionalText(assistant.privacyModelResourceId()),
-                assistant.privacyMappingEnabled(),
-                normalizeKnowledgeAccessPolicy(assistant.knowledgeAccessPolicy()),
-                normalizeMemoryPolicy(assistant.memoryPolicy())
-            ))
-            .toList());
-        resources.clear();
-        resources.addAll(snapshot.resources());
-        agents.clear();
-        agents.addAll(snapshot.agents().stream().map(this::normalizeLoadedAgent).toList());
-        playbooks.clear();
-        playbooks.addAll(snapshot.playbooks().stream().map(this::normalizePlaybook).toList());
-        resourceVersions.clear();
-        snapshot.resourceVersions().forEach((resourceId, versions) -> {
-            ResourceType resourceType = resources.stream()
-                .filter(resource -> resource.id().equals(resourceId))
-                .map(ResourceDto::type)
-                .findFirst()
-                .orElse(null);
-            resourceVersions.put(
-                resourceId,
-                versions.stream()
-                    .map(version -> new StoredResourceVersion(
-                        version.id(),
-                        version.resourceId(),
-                        version.version(),
-                        version.status(),
-                        version.summary(),
-                        version.configDigest(),
-                        version.createdAt(),
-                        version.publishedAt(),
-                        normalizeConfiguration(
-                            resourceType == null ? version.configuration().type() : resourceType,
-                            version.configuration()
-                        )
-                    ))
-                    .toList()
-            );
-        });
-        assistantReleases.clear();
-        snapshot.assistantReleases().forEach((assistantId, releases) -> assistantReleases.put(
-            assistantId,
-            releases.stream()
-                .map(release -> new AssistantReleaseDto(
-                    release.id(),
-                    release.assistantId(),
-                    release.releaseVersion(),
-                    release.status(),
-                    release.createdAt(),
-                    release.publishedAt(),
-                    normalizeKnowledgeBindingSnapshot(release.assistantKnowledgeBinding()),
-                    normalizeDefaultModelBinding(release.defaultModelBinding()),
-                    normalizeDefaultModelBinding(release.privacyModelBinding()),
-                    release.privacyMappingEnabled(),
-                    release.resources().stream()
-                        .map(resource -> new AssistantReleaseResourceDto(
-                            resource.resourceId(),
-                            resource.resourceName(),
-                            resource.resourceType(),
-                            resource.resourceVersionId(),
-                            resource.resourceVersion(),
-                            resource.boundAgents(),
-                            normalizeConfiguration(resource.resourceType(), resource.configuration())
-                        ))
-                        .toList(),
-                    release.agents().stream()
-                        .map(agent -> new AssistantReleaseAgentDto(
-                            agent.agentId(),
-                            agent.name(),
-                            agent.role(),
-                            agent.responsibility(),
-                            normalizeAgentExecutionPolicy(agent.executionPolicy()),
-                            normalizeKnowledgeBindingSnapshot(agent.knowledgeBinding()),
-                            normalizeDefaultModelBinding(agent.effectivePrivacyModelBinding()),
-                            agent.effectivePrivacyMappingEnabled(),
-                            agent.canOwnSession(),
-                            normalizeAllowedActions(agent.allowedActions()),
-                            agent.switchableOwnerAgentIds(),
-                            agent.playbookIds(),
-                            agent.skillResourceVersionIds(),
-                            agent.toolResourceVersionIds()
-                        ))
-                        .toList(),
-                    release.playbooks() == null ? List.of() : release.playbooks().stream().map(this::normalizePlaybook).toList(),
-                    normalizePrimaryAgentId(release.primaryAgentId()),
-                    normalizeAssistantOwnerPolicy(release.ownerPolicy()),
-                    normalizeAssistantSessionPolicy(release.sessionPolicy()),
-                    normalizeAssistantReplyPolicy(release.replyPolicy()),
-                    normalizeAssistantPlaybookPolicy(release.playbookPolicy()),
-                    normalizeAssistantModelPolicy(release.modelPolicy()),
-                    normalizeKnowledgeAccessPolicy(release.knowledgeAccessPolicy()),
-                    normalizeMemoryPolicy(release.memoryPolicy())
-                ))
-                .toList()
-        ));
-    }
-
-    private AgentDto normalizeLoadedAgent(AgentDto agent) {
+    private AgentDto normalizeLoadedAgent(CatalogRepository state, AgentDto agent) {
         AgentExecutionPolicyDto normalizedPolicy = normalizeAgentExecutionPolicy(agent.executionPolicy());
         List<String> enabledSkillResourceIds = normalizedPolicy.skillResourceIds().stream()
-            .filter(resourceId -> resources.stream().anyMatch(item -> item.id().equals(resourceId) && item.type() == ResourceType.SKILL))
+            .filter(resourceId -> resources(state).stream().anyMatch(item -> item.id().equals(resourceId) && item.type() == ResourceType.SKILL))
             .toList();
         List<String> enabledToolResourceIds = normalizedPolicy.toolResourceIds().stream()
-            .filter(resourceId -> resources.stream().anyMatch(item -> item.id().equals(resourceId) && item.type() == ResourceType.TOOL))
+            .filter(resourceId -> resources(state).stream().anyMatch(item -> item.id().equals(resourceId) && item.type() == ResourceType.TOOL))
             .toList();
         return new AgentDto(
             agent.id(),
@@ -1692,8 +1767,8 @@ public class CatalogService {
         );
     }
 
-    private List<PlaybookDto> playbooksForAssistant(String assistantId) {
-        return playbooks.stream()
+    private List<PlaybookDto> playbooksForAssistant(CatalogRepository state, String assistantId) {
+        return playbooks(state).stream()
             .filter(item -> item.assistantId().equals(assistantId))
             .sorted(Comparator.comparing(PlaybookDto::name))
             .map(this::normalizePlaybook)
@@ -1804,66 +1879,53 @@ public class CatalogService {
         }
     }
 
-    private void persistState() {
-        repository.save(new CatalogRepository.CatalogSnapshot(
-            List.copyOf(domains),
-            List.copyOf(scenarios),
-            List.copyOf(assistants),
-            List.copyOf(agents),
-            List.copyOf(playbooks),
-            List.copyOf(resources),
-            Map.copyOf(resourceVersions),
-            Map.copyOf(assistantReleases)
-        ));
-    }
-
-    private BusinessDomainDto findDomain(String domainId) {
-        return domains.stream()
+    private BusinessDomainDto findDomain(CatalogRepository state, String domainId) {
+        return domains(state).stream()
             .filter(item -> item.id().equals(domainId))
             .findFirst()
             .orElseThrow(() -> new NoSuchElementException("business domain not found: " + domainId));
     }
 
-    private ScenarioDto findScenario(String scenarioId) {
-        return scenarios.stream()
+    private ScenarioDto findScenario(CatalogRepository state, String scenarioId) {
+        return scenarios(state).stream()
             .filter(item -> item.id().equals(scenarioId))
             .findFirst()
             .orElseThrow(() -> new NoSuchElementException("scenario not found: " + scenarioId));
     }
 
-    private ResourceDto findResource(String resourceId) {
-        return resources.stream()
+    private ResourceDto findResource(CatalogRepository state, String resourceId) {
+        return resources(state).stream()
             .filter(item -> item.id().equals(resourceId))
             .findFirst()
             .orElseThrow(() -> new NoSuchElementException("resource not found: " + resourceId));
     }
 
-    private AssistantDto findAssistant(String assistantId) {
-        return assistants.stream()
+    private AssistantDto findAssistant(CatalogRepository state, String assistantId) {
+        return assistants(state).stream()
             .filter(item -> item.id().equals(assistantId))
             .findFirst()
             .orElseThrow(() -> new NoSuchElementException("assistant not found: " + assistantId));
     }
 
-    private AgentDto findAgent(String agentId) {
-        return agents.stream()
+    private AgentDto findAgent(CatalogRepository state, String agentId) {
+        return agents(state).stream()
             .filter(item -> item.id().equals(agentId))
             .findFirst()
             .orElseThrow(() -> new NoSuchElementException("agent not found: " + agentId));
     }
 
-    private PlaybookDto findPlaybook(String playbookId) {
-        return playbooks.stream()
+    private PlaybookDto findPlaybook(CatalogRepository state, String playbookId) {
+        return playbooks(state).stream()
             .filter(item -> item.id().equals(playbookId))
             .findFirst()
             .orElseThrow(() -> new NoSuchElementException("playbook not found: " + playbookId));
     }
 
-    private void validateAgentPlaybookReferences(String assistantId, List<String> playbookIds) {
+    private void validateAgentPlaybookReferences(CatalogRepository state, String assistantId, List<String> playbookIds) {
         if (playbookIds == null || playbookIds.isEmpty()) {
             return;
         }
-        Set<String> allowedPlaybooks = playbooks.stream()
+        Set<String> allowedPlaybooks = playbooks(state).stream()
             .filter(item -> item.assistantId().equals(assistantId))
             .map(PlaybookDto::id)
             .collect(java.util.stream.Collectors.toSet());
@@ -1874,35 +1936,35 @@ public class CatalogService {
         }
     }
 
-    private ResourceVersionDto findResourceVersion(String resourceId, String versionId) {
-        return versionsFor(resourceId).stream()
+    private ResourceVersionDto findResourceVersion(CatalogRepository state, String resourceId, String versionId) {
+        return versionsFor(state, resourceId).stream()
             .filter(item -> item.id().equals(versionId))
             .findFirst()
             .orElseThrow(() -> new NoSuchElementException("resource version not found: " + resourceId + "/" + versionId));
     }
 
-    private List<ResourceVersionDto> versionsFor(String resourceId) {
-        return resourceVersions.getOrDefault(resourceId, List.of()).stream()
+    private List<ResourceVersionDto> versionsFor(CatalogRepository state, String resourceId) {
+        return resourceVersions(state, resourceId).stream()
             .sorted(Comparator.comparing(StoredResourceVersion::createdAt))
             .map(this::toResourceVersionDto)
             .toList();
     }
 
-    private List<StoredResourceVersion> storedVersionsFor(String resourceId) {
-        return resourceVersions.getOrDefault(resourceId, List.of()).stream()
+    private List<StoredResourceVersion> storedVersionsFor(CatalogRepository state, String resourceId) {
+        return resourceVersions(state, resourceId).stream()
             .sorted(Comparator.comparing(StoredResourceVersion::createdAt))
             .toList();
     }
 
-    private ResourceVersionDto effectiveVersion(ResourceDto resource) {
-        return versionsFor(resource.id()).stream()
+    private ResourceVersionDto effectiveVersion(CatalogRepository state, ResourceDto resource) {
+        return versionsFor(state, resource.id()).stream()
             .filter(item -> item.status() == VersionStatus.PUBLISHED)
             .reduce((__, item) -> item)
-            .orElseGet(() -> versionsFor(resource.id()).stream().findFirst().orElseThrow());
+            .orElseGet(() -> versionsFor(state, resource.id()).stream().findFirst().orElseThrow());
     }
 
-    private String nextAssistantReleaseVersion(String assistantId) {
-        List<AssistantReleaseDto> releases = assistantReleases.getOrDefault(assistantId, List.of()).stream()
+    private String nextAssistantReleaseVersion(CatalogRepository state, String assistantId) {
+        List<AssistantReleaseDto> releases = assistantReleases(state, assistantId).stream()
             .sorted(Comparator.comparing(AssistantReleaseDto::createdAt))
             .toList();
         if (releases.isEmpty()) {
@@ -2175,7 +2237,7 @@ public class CatalogService {
         return List.copyOf(actions);
     }
 
-    private void validateResourceOwner(String domainId, String ownerType, String ownerId) {
+    private void validateResourceOwner(CatalogRepository state, String domainId, String ownerType, String ownerId) {
         String normalizedOwnerType = requireText(ownerType, "resource.ownerType");
         String normalizedOwnerId = requireText(ownerId, "resource.ownerId");
         if ("DOMAIN".equals(normalizedOwnerType)) {
@@ -2187,8 +2249,8 @@ public class CatalogService {
         if (!"ASSISTANT".equals(normalizedOwnerType)) {
             throw new IllegalArgumentException("resource ownerType must be DOMAIN or ASSISTANT");
         }
-        AssistantDto assistant = findAssistant(normalizedOwnerId);
-        ScenarioDto scenario = findScenario(assistant.scenarioId());
+        AssistantDto assistant = findAssistant(state, normalizedOwnerId);
+        ScenarioDto scenario = findScenario(state, assistant.scenarioId());
         if (!domainId.equals(scenario.domainId())) {
             throw new IllegalArgumentException("assistant owner must belong to the same business domain as resource.domainId");
         }
@@ -2235,32 +2297,32 @@ public class CatalogService {
         return knowledgeService.resolveDefaultKnowledgeBaseId(preferredKnowledgeBaseId);
     }
 
-    private void validateAssistantModelPolicy(AssistantModelPolicyDto policy) {
+    private void validateAssistantModelPolicy(CatalogRepository state, AssistantModelPolicyDto policy) {
         if (policy == null || policy.defaultModelResourceId() == null || policy.defaultModelResourceId().isBlank()) {
             return;
         }
-        ResourceDto resource = findResource(policy.defaultModelResourceId());
+        ResourceDto resource = findResource(state, policy.defaultModelResourceId());
         if (resource.type() != ResourceType.LLM_MODEL) {
             throw new IllegalArgumentException("assistant default model must reference an LLM_MODEL resource");
         }
     }
 
-    private void validatePrivacyModelResourceId(String resourceId, String fieldName) {
+    private void validatePrivacyModelResourceId(CatalogRepository state, String resourceId, String fieldName) {
         if (resourceId == null || resourceId.isBlank()) {
             return;
         }
-        ResourceDto resource = findResource(resourceId);
+        ResourceDto resource = findResource(state, resourceId);
         if (resource.type() != ResourceType.LLM_MODEL) {
             throw new IllegalArgumentException(fieldName + " must reference an LLM_MODEL resource");
         }
     }
 
-    private void validateAssistantOwnerConfiguration(AssistantDto assistant) {
+    private void validateAssistantOwnerConfiguration(CatalogRepository state, AssistantDto assistant) {
         String primaryAgentId = assistant.primaryAgentId();
         if (primaryAgentId == null || primaryAgentId.isBlank()) {
             return;
         }
-        AgentDto primaryAgent = agents.stream()
+        AgentDto primaryAgent = agents(state).stream()
             .filter(item -> item.assistantId().equals(assistant.id()))
             .filter(item -> item.id().equals(primaryAgentId))
             .findFirst()
@@ -2270,8 +2332,8 @@ public class CatalogService {
         }
     }
 
-    private void clearDeletedPrimaryAgent(String assistantId, String deletedAgentId) {
-        AssistantDto assistant = findAssistant(assistantId);
+    private void clearDeletedPrimaryAgent(CatalogRepository state, String assistantId, String deletedAgentId) {
+        AssistantDto assistant = findAssistant(state, assistantId);
         if (!deletedAgentId.equals(assistant.primaryAgentId())) {
             return;
         }
@@ -2296,10 +2358,10 @@ public class CatalogService {
             assistant.knowledgeAccessPolicy(),
             assistant.memoryPolicy()
         );
-        replace(assistants, AssistantDto::id, updated);
+        state.upsertAssistant(updated);
     }
 
-    private void ensureAssistantReadyForPublication(AssistantDto assistant) {
+    private void ensureAssistantReadyForPublication(CatalogRepository state, AssistantDto assistant) {
         AssistantModelPolicyDto policy = assistant.modelPolicy();
         if (policy == null || policy.defaultModelResourceId() == null || policy.defaultModelResourceId().isBlank()) {
             throw new IllegalStateException("assistant default model must be configured before publishing");
@@ -2307,27 +2369,27 @@ public class CatalogService {
         if (assistant.primaryAgentId() == null || assistant.primaryAgentId().isBlank()) {
             throw new IllegalStateException("assistant primaryAgentId must be configured before publishing");
         }
-        validateAssistantOwnerConfiguration(assistant);
+        validateAssistantOwnerConfiguration(state, assistant);
         if (assistant.privacyMappingEnabled()) {
-            resolvePrivacyModelBinding(assistant);
+            resolvePrivacyModelBinding(state, assistant);
         }
-        for (AgentDto agent : orderAgentsForAssistant(assistant.id())) {
+        for (AgentDto agent : orderAgentsForAssistant(state, assistant.id())) {
             if (!resolveEffectivePrivacyMappingEnabled(assistant, agent)) {
                 continue;
             }
-            resolvePrivacyModelBinding(assistant, agent);
+            resolvePrivacyModelBinding(state, assistant, agent);
         }
     }
 
-    private DefaultModelBindingDto resolveDefaultModelBinding(AssistantDto assistant) {
+    private DefaultModelBindingDto resolveDefaultModelBinding(CatalogRepository state, AssistantDto assistant) {
         String resourceId = assistant.modelPolicy().defaultModelResourceId();
         if (resourceId == null || resourceId.isBlank()) {
             throw new IllegalStateException("assistant default model must be configured before publishing");
         }
-        return resolveLlmModelBinding(resourceId, false, "assistant default model");
+        return resolveLlmModelBinding(state, resourceId, false, "assistant default model");
     }
 
-    private DefaultModelBindingDto resolvePrivacyModelBinding(AssistantDto assistant) {
+    private DefaultModelBindingDto resolvePrivacyModelBinding(CatalogRepository state, AssistantDto assistant) {
         if (!assistant.privacyMappingEnabled()) {
             return null;
         }
@@ -2335,15 +2397,15 @@ public class CatalogService {
         if (resourceId == null || resourceId.isBlank()) {
             throw new IllegalStateException("assistant privacy model must be configured when privacy mapping is enabled");
         }
-        return resolveLlmModelBinding(resourceId, true, "assistant privacy model");
+        return resolveLlmModelBinding(state, resourceId, true, "assistant privacy model");
     }
 
-    private DefaultModelBindingDto resolvePrivacyModelBinding(AssistantDto assistant, AgentDto agent) {
+    private DefaultModelBindingDto resolvePrivacyModelBinding(CatalogRepository state, AssistantDto assistant, AgentDto agent) {
         String resourceId = resolveEffectivePrivacyModelResourceId(assistant, agent);
         if (resourceId == null || resourceId.isBlank()) {
             throw new IllegalStateException("effective privacy model must be configured when privacy mapping is enabled");
         }
-        return resolveLlmModelBinding(resourceId, true, "effective privacy model");
+        return resolveLlmModelBinding(state, resourceId, true, "effective privacy model");
     }
 
     private String resolveEffectivePrivacyModelResourceId(AssistantDto assistant, AgentDto agent) {
@@ -2361,12 +2423,17 @@ public class CatalogService {
         return assistant.privacyMappingEnabled();
     }
 
-    private DefaultModelBindingDto resolveLlmModelBinding(String resourceId, boolean requirePrivateDeployment, String usageLabel) {
-        ResourceDto resource = toResourceView(findResource(resourceId));
+    private DefaultModelBindingDto resolveLlmModelBinding(
+        CatalogRepository state,
+        String resourceId,
+        boolean requirePrivateDeployment,
+        String usageLabel
+    ) {
+        ResourceDto resource = toResourceView(state, findResource(state, resourceId));
         if (resource.type() != ResourceType.LLM_MODEL) {
             throw new IllegalArgumentException(usageLabel + " must reference an LLM_MODEL resource");
         }
-        ResourceVersionDto version = effectiveVersion(resource);
+        ResourceVersionDto version = effectiveVersion(state, resource);
         LlmModelConfigDto modelConfig = version.configuration() == null ? null : version.configuration().llmModel();
         if (requirePrivateDeployment && (modelConfig == null || !modelConfig.privateDeployment())) {
             throw new IllegalStateException(usageLabel + " must reference an LLM_MODEL resource with privateDeployment=true");
@@ -2411,8 +2478,8 @@ public class CatalogService {
         );
     }
 
-    private void ensureUniqueDomainName(String name, String excludedDomainId) {
-        boolean exists = domains.stream().anyMatch(item ->
+    private void ensureUniqueDomainName(CatalogRepository state, String name, String excludedDomainId) {
+        boolean exists = domains(state).stream().anyMatch(item ->
             !item.id().equals(excludedDomainId)
                 && item.name().equalsIgnoreCase(name)
         );
@@ -2421,8 +2488,8 @@ public class CatalogService {
         }
     }
 
-    private void ensureUniqueScenarioName(String domainId, String name, String excludedScenarioId) {
-        boolean exists = scenarios.stream().anyMatch(item ->
+    private void ensureUniqueScenarioName(CatalogRepository state, String domainId, String name, String excludedScenarioId) {
+        boolean exists = scenarios(state).stream().anyMatch(item ->
             item.domainId().equals(domainId)
                 && !item.id().equals(excludedScenarioId)
                 && item.name().equalsIgnoreCase(name)
@@ -2444,12 +2511,6 @@ public class CatalogService {
             return "";
         }
         return value.trim();
-    }
-
-    private static <T, K> void replace(List<T> items, Function<T, K> keyExtractor, T replacement) {
-        K replacementKey = keyExtractor.apply(replacement);
-        items.removeIf(item -> keyExtractor.apply(item).equals(replacementKey));
-        items.add(replacement);
     }
 
     private static final class NoOpKnowledgeWorkflowGateway implements KnowledgeWorkflowGateway {

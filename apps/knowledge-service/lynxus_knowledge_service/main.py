@@ -20,9 +20,12 @@ from urllib.parse import urlparse
 from urllib.request import Request as UrlRequest, urlopen
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request as FastAPIRequest
+from fastapi.responses import JSONResponse
 from lynxus_common import (
+    ReadinessCheck,
     TRACEPARENT_HEADER,
     bind_request_log_context,
+    build_readiness_report,
     clear_log_context,
     configure_structured_logging,
 )
@@ -64,7 +67,7 @@ MINIO_BUCKET = os.getenv("LYNXUS_KNOWLEDGE_MINIO_BUCKET", "lynxus-knowledge")
 URL_IMPORT_TIMEOUT_SECONDS = float(os.getenv("LYNXUS_KNOWLEDGE_URL_IMPORT_TIMEOUT_SECONDS", "15"))
 URL_IMPORT_USER_AGENT = os.getenv(
     "LYNXUS_KNOWLEDGE_URL_IMPORT_USER_AGENT",
-    "LynxusKnowledgeService/2.0 (+https://lynxus.local)",
+    "LynxusKnowledgeService/2.0",
 )
 EMBEDDING_BASE_URL = os.getenv("LYNXUS_KNOWLEDGE_EMBEDDING_BASE_URL", "").rstrip("/")
 EMBEDDING_MODEL = os.getenv("LYNXUS_KNOWLEDGE_EMBEDDING_MODEL", "").strip()
@@ -74,6 +77,7 @@ EMBEDDING_BATCH_SIZE = max(1, int(os.getenv("LYNXUS_KNOWLEDGE_EMBEDDING_BATCH_SI
 EMBEDDING_TIMEOUT_SECONDS = float(os.getenv("LYNXUS_KNOWLEDGE_EMBEDDING_TIMEOUT_SECONDS", "15"))
 DEFAULT_SNAPSHOT_RETRIEVAL_MODE = os.getenv("LYNXUS_KNOWLEDGE_DEFAULT_RETRIEVAL_MODE", "HYBRID").upper()
 DEFAULT_SNAPSHOT_RETRIEVAL_BACKEND = "PGVECTOR"
+INSTANCE_ID = (os.getenv("LYNXUS_INSTANCE_ID") or "lynxus-knowledge-service").strip() or "lynxus-knowledge-service"
 if STORAGE_MODE == "filesystem":
     STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
 
@@ -777,13 +781,55 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(
     title="Lynxus Knowledge Service",
     version="2.0.0",
-    dependencies=[Depends(require_internal_bearer)],
     lifespan=lifespan,
 )
 
 
+@app.get("/healthz")
+async def healthz() -> JSONResponse:
+    def check_database() -> dict[str, object]:
+        with engine.connect() as connection:
+            value = connection.execute(text("select 1")).scalar_one()
+        if value != 1:
+            raise RuntimeError("postgres readiness probe returned unexpected result")
+        return {"backend": "postgresql"}
+
+    def check_storage() -> dict[str, object]:
+        if storage.client is None:
+            if not STORAGE_ROOT.exists() or not STORAGE_ROOT.is_dir():
+                raise RuntimeError(f"storage root is not available: {STORAGE_ROOT}")
+            return {"mode": STORAGE_MODE, "root": str(STORAGE_ROOT)}
+        if not storage.client.bucket_exists(MINIO_BUCKET):
+            raise RuntimeError(f"minio bucket is not available: {MINIO_BUCKET}")
+        return {
+            "mode": STORAGE_MODE,
+            "bucket": MINIO_BUCKET,
+            "endpoint": MINIO_ENDPOINT,
+        }
+
+    report = await build_readiness_report(
+        service_name="lynxus-knowledge-service",
+        instance_id=INSTANCE_ID,
+        checks=[
+            ReadinessCheck(name="database", probe=check_database),
+            ReadinessCheck(name="storage", probe=check_storage),
+        ],
+    )
+    report.body["embedding"] = {
+        "status": "configured",
+        "baseUrl": EMBEDDING_BASE_URL,
+        "model": EMBEDDING_MODEL,
+    }
+    return JSONResponse(status_code=report.status_code, content=report.body)
+
+
 @app.middleware("http")
 async def inject_log_context(request: FastAPIRequest, call_next):
+    if request.url.path.startswith("/internal/"):
+        try:
+            require_internal_bearer(request.headers.get("Authorization"))
+        except HTTPException as exc:
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
     traceparent = bind_request_log_context(request.headers)
     try:
         response = await call_next(request)

@@ -2,7 +2,9 @@ package com.lynxus.worker.session;
 
 import com.lynxus.contracts.session.SessionContracts.PlaybookRun;
 import com.lynxus.contracts.session.SessionContracts.SessionEvent;
+import java.time.Instant;
 import java.sql.Timestamp;
+import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import tools.jackson.core.JacksonException;
@@ -69,6 +71,26 @@ public class JdbcSessionProjectionRepository {
             toTimestamp(session.updatedAt()),
             toTimestamp(session.endedAt())
         );
+    }
+
+    public Optional<SessionRuntimeChangeStamp> findSessionChangeStamp(String sessionId) {
+        return jdbcTemplate.query(
+            """
+                select s.id,
+                       s.updated_at,
+                       coalesce((select max(sequence) from session_runtime_event e where e.session_id = s.id), 0) as latest_event_sequence,
+                       (select max(updated_at) from session_runtime_playbook_run p where p.session_id = s.id) as latest_playbook_run_updated_at
+                from session_runtime_session s
+                where s.id = ?
+                """,
+            (rs, rowNum) -> new SessionRuntimeChangeStamp(
+                rs.getString("id"),
+                toInstant(rs.getTimestamp("updated_at")),
+                rs.getLong("latest_event_sequence"),
+                toInstant(rs.getTimestamp("latest_playbook_run_updated_at"))
+            ),
+            sessionId
+        ).stream().findFirst();
     }
 
     public void appendEvent(SessionEvent event) {
@@ -156,5 +178,22 @@ public class JdbcSessionProjectionRepository {
 
     private static Timestamp toTimestamp(java.time.Instant instant) {
         return instant == null ? null : Timestamp.from(instant);
+    }
+
+    private static Instant toInstant(Timestamp timestamp) {
+        return timestamp == null ? null : timestamp.toInstant();
+    }
+
+    public record SessionRuntimeChangeStamp(
+        String sessionId,
+        Instant sessionUpdatedAt,
+        long latestEventSequence,
+        Instant latestPlaybookRunUpdatedAt
+    ) {
+        public String fingerprint() {
+            long sessionMillis = sessionUpdatedAt == null ? 0L : sessionUpdatedAt.toEpochMilli();
+            long playbookMillis = latestPlaybookRunUpdatedAt == null ? 0L : latestPlaybookRunUpdatedAt.toEpochMilli();
+            return sessionId + ":" + sessionMillis + ":" + latestEventSequence + ":" + playbookMillis;
+        }
     }
 }

@@ -2,12 +2,16 @@ package com.lynxus.platform.session;
 
 import com.lynxus.platform.auth.RequireRuntimeAccess;
 import com.lynxus.platform.shared.ApiResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import static com.lynxus.platform.session.SessionRuntimeDtos.*;
 
@@ -16,9 +20,14 @@ import static com.lynxus.platform.session.SessionRuntimeDtos.*;
 @RequireRuntimeAccess
 public class SessionRuntimeController {
     private final SessionRuntimeService sessionRuntimeService;
+    private final SessionRuntimeStreamService sessionRuntimeStreamService;
 
-    public SessionRuntimeController(SessionRuntimeService sessionRuntimeService) {
+    public SessionRuntimeController(
+        SessionRuntimeService sessionRuntimeService,
+        SessionRuntimeStreamService sessionRuntimeStreamService
+    ) {
         this.sessionRuntimeService = sessionRuntimeService;
+        this.sessionRuntimeStreamService = sessionRuntimeStreamService;
     }
 
     @GetMapping("/sessions")
@@ -34,6 +43,19 @@ public class SessionRuntimeController {
     @GetMapping("/sessions/{sessionId}")
     public ApiResponse<?> session(@PathVariable String sessionId) {
         return ApiResponse.ok(sessionRuntimeService.getSessionDetail(sessionId));
+    }
+
+    @GetMapping("/sessions/{sessionId}/stream")
+    public SseEmitter streamSession(
+        @PathVariable String sessionId,
+        @RequestParam(value = "lastEventId", required = false) String lastEventIdParam,
+        @RequestHeader(value = "Last-Event-ID", required = false) String lastEventIdHeader,
+        HttpServletRequest request
+    ) {
+        String lastEventId = lastEventIdHeader != null && !lastEventIdHeader.isBlank() ? lastEventIdHeader : lastEventIdParam;
+        return sessionRuntimeStreamService.connect(sessionId, lastEventId, request.getUserPrincipal() == null
+            ? "anonymous"
+            : request.getUserPrincipal().getName());
     }
 
     @GetMapping("/sessions/{sessionId}/privacy-mapping-summary")
@@ -52,8 +74,12 @@ public class SessionRuntimeController {
     }
 
     @PostMapping("/sessions/{sessionId}/external-callback")
-    public ApiResponse<?> externalCallback(@PathVariable String sessionId, @RequestBody ExternalCallbackRequest request) {
-        return ApiResponse.ok(sessionRuntimeService.externalCallback(sessionId, request));
+    public ApiResponse<?> externalCallback(
+        @PathVariable String sessionId,
+        @RequestBody ExternalCallbackRequest request,
+        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
+    ) {
+        return ApiResponse.ok(sessionRuntimeService.externalCallback(sessionId, request, idempotencyKey));
     }
 
     @PostMapping("/sessions/{sessionId}/handoff/end")

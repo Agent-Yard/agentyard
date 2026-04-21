@@ -35,6 +35,11 @@ import com.lynxus.platform.catalog.CatalogDtos.ToolConfigDto;
 import com.lynxus.platform.catalog.CatalogDtos.ToolOperationDto;
 import com.lynxus.platform.catalog.CatalogService;
 import com.lynxus.platform.shared.ConflictException;
+import com.lynxus.platform.shared.redis.RedisIdempotencyService;
+import com.lynxus.platform.shared.redis.RedisSharedStateProperties;
+import com.lynxus.shared.redis.RedisJsonCodec;
+import com.lynxus.shared.redis.RedisKeyspace;
+import com.lynxus.shared.redis.RedisSharedStateMetrics;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -42,7 +47,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import tools.jackson.core.type.TypeReference;
@@ -58,7 +63,9 @@ public class SessionRuntimeService {
     private final SessionDispatchLockService dispatchLockService;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
-    private final String privacySummaryKeyPrefix;
+    private final RedisKeyspace redisKeyspace;
+    private final RedisIdempotencyService idempotencyService;
+    private final SessionRuntimeChangeNoticePublisher changeNoticePublisher;
 
     public SessionRuntimeService(
         SessionWorkflowGateway sessionWorkflowGateway,
@@ -73,10 +80,20 @@ public class SessionRuntimeService {
             dispatchLockService,
             new StringRedisTemplate(),
             new ObjectMapper(),
-            "privacy:session"
+            new RedisKeyspace(),
+            new RedisIdempotencyService(
+                new StringRedisTemplate(),
+                new RedisJsonCodec(new ObjectMapper()),
+                new RedisSharedStateProperties(null, null, null, null, null, 0, null),
+                new RedisSharedStateMetrics(
+                    new io.micrometer.core.instrument.simple.SimpleMeterRegistry()
+                )
+            ),
+            null
         );
     }
 
+    @Autowired
     public SessionRuntimeService(
         SessionWorkflowGateway sessionWorkflowGateway,
         CatalogService catalogService,
@@ -84,7 +101,9 @@ public class SessionRuntimeService {
         SessionDispatchLockService dispatchLockService,
         StringRedisTemplate redisTemplate,
         ObjectMapper objectMapper,
-        @Value("${lynxus.privacy.session-store-key-prefix:privacy:session}") String privacySummaryKeyPrefix
+        RedisKeyspace redisKeyspace,
+        RedisIdempotencyService idempotencyService,
+        SessionRuntimeChangeNoticePublisher changeNoticePublisher
     ) {
         this.sessionWorkflowGateway = sessionWorkflowGateway;
         this.catalogService = catalogService;
@@ -92,7 +111,9 @@ public class SessionRuntimeService {
         this.dispatchLockService = dispatchLockService;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
-        this.privacySummaryKeyPrefix = privacySummaryKeyPrefix;
+        this.redisKeyspace = redisKeyspace;
+        this.idempotencyService = idempotencyService;
+        this.changeNoticePublisher = changeNoticePublisher;
     }
 
     public List<SessionRuntimeSessionDto> listSessions() {
@@ -113,7 +134,7 @@ public class SessionRuntimeService {
     }
 
     public PrivacyMappingSummaryDto getPrivacyMappingSummary(String sessionId) {
-        String payload = redisTemplate.opsForValue().get(privacySummaryKey(sessionId));
+        String payload = redisTemplate.opsForValue().get(redisKeyspace.privacySessionSummary(sessionId));
         if (payload == null || payload.isBlank()) {
             return new PrivacyMappingSummaryDto(false, null, null, Map.of(), Map.of(), Map.of(), 0, 0, 0, null);
         }
@@ -174,14 +195,17 @@ public class SessionRuntimeService {
         return awaitPersistedSession(sessionId, existing);
     }
 
-    public SessionRuntimeSessionDto externalCallback(String sessionId, ExternalCallbackRequest request) {
-        SessionRuntimeSessionDto existing = repository.findSession(sessionId).orElseThrow();
-        requirePlaybookRunInSession(sessionId, request.playbookRunId());
-        sessionWorkflowGateway.externalCallback(
-            sessionId,
-            new ExternalCallbackSignal(sessionId, request.playbookRunId(), request.payload())
+    public SessionRuntimeSessionDto externalCallback(String sessionId, ExternalCallbackRequest request, String idempotencyKey) {
+        String effectiveIdempotencyKey = normalizeExternalCallbackIdempotencyKey(sessionId, request, idempotencyKey);
+        return idempotencyService.execute(
+            redisKeyspace.idempotency("session-external-callback", effectiveIdempotencyKey),
+            SessionRuntimeSessionDto.class,
+            () -> externalCallbackInternal(sessionId, request)
         );
-        return awaitPersistedSession(sessionId, existing);
+    }
+
+    public SessionRuntimeSessionDto externalCallback(String sessionId, ExternalCallbackRequest request) {
+        return externalCallbackInternal(sessionId, request);
     }
 
     public SessionRuntimeSessionDto endHumanHandoff(String sessionId) {
@@ -511,8 +535,25 @@ public class SessionRuntimeService {
         );
     }
 
-    private String privacySummaryKey(String sessionId) {
-        return privacySummaryKeyPrefix + ":" + sessionId + ":summary";
+    private String normalizeExternalCallbackIdempotencyKey(
+        String sessionId,
+        ExternalCallbackRequest request,
+        String idempotencyKey
+    ) {
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            return idempotencyKey.trim();
+        }
+        return sessionId + ":" + request.playbookRunId() + ":" + Integer.toHexString(request.payload().hashCode());
+    }
+
+    private SessionRuntimeSessionDto externalCallbackInternal(String sessionId, ExternalCallbackRequest request) {
+        SessionRuntimeSessionDto existing = repository.findSession(sessionId).orElseThrow();
+        requirePlaybookRunInSession(sessionId, request.playbookRunId());
+        sessionWorkflowGateway.externalCallback(
+            sessionId,
+            new ExternalCallbackSignal(sessionId, request.playbookRunId(), request.payload())
+        );
+        return awaitPersistedSession(sessionId, existing);
     }
 
     private static Map<String, Integer> intMap(Object rawValue) {
@@ -627,6 +668,9 @@ public class SessionRuntimeService {
             existing.latestEventSequence()
         );
         repository.saveSession(ended);
+        if (changeNoticePublisher != null) {
+            changeNoticePublisher.publishSessionChanged(existing.id());
+        }
         return ended;
     }
 

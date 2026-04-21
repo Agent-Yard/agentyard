@@ -5,11 +5,14 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from lynxus_common import (
+    ReadinessCheck,
     TRACEPARENT_HEADER,
     bind_log_context,
     bind_request_log_context,
+    build_readiness_report,
     clear_log_context,
     configure_structured_logging,
 )
@@ -20,6 +23,7 @@ from .redis_support import RedisSettings, create_redis_client
 from .tooling import execute_playbook_tool_task
 
 LOGGER = logging.getLogger("lynxus-agent-runtime")
+INSTANCE_ID = (os.getenv("LYNXUS_INSTANCE_ID") or "lynxus-agent-runtime").strip() or "lynxus-agent-runtime"
 
 
 def require_internal_bearer(authorization: str | None = Header(default=None, alias="Authorization")) -> None:
@@ -43,6 +47,7 @@ async def lifespan(app: FastAPI):
     LOGGER.info(
         "redis connectivity verified",
         extra={
+            "instanceId": INSTANCE_ID,
             "redisHost": redis_settings.host,
             "redisPort": redis_settings.port,
             "redisDatabase": redis_settings.database,
@@ -50,6 +55,7 @@ async def lifespan(app: FastAPI):
         },
     )
     app.state.redis_client = redis_client
+    app.state.redis_settings = redis_settings
     yield
     await redis_client.aclose()
     clear_log_context()
@@ -68,8 +74,31 @@ async def bind_traceparent(request: Request, call_next):
 
 
 @app.get("/healthz")
-async def healthz() -> dict[str, str]:
-    return {"status": "ok"}
+async def healthz() -> JSONResponse:
+    async def check_redis() -> dict[str, object]:
+        redis_client = getattr(app.state, "redis_client", None)
+        if redis_client is None:
+            raise RuntimeError("redis client is not initialized")
+        redis_settings = getattr(app.state, "redis_settings", RedisSettings.from_env())
+        if not await redis_client.ping():
+            raise RuntimeError("redis ping returned falsy response")
+        return {
+            "host": redis_settings.host,
+            "port": redis_settings.port,
+            "database": redis_settings.database,
+        }
+
+    report = await build_readiness_report(
+        service_name="lynxus-agent-runtime",
+        instance_id=INSTANCE_ID,
+        checks=[
+            ReadinessCheck(
+                name="redis",
+                probe=check_redis,
+            )
+        ],
+    )
+    return JSONResponse(status_code=report.status_code, content=report.body)
 
 
 @app.post("/agent-turns/execute", response_model=AgentTurnResult)
@@ -85,6 +114,7 @@ async def execute_turn(
     LOGGER.info(
         "agent turn executed",
         extra={
+            "instanceId": INSTANCE_ID,
             "sessionId": request.sessionId,
             "assistantId": request.assistantId,
             "ownerAgentId": request.currentOwner.agentId,
@@ -113,6 +143,7 @@ async def execute_playbook_tool(
     LOGGER.info(
         "playbook tool task executed",
         extra={
+            "instanceId": INSTANCE_ID,
             "sessionId": request.sessionId,
             "playbookRunId": request.playbookRunId,
             "playbookId": request.playbookId,

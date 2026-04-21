@@ -8,12 +8,44 @@ import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
 import com.lynxus.platform.catalog.CatalogDtos;
 import com.lynxus.platform.catalog.CatalogService;
 import com.lynxus.platform.catalog.InMemoryCatalogRepository;
+import com.lynxus.platform.shared.ConflictException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class KnowledgeServiceTest {
+    @Test
+    void shouldRejectKnowledgeWriteWhenAnotherInstanceCommitsDuringMutation() {
+        InMemoryCatalogRepository catalogRepository = new InMemoryCatalogRepository();
+        CatalogDtos.BusinessDomainDto domain = seedDomain(catalogRepository);
+        KnowledgeService knowledgeService = new KnowledgeService(
+            new ConflictingKnowledgeRepository(domain.id()),
+            catalogRepository,
+            new StubKnowledgeServiceClient(),
+            new TrackingKnowledgeWorkflowGateway()
+        );
+
+        ConflictException error = assertThrows(
+            ConflictException.class,
+            () -> knowledgeService.createKnowledgeBase(
+                new CatalogDtos.CreateKnowledgeBaseRequest(
+                    domain.id(),
+                    "本地知识库",
+                    ShareScope.DOMAIN_SHARED,
+                    "DOMAIN",
+                    domain.id(),
+                    "local",
+                    "知识运营",
+                    List.of("local")
+                )
+            )
+        );
+
+        assertEquals("knowledge changed on another instance; retry the request", error.getMessage());
+        assertEquals(List.of("远端知识库"), knowledgeService.listKnowledgeBases().stream().map(CatalogDtos.KnowledgeBaseDto::name).toList());
+    }
+
     @Test
     void shouldRetryFailedImportJobAndTriggerWorkflow() {
         InMemoryCatalogRepository catalogRepository = new InMemoryCatalogRepository();
@@ -259,6 +291,41 @@ class KnowledgeServiceTest {
 
         @Override
         public void startIndexBuild(String knowledgeBaseId, String indexSnapshotId) {
+        }
+    }
+
+    private static final class ConflictingKnowledgeRepository extends InMemoryKnowledgeRepository {
+        private final String domainId;
+        private boolean injectConflict = true;
+
+        private ConflictingKnowledgeRepository(String domainId) {
+            this.domainId = domainId;
+        }
+
+        @Override
+        protected void commit(KnowledgeData working, long expectedRevision) {
+            if (injectConflict) {
+                injectConflict = false;
+                KnowledgeData remoteData = committedCopy();
+                remoteData.knowledgeBases.clear();
+                remoteData.knowledgeBases.add(new CatalogDtos.KnowledgeBaseDto(
+                        "knowledge-base-remote",
+                        domainId,
+                        "远端知识库",
+                        ShareScope.DOMAIN_SHARED,
+                        "DOMAIN",
+                        domainId,
+                        "remote",
+                        "知识运营",
+                        List.of("remote"),
+                        null,
+                        null,
+                        List.of()
+                    ));
+                remoteData.knowledgeReleases.clear();
+                super.commit(remoteData, revision());
+            }
+            super.commit(working, expectedRevision);
         }
     }
 }

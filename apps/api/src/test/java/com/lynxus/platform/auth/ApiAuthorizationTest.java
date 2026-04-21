@@ -23,6 +23,7 @@ import com.lynxus.platform.event.PlatformEventService;
 import com.lynxus.platform.session.SessionRuntimeController;
 import com.lynxus.platform.session.SessionRuntimeDtos;
 import com.lynxus.platform.session.SessionRuntimeService;
+import com.lynxus.platform.session.SessionRuntimeStreamService;
 import com.lynxus.platform.shared.ApiExceptionHandler;
 import java.time.Instant;
 import java.util.List;
@@ -193,8 +194,11 @@ class ApiAuthorizationTest {
         }
 
         @Bean
-        SessionRuntimeController sessionRuntimeController(SessionRuntimeService sessionRuntimeService) {
-            return new SessionRuntimeController(sessionRuntimeService);
+        SessionRuntimeController sessionRuntimeController(
+            SessionRuntimeService sessionRuntimeService,
+            SessionRuntimeStreamService sessionRuntimeStreamService
+        ) {
+            return new SessionRuntimeController(sessionRuntimeService, sessionRuntimeStreamService);
         }
 
         @Bean
@@ -210,6 +214,11 @@ class ApiAuthorizationTest {
         @Bean
         SessionRuntimeService sessionRuntimeService() {
             return mock(SessionRuntimeService.class);
+        }
+
+        @Bean
+        SessionRuntimeStreamService sessionRuntimeStreamService() {
+            return mock(SessionRuntimeStreamService.class);
         }
 
         @Bean

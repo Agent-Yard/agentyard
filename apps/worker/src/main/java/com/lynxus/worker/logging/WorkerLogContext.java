@@ -14,6 +14,7 @@ public final class WorkerLogContext {
     public static final String WORKFLOW_ID = "workflowId";
     public static final String CUSTOMER_ID = "customerId";
     public static final String USER_ID = "userId";
+    public static final String INSTANCE_ID = "instanceId";
 
     private WorkerLogContext() {
     }
@@ -29,6 +30,7 @@ public final class WorkerLogContext {
         values.put(WORKFLOW_ID, context == null ? null : context.workflowId());
         values.put(CUSTOMER_ID, context == null ? null : context.customerId());
         values.put(USER_ID, context == null ? null : context.userId());
+        values.put(INSTANCE_ID, resolveInstanceId());
         return new Scope(values);
     }
 
@@ -67,6 +69,11 @@ public final class WorkerLogContext {
 
     private static String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value;
+    }
+
+    private static String resolveInstanceId() {
+        String instanceId = System.getenv("LYNXUS_INSTANCE_ID");
+        return blankToNull(instanceId) == null ? "lynxus-worker-instance" : instanceId.trim();
     }
 
     public static final class Scope implements AutoCloseable {

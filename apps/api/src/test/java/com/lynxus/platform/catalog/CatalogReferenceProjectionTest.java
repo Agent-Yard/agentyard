@@ -11,7 +11,6 @@ import com.lynxus.platform.catalog.CatalogDtos.*;
 import com.lynxus.platform.catalog.CatalogRepository.*;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -87,16 +86,14 @@ class CatalogReferenceProjectionTest {
             assistant.memoryPolicy()
         );
 
-        repository.save(new CatalogSnapshot(
-            List.of(new BusinessDomainDto("dom-1", "Test Domain", "desc", List.of(), List.of(), List.of())),
-            List.of(new ScenarioDto("scn-1", "dom-1", "Test Scenario", "goal", new VersionDto("1.0.0", VersionStatus.PUBLISHED, Instant.now()), List.of())),
-            List.of(assistant),
-            List.of(agent),
-            List.of(),
-            List.of(),
-            Map.of(),
-            Map.of("ast-1", List.of(release))
-        ));
+        repository.inWriteTransaction(() -> {
+            repository.upsertDomain(new BusinessDomainDto("dom-1", "Test Domain", "desc", List.of(), List.of(), List.of()));
+            repository.upsertScenario(new ScenarioDto("scn-1", "dom-1", "Test Scenario", "goal", new VersionDto("1.0.0", VersionStatus.PUBLISHED, Instant.now()), List.of()));
+            repository.upsertAssistant(assistant);
+            repository.upsertAgent(agent);
+            repository.replaceAssistantReleases("ast-1", List.of(release));
+            return null;
+        });
     }
 
     @Test

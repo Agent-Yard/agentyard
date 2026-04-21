@@ -13,7 +13,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from redis import Redis
 
 from ..models import PrivacyMappingTelemetry
-from ..redis_support import RedisSettings
+from ..redis_support import RedisSettings, privacy_session_prefix
 from .policy import PRIVACY_CHANNELS, PrivacyPolicy
 
 
@@ -113,7 +113,7 @@ return {placeholderId, reversePayload, created}
             socket_connect_timeout=3,
             socket_timeout=3,
         )
-        prefix = (os.getenv("LYNXUS_PRIVACY_SESSION_STORE_KEY_PREFIX") or "privacy:session").strip() or "privacy:session"
+        prefix = privacy_session_prefix()
         self._session_prefix = f"{prefix}:{policy.session_id}"
         self._policy = policy
         secret = (os.getenv("LYNXUS_PRIVACY_SESSION_STORE_ENCRYPTION_KEY") or "").strip()

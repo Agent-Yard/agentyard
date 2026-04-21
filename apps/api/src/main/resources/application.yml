@@ -20,6 +20,9 @@ spring:
       ssl:
         enabled: ${LYNXUS_REDIS_SSL_ENABLED:false}
       timeout: ${LYNXUS_REDIS_TIMEOUT:3s}
+  session:
+    redis:
+      namespace: ${LYNXUS_SESSION_REDIS_NAMESPACE:lynxus:session:http}
   flyway:
     enabled: true
 
@@ -42,6 +45,15 @@ logging:
 
 server:
   port: ${LYNXUS_API_PORT:8080}
+  servlet:
+    session:
+      timeout: ${LYNXUS_SESSION_TIMEOUT:12h}
+      cookie:
+        name: ${LYNXUS_SESSION_COOKIE_NAME:LYNXUS_SESSION}
+        path: ${LYNXUS_SESSION_COOKIE_PATH:/}
+        http-only: true
+        secure: ${LYNXUS_SESSION_COOKIE_SECURE:false}
+        same-site: ${LYNXUS_SESSION_COOKIE_SAME_SITE:Lax}
 
 lynxus:
   auth:
@@ -60,6 +72,14 @@ lynxus:
     token: ${LYNXUS_INTERNAL_AUTH_TOKEN}
   redis:
     health-check-enabled: ${LYNXUS_REDIS_HEALTH_CHECK_ENABLED:true}
+  shared-state:
+    instance-id: ${LYNXUS_INSTANCE_ID:}
+    lock-ttl: ${LYNXUS_SHARED_STATE_LOCK_TTL:10s}
+    lock-acquire-timeout: ${LYNXUS_SHARED_STATE_LOCK_ACQUIRE_TIMEOUT:3s}
+    idempotency-ttl: ${LYNXUS_SHARED_STATE_IDEMPOTENCY_TTL:24h}
+    sse-replay-ttl: ${LYNXUS_SHARED_STATE_SSE_REPLAY_TTL:15m}
+    sse-replay-limit: ${LYNXUS_SHARED_STATE_SSE_REPLAY_LIMIT:128}
+    stream-poll-interval: ${LYNXUS_SHARED_STATE_STREAM_POLL_INTERVAL:1s}
   temporal:
     target: ${LYNXUS_TEMPORAL_TARGET:127.0.0.1:7233}
     namespace: ${LYNXUS_TEMPORAL_NAMESPACE:default}

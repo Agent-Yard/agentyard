@@ -49,6 +49,8 @@ public class AuthSecurityConfiguration {
             .authorizeHttpRequests(authorize -> authorize
                 .requestMatchers(
                     "/api/system/health",
+                    "/api/system/health/live",
+                    "/api/system/health/ready",
                     "/api/auth/login",
                     "/api/auth/dev-bootstrap-login",
                     "/oauth2/authorization/**",

@@ -651,6 +651,36 @@ class KnowledgeServiceTest(unittest.TestCase):
         self.assertEqual(valid.status_code, 200)
         self.assertTrue(valid.headers["traceparent"].startswith("00-0123456789abcdef0123456789abcdef-"))
 
+    def test_healthz_should_report_up_when_dependencies_are_ready(self) -> None:
+        with TestClient(app) as client:
+            response = client.get("/healthz")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "UP")
+        self.assertEqual(payload["service"], "lynxus-knowledge-service")
+        self.assertEqual(payload["dependencies"]["database"]["status"], "UP")
+        self.assertEqual(payload["dependencies"]["storage"]["status"], "UP")
+        self.assertEqual(payload["embedding"]["status"], "configured")
+
+    def test_healthz_should_return_down_and_503_when_database_probe_fails(self) -> None:
+        with TestClient(app) as client:
+            with patch("lynxus_knowledge_service.main.engine.connect", side_effect=RuntimeError("postgres unavailable")):
+                response = client.get("/healthz")
+
+        self.assertEqual(response.status_code, 503)
+        payload = response.json()
+        self.assertEqual(payload["status"], "DOWN")
+        self.assertEqual(payload["dependencies"]["database"]["status"], "DOWN")
+        self.assertEqual(payload["dependencies"]["database"]["detail"], "postgres unavailable")
+        self.assertEqual(payload["dependencies"]["storage"]["status"], "UP")
+
+    def test_healthz_should_not_require_internal_authentication(self) -> None:
+        with TestClient(app) as client:
+            response = client.get("/healthz")
+
+        self.assertEqual(response.status_code, 200)
+
     def test_should_retry_failed_snapshot_with_new_attempt(self) -> None:
         with SessionLocal() as db:
             created = create_index_snapshot(
