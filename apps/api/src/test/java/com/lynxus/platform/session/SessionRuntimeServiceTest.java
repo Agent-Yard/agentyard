@@ -296,6 +296,31 @@ class SessionRuntimeServiceTest {
         verify(repository, times(3)).findSession("session-1");
     }
 
+    @Test
+    void sendMessage_shouldPropagateConflictWhenWorkflowUpdateTimesOutButWorkflowIsStillOpen() {
+        SessionWorkflowGateway gateway = mock(SessionWorkflowGateway.class);
+        CatalogService catalogService = mock(CatalogService.class);
+        SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
+        SessionRuntimeService service = new SessionRuntimeService(
+            gateway,
+            catalogService,
+            repository,
+            new SessionDispatchLockService()
+        );
+        SessionRuntimeDtos.SessionRuntimeSessionDto existing = session("session-1", "IDLE", null);
+
+        when(repository.findSession("session-1")).thenReturn(java.util.Optional.of(existing));
+        when(gateway.isWorkflowOpen("session-1")).thenReturn(true);
+        when(gateway.submitUserMessage(any(), any())).thenThrow(new ConflictException("session message processing timed out"));
+
+        ConflictException error = assertThrows(
+            ConflictException.class,
+            () -> service.sendMessage("session-1", new SendSessionMessageRequest("customer-1", "你好"))
+        );
+
+        assertEquals("session message processing timed out", error.getMessage());
+    }
+
     private static CatalogDtos.AssistantDto assistant(String assistantId) {
         Instant now = Instant.now();
         CatalogDtos.AssistantReleaseDto release = new CatalogDtos.AssistantReleaseDto(
