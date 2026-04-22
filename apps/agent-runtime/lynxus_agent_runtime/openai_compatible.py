@@ -4,8 +4,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-import httpx
-
+from .http_clients import shared_http_client_for_url
 from .models import LlmUsageEntry
 
 
@@ -86,13 +85,14 @@ def chat_completion(
         headers["OpenAI-Organization"] = settings.organization
     if settings.project:
         headers["OpenAI-Project"] = settings.project
-    with httpx.Client(timeout=timeout_seconds) as client:
-        response = client.post(
-            settings.base_url.rstrip("/") + "/chat/completions",
-            headers=headers,
-            json=payload,
-        )
-        response.raise_for_status()
+    client = shared_http_client_for_url(settings.base_url)
+    response = client.post(
+        settings.base_url.rstrip("/") + "/chat/completions",
+        headers=headers,
+        json=payload,
+        timeout=timeout_seconds,
+    )
+    response.raise_for_status()
     parsed = response.json()
     if usage_tracker is not None and source_type is not None:
         usage_tracker.record(

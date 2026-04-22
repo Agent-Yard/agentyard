@@ -18,6 +18,7 @@ from lynxus_common import (
 )
 
 from .decisioning import execute_agent_turn
+from .http_clients import reset_shared_http_client_registry
 from .models import AgentTurnExecutionOutcome, AgentTurnRequest, PlaybookToolTaskRequest, PlaybookToolTaskResult
 from .redis_support import RedisSettings, create_redis_client
 from .tooling import execute_playbook_tool_task
@@ -57,6 +58,7 @@ async def lifespan(app: FastAPI):
     app.state.redis_client = redis_client
     app.state.redis_settings = redis_settings
     yield
+    reset_shared_http_client_registry()
     await redis_client.aclose()
     clear_log_context()
 

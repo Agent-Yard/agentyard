@@ -5,8 +5,6 @@ import os
 import re
 from typing import Any
 
-import httpx
-
 from .json_schema import validate_json_schema_value
 from .models import (
     AgentConfig,
@@ -17,6 +15,7 @@ from .models import (
     ToolDescriptor,
     ToolOperationDescriptor,
 )
+from .http_clients import shared_http_client_for_url
 from .semantic import SemanticToolDefinition
 
 _RESOURCE_TOOL_PREFIX = "resource_tool__"
@@ -444,20 +443,22 @@ def _knowledge_search(binding: KnowledgeBindingDescriptor | None, arguments: dic
         raise ValueError("knowledge_search.minScore must be a number")
     if retrieval_mode not in {"LEXICAL", "VECTOR", "HYBRID"}:
         raise ValueError("knowledge_search.retrievalMode must be LEXICAL, VECTOR, or HYBRID")
-    with httpx.Client(timeout=10.0) as client:
-        response = client.post(
-            _knowledge_service_base_url() + "/internal/retrieve",
-            headers=_internal_auth_headers(),
-            json={
-                "indexSnapshotId": active_binding.snapshotId,
-                "query": query,
-                "topK": top_k_raw,
-                "minScore": float(min_score_raw),
-                "retrievalMode": retrieval_mode,
-            },
-        )
-        response.raise_for_status()
-        payload = response.json()
+    endpoint = _knowledge_service_base_url() + "/internal/retrieve"
+    client = shared_http_client_for_url(endpoint)
+    response = client.post(
+        endpoint,
+        headers=_internal_auth_headers(),
+        json={
+            "indexSnapshotId": active_binding.snapshotId,
+            "query": query,
+            "topK": top_k_raw,
+            "minScore": float(min_score_raw),
+            "retrievalMode": retrieval_mode,
+        },
+        timeout=10.0,
+    )
+    response.raise_for_status()
+    payload = response.json()
     hits = payload.get("hits", [])
     return {
         "knowledgeBaseId": active_binding.knowledgeBaseId,
@@ -483,17 +484,19 @@ def _knowledge_read(binding: KnowledgeBindingDescriptor | None, arguments: dict[
             chunk_ids.append(chunk_id)
     if not chunk_ids:
         raise ValueError("knowledge_read.chunkIds must not be empty")
-    with httpx.Client(timeout=10.0) as client:
-        response = client.post(
-            _knowledge_service_base_url() + "/internal/read-chunks",
-            headers=_internal_auth_headers(),
-            json={
-                "indexSnapshotId": active_binding.snapshotId,
-                "chunkIds": chunk_ids,
-            },
-        )
-        response.raise_for_status()
-        payload = response.json()
+    endpoint = _knowledge_service_base_url() + "/internal/read-chunks"
+    client = shared_http_client_for_url(endpoint)
+    response = client.post(
+        endpoint,
+        headers=_internal_auth_headers(),
+        json={
+            "indexSnapshotId": active_binding.snapshotId,
+            "chunkIds": chunk_ids,
+        },
+        timeout=10.0,
+    )
+    response.raise_for_status()
+    payload = response.json()
     chunks = payload.get("chunks", [])
     return {
         "knowledgeBaseId": active_binding.knowledgeBaseId,
@@ -654,10 +657,11 @@ def _call_http_tool(
         request_kwargs["params"] = arguments
     else:
         request_kwargs["json"] = arguments
-    with httpx.Client(timeout=max(1, descriptor.timeoutSeconds)) as client:
-        response = client.request(method, descriptor.http.endpoint, **request_kwargs)
-        response.raise_for_status()
-        payload = response.json()
+    timeout_seconds = max(1, descriptor.timeoutSeconds)
+    client = shared_http_client_for_url(descriptor.http.endpoint)
+    response = client.request(method, descriptor.http.endpoint, timeout=timeout_seconds, **request_kwargs)
+    response.raise_for_status()
+    payload = response.json()
     if not isinstance(payload, dict):
         raise ValueError(f"tool {descriptor.resourceName}.{operation.name} must return a JSON object")
     return payload
@@ -671,20 +675,22 @@ def _call_mcp_tool(
     if descriptor.mcp is None:
         raise ValueError(f"tool {descriptor.resourceVersionId} is missing MCP provider config")
     remote_operation = descriptor.mcp.operationMappings.get(operation.name, operation.name)
-    with httpx.Client(timeout=max(1, descriptor.timeoutSeconds)) as client:
-        response = client.post(
-            descriptor.mcp.connectionUri,
-            headers=_provider_headers(descriptor.authType),
-            json={
-                "serverName": descriptor.mcp.serverName,
-                "namespace": descriptor.mcp.namespace,
-                "transport": descriptor.mcp.transport,
-                "tool": remote_operation,
-                "arguments": arguments,
-            },
-        )
-        response.raise_for_status()
-        payload = response.json()
+    timeout_seconds = max(1, descriptor.timeoutSeconds)
+    client = shared_http_client_for_url(descriptor.mcp.connectionUri)
+    response = client.post(
+        descriptor.mcp.connectionUri,
+        headers=_provider_headers(descriptor.authType),
+        json={
+            "serverName": descriptor.mcp.serverName,
+            "namespace": descriptor.mcp.namespace,
+            "transport": descriptor.mcp.transport,
+            "tool": remote_operation,
+            "arguments": arguments,
+        },
+        timeout=timeout_seconds,
+    )
+    response.raise_for_status()
+    payload = response.json()
     if not isinstance(payload, dict):
         raise ValueError(f"tool {descriptor.resourceName}.{operation.name} must return a JSON object")
     return payload

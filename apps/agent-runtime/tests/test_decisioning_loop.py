@@ -8,8 +8,13 @@ os.environ.setdefault("LYNXUS_INTERNAL_AUTH_TOKEN", "test-internal-token")
 from lynxus_agent_runtime.decisioning import execute_agent_turn
 from lynxus_agent_runtime.data_security.rewriter import PrivateLlmRewriter
 from lynxus_agent_runtime.data_security.rules import SanitizationResult
+from lynxus_agent_runtime.http_clients import reset_shared_http_client_registry
 from lynxus_agent_runtime.models import AgentTurnRequest, PrivacyMappingTelemetry
-from lynxus_agent_runtime.openai_compatible import LlmUsageTracker
+from lynxus_agent_runtime.openai_compatible import (
+    LlmUsageTracker,
+    OpenAiCompatibleSettings,
+    chat_completion,
+)
 from lynxus_agent_runtime.openai_adapter import render_openai_tool_definitions
 from lynxus_agent_runtime.tooling import execute_tool_call, resource_tool_function_name, semantic_tool_definitions
 
@@ -62,6 +67,9 @@ class _FakeClient:
 
     def request(self, method: str, url: str, **kwargs) -> _FakeResponse:
         return self._transport.handle(method.upper(), url, kwargs)
+
+    def close(self) -> None:
+        return None
 
 
 class _FakePrivacyStore:
@@ -246,6 +254,12 @@ def _enable_privacy_mapping(payload: dict) -> dict:
 
 
 class AgentRuntimeDecisionLoopTest(unittest.TestCase):
+    def setUp(self) -> None:
+        reset_shared_http_client_registry()
+
+    def tearDown(self) -> None:
+        reset_shared_http_client_registry()
+
     def test_should_complete_skill_read_and_tool_loop_before_returning_final_decision(self) -> None:
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
         os.environ["LYNXUS_KNOWLEDGE_SERVICE_BASE_URL"] = "https://knowledge.example"
@@ -344,9 +358,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         )
 
         factory = lambda *args, **kwargs: _FakeClient(transport)
-        with patch("lynxus_agent_runtime.openai_compatible.httpx.Client", side_effect=factory), patch(
-            "lynxus_agent_runtime.tooling.httpx.Client", side_effect=factory
-        ):
+        with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=factory):
             outcome, _ = execute_agent_turn(request)
 
         self.assertTrue(outcome.success)
@@ -401,9 +413,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         )
         factory = lambda *args, **kwargs: _FakeClient(transport)
 
-        with patch("lynxus_agent_runtime.openai_compatible.httpx.Client", side_effect=factory), patch(
-            "lynxus_agent_runtime.tooling.httpx.Client", side_effect=factory
-        ):
+        with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=factory):
             outcome, _ = execute_agent_turn(request)
 
         self.assertFalse(outcome.success)
@@ -436,7 +446,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         )
         factory = lambda *args, **kwargs: _FakeClient(transport)
 
-        with patch("lynxus_agent_runtime.tooling.httpx.Client", side_effect=factory):
+        with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=factory):
             result = execute_tool_call(request, "knowledge_read", {"chunkIds": ["chunk-1"]})
 
         self.assertEqual(result["knowledgeBaseId"], "kb-1")
@@ -489,7 +499,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         )
         factory = lambda *args, **kwargs: _FakeClient(transport)
 
-        with patch("lynxus_agent_runtime.openai_compatible.httpx.Client", side_effect=factory):
+        with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=factory):
             outcome, _ = execute_agent_turn(request)
 
         self.assertTrue(outcome.success)
@@ -537,7 +547,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
                 return SanitizationResult(value, {}, 0)
             return original_sanitize_value(value, store)
 
-        with patch("lynxus_agent_runtime.openai_compatible.httpx.Client", side_effect=factory), patch(
+        with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=factory), patch(
             "lynxus_agent_runtime.data_security.pipeline.SessionPrivacyMapStore",
             _FakePrivacyStore,
         ), patch("lynxus_agent_runtime.data_security.mapper.sanitize_value", side_effect=leaking_sanitize):
@@ -557,7 +567,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         transport = _FakeTransport([], request_log)
         factory = lambda *args, **kwargs: _FakeClient(transport)
 
-        with patch("lynxus_agent_runtime.openai_compatible.httpx.Client", side_effect=factory), patch(
+        with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=factory), patch(
             "lynxus_agent_runtime.data_security.pipeline.SessionPrivacyMapStore",
             _FakePrivacyStore,
         ):
@@ -577,7 +587,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         transport = _FakeTransport([], request_log)
         factory = lambda *args, **kwargs: _FakeClient(transport)
 
-        with patch("lynxus_agent_runtime.openai_compatible.httpx.Client", side_effect=factory), patch(
+        with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=factory), patch(
             "lynxus_agent_runtime.data_security.pipeline.SessionPrivacyMapStore",
             _FakePrivacyStore,
         ), patch(
@@ -659,7 +669,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
                     },
                 )()
 
-        with patch("lynxus_agent_runtime.openai_compatible.httpx.Client", side_effect=factory):
+        with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=factory):
             rewritten = PrivateLlmRewriter(request.effectivePrivacyModelBinding, usage_tracker).rewrite(
                 "user Alice Johnson",
                 _Store(),
@@ -671,3 +681,84 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         self.assertEqual("privacy-model-1", usage_tracker.entries()[0].modelResourceId)
         self.assertEqual(9, usage_tracker.entries()[0].totalTokens)
         self.assertEqual([1], [entry.callSequence for entry in usage_tracker.entries()])
+
+    def test_should_reuse_shared_client_for_same_origin_with_different_base_paths(self) -> None:
+        request_log: list[dict] = []
+        created_clients: list[_FakeClient] = []
+
+        def factory(*args, **kwargs):  # noqa: ANN002, ANN003
+            client = _FakeClient(
+                _FakeTransport(
+                    [
+                        {"choices": [{"message": {"content": json.dumps({"ok": True})}}]},
+                        {"choices": [{"message": {"content": json.dumps({"ok": True})}}]},
+                    ],
+                    request_log,
+                )
+            )
+            created_clients.append(client)
+            return client
+
+        with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=factory):
+            chat_completion(
+                OpenAiCompatibleSettings(
+                    base_url="https://runtime.example/v1",
+                    model_id="gpt-test",
+                    api_key="secret",
+                    provider_type="OPENAI_COMPATIBLE",
+                ),
+                {"model": "gpt-test", "messages": []},
+                timeout_seconds=5.0,
+            )
+            chat_completion(
+                OpenAiCompatibleSettings(
+                    base_url="https://runtime.example/openai",
+                    model_id="gpt-test",
+                    api_key="secret",
+                    provider_type="OPENAI_COMPATIBLE",
+                ),
+                {"model": "gpt-test", "messages": []},
+                timeout_seconds=5.0,
+            )
+
+        self.assertEqual(1, len(created_clients))
+        self.assertEqual(
+            [
+                "https://runtime.example/v1/chat/completions",
+                "https://runtime.example/openai/chat/completions",
+            ],
+            [entry["url"] for entry in request_log],
+        )
+
+    def test_should_reuse_shared_client_for_knowledge_calls_on_same_origin(self) -> None:
+        os.environ["LYNXUS_KNOWLEDGE_SERVICE_BASE_URL"] = "https://knowledge.example/api"
+        request = AgentTurnRequest.model_validate(_request_payload())
+        request_log: list[dict] = []
+        created_clients: list[_FakeClient] = []
+
+        def factory(*args, **kwargs):  # noqa: ANN002, ANN003
+            client = _FakeClient(
+                _FakeTransport(
+                    [],
+                    request_log,
+                    payloads_by_url={
+                        "https://knowledge.example/api/internal/retrieve": {"hits": []},
+                        "https://knowledge.example/api/internal/read-chunks": {"chunks": []},
+                    },
+                )
+            )
+            created_clients.append(client)
+            return client
+
+        with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=factory):
+            execute_tool_call(request, "knowledge_search", {"query": "refund"})
+            execute_tool_call(request, "knowledge_read", {"chunkIds": ["chunk-1"]})
+
+        self.assertEqual(1, len(created_clients))
+        self.assertEqual(
+            [
+                "https://knowledge.example/api/internal/retrieve",
+                "https://knowledge.example/api/internal/read-chunks",
+            ],
+            [entry["url"] for entry in request_log],
+        )
