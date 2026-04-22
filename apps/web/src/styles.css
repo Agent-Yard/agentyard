@@ -940,6 +940,15 @@ pre,
   color: var(--ink);
 }
 
+.console-page-body .ant-descriptions:not(.ant-descriptions-bordered) .ant-descriptions-item-container {
+  gap: 8px;
+}
+
+.console-page-body .ant-descriptions:not(.ant-descriptions-bordered) .ant-descriptions-item-container .ant-descriptions-item-label,
+.console-page-body .ant-descriptions:not(.ant-descriptions-bordered) .ant-descriptions-item-container .ant-descriptions-item-content {
+  align-items: center;
+}
+
 .console-page-body .ant-descriptions-bordered .ant-descriptions-view {
   border-color: var(--line);
   border-radius: var(--r-sm);
