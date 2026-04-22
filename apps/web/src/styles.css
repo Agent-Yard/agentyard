@@ -29,8 +29,29 @@
   --info: #8d521b;
   --info-tint: rgba(182, 109, 42, 0.12);
 
-  --font-sans: 'Fira Sans', 'IBM Plex Sans', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  --font-mono: 'Fira Code', 'JetBrains Mono', 'SFMono-Regular', 'SF Mono', Menlo, monospace;
+  --font-sans:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI Variable Text',
+    'Segoe UI',
+    'PingFang SC',
+    'Hiragino Sans GB',
+    'Noto Sans CJK SC',
+    'Microsoft YaHei UI',
+    'Microsoft YaHei',
+    sans-serif;
+  --font-mono:
+    ui-monospace,
+    'SFMono-Regular',
+    'SF Mono',
+    'Cascadia Mono',
+    'Cascadia Code',
+    'JetBrains Mono',
+    'Fira Code',
+    Consolas,
+    Menlo,
+    monospace;
 
   --r-sm: 4px;
   --r: 8px;
@@ -65,7 +86,6 @@ body {
   font-size: 13px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
-  font-feature-settings: 'cv11', 'ss01', 'ss03';
 }
 
 a {
