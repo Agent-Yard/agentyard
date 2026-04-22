@@ -4,6 +4,8 @@ plugins {
     id("io.spring.dependency-management") version "1.1.7"
 }
 
+val temporalVersion: String by rootProject.extra
+
 java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(25))
@@ -28,7 +30,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-flyway")
     implementation("org.flywaydb:flyway-database-postgresql")
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.5")
-    implementation("io.temporal:temporal-sdk:1.32.1")
+    implementation("io.temporal:temporal-sdk:$temporalVersion")
     implementation("org.postgresql:postgresql:42.7.7")
     implementation("io.minio:minio:8.5.17")
 
