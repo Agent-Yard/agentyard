@@ -6,11 +6,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.lynxus.contracts.session.SessionContracts.AgentConfig;
 import com.lynxus.contracts.session.SessionContracts.AgentDecision;
 import com.lynxus.contracts.session.SessionContracts.AgentDecisionAction;
+import com.lynxus.contracts.session.SessionContracts.AgentTurnExecutionOutcome;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnRequest;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnResult;
 import com.lynxus.contracts.session.SessionContracts.AssistantSessionConfig;
 import com.lynxus.contracts.session.SessionContracts.ExternalCallbackSignal;
 import com.lynxus.contracts.session.SessionContracts.HumanResumeSignal;
+import com.lynxus.contracts.session.SessionContracts.LlmUsageEntry;
+import com.lynxus.contracts.session.SessionContracts.LlmUsageSourceType;
 import com.lynxus.contracts.session.SessionContracts.PlaybookConfig;
 import com.lynxus.contracts.session.SessionContracts.PlaybookEdge;
 import com.lynxus.contracts.session.SessionContracts.PlaybookExecutionPolicy;
@@ -422,6 +425,118 @@ class SessionWorkflowImplTest {
     }
 
     @Test
+    void noReplyDecision_shouldPersistLlmUsageWithSessionContext() {
+        try (TestWorkflowEnvironment environment = TestWorkflowEnvironment.newInstance()) {
+            Worker worker = environment.newWorker("session-tests-llm-usage-context");
+            RecordingPersistenceActivities persistence = new RecordingPersistenceActivities();
+            worker.registerWorkflowImplementationTypes(SessionWorkflowImpl.class);
+            worker.registerActivitiesImplementations(new NoReplyWithLlmUsageActivities(), persistence);
+            environment.start();
+
+            SessionWorkflow workflow = environment.getWorkflowClient().newWorkflowStub(
+                SessionWorkflow.class,
+                WorkflowOptions.newBuilder()
+                    .setTaskQueue("session-tests-llm-usage-context")
+                    .setWorkflowId("session-llm-usage-context")
+                    .build()
+            );
+            WorkflowClient.start(workflow::run, startRequestForAgentActions(List.of(AgentDecisionAction.NO_REPLY)));
+
+            assertEquals(
+                SessionMessageDeliveryStatus.ACCEPTED,
+                workflow.submitUserMessage(new UserMessage("msg-1", "customer-1", "start", Map.of())).status()
+            );
+
+            waitForLlmUsageCount(environment, persistence, 1);
+            SessionPersistenceActivities.LlmUsageRecord record = persistence.llmUsageRecords().getFirst();
+            assertEquals("SESSION_OWNER_MODEL", record.sourceType());
+            assertEquals("session-1", record.sessionId());
+            assertEquals("scenario-1", record.scenarioId());
+            assertEquals("customer-1", record.customerId());
+            assertEquals("assistant-1", record.assistantId());
+            assertEquals("2026.04.20", record.assistantReleaseVersion());
+            assertEquals("agent-1", record.agentId());
+            assertEquals("OPENAI_COMPATIBLE", record.providerType());
+            assertEquals("model-1", record.modelResourceId());
+            assertEquals("model-ver-1", record.modelResourceVersionId());
+            assertEquals("gpt-test", record.modelId());
+            assertEquals(true, record.usageAvailable());
+            assertEquals(13, record.promptTokens());
+            assertEquals(21, record.totalTokens());
+            assertEquals(1, record.callSequence());
+            assertEquals(0, record.toolLoopStep());
+        }
+    }
+
+    @Test
+    void rejectedDecision_shouldPersistLlmUsageBeforeRejectionEvent() {
+        try (TestWorkflowEnvironment environment = TestWorkflowEnvironment.newInstance()) {
+            Worker worker = environment.newWorker("session-tests-llm-usage-rejection-order");
+            RecordingPersistenceActivities persistence = new RecordingPersistenceActivities();
+            worker.registerWorkflowImplementationTypes(SessionWorkflowImpl.class);
+            worker.registerActivitiesImplementations(new RejectedDecisionWithLlmUsageActivities(), persistence);
+            environment.start();
+
+            SessionWorkflow workflow = environment.getWorkflowClient().newWorkflowStub(
+                SessionWorkflow.class,
+                WorkflowOptions.newBuilder()
+                    .setTaskQueue("session-tests-llm-usage-rejection-order")
+                    .setWorkflowId("session-llm-usage-rejection-order")
+                    .build()
+            );
+            WorkflowClient.start(workflow::run, startRequestForAgentActions(List.of(AgentDecisionAction.RUN_PLAYBOOK)));
+
+            assertEquals(
+                SessionMessageDeliveryStatus.ACCEPTED,
+                workflow.submitUserMessage(new UserMessage("msg-1", "customer-1", "start", Map.of())).status()
+            );
+
+            waitForEvent(environment, persistence, SessionEventType.AGENT_DECISION_REJECTED);
+            assertEquals(1, persistence.llmUsageRecords().size());
+            assertTrue(
+                persistence.firstOperationIndex("appendLlmUsage:count=1")
+                    < persistence.firstOperationIndex("appendEvent:AGENT_DECISION_REJECTED")
+            );
+        }
+    }
+
+    @Test
+    void failedExecutionOutcome_shouldPersistLlmUsageBeforeFailureEvent() {
+        try (TestWorkflowEnvironment environment = TestWorkflowEnvironment.newInstance()) {
+            Worker worker = environment.newWorker("session-tests-llm-usage-failure-order");
+            RecordingPersistenceActivities persistence = new RecordingPersistenceActivities();
+            worker.registerWorkflowImplementationTypes(SessionWorkflowImpl.class);
+            worker.registerActivitiesImplementations(new FailedOutcomeWithLlmUsageActivities(), persistence);
+            environment.start();
+
+            SessionWorkflow workflow = environment.getWorkflowClient().newWorkflowStub(
+                SessionWorkflow.class,
+                WorkflowOptions.newBuilder()
+                    .setTaskQueue("session-tests-llm-usage-failure-order")
+                    .setWorkflowId("session-llm-usage-failure-order")
+                    .build()
+            );
+            WorkflowClient.start(workflow::run, startRequestForAgentActions(List.of(AgentDecisionAction.NO_REPLY)));
+
+            assertEquals(
+                SessionMessageDeliveryStatus.ACCEPTED,
+                workflow.submitUserMessage(new UserMessage("msg-1", "customer-1", "start", Map.of())).status()
+            );
+
+            waitForEvent(environment, persistence, SessionEventType.AGENT_TURN_FAILED);
+            assertEquals(1, persistence.llmUsageRecords().size());
+            assertEquals(
+                "runtime returned malformed final JSON",
+                latestEventOfType(persistence.events(), SessionEventType.AGENT_TURN_FAILED).payload().get("reason")
+            );
+            assertTrue(
+                persistence.firstOperationIndex("appendLlmUsage:count=1")
+                    < persistence.firstOperationIndex("appendEvent:AGENT_TURN_FAILED")
+            );
+        }
+    }
+
+    @Test
     void malformedSwitchOwnerDecision_shouldBeRejectedByWorkerAuthority() {
         try (TestWorkflowEnvironment environment = TestWorkflowEnvironment.newInstance()) {
             Worker worker = environment.newWorker("session-tests-invalid-switch-owner");
@@ -617,6 +732,20 @@ class SessionWorkflowImplTest {
         );
     }
 
+    private static void waitForLlmUsageCount(
+        TestWorkflowEnvironment environment,
+        RecordingPersistenceActivities persistence,
+        long expectedCount
+    ) {
+        for (int attempt = 0; attempt < 20; attempt += 1) {
+            if (persistence.llmUsageRecords().size() >= expectedCount) {
+                return;
+            }
+            environment.sleep(Duration.ofMillis(200));
+        }
+        throw new AssertionError("expected llm usage count not reached: " + persistence.llmUsageRecords().size());
+    }
+
     private static SessionSnapshot waitForWorkflowCompletion(
         TestWorkflowEnvironment environment,
         SessionWorkflow workflow
@@ -642,11 +771,23 @@ class SessionWorkflowImplTest {
             .orElseThrow();
     }
 
+    private static AgentTurnExecutionOutcome successOutcome(AgentTurnResult result) {
+        return new AgentTurnExecutionOutcome(true, result, null, List.of());
+    }
+
+    private static AgentTurnExecutionOutcome successOutcome(AgentTurnResult result, List<LlmUsageEntry> llmUsage) {
+        return new AgentTurnExecutionOutcome(true, result, null, llmUsage);
+    }
+
+    private static AgentTurnExecutionOutcome failedOutcome(String failureReason, List<LlmUsageEntry> llmUsage) {
+        return new AgentTurnExecutionOutcome(false, null, failureReason, llmUsage);
+    }
+
     private static final class RunPlaybookAgentTurnActivities implements AgentTurnActivities {
         @Override
-        public AgentTurnResult executeTurn(AgentTurnRequest request) {
+        public AgentTurnExecutionOutcome executeTurn(AgentTurnRequest request) {
             if (request.trigger().triggerType() == SessionTriggerType.USER_MESSAGE) {
-                return new AgentTurnResult(
+                return successOutcome(new AgentTurnResult(
                     new AgentDecision(
                         AgentDecisionAction.RUN_PLAYBOOK,
                         null,
@@ -657,13 +798,13 @@ class SessionWorkflowImplTest {
                     ),
                     Map.of(),
                     null
-                );
+                ));
             }
-            return new AgentTurnResult(
+            return successOutcome(new AgentTurnResult(
                 new AgentDecision(AgentDecisionAction.NO_REPLY, null, null, null, Map.of(), null),
                 Map.of(),
                 null
-            );
+            ));
         }
     }
 
@@ -671,10 +812,10 @@ class SessionWorkflowImplTest {
         private final List<SessionTriggerType> triggerTypes = new CopyOnWriteArrayList<>();
 
         @Override
-        public AgentTurnResult executeTurn(AgentTurnRequest request) {
+        public AgentTurnExecutionOutcome executeTurn(AgentTurnRequest request) {
             triggerTypes.add(request.trigger().triggerType());
             if (request.trigger().triggerType() == SessionTriggerType.USER_MESSAGE) {
-                return new AgentTurnResult(
+                return successOutcome(new AgentTurnResult(
                     new AgentDecision(
                         AgentDecisionAction.RUN_PLAYBOOK,
                         null,
@@ -685,13 +826,13 @@ class SessionWorkflowImplTest {
                     ),
                     Map.of(),
                     null
-                );
+                ));
             }
-            return new AgentTurnResult(
+            return successOutcome(new AgentTurnResult(
                 new AgentDecision(AgentDecisionAction.NO_REPLY, null, null, null, Map.of(), null),
                 Map.of(),
                 null
-            );
+            ));
         }
 
         List<SessionTriggerType> triggerTypes() {
@@ -701,8 +842,8 @@ class SessionWorkflowImplTest {
 
     private static final class HandoffAgentTurnActivities implements AgentTurnActivities {
         @Override
-        public AgentTurnResult executeTurn(AgentTurnRequest request) {
-            return new AgentTurnResult(
+        public AgentTurnExecutionOutcome executeTurn(AgentTurnRequest request) {
+            return successOutcome(new AgentTurnResult(
                 new AgentDecision(
                     AgentDecisionAction.SESSION_HUMAN_HANDOFF,
                     null,
@@ -713,14 +854,14 @@ class SessionWorkflowImplTest {
                 ),
                 Map.of(),
                 null
-            );
+            ));
         }
     }
 
     private static final class MalformedRunPlaybookActivities implements AgentTurnActivities {
         @Override
-        public AgentTurnResult executeTurn(AgentTurnRequest request) {
-            return new AgentTurnResult(
+        public AgentTurnExecutionOutcome executeTurn(AgentTurnRequest request) {
+            return successOutcome(new AgentTurnResult(
                 new AgentDecision(
                     AgentDecisionAction.RUN_PLAYBOOK,
                     null,
@@ -731,14 +872,14 @@ class SessionWorkflowImplTest {
                 ),
                 Map.of("reviewMarker", "malformed-run-playbook"),
                 null
-            );
+            ));
         }
     }
 
     private static final class MalformedSwitchOwnerActivities implements AgentTurnActivities {
         @Override
-        public AgentTurnResult executeTurn(AgentTurnRequest request) {
-            return new AgentTurnResult(
+        public AgentTurnExecutionOutcome executeTurn(AgentTurnRequest request) {
+            return successOutcome(new AgentTurnResult(
                 new AgentDecision(
                     AgentDecisionAction.SWITCH_OWNER,
                     null,
@@ -749,14 +890,14 @@ class SessionWorkflowImplTest {
                 ),
                 Map.of("reviewMarker", "malformed-switch-owner"),
                 null
-            );
+            ));
         }
     }
 
     private static final class ReplyWithExtraFieldsActivities implements AgentTurnActivities {
         @Override
-        public AgentTurnResult executeTurn(AgentTurnRequest request) {
-            return new AgentTurnResult(
+        public AgentTurnExecutionOutcome executeTurn(AgentTurnRequest request) {
+            return successOutcome(new AgentTurnResult(
                 new AgentDecision(
                     AgentDecisionAction.REPLY,
                     "reply from owner",
@@ -767,7 +908,7 @@ class SessionWorkflowImplTest {
                 ),
                 Map.of(),
                 null
-            );
+            ));
         }
     }
 
@@ -775,7 +916,7 @@ class SessionWorkflowImplTest {
         private int turnCount = 0;
 
         @Override
-        public AgentTurnResult executeTurn(AgentTurnRequest request) {
+        public AgentTurnExecutionOutcome executeTurn(AgentTurnRequest request) {
             turnCount += 1;
             PrivacyMappingTelemetry telemetry = turnCount == 1
                 ? new PrivacyMappingTelemetry(
@@ -802,10 +943,93 @@ class SessionWorkflowImplTest {
                     0,
                     Instant.parse("2026-04-20T12:01:00Z")
                 );
-            return new AgentTurnResult(
+            return successOutcome(new AgentTurnResult(
                 new AgentDecision(AgentDecisionAction.NO_REPLY, null, null, null, Map.of(), null),
                 Map.of(),
                 telemetry
+            ));
+        }
+    }
+
+    private static final class NoReplyWithLlmUsageActivities implements AgentTurnActivities {
+        @Override
+        public AgentTurnExecutionOutcome executeTurn(AgentTurnRequest request) {
+            return successOutcome(new AgentTurnResult(
+                new AgentDecision(AgentDecisionAction.NO_REPLY, null, null, null, Map.of(), null),
+                Map.of(),
+                null
+            ), List.of(new LlmUsageEntry(
+                    LlmUsageSourceType.SESSION_OWNER_MODEL,
+                    1,
+                    0,
+                    "OPENAI_COMPATIBLE",
+                    "model-1",
+                    "model-ver-1",
+                    "gpt-test",
+                    true,
+                    13,
+                    8,
+                    21,
+                    Map.of("prompt_tokens", 13, "completion_tokens", 8, "total_tokens", 21),
+                    Instant.parse("2026-04-22T00:00:00Z")
+                ))
+            );
+        }
+    }
+
+    private static final class RejectedDecisionWithLlmUsageActivities implements AgentTurnActivities {
+        @Override
+        public AgentTurnExecutionOutcome executeTurn(AgentTurnRequest request) {
+            return successOutcome(new AgentTurnResult(
+                new AgentDecision(
+                    AgentDecisionAction.RUN_PLAYBOOK,
+                    null,
+                    "agent-2",
+                    null,
+                    Map.of("customerId", "customer-1"),
+                    null
+                ),
+                Map.of(),
+                null
+            ), List.of(new LlmUsageEntry(
+                    LlmUsageSourceType.SESSION_OWNER_MODEL,
+                    1,
+                    0,
+                    "OPENAI_COMPATIBLE",
+                    "model-1",
+                    "model-ver-1",
+                    "gpt-test",
+                    true,
+                    9,
+                    4,
+                    13,
+                    Map.of("prompt_tokens", 9, "completion_tokens", 4, "total_tokens", 13),
+                    Instant.parse("2026-04-22T00:00:01Z")
+                ))
+            );
+        }
+    }
+
+    private static final class FailedOutcomeWithLlmUsageActivities implements AgentTurnActivities {
+        @Override
+        public AgentTurnExecutionOutcome executeTurn(AgentTurnRequest request) {
+            return failedOutcome(
+                "runtime returned malformed final JSON",
+                List.of(new LlmUsageEntry(
+                    LlmUsageSourceType.SESSION_OWNER_MODEL,
+                    1,
+                    0,
+                    "OPENAI_COMPATIBLE",
+                    "model-1",
+                    "model-ver-1",
+                    "gpt-test",
+                    true,
+                    15,
+                    6,
+                    21,
+                    Map.of("prompt_tokens", 15, "completion_tokens", 6, "total_tokens", 21),
+                    Instant.parse("2026-04-22T00:00:02Z")
+                ))
             );
         }
     }
@@ -825,6 +1049,7 @@ class SessionWorkflowImplTest {
     private static final class RecordingPersistenceActivities implements SessionPersistenceActivities {
         private final List<SessionEvent> events = new CopyOnWriteArrayList<>();
         private final List<PlatformEventRecord> platformEvents = new CopyOnWriteArrayList<>();
+        private final List<LlmUsageRecord> llmUsageRecords = new CopyOnWriteArrayList<>();
         private final ConcurrentMap<String, PlaybookRun> playbookRuns = new ConcurrentHashMap<>();
         private final List<String> operations = new CopyOnWriteArrayList<>();
 
@@ -845,6 +1070,12 @@ class SessionWorkflowImplTest {
         }
 
         @Override
+        public void appendLlmUsage(List<LlmUsageRecord> records) {
+            operations.add("appendLlmUsage:count=" + records.size());
+            llmUsageRecords.addAll(records);
+        }
+
+        @Override
         public void savePlaybookRun(PlaybookRun playbookRun) {
             playbookRuns.put(playbookRun.runId(), playbookRun);
         }
@@ -855,6 +1086,10 @@ class SessionWorkflowImplTest {
 
         List<PlatformEventRecord> platformEvents() {
             return new ArrayList<>(platformEvents);
+        }
+
+        List<LlmUsageRecord> llmUsageRecords() {
+            return new ArrayList<>(llmUsageRecords);
         }
 
         int firstOperationIndex(String operation) {

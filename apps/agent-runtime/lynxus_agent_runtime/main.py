@@ -18,7 +18,7 @@ from lynxus_common import (
 )
 
 from .decisioning import execute_agent_turn
-from .models import AgentTurnRequest, AgentTurnResult, PlaybookToolTaskRequest, PlaybookToolTaskResult
+from .models import AgentTurnExecutionOutcome, AgentTurnRequest, PlaybookToolTaskRequest, PlaybookToolTaskResult
 from .redis_support import RedisSettings, create_redis_client
 from .tooling import execute_playbook_tool_task
 
@@ -101,32 +101,39 @@ async def healthz() -> JSONResponse:
     return JSONResponse(status_code=report.status_code, content=report.body)
 
 
-@app.post("/agent-turns/execute", response_model=AgentTurnResult)
+@app.post("/agent-turns/execute", response_model=AgentTurnExecutionOutcome)
 async def execute_turn(
     request: AgentTurnRequest,
     _: None = Depends(require_internal_bearer),
-) -> AgentTurnResult:
+) -> AgentTurnExecutionOutcome:
     bind_log_context(
         sessionId=request.sessionId,
         customerId=str(request.trigger.payload.get("customerId") or ""),
     )
-    result, prompt_bundle = execute_agent_turn(request)
-    LOGGER.info(
-        "agent turn executed",
-        extra={
-            "instanceId": INSTANCE_ID,
-            "sessionId": request.sessionId,
-            "assistantId": request.assistantId,
-            "ownerAgentId": request.currentOwner.agentId,
-            "action": result.decision.action,
-            "runtimeMessageCount": len(prompt_bundle.runtime_messages),
-            "hasOpenAiCompatibleProvider": bool(
-                (os.getenv("LYNXUS_OPENAI_COMPATIBLE_BASE_URL") or "").strip()
-                and (os.getenv("LYNXUS_OPENAI_COMPATIBLE_MODEL_ID") or "").strip()
-            ),
-        },
-    )
-    return result
+    outcome, prompt_bundle = execute_agent_turn(request)
+    log_extra = {
+        "instanceId": INSTANCE_ID,
+        "sessionId": request.sessionId,
+        "assistantId": request.assistantId,
+        "ownerAgentId": request.currentOwner.agentId,
+        "runtimeMessageCount": len(prompt_bundle.runtime_messages),
+        "llmUsageCount": len(outcome.llmUsage),
+        "hasOpenAiCompatibleProvider": bool(
+            (os.getenv("LYNXUS_OPENAI_COMPATIBLE_BASE_URL") or "").strip()
+            and (os.getenv("LYNXUS_OPENAI_COMPATIBLE_MODEL_ID") or "").strip()
+        ),
+    }
+    if outcome.success and outcome.result is not None:
+        LOGGER.info(
+            "agent turn executed",
+            extra={**log_extra, "action": outcome.result.decision.action},
+        )
+    else:
+        LOGGER.warning(
+            "agent turn execution returned failure",
+            extra={**log_extra, "failureReason": outcome.failureReason},
+        )
+    return outcome
 
 
 @app.post("/playbook-tool-tasks/execute", response_model=PlaybookToolTaskResult)

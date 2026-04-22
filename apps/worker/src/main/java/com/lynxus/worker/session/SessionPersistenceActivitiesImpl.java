@@ -2,6 +2,7 @@ package com.lynxus.worker.session;
 
 import com.lynxus.contracts.session.SessionContracts.PlaybookRun;
 import com.lynxus.contracts.session.SessionContracts.SessionEvent;
+import java.util.List;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -32,6 +33,11 @@ public class SessionPersistenceActivitiesImpl implements SessionPersistenceActiv
     @Override
     public void appendPlatformEvent(PlatformEventRecord event) {
         repository.appendPlatformEvent(event);
+    }
+
+    @Override
+    public void appendLlmUsage(List<LlmUsageRecord> records) {
+        repository.appendLlmUsage(records);
     }
 
     @Override

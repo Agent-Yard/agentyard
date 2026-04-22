@@ -25,6 +25,7 @@ import com.lynxus.persistence.jooq.tables.ExternalInteractionEvent;
 import com.lynxus.persistence.jooq.tables.ExternalInteractionTask;
 import com.lynxus.persistence.jooq.tables.KnowledgeBase;
 import com.lynxus.persistence.jooq.tables.KnowledgeRelease;
+import com.lynxus.persistence.jooq.tables.LlmUsageRecord;
 import com.lynxus.persistence.jooq.tables.PlatformEvent;
 import com.lynxus.persistence.jooq.tables.PlatformUser;
 import com.lynxus.persistence.jooq.tables.PlatformUserRoleBinding;
@@ -150,6 +151,11 @@ public class Tables {
      * The table <code>public.knowledge_release</code>.
      */
     public static final KnowledgeRelease KNOWLEDGE_RELEASE = KnowledgeRelease.KNOWLEDGE_RELEASE;
+
+    /**
+     * The table <code>public.llm_usage_record</code>.
+     */
+    public static final LlmUsageRecord LLM_USAGE_RECORD = LlmUsageRecord.LLM_USAGE_RECORD;
 
     /**
      * The table <code>public.platform_event</code>.

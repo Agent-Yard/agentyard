@@ -8,6 +8,7 @@
 - 组装 `PromptInstruction + PromptRuntimeMessages + PromptCapabilities`
 - 在单轮推理内执行有上限的 `LLM -> tool_call -> tool_result -> final_decision` 循环
 - 返回新的 `sharedState` 快照
+- 采集单轮内各次 OpenAI-compatible 模型调用的 usage 明细，并随结果回传给 worker 落库
 - 通过内部鉴权和 `traceparent` 头保持服务间调用约束与链路日志
 
 ## 启动
@@ -61,6 +62,7 @@ uv run --directory apps/agent-runtime --package lynxus-agent-runtime pytest test
 
 - runtime 内部先维护语义层消息 / tool 定义 / tool result，再渲染到 OpenAI-compatible 协议
 - 当前 act loop 已接入 OpenAI-compatible function/tool calling
+- 模型 usage 由 runtime 采集，worker 负责补齐业务上下文后落库；当前尚无展示接口
 - `AgentTurnRequest` 现在会携带 assistant release 冻结后的 model / skill / tool descriptor
 - `AgentTurnRequest` 也会携带冻结后的 knowledge binding；runtime 通过内部接口远程调用 knowledge-service 完成在线检索
 - tools 会以模型原生 function/tool definitions 暴露，并按 HTTP / MCP provider config 执行

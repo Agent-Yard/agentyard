@@ -18,7 +18,6 @@ sourceSets {
     }
     create("codegen") {
         java.srcDir("src/codegen/java")
-        compileClasspath += sourceSets["main"].output
         runtimeClasspath += output + compileClasspath
     }
 }

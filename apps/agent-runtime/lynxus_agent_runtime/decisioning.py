@@ -3,12 +3,10 @@ from __future__ import annotations
 import json
 import logging
 import os
-from dataclasses import dataclass
 from typing import Any
 
-import httpx
-
 from .data_security import build_privacy_pipeline
+from .openai_compatible import LlmUsageTracker, OpenAiCompatibleSettings, chat_completion
 from .openai_adapter import (
     assistant_tool_call_message,
     parse_openai_tool_calls,
@@ -16,7 +14,7 @@ from .openai_adapter import (
     render_openai_runtime_message,
     tool_result_message,
 )
-from .models import AgentDecision, AgentTurnRequest, AgentTurnResult
+from .models import AgentDecision, AgentTurnExecutionOutcome, AgentTurnRequest, AgentTurnResult
 from .prompting import PromptBundle, build_prompt_bundle, loaded_skill_runtime_message, render_openai_messages
 from .semantic import SemanticMessage, SemanticToolCall, SemanticToolResult
 from .tooling import execute_tool_call, load_skills, semantic_tool_definitions
@@ -27,39 +25,20 @@ DEFAULT_MAX_TOOL_STEPS = 4
 OPENAI_COMPATIBLE_PROVIDER_TYPES = {"OPENAI", "OPENAI_COMPATIBLE"}
 
 
-@dataclass(frozen=True)
-class ProviderSettings:
-    base_url: str
-    model_id: str
-    api_key: str
-    temperature: float
-    max_tokens: int
-    organization: str
-    project: str
-
-
-def execute_agent_turn(request: AgentTurnRequest) -> tuple[AgentTurnResult, PromptBundle]:
+def execute_agent_turn(request: AgentTurnRequest) -> tuple[AgentTurnExecutionOutcome, PromptBundle]:
     prompt_bundle = build_prompt_bundle(request)
-    result = _execute_via_openai_compatible(request, prompt_bundle)
+    usage_tracker = LlmUsageTracker()
+    result = _execute_via_openai_compatible(request, prompt_bundle, usage_tracker)
     return result, prompt_bundle
 
 
 def _execute_via_openai_compatible(
-    request: AgentTurnRequest, prompt_bundle: PromptBundle
-) -> AgentTurnResult:
+    request: AgentTurnRequest, prompt_bundle: PromptBundle, usage_tracker: LlmUsageTracker
+) -> AgentTurnExecutionOutcome:
     settings = _resolve_provider_settings(request)
     if settings is None:
         raise RuntimeError("no supported model provider configured for current owner")
-    privacy_pipeline = build_privacy_pipeline(request)
-
-    headers = {
-        "Authorization": f"Bearer {settings.api_key}",
-        "Content-Type": "application/json",
-    }
-    if settings.organization:
-        headers["OpenAI-Organization"] = settings.organization
-    if settings.project:
-        headers["OpenAI-Project"] = settings.project
+    privacy_pipeline = build_privacy_pipeline(request, usage_tracker)
 
     try:
         sanitized_bundle = PromptBundle(
@@ -82,110 +61,127 @@ def _execute_via_openai_compatible(
         max_steps = _max_tool_steps()
         tool_call_count = 0
         skill_read_count = 0
-        with httpx.Client(timeout=20.0) as client:
-            for step in range(max_steps + 1):
-                payload: dict[str, Any] = {
-                    "model": settings.model_id,
-                    "temperature": settings.temperature,
-                    "messages": messages,
-                    "tools": tools,
-                }
-                if settings.max_tokens > 0:
-                    payload["max_tokens"] = settings.max_tokens
-                response = client.post(
-                    settings.base_url.rstrip("/") + "/chat/completions",
-                    headers=headers,
-                    json=payload,
-                )
-                response.raise_for_status()
-                message = response.json()["choices"][0]["message"]
-                tool_calls = message.get("tool_calls") or []
-                if tool_calls:
-                    content, semantic_tool_calls = parse_openai_tool_calls(message)
-                    messages.append(render_openai_runtime_message(assistant_tool_call_message(content, semantic_tool_calls)))
-                    for tool_call in semantic_tool_calls:
-                        tool_call_count += 1
-                        restored_arguments = privacy_pipeline.restore_inbound("MODEL_TOOL_ARGUMENT", tool_call.arguments)
-                        restored_tool_call = SemanticToolCall(
-                            call_id=tool_call.call_id,
-                            tool_name=tool_call.tool_name,
-                            arguments=restored_arguments,
-                        )
-                        raw_tool_result = _execute_model_tool_call(request, restored_tool_call)
-                        tool_result = (
-                            raw_tool_result
-                            if tool_call.tool_name in {"knowledge_search", "knowledge_read"}
-                            else privacy_pipeline.sanitize_outbound("TOOL_RESULT", raw_tool_result)
-                        )
-                        messages.append(render_openai_runtime_message(tool_result_message(SemanticToolResult(tool_call.call_id, tool_result))))
-                    continue
+        for step in range(max_steps + 1):
+            usage_tracker.set_tool_loop_step(step)
+            payload: dict[str, Any] = {
+                "model": settings.model_id,
+                "temperature": settings.temperature,
+                "messages": messages,
+                "tools": tools,
+            }
+            if settings.max_tokens > 0:
+                payload["max_tokens"] = settings.max_tokens
+            response_json = chat_completion(
+                settings,
+                payload,
+                timeout_seconds=20.0,
+                usage_tracker=usage_tracker,
+                source_type="SESSION_OWNER_MODEL",
+                tool_loop_step=step,
+            )
+            message = response_json["choices"][0]["message"]
+            tool_calls = message.get("tool_calls") or []
+            if tool_calls:
+                content, semantic_tool_calls = parse_openai_tool_calls(message)
+                messages.append(render_openai_runtime_message(assistant_tool_call_message(content, semantic_tool_calls)))
+                for tool_call in semantic_tool_calls:
+                    tool_call_count += 1
+                    restored_arguments = privacy_pipeline.restore_inbound("MODEL_TOOL_ARGUMENT", tool_call.arguments)
+                    restored_tool_call = SemanticToolCall(
+                        call_id=tool_call.call_id,
+                        tool_name=tool_call.tool_name,
+                        arguments=restored_arguments,
+                    )
+                    raw_tool_result = _execute_model_tool_call(request, restored_tool_call)
+                    tool_result = (
+                        raw_tool_result
+                        if tool_call.tool_name in {"knowledge_search", "knowledge_read"}
+                        else privacy_pipeline.sanitize_outbound("TOOL_RESULT", raw_tool_result)
+                    )
+                    messages.append(render_openai_runtime_message(tool_result_message(SemanticToolResult(tool_call.call_id, tool_result))))
+                continue
 
-                parsed = _extract_json_object(message.get("content"))
-                if not isinstance(parsed, dict):
-                    raise ValueError("model response is not a JSON object")
-                if _is_skill_read_request(parsed):
-                    requested_ids = _parse_skill_reads(parsed, request, loaded_skill_ids)
-                    loaded_skill_ids.update(requested_ids)
-                    skill_read_count += len(requested_ids)
-                    messages.append(
-                        render_openai_runtime_message(
-                            SemanticMessage(
-                                kind="assistant_turn",
-                                content=json.dumps({"skillReads": requested_ids}, ensure_ascii=False),
-                            )
+            parsed = _extract_json_object(message.get("content"))
+            if not isinstance(parsed, dict):
+                raise ValueError("model response is not a JSON object")
+            if _is_skill_read_request(parsed):
+                requested_ids = _parse_skill_reads(parsed, request, loaded_skill_ids)
+                loaded_skill_ids.update(requested_ids)
+                skill_read_count += len(requested_ids)
+                messages.append(
+                    render_openai_runtime_message(
+                        SemanticMessage(
+                            kind="assistant_turn",
+                            content=json.dumps({"skillReads": requested_ids}, ensure_ascii=False),
                         )
                     )
-                    loaded_skills = privacy_pipeline.sanitize_outbound("SKILL_PAYLOAD", load_skills(request, requested_ids))
-                    messages.append(render_openai_runtime_message(loaded_skill_runtime_message(loaded_skills)))
-                    continue
-                parsed = privacy_pipeline.restore_inbound("MODEL_FINAL_RESPONSE", parsed)
-                decision_payload = parsed.get("decision")
-                shared_state = parsed.get("sharedState")
-                result = AgentTurnResult(
-                    decision=AgentDecision.model_validate(decision_payload or {}),
-                    sharedState=shared_state if isinstance(shared_state, dict) else dict(request.sharedState),
-                    mappingTelemetry=privacy_pipeline.telemetry(),
                 )
-                LOGGER.info(
-                    "agent turn executed via openai-compatible provider",
-                    extra={
-                        "sessionId": request.sessionId,
-                        "assistantId": request.assistantId,
-                        "ownerAgentId": request.currentOwner.agentId,
-                        "action": result.decision.action,
-                        "toolLoopSteps": step,
-                        "toolCallCount": tool_call_count,
-                        "skillReadCount": skill_read_count,
-                        "privacyMappingEnabled": privacy_pipeline.enabled,
-                    },
-                )
-                privacy_pipeline.close()
-                return result
+                loaded_skills = privacy_pipeline.sanitize_outbound("SKILL_PAYLOAD", load_skills(request, requested_ids))
+                messages.append(render_openai_runtime_message(loaded_skill_runtime_message(loaded_skills)))
+                continue
+            parsed = privacy_pipeline.restore_inbound("MODEL_FINAL_RESPONSE", parsed)
+            decision_payload = parsed.get("decision")
+            shared_state = parsed.get("sharedState")
+            result = AgentTurnResult(
+                decision=AgentDecision.model_validate(decision_payload or {}),
+                sharedState=shared_state if isinstance(shared_state, dict) else dict(request.sharedState),
+                mappingTelemetry=privacy_pipeline.telemetry(),
+            )
+            outcome = AgentTurnExecutionOutcome(
+                success=True,
+                result=result,
+                llmUsage=usage_tracker.entries(),
+            )
+            LOGGER.info(
+                "agent turn executed via openai-compatible provider",
+                extra={
+                    "sessionId": request.sessionId,
+                    "assistantId": request.assistantId,
+                    "ownerAgentId": request.currentOwner.agentId,
+                    "action": result.decision.action,
+                    "toolLoopSteps": step,
+                    "toolCallCount": tool_call_count,
+                    "skillReadCount": skill_read_count,
+                    "llmUsageCount": len(outcome.llmUsage),
+                    "privacyMappingEnabled": privacy_pipeline.enabled,
+                },
+            )
+            privacy_pipeline.close()
+            return outcome
         raise ValueError("model did not return a final decision within loop step budget")
     except Exception as error:  # noqa: BLE001
+        failure_reason = str(error) or "agent turn execution failed"
         LOGGER.warning(
             "openai-compatible execution failed",
             extra={
                 "sessionId": request.sessionId,
                 "assistantId": request.assistantId,
                 "ownerAgentId": request.currentOwner.agentId,
-                "error": str(error),
+                "error": failure_reason,
+                "llmUsageCount": len(usage_tracker.entries()),
                 "privacyMappingEnabled": privacy_pipeline.enabled,
             },
         )
         privacy_pipeline.close()
-        raise RuntimeError("agent turn execution failed") from error
+        return AgentTurnExecutionOutcome(
+            success=False,
+            failureReason=failure_reason,
+            llmUsage=usage_tracker.entries(),
+        )
 
 
-def _resolve_provider_settings(request: AgentTurnRequest) -> ProviderSettings | None:
+def _resolve_provider_settings(request: AgentTurnRequest) -> OpenAiCompatibleSettings | None:
     model = request.currentOwner.model
     if model is not None and model.providerType.upper() in OPENAI_COMPATIBLE_PROVIDER_TYPES:
         api_key = (os.getenv(model.apiKeyEnvVar) or "").strip()
         if api_key and model.baseUrl.strip() and model.modelId.strip():
-            return ProviderSettings(
+            return OpenAiCompatibleSettings(
                 base_url=model.baseUrl.strip(),
                 model_id=model.modelId.strip(),
                 api_key=api_key,
+                provider_type=model.providerType.upper(),
+                model_resource_id=model.resourceId,
+                model_resource_version_id=model.resourceVersionId,
                 temperature=model.temperature,
                 max_tokens=model.maxTokens,
                 organization=(os.getenv("LYNXUS_OPENAI_COMPATIBLE_ORGANIZATION") or "").strip(),
@@ -199,10 +195,11 @@ def _resolve_provider_settings(request: AgentTurnRequest) -> ProviderSettings | 
     api_key = (os.getenv(api_key_env) or "").strip()
     if not api_key:
         return None
-    return ProviderSettings(
+    return OpenAiCompatibleSettings(
         base_url=base_url,
         model_id=model_id,
         api_key=api_key,
+        provider_type="OPENAI_COMPATIBLE",
         temperature=0,
         max_tokens=0,
         organization=(os.getenv("LYNXUS_OPENAI_COMPATIBLE_ORGANIZATION") or "").strip(),

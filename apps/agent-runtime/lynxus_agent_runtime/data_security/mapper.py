@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..openai_compatible import LlmUsageTracker
 from .rewriter import PrivateLlmRewriter
 from .policy import PrivacyPolicy
 from .rules import restore_value, sanitize_value
@@ -16,11 +17,17 @@ from .validator import (
 
 
 class PrivacyMapper:
-    def __init__(self, policy: PrivacyPolicy, store: SessionPrivacyMapStore, trace: MappingTrace) -> None:
+    def __init__(
+        self,
+        policy: PrivacyPolicy,
+        store: SessionPrivacyMapStore,
+        trace: MappingTrace,
+        usage_tracker: LlmUsageTracker | None = None,
+    ) -> None:
         self._policy = policy
         self._store = store
         self._trace = trace
-        self._rewriter = PrivateLlmRewriter(policy.model_binding)
+        self._rewriter = PrivateLlmRewriter(policy.model_binding, usage_tracker)
 
     def sanitize(self, payload: Any, channel: str) -> Any:
         if not self._policy.enabled:

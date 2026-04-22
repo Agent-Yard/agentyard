@@ -1,7 +1,7 @@
 package com.lynxus.worker.runtime;
 
 import com.lynxus.contracts.session.SessionContracts.AgentTurnRequest;
-import com.lynxus.contracts.session.SessionContracts.AgentTurnResult;
+import com.lynxus.contracts.session.SessionContracts.AgentTurnExecutionOutcome;
 import com.lynxus.contracts.session.SessionContracts.PlaybookToolTaskRequest;
 import com.lynxus.contracts.session.SessionContracts.PlaybookToolTaskResult;
 import java.io.IOException;
@@ -17,7 +17,7 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.cfg.DateTimeFeature;
 
 public interface SessionAgentRuntimeGateway {
-    AgentTurnResult executeTurn(AgentTurnRequest request);
+    AgentTurnExecutionOutcome executeTurn(AgentTurnRequest request);
 
     PlaybookToolTaskResult executePlaybookToolTask(PlaybookToolTaskRequest request);
 
@@ -43,8 +43,8 @@ public interface SessionAgentRuntimeGateway {
         }
 
         @Override
-        public AgentTurnResult executeTurn(AgentTurnRequest request) {
-            return post("/agent-turns/execute", request, AgentTurnResult.class, "agent-turn execution failed");
+        public AgentTurnExecutionOutcome executeTurn(AgentTurnRequest request) {
+            return post("/agent-turns/execute", request, AgentTurnExecutionOutcome.class, "agent-turn execution failed");
         }
 
         @Override

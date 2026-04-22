@@ -131,6 +131,22 @@ class PrivacyMappingTelemetry(BaseModel):
     lastProcessedAt: str | None = None
 
 
+class LlmUsageEntry(BaseModel):
+    sourceType: Literal["SESSION_OWNER_MODEL", "SESSION_PRIVACY_MODEL"]
+    callSequence: int
+    toolLoopStep: int = 0
+    providerType: str
+    modelResourceId: str | None = None
+    modelResourceVersionId: str | None = None
+    modelId: str
+    usageAvailable: bool = False
+    promptTokens: int | None = None
+    completionTokens: int | None = None
+    totalTokens: int | None = None
+    rawUsage: dict[str, Any] = Field(default_factory=dict)
+    occurredAt: str
+
+
 class SessionEvent(BaseModel):
     eventId: str
     sessionId: str
@@ -189,6 +205,21 @@ class AgentTurnResult(BaseModel):
     decision: AgentDecision
     sharedState: dict[str, Any] = Field(default_factory=dict)
     mappingTelemetry: PrivacyMappingTelemetry | None = None
+
+
+class AgentTurnExecutionOutcome(BaseModel):
+    success: bool
+    result: AgentTurnResult | None = None
+    failureReason: str | None = None
+    llmUsage: list[LlmUsageEntry] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_outcome(self) -> "AgentTurnExecutionOutcome":
+        if self.success and self.result is None:
+            raise ValueError("successful outcome requires result")
+        if not self.success and not (self.failureReason or "").strip():
+            raise ValueError("failed outcome requires failureReason")
+        return self
 
 
 class PlaybookToolTaskRequest(BaseModel):

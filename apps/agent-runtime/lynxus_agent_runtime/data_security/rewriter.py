@@ -5,8 +5,7 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
-import httpx
-
+from ..openai_compatible import LlmUsageTracker, OpenAiCompatibleSettings, chat_completion
 from .store import SessionPrivacyMapStore
 from .validator import PrivacyMappingBlockedError
 
@@ -19,8 +18,9 @@ class RewriteResult:
 
 
 class PrivateLlmRewriter:
-    def __init__(self, model_binding: Any | None) -> None:
+    def __init__(self, model_binding: Any | None, usage_tracker: LlmUsageTracker | None = None) -> None:
         self._binding = model_binding
+        self._usage_tracker = usage_tracker
 
     @property
     def enabled(self) -> bool:
@@ -106,17 +106,22 @@ class PrivateLlmRewriter:
             ],
             "response_format": response_format,
         }
-        with httpx.Client(timeout=10.0) as client:
-            response = client.post(
-                self._binding.baseUrl.rstrip("/") + "/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-            )
-            response.raise_for_status()
-        content = response.json()["choices"][0]["message"]["content"]
+        response_json = chat_completion(
+            OpenAiCompatibleSettings(
+                base_url=self._binding.baseUrl.rstrip("/"),
+                model_id=self._binding.modelId,
+                api_key=api_key,
+                provider_type=str(getattr(self._binding, "providerType", "OPENAI_COMPATIBLE")).upper(),
+                model_resource_id=getattr(self._binding, "resourceId", None),
+                model_resource_version_id=getattr(self._binding, "resourceVersionId", None),
+            ),
+            payload,
+            timeout_seconds=10.0,
+            usage_tracker=self._usage_tracker,
+            source_type="SESSION_PRIVACY_MODEL",
+            tool_loop_step=None if self._usage_tracker is None else self._usage_tracker.current_tool_loop_step(),
+        )
+        content = response_json["choices"][0]["message"]["content"]
         parsed = json.loads(content)
         entities = parsed.get("entities", [])
         return entities if isinstance(entities, list) else []

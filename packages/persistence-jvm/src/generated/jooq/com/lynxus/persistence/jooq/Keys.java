@@ -25,6 +25,7 @@ import com.lynxus.persistence.jooq.tables.ExternalInteractionEvent;
 import com.lynxus.persistence.jooq.tables.ExternalInteractionTask;
 import com.lynxus.persistence.jooq.tables.KnowledgeBase;
 import com.lynxus.persistence.jooq.tables.KnowledgeRelease;
+import com.lynxus.persistence.jooq.tables.LlmUsageRecord;
 import com.lynxus.persistence.jooq.tables.PlatformEvent;
 import com.lynxus.persistence.jooq.tables.PlatformUser;
 import com.lynxus.persistence.jooq.tables.PlatformUserRoleBinding;
@@ -59,6 +60,7 @@ import com.lynxus.persistence.jooq.tables.records.ExternalInteractionEventRecord
 import com.lynxus.persistence.jooq.tables.records.ExternalInteractionTaskRecord;
 import com.lynxus.persistence.jooq.tables.records.KnowledgeBaseRecord;
 import com.lynxus.persistence.jooq.tables.records.KnowledgeReleaseRecord;
+import com.lynxus.persistence.jooq.tables.records.LlmUsageRecordRecord;
 import com.lynxus.persistence.jooq.tables.records.PlatformEventRecord;
 import com.lynxus.persistence.jooq.tables.records.PlatformUserRecord;
 import com.lynxus.persistence.jooq.tables.records.PlatformUserRoleBindingRecord;
@@ -111,6 +113,7 @@ public class Keys {
     public static final UniqueKey<ExternalInteractionTaskRecord> EXTERNAL_INTERACTION_TASK_PKEY = Internal.createUniqueKey(ExternalInteractionTask.EXTERNAL_INTERACTION_TASK, DSL.name("external_interaction_task_pkey"), new TableField[] { ExternalInteractionTask.EXTERNAL_INTERACTION_TASK.ID }, true);
     public static final UniqueKey<KnowledgeBaseRecord> KNOWLEDGE_BASE_PKEY = Internal.createUniqueKey(KnowledgeBase.KNOWLEDGE_BASE, DSL.name("knowledge_base_pkey"), new TableField[] { KnowledgeBase.KNOWLEDGE_BASE.ID }, true);
     public static final UniqueKey<KnowledgeReleaseRecord> KNOWLEDGE_RELEASE_PKEY = Internal.createUniqueKey(KnowledgeRelease.KNOWLEDGE_RELEASE, DSL.name("knowledge_release_pkey"), new TableField[] { KnowledgeRelease.KNOWLEDGE_RELEASE.ID }, true);
+    public static final UniqueKey<LlmUsageRecordRecord> LLM_USAGE_RECORD_PKEY = Internal.createUniqueKey(LlmUsageRecord.LLM_USAGE_RECORD, DSL.name("llm_usage_record_pkey"), new TableField[] { LlmUsageRecord.LLM_USAGE_RECORD.ID }, true);
     public static final UniqueKey<PlatformEventRecord> PLATFORM_EVENT_PKEY = Internal.createUniqueKey(PlatformEvent.PLATFORM_EVENT, DSL.name("platform_event_pkey"), new TableField[] { PlatformEvent.PLATFORM_EVENT.ID }, true);
     public static final UniqueKey<PlatformUserRecord> PLATFORM_USER_PKEY = Internal.createUniqueKey(PlatformUser.PLATFORM_USER, DSL.name("platform_user_pkey"), new TableField[] { PlatformUser.PLATFORM_USER.ID }, true);
     public static final UniqueKey<PlatformUserRecord> PLATFORM_USER_USERNAME_KEY = Internal.createUniqueKey(PlatformUser.PLATFORM_USER, DSL.name("platform_user_username_key"), new TableField[] { PlatformUser.PLATFORM_USER.USERNAME }, true);

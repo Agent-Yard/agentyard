@@ -1,7 +1,7 @@
 package com.lynxus.worker.session;
 
 import com.lynxus.contracts.session.SessionContracts.AgentTurnRequest;
-import com.lynxus.contracts.session.SessionContracts.AgentTurnResult;
+import com.lynxus.contracts.session.SessionContracts.AgentTurnExecutionOutcome;
 import com.lynxus.worker.runtime.SessionAgentRuntimeGateway;
 import org.springframework.stereotype.Component;
 
@@ -14,7 +14,7 @@ public class AgentTurnActivitiesImpl implements AgentTurnActivities {
     }
 
     @Override
-    public AgentTurnResult executeTurn(AgentTurnRequest request) {
+    public AgentTurnExecutionOutcome executeTurn(AgentTurnRequest request) {
         return sessionAgentRuntimeGateway.executeTurn(request);
     }
 }

@@ -51,6 +51,11 @@ public final class SessionContracts {
         PLAYBOOK_COMPLETED
     }
 
+    public enum LlmUsageSourceType {
+        SESSION_OWNER_MODEL,
+        SESSION_PRIVACY_MODEL
+    }
+
     public enum SessionActorType {
         USER,
         AGENT,
@@ -379,6 +384,26 @@ public final class SessionContracts {
         }
     }
 
+    public record LlmUsageEntry(
+        LlmUsageSourceType sourceType,
+        int callSequence,
+        int toolLoopStep,
+        String providerType,
+        String modelResourceId,
+        String modelResourceVersionId,
+        String modelId,
+        boolean usageAvailable,
+        Integer promptTokens,
+        Integer completionTokens,
+        Integer totalTokens,
+        Map<String, Object> rawUsage,
+        Instant occurredAt
+    ) {
+        public LlmUsageEntry {
+            rawUsage = immutableObjectMap(rawUsage);
+        }
+    }
+
     public record AgentDecision(
         AgentDecisionAction action,
         String replyContent,
@@ -421,6 +446,25 @@ public final class SessionContracts {
     ) {
         public AgentTurnResult {
             sharedState = immutableObjectMap(sharedState);
+        }
+    }
+
+    public record AgentTurnExecutionOutcome(
+        boolean success,
+        AgentTurnResult result,
+        String failureReason,
+        List<LlmUsageEntry> llmUsage
+    ) {
+        public AgentTurnExecutionOutcome {
+            llmUsage = llmUsage == null ? List.of() : List.copyOf(llmUsage);
+        }
+
+        public AgentTurnExecutionOutcome(
+            boolean success,
+            AgentTurnResult result,
+            String failureReason
+        ) {
+            this(success, result, failureReason, List.of());
         }
     }
 

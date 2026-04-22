@@ -5,6 +5,7 @@ import com.lynxus.contracts.session.SessionContracts.ActivePlaybookSummary;
 import com.lynxus.contracts.session.SessionContracts.AgentConfig;
 import com.lynxus.contracts.session.SessionContracts.AgentDecision;
 import com.lynxus.contracts.session.SessionContracts.AgentDecisionAction;
+import com.lynxus.contracts.session.SessionContracts.AgentTurnExecutionOutcome;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnRequest;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnResult;
 import com.lynxus.contracts.session.SessionContracts.ExternalCallbackSignal;
@@ -36,6 +37,8 @@ import io.temporal.workflow.Async;
 import io.temporal.workflow.ChildWorkflowOptions;
 import io.temporal.workflow.Promise;
 import io.temporal.workflow.Workflow;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -359,9 +362,9 @@ public class SessionWorkflowImpl implements SessionWorkflow {
                 emitDecisionRejected("missing current owner agent", null, currentOwnerAgentId, activePlaybookRunId);
                 break;
             }
-            AgentTurnResult result;
+            AgentTurnExecutionOutcome outcome;
             try {
-                result = activities.executeTurn(new AgentTurnRequest(
+                outcome = activities.executeTurn(new AgentTurnRequest(
                     snapshot.sessionId(),
                     snapshot.assistantId(),
                     snapshot.assistantReleaseVersion(),
@@ -388,6 +391,25 @@ public class SessionWorkflowImpl implements SessionWorkflow {
                 break;
             }
 
+            if (outcome != null && outcome.llmUsage() != null && !outcome.llmUsage().isEmpty()) {
+                persistLlmUsage(trigger, currentOwnerAgentId, activePlaybookRunId, outcome.llmUsage());
+            }
+            if (outcome == null || !outcome.success() || outcome.result() == null) {
+                String failureReason = outcome == null || outcome.failureReason() == null || outcome.failureReason().isBlank()
+                    ? "agent turn failed"
+                    : outcome.failureReason();
+                appendEvent(
+                    SessionEventType.AGENT_TURN_FAILED,
+                    SessionActorType.SYSTEM,
+                    currentOwnerAgentId,
+                    Map.of("reason", failureReason, "triggerType", trigger.triggerType().name()),
+                    activePlaybookRunId,
+                    currentOwnerAgentId
+                );
+                emitOwnerReply(TURN_FAILED_REPLY, SessionActorType.SYSTEM, null, activePlaybookRunId, currentOwnerAgentId);
+                break;
+            }
+            AgentTurnResult result = outcome.result();
             sharedState = result == null ? sharedState : result.sharedState();
             if (result != null && result.mappingTelemetry() != null) {
                 appendPrivacyMappingAuditEvents(currentOwnerAgentId, result.mappingTelemetry());
@@ -982,6 +1004,59 @@ public class SessionWorkflowImpl implements SessionWorkflow {
                 basePayload,
                 now()
             );
+        }
+    }
+
+    private void persistLlmUsage(
+        SessionTrigger trigger,
+        String agentId,
+        String playbookRunId,
+        List<com.lynxus.contracts.session.SessionContracts.LlmUsageEntry> usageEntries
+    ) {
+        persistenceActivities.appendLlmUsage(usageEntries.stream()
+            .map(entry -> new SessionPersistenceActivities.LlmUsageRecord(
+                stableLlmUsageId(trigger.eventId(), entry.callSequence()),
+                entry.sourceType().name(),
+                snapshot.sessionId(),
+                trigger.eventId(),
+                trigger.triggerType().name(),
+                playbookRunId,
+                startRequest.scenarioId(),
+                startRequest.customerId(),
+                startRequest.assistant().assistantId(),
+                snapshot.assistantReleaseVersion(),
+                agentId,
+                entry.providerType(),
+                entry.modelResourceId(),
+                entry.modelResourceVersionId(),
+                entry.modelId(),
+                entry.usageAvailable(),
+                entry.promptTokens(),
+                entry.completionTokens(),
+                entry.totalTokens(),
+                entry.rawUsage(),
+                entry.callSequence(),
+                entry.toolLoopStep(),
+                entry.occurredAt() == null ? now() : entry.occurredAt()
+            ))
+            .toList());
+    }
+
+    private String stableLlmUsageId(String triggerEventId, int callSequence) {
+        return sha256Hex(snapshot.sessionId() + "|" + triggerEventId + "|" + callSequence);
+    }
+
+    private static String sha256Hex(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] encoded = digest.digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder builder = new StringBuilder(encoded.length * 2);
+            for (byte current : encoded) {
+                builder.append(String.format("%02x", current));
+            }
+            return builder.toString();
+        } catch (Exception error) {
+            throw new IllegalStateException("failed to hash llm usage key", error);
         }
     }
 

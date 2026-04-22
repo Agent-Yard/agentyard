@@ -25,6 +25,7 @@ import com.lynxus.persistence.jooq.tables.ExternalInteractionEvent;
 import com.lynxus.persistence.jooq.tables.ExternalInteractionTask;
 import com.lynxus.persistence.jooq.tables.KnowledgeBase;
 import com.lynxus.persistence.jooq.tables.KnowledgeRelease;
+import com.lynxus.persistence.jooq.tables.LlmUsageRecord;
 import com.lynxus.persistence.jooq.tables.PlatformEvent;
 import com.lynxus.persistence.jooq.tables.PlatformUser;
 import com.lynxus.persistence.jooq.tables.PlatformUserRoleBinding;
@@ -166,6 +167,11 @@ public class Public extends SchemaImpl {
     public final KnowledgeRelease KNOWLEDGE_RELEASE = KnowledgeRelease.KNOWLEDGE_RELEASE;
 
     /**
+     * The table <code>public.llm_usage_record</code>.
+     */
+    public final LlmUsageRecord LLM_USAGE_RECORD = LlmUsageRecord.LLM_USAGE_RECORD;
+
+    /**
      * The table <code>public.platform_event</code>.
      */
     public final PlatformEvent PLATFORM_EVENT = PlatformEvent.PLATFORM_EVENT;
@@ -267,6 +273,7 @@ public class Public extends SchemaImpl {
             ExternalInteractionTask.EXTERNAL_INTERACTION_TASK,
             KnowledgeBase.KNOWLEDGE_BASE,
             KnowledgeRelease.KNOWLEDGE_RELEASE,
+            LlmUsageRecord.LLM_USAGE_RECORD,
             PlatformEvent.PLATFORM_EVENT,
             PlatformUser.PLATFORM_USER,
             PlatformUserRoleBinding.PLATFORM_USER_ROLE_BINDING,

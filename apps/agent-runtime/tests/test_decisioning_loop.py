@@ -6,8 +6,10 @@ from unittest.mock import patch
 os.environ.setdefault("LYNXUS_INTERNAL_AUTH_TOKEN", "test-internal-token")
 
 from lynxus_agent_runtime.decisioning import execute_agent_turn
+from lynxus_agent_runtime.data_security.rewriter import PrivateLlmRewriter
 from lynxus_agent_runtime.data_security.rules import SanitizationResult
 from lynxus_agent_runtime.models import AgentTurnRequest, PrivacyMappingTelemetry
+from lynxus_agent_runtime.openai_compatible import LlmUsageTracker
 from lynxus_agent_runtime.openai_adapter import render_openai_tool_definitions
 from lynxus_agent_runtime.tooling import execute_tool_call, resource_tool_function_name, semantic_tool_definitions
 
@@ -342,11 +344,14 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         )
 
         factory = lambda *args, **kwargs: _FakeClient(transport)
-        with patch("lynxus_agent_runtime.decisioning.httpx.Client", side_effect=factory), patch(
+        with patch("lynxus_agent_runtime.openai_compatible.httpx.Client", side_effect=factory), patch(
             "lynxus_agent_runtime.tooling.httpx.Client", side_effect=factory
         ):
-            result, _ = execute_agent_turn(request)
+            outcome, _ = execute_agent_turn(request)
 
+        self.assertTrue(outcome.success)
+        result = outcome.result
+        self.assertIsNotNone(result)
         self.assertEqual(result.decision.action, "REPLY")
         self.assertEqual(result.decision.replyContent, "已为你创建退款工单。")
         self.assertEqual(result.sharedState["ticketId"], "ticket-1")
@@ -358,6 +363,11 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         self.assertEqual(request_log[4]["url"], "https://tool.example/invoke")
         self.assertEqual(request_log[4]["json"], {"subject": "退款申请"})
         self.assertIn("tools", request_log[0]["json"])
+        self.assertEqual(4, len(outcome.llmUsage))
+        self.assertEqual([1, 2, 3, 4], [entry.callSequence for entry in outcome.llmUsage])
+        self.assertEqual([0, 1, 2, 3], [entry.toolLoopStep for entry in outcome.llmUsage])
+        self.assertTrue(all(entry.sourceType == "SESSION_OWNER_MODEL" for entry in outcome.llmUsage))
+        self.assertTrue(all(entry.usageAvailable is False for entry in outcome.llmUsage))
 
     def test_should_fail_when_loop_cannot_finish(self) -> None:
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
@@ -391,11 +401,14 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         )
         factory = lambda *args, **kwargs: _FakeClient(transport)
 
-        with patch("lynxus_agent_runtime.decisioning.httpx.Client", side_effect=factory), patch(
+        with patch("lynxus_agent_runtime.openai_compatible.httpx.Client", side_effect=factory), patch(
             "lynxus_agent_runtime.tooling.httpx.Client", side_effect=factory
         ):
-            with self.assertRaisesRegex(RuntimeError, "agent turn execution failed"):
-                execute_agent_turn(request)
+            outcome, _ = execute_agent_turn(request)
+
+        self.assertFalse(outcome.success)
+        self.assertEqual("model did not return a final decision within loop step budget", outcome.failureReason)
+        self.assertEqual(2, len(outcome.llmUsage))
 
         os.environ.pop("LYNXUS_AGENT_RUNTIME_MAX_TOOL_STEPS", None)
 
@@ -476,11 +489,18 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         )
         factory = lambda *args, **kwargs: _FakeClient(transport)
 
-        with patch("lynxus_agent_runtime.decisioning.httpx.Client", side_effect=factory):
-            result, _ = execute_agent_turn(request)
+        with patch("lynxus_agent_runtime.openai_compatible.httpx.Client", side_effect=factory):
+            outcome, _ = execute_agent_turn(request)
 
+        self.assertTrue(outcome.success)
+        result = outcome.result
+        self.assertIsNotNone(result)
         self.assertEqual(result.decision.action, "REPLY")
         self.assertEqual(result.decision.accompanyingReply, "这条不该阻断")
+        self.assertEqual(1, len(outcome.llmUsage))
+        self.assertFalse(outcome.llmUsage[0].usageAvailable)
+        self.assertIsNone(outcome.llmUsage[0].promptTokens)
+        self.assertEqual({}, outcome.llmUsage[0].rawUsage)
 
     def test_rendered_tool_definitions_should_include_output_schema_metadata(self) -> None:
         request = AgentTurnRequest.model_validate(_request_payload())
@@ -517,13 +537,14 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
                 return SanitizationResult(value, {}, 0)
             return original_sanitize_value(value, store)
 
-        with patch("lynxus_agent_runtime.decisioning.httpx.Client", side_effect=factory), patch(
+        with patch("lynxus_agent_runtime.openai_compatible.httpx.Client", side_effect=factory), patch(
             "lynxus_agent_runtime.data_security.pipeline.SessionPrivacyMapStore",
             _FakePrivacyStore,
         ), patch("lynxus_agent_runtime.data_security.mapper.sanitize_value", side_effect=leaking_sanitize):
-            with self.assertRaisesRegex(RuntimeError, "agent turn execution failed"):
-                execute_agent_turn(request)
+            outcome, _ = execute_agent_turn(request)
 
+        self.assertFalse(outcome.success)
+        self.assertTrue(outcome.failureReason)
         self.assertFalse(any(entry["url"] == "https://runtime.example/chat/completions" for entry in request_log))
 
     def test_should_fail_closed_when_private_rewriter_api_key_is_missing(self) -> None:
@@ -531,18 +552,19 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         os.environ.pop("TEST_PRIVATE_API_KEY", None)
         request_log: list[dict] = []
         payload = _enable_privacy_mapping(_request_payload())
-        payload["trigger"]["payload"]["text"] = "customer Alice Johnson needs a refund"
+        payload["trigger"]["payload"]["text"] = "user Alice Johnson"
         request = AgentTurnRequest.model_validate(payload)
         transport = _FakeTransport([], request_log)
         factory = lambda *args, **kwargs: _FakeClient(transport)
 
-        with patch("lynxus_agent_runtime.decisioning.httpx.Client", side_effect=factory), patch(
+        with patch("lynxus_agent_runtime.openai_compatible.httpx.Client", side_effect=factory), patch(
             "lynxus_agent_runtime.data_security.pipeline.SessionPrivacyMapStore",
             _FakePrivacyStore,
         ):
-            with self.assertRaisesRegex(RuntimeError, "agent turn execution failed"):
-                execute_agent_turn(request)
+            outcome, _ = execute_agent_turn(request)
 
+        self.assertFalse(outcome.success)
+        self.assertTrue(outcome.failureReason)
         self.assertFalse(any(entry["url"] == "https://runtime.example/chat/completions" for entry in request_log))
 
     def test_should_fail_closed_when_rewriter_returns_raw_sensitive_text(self) -> None:
@@ -550,12 +572,12 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         os.environ["TEST_PRIVATE_API_KEY"] = "private-secret"
         request_log: list[dict] = []
         payload = _enable_privacy_mapping(_request_payload())
-        payload["trigger"]["payload"]["text"] = "customer Alice Johnson needs a refund"
+        payload["trigger"]["payload"]["text"] = "user Alice Johnson"
         request = AgentTurnRequest.model_validate(payload)
         transport = _FakeTransport([], request_log)
         factory = lambda *args, **kwargs: _FakeClient(transport)
 
-        with patch("lynxus_agent_runtime.decisioning.httpx.Client", side_effect=factory), patch(
+        with patch("lynxus_agent_runtime.openai_compatible.httpx.Client", side_effect=factory), patch(
             "lynxus_agent_runtime.data_security.pipeline.SessionPrivacyMapStore",
             _FakePrivacyStore,
         ), patch(
@@ -566,7 +588,86 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
                 {"value": "customer Alice Johnson", "entity_type_breakdown": {}, "new_placeholder_count": 0},
             )(),
         ):
-            with self.assertRaisesRegex(RuntimeError, "agent turn execution failed"):
-                execute_agent_turn(request)
+            outcome, _ = execute_agent_turn(request)
 
+        self.assertFalse(outcome.success)
+        self.assertIn("Alice Johnson", outcome.failureReason)
         self.assertFalse(any(entry["url"] == "https://runtime.example/chat/completions" for entry in request_log))
+
+    def test_should_collect_usage_for_private_rewriter_and_owner_model(self) -> None:
+        os.environ["TEST_PRIVATE_API_KEY"] = "private-secret"
+        request_log: list[dict] = []
+        payload = _enable_privacy_mapping(_request_payload())
+        request = AgentTurnRequest.model_validate(payload)
+        usage_tracker = LlmUsageTracker()
+        transport = _FakeTransport(
+            [
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "entities": [
+                                            {
+                                                "rawValue": "Alice Johnson",
+                                                "entityType": "PERSON",
+                                            }
+                                        ]
+                                    },
+                                    ensure_ascii=False,
+                                ),
+                            }
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 5, "completion_tokens": 4, "total_tokens": 9},
+                },
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "decision": {
+                                            "action": "REPLY",
+                                            "replyContent": "已处理",
+                                        },
+                                        "sharedState": {"knownPreference": "email"},
+                                    },
+                                    ensure_ascii=False,
+                                )
+                            }
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 12, "completion_tokens": 6, "total_tokens": 18},
+                },
+            ],
+            request_log,
+        )
+        factory = lambda *args, **kwargs: _FakeClient(transport)
+
+        class _Store:
+            def ensure_mapping(self, entity_type: str, raw_value: str):  # noqa: ANN001
+                return type(
+                    "MappingEntry",
+                    (),
+                    {
+                        "placeholder_id": "[PERSON_001]",
+                        "raw_value": raw_value,
+                        "entity_type": entity_type,
+                        "created": True,
+                    },
+                )()
+
+        with patch("lynxus_agent_runtime.openai_compatible.httpx.Client", side_effect=factory):
+            rewritten = PrivateLlmRewriter(request.effectivePrivacyModelBinding, usage_tracker).rewrite(
+                "user Alice Johnson",
+                _Store(),
+            )
+
+        self.assertEqual("user [PERSON_001]", rewritten.value)
+        self.assertEqual(1, len(usage_tracker.entries()))
+        self.assertEqual("SESSION_PRIVACY_MODEL", usage_tracker.entries()[0].sourceType)
+        self.assertEqual("privacy-model-1", usage_tracker.entries()[0].modelResourceId)
+        self.assertEqual(9, usage_tracker.entries()[0].totalTokens)
+        self.assertEqual([1], [entry.callSequence for entry in usage_tracker.entries()])

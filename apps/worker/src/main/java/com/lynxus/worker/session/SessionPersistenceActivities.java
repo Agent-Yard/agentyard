@@ -16,6 +16,8 @@ public interface SessionPersistenceActivities {
 
     void appendPlatformEvent(PlatformEventRecord event);
 
+    void appendLlmUsage(java.util.List<LlmUsageRecord> records);
+
     void savePlaybookRun(PlaybookRun playbookRun);
 
     record SessionRecord(
@@ -56,6 +58,36 @@ public interface SessionPersistenceActivities {
     ) {
         public PlatformEventRecord {
             payload = immutableObjectMap(payload);
+        }
+    }
+
+    record LlmUsageRecord(
+        String id,
+        String sourceType,
+        String sessionId,
+        String triggerEventId,
+        String triggerType,
+        String playbookRunId,
+        String scenarioId,
+        String customerId,
+        String assistantId,
+        String assistantReleaseVersion,
+        String agentId,
+        String providerType,
+        String modelResourceId,
+        String modelResourceVersionId,
+        String modelId,
+        boolean usageAvailable,
+        Integer promptTokens,
+        Integer completionTokens,
+        Integer totalTokens,
+        Map<String, Object> rawUsage,
+        int callSequence,
+        int toolLoopStep,
+        Instant occurredAt
+    ) {
+        public LlmUsageRecord {
+            rawUsage = immutableObjectMap(rawUsage);
         }
     }
 

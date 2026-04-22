@@ -10,6 +10,7 @@ import com.lynxus.contracts.session.SessionContracts.SessionActorType;
 import com.lynxus.contracts.session.SessionContracts.SessionEvent;
 import com.lynxus.contracts.session.SessionContracts.SessionEventType;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -70,11 +71,61 @@ class SessionPersistenceActivitiesImplTest {
 
         activities.saveSession(session);
         activities.appendEvent(event);
+        activities.appendLlmUsage(List.of(new SessionPersistenceActivities.LlmUsageRecord(
+            "usage-1",
+            "SESSION_OWNER_MODEL",
+            "session-1",
+            "event-1",
+            "USER_MESSAGE",
+            null,
+            "scenario-1",
+            "customer-1",
+            "assistant-1",
+            "1.0.0",
+            "agent-1",
+            "OPENAI_COMPATIBLE",
+            "model-1",
+            "model-ver-1",
+            "gpt-test",
+            true,
+            10,
+            5,
+            15,
+            Map.of("prompt_tokens", 10),
+            1,
+            0,
+            Instant.parse("2026-04-21T00:00:01Z")
+        )));
         activities.savePlaybookRun(playbookRun);
 
         verify(publisher, times(3)).publishSessionChanged("session-1");
         verify(repository).saveSession(session);
         verify(repository).appendEvent(event);
+        verify(repository).appendLlmUsage(List.of(new SessionPersistenceActivities.LlmUsageRecord(
+            "usage-1",
+            "SESSION_OWNER_MODEL",
+            "session-1",
+            "event-1",
+            "USER_MESSAGE",
+            null,
+            "scenario-1",
+            "customer-1",
+            "assistant-1",
+            "1.0.0",
+            "agent-1",
+            "OPENAI_COMPATIBLE",
+            "model-1",
+            "model-ver-1",
+            "gpt-test",
+            true,
+            10,
+            5,
+            15,
+            Map.of("prompt_tokens", 10),
+            1,
+            0,
+            Instant.parse("2026-04-21T00:00:01Z")
+        )));
         verify(repository).savePlaybookRun(playbookRun);
     }
 }

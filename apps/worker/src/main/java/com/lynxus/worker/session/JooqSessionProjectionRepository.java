@@ -5,7 +5,9 @@ import com.lynxus.contracts.session.SessionContracts.SessionEvent;
 import com.lynxus.persistence.event.PlatformEventStore;
 import com.lynxus.persistence.jooqsupport.JooqJsonbSupport;
 import com.lynxus.persistence.session.SessionRuntimeStore;
+import com.lynxus.persistence.usage.LlmUsageStore;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import org.jooq.DSLContext;
 import org.springframework.stereotype.Repository;
@@ -15,11 +17,13 @@ import tools.jackson.databind.ObjectMapper;
 public class JooqSessionProjectionRepository {
     private final SessionRuntimeStore sessionStore;
     private final PlatformEventStore platformEventStore;
+    private final LlmUsageStore llmUsageStore;
 
     public JooqSessionProjectionRepository(DSLContext dsl, ObjectMapper objectMapper) {
         JooqJsonbSupport jsonbSupport = new JooqJsonbSupport(objectMapper);
         this.sessionStore = new SessionRuntimeStore(dsl, jsonbSupport);
         this.platformEventStore = new PlatformEventStore(dsl, jsonbSupport);
+        this.llmUsageStore = new LlmUsageStore(dsl, jsonbSupport);
     }
 
     public void saveSession(SessionPersistenceActivities.SessionRecord session) {
@@ -72,6 +76,36 @@ public class JooqSessionProjectionRepository {
             event.payload(),
             event.occurredAt()
         ));
+    }
+
+    public void appendLlmUsage(List<SessionPersistenceActivities.LlmUsageRecord> records) {
+        llmUsageStore.append(records.stream()
+            .map(record -> new LlmUsageStore.LlmUsageData(
+                record.id(),
+                record.sourceType(),
+                record.sessionId(),
+                record.triggerEventId(),
+                record.triggerType(),
+                record.playbookRunId(),
+                record.scenarioId(),
+                record.customerId(),
+                record.assistantId(),
+                record.assistantReleaseVersion(),
+                record.agentId(),
+                record.providerType(),
+                record.modelResourceId(),
+                record.modelResourceVersionId(),
+                record.modelId(),
+                record.usageAvailable(),
+                record.promptTokens(),
+                record.completionTokens(),
+                record.totalTokens(),
+                record.rawUsage(),
+                record.callSequence(),
+                record.toolLoopStep(),
+                record.occurredAt()
+            ))
+            .toList());
     }
 
     public void savePlaybookRun(PlaybookRun playbookRun) {

@@ -553,6 +553,24 @@ export interface AgentDecision {
   accompanyingReply: string | null;
 }
 
+export type LlmUsageSourceType = 'SESSION_OWNER_MODEL' | 'SESSION_PRIVACY_MODEL';
+
+export interface LlmUsageEntry {
+  sourceType: LlmUsageSourceType;
+  callSequence: number;
+  toolLoopStep: number;
+  providerType: string;
+  modelResourceId: string | null;
+  modelResourceVersionId: string | null;
+  modelId: string;
+  usageAvailable: boolean;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  totalTokens: number | null;
+  rawUsage: Record<string, unknown>;
+  occurredAt: string;
+}
+
 export interface AgentTurnRequestV2 {
   sessionId: string;
   assistantId: string;
@@ -572,6 +590,13 @@ export interface AgentTurnResultV2 {
   decision: AgentDecision;
   sharedState: Record<string, unknown>;
   mappingTelemetry: PrivacyMappingTelemetry | null;
+}
+
+export interface AgentTurnExecutionOutcomeV2 {
+  success: boolean;
+  result: AgentTurnResultV2 | null;
+  failureReason: string | null;
+  llmUsage: LlmUsageEntry[];
 }
 
 export interface SessionUserMessageUpdateResult {
