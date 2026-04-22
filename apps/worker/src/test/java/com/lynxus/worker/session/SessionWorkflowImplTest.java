@@ -51,7 +51,7 @@ import org.junit.jupiter.api.Test;
 class SessionWorkflowImplTest {
     @Test
     void shouldAppendPlatformAuditEventsForSessionAndPlaybookRunTransitions() {
-        try (TestWorkflowEnvironment environment = TestWorkflowEnvironment.newInstance()) {
+        try (TestWorkflowEnvironment environment = newRealTimeWorkflowEnvironment()) {
             Worker worker = environment.newWorker("session-tests-platform-audit");
             RecordingPersistenceActivities persistence = new RecordingPersistenceActivities();
             worker.registerWorkflowImplementationTypes(SessionWorkflowImpl.class, PlaybookWorkflowImpl.class);
@@ -65,8 +65,9 @@ class SessionWorkflowImplTest {
                     .setWorkflowId("session-1")
                     .build()
             );
-            WorkflowClient.start(
-                workflow::run,
+            startWorkflowAndWaitUntilReady(
+                environment,
+                workflow,
                 startRequestForAgentActionsAndPolicy(
                     List.of(AgentDecisionAction.RUN_PLAYBOOK, AgentDecisionAction.NO_REPLY),
                     Duration.ofHours(1),
@@ -111,8 +112,9 @@ class SessionWorkflowImplTest {
                     .setWorkflowId("session-1")
                     .build()
             );
-            WorkflowClient.start(
-                workflow::run,
+            startWorkflowAndWaitUntilReady(
+                environment,
+                workflow,
                 startRequestForAgentActionsAndPolicy(
                     List.of(AgentDecisionAction.RUN_PLAYBOOK, AgentDecisionAction.NO_REPLY),
                     Duration.ofHours(1),
@@ -158,8 +160,9 @@ class SessionWorkflowImplTest {
                     .setWorkflowId("session-1")
                     .build()
             );
-            WorkflowClient.start(
-                workflow::run,
+            startWorkflowAndWaitUntilReady(
+                environment,
+                workflow,
                 startRequestForAgentActionsAndPolicy(
                     List.of(AgentDecisionAction.SESSION_HUMAN_HANDOFF),
                     Duration.ofHours(1),
@@ -202,8 +205,9 @@ class SessionWorkflowImplTest {
                 SessionWorkflow.class,
                 WorkflowOptions.newBuilder().setTaskQueue("session-tests-guardrail").setWorkflowId("session-1").build()
             );
-            WorkflowClient.start(
-                workflow::run,
+            startWorkflowAndWaitUntilReady(
+                environment,
+                workflow,
                 startRequestForAgentActionsAndPolicy(
                     List.of(AgentDecisionAction.RUN_PLAYBOOK, AgentDecisionAction.NO_REPLY),
                     Duration.ofHours(1),
@@ -233,7 +237,7 @@ class SessionWorkflowImplTest {
 
     @Test
     void resumeSignals_shouldAppendReceivedEventsOnlyAfterValidation() {
-        try (TestWorkflowEnvironment environment = TestWorkflowEnvironment.newInstance()) {
+        try (TestWorkflowEnvironment environment = newRealTimeWorkflowEnvironment()) {
             Worker worker = environment.newWorker("session-tests");
             RecordingPersistenceActivities persistence = new RecordingPersistenceActivities();
             worker.registerWorkflowImplementationTypes(SessionWorkflowImpl.class, PlaybookWorkflowImpl.class);
@@ -248,7 +252,7 @@ class SessionWorkflowImplTest {
                 SessionWorkflow.class,
                 WorkflowOptions.newBuilder().setTaskQueue("session-tests").setWorkflowId("session-1").build()
             );
-            WorkflowClient.start(workflow::run, startRequest());
+            startWorkflowAndWaitUntilReady(environment, workflow, startRequest());
 
             assertEquals(
                 SessionMessageDeliveryStatus.ACCEPTED,
@@ -282,7 +286,7 @@ class SessionWorkflowImplTest {
 
     @Test
     void malformedRunPlaybookDecision_shouldBeRejectedByWorkerAuthority() {
-        try (TestWorkflowEnvironment environment = TestWorkflowEnvironment.newInstance()) {
+        try (TestWorkflowEnvironment environment = newRealTimeWorkflowEnvironment()) {
             Worker worker = environment.newWorker("session-tests-invalid-run-playbook");
             RecordingPersistenceActivities persistence = new RecordingPersistenceActivities();
             worker.registerWorkflowImplementationTypes(SessionWorkflowImpl.class);
@@ -296,7 +300,7 @@ class SessionWorkflowImplTest {
                     .setWorkflowId("session-invalid-run-playbook")
                     .build()
             );
-            WorkflowClient.start(workflow::run, startRequestForAgentActions(List.of(AgentDecisionAction.RUN_PLAYBOOK)));
+            startWorkflowAndWaitUntilReady(environment, workflow, startRequestForAgentActions(List.of(AgentDecisionAction.RUN_PLAYBOOK)));
 
             assertEquals(
                 SessionMessageDeliveryStatus.ACCEPTED,
@@ -314,7 +318,7 @@ class SessionWorkflowImplTest {
 
     @Test
     void replyDecision_shouldIgnoreExtraFieldsWithoutRejection() {
-        try (TestWorkflowEnvironment environment = TestWorkflowEnvironment.newInstance()) {
+        try (TestWorkflowEnvironment environment = newRealTimeWorkflowEnvironment()) {
             Worker worker = environment.newWorker("session-tests-reply-extra-fields");
             RecordingPersistenceActivities persistence = new RecordingPersistenceActivities();
             worker.registerWorkflowImplementationTypes(SessionWorkflowImpl.class);
@@ -328,7 +332,7 @@ class SessionWorkflowImplTest {
                     .setWorkflowId("session-reply-extra-fields")
                     .build()
             );
-            WorkflowClient.start(workflow::run, startRequestForAgentActions(List.of(AgentDecisionAction.REPLY)));
+            startWorkflowAndWaitUntilReady(environment, workflow, startRequestForAgentActions(List.of(AgentDecisionAction.REPLY)));
 
             assertEquals(
                 SessionMessageDeliveryStatus.ACCEPTED,
@@ -343,7 +347,7 @@ class SessionWorkflowImplTest {
 
     @Test
     void privacyMappingAuditEvents_shouldUsePerTurnTelemetryInsteadOfSessionCumulativeCounts() {
-        try (TestWorkflowEnvironment environment = TestWorkflowEnvironment.newInstance()) {
+        try (TestWorkflowEnvironment environment = newRealTimeWorkflowEnvironment()) {
             Worker worker = environment.newWorker("session-tests-privacy-telemetry");
             RecordingPersistenceActivities persistence = new RecordingPersistenceActivities();
             worker.registerWorkflowImplementationTypes(SessionWorkflowImpl.class);
@@ -357,7 +361,7 @@ class SessionWorkflowImplTest {
                     .setWorkflowId("session-privacy-telemetry")
                     .build()
             );
-            WorkflowClient.start(workflow::run, startRequestForAgentActions(List.of(AgentDecisionAction.NO_REPLY)));
+            startWorkflowAndWaitUntilReady(environment, workflow, startRequestForAgentActions(List.of(AgentDecisionAction.NO_REPLY)));
 
             assertEquals(
                 SessionMessageDeliveryStatus.ACCEPTED,
@@ -394,7 +398,7 @@ class SessionWorkflowImplTest {
 
     @Test
     void rejectedDecision_shouldPersistSharedStateBeforeRejectionEvent() {
-        try (TestWorkflowEnvironment environment = TestWorkflowEnvironment.newInstance()) {
+        try (TestWorkflowEnvironment environment = newRealTimeWorkflowEnvironment()) {
             Worker worker = environment.newWorker("session-tests-shared-state-order");
             RecordingPersistenceActivities persistence = new RecordingPersistenceActivities();
             worker.registerWorkflowImplementationTypes(SessionWorkflowImpl.class);
@@ -408,7 +412,7 @@ class SessionWorkflowImplTest {
                     .setWorkflowId("session-shared-state-order")
                     .build()
             );
-            WorkflowClient.start(workflow::run, startRequestForAgentActions(List.of(AgentDecisionAction.RUN_PLAYBOOK)));
+            startWorkflowAndWaitUntilReady(environment, workflow, startRequestForAgentActions(List.of(AgentDecisionAction.RUN_PLAYBOOK)));
 
             assertEquals(
                 SessionMessageDeliveryStatus.ACCEPTED,
@@ -426,7 +430,7 @@ class SessionWorkflowImplTest {
 
     @Test
     void noReplyDecision_shouldPersistLlmUsageWithSessionContext() {
-        try (TestWorkflowEnvironment environment = TestWorkflowEnvironment.newInstance()) {
+        try (TestWorkflowEnvironment environment = newRealTimeWorkflowEnvironment()) {
             Worker worker = environment.newWorker("session-tests-llm-usage-context");
             RecordingPersistenceActivities persistence = new RecordingPersistenceActivities();
             worker.registerWorkflowImplementationTypes(SessionWorkflowImpl.class);
@@ -440,7 +444,7 @@ class SessionWorkflowImplTest {
                     .setWorkflowId("session-llm-usage-context")
                     .build()
             );
-            WorkflowClient.start(workflow::run, startRequestForAgentActions(List.of(AgentDecisionAction.NO_REPLY)));
+            startWorkflowAndWaitUntilReady(environment, workflow, startRequestForAgentActions(List.of(AgentDecisionAction.NO_REPLY)));
 
             assertEquals(
                 SessionMessageDeliveryStatus.ACCEPTED,
@@ -470,7 +474,7 @@ class SessionWorkflowImplTest {
 
     @Test
     void rejectedDecision_shouldPersistLlmUsageBeforeRejectionEvent() {
-        try (TestWorkflowEnvironment environment = TestWorkflowEnvironment.newInstance()) {
+        try (TestWorkflowEnvironment environment = newRealTimeWorkflowEnvironment()) {
             Worker worker = environment.newWorker("session-tests-llm-usage-rejection-order");
             RecordingPersistenceActivities persistence = new RecordingPersistenceActivities();
             worker.registerWorkflowImplementationTypes(SessionWorkflowImpl.class);
@@ -484,7 +488,7 @@ class SessionWorkflowImplTest {
                     .setWorkflowId("session-llm-usage-rejection-order")
                     .build()
             );
-            WorkflowClient.start(workflow::run, startRequestForAgentActions(List.of(AgentDecisionAction.RUN_PLAYBOOK)));
+            startWorkflowAndWaitUntilReady(environment, workflow, startRequestForAgentActions(List.of(AgentDecisionAction.RUN_PLAYBOOK)));
 
             assertEquals(
                 SessionMessageDeliveryStatus.ACCEPTED,
@@ -502,7 +506,7 @@ class SessionWorkflowImplTest {
 
     @Test
     void failedExecutionOutcome_shouldPersistLlmUsageBeforeFailureEvent() {
-        try (TestWorkflowEnvironment environment = TestWorkflowEnvironment.newInstance()) {
+        try (TestWorkflowEnvironment environment = newRealTimeWorkflowEnvironment()) {
             Worker worker = environment.newWorker("session-tests-llm-usage-failure-order");
             RecordingPersistenceActivities persistence = new RecordingPersistenceActivities();
             worker.registerWorkflowImplementationTypes(SessionWorkflowImpl.class);
@@ -516,7 +520,7 @@ class SessionWorkflowImplTest {
                     .setWorkflowId("session-llm-usage-failure-order")
                     .build()
             );
-            WorkflowClient.start(workflow::run, startRequestForAgentActions(List.of(AgentDecisionAction.NO_REPLY)));
+            startWorkflowAndWaitUntilReady(environment, workflow, startRequestForAgentActions(List.of(AgentDecisionAction.NO_REPLY)));
 
             assertEquals(
                 SessionMessageDeliveryStatus.ACCEPTED,
@@ -538,7 +542,7 @@ class SessionWorkflowImplTest {
 
     @Test
     void malformedSwitchOwnerDecision_shouldBeRejectedByWorkerAuthority() {
-        try (TestWorkflowEnvironment environment = TestWorkflowEnvironment.newInstance()) {
+        try (TestWorkflowEnvironment environment = newRealTimeWorkflowEnvironment()) {
             Worker worker = environment.newWorker("session-tests-invalid-switch-owner");
             RecordingPersistenceActivities persistence = new RecordingPersistenceActivities();
             worker.registerWorkflowImplementationTypes(SessionWorkflowImpl.class);
@@ -552,8 +556,9 @@ class SessionWorkflowImplTest {
                     .setWorkflowId("session-invalid-switch-owner")
                     .build()
             );
-            WorkflowClient.start(
-                workflow::run,
+            startWorkflowAndWaitUntilReady(
+                environment,
+                workflow,
                 startRequestForAgentActions(List.of(AgentDecisionAction.SWITCH_OWNER))
             );
 
@@ -581,6 +586,25 @@ class SessionWorkflowImplTest {
                 .setUseTimeskipping(false)
                 .build()
         );
+    }
+
+    private static void startWorkflowAndWaitUntilReady(
+        TestWorkflowEnvironment environment,
+        SessionWorkflow workflow,
+        SessionStartRequest request
+    ) {
+        WorkflowClient.start(workflow::run, request);
+        for (int attempt = 0; attempt < 20; attempt += 1) {
+            try {
+                if (workflow.currentSnapshot() != null) {
+                    return;
+                }
+            } catch (RuntimeException ignored) {
+                // The workflow may not have completed its first task yet.
+            }
+            environment.sleep(Duration.ofMillis(100));
+        }
+        throw new AssertionError("workflow did not become ready");
     }
 
     private static SessionStartRequest startRequestForAgentActions(List<AgentDecisionAction> allowedActions) {
