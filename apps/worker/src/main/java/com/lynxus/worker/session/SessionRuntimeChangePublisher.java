@@ -10,14 +10,14 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class SessionRuntimeChangePublisher {
-    private final JdbcSessionProjectionRepository repository;
+    private final JooqSessionProjectionRepository repository;
     private final RedisPubSubBus pubSubBus;
     private final RedisKeyspace keyspace;
     private final RedisJsonCodec codec;
     private final WorkerSharedStateProperties properties;
 
     public SessionRuntimeChangePublisher(
-        JdbcSessionProjectionRepository repository,
+        JooqSessionProjectionRepository repository,
         RedisPubSubBus pubSubBus,
         RedisKeyspace keyspace,
         RedisJsonCodec codec,
@@ -34,7 +34,7 @@ public class SessionRuntimeChangePublisher {
         repository.findSessionChangeStamp(sessionId).ifPresent(this::publish);
     }
 
-    private void publish(JdbcSessionProjectionRepository.SessionRuntimeChangeStamp stamp) {
+    private void publish(JooqSessionProjectionRepository.SessionRuntimeChangeStamp stamp) {
         SessionRuntimeChangeNotice notice = new SessionRuntimeChangeNotice(
             stamp.sessionId(),
             stamp.fingerprint(),

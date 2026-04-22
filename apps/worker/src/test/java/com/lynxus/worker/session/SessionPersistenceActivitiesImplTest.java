@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
 class SessionPersistenceActivitiesImplTest {
     @Test
     void shouldPublishRuntimeChangeNoticeAfterProjectionWrites() {
-        JdbcSessionProjectionRepository repository = mock(JdbcSessionProjectionRepository.class);
+        JooqSessionProjectionRepository repository = mock(JooqSessionProjectionRepository.class);
         SessionRuntimeChangePublisher publisher = mock(SessionRuntimeChangePublisher.class);
         SessionPersistenceActivitiesImpl activities = new SessionPersistenceActivitiesImpl(repository, publisher);
         SessionPersistenceActivities.SessionRecord session = new SessionPersistenceActivities.SessionRecord(

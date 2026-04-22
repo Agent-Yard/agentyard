@@ -26,6 +26,7 @@
 - `apps/agent-runtime`：Python 执行运行时，负责单个 owner agent 的单轮推理
 - `apps/knowledge-service`：Python 知识服务，负责知识源对象、导入任务、文档切片、索引快照与检索数据
 - `packages/contracts-jvm`：JVM 侧共享 session / playbook / runtime 契约
+- `packages/persistence-jvm`：JVM 侧共享 PostgreSQL persistence 基座，承载 jOOQ generated schema、shared store 与 JSONB helper
 - `packages/contracts`：TypeScript 合同类型与 OpenAPI 文档
 - `scripts`：本地开发启动脚本与环境变量装载
 - `infra/local`：本地 Docker 依赖
@@ -58,11 +59,32 @@
 - `shared`：统一响应、异常处理与通用基础设施
 - `config`：Web 跨域等基础配置
 
-目录数据当前通过 `JdbcCatalogRepository` 落到 PostgreSQL JSONB；知识服务的结构化存储使用独立数据库；运行态已经落到 PostgreSQL 的：
+Java core 数据访问当前以 `Flyway + jOOQ + packages/persistence-jvm` 为统一基线：
+
+- `apps/api` 与 `apps/worker` 共用 `packages/persistence-jvm` 生成的 schema model 与 shared store
+- `session runtime`、`platform_event`、`platform_user` 等共享表不再各自维护字符串 SQL
+- `catalog` / `knowledge` 顶层治理对象已改成类型化列；只有嵌套策略、发布快照和配置片段保留 JSONB
+
+运行态已经落到 PostgreSQL 的：
 
 - `session_runtime_session`
 - `session_runtime_event`
 - `session_runtime_playbook_run`
+- `platform_event`
+- `platform_user`
+
+控制面治理表当前同样落到 PostgreSQL typed schema：
+
+- `catalog_domain`
+- `catalog_scenario`
+- `catalog_assistant`
+- `catalog_agent`
+- `catalog_playbook`
+- `catalog_resource`
+- `catalog_resource_versions`
+- `catalog_assistant_releases`
+- `knowledge_base`
+- `knowledge_release`
 
 ## Worker 与 Runtime 分工
 
@@ -99,7 +121,9 @@
 - owner agent 的知识检索、tool calling、skill 读取都发生在 `agent-runtime` 内部推理循环
 - playbook 只承担强业务流程，不重复承载 owner 推理
 - `sharedState` 只承载认知性上下文，不承载 owner / handoff / playbook 生命周期这类操作性权威状态
-- 持久化采用 JSONB catalog store + `session/session_event/playbook_run` 运行态表
+- Java 持久化默认使用 jOOQ DSL，不再新增 `JdbcTemplate` / `NamedParameterJdbcTemplate` repository
+- `session runtime`、`platform_event`、`platform_user` 等共享表逻辑进入 `packages/persistence-jvm`
+- 控制面顶层治理对象采用类型化列建模，JSONB 只用于嵌套配置和发布快照
 - 前端运行态页面围绕 `session event / owner / playbook / handoff` 组织，不再暴露旧 workflow 观测页
 - 当前系统层不做跨 assistant 自动切换；一次 session 只绑定一个 assistant
 

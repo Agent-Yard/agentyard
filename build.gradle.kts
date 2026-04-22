@@ -12,3 +12,11 @@ subprojects {
         mavenCentral()
     }
 }
+
+tasks.register("generateJooq") {
+    dependsOn(":packages:persistence-jvm:generateJooq")
+}
+
+tasks.register("verifyJooqGenerated") {
+    dependsOn(":packages:persistence-jvm:verifyJooqGenerated")
+}

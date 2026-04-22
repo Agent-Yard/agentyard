@@ -4,58 +4,49 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.lynxus.platform.testing.EmbeddedPostgresTestDatabase;
 import java.time.Instant;
 import java.util.Map;
-import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import tools.jackson.databind.ObjectMapper;
 
 import static com.lynxus.platform.event.PlatformEventDtos.*;
 
-@Testcontainers(disabledWithoutDocker = true)
-class JdbcPlatformEventRepositoryTest {
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
+class JooqPlatformEventRepositoryTest {
+    private static EmbeddedPostgresTestDatabase database;
 
-    private JdbcPlatformEventRepository repository;
-    private NamedParameterJdbcTemplate jdbcTemplate;
+    private JooqPlatformEventRepository repository;
+
+    @BeforeAll
+    static void startDatabase() throws Exception {
+        database = new EmbeddedPostgresTestDatabase();
+    }
+
+    @AfterAll
+    static void stopDatabase() throws Exception {
+        database.close();
+    }
 
     @BeforeEach
     void setUp() {
-        DriverManagerDataSource dataSource = new DriverManagerDataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
-        Flyway.configure()
-            .cleanDisabled(false)
-            .dataSource(dataSource)
-            .load()
-            .clean();
-        Flyway.configure()
-            .dataSource(dataSource)
-            .load()
-            .migrate();
-        jdbcTemplate = new NamedParameterJdbcTemplate(dataSource);
-        repository = new JdbcPlatformEventRepository(jdbcTemplate, new ObjectMapper());
+        database.reset();
+        repository = new JooqPlatformEventRepository(database.dsl(), new ObjectMapper());
     }
 
     @Test
     void shouldCreatePlatformEventTableAndIndexes() {
-        Integer tableCount = jdbcTemplate.getJdbcTemplate().queryForObject(
-            "select count(*) from information_schema.tables where table_name = 'platform_event'",
-            Integer.class
-        );
-        Integer aggregateIndexCount = jdbcTemplate.getJdbcTemplate().queryForObject(
-            "select count(*) from pg_indexes where indexname = 'idx_platform_event_aggregate_occurred'",
-            Integer.class
-        );
-        Integer occurredIndexCount = jdbcTemplate.getJdbcTemplate().queryForObject(
-            "select count(*) from pg_indexes where indexname = 'idx_platform_event_occurred'",
-            Integer.class
-        );
+        Integer tableCount = ((Number) database.dsl()
+            .fetchOne("select count(*) from information_schema.tables where table_name = 'platform_event'")
+            .get(0)).intValue();
+        Integer aggregateIndexCount = ((Number) database.dsl()
+            .fetchOne("select count(*) from pg_indexes where indexname = 'idx_platform_event_aggregate_occurred'")
+            .get(0)).intValue();
+        Integer occurredIndexCount = ((Number) database.dsl()
+            .fetchOne("select count(*) from pg_indexes where indexname = 'idx_platform_event_occurred'")
+            .get(0)).intValue();
 
         assertEquals(1, tableCount);
         assertEquals(1, aggregateIndexCount);

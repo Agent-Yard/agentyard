@@ -6,12 +6,12 @@ import io.temporal.serviceclient.WorkflowServiceStubs;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import org.jooq.DSLContext;
 import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -20,18 +20,18 @@ import com.lynxus.platform.shared.redis.RedisSharedStateProperties;
 @RestController
 @RequestMapping("/api/system")
 public class SystemController {
-    private final JdbcTemplate jdbcTemplate;
+    private final DSLContext dsl;
     private final StringRedisTemplate redisTemplate;
     private final WorkflowServiceStubs workflowServiceStubs;
     private final RedisSharedStateProperties sharedStateProperties;
 
     public SystemController(
-        JdbcTemplate jdbcTemplate,
+        DSLContext dsl,
         StringRedisTemplate redisTemplate,
         WorkflowServiceStubs workflowServiceStubs,
         RedisSharedStateProperties sharedStateProperties
     ) {
-        this.jdbcTemplate = jdbcTemplate;
+        this.dsl = dsl;
         this.redisTemplate = redisTemplate;
         this.workflowServiceStubs = workflowServiceStubs;
         this.sharedStateProperties = sharedStateProperties;
@@ -90,7 +90,7 @@ public class SystemController {
     }
 
     private void checkPostgres() {
-        Integer one = jdbcTemplate.queryForObject("select 1", Integer.class);
+        Integer one = dsl.selectOne().fetchOne(0, Integer.class);
         if (one == null || one != 1) {
             throw new IllegalStateException("postgres readiness probe returned unexpected result");
         }

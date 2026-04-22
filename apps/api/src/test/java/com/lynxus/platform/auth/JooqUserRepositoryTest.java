@@ -8,48 +8,41 @@ import com.lynxus.platform.auth.AuthModels.AuthSource;
 import com.lynxus.platform.auth.AuthModels.PlatformUser;
 import com.lynxus.platform.auth.AuthModels.Role;
 import com.lynxus.platform.auth.AuthModels.UserStatus;
+import com.lynxus.platform.testing.EmbeddedPostgresTestDatabase;
 import java.time.Instant;
 import java.util.List;
-import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
-@Testcontainers(disabledWithoutDocker = true)
-class JdbcUserRepositoryTest {
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
+class JooqUserRepositoryTest {
+    private static EmbeddedPostgresTestDatabase database;
 
-    private JdbcTemplate jdbcTemplate;
-    private JdbcUserRepository repository;
+    private JooqUserRepository repository;
+
+    @BeforeAll
+    static void startDatabase() throws Exception {
+        database = new EmbeddedPostgresTestDatabase();
+    }
+
+    @AfterAll
+    static void stopDatabase() throws Exception {
+        database.close();
+    }
 
     @BeforeEach
     void setUp() {
-        DriverManagerDataSource dataSource = new DriverManagerDataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
-        Flyway.configure()
-            .cleanDisabled(false)
-            .dataSource(dataSource)
-            .load()
-            .clean();
-        Flyway.configure()
-            .dataSource(dataSource)
-            .load()
-            .migrate();
-        jdbcTemplate = new JdbcTemplate(dataSource);
-        repository = new JdbcUserRepository(jdbcTemplate);
+        database.reset();
+        repository = new JooqUserRepository(database.dsl());
     }
 
     @Test
     void shouldRunMigrationsAndSeedBootstrapAdmin() {
-        Integer userCount = jdbcTemplate.queryForObject("select count(*) from platform_user", Integer.class);
-        Integer adminRoleCount = jdbcTemplate.queryForObject(
-            "select count(*) from platform_user_role_binding where user_id = 'user-admin' and role = 'PLATFORM_ADMIN'",
-            Integer.class
-        );
+        Integer userCount = ((Number) database.dsl().fetchOne("select count(*) from platform_user").get(0)).intValue();
+        Integer adminRoleCount = ((Number) database.dsl()
+            .fetchOne("select count(*) from platform_user_role_binding where user_id = 'user-admin' and role = 'PLATFORM_ADMIN'")
+            .get(0)).intValue();
 
         PlatformUser admin = repository.findByUsername("admin").orElseThrow();
 
@@ -65,7 +58,7 @@ class JdbcUserRepositoryTest {
 
     @Test
     void shouldLoadAllRolesForUser() {
-        jdbcTemplate.update("insert into platform_user_role_binding (user_id, role) values (?, ?)", "user-admin", "DEVELOPER");
+        database.dsl().execute("insert into platform_user_role_binding (user_id, role) values ('user-admin', 'DEVELOPER')");
 
         PlatformUser admin = repository.findByUsername("admin").orElseThrow();
 

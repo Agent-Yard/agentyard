@@ -19,7 +19,7 @@ import tools.jackson.databind.ObjectMapper;
 class SessionRuntimeChangePublisherTest {
     @Test
     void shouldPublishSessionRuntimeNoticeViaRedisPubSubBus() {
-        JdbcSessionProjectionRepository repository = mock(JdbcSessionProjectionRepository.class);
+        JooqSessionProjectionRepository repository = mock(JooqSessionProjectionRepository.class);
         RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);
         RedisJsonCodec codec = new RedisJsonCodec(new ObjectMapper());
         SessionRuntimeChangePublisher publisher = new SessionRuntimeChangePublisher(
@@ -29,8 +29,8 @@ class SessionRuntimeChangePublisherTest {
             codec,
             new WorkerSharedStateProperties("worker-a")
         );
-        JdbcSessionProjectionRepository.SessionRuntimeChangeStamp stamp =
-            new JdbcSessionProjectionRepository.SessionRuntimeChangeStamp(
+        JooqSessionProjectionRepository.SessionRuntimeChangeStamp stamp =
+            new JooqSessionProjectionRepository.SessionRuntimeChangeStamp(
                 "session-1",
                 Instant.parse("2026-04-21T00:00:00Z"),
                 3L,

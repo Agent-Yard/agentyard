@@ -6,11 +6,11 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class SessionPersistenceActivitiesImpl implements SessionPersistenceActivities {
-    private final JdbcSessionProjectionRepository repository;
+    private final JooqSessionProjectionRepository repository;
     private final SessionRuntimeChangePublisher changePublisher;
 
     public SessionPersistenceActivitiesImpl(
-        JdbcSessionProjectionRepository repository,
+        JooqSessionProjectionRepository repository,
         SessionRuntimeChangePublisher changePublisher
     ) {
         this.repository = repository;
