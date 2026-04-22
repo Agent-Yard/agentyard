@@ -31,6 +31,7 @@ import com.lynxus.contracts.session.SessionContracts.UserMessage;
 import com.lynxus.contracts.session.SessionWorkflow;
 import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowOptions;
+import io.temporal.testing.TestEnvironmentOptions;
 import io.temporal.client.WorkflowStub;
 import io.temporal.testing.TestWorkflowEnvironment;
 import io.temporal.worker.Worker;
@@ -92,7 +93,7 @@ class SessionWorkflowImplTest {
 
     @Test
     void drainingWorkflow_shouldEndAfterPlaybookCompletionWithoutOwnerReevaluation() {
-        try (TestWorkflowEnvironment environment = TestWorkflowEnvironment.newInstance()) {
+        try (TestWorkflowEnvironment environment = newRealTimeWorkflowEnvironment()) {
             Worker worker = environment.newWorker("session-tests-draining-playbook-completion");
             RecordingPersistenceActivities persistence = new RecordingPersistenceActivities();
             RecordingRunPlaybookAgentTurnActivities activities = new RecordingRunPlaybookAgentTurnActivities();
@@ -140,7 +141,7 @@ class SessionWorkflowImplTest {
 
     @Test
     void drainingWorkflow_shouldEndWhenHumanHandoffLeavesSafePoint() {
-        try (TestWorkflowEnvironment environment = TestWorkflowEnvironment.newInstance()) {
+        try (TestWorkflowEnvironment environment = newRealTimeWorkflowEnvironment()) {
             Worker worker = environment.newWorker("session-tests-draining-handoff-end");
             RecordingPersistenceActivities persistence = new RecordingPersistenceActivities();
             worker.registerWorkflowImplementationTypes(SessionWorkflowImpl.class);
@@ -183,7 +184,7 @@ class SessionWorkflowImplTest {
 
     @Test
     void submitUserMessage_shouldRejectWhenWorkflowTurnsDrainingAtGuardrail() {
-        try (TestWorkflowEnvironment environment = TestWorkflowEnvironment.newInstance()) {
+        try (TestWorkflowEnvironment environment = newRealTimeWorkflowEnvironment()) {
             Worker worker = environment.newWorker("session-tests-guardrail");
             RecordingPersistenceActivities persistence = new RecordingPersistenceActivities();
             worker.registerWorkflowImplementationTypes(SessionWorkflowImpl.class, PlaybookWorkflowImpl.class);
@@ -457,6 +458,14 @@ class SessionWorkflowImplTest {
 
     private static SessionStartRequest startRequest() {
         return startRequestForAgentActions(List.of(AgentDecisionAction.RUN_PLAYBOOK, AgentDecisionAction.NO_REPLY));
+    }
+
+    private static TestWorkflowEnvironment newRealTimeWorkflowEnvironment() {
+        return TestWorkflowEnvironment.newInstance(
+            TestEnvironmentOptions.newBuilder()
+                .setUseTimeskipping(false)
+                .build()
+        );
     }
 
     private static SessionStartRequest startRequestForAgentActions(List<AgentDecisionAction> allowedActions) {
