@@ -571,7 +571,7 @@ export interface LlmUsageEntry {
   occurredAt: string;
 }
 
-export interface AgentTurnRequestV2 {
+export interface AgentTurnRequest {
   sessionId: string;
   assistantId: string;
   assistantReleaseVersion: string;
@@ -586,15 +586,15 @@ export interface AgentTurnRequestV2 {
   recentEvents: SessionEvent[];
 }
 
-export interface AgentTurnResultV2 {
+export interface AgentTurnResult {
   decision: AgentDecision;
   sharedState: Record<string, unknown>;
   mappingTelemetry: PrivacyMappingTelemetry | null;
 }
 
-export interface AgentTurnExecutionOutcomeV2 {
+export interface AgentTurnExecutionOutcome {
   success: boolean;
-  result: AgentTurnResultV2 | null;
+  result: AgentTurnResult | null;
   failureReason: string | null;
   llmUsage: LlmUsageEntry[];
 }
@@ -605,14 +605,14 @@ export interface SessionUserMessageUpdateResult {
   reason: string | null;
 }
 
-export interface UserMessageV2 {
+export interface UserMessage {
   messageId: string;
   customerId: string;
   content: string;
   payload: Record<string, unknown>;
 }
 
-export interface SessionStartRequestV2 {
+export interface SessionStartRequest {
   sessionId: string;
   scenarioId: string;
   sessionTitle: string;
