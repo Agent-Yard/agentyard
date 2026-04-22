@@ -433,6 +433,7 @@ services:
       dockerfile: apps/web/Dockerfile
       args:
         VITE_API_BASE_URL: ${LYNXUS_DEV_VITE_API_BASE_URL:-/api}
+        VITE_DEPLOY_ENV: ${LYNXUS_DEV_VITE_DEPLOY_ENV:-dev}
     image: lynxus-web:dev
     restart: unless-stopped
     ports:

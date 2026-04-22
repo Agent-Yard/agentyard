@@ -3,6 +3,7 @@ import { computed, provide, shallowRef } from 'vue';
 import { pageHeadActionsKey, type PageHeadActionsRegistration } from '../composables/pageHeadActions';
 import type { UserSession } from '../types';
 import { menuItems } from '../config/navigation';
+import { resolveDeployEnv } from '../config/deployEnv';
 
 const props = defineProps<{
   session: UserSession;
@@ -43,7 +44,7 @@ const userInitials = computed(() => {
   return compactName.slice(0, 2).toUpperCase();
 });
 
-const environmentLabel = computed(() => import.meta.env.MODE || 'local');
+const environmentLabel = computed(() => resolveDeployEnv(import.meta.env.VITE_DEPLOY_ENV, import.meta.env.MODE));
 const pageHeadActions = shallowRef<PageHeadActionsRegistration | null>(null);
 const pageHeadActionsComponent = computed(() => (
   pageHeadActions.value

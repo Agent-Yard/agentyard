@@ -63,6 +63,10 @@
 
 这样前端仍可使用 `/api` 作为统一入口，不需要在构建阶段硬编码服务器公网地址。
 
+`pnpm dev` 下的 Web 虽然是 `vite build` 后由 nginx 托管，但它仍然属于“开发部署环境”。
+前端环境语义不应依赖 `import.meta.env.DEV`；当前统一预留四个环境值：`local`、`dev`、`test`、`prd`。
+其中 `infra/dev` 会显式向 Web 传入 `VITE_DEPLOY_ENV=dev`，不要求你在 `.env.dev` 里额外声明。
+
 ## 源码直跑
 
 如果需要在服务器上保留热加载，使用：

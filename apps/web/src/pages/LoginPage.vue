@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { AUTH_DEV_BOOTSTRAP_LOGIN_PATH, AUTH_LOGIN_PATH } from '../services/api';
+import { isNonPrdDeployEnv, resolveDeployEnv } from '../config/deployEnv';
 
-const showDevBootstrapLogin = import.meta.env.DEV;
+const deployEnv = resolveDeployEnv(import.meta.env.VITE_DEPLOY_ENV, import.meta.env.MODE);
+const showDevBootstrapLogin = isNonPrdDeployEnv(deployEnv);
 
 function goToOidcLogin() {
   window.location.assign(AUTH_LOGIN_PATH);

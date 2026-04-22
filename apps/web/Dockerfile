@@ -14,6 +14,8 @@ COPY packages/contracts packages/contracts
 
 ARG VITE_API_BASE_URL=/api
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+ARG VITE_DEPLOY_ENV=prd
+ENV VITE_DEPLOY_ENV=${VITE_DEPLOY_ENV}
 
 RUN pnpm --filter @lynxus/web build
 
