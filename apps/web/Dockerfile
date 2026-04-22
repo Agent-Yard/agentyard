@@ -10,6 +10,7 @@ COPY apps/web/package.json apps/web/package.json
 RUN pnpm install --frozen-lockfile --filter @lynxus/web...
 
 COPY apps/web apps/web
+COPY packages/contracts packages/contracts
 
 ARG VITE_API_BASE_URL=/api
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
