@@ -8,6 +8,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
 import java.util.NoSuchElementException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -42,7 +43,7 @@ public class AuthController {
 
     @GetMapping("/login")
     public void login(HttpServletResponse response) throws IOException {
-        response.sendRedirect(authRedirectSupport.authorizationRequestPath());
+        redirectRelative(response, authRedirectSupport.authorizationRequestPath());
     }
 
     @GetMapping("/dev-bootstrap-login")
@@ -59,7 +60,7 @@ public class AuthController {
         context.setAuthentication(authentication);
         SecurityContextHolder.setContext(context);
         securityContextRepository.saveContext(context, request, response);
-        response.sendRedirect(authRedirectSupport.loginSuccessPath());
+        redirectRelative(response, authRedirectSupport.loginSuccessPath());
     }
 
     @GetMapping("/session")
@@ -78,5 +79,10 @@ public class AuthController {
         new SecurityContextLogoutHandler().logout(request, response, authentication);
         SecurityContextHolder.clearContext();
         return ApiResponse.ok(new LogoutResponse(postLogoutRedirectUrl));
+    }
+
+    private void redirectRelative(HttpServletResponse response, String location) {
+        response.setStatus(HttpServletResponse.SC_FOUND);
+        response.setHeader(HttpHeaders.LOCATION, location);
     }
 }
