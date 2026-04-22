@@ -87,6 +87,20 @@ jobs:
           wait "${watchdog_pid}" 2>/dev/null || true
           exit "${status}"
 
+      - name: Dump api test failure diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          set +e
+          echo "API test result files:"
+          find apps/api/build/test-results/test -maxdepth 1 -type f | sort || true
+          echo
+          echo "MultiInstanceApiIntegrationTest XML:"
+          sed -n '1,260p' apps/api/build/test-results/test/TEST-com.lynxus.platform.session.MultiInstanceApiIntegrationTest.xml || true
+          echo
+          echo "API HTML report path:"
+          ls -la apps/api/build/reports/tests/test || true
+
       - name: Run contracts check
         run: ./gradlew :packages:contracts-jvm:check --no-daemon --console=plain --stacktrace
 

@@ -113,7 +113,9 @@ public class SessionRuntimeStreamService {
             if (replay.matchedLastEventId()) {
                 replay.events().forEach(event -> send(emitter, event));
             } else {
-                send(emitter, snapshotEvent(sessionId));
+                SessionRuntimeStreamEvent snapshot = snapshotEvent(sessionId);
+                replayStore.append(snapshot);
+                send(emitter, snapshot);
             }
             repository.findSessionChangeStamp(sessionId)
                 .ifPresent(stamp -> observedFingerprints.put(sessionId, stamp.fingerprint()));

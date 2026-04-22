@@ -25,14 +25,14 @@ class SecurityContextCurrentUserResolverTest {
     }
 
     @Test
-    void shouldResolveBootstrapPrincipalFromRepository() {
+    void shouldResolveStringPrincipalFromRepository() {
         UserRepository userRepository = mock(UserRepository.class);
         UserProvisioningService provisioningService = mock(UserProvisioningService.class);
         ExternalIdentityValidator externalIdentityValidator = mock(ExternalIdentityValidator.class);
         PlatformUser bootstrapUser = platformUser("user-admin", "admin", AuthSource.LOCAL_BOOTSTRAP, null, null);
         when(userRepository.findByUsername("admin")).thenReturn(Optional.of(bootstrapUser));
         SecurityContextHolder.getContext().setAuthentication(UsernamePasswordAuthenticationToken.authenticated(
-            new BootstrapPrincipal("admin"),
+            "admin",
             "N/A",
             List.of()
         ));

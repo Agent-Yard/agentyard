@@ -61,7 +61,8 @@ class SessionRuntimeStreamServiceTest {
         service.connect("session-1", null, "tester");
         service.pollSubscribedSessions();
 
-        verify(replayStore).append(any());
+        verify(replayStore).append(argThat(event -> "SESSION_SNAPSHOT".equals(event.type())));
+        verify(replayStore).append(argThat(event -> "SESSION_UPDATED".equals(event.type())));
         verify(pubSubBus).publish(eq(keyspace.sseChannelSessionUpdated()), any());
     }
 

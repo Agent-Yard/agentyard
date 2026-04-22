@@ -17,7 +17,3 @@ dependencies {
     implementation("io.micrometer:micrometer-core")
     implementation("tools.jackson.core:jackson-databind")
 }
-
-tasks.withType<Test> {
-    useJUnitPlatform()
-}

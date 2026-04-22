@@ -29,9 +29,6 @@ public class SecurityContextCurrentUserResolver implements CurrentUserResolver {
             throw new IllegalStateException("current user is not authenticated");
         }
         Object principal = authentication.getPrincipal();
-        if (principal instanceof BootstrapPrincipal bootstrapPrincipal) {
-            return loadLocalUser(bootstrapPrincipal.username());
-        }
         if (principal instanceof String username && !username.isBlank()) {
             return loadLocalUser(username);
         }

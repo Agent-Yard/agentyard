@@ -52,10 +52,6 @@ dependencies {
     testImplementation("org.testcontainers:postgresql")
 }
 
-tasks.withType<Test> {
-    useJUnitPlatform()
-}
-
 val generatedJooqDir = layout.projectDirectory.dir("src/generated/jooq")
 val verificationJooqDir = layout.buildDirectory.dir("generated/jooq-verify")
 

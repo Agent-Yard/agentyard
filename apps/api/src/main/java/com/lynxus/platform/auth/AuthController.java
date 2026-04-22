@@ -52,7 +52,7 @@ public class AuthController {
             throw new NoSuchElementException("development bootstrap login is not enabled");
         }
         Authentication authentication = UsernamePasswordAuthenticationToken.authenticated(
-            new BootstrapPrincipal(authProperties.bootstrap().username()),
+            authProperties.bootstrap().username(),
             "N/A",
             List.of(new SimpleGrantedAuthority("ROLE_PLATFORM_USER"))
         );
