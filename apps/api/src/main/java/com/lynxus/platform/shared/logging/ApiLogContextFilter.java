@@ -80,8 +80,8 @@ public class ApiLogContextFilter extends OncePerRequestFilter {
     private String value(JsonNode node, String... fieldNames) {
         for (String fieldName : fieldNames) {
             JsonNode value = node.get(fieldName);
-            if (value != null && value.isTextual() && !value.asText().isBlank()) {
-                return value.asText();
+            if (value != null && value.isString() && !value.stringValue().isBlank()) {
+                return value.stringValue();
             }
         }
         return null;

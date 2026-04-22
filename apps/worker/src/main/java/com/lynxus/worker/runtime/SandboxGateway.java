@@ -47,24 +47,24 @@ public interface SandboxGateway {
                         .put("kernel_name", kernelName == null || kernelName.isBlank() ? "python3.11" : kernelName)
                         .put("timeout", sanitizeTimeout(timeoutSeconds))
                 );
-                String status = response.path("status").asText("error");
+                String status = stringValue(response.path("status"), "error");
                 StringBuilder stdout = new StringBuilder();
                 StringBuilder stderr = new StringBuilder();
                 JsonNode outputs = response.path("outputs");
                 if (outputs.isArray()) {
                     for (JsonNode item : outputs) {
-                        String outputType = item.path("output_type").asText("");
+                        String outputType = stringValue(item.path("output_type"), "");
                         if ("error".equals(outputType)) {
-                            appendLine(stderr, item.path("evalue").asText(""));
+                            appendLine(stderr, stringValue(item.path("evalue"), ""));
                             JsonNode traceback = item.path("traceback");
                             if (traceback.isArray()) {
                                 for (JsonNode line : traceback) {
-                                    appendLine(stderr, line.asText(""));
+                                    appendLine(stderr, stringValue(line, ""));
                                 }
                             }
                             continue;
                         }
-                        appendLine(stdout, item.path("text").asText(""));
+                        appendLine(stdout, stringValue(item.path("text"), ""));
                     }
                 }
                 return new SandboxExecutionResult(status, stdout.toString().trim(), stderr.toString().trim());
@@ -83,9 +83,9 @@ public interface SandboxGateway {
                         .put("timeout", sanitizeTimeout(timeoutSeconds))
                 );
                 return new SandboxExecutionResult(
-                    response.path("status").asText("error"),
-                    response.path("stdout").asText("").trim(),
-                    response.path("stderr").asText("").trim()
+                    stringValue(response.path("status"), "error"),
+                    stringValue(response.path("stdout"), "").trim(),
+                    stringValue(response.path("stderr"), "").trim()
                 );
             } catch (IOException | InterruptedException error) {
                 throw new IllegalStateException("failed to execute node step in sandbox", error);
@@ -115,6 +115,10 @@ public interface SandboxGateway {
                 return 30;
             }
             return Math.min(timeoutSeconds, 300);
+        }
+
+        private static String stringValue(JsonNode node, String defaultValue) {
+            return node == null ? defaultValue : node.asString(defaultValue);
         }
 
         private static void appendLine(StringBuilder builder, String value) {

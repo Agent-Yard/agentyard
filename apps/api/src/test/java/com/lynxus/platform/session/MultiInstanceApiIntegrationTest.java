@@ -134,8 +134,8 @@ class MultiInstanceApiIntegrationTest {
 
         assertEquals(200, response.statusCode());
         JsonNode body = OBJECT_MAPPER.readTree(response.body());
-        assertEquals("user-admin", body.path("data").path("userId").asText());
-        assertEquals("PLATFORM_ADMIN", body.path("data").path("currentRole").asText());
+        assertEquals("user-admin", body.path("data").path("userId").asString());
+        assertEquals("PLATFORM_ADMIN", body.path("data").path("currentRole").asString());
     }
 
     @Test
@@ -180,7 +180,7 @@ class MultiInstanceApiIntegrationTest {
             Map.of("Idempotency-Key", "callback-key-1")
         );
         assertEquals(409, second.statusCode());
-        assertEquals("duplicate request is already in progress", OBJECT_MAPPER.readTree(second.body()).path("detail").asText());
+        assertEquals("duplicate request is already in progress", OBJECT_MAPPER.readTree(second.body()).path("detail").asString());
 
         SharedGatewayState.releaseExternalCallback();
 
