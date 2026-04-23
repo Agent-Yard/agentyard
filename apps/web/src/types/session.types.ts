@@ -70,7 +70,6 @@ export interface SendSessionMessagePayload {
 }
 
 export interface HumanOperatorReplyPayload {
-  operatorId: string;
   message: SessionMessageInput;
   payload?: Record<string, unknown>;
 }

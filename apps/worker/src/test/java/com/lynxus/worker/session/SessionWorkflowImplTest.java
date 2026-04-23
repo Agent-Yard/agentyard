@@ -11,6 +11,7 @@ import com.lynxus.contracts.session.SessionContracts.AgentTurnRequest;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnResult;
 import com.lynxus.contracts.session.SessionContracts.AssistantSessionConfig;
 import com.lynxus.contracts.session.SessionContracts.ExternalCallbackSignal;
+import com.lynxus.contracts.session.SessionContracts.EndHumanHandoffSignal;
 import com.lynxus.contracts.session.SessionContracts.HumanResumeSignal;
 import com.lynxus.contracts.session.SessionContracts.LlmUsageEntry;
 import com.lynxus.contracts.session.SessionContracts.LlmUsageSourceType;
@@ -83,7 +84,7 @@ class SessionWorkflowImplTest {
             waitForEvent(environment, persistence, SessionEventType.PLAYBOOK_WAITING);
 
             String activeRunId = workflow.currentSnapshot().activePlaybookRunId();
-            workflow.humanResume(new HumanResumeSignal("session-1", activeRunId, Map.of("approved", true)));
+            workflow.humanResume(new HumanResumeSignal("session-1", activeRunId, "user-1", Map.of("approved", true)));
             waitForEvent(environment, persistence, SessionEventType.PLAYBOOK_COMPLETED);
 
             List<SessionPersistenceActivities.PlatformEventRecord> platformEvents = persistence.platformEvents();
@@ -136,7 +137,7 @@ class SessionWorkflowImplTest {
             assertTrue(workflow.currentSnapshot().draining());
 
             String activeRunId = workflow.currentSnapshot().activePlaybookRunId();
-            workflow.humanResume(new HumanResumeSignal("session-1", activeRunId, Map.of("approved", true)));
+            workflow.humanResume(new HumanResumeSignal("session-1", activeRunId, "user-1", Map.of("approved", true)));
 
             waitForEvent(environment, persistence, SessionEventType.PLAYBOOK_COMPLETED);
             SessionSnapshot finalSnapshot = waitForWorkflowCompletion(environment, workflow);
@@ -183,7 +184,7 @@ class SessionWorkflowImplTest {
             environment.sleep(Duration.ofSeconds(3));
             assertTrue(workflow.currentSnapshot().draining());
 
-            workflow.endHumanHandoff();
+            workflow.endHumanHandoff(new EndHumanHandoffSignal("session-1", "user-1"));
 
             SessionSnapshot finalSnapshot = waitForWorkflowCompletion(environment, workflow);
             assertTrue(finalSnapshot.draining());
@@ -295,19 +296,19 @@ class SessionWorkflowImplTest {
             waitForEvent(environment, persistence, SessionEventType.PLAYBOOK_WAITING);
             String activeRunId = workflow.currentSnapshot().activePlaybookRunId();
 
-            workflow.humanResume(new HumanResumeSignal("session-1", "run-wrong", Map.of("approved", true)));
+            workflow.humanResume(new HumanResumeSignal("session-1", "run-wrong", "user-1", Map.of("approved", true)));
             environment.sleep(Duration.ofSeconds(1));
             assertEquals(0, countEvents(persistence.events(), SessionEventType.HUMAN_RESUME_RECEIVED));
 
-            workflow.humanResume(new HumanResumeSignal("session-wrong", activeRunId, Map.of("approved", true)));
+            workflow.humanResume(new HumanResumeSignal("session-wrong", activeRunId, "user-1", Map.of("approved", true)));
             environment.sleep(Duration.ofSeconds(1));
             assertEquals(0, countEvents(persistence.events(), SessionEventType.HUMAN_RESUME_RECEIVED));
 
-            workflow.humanResume(new HumanResumeSignal("session-1", activeRunId, Map.of("approved", true)));
+            workflow.humanResume(new HumanResumeSignal("session-1", activeRunId, "user-1", Map.of("approved", true)));
             waitForEvent(environment, persistence, SessionEventType.HUMAN_RESUME_RECEIVED);
             waitForEvent(environment, persistence, SessionEventType.PLAYBOOK_RESUMED);
 
-            workflow.humanResume(new HumanResumeSignal("session-1", activeRunId, Map.of("approved", true)));
+            workflow.humanResume(new HumanResumeSignal("session-1", activeRunId, "user-1", Map.of("approved", true)));
             environment.sleep(Duration.ofSeconds(1));
             assertEquals(1, countEvents(persistence.events(), SessionEventType.HUMAN_RESUME_RECEIVED));
 

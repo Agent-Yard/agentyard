@@ -308,7 +308,7 @@ export type AgentDecisionAction =
   | 'RUN_PLAYBOOK'
   | 'SESSION_HUMAN_HANDOFF';
 export type SessionTriggerType = 'USER_MESSAGE' | 'PLAYBOOK_COMPLETED';
-export type SessionActorType = 'USER' | 'AGENT' | 'SYSTEM' | 'HUMAN_OPERATOR' | 'EXTERNAL_SYSTEM';
+export type SessionActorType = 'CUSTOMER' | 'AGENT' | 'SYSTEM' | 'HUMAN_OPERATOR' | 'EXTERNAL_SYSTEM';
 export type SessionEventType =
   | 'AGENT_DECISION_REJECTED'
   | 'AGENT_TURN_FAILED'
@@ -698,6 +698,7 @@ export interface SessionStartRequest {
 export interface HumanResumeSignal {
   sessionId: string;
   playbookRunId: string;
+  operatorId: string;
   payload: Record<string, unknown>;
 }
 
@@ -718,9 +719,13 @@ export interface ExternalCallbackRequest {
 }
 
 export interface HumanOperatorReplyRequest {
-  operatorId: string;
   message: SessionMessageInput;
   payload: Record<string, unknown>;
+}
+
+export interface EndHumanHandoffSignal {
+  sessionId: string;
+  operatorId: string;
 }
 
 export interface SessionSnapshot {
@@ -772,5 +777,6 @@ export interface PlaybookToolTaskResult {
 export interface PlaybookResumeSignal {
   playbookRunId: string;
   source: PlaybookResumeSource;
+  operatorId: string;
   payload: Record<string, unknown>;
 }

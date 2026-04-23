@@ -131,6 +131,7 @@ public class PlaybookWorkflowImpl implements PlaybookWorkflow {
                 node.nodeKey(),
                 waitingType,
                 null,
+                null,
                 Map.of()
             )
         );
@@ -156,6 +157,7 @@ public class PlaybookWorkflowImpl implements PlaybookWorkflow {
                 node.nodeKey(),
                 waitingType,
                 resume.source(),
+                resume.operatorId(),
                 resume.payload()
             )
         );

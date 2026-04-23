@@ -1978,7 +1978,7 @@ components:
       enum: [IDLE, ACTIVE, DRAINING, ENDED]
     SessionActorType:
       type: string
-      enum: [USER, AGENT, SYSTEM, HUMAN_OPERATOR, EXTERNAL_SYSTEM]
+      enum: [CUSTOMER, AGENT, SYSTEM, HUMAN_OPERATOR, EXTERNAL_SYSTEM]
     SessionMessageRole:
       type: string
       enum: [USER, ASSISTANT, HUMAN_OPERATOR, SYSTEM]
@@ -2053,10 +2053,8 @@ components:
           additionalProperties: true
     HumanOperatorReplyRequest:
       type: object
-      required: [operatorId, message]
+      required: [message]
       properties:
-        operatorId:
-          type: string
         message:
           $ref: '#/components/schemas/SessionMessageInput'
         payload:

@@ -93,7 +93,7 @@ public final class SessionContracts {
     }
 
     public enum SessionActorType {
-        USER,
+        CUSTOMER,
         AGENT,
         SYSTEM,
         HUMAN_OPERATOR,
@@ -649,6 +649,7 @@ public final class SessionContracts {
     public record HumanResumeSignal(
         String sessionId,
         String playbookRunId,
+        String operatorId,
         Map<String, Object> payload
     ) {
         public HumanResumeSignal {
@@ -675,6 +676,12 @@ public final class SessionContracts {
         public HumanOperatorReplySignal {
             payload = immutableObjectMap(payload);
         }
+    }
+
+    public record EndHumanHandoffSignal(
+        String sessionId,
+        String operatorId
+    ) {
     }
 
     public record SessionSnapshot(
@@ -714,6 +721,7 @@ public final class SessionContracts {
     public record PlaybookResumeSignal(
         String playbookRunId,
         PlaybookResumeSource source,
+        String operatorId,
         Map<String, Object> payload
     ) {
         public PlaybookResumeSignal {
@@ -727,6 +735,7 @@ public final class SessionContracts {
         String nodeKey,
         PlaybookWaitingType waitingType,
         PlaybookResumeSource resumeSource,
+        String operatorId,
         Map<String, Object> payload
     ) {
         public PlaybookProgressUpdate {

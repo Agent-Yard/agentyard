@@ -9,6 +9,7 @@ import com.lynxus.contracts.session.SessionContracts.AgentTurnExecutionOutcome;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnRequest;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnResult;
 import com.lynxus.contracts.session.SessionContracts.ExternalCallbackSignal;
+import com.lynxus.contracts.session.SessionContracts.EndHumanHandoffSignal;
 import com.lynxus.contracts.session.SessionContracts.HumanOperatorReplySignal;
 import com.lynxus.contracts.session.SessionContracts.HumanResumeSignal;
 import com.lynxus.contracts.session.SessionContracts.PlaybookConfig;
@@ -227,12 +228,12 @@ public class SessionWorkflowImpl implements SessionWorkflow {
         appendEvent(
             SessionEventType.HUMAN_RESUME_RECEIVED,
             SessionActorType.HUMAN_OPERATOR,
-            null,
+            signal.operatorId(),
             Map.of("playbookRunId", signal.playbookRunId(), "payload", signal.payload()),
             signal.playbookRunId(),
             snapshot.currentOwnerAgentId()
         );
-        activePlaybookWorkflow.resume(new PlaybookResumeSignal(signal.playbookRunId(), PlaybookResumeSource.HUMAN, signal.payload()));
+        activePlaybookWorkflow.resume(new PlaybookResumeSignal(signal.playbookRunId(), PlaybookResumeSource.HUMAN, signal.operatorId(), signal.payload()));
     }
 
     @Override
@@ -252,18 +253,18 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             signal.playbookRunId(),
             snapshot.currentOwnerAgentId()
         );
-        activePlaybookWorkflow.resume(new PlaybookResumeSignal(signal.playbookRunId(), PlaybookResumeSource.EXTERNAL_SYSTEM, signal.payload()));
+        activePlaybookWorkflow.resume(new PlaybookResumeSignal(signal.playbookRunId(), PlaybookResumeSource.EXTERNAL_SYSTEM, null, signal.payload()));
     }
 
     @Override
-    public void endHumanHandoff() {
-        if (!snapshot.sessionHumanHandoffActive()) {
+    public void endHumanHandoff(EndHumanHandoffSignal signal) {
+        if (!snapshot.sessionHumanHandoffActive() || signal == null) {
             return;
         }
         appendEvent(
             SessionEventType.SESSION_HUMAN_HANDOFF_ENDED,
-            SessionActorType.SYSTEM,
-            null,
+            SessionActorType.HUMAN_OPERATOR,
+            signal.operatorId(),
             Map.of(),
             snapshot.activePlaybookRunId(),
             snapshot.currentOwnerAgentId()
@@ -328,7 +329,7 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             sourceEventId = appendEvent(
                 SessionEventType.PLAYBOOK_RESUMED,
                 update.resumeSource() == PlaybookResumeSource.HUMAN ? SessionActorType.HUMAN_OPERATOR : SessionActorType.EXTERNAL_SYSTEM,
-                null,
+                update.resumeSource() == PlaybookResumeSource.HUMAN ? update.operatorId() : null,
                 Map.of(
                     "runId", update.run().runId(),
                     "nodeKey", update.nodeKey(),

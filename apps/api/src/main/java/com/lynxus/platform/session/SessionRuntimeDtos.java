@@ -53,7 +53,6 @@ public final class SessionRuntimeDtos {
     }
 
     public record HumanOperatorReplyRequest(
-        String operatorId,
         SessionMessageInput message,
         Map<String, Object> payload
     ) {

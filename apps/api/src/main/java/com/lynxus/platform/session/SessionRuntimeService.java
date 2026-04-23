@@ -1,11 +1,13 @@
 package com.lynxus.platform.session;
 
+import com.lynxus.platform.auth.CurrentUserResolver;
 import com.lynxus.contracts.session.SessionContracts.AgentConfig;
 import com.lynxus.contracts.session.SessionContracts.PlaybookConfig;
 import com.lynxus.contracts.session.SessionContracts.PlaybookEdge;
 import com.lynxus.contracts.session.SessionContracts.PlaybookExecutionPolicy;
 import com.lynxus.contracts.session.SessionContracts.PlaybookNode;
 import com.lynxus.contracts.session.SessionContracts.ExternalCallbackSignal;
+import com.lynxus.contracts.session.SessionContracts.EndHumanHandoffSignal;
 import com.lynxus.contracts.session.SessionContracts.HumanResumeSignal;
 import com.lynxus.contracts.session.SessionContracts.HumanOperatorReplySignal;
 import com.lynxus.contracts.session.SessionContracts.HttpToolProviderDescriptor;
@@ -68,6 +70,7 @@ public class SessionRuntimeService {
     private final RedisIdempotencyService idempotencyService;
     private final SessionRuntimeChangeNoticePublisher changeNoticePublisher;
     private final ExternalCallbackIdempotencyKeyFactory externalCallbackIdempotencyKeyFactory;
+    private final CurrentUserResolver currentUserResolver;
 
     public SessionRuntimeService(
         SessionWorkflowGateway sessionWorkflowGateway,
@@ -92,7 +95,10 @@ public class SessionRuntimeService {
                 )
             ),
             null,
-            new ExternalCallbackIdempotencyKeyFactory(new ObjectMapper())
+            new ExternalCallbackIdempotencyKeyFactory(new ObjectMapper()),
+            () -> {
+                throw new IllegalStateException("current user resolver unavailable");
+            }
         );
     }
 
@@ -107,7 +113,8 @@ public class SessionRuntimeService {
         RedisKeyspace redisKeyspace,
         RedisIdempotencyService idempotencyService,
         SessionRuntimeChangeNoticePublisher changeNoticePublisher,
-        ExternalCallbackIdempotencyKeyFactory externalCallbackIdempotencyKeyFactory
+        ExternalCallbackIdempotencyKeyFactory externalCallbackIdempotencyKeyFactory,
+        CurrentUserResolver currentUserResolver
     ) {
         this.sessionWorkflowGateway = sessionWorkflowGateway;
         this.catalogService = catalogService;
@@ -119,6 +126,7 @@ public class SessionRuntimeService {
         this.idempotencyService = idempotencyService;
         this.changeNoticePublisher = changeNoticePublisher;
         this.externalCallbackIdempotencyKeyFactory = externalCallbackIdempotencyKeyFactory;
+        this.currentUserResolver = currentUserResolver;
     }
 
     public List<SessionRuntimeSessionDto> listSessions() {
@@ -194,9 +202,10 @@ public class SessionRuntimeService {
     public SessionRuntimeSessionDto humanResume(String sessionId, HumanResumeRequest request) {
         SessionRuntimeSessionDto existing = repository.findSession(sessionId).orElseThrow();
         requirePlaybookRunInSession(sessionId, request.playbookRunId());
+        String operatorId = currentUserResolver.resolveCurrentUser().id();
         sessionWorkflowGateway.humanResume(
             sessionId,
-            new HumanResumeSignal(sessionId, request.playbookRunId(), request.payload())
+            new HumanResumeSignal(sessionId, request.playbookRunId(), operatorId, request.payload())
         );
         return awaitPersistedSession(sessionId, existing);
     }
@@ -216,15 +225,17 @@ public class SessionRuntimeService {
 
     public SessionRuntimeSessionDto endHumanHandoff(String sessionId) {
         SessionRuntimeSessionDto existing = repository.findSession(sessionId).orElseThrow();
-        sessionWorkflowGateway.endHumanHandoff(sessionId);
+        String operatorId = currentUserResolver.resolveCurrentUser().id();
+        sessionWorkflowGateway.endHumanHandoff(sessionId, new EndHumanHandoffSignal(sessionId, operatorId));
         return awaitPersistedSession(sessionId, existing);
     }
 
     public SessionRuntimeSessionDto humanOperatorReply(String sessionId, HumanOperatorReplyRequest request) {
         SessionRuntimeSessionDto existing = repository.findSession(sessionId).orElseThrow();
+        String operatorId = currentUserResolver.resolveCurrentUser().id();
         sessionWorkflowGateway.humanOperatorReply(
             sessionId,
-            new HumanOperatorReplySignal(sessionId, request.operatorId(), request.message(), request.payload())
+            new HumanOperatorReplySignal(sessionId, operatorId, request.message(), request.payload())
         );
         return awaitPersistedSession(sessionId, existing);
     }

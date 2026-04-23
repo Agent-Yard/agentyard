@@ -1,5 +1,7 @@
 package com.lynxus.platform.session;
 
+import com.lynxus.platform.auth.AuthModels;
+import com.lynxus.platform.auth.CurrentUserResolver;
 import static com.lynxus.platform.session.SessionRuntimeDtos.CreateSessionRequest;
 import static com.lynxus.platform.session.SessionRuntimeDtos.SendSessionMessageRequest;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -264,11 +266,24 @@ class SessionRuntimeServiceTest {
         SessionWorkflowGateway gateway = mock(SessionWorkflowGateway.class);
         CatalogService catalogService = mock(CatalogService.class);
         SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
+        CurrentUserResolver currentUserResolver = currentUserResolver("user-1");
         SessionRuntimeService service = new SessionRuntimeService(
             gateway,
             catalogService,
             repository,
-            new SessionDispatchLockService()
+            new SessionDispatchLockService(),
+            new org.springframework.data.redis.core.StringRedisTemplate(),
+            new tools.jackson.databind.ObjectMapper(),
+            new com.lynxus.shared.redis.RedisKeyspace(),
+            new com.lynxus.platform.shared.redis.RedisIdempotencyService(
+                new org.springframework.data.redis.core.StringRedisTemplate(),
+                new com.lynxus.shared.redis.RedisJsonCodec(new tools.jackson.databind.ObjectMapper()),
+                new com.lynxus.platform.shared.redis.RedisSharedStateProperties(null, null, null, null, null, 0, null),
+                new com.lynxus.shared.redis.RedisSharedStateMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry())
+            ),
+            null,
+            new ExternalCallbackIdempotencyKeyFactory(new tools.jackson.databind.ObjectMapper()),
+            currentUserResolver
         );
         SessionRuntimeDtos.SessionRuntimeSessionDto existing = session("session-1", "ACTIVE", null);
 
@@ -307,6 +322,73 @@ class SessionRuntimeServiceTest {
 
         assertEquals("playbook run does not belong to session", error.getMessage());
         verify(gateway, never()).externalCallback(eq("session-1"), any());
+    }
+
+    @Test
+    void humanOperatorReply_shouldUseCurrentUserIdAsOperatorId() {
+        SessionWorkflowGateway gateway = mock(SessionWorkflowGateway.class);
+        CatalogService catalogService = mock(CatalogService.class);
+        SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
+        CurrentUserResolver currentUserResolver = currentUserResolver("user-operator");
+        SessionRuntimeService service = new SessionRuntimeService(
+            gateway,
+            catalogService,
+            repository,
+            new SessionDispatchLockService(),
+            new org.springframework.data.redis.core.StringRedisTemplate(),
+            new tools.jackson.databind.ObjectMapper(),
+            new com.lynxus.shared.redis.RedisKeyspace(),
+            new com.lynxus.platform.shared.redis.RedisIdempotencyService(
+                new org.springframework.data.redis.core.StringRedisTemplate(),
+                new com.lynxus.shared.redis.RedisJsonCodec(new tools.jackson.databind.ObjectMapper()),
+                new com.lynxus.platform.shared.redis.RedisSharedStateProperties(null, null, null, null, null, 0, null),
+                new com.lynxus.shared.redis.RedisSharedStateMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry())
+            ),
+            null,
+            new ExternalCallbackIdempotencyKeyFactory(new tools.jackson.databind.ObjectMapper()),
+            currentUserResolver
+        );
+        SessionRuntimeDtos.SessionRuntimeSessionDto existing = session("session-1", "ACTIVE", null);
+        SessionRuntimeDtos.SessionRuntimeSessionDto updated = new SessionRuntimeDtos.SessionRuntimeSessionDto(
+            existing.id(),
+            existing.scenarioId(),
+            existing.title(),
+            existing.customerId(),
+            existing.assistantId(),
+            existing.assistantName(),
+            existing.assistantReleaseVersion(),
+            existing.status(),
+            existing.primaryAgentId(),
+            existing.currentOwnerAgentId(),
+            existing.activePlaybookRunId(),
+            existing.agentTurnActive(),
+            existing.sessionHumanHandoffActive(),
+            existing.pendingOwnerReevaluation(),
+            existing.draining(),
+            existing.sharedState(),
+            existing.idleDeadline(),
+            existing.createdAt(),
+            existing.updatedAt().plusSeconds(1),
+            existing.endedAt(),
+            existing.latestMessageSequence() + 1,
+            existing.latestEventSequence()
+        );
+
+        when(repository.findSession("session-1"))
+            .thenReturn(java.util.Optional.of(existing))
+            .thenReturn(java.util.Optional.of(existing))
+            .thenReturn(java.util.Optional.of(updated));
+        when(gateway.isWorkflowOpen("session-1")).thenReturn(true);
+
+        SessionRuntimeDtos.SessionRuntimeSessionDto result = service.humanOperatorReply(
+            "session-1",
+            new SessionRuntimeDtos.HumanOperatorReplyRequest(textMessageInput("人工回复"), Map.of())
+        );
+
+        assertEquals(updated, result);
+        verify(gateway).humanOperatorReply(eq("session-1"), argThat(signal ->
+            "user-operator".equals(signal.operatorId()) && signal.message() != null
+        ));
     }
 
     @Test
@@ -457,6 +539,23 @@ class SessionRuntimeServiceTest {
             new CatalogDtos.AssistantModelPolicyDto("model-1"),
             new CatalogDtos.KnowledgeAccessPolicyDto(false, null),
             new CatalogDtos.MemoryPolicyDto(true, 8)
+        );
+    }
+
+    private static CurrentUserResolver currentUserResolver(String userId) {
+        return () -> new AuthModels.PlatformUser(
+            userId,
+            "operator",
+            "Operator",
+            "operator@example.com",
+            AuthModels.AuthSource.LOCAL_BOOTSTRAP,
+            null,
+            null,
+            AuthModels.UserStatus.ACTIVE,
+            Instant.now(),
+            Instant.now(),
+            Instant.now(),
+            List.of(AuthModels.Role.DEVELOPER)
         );
     }
 

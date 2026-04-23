@@ -1,6 +1,7 @@
 package com.lynxus.platform.session;
 
 import com.lynxus.contracts.session.SessionContracts.ExternalCallbackSignal;
+import com.lynxus.contracts.session.SessionContracts.EndHumanHandoffSignal;
 import com.lynxus.contracts.session.SessionContracts.HumanResumeSignal;
 import com.lynxus.contracts.session.SessionContracts.HumanOperatorReplySignal;
 import com.lynxus.contracts.session.SessionContracts.SessionSnapshot;
@@ -33,7 +34,7 @@ public interface SessionWorkflowGateway {
 
     void externalCallback(String workflowId, ExternalCallbackSignal signal);
 
-    void endHumanHandoff(String workflowId);
+    void endHumanHandoff(String workflowId, EndHumanHandoffSignal signal);
 
     void humanOperatorReply(String workflowId, HumanOperatorReplySignal signal);
 
@@ -101,8 +102,8 @@ public interface SessionWorkflowGateway {
         }
 
         @Override
-        public void endHumanHandoff(String workflowId) {
-            existingWorkflowStub(workflowId).endHumanHandoff();
+        public void endHumanHandoff(String workflowId, EndHumanHandoffSignal signal) {
+            existingWorkflowStub(workflowId).endHumanHandoff(signal);
         }
 
         @Override

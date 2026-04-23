@@ -115,7 +115,7 @@ docker build \
 - 公共字段：`service`、`traceId`、`spanId`、`sessionId`、`workflowId`、`customerId`、`userId`
 - 字段语义：`customerId` 表示业务客户或外部终端用户；`userId` 表示平台系统用户
 - 跨服务透传头：`traceparent`、`X-Lynxus-Session-Id`、`X-Lynxus-Workflow-Id`、`X-Lynxus-Customer-Id`、`X-Lynxus-User-Id`
-- Web 运行态语义：业务用户在会话页发消息时使用 `customerId`；若后续补人工接管操作台，`human-reply / human-resume / handoff-end` 这类操作应写平台侧 `userId / operatorId`
+- Web 运行态语义：业务用户在会话页发消息时使用 `customerId`；内部登录态下的人工相关操作属于平台用户域，`human-reply / human-resume / handoff-end` 这类操作统一取登录态 `userId`，不再由内部 runtime 请求体传 `operatorId`。`operatorId` 仍保留在 workflow / 对接模型中，供后续非登录态外部接口使用。
 
 本地开发日志格式切换约定：
 

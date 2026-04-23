@@ -1,6 +1,7 @@
 package com.lynxus.contracts.session;
 
 import com.lynxus.contracts.session.SessionContracts.ExternalCallbackSignal;
+import com.lynxus.contracts.session.SessionContracts.EndHumanHandoffSignal;
 import com.lynxus.contracts.session.SessionContracts.HumanResumeSignal;
 import com.lynxus.contracts.session.SessionContracts.HumanOperatorReplySignal;
 import com.lynxus.contracts.session.SessionContracts.PlaybookProgressUpdate;
@@ -29,7 +30,7 @@ public interface SessionWorkflow {
     void externalCallback(ExternalCallbackSignal signal);
 
     @SignalMethod
-    void endHumanHandoff();
+    void endHumanHandoff(EndHumanHandoffSignal signal);
 
     @SignalMethod
     void syncPlaybookProgress(PlaybookProgressUpdate update);

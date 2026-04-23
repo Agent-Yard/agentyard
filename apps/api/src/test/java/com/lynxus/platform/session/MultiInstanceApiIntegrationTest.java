@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lynxus.contracts.session.SessionContracts.ExternalCallbackSignal;
+import com.lynxus.contracts.session.SessionContracts.EndHumanHandoffSignal;
 import com.lynxus.contracts.session.SessionContracts.HumanOperatorReplySignal;
 import com.lynxus.contracts.session.SessionContracts.HumanResumeSignal;
 import com.lynxus.contracts.session.SessionContracts.PlaybookRun;
@@ -1309,7 +1310,7 @@ class MultiInstanceApiIntegrationTest {
         }
 
         @Override
-        public void endHumanHandoff(String workflowId) {
+        public void endHumanHandoff(String workflowId, EndHumanHandoffSignal signal) {
             throw new UnsupportedOperationException("handoff end is not used in multi-instance tests");
         }
 
