@@ -22,7 +22,7 @@ Lynxus 当前定位为企业智能体平台 Alpha 原型，目标不是做单点
 - 可本地联调、可真实执行的 Alpha 阶段产品骨架
 - 已具备发布锚点、运行持久化、人工接管与恢复闭环的系统原型
 
-当前仍不应定义为生产平台。多租户治理、完整审计、订阅式观测和正式生产运维能力仍未闭环。
+当前仍不应定义为生产平台。多租户治理、完整审计、细粒度观测和正式生产运维能力仍未闭环。
 
 ## 2. 项目要解决的问题
 
@@ -156,7 +156,9 @@ Lynxus 当前的解法，是把这些问题收束到统一平台结构中：
 
 - PostgreSQL：控制面与运行态投影、知识服务数据存储
 - MinIO：知识对象存储
+- Redis：共享登录态、分布式锁、幂等和 session SSE replay / broadcast
 - Temporal：session / playbook 长流程编排
+- sandbox：playbook `STEP` 节点代码执行沙箱
 
 ## 6. 当前关键设计取舍
 
@@ -185,7 +187,7 @@ Lynxus 当前的解法，是把这些问题收束到统一平台结构中：
 
 ### 6.5 将命令受理与结果观测解耦
 
-运行入口当前统一是“提交命令，然后从 session detail 观察结果”，API 不再同步等待首个业务结果。这样让 API、worker 和前端的职责边界更稳定，也为后续 SSE 预留了明确落点。
+运行入口当前统一是“提交命令，然后从 session detail / session SSE 观察结果”，API 不再同步等待首个业务结果。这样让 API、worker 和前端的职责边界更稳定，也让跨实例流式观测可以独立演进。
 
 ## 7. 当前边界与不足
 
@@ -194,7 +196,7 @@ Lynxus 当前的解法，是把这些问题收束到统一平台结构中：
 - 默认单租户，复杂租户治理仅保留模型边界
 - 认证已具备 API Session 与 OIDC 边界，但开发态仍保留 bootstrap 登录旁路
 - 运行态当前以 session 投影 + event 时间线为主，还不是完整审计账本
-- 运行观测仍以轮询为主，session 级 SSE 尚未落地
+- session 级 SSE 已落地，但长 session 分页、派生视图和操作台收口仍未补齐
 - Web 运行页尚未补全人工接管、human resume、external callback 的操作面板
 - external interaction 的 provider adapter、签名校验和补偿治理仍未闭环
 - 软删除、归档视图、版本差异和发布影响展示仍未完整补齐
@@ -204,10 +206,10 @@ Lynxus 当前的解法，是把这些问题收束到统一平台结构中：
 
 ## 8. 下一阶段重点
 
-### 8.1 补齐订阅式运行观测
+### 8.1 补强运行观测
 
-- 在 `session-runtime` 投影基础上补 session 级 SSE
-- 降低运行页整量轮询成本
+- 在现有 session 级 SSE 基础上补长 session 分页、过滤和派生视图
+- 继续降低运行页 fallback 轮询成本
 - 强化事件时间线与 playbook waiting / resume 的即时反馈
 
 ### 8.2 完善人工操作链路

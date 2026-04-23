@@ -7,8 +7,9 @@
 - 长流程托管：Temporal SDK 1.32.1
 - 执行运行时：Python + FastAPI
 - 知识检索服务：Python + FastAPI + PostgreSQL `pgvector + pg_trgm + tsvector`
-- 目录与运行态持久化：PostgreSQL JSONB
+- 目录与运行态持久化：PostgreSQL typed schema + JSONB 嵌套配置
 - 契约层：`packages/contracts` + `packages/contracts-jvm`
+- 持久化与共享状态层：`packages/persistence-jvm` + `packages/shared-redis-jvm`
 - 启动脚本：根目录 `scripts/*.sh` 统一装载环境变量并拉起各应用
 
 ## 当前运行架构
@@ -43,12 +44,12 @@
 
 - 已移除 `LangGraph`，不再以多节点 agent 图作为主运行模型
 - 控制面公开的运行入口收敛到 `/api/session-runtime/...`
-- 当前前端运行态仍以轮询拉取 session detail 为主，SSE 尚未落地
+- 当前前端运行态优先走 session 级 SSE，轮询作为 fallback；但长 session 分页、派生视图和更细粒度订阅仍未补齐
 - external interaction 只作为 playbook 的等待点与恢复来源，不再保留独立 runtime 主模型
 
 ## 目标扩展方向
 
 - 权限与身份：继续收敛真实 OIDC / IAM 与更细粒度授权
-- 观测：在 `session event / playbook run` 投影之上补订阅式推送与审计账本
+- 观测：在现有 `session event / playbook run` + SSE 基础上补派生视图、分页查询和更完整审计账本
 - 发布治理：灰度、回滚、版本 diff 与影响分析
 - 运行基座：增强 playbook provider 生态、回调安全、运维告警和生产隔离

@@ -9,6 +9,7 @@
 - 在单轮推理内执行有上限的 `LLM -> tool_call -> tool_result -> final_decision` 循环
 - 返回新的 `sharedState` 快照
 - 采集单轮内各次 OpenAI-compatible 模型调用的 usage 明细，并随结果回传给 worker 落库
+- 执行 playbook `TOOL_TASK`，为 worker 返回结构化工具任务结果
 - 通过内部鉴权和 `traceparent` 头保持服务间调用约束与链路日志
 
 ## 启动
@@ -35,8 +36,9 @@ uv run --directory apps/agent-runtime --package lynxus-agent-runtime pytest test
 当前 runtime 暴露的核心接口：
 
 - `POST /agent-turns/execute`
+- `POST /playbook-tool-tasks/execute`
 
-它由 `apps/worker` 通过 HTTP 调用，不直接面向控制台页面。
+它们都由 `apps/worker` 通过 HTTP 调用，不直接面向控制台页面。
 
 ## 环境变量
 

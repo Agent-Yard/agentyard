@@ -1,6 +1,42 @@
-# 当前对象结构
+# 项目结构与对象模型
 
-## 1. 治理主树
+## 1. Monorepo 结构
+
+```text
+apps/
+  api/                Spring Boot 控制面 API
+  worker/             Temporal workflow worker
+  web/                Vue + Ant Design Vue 控制台
+  agent-runtime/      Python owner agent / playbook tool task 执行运行时
+  knowledge-service/  Python 知识导入、快照构建与检索服务
+packages/
+  contracts/          OpenAPI 与 TypeScript 合同
+  contracts-jvm/      JVM 侧 session / playbook / runtime 契约
+  persistence-jvm/    JVM 侧 PostgreSQL 持久化基座与 jOOQ schema
+  python-common/      Python 服务共享工具库
+  shared-redis-jvm/   JVM 侧共享 Redis keyspace / lock / pubsub / codec
+infra/
+  local/              本机联调 Docker Compose
+  dev/                开发服务器常驻 Docker Compose
+scripts/
+  local/              本地源码直跑脚本
+  dev/                开发服务器源码直跑脚本
+  common/             环境变量装载与进程管理脚本
+docs/
+  architecture/       当前架构与环境说明
+  todo/               仍然有效的待办分解
+  develop_record/     历史留档，不作为当前实现基准
+demo/                 演示素材目录，不参与当前主实现说明
+```
+
+## 2. 构建与运行基座
+
+- Gradle 多项目：`apps/api`、`apps/worker`、`packages/contracts-jvm`、`packages/persistence-jvm`、`packages/shared-redis-jvm`
+- pnpm workspace：`apps/web`、`packages/contracts`
+- uv workspace：`apps/agent-runtime`、`apps/knowledge-service`、`packages/python-common`
+- 本地依赖：PostgreSQL、MinIO、Redis、Temporal、sandbox
+
+## 3. 治理主树
 
 ### 租户
 
@@ -50,7 +86,7 @@
 
 ---
 
-## 2. 运行与发布横切面
+## 4. 运行与发布横切面
 
 ### 绑定与共享
 
@@ -106,7 +142,7 @@
 
 ---
 
-## 3. 可执行结构
+## 5. 可执行结构
 
 当前助手运行采用“两层能力模型”：
 
@@ -120,7 +156,15 @@
   - 节点类型为 `STEP / TOOL_TASK / HUMAN_TASK / EXTERNAL_INTERACTION / END`
   - 可挂起、恢复并返回结构化结果
 
-## 4. 一句话总结
+## 6. 代码与对象的一句话对应
+
+- `apps/api` 负责治理与 session-runtime 聚合 API
+- `apps/worker` 负责 `SessionWorkflow`、`PlaybookWorkflow` 和跨服务编排
+- `apps/agent-runtime` 负责 owner 单轮推理与 playbook tool task 执行
+- `apps/knowledge-service` 负责 source/job/document/snapshot 检索链路
+- `apps/web` 负责治理控制台与运行观测
+
+## 7. 一句话总结
 
 当前可以把 Lynxus 理解为：
 

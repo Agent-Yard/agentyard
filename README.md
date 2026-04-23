@@ -16,8 +16,8 @@ Orchestrate Enterprise Agents
 - 知识库导入任务状态机、失败重试、索引快照构建和检索验证工作台
 - 能力资源类型 `TOOL / LLM_MODEL / SKILL`，知识库作为独立一级域治理
 - 助手发布时冻结资源版本、知识绑定、智能体执行策略和编排图快照
-- 单助手会话、任务、工作流、节点轨迹和人工介入观测
-- `START / AGENT / HUMAN / END` 显式图编排
+- 单助手 session、session event、playbook run 和人工介入观测
+- `STEP / TOOL_TASK / HUMAN_TASK / EXTERNAL_INTERACTION / END` playbook 显式图编排
 - 基于 Temporal 的 `start / signal / resume` 长流程托管
 - Python `agent-runtime` 按发布快照动态执行知识检索、Skill 读取、Tool 调用和模型推理
 - 开发态用户会话接口，保留未来对接 OIDC / IAM 的边界
@@ -27,8 +27,8 @@ Orchestrate Enterprise Agents
 - 默认单租户，复杂租户治理只保留模型边界
 - 认证仍以 mock 为主
 - 运行态主投影已落 PostgreSQL，并在 API 启动时主动与 Temporal 对账
-- `sendMessage` / `launchTask` / `human-action` 已改为启动即返回，前端通过轮询收口运行结果
-- workflow 观测页已暴露 `agentTurnState`，可查看最新结构化决策和 turn logs
+- `createSession` / `sendMessage` / `human-resume` / `human-reply` / `external-callback` / `handoff/end` 都按异步命令受理，前端优先通过 session SSE 流接收更新，轮询只作 fallback
+- 运行观测主入口已经收敛到 session runtime 详情，可查看当前 owner、shared state、event 时间线和 playbook runs
 - MinIO / pgvector 已纳入本地依赖与配置，知识服务当前默认以 PostgreSQL 检索栈作为正式快照检索后端
 - 知识库导入与快照构建已改为异步后台任务；控制台会轮询展示进度、失败原因与手动重试入口
 
@@ -40,9 +40,13 @@ apps/
   worker/      Temporal workflow worker
   web/         Vue + Ant Design Vue console
   agent-runtime/ Python execution runtime
+  knowledge-service/ Python knowledge service
 packages/
   contracts/   OpenAPI spec and shared TypeScript contracts
   contracts-jvm/ Shared JVM workflow/runtime contracts
+  persistence-jvm/ Shared JVM PostgreSQL persistence layer
+  python-common/ Shared Python utilities
+  shared-redis-jvm/ Shared JVM Redis keyspace / lock / pubsub layer
 infra/
   local/       Docker Compose for local development
   dev/         Docker Compose for persistent development environment
@@ -65,10 +69,9 @@ docs/
 
 ## Documentation Notes
 
-- 当前阶段与范围说明：`docs/lynxus_mvp.md`
-- 当前对象模型说明：`docs/mvp_brief_models.md`
-- 当前代码结构与本地开发：`docs/architecture/code-framework.md`、`docs/architecture/local-development.md`
-- 开发服务器环境：`docs/architecture/dev-environment.md`
+- 当前项目结构与对象模型：`docs/project_structure.md`
+- 当前技术路线与代码框架：`docs/technical_route.md`、`docs/architecture/code-framework.md`
+- 当前本地开发与开发服务器环境：`docs/architecture/local-development.md`、`docs/architecture/dev-environment.md`
 - 当前待办：`docs/todo/`
 - 记录性文档目录：`docs/develop_record/`
 
@@ -83,7 +86,7 @@ cd infra/local
 docker compose up -d
 ```
 
-默认本地依赖包含 PostgreSQL、MinIO 和 Temporal。
+默认本地依赖包含 PostgreSQL、MinIO、Redis、Temporal 和 sandbox。
 其中 PostgreSQL 会在本地自动准备 `lynxus_core` 和 `lynxus_knowledge` 数据库，分别给 API/worker 核心链路与 knowledge service 使用。
 知识服务按当前实现默认要求 PostgreSQL 内已启用 `pgvector` 与 `pg_trgm`，不再保留 OpenSearch 或本地嵌入式检索回退。
 
@@ -153,7 +156,7 @@ pnpm dev
 ### 5. 常用环境变量
 
 API 启动时会自动对数据库中的非终态 workflow 做一次 Temporal 对账。
-当前不再提供内置 demo seed 或 demo SQL 导入路径；目录、资源和知识库数据需由控制台或 API 显式创建。
+当前没有自动 demo seed 或 demo SQL 导入路径；目录、资源和知识库数据需由控制台或 API 显式创建。
 知识库当前支持文件上传与 URL 导入；运行态只消费已发布知识版本绑定的 `READY` snapshot。
 
 前端源码开发默认连接 `http://localhost:8080/api`，统一通过仓库根目录环境文件覆盖，例如 `.env` / `.env.local` / `.env.dev`：
@@ -200,18 +203,19 @@ LYNXUS_TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT=PT2M
 
 ## Runtime Model
 
-当前运行链路已经是“发布快照驱动的真实图编排”：
+当前运行链路已经收敛到“发布快照驱动的 session-owner-playbook 模型”：
 
-- Spring API 负责控制面、目录数据、发布快照、会话和运行实例聚合
-- Temporal worker 负责长流程托管与人工 signal 恢复
-- Python `agent-runtime` 按发布快照中的 graph 动态执行节点
-- `HUMAN` 节点会生成 checkpoint 与待办，恢复后继续沿图向后执行
-- `SKILL` 资源会作为智能体按需读取的技能提示，而不是独立 Prompt 模板
+- Spring API 负责控制面、发布快照、认证会话和 `session-runtime` 聚合
+- Temporal worker 负责 `SessionWorkflow`、`PlaybookWorkflow` 和人工 / 外部恢复 signal
+- Python `agent-runtime` 负责 owner agent 单轮推理与 playbook `TOOL_TASK`
+- Python `knowledge-service` 负责知识导入、快照构建与按发布快照检索
+- Web 运行页围绕 session detail 与 session SSE 流观察 owner、shared state、event 和 playbook run
 
 关键契约与实现可从这些入口查看：
 
-- `packages/contracts-jvm/src/main/java/com/lynxus/contracts/runtime/WorkflowContracts.java`
+- `packages/contracts-jvm/src/main/java/com/lynxus/contracts/session/SessionContracts.java`
 - `apps/api/src/main/java/com/lynxus/platform/catalog/CatalogService.java`
-- `apps/api/src/main/java/com/lynxus/platform/runtime/RuntimeService.java`
-- `apps/worker/src/main/java/com/lynxus/worker/workflow/AssistantRunWorkflowImpl.java`
+- `apps/api/src/main/java/com/lynxus/platform/session/SessionRuntimeService.java`
+- `apps/worker/src/main/java/com/lynxus/worker/session/SessionWorkflowImpl.java`
+- `apps/worker/src/main/java/com/lynxus/worker/session/PlaybookWorkflowImpl.java`
 - `apps/agent-runtime/lynxus_agent_runtime/main.py`

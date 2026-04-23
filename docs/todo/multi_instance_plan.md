@@ -99,12 +99,13 @@
 - 结构化数据已落 PostgreSQL
 - 文件存储已落 MinIO 或 filesystem
 - 异步导入 / 建索引由 Temporal workflow 驱动，不靠进程内后台线程
+- 已暴露 `/healthz`
 - 代码里没有明显的长期进程级业务缓存
 
 结论：
 
 - Knowledge Service 也接近无状态
-- 但缺少健康端点、统一共享状态约束和多实例专项验证
+- 但仍缺统一共享状态约束和多实例专项验证
 
 #### Web
 

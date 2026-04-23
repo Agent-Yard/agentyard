@@ -23,19 +23,21 @@
 - `apps/web`：Vue 控制台，承接配置态页面、知识与资源工作台、运行态页面
 - `apps/api`：Spring Boot 控制面 API，负责目录治理、发布、认证与 `session-runtime` 聚合查询
 - `apps/worker`：Temporal worker，负责 `SessionWorkflow`、`PlaybookWorkflow` 与知识相关 workflow / activity
-- `apps/agent-runtime`：Python 执行运行时，负责单个 owner agent 的单轮推理
+- `apps/agent-runtime`：Python 执行运行时，负责单个 owner agent 的单轮推理与 playbook tool task 执行
 - `apps/knowledge-service`：Python 知识服务，负责知识源对象、导入任务、文档切片、索引快照与检索数据
 - `packages/contracts-jvm`：JVM 侧共享 session / playbook / runtime 契约
 - `packages/persistence-jvm`：JVM 侧共享 PostgreSQL persistence 基座，承载 jOOQ generated schema、shared store 与 JSONB helper
+- `packages/shared-redis-jvm`：JVM 侧共享 Redis keyspace、JSON codec、Pub/Sub bus 与分布式锁
 - `packages/contracts`：TypeScript 合同类型与 OpenAPI 文档
+- `packages/python-common`：Python 服务共享基础模块
 - `scripts`：本地开发启动脚本与环境变量装载
 - `infra/local`：本地 Docker 依赖
 
 当前仓库的构建方式是混合式的：
 
-- `apps/api`、`apps/worker`、`packages/contracts-jvm` 由根目录 Gradle 多项目管理
+- `apps/api`、`apps/worker`、`packages/contracts-jvm`、`packages/persistence-jvm`、`packages/shared-redis-jvm` 由根目录 Gradle 多项目管理
 - `apps/web`、`packages/contracts` 由 pnpm workspace 管理
-- `apps/agent-runtime`、`apps/knowledge-service` 通过根目录 `uv` workspace 管理
+- `apps/agent-runtime`、`apps/knowledge-service`、`packages/python-common` 通过根目录 `uv` workspace 管理
 
 ## 前端导航
 
@@ -93,10 +95,11 @@ Java core 数据访问当前以 `Flyway + jOOQ + packages/persistence-jvm` 为�
   - 负责 `PlaybookWorkflowImpl`
   - 负责 session / playbook 持久化 activity
 - `apps/worker/src/main/java/com/lynxus/worker/runtime`
-  - 负责通过 HTTP 调用 Python `agent-runtime` 与 `knowledge-service`
+  - 负责通过 HTTP 调用 Python `agent-runtime`、`knowledge-service` 与 sandbox
 - `apps/agent-runtime`
   - 负责执行单个 owner agent 的一轮推理
-  - 返回 `AgentTurnResult(decision, sharedState)`
+  - 负责执行 playbook `TOOL_TASK`
+  - 返回 `AgentTurnResult(decision, sharedState)` 或 `PlaybookToolTaskResult`
 
 ## 运行链路
 
@@ -124,7 +127,7 @@ Java core 数据访问当前以 `Flyway + jOOQ + packages/persistence-jvm` 为�
 - Java 持久化默认使用 jOOQ DSL，不再新增 `JdbcTemplate` / `NamedParameterJdbcTemplate` repository
 - `session runtime`、`platform_event`、`platform_user` 等共享表逻辑进入 `packages/persistence-jvm`
 - 控制面顶层治理对象采用类型化列建模，JSONB 只用于嵌套配置和发布快照
-- 前端运行态页面围绕 `session event / owner / playbook / handoff` 组织，不再暴露旧 workflow 观测页
+- 前端运行态页面围绕 `session event / owner / playbook / handoff` 组织，并优先通过 session SSE 接收更新
 - 当前系统层不做跨 assistant 自动切换；一次 session 只绑定一个 assistant
 
 ## 当前边界

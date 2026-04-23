@@ -13,19 +13,25 @@ apps/
   worker/      Temporal workflow worker
   web/         Vue + Ant Design Vue console
   agent-runtime/ Python execution runtime
-  knowledge-service Knowledge base service
+  knowledge-service/ Python knowledge service
 demo/         Just for user demo data, no need to read this unless required
 packages/
   contracts/   OpenAPI spec and shared TypeScript contracts
   contracts-jvm/ Shared JVM workflow/runtime contracts
+  persistence-jvm/ Shared JVM PostgreSQL persistence layer
+  python-common/ Shared Python utilities
+  shared-redis-jvm/ Shared JVM Redis keyspace / lock / pubsub layer
 infra/
   dev/         Docker Compose for dev environment
   local/       Docker Compose for local development
-scripts/       Local startup wrappers and env loading
+scripts/
+  common/      Shared env loading and process helpers
+  dev/         Source-run wrappers for dev environment
+  local/       Source-run wrappers for local development
 docs/
   architecture/      current architecture and startup notes
   briefing/          project briefing files, no need to read this unless required
-  doing/             active execution docs and in-progress task context
+  doing/             execution ledger for active tasks only; record during execution, then clear after self-check on completion
   project_todos.md   general todo document of this project
   todo/              current detailed todo docs
   develop_record/    archived working notes and completed refactor records, no need to read this unless required

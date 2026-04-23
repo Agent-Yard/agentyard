@@ -9,6 +9,7 @@
 - MinIO
 - Redis
 - Temporal
+- sandbox
 
 这些依赖服务于当前“控制面 + Temporal + Python runtime + 前端控制台”的本地联调链路。
 其中当前主链路最依赖的是 PostgreSQL、Temporal、MinIO、Redis 和知识服务；知识快照构建与检索默认依赖 PostgreSQL 内的 `pgvector + pg_trgm + tsvector`。
@@ -138,6 +139,7 @@ SPRING_PROFILES_ACTIVE=default pnpm local:worker
 - 前端开发服务：`http://127.0.0.1:5173`
 - Agent Runtime：`http://127.0.0.1:8090`
 - Knowledge Service：`http://127.0.0.1:8091`
+- Sandbox：`http://127.0.0.1:8092`
 - Redis：`127.0.0.1:6379`
 - MinIO Console：`http://127.0.0.1:9001`
 - Temporal UI：`http://<host>:8088`（对外监听，经过 Basic Auth 保护）
