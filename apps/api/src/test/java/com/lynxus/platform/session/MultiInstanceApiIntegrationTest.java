@@ -12,6 +12,12 @@ import com.lynxus.contracts.session.SessionContracts.PlaybookRunStatus;
 import com.lynxus.contracts.session.SessionContracts.SessionActorType;
 import com.lynxus.contracts.session.SessionContracts.SessionEvent;
 import com.lynxus.contracts.session.SessionContracts.SessionEventType;
+import com.lynxus.contracts.session.SessionContracts.SessionMessage;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageInput;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageRole;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageSender;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageSenderType;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageStatus;
 import com.lynxus.contracts.session.SessionContracts.SessionSnapshot;
 import com.lynxus.contracts.session.SessionContracts.SessionStartRequest;
 import com.lynxus.contracts.session.SessionContracts.SessionUserMessageUpdateResult;
@@ -37,6 +43,7 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -287,7 +294,15 @@ class MultiInstanceApiIntegrationTest {
             """
                 {
                   "customerId": "customer-1",
-                  "message": "hello from instance a"
+                  "message": {
+                    "blocks": [
+                      {
+                        "type": "TEXT",
+                        "text": "hello from instance a"
+                      }
+                    ],
+                    "metadata": {}
+                  }
                 }
                 """,
             null
@@ -300,7 +315,15 @@ class MultiInstanceApiIntegrationTest {
             """
                 {
                   "customerId": "customer-1",
-                  "message": "hello from instance b"
+                  "message": {
+                    "blocks": [
+                      {
+                        "type": "TEXT",
+                        "text": "hello from instance b"
+                      }
+                    ],
+                    "metadata": {}
+                  }
                 }
                 """,
             null
@@ -772,7 +795,8 @@ class MultiInstanceApiIntegrationTest {
             now,
             now,
             null,
-            0
+            0L,
+            0L
         ));
         repository.savePlaybookRun(new PlaybookRun(
             playbookRunId,
@@ -814,7 +838,8 @@ class MultiInstanceApiIntegrationTest {
             now,
             now,
             null,
-            0
+            0L,
+            0L
         ));
     }
 
@@ -822,19 +847,22 @@ class MultiInstanceApiIntegrationTest {
         SessionRuntimeRepository repository = instance.bean(SessionRuntimeRepository.class);
         SessionRuntimeChangeNoticePublisher publisher = instance.bean(SessionRuntimeChangeNoticePublisher.class);
         SessionRuntimeSessionDto current = repository.findSession(sessionId).orElseThrow();
-        long sequence = repository.nextEventSequence(sessionId);
+        long sequence = repository.nextMessageSequence(sessionId);
         Instant now = Instant.now();
-        repository.appendEvent(new SessionEvent(
-            "session-event-" + UUID.randomUUID(),
+        repository.appendMessage(new SessionMessage(
+            "session-message-" + UUID.randomUUID(),
             sessionId,
             sequence,
-            SessionEventType.OWNER_REPLY,
-            now,
-            SessionActorType.AGENT,
-            current.currentOwnerAgentId(),
-            Map.of("text", "synthetic update"),
+            SessionMessageRole.ASSISTANT,
+            new SessionMessageSender(SessionMessageSenderType.AGENT, current.currentOwnerAgentId(), current.currentOwnerAgentId()),
+            SessionMessageStatus.DELIVERED,
+            textMessageInput("synthetic update").blocks(),
+            Map.of(),
             null,
-            current.currentOwnerAgentId()
+            current.currentOwnerAgentId(),
+            null,
+            now,
+            now
         ));
         repository.saveSession(new SessionRuntimeSessionDto(
             current.id(),
@@ -857,7 +885,8 @@ class MultiInstanceApiIntegrationTest {
             current.createdAt(),
             now,
             current.endedAt(),
-            sequence
+            sequence,
+            current.latestEventSequence()
         ));
         publisher.publishSessionChanged(sessionId);
     }
@@ -927,6 +956,13 @@ class MultiInstanceApiIntegrationTest {
         HttpResponse<InputStream> response = client.httpClient().send(request.build(), HttpResponse.BodyHandlers.ofInputStream());
         assertEquals(200, response.statusCode());
         return new SseConnection(response.body());
+    }
+
+    private static SessionMessageInput textMessageInput(String text) {
+        return new SessionMessageInput(
+            List.of(Map.of("type", "TEXT", "text", text)),
+            Map.of()
+        );
     }
 
     record AuthenticatedClient(HttpClient httpClient, String sessionCookie) {
@@ -1129,19 +1165,22 @@ class MultiInstanceApiIntegrationTest {
             try {
                 maybeDelaySubmit();
                 SessionRuntimeSessionDto current = repository.findSession(workflowId).orElseThrow();
-                long sequence = repository.nextEventSequence(workflowId);
+                long sequence = repository.nextMessageSequence(workflowId);
                 Instant now = Instant.now();
-                repository.appendEvent(new SessionEvent(
+                repository.appendMessage(new SessionMessage(
                     message.messageId(),
                     workflowId,
                     sequence,
-                    SessionEventType.USER_MESSAGE,
-                    now,
-                    SessionActorType.USER,
-                    message.customerId(),
-                    message.payload(),
+                    SessionMessageRole.USER,
+                    new SessionMessageSender(SessionMessageSenderType.CUSTOMER, message.customerId(), message.customerId()),
+                    SessionMessageStatus.SENT,
+                    message.message().blocks(),
+                    message.message().metadata(),
                     null,
-                    current.currentOwnerAgentId()
+                    current.currentOwnerAgentId(),
+                    null,
+                    now,
+                    now
                 ));
                 repository.saveSession(new SessionRuntimeSessionDto(
                     current.id(),
@@ -1164,7 +1203,8 @@ class MultiInstanceApiIntegrationTest {
                     current.createdAt(),
                     now,
                     current.endedAt(),
-                    sequence
+                    sequence,
+                    current.latestEventSequence()
                 ));
                 changeNoticePublisher.publishSessionChanged(workflowId);
                 return new SessionUserMessageUpdateResult(SessionMessageDeliveryStatus.ACCEPTED, workflowId, null);
@@ -1223,6 +1263,7 @@ class MultiInstanceApiIntegrationTest {
                 SessionActorType.EXTERNAL_SYSTEM,
                 "test-external-system",
                 signal.payload(),
+                null,
                 signal.playbookRunId(),
                 current.currentOwnerAgentId()
             ));
@@ -1261,6 +1302,7 @@ class MultiInstanceApiIntegrationTest {
                 current.createdAt(),
                 now,
                 current.endedAt(),
+                current.latestMessageSequence(),
                 sequence
             ));
             changeNoticePublisher.publishSessionChanged(workflowId);

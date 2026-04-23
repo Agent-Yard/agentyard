@@ -27,6 +27,7 @@ import com.lynxus.persistence.jooq.tables.PlatformUser;
 import com.lynxus.persistence.jooq.tables.PlatformUserRoleBinding;
 import com.lynxus.persistence.jooq.tables.ResumeIntervention;
 import com.lynxus.persistence.jooq.tables.SessionRuntimeEvent;
+import com.lynxus.persistence.jooq.tables.SessionRuntimeMessage;
 import com.lynxus.persistence.jooq.tables.SessionRuntimePlaybookRun;
 import com.lynxus.persistence.jooq.tables.SessionRuntimeSession;
 import com.lynxus.persistence.jooq.tables.TaskInstance;
@@ -80,6 +81,7 @@ public class Indexes {
     public static final Index IDX_REF_RESOURCE_BINDING_RESOURCE = Internal.createIndex(DSL.name("idx_ref_resource_binding_resource"), CatalogRefResourceBinding.CATALOG_REF_RESOURCE_BINDING, new OrderField[] { CatalogRefResourceBinding.CATALOG_REF_RESOURCE_BINDING.RESOURCE_ID }, false);
     public static final Index IDX_RESUME_INTERVENTION_WORKFLOW = Internal.createIndex(DSL.name("idx_resume_intervention_workflow"), ResumeIntervention.RESUME_INTERVENTION, new OrderField[] { ResumeIntervention.RESUME_INTERVENTION.WORKFLOW_INSTANCE_ID, ResumeIntervention.RESUME_INTERVENTION.CREATED_AT, ResumeIntervention.RESUME_INTERVENTION.ID }, false);
     public static final Index IDX_SESSION_RUNTIME_EVENT_SESSION = Internal.createIndex(DSL.name("idx_session_runtime_event_session"), SessionRuntimeEvent.SESSION_RUNTIME_EVENT, new OrderField[] { SessionRuntimeEvent.SESSION_RUNTIME_EVENT.SESSION_ID, SessionRuntimeEvent.SESSION_RUNTIME_EVENT.SEQUENCE, SessionRuntimeEvent.SESSION_RUNTIME_EVENT.CREATED_AT }, false);
+    public static final Index IDX_SESSION_RUNTIME_MESSAGE_SESSION = Internal.createIndex(DSL.name("idx_session_runtime_message_session"), SessionRuntimeMessage.SESSION_RUNTIME_MESSAGE, new OrderField[] { SessionRuntimeMessage.SESSION_RUNTIME_MESSAGE.SESSION_ID, SessionRuntimeMessage.SESSION_RUNTIME_MESSAGE.SEQUENCE, SessionRuntimeMessage.SESSION_RUNTIME_MESSAGE.CREATED_AT }, false);
     public static final Index IDX_SESSION_RUNTIME_PLAYBOOK_RUN_SESSION = Internal.createIndex(DSL.name("idx_session_runtime_playbook_run_session"), SessionRuntimePlaybookRun.SESSION_RUNTIME_PLAYBOOK_RUN, new OrderField[] { SessionRuntimePlaybookRun.SESSION_RUNTIME_PLAYBOOK_RUN.SESSION_ID, SessionRuntimePlaybookRun.SESSION_RUNTIME_PLAYBOOK_RUN.UPDATED_AT.desc() }, false);
     public static final Index IDX_SESSION_RUNTIME_SESSION_CUSTOMER_ASSISTANT_STATUS = Internal.createIndex(DSL.name("idx_session_runtime_session_customer_assistant_status"), SessionRuntimeSession.SESSION_RUNTIME_SESSION, new OrderField[] { SessionRuntimeSession.SESSION_RUNTIME_SESSION.CUSTOMER_ID, SessionRuntimeSession.SESSION_RUNTIME_SESSION.ASSISTANT_ID, SessionRuntimeSession.SESSION_RUNTIME_SESSION.STATUS, SessionRuntimeSession.SESSION_RUNTIME_SESSION.UPDATED_AT.desc() }, false);
     public static final Index IDX_SESSION_RUNTIME_SESSION_UPDATED = Internal.createIndex(DSL.name("idx_session_runtime_session_updated"), SessionRuntimeSession.SESSION_RUNTIME_SESSION, new OrderField[] { SessionRuntimeSession.SESSION_RUNTIME_SESSION.UPDATED_AT.desc() }, false);
@@ -94,4 +96,5 @@ public class Indexes {
     public static final Index UK_KNOWLEDGE_RELEASE_BASE_VERSION = Internal.createIndex(DSL.name("uk_knowledge_release_base_version"), KnowledgeRelease.KNOWLEDGE_RELEASE, new OrderField[] { KnowledgeRelease.KNOWLEDGE_RELEASE.KNOWLEDGE_BASE_ID, KnowledgeRelease.KNOWLEDGE_RELEASE.VERSION }, true);
     public static final Index UK_PLATFORM_USER_EXTERNAL_IDENTITY = Internal.createIndex(DSL.name("uk_platform_user_external_identity"), PlatformUser.PLATFORM_USER, new OrderField[] { PlatformUser.PLATFORM_USER.EXTERNAL_ISSUER, PlatformUser.PLATFORM_USER.EXTERNAL_SUBJECT }, true);
     public static final Index UK_SESSION_RUNTIME_EVENT_SEQUENCE = Internal.createIndex(DSL.name("uk_session_runtime_event_sequence"), SessionRuntimeEvent.SESSION_RUNTIME_EVENT, new OrderField[] { SessionRuntimeEvent.SESSION_RUNTIME_EVENT.SESSION_ID, SessionRuntimeEvent.SESSION_RUNTIME_EVENT.SEQUENCE }, true);
+    public static final Index UK_SESSION_RUNTIME_MESSAGE_SEQUENCE = Internal.createIndex(DSL.name("uk_session_runtime_message_sequence"), SessionRuntimeMessage.SESSION_RUNTIME_MESSAGE, new OrderField[] { SessionRuntimeMessage.SESSION_RUNTIME_MESSAGE.SESSION_ID, SessionRuntimeMessage.SESSION_RUNTIME_MESSAGE.SEQUENCE }, true);
 }

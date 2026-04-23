@@ -2,6 +2,8 @@ package com.lynxus.platform.session;
 
 import com.lynxus.contracts.session.SessionContracts.PlaybookRun;
 import com.lynxus.contracts.session.SessionContracts.SessionEvent;
+import com.lynxus.contracts.session.SessionContracts.SessionMessage;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageInput;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -22,13 +24,13 @@ public final class SessionRuntimeDtos {
     public record CreateSessionRequest(
         String assistantId,
         String customerId,
-        String openingMessage
+        SessionMessageInput openingMessage
     ) {
     }
 
     public record SendSessionMessageRequest(
         String customerId,
-        String message
+        SessionMessageInput message
     ) {
     }
 
@@ -52,7 +54,7 @@ public final class SessionRuntimeDtos {
 
     public record HumanOperatorReplyRequest(
         String operatorId,
-        String message,
+        SessionMessageInput message,
         Map<String, Object> payload
     ) {
         public HumanOperatorReplyRequest {
@@ -81,6 +83,7 @@ public final class SessionRuntimeDtos {
         Instant createdAt,
         Instant updatedAt,
         Instant endedAt,
+        long latestMessageSequence,
         long latestEventSequence
     ) {
         public SessionRuntimeSessionDto {
@@ -90,10 +93,12 @@ public final class SessionRuntimeDtos {
 
     public record SessionRuntimeDetailDto(
         SessionRuntimeSessionDto session,
+        List<SessionMessage> messages,
         List<SessionEvent> events,
         List<PlaybookRun> playbookRuns
     ) {
         public SessionRuntimeDetailDto {
+            messages = messages == null ? List.of() : List.copyOf(messages);
             events = events == null ? List.of() : List.copyOf(events);
             playbookRuns = playbookRuns == null ? List.of() : List.copyOf(playbookRuns);
         }

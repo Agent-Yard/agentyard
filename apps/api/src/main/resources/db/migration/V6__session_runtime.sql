@@ -30,8 +30,27 @@ create table session_runtime_event (
     actor_type varchar(32) not null,
     actor_id varchar(255),
     payload jsonb not null,
+    related_message_id varchar(64),
     related_playbook_run_id varchar(64),
     related_owner_agent_id varchar(64)
+);
+
+create table session_runtime_message (
+    message_id varchar(64) primary key,
+    session_id varchar(64) not null,
+    sequence bigint not null,
+    role varchar(32) not null,
+    sender_type varchar(32) not null,
+    sender_id varchar(255),
+    sender_name varchar(255) not null,
+    status varchar(32) not null,
+    blocks jsonb not null,
+    metadata jsonb not null,
+    related_playbook_run_id varchar(64),
+    related_owner_agent_id varchar(64),
+    source_event_id varchar(64),
+    created_at timestamp with time zone not null,
+    updated_at timestamp with time zone not null
 );
 
 create table session_runtime_playbook_run (
@@ -50,8 +69,10 @@ create table session_runtime_playbook_run (
 );
 
 create unique index uk_session_runtime_event_sequence on session_runtime_event (session_id, sequence);
+create unique index uk_session_runtime_message_sequence on session_runtime_message (session_id, sequence);
 create index idx_session_runtime_session_customer_assistant_status
     on session_runtime_session (customer_id, assistant_id, status, updated_at desc);
 create index idx_session_runtime_session_updated on session_runtime_session (updated_at desc);
 create index idx_session_runtime_event_session on session_runtime_event (session_id, sequence asc, created_at asc);
+create index idx_session_runtime_message_session on session_runtime_message (session_id, sequence asc, created_at asc);
 create index idx_session_runtime_playbook_run_session on session_runtime_playbook_run (session_id, updated_at desc);

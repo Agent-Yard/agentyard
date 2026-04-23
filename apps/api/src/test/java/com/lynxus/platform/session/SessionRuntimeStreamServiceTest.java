@@ -41,18 +41,21 @@ class SessionRuntimeStreamServiceTest {
         SessionRuntimeRepository.SessionRuntimeChangeStamp initial = new SessionRuntimeRepository.SessionRuntimeChangeStamp(
             "session-1",
             session.updatedAt(),
+            session.latestMessageSequence(),
             session.latestEventSequence(),
             null
         );
         SessionRuntimeRepository.SessionRuntimeChangeStamp updated = new SessionRuntimeRepository.SessionRuntimeChangeStamp(
             "session-1",
             session.updatedAt().plusSeconds(5),
+            session.latestMessageSequence() + 1,
             session.latestEventSequence() + 1,
             null
         );
 
         when(replayStore.replayAfter("session-1", null)).thenReturn(new SessionRuntimeStreamDtos.SessionRuntimeStreamReplayResult(false, List.of()));
         when(repository.findSession("session-1")).thenReturn(Optional.of(session));
+        when(repository.listMessages("session-1")).thenReturn(List.of());
         when(repository.listEvents("session-1")).thenReturn(List.of());
         when(repository.listPlaybookRuns("session-1")).thenReturn(List.of());
         when(repository.findSessionChangeStamp("session-1")).thenReturn(Optional.of(initial), Optional.of(updated));
@@ -61,7 +64,9 @@ class SessionRuntimeStreamServiceTest {
         service.connect("session-1", null, "tester");
         service.pollSubscribedSessions();
 
-        verify(replayStore).append(argThat(event -> "SESSION_SNAPSHOT".equals(event.type())));
+        verify(replayStore).append(argThat(event ->
+            "SESSION_SNAPSHOT".equals(event.type()) && "session-snapshot:session-1:1:1".equals(event.id())
+        ));
         verify(replayStore).append(argThat(event -> "SESSION_UPDATED".equals(event.type())));
         verify(pubSubBus).publish(eq(keyspace.sseChannelSessionUpdated()), any());
     }
@@ -81,15 +86,16 @@ class SessionRuntimeStreamServiceTest {
             new RedisSharedStateProperties("instance-a", Duration.ofSeconds(10), Duration.ofSeconds(3), Duration.ofHours(24), Duration.ofMinutes(15), 128, Duration.ofSeconds(1))
         );
         SessionRuntimeSessionDto session = session("session-1", Instant.parse("2026-04-21T00:00:00Z"), 1L);
-        String initialFingerprint = "session-1:0:0:0";
-        String updatedFingerprint = "session-1:1713657605000:2:0";
+        String initialFingerprint = "session-1:0:0:0:0";
+        String updatedFingerprint = "session-1:1713657605000:2:2:0";
 
         when(replayStore.replayAfter("session-1", null)).thenReturn(new SessionRuntimeStreamDtos.SessionRuntimeStreamReplayResult(false, List.of()));
         when(repository.findSession("session-1")).thenReturn(Optional.of(session));
+        when(repository.listMessages("session-1")).thenReturn(List.of());
         when(repository.listEvents("session-1")).thenReturn(List.of());
         when(repository.listPlaybookRuns("session-1")).thenReturn(List.of());
         when(repository.findSessionChangeStamp("session-1")).thenReturn(Optional.of(
-            new SessionRuntimeRepository.SessionRuntimeChangeStamp("session-1", Instant.ofEpochMilli(0), 0L, null)
+            new SessionRuntimeRepository.SessionRuntimeChangeStamp("session-1", Instant.ofEpochMilli(0), 0L, 0L, null)
         ));
         when(replayStore.append(any())).thenReturn(true);
 
@@ -114,9 +120,10 @@ class SessionRuntimeStreamServiceTest {
             new RedisSharedStateProperties("instance-a", Duration.ofSeconds(10), Duration.ofSeconds(3), Duration.ofHours(24), Duration.ofMinutes(15), 128, Duration.ofSeconds(1))
         );
         SessionRuntimeSessionDto session = session("session-1", Instant.parse("2026-04-21T00:00:00Z"), 2L);
-        String updatedFingerprint = "session-1:1713657605000:2:0";
+        String updatedFingerprint = "session-1:1713657605000:2:2:0";
 
         when(repository.findSession("session-1")).thenReturn(Optional.of(session));
+        when(repository.listMessages("session-1")).thenReturn(List.of());
         when(repository.listEvents("session-1")).thenReturn(List.of());
         when(repository.listPlaybookRuns("session-1")).thenReturn(List.of());
         when(replayStore.append(any())).thenReturn(true);
@@ -127,7 +134,7 @@ class SessionRuntimeStreamServiceTest {
         verify(pubSubBus).publish(eq(keyspace.sseChannelSessionUpdated()), argThat(payload -> payload.contains(updatedFingerprint)));
     }
 
-    private static SessionRuntimeSessionDto session(String sessionId, Instant updatedAt, long latestEventSequence) {
+    private static SessionRuntimeSessionDto session(String sessionId, Instant updatedAt, long latestSequence) {
         return new SessionRuntimeSessionDto(
             sessionId,
             "scenario-1",
@@ -149,7 +156,8 @@ class SessionRuntimeStreamServiceTest {
             updatedAt.minusSeconds(5),
             updatedAt,
             null,
-            latestEventSequence
+            latestSequence,
+            latestSequence
         );
     }
 }

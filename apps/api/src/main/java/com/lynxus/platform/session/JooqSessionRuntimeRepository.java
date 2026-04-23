@@ -2,6 +2,7 @@ package com.lynxus.platform.session;
 
 import com.lynxus.contracts.session.SessionContracts.PlaybookRun;
 import com.lynxus.contracts.session.SessionContracts.SessionEvent;
+import com.lynxus.contracts.session.SessionContracts.SessionMessage;
 import com.lynxus.persistence.jooqsupport.JooqJsonbSupport;
 import com.lynxus.persistence.session.SessionRuntimeStore;
 import java.util.List;
@@ -41,6 +42,7 @@ public class JooqSessionRuntimeRepository implements SessionRuntimeRepository {
             .map(item -> new SessionRuntimeChangeStamp(
                 item.sessionId(),
                 item.sessionUpdatedAt(),
+                item.latestMessageSequence(),
                 item.latestEventSequence(),
                 item.latestPlaybookRunUpdatedAt()
             ));
@@ -69,8 +71,14 @@ public class JooqSessionRuntimeRepository implements SessionRuntimeRepository {
             session.createdAt(),
             session.updatedAt(),
             session.endedAt(),
+            session.latestMessageSequence(),
             session.latestEventSequence()
         ));
+    }
+
+    @Override
+    public List<SessionMessage> listMessages(String sessionId) {
+        return store.listMessages(sessionId);
     }
 
     @Override
@@ -79,8 +87,18 @@ public class JooqSessionRuntimeRepository implements SessionRuntimeRepository {
     }
 
     @Override
+    public long nextMessageSequence(String sessionId) {
+        return store.nextMessageSequence(sessionId);
+    }
+
+    @Override
     public long nextEventSequence(String sessionId) {
         return store.nextEventSequence(sessionId);
+    }
+
+    @Override
+    public void appendMessage(SessionMessage message) {
+        store.appendMessage(message);
     }
 
     @Override
@@ -120,6 +138,7 @@ public class JooqSessionRuntimeRepository implements SessionRuntimeRepository {
             session.createdAt(),
             session.updatedAt(),
             session.endedAt(),
+            session.latestMessageSequence(),
             session.latestEventSequence()
         );
     }

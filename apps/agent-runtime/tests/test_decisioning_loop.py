@@ -229,9 +229,35 @@ def _request_payload() -> dict:
         "trigger": {
             "triggerType": "USER_MESSAGE",
             "eventId": "evt-1",
+            "triggerMessageId": "msg-1",
             "payload": {"text": "帮我发起退款"},
         },
+        "recentMessages": [
+            {
+                "messageId": "msg-1",
+                "sessionId": "session-1",
+                "sequence": 1,
+                "role": "USER",
+                "sender": {
+                    "senderType": "CUSTOMER",
+                    "senderId": "customer-1",
+                    "senderName": "customer-1",
+                },
+                "status": "DELIVERED",
+                "blocks": [{"type": "TEXT", "text": "帮我发起退款"}],
+                "metadata": {},
+                "createdAt": "2026-04-19T00:00:01Z",
+                "updatedAt": "2026-04-19T00:00:01Z",
+            }
+        ],
         "recentEvents": [],
+    }
+
+
+def _text_message_input(text: str) -> dict:
+    return {
+        "blocks": [{"type": "TEXT", "text": text}],
+        "metadata": {},
     }
 
 
@@ -324,7 +350,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
                                     {
                                         "decision": {
                                             "action": "REPLY",
-                                            "replyContent": "已为你创建退款工单。",
+                                            "replyMessage": _text_message_input("已为你创建退款工单。"),
                                         },
                                         "sharedState": {
                                             "knownPreference": "email",
@@ -365,7 +391,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         result = outcome.result
         self.assertIsNotNone(result)
         self.assertEqual(result.decision.action, "REPLY")
-        self.assertEqual(result.decision.replyContent, "已为你创建退款工单。")
+        self.assertEqual(result.decision.replyMessage.blocks[0].text, "已为你创建退款工单。")
         self.assertEqual(result.sharedState["ticketId"], "ticket-1")
         self.assertEqual(len(request_log), 6)
         self.assertEqual(request_log[1]["url"], "https://knowledge.example/internal/retrieve")
@@ -483,8 +509,8 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
                                     {
                                         "decision": {
                                             "action": "REPLY",
-                                            "replyContent": "已收到",
-                                            "accompanyingReply": "这条不该阻断",
+                                            "replyMessage": _text_message_input("已收到"),
+                                            "accompanyingMessage": _text_message_input("这条不该阻断"),
                                         },
                                         "sharedState": {"knownPreference": "email"},
                                     },
@@ -506,7 +532,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         result = outcome.result
         self.assertIsNotNone(result)
         self.assertEqual(result.decision.action, "REPLY")
-        self.assertEqual(result.decision.accompanyingReply, "这条不该阻断")
+        self.assertEqual(result.decision.accompanyingMessage.blocks[0].text, "这条不该阻断")
         self.assertEqual(1, len(outcome.llmUsage))
         self.assertFalse(outcome.llmUsage[0].usageAvailable)
         self.assertIsNone(outcome.llmUsage[0].promptTokens)
@@ -640,7 +666,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
                                     {
                                         "decision": {
                                             "action": "REPLY",
-                                            "replyContent": "已处理",
+                                            "replyMessage": _text_message_input("已处理"),
                                         },
                                         "sharedState": {"knownPreference": "email"},
                                     },

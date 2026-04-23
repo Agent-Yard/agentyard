@@ -24,6 +24,12 @@ import com.lynxus.contracts.session.SessionContracts.SessionActorType;
 import com.lynxus.contracts.session.SessionContracts.SessionEvent;
 import com.lynxus.contracts.session.SessionContracts.SessionEventType;
 import com.lynxus.contracts.session.SessionContracts.SessionMessageDeliveryStatus;
+import com.lynxus.contracts.session.SessionContracts.SessionMessage;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageInput;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageRole;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageSender;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageSenderType;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageStatus;
 import com.lynxus.contracts.session.SessionContracts.SessionSnapshot;
 import com.lynxus.contracts.session.SessionContracts.SessionStartRequest;
 import com.lynxus.contracts.session.SessionContracts.SessionTrigger;
@@ -51,7 +57,9 @@ import tools.jackson.databind.ObjectMapper;
 public class SessionWorkflowImpl implements SessionWorkflow {
     private static final String DECISION_REJECTED_REPLY = "当前无法完成该操作，请稍后再试";
     private static final String TURN_FAILED_REPLY = "当前处理遇到问题，请稍后再试";
+    private static final String SYSTEM_SENDER_NAME = "System";
     private static final int RECENT_EVENT_WINDOW = 20;
+    private static final int RECENT_MESSAGE_WINDOW = 20;
 
     private record DecisionValidation(
         AgentDecision decision,
@@ -83,6 +91,7 @@ public class SessionWorkflowImpl implements SessionWorkflow {
     private final Map<String, AgentConfig> agentsById = new LinkedHashMap<>();
     private final Map<String, PlaybookConfig> playbooksById = new LinkedHashMap<>();
     private final Map<String, PlaybookRun> playbookRunsById = new LinkedHashMap<>();
+    private final List<SessionMessage> messages = new ArrayList<>();
     private final List<SessionEvent> events = new ArrayList<>();
     private Promise<PlaybookRun> activePlaybookCompletion;
     private PlaybookWorkflow activePlaybookWorkflow;
@@ -127,6 +136,7 @@ public class SessionWorkflowImpl implements SessionWorkflow {
         this.agentsById.clear();
         this.playbooksById.clear();
         this.playbookRunsById.clear();
+        this.messages.clear();
         this.events.clear();
         this.activePlaybookCompletion = null;
         this.activePlaybookWorkflow = null;
@@ -177,24 +187,30 @@ public class SessionWorkflowImpl implements SessionWorkflow {
         if (snapshot.draining() || ended) {
             return new SessionUserMessageUpdateResult(SessionMessageDeliveryStatus.REJECTED, snapshot.sessionId(), "workflow draining");
         }
+        if (message == null || !hasMessageContent(message.message())) {
+            return new SessionUserMessageUpdateResult(SessionMessageDeliveryStatus.REJECTED, snapshot.sessionId(), "message content required");
+        }
         if (snapshot.agentTurnActive()) {
             return new SessionUserMessageUpdateResult(SessionMessageDeliveryStatus.BUSY, snapshot.sessionId(), "agent turn active");
         }
-        String eventId = appendEvent(
-            SessionEventType.USER_MESSAGE,
-            SessionActorType.USER,
+        String messageId = appendMessage(
+            SessionMessageRole.USER,
+            SessionMessageSenderType.CUSTOMER,
             message.customerId(),
-            Map.of("text", message.content(), "payload", message.payload()),
+            message.customerId(),
+            message.message(),
             snapshot.activePlaybookRunId(),
-            snapshot.currentOwnerAgentId()
+            snapshot.currentOwnerAgentId(),
+            null
         );
         if (snapshot.sessionHumanHandoffActive()) {
             return new SessionUserMessageUpdateResult(SessionMessageDeliveryStatus.ACCEPTED, snapshot.sessionId(), "session human handoff active");
         }
         executeTurn(new SessionTrigger(
             SessionTriggerType.USER_MESSAGE,
-            eventId,
-            Map.of("text", message.content(), "payload", message.payload(), "customerId", message.customerId())
+            messageId,
+            messageId,
+            Map.of("customerId", message.customerId())
         ));
         return new SessionUserMessageUpdateResult(SessionMessageDeliveryStatus.ACCEPTED, snapshot.sessionId(), null);
     }
@@ -267,16 +283,18 @@ public class SessionWorkflowImpl implements SessionWorkflow {
 
     @Override
     public void humanOperatorReply(HumanOperatorReplySignal signal) {
-        if (!snapshot.sessionHumanHandoffActive() || signal == null || signal.content() == null || signal.content().isBlank()) {
+        if (!snapshot.sessionHumanHandoffActive() || signal == null || !hasMessageContent(signal.message())) {
             return;
         }
-        appendEvent(
-            SessionEventType.HUMAN_OPERATOR_REPLY,
-            SessionActorType.HUMAN_OPERATOR,
+        appendMessage(
+            SessionMessageRole.HUMAN_OPERATOR,
+            SessionMessageSenderType.HUMAN_OPERATOR,
             signal.operatorId(),
-            Map.of("text", signal.content(), "payload", signal.payload()),
+            signal.operatorId(),
+            signal.message(),
             snapshot.activePlaybookRunId(),
-            snapshot.currentOwnerAgentId()
+            snapshot.currentOwnerAgentId(),
+            null
         );
     }
 
@@ -376,18 +394,18 @@ public class SessionWorkflowImpl implements SessionWorkflow {
                     owner.effectivePrivacyModelBinding(),
                     owner.effectivePrivacyMappingEnabled(),
                     trigger,
+                    recentMessages(),
                     recentEvents()
                 ));
             } catch (RuntimeException error) {
-                appendEvent(
+                emitSystemEventBackedReply(
                     SessionEventType.AGENT_TURN_FAILED,
-                    SessionActorType.SYSTEM,
                     currentOwnerAgentId,
                     Map.of("reason", error.getMessage() == null ? "agent turn failed" : error.getMessage(), "triggerType", trigger.triggerType().name()),
                     activePlaybookRunId,
-                    currentOwnerAgentId
+                    currentOwnerAgentId,
+                    textMessageInput(TURN_FAILED_REPLY)
                 );
-                emitOwnerReply(TURN_FAILED_REPLY, SessionActorType.SYSTEM, null, activePlaybookRunId, currentOwnerAgentId);
                 break;
             }
 
@@ -398,15 +416,14 @@ public class SessionWorkflowImpl implements SessionWorkflow {
                 String failureReason = outcome == null || outcome.failureReason() == null || outcome.failureReason().isBlank()
                     ? "agent turn failed"
                     : outcome.failureReason();
-                appendEvent(
+                emitSystemEventBackedReply(
                     SessionEventType.AGENT_TURN_FAILED,
-                    SessionActorType.SYSTEM,
                     currentOwnerAgentId,
                     Map.of("reason", failureReason, "triggerType", trigger.triggerType().name()),
                     activePlaybookRunId,
-                    currentOwnerAgentId
+                    currentOwnerAgentId,
+                    textMessageInput(TURN_FAILED_REPLY)
                 );
-                emitOwnerReply(TURN_FAILED_REPLY, SessionActorType.SYSTEM, null, activePlaybookRunId, currentOwnerAgentId);
                 break;
             }
             AgentTurnResult result = outcome.result();
@@ -444,7 +461,7 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             AgentDecision decision = validation.decision();
 
             if (decision.action() == AgentDecisionAction.REPLY) {
-                emitOwnerReply(decision.replyContent(), SessionActorType.AGENT, currentOwnerAgentId, activePlaybookRunId, currentOwnerAgentId);
+                emitOwnerReply(decision.replyMessage(), SessionActorType.AGENT, currentOwnerAgentId, activePlaybookRunId, currentOwnerAgentId, null);
                 break;
             }
             if (decision.action() == AgentDecisionAction.NO_REPLY) {
@@ -452,7 +469,7 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             }
 
             if (shouldEmitAccompanyingReply(decision)) {
-                emitOwnerReply(decision.accompanyingReply(), SessionActorType.AGENT, currentOwnerAgentId, activePlaybookRunId, currentOwnerAgentId);
+                emitOwnerReply(decision.accompanyingMessage(), SessionActorType.AGENT, currentOwnerAgentId, activePlaybookRunId, currentOwnerAgentId, null);
             }
 
             if (decision.action() == AgentDecisionAction.SWITCH_OWNER) {
@@ -629,6 +646,7 @@ public class SessionWorkflowImpl implements SessionWorkflow {
                 pendingOwnerReevaluationTrigger = new SessionTrigger(
                     SessionTriggerType.PLAYBOOK_COMPLETED,
                     lastEventId(),
+                    null,
                     reevaluationPayload
                 );
             }
@@ -687,7 +705,7 @@ public class SessionWorkflowImpl implements SessionWorkflow {
     }
 
     private DecisionValidation validateReplyDecision(AgentDecision decision) {
-        if (decision.replyContent() == null || decision.replyContent().isBlank()) {
+        if (!hasMessageContent(decision.replyMessage())) {
             return DecisionValidation.rejected("reply_content_required");
         }
         return DecisionValidation.accepted(decision);
@@ -762,8 +780,7 @@ public class SessionWorkflowImpl implements SessionWorkflow {
     }
 
     private boolean shouldEmitAccompanyingReply(AgentDecision decision) {
-        return decision.accompanyingReply() != null
-            && !decision.accompanyingReply().isBlank()
+        return hasMessageContent(decision.accompanyingMessage())
             && (
                 decision.action() == AgentDecisionAction.SWITCH_OWNER
                     || decision.action() == AgentDecisionAction.RUN_PLAYBOOK
@@ -815,35 +832,78 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             payload.put("playbookId", decision.playbookId());
             payload.put("playbookInput", decision.playbookInput());
         }
-        appendEvent(
+        emitSystemEventBackedReply(
             SessionEventType.AGENT_DECISION_REJECTED,
-            SessionActorType.SYSTEM,
             ownerAgentId,
             payload,
             activePlaybookRunId,
-            ownerAgentId
+            ownerAgentId,
+            textMessageInput(DECISION_REJECTED_REPLY)
         );
-        emitOwnerReply(DECISION_REJECTED_REPLY, SessionActorType.SYSTEM, null, activePlaybookRunId, ownerAgentId);
     }
 
     private void emitOwnerReply(
-        String reply,
+        SessionMessageInput reply,
         SessionActorType actorType,
         String actorId,
         String activePlaybookRunId,
-        String currentOwnerAgentId
+        String currentOwnerAgentId,
+        String sourceEventId
     ) {
-        if (reply == null || reply.isBlank()) {
+        emitOwnerReply(null, reply, actorType, actorId, activePlaybookRunId, currentOwnerAgentId, sourceEventId);
+    }
+
+    private void emitOwnerReply(
+        String messageId,
+        SessionMessageInput reply,
+        SessionActorType actorType,
+        String actorId,
+        String activePlaybookRunId,
+        String currentOwnerAgentId,
+        String sourceEventId
+    ) {
+        if (!hasMessageContent(reply)) {
             return;
         }
-        appendEvent(
-            SessionEventType.OWNER_REPLY,
-            actorType,
+        appendMessage(
+            messageId,
+            actorType == SessionActorType.SYSTEM ? SessionMessageRole.SYSTEM : SessionMessageRole.ASSISTANT,
+            actorType == SessionActorType.SYSTEM ? SessionMessageSenderType.SYSTEM : SessionMessageSenderType.AGENT,
             actorId,
-            Map.of("text", reply),
+            resolveSenderName(
+                actorType == SessionActorType.SYSTEM ? SessionMessageSenderType.SYSTEM : SessionMessageSenderType.AGENT,
+                actorId
+            ),
+            reply,
             activePlaybookRunId,
-            currentOwnerAgentId
+            currentOwnerAgentId,
+            sourceEventId
         );
+    }
+
+    private void emitSystemEventBackedReply(
+        SessionEventType eventType,
+        String actorId,
+        Map<String, Object> payload,
+        String relatedPlaybookRunId,
+        String relatedOwnerAgentId,
+        SessionMessageInput reply
+    ) {
+        if (!hasMessageContent(reply)) {
+            appendEvent(eventType, SessionActorType.SYSTEM, actorId, payload, relatedPlaybookRunId, relatedOwnerAgentId);
+            return;
+        }
+        String messageId = nextMessageId();
+        String eventId = appendEvent(
+            eventType,
+            SessionActorType.SYSTEM,
+            actorId,
+            payload,
+            messageId,
+            relatedPlaybookRunId,
+            relatedOwnerAgentId
+        );
+        emitOwnerReply(messageId, reply, SessionActorType.SYSTEM, null, relatedPlaybookRunId, relatedOwnerAgentId, eventId);
     }
 
     private ActivePlaybookSummary activePlaybookSummary(String runId) {
@@ -865,9 +925,69 @@ public class SessionWorkflowImpl implements SessionWorkflow {
         );
     }
 
+    private List<SessionMessage> recentMessages() {
+        int start = Math.max(0, messages.size() - RECENT_MESSAGE_WINDOW);
+        return List.copyOf(messages.subList(start, messages.size()));
+    }
+
     private List<SessionEvent> recentEvents() {
         int start = Math.max(0, events.size() - RECENT_EVENT_WINDOW);
         return List.copyOf(events.subList(start, events.size()));
+    }
+
+    private String appendMessage(
+        String messageId,
+        SessionMessageRole role,
+        SessionMessageSenderType senderType,
+        String senderId,
+        String senderName,
+        SessionMessageInput message,
+        String relatedPlaybookRunId,
+        String relatedOwnerAgentId,
+        String sourceEventId
+    ) {
+        String resolvedMessageId = messageId == null || messageId.isBlank() ? nextMessageId() : messageId;
+        SessionMessage item = new SessionMessage(
+            resolvedMessageId,
+            snapshot.sessionId(),
+            messages.size() + 1L,
+            role,
+            new SessionMessageSender(senderType, senderId, senderName),
+            SessionMessageStatus.SENT,
+            message.blocks(),
+            message.metadata(),
+            relatedPlaybookRunId,
+            relatedOwnerAgentId,
+            sourceEventId,
+            now(),
+            now()
+        );
+        messages.add(item);
+        persistenceActivities.appendMessage(item);
+        return resolvedMessageId;
+    }
+
+    private String appendMessage(
+        SessionMessageRole role,
+        SessionMessageSenderType senderType,
+        String senderId,
+        String senderName,
+        SessionMessageInput message,
+        String relatedPlaybookRunId,
+        String relatedOwnerAgentId,
+        String sourceEventId
+    ) {
+        return appendMessage(
+            null,
+            role,
+            senderType,
+            senderId,
+            senderName,
+            message,
+            relatedPlaybookRunId,
+            relatedOwnerAgentId,
+            sourceEventId
+        );
     }
 
     private String appendEvent(
@@ -875,6 +995,18 @@ public class SessionWorkflowImpl implements SessionWorkflow {
         SessionActorType actorType,
         String actorId,
         Map<String, Object> payload,
+        String relatedPlaybookRunId,
+        String relatedOwnerAgentId
+    ) {
+        return appendEvent(eventType, actorType, actorId, payload, null, relatedPlaybookRunId, relatedOwnerAgentId);
+    }
+
+    private String appendEvent(
+        SessionEventType eventType,
+        SessionActorType actorType,
+        String actorId,
+        Map<String, Object> payload,
+        String relatedMessageId,
         String relatedPlaybookRunId,
         String relatedOwnerAgentId
     ) {
@@ -888,6 +1020,7 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             actorType,
             actorId,
             payload,
+            relatedMessageId,
             relatedPlaybookRunId,
             relatedOwnerAgentId
         );
@@ -1044,6 +1177,48 @@ public class SessionWorkflowImpl implements SessionWorkflow {
 
     private String stableLlmUsageId(String triggerEventId, int callSequence) {
         return sha256Hex(snapshot.sessionId() + "|" + triggerEventId + "|" + callSequence);
+    }
+
+    private static boolean hasMessageContent(SessionMessageInput input) {
+        if (input == null || input.blocks() == null || input.blocks().isEmpty()) {
+            return false;
+        }
+        for (Object block : input.blocks()) {
+            if (!(block instanceof Map<?, ?> entry)) {
+                continue;
+            }
+            Object type = entry.get("type");
+            Object value = "TEXT".equals(type) ? entry.get("text") : "RICH_TEXT".equals(type) ? entry.get("content") : null;
+            if (value instanceof String text && !text.isBlank()) {
+                return true;
+            }
+            if ("IMAGE".equals(type) || "CARD".equals(type)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static SessionMessageInput textMessageInput(String text) {
+        return new SessionMessageInput(
+            List.of(Map.of("type", "TEXT", "text", text)),
+            Map.of()
+        );
+    }
+
+    private static String nextMessageId() {
+        return "session-message-" + Workflow.randomUUID();
+    }
+
+    private String resolveSenderName(SessionMessageSenderType senderType, String senderId) {
+        return switch (senderType) {
+            case CUSTOMER, HUMAN_OPERATOR -> senderId == null || senderId.isBlank() ? senderType.name() : senderId;
+            case AGENT -> {
+                AgentConfig agent = senderId == null ? null : agentsById.get(senderId);
+                yield agent == null ? (senderId == null || senderId.isBlank() ? "Agent" : senderId) : agent.name();
+            }
+            case SYSTEM -> SYSTEM_SENDER_NAME;
+        };
     }
 
     private static String sha256Hex(String value) {

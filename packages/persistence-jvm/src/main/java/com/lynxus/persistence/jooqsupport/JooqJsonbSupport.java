@@ -1,6 +1,7 @@
 package com.lynxus.persistence.jooqsupport;
 
 import java.util.Map;
+import java.util.List;
 import org.jooq.JSONB;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.type.TypeReference;
@@ -8,6 +9,8 @@ import tools.jackson.databind.ObjectMapper;
 
 public final class JooqJsonbSupport {
     private static final TypeReference<Map<String, Object>> OBJECT_MAP = new TypeReference<>() {
+    };
+    private static final TypeReference<List<Object>> OBJECT_LIST = new TypeReference<>() {
     };
 
     private final ObjectMapper objectMapper;
@@ -40,6 +43,21 @@ public final class JooqJsonbSupport {
             return objectMapper.readValue(json, OBJECT_MAP);
         } catch (JacksonException error) {
             throw new IllegalStateException("failed to deserialize jsonb object map", error);
+        }
+    }
+
+    public List<Object> readList(JSONB value) {
+        if (value == null) {
+            return List.of();
+        }
+        String json = value.data();
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(json, OBJECT_LIST);
+        } catch (JacksonException error) {
+            throw new IllegalStateException("failed to deserialize jsonb object list", error);
         }
     }
 

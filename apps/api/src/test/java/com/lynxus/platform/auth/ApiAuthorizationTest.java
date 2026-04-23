@@ -127,7 +127,8 @@ class ApiAuthorizationTest {
                 Instant.parse("2026-04-01T00:00:00Z"),
                 Instant.parse("2026-04-01T00:00:00Z"),
                 null,
-                0
+                0L,
+                0L
             ));
 
             MockMvc mockMvc = mockMvc(context);
@@ -139,7 +140,15 @@ class ApiAuthorizationTest {
                         {
                           "assistantId": "assistant-1",
                           "customerId": "customer-1",
-                          "openingMessage": "你好"
+                          "openingMessage": {
+                            "blocks": [
+                              {
+                                "type": "TEXT",
+                                "text": "你好"
+                              }
+                            ],
+                            "metadata": {}
+                          }
                         }
                         """))
                 .andExpect(status().isOk())

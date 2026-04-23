@@ -9,6 +9,11 @@ import com.lynxus.contracts.session.SessionContracts.PlaybookRunStatus;
 import com.lynxus.contracts.session.SessionContracts.SessionActorType;
 import com.lynxus.contracts.session.SessionContracts.SessionEvent;
 import com.lynxus.contracts.session.SessionContracts.SessionEventType;
+import com.lynxus.contracts.session.SessionContracts.SessionMessage;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageRole;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageSender;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageSenderType;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageStatus;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -42,15 +47,31 @@ class SessionPersistenceActivitiesImplTest {
             Instant.parse("2026-04-21T00:00:00Z"),
             null
         );
+        SessionMessage message = new SessionMessage(
+            "message-1",
+            "session-1",
+            1L,
+            SessionMessageRole.USER,
+            new SessionMessageSender(SessionMessageSenderType.CUSTOMER, "customer-1", "customer-1"),
+            SessionMessageStatus.SENT,
+            List.of(Map.of("type", "TEXT", "text", "退款")),
+            Map.of(),
+            null,
+            null,
+            null,
+            Instant.parse("2026-04-21T00:00:01Z"),
+            Instant.parse("2026-04-21T00:00:01Z")
+        );
         SessionEvent event = new SessionEvent(
             "event-1",
             "session-1",
             1L,
-            SessionEventType.USER_MESSAGE,
+            SessionEventType.OWNER_SWITCH,
             Instant.parse("2026-04-21T00:00:01Z"),
-            SessionActorType.USER,
-            "customer-1",
+            SessionActorType.AGENT,
+            "agent-1",
             Map.of(),
+            null,
             null,
             null
         );
@@ -70,6 +91,7 @@ class SessionPersistenceActivitiesImplTest {
         );
 
         activities.saveSession(session);
+        activities.appendMessage(message);
         activities.appendEvent(event);
         activities.appendLlmUsage(List.of(new SessionPersistenceActivities.LlmUsageRecord(
             "usage-1",
@@ -98,8 +120,9 @@ class SessionPersistenceActivitiesImplTest {
         )));
         activities.savePlaybookRun(playbookRun);
 
-        verify(publisher, times(3)).publishSessionChanged("session-1");
+        verify(publisher, times(4)).publishSessionChanged("session-1");
         verify(repository).saveSession(session);
+        verify(repository).appendMessage(message);
         verify(repository).appendEvent(event);
         verify(repository).appendLlmUsage(List.of(new SessionPersistenceActivities.LlmUsageRecord(
             "usage-1",

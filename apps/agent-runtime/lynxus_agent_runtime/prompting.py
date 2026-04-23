@@ -77,11 +77,11 @@ def build_prompt_bundle(request: AgentTurnRequest) -> PromptBundle:
         "skillReads": "optional array of skill resourceVersionIds when you need mounted skill details before the final decision",
         "decision": {
             "action": "REPLY | NO_REPLY | SWITCH_OWNER | RUN_PLAYBOOK | SESSION_HUMAN_HANDOFF",
-            "replyContent": "required when action=REPLY",
+            "replyMessage": "required when action=REPLY; SessionMessageInput with structured blocks",
             "targetAgentId": "required when action=SWITCH_OWNER",
             "playbookId": "required when action=RUN_PLAYBOOK",
             "playbookInput": "structured object when action=RUN_PLAYBOOK",
-            "accompanyingReply": "optional only for SWITCH_OWNER/RUN_PLAYBOOK/SESSION_HUMAN_HANDOFF",
+            "accompanyingMessage": "optional only for SWITCH_OWNER/RUN_PLAYBOOK/SESSION_HUMAN_HANDOFF; SessionMessageInput",
         },
         "sharedState": "full snapshot object to replace current sharedState",
     }
@@ -99,8 +99,8 @@ def build_prompt_bundle(request: AgentTurnRequest) -> PromptBundle:
             "Final output must be JSON only with keys decision and sharedState.",
             "Never invent unsupported fields. Keep sharedState as a full snapshot object.",
             "If a playbook is active, do not switch owner or start a second playbook.",
-            "If you choose REPLY, put the user-visible text in decision.replyContent.",
-            "If you choose NO_REPLY, do not include replyContent or accompanyingReply.",
+            "If you choose REPLY, put the user-visible structured message in decision.replyMessage.",
+            "If you choose NO_REPLY, do not include replyMessage or accompanyingMessage.",
             f"System prompt:\n{request.currentOwner.systemPrompt.strip() or '(empty)'}",
         ]
     )
@@ -133,11 +133,18 @@ def build_prompt_bundle(request: AgentTurnRequest) -> PromptBundle:
                 + json.dumps(request.activePlaybook.model_dump(mode="json"), ensure_ascii=False),
             )
         )
+    runtime_messages.extend(_recent_message_messages(request, event_window))
     runtime_messages.extend(_recent_event_messages(request, event_window))
     if request.trigger.triggerType == "USER_MESSAGE":
-        runtime_messages.append(
-            SemanticMessage(kind="user_turn", content=str(request.trigger.payload.get("text") or ""))
-        )
+        trigger_message = _find_trigger_message(request)
+        if trigger_message is not None:
+            runtime_messages.append(
+                SemanticMessage(kind="user_turn", content=_message_to_semantic_text(trigger_message))
+            )
+        else:
+            runtime_messages.append(
+                SemanticMessage(kind="system_event", content="Session trigger references a missing message")
+            )
     else:
         runtime_messages.append(
             SemanticMessage(
@@ -175,11 +182,13 @@ def _recent_event_messages(request: AgentTurnRequest, event_window: int) -> list
     return [_event_to_runtime_message(event) for event in history_events[-event_window:]]
 
 
+def _recent_message_messages(request: AgentTurnRequest, event_window: int) -> list[SemanticMessage]:
+    trigger_message_id = request.trigger.triggerMessageId
+    history_messages = [message for message in request.recentMessages if message.messageId != trigger_message_id]
+    return [_message_to_runtime_message(message) for message in history_messages[-event_window:]]
+
+
 def _event_to_runtime_message(event: Any) -> SemanticMessage:
-    if event.eventType == "USER_MESSAGE":
-        return SemanticMessage(kind="user_turn", content=_payload_text(event.payload))
-    if event.eventType in {"OWNER_REPLY", "HUMAN_OPERATOR_REPLY"}:
-        return SemanticMessage(kind="assistant_turn", content=_assistant_event_text(event))
     return SemanticMessage(
         kind="system_event",
         content=f"Session event {event.eventType}:\n"
@@ -196,20 +205,53 @@ def _event_to_runtime_message(event: Any) -> SemanticMessage:
     )
 
 
-def _assistant_event_text(event: Any) -> str:
-    text = _payload_text(event.payload)
-    if event.eventType == "HUMAN_OPERATOR_REPLY":
-        return "Human operator reply:\n" + text
-    if event.actorType == "SYSTEM":
-        return "System-generated reply:\n" + text
-    return text
+def _message_to_runtime_message(message: Any) -> SemanticMessage:
+    if message.role == "USER":
+        return SemanticMessage(kind="user_turn", content=_message_to_semantic_text(message))
+    return SemanticMessage(kind="assistant_turn", content=_message_to_semantic_text(message))
 
 
-def _payload_text(payload: dict[str, Any]) -> str:
-    text = payload.get("text")
-    if isinstance(text, str) and text.strip():
-        return text
-    return json.dumps(payload, ensure_ascii=False)
+def _find_trigger_message(request: AgentTurnRequest) -> Any | None:
+    if not request.trigger.triggerMessageId:
+        return None
+    for message in request.recentMessages:
+        if message.messageId == request.trigger.triggerMessageId:
+            return message
+    return None
+
+
+def _message_to_semantic_text(message: Any) -> str:
+    rendered_blocks = [_block_to_text(block) for block in message.blocks]
+    parts = [part for part in rendered_blocks if part]
+    text = "\n".join(parts).strip()
+    if message.role == "HUMAN_OPERATOR":
+        return "Human operator reply:\n" + text if text else "Human operator reply"
+    if message.role == "SYSTEM":
+        return "System-generated reply:\n" + text if text else "System-generated reply"
+    return text or json.dumps(message.model_dump(mode="json"), ensure_ascii=False)
+
+
+def _block_to_text(block: Any) -> str:
+    if block.type == "TEXT":
+        return block.text.strip()
+    if block.type == "RICH_TEXT":
+        return block.content.strip()
+    if block.type == "IMAGE":
+        details = [f"url={block.url}"]
+        if block.alt:
+            details.append(f"alt={block.alt}")
+        if block.mimeType:
+            details.append(f"mimeType={block.mimeType}")
+        return "Image: " + ", ".join(details)
+    if block.type == "CARD":
+        card = {
+            "cardType": block.cardType,
+            "version": block.version,
+            "data": block.data,
+            "actions": [action.model_dump(mode="json") for action in block.actions],
+        }
+        return "Card:\n" + json.dumps(card, ensure_ascii=False)
+    return ""
 
 
 def _event_window_size(request: AgentTurnRequest) -> int:

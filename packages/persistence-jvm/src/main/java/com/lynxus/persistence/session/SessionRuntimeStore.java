@@ -5,6 +5,11 @@ import com.lynxus.contracts.session.SessionContracts.PlaybookRunStatus;
 import com.lynxus.contracts.session.SessionContracts.SessionActorType;
 import com.lynxus.contracts.session.SessionContracts.SessionEvent;
 import com.lynxus.contracts.session.SessionContracts.SessionEventType;
+import com.lynxus.contracts.session.SessionContracts.SessionMessage;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageRole;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageSender;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageSenderType;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageStatus;
 import com.lynxus.persistence.jooqsupport.JooqJsonbSupport;
 import com.lynxus.persistence.jooqsupport.JooqTimeSupport;
 import java.time.Instant;
@@ -18,6 +23,7 @@ import org.jooq.Record;
 import org.jooq.impl.DSL;
 
 import static com.lynxus.persistence.jooq.Tables.SESSION_RUNTIME_EVENT;
+import static com.lynxus.persistence.jooq.Tables.SESSION_RUNTIME_MESSAGE;
 import static com.lynxus.persistence.jooq.Tables.SESSION_RUNTIME_PLAYBOOK_RUN;
 import static com.lynxus.persistence.jooq.Tables.SESSION_RUNTIME_SESSION;
 
@@ -33,26 +39,32 @@ public final class SessionRuntimeStore {
     }
 
     public List<SessionRuntimeSessionData> listSessions() {
+        Field<Long> latestMessageSequence = latestMessageSequenceField();
         Field<Long> latestEventSequence = latestEventSequenceField();
         return dsl.select(SESSION_RUNTIME_SESSION.fields())
+            .select(latestMessageSequence)
             .select(latestEventSequence)
             .from(SESSION_RUNTIME_SESSION)
             .orderBy(SESSION_RUNTIME_SESSION.UPDATED_AT.desc(), SESSION_RUNTIME_SESSION.ID.desc())
-            .fetch(record -> mapSession(record, latestEventSequence));
+            .fetch(record -> mapSession(record, latestMessageSequence, latestEventSequence));
     }
 
     public Optional<SessionRuntimeSessionData> findSession(String sessionId) {
+        Field<Long> latestMessageSequence = latestMessageSequenceField();
         Field<Long> latestEventSequence = latestEventSequenceField();
         return dsl.select(SESSION_RUNTIME_SESSION.fields())
+            .select(latestMessageSequence)
             .select(latestEventSequence)
             .from(SESSION_RUNTIME_SESSION)
             .where(SESSION_RUNTIME_SESSION.ID.eq(sessionId))
-            .fetchOptional(record -> mapSession(record, latestEventSequence));
+            .fetchOptional(record -> mapSession(record, latestMessageSequence, latestEventSequence));
     }
 
     public Optional<SessionRuntimeSessionData> findActiveSession(String customerId, String assistantId) {
+        Field<Long> latestMessageSequence = latestMessageSequenceField();
         Field<Long> latestEventSequence = latestEventSequenceField();
         return dsl.select(SESSION_RUNTIME_SESSION.fields())
+            .select(latestMessageSequence)
             .select(latestEventSequence)
             .from(SESSION_RUNTIME_SESSION)
             .where(SESSION_RUNTIME_SESSION.CUSTOMER_ID.eq(customerId))
@@ -60,15 +72,17 @@ public final class SessionRuntimeStore {
             .and(SESSION_RUNTIME_SESSION.STATUS.in(ACTIVE_STATUSES))
             .orderBy(SESSION_RUNTIME_SESSION.UPDATED_AT.desc(), SESSION_RUNTIME_SESSION.ID.desc())
             .limit(1)
-            .fetchOptional(record -> mapSession(record, latestEventSequence));
+            .fetchOptional(record -> mapSession(record, latestMessageSequence, latestEventSequence));
     }
 
     public Optional<SessionRuntimeChangeStamp> findSessionChangeStamp(String sessionId) {
+        Field<Long> latestMessageSequence = latestMessageSequenceField();
         Field<Long> latestEventSequence = latestEventSequenceField();
         Field<OffsetDateTime> latestPlaybookRunUpdatedAt = latestPlaybookRunUpdatedAtField();
         return dsl.select(
                 SESSION_RUNTIME_SESSION.ID,
                 SESSION_RUNTIME_SESSION.UPDATED_AT,
+                latestMessageSequence,
                 latestEventSequence,
                 latestPlaybookRunUpdatedAt
             )
@@ -77,6 +91,7 @@ public final class SessionRuntimeStore {
             .fetchOptional(record -> new SessionRuntimeChangeStamp(
                 record.get(SESSION_RUNTIME_SESSION.ID),
                 JooqTimeSupport.toInstant(record.get(SESSION_RUNTIME_SESSION.UPDATED_AT)),
+                record.get(latestMessageSequence),
                 record.get(latestEventSequence),
                 JooqTimeSupport.toInstant(record.get(latestPlaybookRunUpdatedAt))
             ));
@@ -135,10 +150,25 @@ public final class SessionRuntimeStore {
             .fetch(this::mapEvent);
     }
 
+    public List<SessionMessage> listMessages(String sessionId) {
+        return dsl.selectFrom(SESSION_RUNTIME_MESSAGE)
+            .where(SESSION_RUNTIME_MESSAGE.SESSION_ID.eq(sessionId))
+            .orderBy(SESSION_RUNTIME_MESSAGE.SEQUENCE.asc(), SESSION_RUNTIME_MESSAGE.CREATED_AT.asc())
+            .fetch(this::mapMessage);
+    }
+
     public long nextEventSequence(String sessionId) {
         Long value = dsl.select(DSL.coalesce(DSL.max(SESSION_RUNTIME_EVENT.SEQUENCE), 0L).add(1L))
             .from(SESSION_RUNTIME_EVENT)
             .where(SESSION_RUNTIME_EVENT.SESSION_ID.eq(sessionId))
+            .fetchOne(0, Long.class);
+        return value == null ? 1L : value;
+    }
+
+    public long nextMessageSequence(String sessionId) {
+        Long value = dsl.select(DSL.coalesce(DSL.max(SESSION_RUNTIME_MESSAGE.SEQUENCE), 0L).add(1L))
+            .from(SESSION_RUNTIME_MESSAGE)
+            .where(SESSION_RUNTIME_MESSAGE.SESSION_ID.eq(sessionId))
             .fetchOne(0, Long.class);
         return value == null ? 1L : value;
     }
@@ -153,9 +183,32 @@ public final class SessionRuntimeStore {
             .set(SESSION_RUNTIME_EVENT.ACTOR_TYPE, event.actorType().name())
             .set(SESSION_RUNTIME_EVENT.ACTOR_ID, event.actorId())
             .set(SESSION_RUNTIME_EVENT.PAYLOAD, jsonbSupport.toJsonb(event.payload() == null ? Map.of() : event.payload()))
+            .set(SESSION_RUNTIME_EVENT.RELATED_MESSAGE_ID, event.relatedMessageId())
             .set(SESSION_RUNTIME_EVENT.RELATED_PLAYBOOK_RUN_ID, event.relatedPlaybookRunId())
             .set(SESSION_RUNTIME_EVENT.RELATED_OWNER_AGENT_ID, event.relatedOwnerAgentId())
             .onConflict(SESSION_RUNTIME_EVENT.EVENT_ID)
+            .doNothing()
+            .execute();
+    }
+
+    public void appendMessage(SessionMessage message) {
+        dsl.insertInto(SESSION_RUNTIME_MESSAGE)
+            .set(SESSION_RUNTIME_MESSAGE.MESSAGE_ID, message.messageId())
+            .set(SESSION_RUNTIME_MESSAGE.SESSION_ID, message.sessionId())
+            .set(SESSION_RUNTIME_MESSAGE.SEQUENCE, message.sequence())
+            .set(SESSION_RUNTIME_MESSAGE.ROLE, message.role().name())
+            .set(SESSION_RUNTIME_MESSAGE.SENDER_TYPE, message.sender().senderType().name())
+            .set(SESSION_RUNTIME_MESSAGE.SENDER_ID, message.sender().senderId())
+            .set(SESSION_RUNTIME_MESSAGE.SENDER_NAME, message.sender().senderName())
+            .set(SESSION_RUNTIME_MESSAGE.STATUS, message.status().name())
+            .set(SESSION_RUNTIME_MESSAGE.BLOCKS, jsonbSupport.toJsonb(message.blocks() == null ? List.of() : message.blocks()))
+            .set(SESSION_RUNTIME_MESSAGE.METADATA, jsonbSupport.toJsonb(message.metadata() == null ? Map.of() : message.metadata()))
+            .set(SESSION_RUNTIME_MESSAGE.RELATED_PLAYBOOK_RUN_ID, message.relatedPlaybookRunId())
+            .set(SESSION_RUNTIME_MESSAGE.RELATED_OWNER_AGENT_ID, message.relatedOwnerAgentId())
+            .set(SESSION_RUNTIME_MESSAGE.SOURCE_EVENT_ID, message.sourceEventId())
+            .set(SESSION_RUNTIME_MESSAGE.CREATED_AT, JooqTimeSupport.toOffsetDateTime(message.createdAt()))
+            .set(SESSION_RUNTIME_MESSAGE.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(message.updatedAt()))
+            .onConflict(SESSION_RUNTIME_MESSAGE.MESSAGE_ID)
             .doNothing()
             .execute();
     }
@@ -205,6 +258,14 @@ public final class SessionRuntimeStore {
         return DSL.coalesce(maxSequence, DSL.inline(0L)).as("latest_event_sequence");
     }
 
+    private Field<Long> latestMessageSequenceField() {
+        Field<Long> maxSequence = DSL.select(DSL.max(SESSION_RUNTIME_MESSAGE.SEQUENCE))
+            .from(SESSION_RUNTIME_MESSAGE)
+            .where(SESSION_RUNTIME_MESSAGE.SESSION_ID.eq(SESSION_RUNTIME_SESSION.ID))
+            .asField();
+        return DSL.coalesce(maxSequence, DSL.inline(0L)).as("latest_message_sequence");
+    }
+
     private Field<OffsetDateTime> latestPlaybookRunUpdatedAtField() {
         return DSL.select(DSL.max(SESSION_RUNTIME_PLAYBOOK_RUN.UPDATED_AT))
             .from(SESSION_RUNTIME_PLAYBOOK_RUN)
@@ -212,7 +273,7 @@ public final class SessionRuntimeStore {
             .asField("latest_playbook_run_updated_at");
     }
 
-    private SessionRuntimeSessionData mapSession(Record record, Field<Long> latestEventSequence) {
+    private SessionRuntimeSessionData mapSession(Record record, Field<Long> latestMessageSequence, Field<Long> latestEventSequence) {
         return new SessionRuntimeSessionData(
             record.get(SESSION_RUNTIME_SESSION.ID),
             record.get(SESSION_RUNTIME_SESSION.SCENARIO_ID),
@@ -234,6 +295,7 @@ public final class SessionRuntimeStore {
             JooqTimeSupport.toInstant(record.get(SESSION_RUNTIME_SESSION.CREATED_AT)),
             JooqTimeSupport.toInstant(record.get(SESSION_RUNTIME_SESSION.UPDATED_AT)),
             JooqTimeSupport.toInstant(record.get(SESSION_RUNTIME_SESSION.ENDED_AT)),
+            record.get(latestMessageSequence),
             record.get(latestEventSequence)
         );
     }
@@ -248,8 +310,31 @@ public final class SessionRuntimeStore {
             SessionActorType.valueOf(record.get(SESSION_RUNTIME_EVENT.ACTOR_TYPE)),
             record.get(SESSION_RUNTIME_EVENT.ACTOR_ID),
             jsonbSupport.readObjectMap(record.get(SESSION_RUNTIME_EVENT.PAYLOAD)),
+            record.get(SESSION_RUNTIME_EVENT.RELATED_MESSAGE_ID),
             record.get(SESSION_RUNTIME_EVENT.RELATED_PLAYBOOK_RUN_ID),
             record.get(SESSION_RUNTIME_EVENT.RELATED_OWNER_AGENT_ID)
+        );
+    }
+
+    private SessionMessage mapMessage(Record record) {
+        return new SessionMessage(
+            record.get(SESSION_RUNTIME_MESSAGE.MESSAGE_ID),
+            record.get(SESSION_RUNTIME_MESSAGE.SESSION_ID),
+            record.get(SESSION_RUNTIME_MESSAGE.SEQUENCE),
+            SessionMessageRole.valueOf(record.get(SESSION_RUNTIME_MESSAGE.ROLE)),
+            new SessionMessageSender(
+                SessionMessageSenderType.valueOf(record.get(SESSION_RUNTIME_MESSAGE.SENDER_TYPE)),
+                record.get(SESSION_RUNTIME_MESSAGE.SENDER_ID),
+                record.get(SESSION_RUNTIME_MESSAGE.SENDER_NAME)
+            ),
+            SessionMessageStatus.valueOf(record.get(SESSION_RUNTIME_MESSAGE.STATUS)),
+            jsonbSupport.readList(record.get(SESSION_RUNTIME_MESSAGE.BLOCKS)),
+            jsonbSupport.readObjectMap(record.get(SESSION_RUNTIME_MESSAGE.METADATA)),
+            record.get(SESSION_RUNTIME_MESSAGE.RELATED_PLAYBOOK_RUN_ID),
+            record.get(SESSION_RUNTIME_MESSAGE.RELATED_OWNER_AGENT_ID),
+            record.get(SESSION_RUNTIME_MESSAGE.SOURCE_EVENT_ID),
+            JooqTimeSupport.toInstant(record.get(SESSION_RUNTIME_MESSAGE.CREATED_AT)),
+            JooqTimeSupport.toInstant(record.get(SESSION_RUNTIME_MESSAGE.UPDATED_AT))
         );
     }
 
@@ -291,6 +376,7 @@ public final class SessionRuntimeStore {
         Instant createdAt,
         Instant updatedAt,
         Instant endedAt,
+        long latestMessageSequence,
         long latestEventSequence
     ) {
     }
@@ -298,13 +384,14 @@ public final class SessionRuntimeStore {
     public record SessionRuntimeChangeStamp(
         String sessionId,
         Instant sessionUpdatedAt,
+        long latestMessageSequence,
         long latestEventSequence,
         Instant latestPlaybookRunUpdatedAt
     ) {
         public String fingerprint() {
             long sessionMillis = sessionUpdatedAt == null ? 0L : sessionUpdatedAt.toEpochMilli();
             long playbookMillis = latestPlaybookRunUpdatedAt == null ? 0L : latestPlaybookRunUpdatedAt.toEpochMilli();
-            return sessionId + ":" + sessionMillis + ":" + latestEventSequence + ":" + playbookMillis;
+            return sessionId + ":" + sessionMillis + ":" + latestMessageSequence + ":" + latestEventSequence + ":" + playbookMillis;
         }
     }
 }

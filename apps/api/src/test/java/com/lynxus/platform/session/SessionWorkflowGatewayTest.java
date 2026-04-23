@@ -8,6 +8,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.lynxus.contracts.session.SessionContracts.SessionMessageInput;
 import com.lynxus.contracts.session.SessionContracts.SessionMessageDeliveryStatus;
 import com.lynxus.contracts.session.SessionContracts.SessionUserMessageUpdateResult;
 import com.lynxus.contracts.session.SessionContracts.UserMessage;
@@ -20,6 +21,7 @@ import io.temporal.client.WorkflowUpdateHandle;
 import io.temporal.client.WorkflowUpdateStage;
 import io.temporal.client.WorkflowUpdateTimeoutOrCancelledException;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
@@ -37,7 +39,7 @@ class SessionWorkflowGatewayTest {
             "session-task-queue",
             Duration.ofSeconds(45)
         );
-        UserMessage message = new UserMessage("msg-1", "customer-1", "hello", Map.of());
+        UserMessage message = new UserMessage("msg-1", "customer-1", textMessageInput("hello"));
         SessionUserMessageUpdateResult expected = new SessionUserMessageUpdateResult(
             SessionMessageDeliveryStatus.ACCEPTED,
             "session-1",
@@ -71,7 +73,7 @@ class SessionWorkflowGatewayTest {
             "session-task-queue",
             Duration.ofSeconds(30)
         );
-        UserMessage message = new UserMessage("msg-1", "customer-1", "hello", Map.of());
+        UserMessage message = new UserMessage("msg-1", "customer-1", textMessageInput("hello"));
 
         when(workflowClient.newUntypedWorkflowStub("session-1")).thenReturn(workflowStub);
         when(workflowStub.startUpdate(any(UpdateOptions.class), eq(message))).thenReturn(updateHandle);
@@ -90,5 +92,12 @@ class SessionWorkflowGatewayTest {
         );
 
         assertEquals("session message processing timed out", error.getMessage());
+    }
+
+    private static SessionMessageInput textMessageInput(String text) {
+        return new SessionMessageInput(
+            List.of(Map.of("type", "TEXT", "text", text)),
+            Map.of()
+        );
     }
 }

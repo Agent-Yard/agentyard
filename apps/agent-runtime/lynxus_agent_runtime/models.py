@@ -112,9 +112,74 @@ class ActivePlaybookSummary(BaseModel):
     latestResult: dict[str, Any] = Field(default_factory=dict)
 
 
+class SessionMessageSender(BaseModel):
+    senderType: Literal["CUSTOMER", "AGENT", "HUMAN_OPERATOR", "SYSTEM"]
+    senderId: str | None = None
+    senderName: str | None = None
+
+
+class TextMessageBlock(BaseModel):
+    type: Literal["TEXT"]
+    text: str
+
+
+class ImageMessageBlock(BaseModel):
+    type: Literal["IMAGE"]
+    url: str
+    mimeType: str | None = None
+    width: int | None = None
+    height: int | None = None
+    alt: str | None = None
+
+
+class RichTextMessageBlock(BaseModel):
+    type: Literal["RICH_TEXT"]
+    format: Literal["MARKDOWN"]
+    content: str
+
+
+class CardLinkAction(BaseModel):
+    actionType: Literal["LINK"]
+    label: str
+    url: str
+
+
+class CardMessageBlock(BaseModel):
+    type: Literal["CARD"]
+    cardType: str
+    version: str
+    data: dict[str, Any] = Field(default_factory=dict)
+    actions: list[CardLinkAction] = Field(default_factory=list)
+
+
+SessionMessageBlock = TextMessageBlock | ImageMessageBlock | RichTextMessageBlock | CardMessageBlock
+
+
+class SessionMessageInput(BaseModel):
+    blocks: list[SessionMessageBlock] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SessionMessage(BaseModel):
+    messageId: str
+    sessionId: str
+    sequence: int
+    role: Literal["USER", "ASSISTANT", "HUMAN_OPERATOR", "SYSTEM"]
+    sender: SessionMessageSender
+    status: Literal["SENT", "STREAMING", "DELIVERED", "FAILED"]
+    blocks: list[SessionMessageBlock] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    relatedPlaybookRunId: str | None = None
+    relatedOwnerAgentId: str | None = None
+    sourceEventId: str | None = None
+    createdAt: str
+    updatedAt: str
+
+
 class SessionTrigger(BaseModel):
     triggerType: Literal["USER_MESSAGE", "PLAYBOOK_COMPLETED"]
     eventId: str
+    triggerMessageId: str | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -155,6 +220,7 @@ class SessionEvent(BaseModel):
     actorType: str
     actorId: str | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
+    relatedMessageId: str | None = None
     relatedPlaybookRunId: str | None = None
     relatedOwnerAgentId: str | None = None
 
@@ -167,16 +233,16 @@ class AgentDecision(BaseModel):
         "RUN_PLAYBOOK",
         "SESSION_HUMAN_HANDOFF",
     ]
-    replyContent: str | None = None
+    replyMessage: SessionMessageInput | None = None
     targetAgentId: str | None = None
     playbookId: str | None = None
     playbookInput: dict[str, Any] | None = None
-    accompanyingReply: str | None = None
+    accompanyingMessage: SessionMessageInput | None = None
 
     @model_validator(mode="after")
     def validate_action_payload(self) -> "AgentDecision":
-        if self.action == "REPLY" and not (self.replyContent or "").strip():
-            raise ValueError("REPLY requires replyContent")
+        if self.action == "REPLY" and not _has_message_content(self.replyMessage):
+            raise ValueError("REPLY requires replyMessage")
         if self.action == "SWITCH_OWNER" and not (self.targetAgentId or "").strip():
             raise ValueError("SWITCH_OWNER requires targetAgentId")
         if self.action == "RUN_PLAYBOOK" and not (self.playbookId or "").strip():
@@ -198,6 +264,7 @@ class AgentTurnRequest(BaseModel):
     effectivePrivacyModelBinding: LlmModelDescriptor | None = None
     effectivePrivacyMappingEnabled: bool = False
     trigger: SessionTrigger
+    recentMessages: list[SessionMessage] = Field(default_factory=list)
     recentEvents: list[SessionEvent] = Field(default_factory=list)
 
 
@@ -243,3 +310,16 @@ class PlaybookToolTaskResult(BaseModel):
 
 
 AgentConfig.model_rebuild()
+
+
+def _has_message_content(message: SessionMessageInput | None) -> bool:
+    if message is None:
+        return False
+    for block in message.blocks:
+        if isinstance(block, TextMessageBlock) and block.text.strip():
+            return True
+        if isinstance(block, RichTextMessageBlock) and block.content.strip():
+            return True
+        if isinstance(block, (ImageMessageBlock, CardMessageBlock)):
+            return True
+    return False

@@ -36,10 +36,12 @@ import type {
   ResourceVersion,
   ReferenceObjectType,
   Scenario,
+  SendSessionMessagePayload,
   SessionRuntimeDetail,
   SessionRuntimeStreamEvent,
   PrivacyMappingSummary,
   SessionRuntimeSession,
+  HumanOperatorReplyPayload,
   UpdateAssistantPayload,
   UpdateAgentPayload,
   UpdateDomainPayload,
@@ -228,9 +230,9 @@ export const api = {
     request<PrivacyMappingSummary>(`/session-runtime/sessions/${sessionId}/privacy-mapping-summary`),
   createRuntimeSession: (payload: CreateSessionPayload) =>
     request<SessionRuntimeSession>('/session-runtime/sessions', jsonOptions('POST', payload)),
-  sendRuntimeSessionMessage: (sessionId: string, payload: { customerId: string; message: string }) =>
+  sendRuntimeSessionMessage: (sessionId: string, payload: SendSessionMessagePayload) =>
     request<SessionRuntimeSession>(`/session-runtime/sessions/${sessionId}/messages`, jsonOptions('POST', payload)),
-  humanReplyRuntimeSession: (sessionId: string, payload: { operatorId: string; message: string; payload?: Record<string, unknown> }) =>
+  humanReplyRuntimeSession: (sessionId: string, payload: HumanOperatorReplyPayload) =>
     request<SessionRuntimeSession>(`/session-runtime/sessions/${sessionId}/human-reply`, jsonOptions('POST', payload)),
   resumeRuntimePlaybookWithHuman: (sessionId: string, payload: { playbookRunId: string; payload?: Record<string, unknown> }) =>
     request<SessionRuntimeSession>(`/session-runtime/sessions/${sessionId}/human-resume`, jsonOptions('POST', payload)),

@@ -2,6 +2,7 @@ package com.lynxus.worker.session;
 
 import com.lynxus.contracts.session.SessionContracts.PlaybookRun;
 import com.lynxus.contracts.session.SessionContracts.SessionEvent;
+import com.lynxus.contracts.session.SessionContracts.SessionMessage;
 import com.lynxus.persistence.event.PlatformEventStore;
 import com.lynxus.persistence.jooqsupport.JooqJsonbSupport;
 import com.lynxus.persistence.session.SessionRuntimeStore;
@@ -48,6 +49,7 @@ public class JooqSessionProjectionRepository {
             session.createdAt(),
             session.updatedAt(),
             session.endedAt(),
+            0L,
             0L
         ));
     }
@@ -57,9 +59,14 @@ public class JooqSessionProjectionRepository {
             .map(item -> new SessionRuntimeChangeStamp(
                 item.sessionId(),
                 item.sessionUpdatedAt(),
+                item.latestMessageSequence(),
                 item.latestEventSequence(),
                 item.latestPlaybookRunUpdatedAt()
             ));
+    }
+
+    public void appendMessage(SessionMessage message) {
+        sessionStore.appendMessage(message);
     }
 
     public void appendEvent(SessionEvent event) {
@@ -115,13 +122,14 @@ public class JooqSessionProjectionRepository {
     public record SessionRuntimeChangeStamp(
         String sessionId,
         Instant sessionUpdatedAt,
+        long latestMessageSequence,
         long latestEventSequence,
         Instant latestPlaybookRunUpdatedAt
     ) {
         public String fingerprint() {
             long sessionMillis = sessionUpdatedAt == null ? 0L : sessionUpdatedAt.toEpochMilli();
             long playbookMillis = latestPlaybookRunUpdatedAt == null ? 0L : latestPlaybookRunUpdatedAt.toEpochMilli();
-            return sessionId + ":" + sessionMillis + ":" + latestEventSequence + ":" + playbookMillis;
+            return sessionId + ":" + sessionMillis + ":" + latestMessageSequence + ":" + latestEventSequence + ":" + playbookMillis;
         }
     }
 }

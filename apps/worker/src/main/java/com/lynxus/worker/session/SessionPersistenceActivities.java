@@ -2,6 +2,7 @@ package com.lynxus.worker.session;
 
 import com.lynxus.contracts.session.SessionContracts.PlaybookRun;
 import com.lynxus.contracts.session.SessionContracts.SessionEvent;
+import com.lynxus.contracts.session.SessionContracts.SessionMessage;
 import io.temporal.activity.ActivityInterface;
 import java.time.Instant;
 import java.util.Collections;
@@ -11,6 +12,8 @@ import java.util.Map;
 @ActivityInterface
 public interface SessionPersistenceActivities {
     void saveSession(SessionRecord session);
+
+    void appendMessage(SessionMessage message);
 
     void appendEvent(SessionEvent event);
 

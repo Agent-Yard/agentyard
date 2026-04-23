@@ -38,6 +38,42 @@ public final class SessionContracts {
         REJECTED
     }
 
+    public enum SessionMessageRole {
+        USER,
+        ASSISTANT,
+        HUMAN_OPERATOR,
+        SYSTEM
+    }
+
+    public enum SessionMessageStatus {
+        SENT,
+        STREAMING,
+        DELIVERED,
+        FAILED
+    }
+
+    public enum SessionMessageSenderType {
+        CUSTOMER,
+        AGENT,
+        HUMAN_OPERATOR,
+        SYSTEM
+    }
+
+    public enum SessionMessageBlockType {
+        TEXT,
+        IMAGE,
+        RICH_TEXT,
+        CARD
+    }
+
+    public enum RichTextFormat {
+        MARKDOWN
+    }
+
+    public enum CardActionType {
+        LINK
+    }
+
     public enum AgentDecisionAction {
         REPLY,
         NO_REPLY,
@@ -65,9 +101,6 @@ public final class SessionContracts {
     }
 
     public enum SessionEventType {
-        USER_MESSAGE,
-        OWNER_REPLY,
-        HUMAN_OPERATOR_REPLY,
         AGENT_DECISION_REJECTED,
         AGENT_TURN_FAILED,
         OWNER_SWITCH,
@@ -305,6 +338,87 @@ public final class SessionContracts {
         }
     }
 
+    public record SessionMessageSender(
+        SessionMessageSenderType senderType,
+        String senderId,
+        String senderName
+    ) {
+    }
+
+    public record TextMessageBlock(
+        SessionMessageBlockType type,
+        String text
+    ) {
+    }
+
+    public record ImageMessageBlock(
+        SessionMessageBlockType type,
+        String url,
+        String mimeType,
+        Integer width,
+        Integer height,
+        String alt
+    ) {
+    }
+
+    public record RichTextMessageBlock(
+        SessionMessageBlockType type,
+        RichTextFormat format,
+        String content
+    ) {
+    }
+
+    public record CardLinkAction(
+        CardActionType actionType,
+        String label,
+        String url
+    ) {
+    }
+
+    public record CardMessageBlock(
+        SessionMessageBlockType type,
+        String cardType,
+        String version,
+        Map<String, Object> data,
+        List<CardLinkAction> actions
+    ) {
+        public CardMessageBlock {
+            data = immutableObjectMap(data);
+            actions = actions == null ? List.of() : List.copyOf(actions);
+        }
+    }
+
+    public record SessionMessageInput(
+        List<Object> blocks,
+        Map<String, Object> metadata
+    ) {
+        public SessionMessageInput {
+            blocks = blocks == null ? List.of() : List.copyOf(blocks);
+            metadata = immutableObjectMap(metadata);
+        }
+    }
+
+    public record SessionMessage(
+        String messageId,
+        String sessionId,
+        long sequence,
+        SessionMessageRole role,
+        SessionMessageSender sender,
+        SessionMessageStatus status,
+        List<Object> blocks,
+        Map<String, Object> metadata,
+        String relatedPlaybookRunId,
+        String relatedOwnerAgentId,
+        String sourceEventId,
+        Instant createdAt,
+        Instant updatedAt
+    ) {
+        public SessionMessage {
+            blocks = blocks == null ? List.of() : List.copyOf(blocks);
+            metadata = immutableObjectMap(metadata);
+        }
+    }
+
     public record SessionEvent(
         String eventId,
         String sessionId,
@@ -314,6 +428,7 @@ public final class SessionContracts {
         SessionActorType actorType,
         String actorId,
         Map<String, Object> payload,
+        String relatedMessageId,
         String relatedPlaybookRunId,
         String relatedOwnerAgentId
     ) {
@@ -358,6 +473,7 @@ public final class SessionContracts {
     public record SessionTrigger(
         SessionTriggerType triggerType,
         String eventId,
+        String triggerMessageId,
         Map<String, Object> payload
     ) {
         public SessionTrigger {
@@ -406,11 +522,11 @@ public final class SessionContracts {
 
     public record AgentDecision(
         AgentDecisionAction action,
-        String replyContent,
+        SessionMessageInput replyMessage,
         String targetAgentId,
         String playbookId,
         Map<String, Object> playbookInput,
-        String accompanyingReply
+        SessionMessageInput accompanyingMessage
     ) {
         public AgentDecision {
             playbookInput = immutableObjectMap(playbookInput);
@@ -429,12 +545,14 @@ public final class SessionContracts {
         LlmModelDescriptor effectivePrivacyModelBinding,
         boolean effectivePrivacyMappingEnabled,
         SessionTrigger trigger,
+        List<SessionMessage> recentMessages,
         List<SessionEvent> recentEvents
     ) {
         public AgentTurnRequest {
             availableAgents = availableAgents == null ? List.of() : List.copyOf(availableAgents);
             availablePlaybooks = availablePlaybooks == null ? List.of() : List.copyOf(availablePlaybooks);
             sharedState = immutableObjectMap(sharedState);
+            recentMessages = recentMessages == null ? List.of() : List.copyOf(recentMessages);
             recentEvents = recentEvents == null ? List.of() : List.copyOf(recentEvents);
         }
     }
@@ -500,12 +618,8 @@ public final class SessionContracts {
     public record UserMessage(
         String messageId,
         String customerId,
-        String content,
-        Map<String, Object> payload
+        SessionMessageInput message
     ) {
-        public UserMessage {
-            payload = immutableObjectMap(payload);
-        }
     }
 
     public record SessionUserMessageUpdateResult(
@@ -555,7 +669,7 @@ public final class SessionContracts {
     public record HumanOperatorReplySignal(
         String sessionId,
         String operatorId,
-        String content,
+        SessionMessageInput message,
         Map<String, Object> payload
     ) {
         public HumanOperatorReplySignal {

@@ -2,6 +2,7 @@ package com.lynxus.worker.session;
 
 import com.lynxus.contracts.session.SessionContracts.PlaybookRun;
 import com.lynxus.contracts.session.SessionContracts.SessionEvent;
+import com.lynxus.contracts.session.SessionContracts.SessionMessage;
 import java.util.List;
 import org.springframework.stereotype.Component;
 
@@ -22,6 +23,12 @@ public class SessionPersistenceActivitiesImpl implements SessionPersistenceActiv
     public void saveSession(SessionRecord session) {
         repository.saveSession(session);
         changePublisher.publishSessionChanged(session.id());
+    }
+
+    @Override
+    public void appendMessage(SessionMessage message) {
+        repository.appendMessage(message);
+        changePublisher.publishSessionChanged(message.sessionId());
     }
 
     @Override

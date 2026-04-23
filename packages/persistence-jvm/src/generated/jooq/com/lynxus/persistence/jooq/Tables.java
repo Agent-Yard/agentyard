@@ -34,6 +34,7 @@ import com.lynxus.persistence.jooq.tables.ResourceBinding;
 import com.lynxus.persistence.jooq.tables.ResumeIntervention;
 import com.lynxus.persistence.jooq.tables.Scenario;
 import com.lynxus.persistence.jooq.tables.SessionRuntimeEvent;
+import com.lynxus.persistence.jooq.tables.SessionRuntimeMessage;
 import com.lynxus.persistence.jooq.tables.SessionRuntimePlaybookRun;
 import com.lynxus.persistence.jooq.tables.SessionRuntimeSession;
 import com.lynxus.persistence.jooq.tables.SharedStateRevision;
@@ -196,6 +197,11 @@ public class Tables {
      * The table <code>public.session_runtime_event</code>.
      */
     public static final SessionRuntimeEvent SESSION_RUNTIME_EVENT = SessionRuntimeEvent.SESSION_RUNTIME_EVENT;
+
+    /**
+     * The table <code>public.session_runtime_message</code>.
+     */
+    public static final SessionRuntimeMessage SESSION_RUNTIME_MESSAGE = SessionRuntimeMessage.SESSION_RUNTIME_MESSAGE;
 
     /**
      * The table <code>public.session_runtime_playbook_run</code>.

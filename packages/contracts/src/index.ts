@@ -295,6 +295,12 @@ export interface KnowledgeRetrievalPreviewResult {
 }
 
 export type SessionMessageDeliveryStatus = 'ACCEPTED' | 'BUSY' | 'REJECTED';
+export type SessionMessageRole = 'USER' | 'ASSISTANT' | 'HUMAN_OPERATOR' | 'SYSTEM';
+export type SessionMessageStatus = 'SENT' | 'STREAMING' | 'DELIVERED' | 'FAILED';
+export type SessionMessageSenderType = 'CUSTOMER' | 'AGENT' | 'HUMAN_OPERATOR' | 'SYSTEM';
+export type SessionMessageBlockType = 'TEXT' | 'IMAGE' | 'RICH_TEXT' | 'CARD';
+export type RichTextFormat = 'MARKDOWN';
+export type CardActionType = 'LINK';
 export type AgentDecisionAction =
   | 'REPLY'
   | 'NO_REPLY'
@@ -304,9 +310,6 @@ export type AgentDecisionAction =
 export type SessionTriggerType = 'USER_MESSAGE' | 'PLAYBOOK_COMPLETED';
 export type SessionActorType = 'USER' | 'AGENT' | 'SYSTEM' | 'HUMAN_OPERATOR' | 'EXTERNAL_SYSTEM';
 export type SessionEventType =
-  | 'USER_MESSAGE'
-  | 'OWNER_REPLY'
-  | 'HUMAN_OPERATOR_REPLY'
   | 'AGENT_DECISION_REJECTED'
   | 'AGENT_TURN_FAILED'
   | 'OWNER_SWITCH'
@@ -480,6 +483,73 @@ export interface PlaybookConfig {
   edges: PlaybookEdge[];
 }
 
+export interface SessionMessageSender {
+  senderType: SessionMessageSenderType;
+  senderId: string | null;
+  senderName: string | null;
+}
+
+export interface TextMessageBlock {
+  type: 'TEXT';
+  text: string;
+}
+
+export interface ImageMessageBlock {
+  type: 'IMAGE';
+  url: string;
+  mimeType: string | null;
+  width: number | null;
+  height: number | null;
+  alt: string | null;
+}
+
+export interface RichTextMessageBlock {
+  type: 'RICH_TEXT';
+  format: RichTextFormat;
+  content: string;
+}
+
+export interface CardLinkAction {
+  actionType: CardActionType;
+  label: string;
+  url: string;
+}
+
+export interface CardMessageBlock {
+  type: 'CARD';
+  cardType: string;
+  version: string;
+  data: Record<string, unknown>;
+  actions: CardLinkAction[];
+}
+
+export type SessionMessageBlock =
+  | TextMessageBlock
+  | ImageMessageBlock
+  | RichTextMessageBlock
+  | CardMessageBlock;
+
+export interface SessionMessageInput {
+  blocks: SessionMessageBlock[];
+  metadata: Record<string, unknown>;
+}
+
+export interface SessionMessage {
+  messageId: string;
+  sessionId: string;
+  sequence: number;
+  role: SessionMessageRole;
+  sender: SessionMessageSender;
+  status: SessionMessageStatus;
+  blocks: SessionMessageBlock[];
+  metadata: Record<string, unknown>;
+  relatedPlaybookRunId: string | null;
+  relatedOwnerAgentId: string | null;
+  sourceEventId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface SessionEvent {
   eventId: string;
   sessionId: string;
@@ -489,6 +559,7 @@ export interface SessionEvent {
   actorType: SessionActorType;
   actorId: string | null;
   payload: Record<string, unknown>;
+  relatedMessageId: string | null;
   relatedPlaybookRunId: string | null;
   relatedOwnerAgentId: string | null;
 }
@@ -520,6 +591,7 @@ export interface ActivePlaybookSummary {
 export interface SessionTrigger {
   triggerType: SessionTriggerType;
   eventId: string;
+  triggerMessageId: string | null;
   payload: Record<string, unknown>;
 }
 
@@ -546,11 +618,11 @@ export interface PrivacyMappingTelemetry {
 
 export interface AgentDecision {
   action: AgentDecisionAction;
-  replyContent: string | null;
+  replyMessage: SessionMessageInput | null;
   targetAgentId: string | null;
   playbookId: string | null;
   playbookInput: Record<string, unknown>;
-  accompanyingReply: string | null;
+  accompanyingMessage: SessionMessageInput | null;
 }
 
 export type LlmUsageSourceType = 'SESSION_OWNER_MODEL' | 'SESSION_PRIVACY_MODEL';
@@ -583,6 +655,7 @@ export interface AgentTurnRequest {
   effectivePrivacyModelBinding: LlmModelDescriptor | null;
   effectivePrivacyMappingEnabled: boolean;
   trigger: SessionTrigger;
+  recentMessages: SessionMessage[];
   recentEvents: SessionEvent[];
 }
 
@@ -608,8 +681,7 @@ export interface SessionUserMessageUpdateResult {
 export interface UserMessage {
   messageId: string;
   customerId: string;
-  content: string;
-  payload: Record<string, unknown>;
+  message: SessionMessageInput;
 }
 
 export interface SessionStartRequest {
@@ -647,7 +719,7 @@ export interface ExternalCallbackRequest {
 
 export interface HumanOperatorReplyRequest {
   operatorId: string;
-  message: string;
+  message: SessionMessageInput;
   payload: Record<string, unknown>;
 }
 

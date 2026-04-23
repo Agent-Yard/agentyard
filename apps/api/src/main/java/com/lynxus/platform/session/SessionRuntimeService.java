@@ -13,6 +13,7 @@ import com.lynxus.contracts.session.SessionContracts.KnowledgeBindingDescriptor;
 import com.lynxus.contracts.session.SessionContracts.LlmModelDescriptor;
 import com.lynxus.contracts.session.SessionContracts.McpToolProviderDescriptor;
 import com.lynxus.contracts.session.SessionContracts.SessionMessageDeliveryStatus;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageInput;
 import com.lynxus.contracts.session.SessionContracts.SessionOwnerPolicy;
 import com.lynxus.contracts.session.SessionContracts.SessionPolicy;
 import com.lynxus.contracts.session.SessionContracts.SessionStartRequest;
@@ -132,6 +133,7 @@ public class SessionRuntimeService {
             .orElseThrow();
         return new SessionRuntimeDetailDto(
             session,
+            repository.listMessages(sessionId),
             repository.listEvents(sessionId),
             repository.listPlaybookRuns(sessionId)
         );
@@ -493,11 +495,11 @@ public class SessionRuntimeService {
     private SessionRuntimeSessionDto createOrReuseSession(CreateSessionRequest request) {
         AssistantDto assistant = catalogService.getAssistant(request.assistantId());
         AssistantReleaseDto release = resolveAssistantRelease(assistant);
-        String openingMessage = request.openingMessage() == null ? null : request.openingMessage().trim();
+        SessionMessageInput openingMessage = request.openingMessage();
         Optional<SessionRuntimeSessionDto> activeSession = findReusableActiveSession(request.customerId(), assistant.id());
         if (activeSession.isPresent()) {
             SessionRuntimeSessionDto existing = activeSession.orElseThrow();
-            if (openingMessage == null || openingMessage.isBlank()) {
+            if (isBlankMessageInput(openingMessage)) {
                 return existing;
             }
             return dispatchLockService.withSessionLock(
@@ -530,11 +532,12 @@ public class SessionRuntimeService {
             now,
             now,
             null,
+            0,
             0
         );
         sessionWorkflowGateway.start(buildStartRequest(bootstrap, assistant, release));
         SessionRuntimeSessionDto updated = awaitPersistedSession(bootstrap.id(), bootstrap);
-        if (openingMessage == null || openingMessage.isBlank()) {
+        if (isBlankMessageInput(openingMessage)) {
             return updated;
         }
         return dispatchLockService.withSessionLock(
@@ -595,7 +598,7 @@ public class SessionRuntimeService {
         try {
             SessionUserMessageUpdateResult result = sessionWorkflowGateway.submitUserMessage(
                 sessionId,
-                new UserMessage(nextId("session-event"), request.customerId(), request.message(), Map.of("text", request.message()))
+                new UserMessage(nextId("session-message"), request.customerId(), request.message())
             );
             if (result.status() == SessionMessageDeliveryStatus.BUSY) {
                 throw new ConflictException("session is busy");
@@ -662,6 +665,7 @@ public class SessionRuntimeService {
             existing.createdAt(),
             now,
             existing.endedAt() == null ? now : existing.endedAt(),
+            existing.latestMessageSequence(),
             existing.latestEventSequence()
         );
         repository.saveSession(ended);
@@ -732,11 +736,53 @@ public class SessionRuntimeService {
         }
     }
 
-    private static String summarizeTitle(String openingMessage) {
-        if (openingMessage == null || openingMessage.isBlank()) {
+    private static String summarizeTitle(SessionMessageInput openingMessage) {
+        String text = firstRenderableText(openingMessage);
+        if (text == null || text.isBlank()) {
             return "新会话";
         }
-        return openingMessage.length() <= 24 ? openingMessage : openingMessage.substring(0, 24);
+        return text.length() <= 24 ? text : text.substring(0, 24);
+    }
+
+    private static boolean isBlankMessageInput(SessionMessageInput input) {
+        return !hasRenderableMessageContent(input);
+    }
+
+    private static String firstRenderableText(SessionMessageInput input) {
+        if (input == null || input.blocks() == null || input.blocks().isEmpty()) {
+            return null;
+        }
+        for (Object block : input.blocks()) {
+            if (!(block instanceof Map<?, ?> entry)) {
+                continue;
+            }
+            Object type = entry.get("type");
+            Object value = "TEXT".equals(type) ? entry.get("text") : "RICH_TEXT".equals(type) ? entry.get("content") : null;
+            if (value instanceof String text && !text.isBlank()) {
+                return text.trim();
+            }
+        }
+        return null;
+    }
+
+    private static boolean hasRenderableMessageContent(SessionMessageInput input) {
+        if (input == null || input.blocks() == null || input.blocks().isEmpty()) {
+            return false;
+        }
+        for (Object block : input.blocks()) {
+            if (!(block instanceof Map<?, ?> entry)) {
+                continue;
+            }
+            Object type = entry.get("type");
+            Object value = "TEXT".equals(type) ? entry.get("text") : "RICH_TEXT".equals(type) ? entry.get("content") : null;
+            if (value instanceof String text && !text.isBlank()) {
+                return true;
+            }
+            if ("IMAGE".equals(type) || "CARD".equals(type)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String nextId(String prefix) {

@@ -1,10 +1,14 @@
 import type {
   PlaybookRun as ContractsPlaybookRun,
   SessionEvent as ContractsSessionEvent,
+  SessionMessage as ContractsSessionMessage,
+  SessionMessageInput as ContractsSessionMessageInput,
   SessionRuntimeStreamEvent as ContractsSessionRuntimeStreamEvent,
 } from '../../../../packages/contracts/src';
 
 export type SessionEvent = ContractsSessionEvent;
+export type SessionMessage = ContractsSessionMessage;
+export type SessionMessageInput = ContractsSessionMessageInput;
 export type PlaybookRun = ContractsPlaybookRun;
 
 export interface SessionRuntimeSession {
@@ -28,11 +32,13 @@ export interface SessionRuntimeSession {
   createdAt: string;
   updatedAt: string;
   endedAt: string | null;
+  latestMessageSequence: number;
   latestEventSequence: number;
 }
 
 export interface SessionRuntimeDetail {
   session: SessionRuntimeSession;
+  messages: SessionMessage[];
   events: SessionEvent[];
   playbookRuns: PlaybookRun[];
 }
@@ -55,16 +61,16 @@ export interface PrivacyMappingSummary {
 export interface CreateSessionPayload {
   assistantId: string;
   customerId: string;
-  openingMessage: string;
+  openingMessage: SessionMessageInput | null;
 }
 
 export interface SendSessionMessagePayload {
   customerId: string;
-  message: string;
+  message: SessionMessageInput;
 }
 
 export interface HumanOperatorReplyPayload {
   operatorId: string;
-  message: string;
+  message: SessionMessageInput;
   payload?: Record<string, unknown>;
 }

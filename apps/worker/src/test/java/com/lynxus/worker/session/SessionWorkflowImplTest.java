@@ -24,6 +24,9 @@ import com.lynxus.contracts.session.SessionContracts.PlaybookRun;
 import com.lynxus.contracts.session.SessionContracts.SessionEvent;
 import com.lynxus.contracts.session.SessionContracts.SessionEventType;
 import com.lynxus.contracts.session.SessionContracts.SessionMessageDeliveryStatus;
+import com.lynxus.contracts.session.SessionContracts.SessionMessage;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageInput;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageRole;
 import com.lynxus.contracts.session.SessionContracts.PrivacyMappingTelemetry;
 import com.lynxus.contracts.session.SessionContracts.SessionOwnerPolicy;
 import com.lynxus.contracts.session.SessionContracts.SessionPolicy;
@@ -76,7 +79,7 @@ class SessionWorkflowImplTest {
                 )
             );
 
-            workflow.submitUserMessage(new UserMessage("msg-1", "customer-1", "start", Map.of()));
+            workflow.submitUserMessage(textUserMessage("msg-1", "customer-1", "start"));
             waitForEvent(environment, persistence, SessionEventType.PLAYBOOK_WAITING);
 
             String activeRunId = workflow.currentSnapshot().activePlaybookRunId();
@@ -125,7 +128,7 @@ class SessionWorkflowImplTest {
 
             assertEquals(
                 SessionMessageDeliveryStatus.ACCEPTED,
-                workflow.submitUserMessage(new UserMessage("msg-1", "customer-1", "start", Map.of())).status()
+                workflow.submitUserMessage(textUserMessage("msg-1", "customer-1", "start")).status()
             );
 
             waitForEvent(environment, persistence, SessionEventType.PLAYBOOK_WAITING);
@@ -173,7 +176,7 @@ class SessionWorkflowImplTest {
 
             assertEquals(
                 SessionMessageDeliveryStatus.ACCEPTED,
-                workflow.submitUserMessage(new UserMessage("msg-1", "customer-1", "start", Map.of())).status()
+                workflow.submitUserMessage(textUserMessage("msg-1", "customer-1", "start")).status()
             );
 
             waitForEvent(environment, persistence, SessionEventType.SESSION_HUMAN_HANDOFF_STARTED);
@@ -218,7 +221,7 @@ class SessionWorkflowImplTest {
 
             assertEquals(
                 SessionMessageDeliveryStatus.ACCEPTED,
-                workflow.submitUserMessage(new UserMessage("msg-1", "customer-1", "start", Map.of())).status()
+                workflow.submitUserMessage(textUserMessage("msg-1", "customer-1", "start")).status()
             );
 
             waitForEvent(environment, persistence, SessionEventType.PLAYBOOK_WAITING);
@@ -226,12 +229,42 @@ class SessionWorkflowImplTest {
 
             assertEquals(
                 SessionMessageDeliveryStatus.REJECTED,
-                workflow.submitUserMessage(new UserMessage("msg-2", "customer-1", "follow up", Map.of())).status()
+                workflow.submitUserMessage(textUserMessage("msg-2", "customer-1", "follow up")).status()
             );
 
             environment.sleep(Duration.ofSeconds(1));
-            assertEquals(1, countEvents(persistence.events(), SessionEventType.USER_MESSAGE));
+            assertEquals(1, countMessages(persistence.messages(), SessionMessageRole.USER));
             assertTrue(workflow.currentSnapshot().draining());
+        }
+    }
+
+    @Test
+    void submitUserMessage_shouldRejectBlankMessageWithoutPersistingOrExecutingTurn() {
+        try (TestWorkflowEnvironment environment = newRealTimeWorkflowEnvironment()) {
+            Worker worker = environment.newWorker("session-tests-blank-message");
+            RecordingPersistenceActivities persistence = new RecordingPersistenceActivities();
+            RecordingRunPlaybookAgentTurnActivities activities = new RecordingRunPlaybookAgentTurnActivities();
+            worker.registerWorkflowImplementationTypes(SessionWorkflowImpl.class);
+            worker.registerActivitiesImplementations(activities, persistence);
+            environment.start();
+
+            SessionWorkflow workflow = environment.getWorkflowClient().newWorkflowStub(
+                SessionWorkflow.class,
+                WorkflowOptions.newBuilder()
+                    .setTaskQueue("session-tests-blank-message")
+                    .setWorkflowId("session-blank-message")
+                    .build()
+            );
+            startWorkflowAndWaitUntilReady(environment, workflow, startRequestForAgentActions(List.of(AgentDecisionAction.NO_REPLY)));
+
+            var result = workflow.submitUserMessage(new UserMessage("msg-1", "customer-1", textMessageInput("")));
+
+            assertEquals(SessionMessageDeliveryStatus.REJECTED, result.status());
+            assertEquals("message content required", result.reason());
+            environment.sleep(Duration.ofSeconds(1));
+            assertEquals(0, countMessages(persistence.messages(), SessionMessageRole.USER));
+            assertEquals(0, persistence.events().size());
+            assertEquals(List.of(), activities.triggerTypes());
         }
     }
 
@@ -256,7 +289,7 @@ class SessionWorkflowImplTest {
 
             assertEquals(
                 SessionMessageDeliveryStatus.ACCEPTED,
-                workflow.submitUserMessage(new UserMessage("msg-1", "customer-1", "start", Map.of())).status()
+                workflow.submitUserMessage(textUserMessage("msg-1", "customer-1", "start")).status()
             );
 
             waitForEvent(environment, persistence, SessionEventType.PLAYBOOK_WAITING);
@@ -304,14 +337,19 @@ class SessionWorkflowImplTest {
 
             assertEquals(
                 SessionMessageDeliveryStatus.ACCEPTED,
-                workflow.submitUserMessage(new UserMessage("msg-1", "customer-1", "start", Map.of())).status()
+                workflow.submitUserMessage(textUserMessage("msg-1", "customer-1", "start")).status()
             );
 
             waitForEvent(environment, persistence, SessionEventType.AGENT_DECISION_REJECTED);
+            waitForMessage(environment, persistence, SessionMessageRole.SYSTEM);
+            SessionEvent rejectionEvent = latestEventOfType(persistence.events(), SessionEventType.AGENT_DECISION_REJECTED);
+            SessionMessage rejectionMessage = latestMessageOfRole(persistence.messages(), SessionMessageRole.SYSTEM);
             assertEquals(
                 "run_playbook_playbook_id_required",
-                latestEventOfType(persistence.events(), SessionEventType.AGENT_DECISION_REJECTED).payload().get("rejectReason")
+                rejectionEvent.payload().get("rejectReason")
             );
+            assertEquals(rejectionMessage.messageId(), rejectionEvent.relatedMessageId());
+            assertEquals(rejectionEvent.eventId(), rejectionMessage.sourceEventId());
             assertEquals(0, countEvents(persistence.events(), SessionEventType.PLAYBOOK_STARTED));
         }
     }
@@ -336,12 +374,12 @@ class SessionWorkflowImplTest {
 
             assertEquals(
                 SessionMessageDeliveryStatus.ACCEPTED,
-                workflow.submitUserMessage(new UserMessage("msg-1", "customer-1", "start", Map.of())).status()
+                workflow.submitUserMessage(textUserMessage("msg-1", "customer-1", "start")).status()
             );
 
-            waitForEvent(environment, persistence, SessionEventType.OWNER_REPLY);
+            waitForMessage(environment, persistence, SessionMessageRole.ASSISTANT);
             assertEquals(0, countEvents(persistence.events(), SessionEventType.AGENT_DECISION_REJECTED));
-            assertEquals(1, countEvents(persistence.events(), SessionEventType.OWNER_REPLY));
+            assertEquals(1, countMessages(persistence.messages(), SessionMessageRole.ASSISTANT));
         }
     }
 
@@ -365,13 +403,13 @@ class SessionWorkflowImplTest {
 
             assertEquals(
                 SessionMessageDeliveryStatus.ACCEPTED,
-                workflow.submitUserMessage(new UserMessage("msg-1", "customer-1", "first", Map.of())).status()
+                workflow.submitUserMessage(textUserMessage("msg-1", "customer-1", "first")).status()
             );
             waitForPlatformEventCount(environment, persistence, "PRIVACY_OUTBOUND_SANITIZED", 1);
 
             assertEquals(
                 SessionMessageDeliveryStatus.ACCEPTED,
-                workflow.submitUserMessage(new UserMessage("msg-2", "customer-1", "second", Map.of())).status()
+                workflow.submitUserMessage(textUserMessage("msg-2", "customer-1", "second")).status()
             );
             waitForPlatformEventCount(environment, persistence, "PRIVACY_OUTBOUND_SANITIZED", 2);
 
@@ -416,7 +454,7 @@ class SessionWorkflowImplTest {
 
             assertEquals(
                 SessionMessageDeliveryStatus.ACCEPTED,
-                workflow.submitUserMessage(new UserMessage("msg-1", "customer-1", "start", Map.of())).status()
+                workflow.submitUserMessage(textUserMessage("msg-1", "customer-1", "start")).status()
             );
 
             waitForEvent(environment, persistence, SessionEventType.AGENT_DECISION_REJECTED);
@@ -448,7 +486,7 @@ class SessionWorkflowImplTest {
 
             assertEquals(
                 SessionMessageDeliveryStatus.ACCEPTED,
-                workflow.submitUserMessage(new UserMessage("msg-1", "customer-1", "start", Map.of())).status()
+                workflow.submitUserMessage(textUserMessage("msg-1", "customer-1", "start")).status()
             );
 
             waitForLlmUsageCount(environment, persistence, 1);
@@ -492,7 +530,7 @@ class SessionWorkflowImplTest {
 
             assertEquals(
                 SessionMessageDeliveryStatus.ACCEPTED,
-                workflow.submitUserMessage(new UserMessage("msg-1", "customer-1", "start", Map.of())).status()
+                workflow.submitUserMessage(textUserMessage("msg-1", "customer-1", "start")).status()
             );
 
             waitForEvent(environment, persistence, SessionEventType.AGENT_DECISION_REJECTED);
@@ -524,15 +562,20 @@ class SessionWorkflowImplTest {
 
             assertEquals(
                 SessionMessageDeliveryStatus.ACCEPTED,
-                workflow.submitUserMessage(new UserMessage("msg-1", "customer-1", "start", Map.of())).status()
+                workflow.submitUserMessage(textUserMessage("msg-1", "customer-1", "start")).status()
             );
 
             waitForEvent(environment, persistence, SessionEventType.AGENT_TURN_FAILED);
+            waitForMessage(environment, persistence, SessionMessageRole.SYSTEM);
+            SessionEvent failureEvent = latestEventOfType(persistence.events(), SessionEventType.AGENT_TURN_FAILED);
+            SessionMessage failureMessage = latestMessageOfRole(persistence.messages(), SessionMessageRole.SYSTEM);
             assertEquals(1, persistence.llmUsageRecords().size());
             assertEquals(
                 "runtime returned malformed final JSON",
-                latestEventOfType(persistence.events(), SessionEventType.AGENT_TURN_FAILED).payload().get("reason")
+                failureEvent.payload().get("reason")
             );
+            assertEquals(failureMessage.messageId(), failureEvent.relatedMessageId());
+            assertEquals(failureEvent.eventId(), failureMessage.sourceEventId());
             assertTrue(
                 persistence.firstOperationIndex("appendLlmUsage:count=1")
                     < persistence.firstOperationIndex("appendEvent:AGENT_TURN_FAILED")
@@ -564,7 +607,7 @@ class SessionWorkflowImplTest {
 
             assertEquals(
                 SessionMessageDeliveryStatus.ACCEPTED,
-                workflow.submitUserMessage(new UserMessage("msg-1", "customer-1", "start", Map.of())).status()
+                workflow.submitUserMessage(textUserMessage("msg-1", "customer-1", "start")).status()
             );
 
             waitForEvent(environment, persistence, SessionEventType.AGENT_DECISION_REJECTED);
@@ -737,6 +780,22 @@ class SessionWorkflowImplTest {
         );
     }
 
+    private static void waitForMessage(
+        TestWorkflowEnvironment environment,
+        RecordingPersistenceActivities persistence,
+        SessionMessageRole role
+    ) {
+        for (int attempt = 0; attempt < 20; attempt += 1) {
+            if (countMessages(persistence.messages(), role) > 0) {
+                return;
+            }
+            environment.sleep(Duration.ofMillis(200));
+        }
+        throw new AssertionError(
+            "expected message not recorded: " + role + ", actual messages=" + persistence.messages().stream().map(SessionMessage::role).toList()
+        );
+    }
+
     private static void waitForPlatformEventCount(
         TestWorkflowEnvironment environment,
         RecordingPersistenceActivities persistence,
@@ -788,11 +847,30 @@ class SessionWorkflowImplTest {
         return events.stream().filter(event -> event.eventType() == eventType).count();
     }
 
+    private static long countMessages(List<SessionMessage> messages, SessionMessageRole role) {
+        return messages.stream().filter(message -> message.role() == role).count();
+    }
+
     private static SessionEvent latestEventOfType(List<SessionEvent> events, SessionEventType eventType) {
         return events.stream()
             .filter(event -> event.eventType() == eventType)
             .reduce((first, second) -> second)
             .orElseThrow();
+    }
+
+    private static SessionMessage latestMessageOfRole(List<SessionMessage> messages, SessionMessageRole role) {
+        return messages.stream()
+            .filter(message -> message.role() == role)
+            .reduce((first, second) -> second)
+            .orElseThrow();
+    }
+
+    private static UserMessage textUserMessage(String messageId, String customerId, String text) {
+        return new UserMessage(messageId, customerId, textMessageInput(text));
+    }
+
+    private static SessionMessageInput textMessageInput(String text) {
+        return new SessionMessageInput(List.of(Map.of("type", "TEXT", "text", text)), Map.of());
     }
 
     private static AgentTurnExecutionOutcome successOutcome(AgentTurnResult result) {
@@ -814,18 +892,18 @@ class SessionWorkflowImplTest {
                 return successOutcome(new AgentTurnResult(
                     new AgentDecision(
                         AgentDecisionAction.RUN_PLAYBOOK,
-                        null,
+                        (SessionMessageInput) null,
                         null,
                         "playbook-1",
                         Map.of("customerId", "customer-1"),
-                        null
+                        (SessionMessageInput) null
                     ),
                     Map.of(),
                     null
                 ));
             }
             return successOutcome(new AgentTurnResult(
-                new AgentDecision(AgentDecisionAction.NO_REPLY, null, null, null, Map.of(), null),
+                new AgentDecision(AgentDecisionAction.NO_REPLY, (SessionMessageInput) null, null, null, Map.of(), (SessionMessageInput) null),
                 Map.of(),
                 null
             ));
@@ -842,18 +920,18 @@ class SessionWorkflowImplTest {
                 return successOutcome(new AgentTurnResult(
                     new AgentDecision(
                         AgentDecisionAction.RUN_PLAYBOOK,
-                        null,
+                        (SessionMessageInput) null,
                         null,
                         "playbook-1",
                         Map.of("customerId", "customer-1"),
-                        null
+                        (SessionMessageInput) null
                     ),
                     Map.of(),
                     null
                 ));
             }
             return successOutcome(new AgentTurnResult(
-                new AgentDecision(AgentDecisionAction.NO_REPLY, null, null, null, Map.of(), null),
+                new AgentDecision(AgentDecisionAction.NO_REPLY, (SessionMessageInput) null, null, null, Map.of(), (SessionMessageInput) null),
                 Map.of(),
                 null
             ));
@@ -870,11 +948,11 @@ class SessionWorkflowImplTest {
             return successOutcome(new AgentTurnResult(
                 new AgentDecision(
                     AgentDecisionAction.SESSION_HUMAN_HANDOFF,
-                    null,
+                    (SessionMessageInput) null,
                     null,
                     null,
                     Map.of(),
-                    null
+                    (SessionMessageInput) null
                 ),
                 Map.of(),
                 null
@@ -888,11 +966,11 @@ class SessionWorkflowImplTest {
             return successOutcome(new AgentTurnResult(
                 new AgentDecision(
                     AgentDecisionAction.RUN_PLAYBOOK,
-                    null,
+                    (SessionMessageInput) null,
                     "agent-2",
                     null,
                     Map.of("customerId", "customer-1"),
-                    null
+                    (SessionMessageInput) null
                 ),
                 Map.of("reviewMarker", "malformed-run-playbook"),
                 null
@@ -906,11 +984,11 @@ class SessionWorkflowImplTest {
             return successOutcome(new AgentTurnResult(
                 new AgentDecision(
                     AgentDecisionAction.SWITCH_OWNER,
-                    null,
+                    (SessionMessageInput) null,
                     null,
                     "playbook-1",
                     Map.of("customerId", "customer-1"),
-                    null
+                    (SessionMessageInput) null
                 ),
                 Map.of("reviewMarker", "malformed-switch-owner"),
                 null
@@ -922,14 +1000,14 @@ class SessionWorkflowImplTest {
         @Override
         public AgentTurnExecutionOutcome executeTurn(AgentTurnRequest request) {
             return successOutcome(new AgentTurnResult(
-                new AgentDecision(
-                    AgentDecisionAction.REPLY,
-                    "reply from owner",
-                    "agent-2",
-                    "playbook-1",
-                    Map.of("customerId", "customer-1"),
-                    "ignored accompanying reply"
-                ),
+                    new AgentDecision(
+                        AgentDecisionAction.REPLY,
+                        textMessageInput("reply from owner"),
+                        "agent-2",
+                        "playbook-1",
+                        Map.of("customerId", "customer-1"),
+                        textMessageInput("ignored accompanying reply")
+                    ),
                 Map.of(),
                 null
             ));
@@ -968,7 +1046,7 @@ class SessionWorkflowImplTest {
                     Instant.parse("2026-04-20T12:01:00Z")
                 );
             return successOutcome(new AgentTurnResult(
-                new AgentDecision(AgentDecisionAction.NO_REPLY, null, null, null, Map.of(), null),
+                new AgentDecision(AgentDecisionAction.NO_REPLY, (SessionMessageInput) null, null, null, Map.of(), (SessionMessageInput) null),
                 Map.of(),
                 telemetry
             ));
@@ -979,7 +1057,7 @@ class SessionWorkflowImplTest {
         @Override
         public AgentTurnExecutionOutcome executeTurn(AgentTurnRequest request) {
             return successOutcome(new AgentTurnResult(
-                new AgentDecision(AgentDecisionAction.NO_REPLY, null, null, null, Map.of(), null),
+                new AgentDecision(AgentDecisionAction.NO_REPLY, (SessionMessageInput) null, null, null, Map.of(), (SessionMessageInput) null),
                 Map.of(),
                 null
             ), List.of(new LlmUsageEntry(
@@ -1007,11 +1085,11 @@ class SessionWorkflowImplTest {
             return successOutcome(new AgentTurnResult(
                 new AgentDecision(
                     AgentDecisionAction.RUN_PLAYBOOK,
-                    null,
+                    (SessionMessageInput) null,
                     "agent-2",
                     null,
                     Map.of("customerId", "customer-1"),
-                    null
+                    (SessionMessageInput) null
                 ),
                 Map.of(),
                 null
@@ -1071,6 +1149,7 @@ class SessionWorkflowImplTest {
     }
 
     private static final class RecordingPersistenceActivities implements SessionPersistenceActivities {
+        private final List<SessionMessage> messages = new CopyOnWriteArrayList<>();
         private final List<SessionEvent> events = new CopyOnWriteArrayList<>();
         private final List<PlatformEventRecord> platformEvents = new CopyOnWriteArrayList<>();
         private final List<LlmUsageRecord> llmUsageRecords = new CopyOnWriteArrayList<>();
@@ -1080,6 +1159,12 @@ class SessionWorkflowImplTest {
         @Override
         public void saveSession(SessionRecord session) {
             operations.add("saveSession:sharedState.reviewMarker=" + session.sharedState().get("reviewMarker"));
+        }
+
+        @Override
+        public void appendMessage(SessionMessage message) {
+            operations.add("appendMessage:" + message.role().name());
+            messages.add(message);
         }
 
         @Override
@@ -1106,6 +1191,10 @@ class SessionWorkflowImplTest {
 
         List<SessionEvent> events() {
             return new ArrayList<>(events);
+        }
+
+        List<SessionMessage> messages() {
+            return new ArrayList<>(messages);
         }
 
         List<PlatformEventRecord> platformEvents() {

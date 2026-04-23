@@ -148,7 +148,7 @@ export function useAppState(currentPageKey: Ref<PageKey>) {
         ? await api.getRuntimeSessionDetail(runtimeSelectedSessionId.value)
         : null;
       if (runtimeSessionDetail.value) {
-        runtimeStreamLastEventId = `session-snapshot:${runtimeSessionDetail.value.session.id}:${runtimeSessionDetail.value.session.latestEventSequence}`;
+        runtimeStreamLastEventId = `session-snapshot:${runtimeSessionDetail.value.session.id}:${runtimeSessionDetail.value.session.latestMessageSequence}:${runtimeSessionDetail.value.session.latestEventSequence}`;
       }
     } finally {
       refreshInFlight = false;

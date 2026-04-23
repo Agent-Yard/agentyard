@@ -188,7 +188,7 @@ public class SessionRuntimeStreamService {
     private SessionRuntimeStreamEvent snapshotEvent(String sessionId) {
         SessionRuntimeDetailDto detail = loadDetail(sessionId);
         return new SessionRuntimeStreamEvent(
-            "session-snapshot:" + sessionId + ":" + detail.session().latestEventSequence(),
+            snapshotEventId(detail.session()),
             "SESSION_SNAPSHOT",
             Instant.now(),
             sessionId,
@@ -196,9 +196,14 @@ public class SessionRuntimeStreamService {
         );
     }
 
+    private static String snapshotEventId(SessionRuntimeDtos.SessionRuntimeSessionDto session) {
+        return "session-snapshot:" + session.id() + ":" + session.latestMessageSequence() + ":" + session.latestEventSequence();
+    }
+
     private SessionRuntimeDetailDto loadDetail(String sessionId) {
         return new SessionRuntimeDetailDto(
             repository.findSession(sessionId).orElseThrow(),
+            repository.listMessages(sessionId),
             repository.listEvents(sessionId),
             repository.listPlaybookRuns(sessionId)
         );

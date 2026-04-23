@@ -2,6 +2,7 @@ import { message } from 'ant-design-vue';
 import { pagePathByKey } from '../config/navigation';
 import { router } from '../router';
 import { api } from '../services/api';
+import type { SessionMessageInput } from '../types';
 
 interface RuntimeActionState {
   creatingSession: { value: boolean };
@@ -20,6 +21,13 @@ export function useRuntimeActions(
   refresh: (showLoading?: boolean) => Promise<void>,
   errorMessage: (error: unknown, fallback: string) => string,
 ) {
+  function textMessageInput(text: string): SessionMessageInput {
+    return {
+      blocks: [{ type: 'TEXT', text }],
+      metadata: {},
+    };
+  }
+
   async function handleCreateSession(payload: {
     assistantId: string;
     customerId: string;
@@ -30,7 +38,7 @@ export function useRuntimeActions(
       const created = await api.createRuntimeSession({
         assistantId: payload.assistantId,
         customerId: payload.customerId,
-        openingMessage: payload.openingMessage.trim(),
+        openingMessage: payload.openingMessage.trim() ? textMessageInput(payload.openingMessage.trim()) : null,
       });
       state.runtimePreferredSessionId.value = created.id;
       state.runtimeSelectedSessionId.value = created.id;
@@ -51,7 +59,7 @@ export function useRuntimeActions(
     try {
       const session = await api.sendRuntimeSessionMessage(payload.sessionId, {
         customerId: payload.customerId,
-        message: payload.message,
+        message: textMessageInput(payload.message),
       });
       state.runtimePreferredSessionId.value = session.id;
       state.runtimeSelectedSessionId.value = session.id;

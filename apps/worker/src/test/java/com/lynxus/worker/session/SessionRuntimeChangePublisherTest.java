@@ -33,6 +33,7 @@ class SessionRuntimeChangePublisherTest {
             new JooqSessionProjectionRepository.SessionRuntimeChangeStamp(
                 "session-1",
                 Instant.parse("2026-04-21T00:00:00Z"),
+                2L,
                 3L,
                 Instant.parse("2026-04-21T00:00:01Z")
             );

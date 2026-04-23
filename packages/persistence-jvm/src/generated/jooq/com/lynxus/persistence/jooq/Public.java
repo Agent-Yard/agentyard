@@ -34,6 +34,7 @@ import com.lynxus.persistence.jooq.tables.ResourceBinding;
 import com.lynxus.persistence.jooq.tables.ResumeIntervention;
 import com.lynxus.persistence.jooq.tables.Scenario;
 import com.lynxus.persistence.jooq.tables.SessionRuntimeEvent;
+import com.lynxus.persistence.jooq.tables.SessionRuntimeMessage;
 import com.lynxus.persistence.jooq.tables.SessionRuntimePlaybookRun;
 import com.lynxus.persistence.jooq.tables.SessionRuntimeSession;
 import com.lynxus.persistence.jooq.tables.SharedStateRevision;
@@ -212,6 +213,11 @@ public class Public extends SchemaImpl {
     public final SessionRuntimeEvent SESSION_RUNTIME_EVENT = SessionRuntimeEvent.SESSION_RUNTIME_EVENT;
 
     /**
+     * The table <code>public.session_runtime_message</code>.
+     */
+    public final SessionRuntimeMessage SESSION_RUNTIME_MESSAGE = SessionRuntimeMessage.SESSION_RUNTIME_MESSAGE;
+
+    /**
      * The table <code>public.session_runtime_playbook_run</code>.
      */
     public final SessionRuntimePlaybookRun SESSION_RUNTIME_PLAYBOOK_RUN = SessionRuntimePlaybookRun.SESSION_RUNTIME_PLAYBOOK_RUN;
@@ -282,6 +288,7 @@ public class Public extends SchemaImpl {
             ResumeIntervention.RESUME_INTERVENTION,
             Scenario.SCENARIO,
             SessionRuntimeEvent.SESSION_RUNTIME_EVENT,
+            SessionRuntimeMessage.SESSION_RUNTIME_MESSAGE,
             SessionRuntimePlaybookRun.SESSION_RUNTIME_PLAYBOOK_RUN,
             SessionRuntimeSession.SESSION_RUNTIME_SESSION,
             SharedStateRevision.SHARED_STATE_REVISION,

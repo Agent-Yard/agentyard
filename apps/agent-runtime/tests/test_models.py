@@ -5,6 +5,13 @@ from pydantic import ValidationError
 from lynxus_agent_runtime.models import AgentDecision
 
 
+def _text_message_input(text: str) -> dict:
+    return {
+        "blocks": [{"type": "TEXT", "text": text}],
+        "metadata": {},
+    }
+
+
 class AgentDecisionModelTest(unittest.TestCase):
     def test_run_playbook_requires_playbook_input(self) -> None:
         with self.assertRaises(ValidationError):
@@ -30,19 +37,20 @@ class AgentDecisionModelTest(unittest.TestCase):
         decision = AgentDecision.model_validate(
             {
                 "action": "NO_REPLY",
-                "accompanyingReply": "should not block runtime parsing",
+                "accompanyingMessage": _text_message_input("should not block runtime parsing"),
             }
         )
         self.assertEqual(decision.action, "NO_REPLY")
-        self.assertEqual(decision.accompanyingReply, "should not block runtime parsing")
+        self.assertEqual(decision.accompanyingMessage.blocks[0].text, "should not block runtime parsing")
 
     def test_reply_allows_accompanying_reply_for_soft_validation(self) -> None:
         decision = AgentDecision.model_validate(
             {
                 "action": "REPLY",
-                "replyContent": "hello",
-                "accompanyingReply": "should not block runtime parsing",
+                "replyMessage": _text_message_input("hello"),
+                "accompanyingMessage": _text_message_input("should not block runtime parsing"),
             }
         )
         self.assertEqual(decision.action, "REPLY")
-        self.assertEqual(decision.accompanyingReply, "should not block runtime parsing")
+        self.assertEqual(decision.replyMessage.blocks[0].text, "hello")
+        self.assertEqual(decision.accompanyingMessage.blocks[0].text, "should not block runtime parsing")

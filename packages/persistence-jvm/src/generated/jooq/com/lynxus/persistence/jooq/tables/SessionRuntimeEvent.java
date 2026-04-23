@@ -96,6 +96,11 @@ public class SessionRuntimeEvent extends TableImpl<SessionRuntimeEventRecord> {
     public final TableField<SessionRuntimeEventRecord, JSONB> PAYLOAD = createField(DSL.name("payload"), SQLDataType.JSONB.nullable(false), this, "");
 
     /**
+     * The column <code>public.session_runtime_event.related_message_id</code>.
+     */
+    public final TableField<SessionRuntimeEventRecord, String> RELATED_MESSAGE_ID = createField(DSL.name("related_message_id"), SQLDataType.VARCHAR(64), this, "");
+
+    /**
      * The column
      * <code>public.session_runtime_event.related_playbook_run_id</code>.
      */

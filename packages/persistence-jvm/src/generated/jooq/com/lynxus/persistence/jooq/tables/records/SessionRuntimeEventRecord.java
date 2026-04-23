@@ -134,11 +134,25 @@ public class SessionRuntimeEventRecord extends UpdatableRecordImpl<SessionRuntim
     }
 
     /**
+     * Setter for <code>public.session_runtime_event.related_message_id</code>.
+     */
+    public void setRelatedMessageId(String value) {
+        set(8, value);
+    }
+
+    /**
+     * Getter for <code>public.session_runtime_event.related_message_id</code>.
+     */
+    public String getRelatedMessageId() {
+        return (String) get(8);
+    }
+
+    /**
      * Setter for
      * <code>public.session_runtime_event.related_playbook_run_id</code>.
      */
     public void setRelatedPlaybookRunId(String value) {
-        set(8, value);
+        set(9, value);
     }
 
     /**
@@ -146,7 +160,7 @@ public class SessionRuntimeEventRecord extends UpdatableRecordImpl<SessionRuntim
      * <code>public.session_runtime_event.related_playbook_run_id</code>.
      */
     public String getRelatedPlaybookRunId() {
-        return (String) get(8);
+        return (String) get(9);
     }
 
     /**
@@ -154,7 +168,7 @@ public class SessionRuntimeEventRecord extends UpdatableRecordImpl<SessionRuntim
      * <code>public.session_runtime_event.related_owner_agent_id</code>.
      */
     public void setRelatedOwnerAgentId(String value) {
-        set(9, value);
+        set(10, value);
     }
 
     /**
@@ -162,7 +176,7 @@ public class SessionRuntimeEventRecord extends UpdatableRecordImpl<SessionRuntim
      * <code>public.session_runtime_event.related_owner_agent_id</code>.
      */
     public String getRelatedOwnerAgentId() {
-        return (String) get(9);
+        return (String) get(10);
     }
 
     // -------------------------------------------------------------------------
@@ -188,7 +202,7 @@ public class SessionRuntimeEventRecord extends UpdatableRecordImpl<SessionRuntim
     /**
      * Create a detached, initialised SessionRuntimeEventRecord
      */
-    public SessionRuntimeEventRecord(String eventId, String sessionId, Long sequence, String eventType, OffsetDateTime createdAt, String actorType, String actorId, JSONB payload, String relatedPlaybookRunId, String relatedOwnerAgentId) {
+    public SessionRuntimeEventRecord(String eventId, String sessionId, Long sequence, String eventType, OffsetDateTime createdAt, String actorType, String actorId, JSONB payload, String relatedMessageId, String relatedPlaybookRunId, String relatedOwnerAgentId) {
         super(SessionRuntimeEvent.SESSION_RUNTIME_EVENT);
 
         setEventId(eventId);
@@ -199,6 +213,7 @@ public class SessionRuntimeEventRecord extends UpdatableRecordImpl<SessionRuntim
         setActorType(actorType);
         setActorId(actorId);
         setPayload(payload);
+        setRelatedMessageId(relatedMessageId);
         setRelatedPlaybookRunId(relatedPlaybookRunId);
         setRelatedOwnerAgentId(relatedOwnerAgentId);
         resetChangedOnNotNull();

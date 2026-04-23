@@ -9,6 +9,31 @@ from lynxus_agent_runtime.models import AgentTurnRequest
 from lynxus_agent_runtime.prompting import build_prompt_bundle
 
 
+def _text_message(message_id: str, sequence: int, role: str, text: str) -> dict:
+    sender_type = {
+        "USER": "CUSTOMER",
+        "ASSISTANT": "AGENT",
+        "HUMAN_OPERATOR": "HUMAN_OPERATOR",
+        "SYSTEM": "SYSTEM",
+    }[role]
+    return {
+        "messageId": message_id,
+        "sessionId": "session-1",
+        "sequence": sequence,
+        "role": role,
+        "sender": {
+            "senderType": sender_type,
+            "senderId": f"{sender_type.lower()}-1",
+            "senderName": f"{sender_type.lower()}-1",
+        },
+        "status": "DELIVERED",
+        "blocks": [{"type": "TEXT", "text": text}],
+        "metadata": {},
+        "createdAt": f"2026-04-19T00:00:0{sequence}Z",
+        "updatedAt": f"2026-04-19T00:00:0{sequence}Z",
+    }
+
+
 class AgentRuntimePromptingTest(unittest.TestCase):
     def test_should_build_prompt_bundle_with_runtime_context(self) -> None:
         request = AgentTurnRequest.model_validate(
@@ -35,18 +60,14 @@ class AgentRuntimePromptingTest(unittest.TestCase):
                 "trigger": {
                     "triggerType": "USER_MESSAGE",
                     "eventId": "evt-1",
+                    "triggerMessageId": "msg-2",
                     "payload": {"text": "hello"},
                 },
-                "recentEvents": [
-                    {
-                        "eventId": "evt-0",
-                        "sessionId": "session-1",
-                        "sequence": 1,
-                        "eventType": "USER_MESSAGE",
-                        "actorType": "USER",
-                        "payload": {"text": "hi"},
-                    }
+                "recentMessages": [
+                    _text_message("msg-1", 1, "USER", "hi"),
+                    _text_message("msg-2", 2, "USER", "hello"),
                 ],
+                "recentEvents": [],
             }
         )
 
@@ -132,8 +153,10 @@ class AgentRuntimePromptingTest(unittest.TestCase):
                 "trigger": {
                     "triggerType": "USER_MESSAGE",
                     "eventId": "evt-1",
+                    "triggerMessageId": "msg-1",
                     "payload": {"text": "hello"},
                 },
+                "recentMessages": [_text_message("msg-1", 1, "USER", "hello")],
                 "recentEvents": [],
             }
         )
@@ -162,19 +185,11 @@ class AgentRuntimePromptingTest(unittest.TestCase):
                 "trigger": {
                     "triggerType": "USER_MESSAGE",
                     "eventId": "evt-5",
+                    "triggerMessageId": "msg-5",
                     "payload": {"text": "latest"},
                 },
-                "recentEvents": [
-                    {
-                        "eventId": f"evt-{index}",
-                        "sessionId": "session-1",
-                        "sequence": index,
-                        "eventType": "USER_MESSAGE",
-                        "actorType": "USER",
-                        "payload": {"text": f"msg-{index}"},
-                    }
-                    for index in range(1, 6)
-                ],
+                "recentMessages": [_text_message(f"msg-{index}", index, "USER", f"msg-{index}") for index in range(1, 6)],
+                "recentEvents": [],
             }
         )
 
@@ -206,23 +221,11 @@ class AgentRuntimePromptingTest(unittest.TestCase):
                     "eventId": "evt-4",
                     "payload": {"playbookRunId": "run-1", "status": "SUCCEEDED"},
                 },
+                "recentMessages": [
+                    _text_message("msg-1", 1, "USER", "我想退款"),
+                    _text_message("msg-2", 2, "ASSISTANT", "我来帮你处理"),
+                ],
                 "recentEvents": [
-                    {
-                        "eventId": "evt-1",
-                        "sessionId": "session-1",
-                        "sequence": 1,
-                        "eventType": "USER_MESSAGE",
-                        "actorType": "USER",
-                        "payload": {"text": "我想退款"},
-                    },
-                    {
-                        "eventId": "evt-2",
-                        "sessionId": "session-1",
-                        "sequence": 2,
-                        "eventType": "OWNER_REPLY",
-                        "actorType": "AGENT",
-                        "payload": {"text": "我来帮你处理"},
-                    },
                     {
                         "eventId": "evt-3",
                         "sessionId": "session-1",

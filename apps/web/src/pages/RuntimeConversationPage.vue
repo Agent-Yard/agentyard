@@ -2,12 +2,14 @@
 import { computed, reactive, ref, watch } from 'vue';
 import PageHeadActions from '../components/PageHeadActions.vue';
 import { api } from '../services/api';
+import { renderMarkdown } from '../utils/markdown';
 import type {
   Assistant,
   PrivacyMappingSummary,
   PlaybookRun,
   Scenario,
   SessionEvent,
+  SessionMessage,
   SessionRuntimeDetail,
   SessionRuntimeSession,
 } from '../types';
@@ -181,10 +183,6 @@ function statusColor(status: string) {
 
 function eventTitle(event: SessionEvent) {
   switch (event.eventType) {
-    case 'USER_MESSAGE':
-      return '用户消息';
-    case 'OWNER_REPLY':
-      return 'Owner 回复';
     case 'OWNER_SWITCH':
       return 'Owner 切换';
     case 'PLAYBOOK_STARTED':
@@ -207,15 +205,30 @@ function eventTitle(event: SessionEvent) {
 }
 
 function eventSummary(event: SessionEvent) {
-  const text = event.payload?.text;
-  if (typeof text === 'string' && text.trim()) {
-    return text;
-  }
   const reason = event.payload?.reason;
   if (typeof reason === 'string' && reason.trim()) {
     return reason;
   }
   return JSON.stringify(event.payload ?? {}, null, 2);
+}
+
+function messageTitle(message: SessionMessage) {
+  switch (message.role) {
+    case 'USER':
+      return '用户消息';
+    case 'ASSISTANT':
+      return '助手回复';
+    case 'HUMAN_OPERATOR':
+      return '人工回复';
+    case 'SYSTEM':
+      return '系统消息';
+    default:
+      return message.role;
+  }
+}
+
+function messageSender(message: SessionMessage) {
+  return message.sender.senderName ?? message.sender.senderId ?? message.sender.senderType;
 }
 
 function playbookSummary(run: PlaybookRun) {
@@ -280,6 +293,7 @@ function formatSharedState(value: Record<string, unknown> | null | undefined) {
             <a-descriptions-item label="Primary Agent">{{ currentSession.primaryAgentId }}</a-descriptions-item>
             <a-descriptions-item label="Active Playbook">{{ currentSession.activePlaybookRunId ?? '无' }}</a-descriptions-item>
             <a-descriptions-item label="Idle Deadline">{{ currentSession.idleDeadline ?? '无' }}</a-descriptions-item>
+            <a-descriptions-item label="最新消息序号">{{ currentSession.latestMessageSequence }}</a-descriptions-item>
             <a-descriptions-item label="最新事件序号">{{ currentSession.latestEventSequence }}</a-descriptions-item>
             <a-descriptions-item label="共享状态">
               <pre class="runtime-json">{{ formatSharedState(currentSession.sharedState) }}</pre>
@@ -317,7 +331,51 @@ function formatSharedState(value: Record<string, unknown> | null | undefined) {
           </a-descriptions>
         </a-card>
 
-        <a-card v-if="currentDetail" title="Session Event">
+        <a-card v-if="currentDetail" title="Messages">
+          <a-list :data-source="currentDetail.messages">
+            <template #renderItem="{ item }">
+              <a-list-item>
+                <div style="width: 100%">
+                  <div class="timeline-title">
+                    <strong>#{{ item.sequence }} {{ messageTitle(item) }}</strong>
+                  </div>
+                  <div class="timeline-meta">
+                    {{ item.createdAt }} · {{ messageSender(item) }}{{ item.relatedOwnerAgentId ? ` · owner ${item.relatedOwnerAgentId}` : '' }}
+                  </div>
+                  <div class="message-blocks">
+                    <template v-for="(block, index) in item.blocks" :key="`${item.messageId}-${index}`">
+                      <pre v-if="block.type === 'TEXT'" class="runtime-json">{{ block.text }}</pre>
+                      <img
+                        v-else-if="block.type === 'IMAGE'"
+                        :src="block.url"
+                        :alt="block.alt ?? 'image'"
+                        class="runtime-message-image"
+                      />
+                      <div v-else-if="block.type === 'RICH_TEXT'" class="runtime-markdown" v-html="renderMarkdown(block.content)" />
+                      <a-card v-else-if="block.type === 'CARD'" size="small" class="runtime-message-card">
+                        <template #title>{{ block.cardType }} · {{ block.version }}</template>
+                        <pre class="runtime-json">{{ JSON.stringify(block.data ?? {}, null, 2) }}</pre>
+                        <a-space v-if="block.actions?.length">
+                          <a-button
+                            v-for="(action, actionIndex) in block.actions"
+                            :key="`${item.messageId}-${index}-${actionIndex}`"
+                            type="link"
+                            :href="action.url"
+                            target="_blank"
+                          >
+                            {{ action.label }}
+                          </a-button>
+                        </a-space>
+                      </a-card>
+                    </template>
+                  </div>
+                </div>
+              </a-list-item>
+            </template>
+          </a-list>
+        </a-card>
+
+        <a-card v-if="currentDetail" title="Session Events">
           <a-timeline>
             <a-timeline-item v-for="event in currentDetail.events" :key="event.eventId" :color="statusColor(event.eventType)">
               <div class="timeline-title">
@@ -424,5 +482,71 @@ function formatSharedState(value: Record<string, unknown> | null | undefined) {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.message-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.runtime-message-image {
+  max-width: 100%;
+  border-radius: 8px;
+  border: 1px solid rgba(5, 5, 5, 0.08);
+}
+
+.runtime-markdown :deep(h1),
+.runtime-markdown :deep(h2),
+.runtime-markdown :deep(h3) {
+  margin: 0 0 8px;
+}
+
+.runtime-markdown :deep(p),
+.runtime-markdown :deep(ul),
+.runtime-markdown :deep(ol),
+.runtime-markdown :deep(blockquote),
+.runtime-markdown :deep(pre),
+.runtime-markdown :deep(table) {
+  margin: 0 0 12px;
+}
+
+.runtime-markdown :deep(ul),
+.runtime-markdown :deep(ol) {
+  padding-left: 20px;
+}
+
+.runtime-markdown :deep(blockquote) {
+  padding-left: 12px;
+  border-left: 3px solid rgba(5, 5, 5, 0.12);
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.runtime-markdown :deep(pre) {
+  padding: 12px;
+  overflow-x: auto;
+  border-radius: 8px;
+  background: #fafafa;
+  border: 1px solid rgba(5, 5, 5, 0.06);
+}
+
+.runtime-markdown :deep(code) {
+  font-family: 'SFMono-Regular', 'Consolas', monospace;
+}
+
+.runtime-markdown :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.runtime-markdown :deep(th),
+.runtime-markdown :deep(td) {
+  padding: 8px 10px;
+  border: 1px solid rgba(5, 5, 5, 0.08);
+  text-align: left;
+}
+
+.runtime-message-card {
+  width: 100%;
 }
 </style>
