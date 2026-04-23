@@ -907,6 +907,17 @@ pre,
   gap: 16px;
 }
 
+.assistant-view__stack,
+.assistant-view__stack .ant-space-item {
+  width: 100%;
+}
+
+.assistant-view__filter-select {
+  width: 100%;
+  min-width: 240px;
+  max-width: 100%;
+}
+
 .selectable-card {
   border-color: var(--line);
   background: rgba(255, 255, 255, 0.7);

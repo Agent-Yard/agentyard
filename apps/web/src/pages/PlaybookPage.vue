@@ -240,9 +240,10 @@ function openEditor(playbookId?: string) {
         <template #extra>
           <a-tag class="console-accent-tag">{{ assistantPlaybooks.length }} 个流程</a-tag>
         </template>
-        <a-space direction="vertical" style="width: 100%">
+        <a-space direction="vertical" class="assistant-view__stack">
           <a-select
             v-model:value="selectedAssistantId"
+            class="assistant-view__filter-select"
             :options="assistants.map((item) => ({ label: item.name, value: item.id }))"
           />
           <a-list :data-source="assistantPlaybooks" :locale="{ emptyText: '当前助手下暂无 Playbook' }">

@@ -544,7 +544,7 @@ function submitUpdateDraftVersion() {
     @close="createDrawerOpen = false"
   >
     <div class="create-drawer">
-      <div class="create-drawer__kicker">04.01 / 能力资源 / 资源目录</div>
+      <div class="create-drawer__kicker">03.01 / 能力资源 / 资源目录</div>
       <div class="create-drawer__body">
         <a-alert
           type="info"
@@ -701,7 +701,7 @@ function submitUpdateDraftVersion() {
     :open="editDrawerOpen"
     title="编辑资源属性"
     :width="720"
-    kicker="04.01 / 能力资源 / 资源目录"
+    kicker="03.01 / 能力资源 / 资源目录"
     @close="editDrawerOpen = false"
   >
     <a-form layout="vertical" :model="resourceForm" @finish="submitUpdateResource">

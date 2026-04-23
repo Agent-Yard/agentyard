@@ -937,7 +937,7 @@ async function handlePreviewRetrieval() {
     :open="createDrawerOpen"
     title="新建知识库"
     :width="640"
-    kicker="03.01 / 知识库 / 工作台"
+    kicker="04.01 / 知识库 / 工作台"
     @close="createDrawerOpen = false"
   >
     <a-alert
@@ -1021,7 +1021,7 @@ async function handlePreviewRetrieval() {
     :open="editDrawerOpen"
     title="编辑知识库"
     :width="640"
-    kicker="03.01 / 知识库 / 工作台"
+    kicker="04.01 / 知识库 / 工作台"
     @close="editDrawerOpen = false"
   >
     <a-form layout="vertical" :model="editForm" @finish="submitUpdateKnowledgeBase">

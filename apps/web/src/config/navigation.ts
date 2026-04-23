@@ -135,17 +135,17 @@ export const menuItems = [
     ],
   },
   {
-    key: 'knowledge',
-    label: sectionMeta.knowledge.label,
-    children: [
-      { key: 'knowledge-library', label: pageMeta['knowledge-library'].label },
-    ],
-  },
-  {
     key: 'resource',
     label: sectionMeta.resource.label,
     children: [
       { key: 'resource-library', label: pageMeta['resource-library'].label },
+    ],
+  },
+  {
+    key: 'knowledge',
+    label: sectionMeta.knowledge.label,
+    children: [
+      { key: 'knowledge-library', label: pageMeta['knowledge-library'].label },
     ],
   },
   {

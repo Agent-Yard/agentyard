@@ -373,9 +373,10 @@ function submitSave() {
   <a-row :gutter="[16, 16]">
     <a-col :span="9">
       <a-card title="助手视图">
-        <a-space direction="vertical" style="width: 100%">
+        <a-space direction="vertical" class="assistant-view__stack">
           <a-select
             v-model:value="selectedAssistantId"
+            class="assistant-view__filter-select"
             :options="assistants.map((item) => ({ label: item.name, value: item.id }))"
           />
           <a-list :data-source="assistantAgents" :locale="{ emptyText: '当前助手下暂无智能体' }">
