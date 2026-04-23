@@ -1052,7 +1052,7 @@ onBeforeUnmount(() => {
 .playbook-panel__kicker {
   color: var(--ink-faint);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-caption);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -1117,7 +1117,7 @@ onBeforeUnmount(() => {
 .playbook-palette__item p {
   margin: 0;
   color: var(--ink-soft);
-  font-size: 12px;
+  font-size: var(--text-secondary);
   line-height: 1.5;
 }
 
@@ -1131,14 +1131,14 @@ onBeforeUnmount(() => {
   background: rgba(252, 251, 248, 0.94);
   color: var(--ink-soft);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-caption);
 }
 
 .playbook-palette__stat {
   margin-top: 8px;
   color: var(--ink-soft);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-caption);
 }
 
 .playbook-canvas-panel {
@@ -1222,7 +1222,7 @@ onBeforeUnmount(() => {
 .playbook-edge-list__item span {
   color: var(--ink-soft);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-caption);
 }
 
 .playbook-inspector {
@@ -1245,7 +1245,7 @@ onBeforeUnmount(() => {
   min-height: 560px;
   color: var(--ink-faint);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--text-secondary);
   text-align: center;
 }
 

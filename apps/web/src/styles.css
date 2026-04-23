@@ -52,6 +52,9 @@
     Consolas,
     Menlo,
     monospace;
+  --text-caption: 12px;
+  --text-secondary: 13px;
+  --text-body: 14px;
 
   --r-sm: 4px;
   --r: 8px;
@@ -83,7 +86,7 @@ body {
   font-family: var(--font-sans);
   background: #f2efe9;
   color: var(--ink);
-  font-size: 13px;
+  font-size: var(--text-body);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
@@ -204,7 +207,7 @@ pre,
 }
 
 .console-topbar__brand-cn {
-  font-size: 13px;
+  font-size: var(--text-body);
   font-weight: 700;
   letter-spacing: 0.08em;
 }
@@ -212,7 +215,7 @@ pre,
 .console-topbar__brand-en {
   color: var(--ink-faint);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-caption);
 }
 
 .console-topbar__crumbs {
@@ -231,7 +234,7 @@ pre,
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-caption);
   color: var(--ink-faint);
   background: rgba(255, 255, 255, 0.55);
 }
@@ -261,7 +264,7 @@ pre,
   border-left: 2px solid var(--accent);
   border-radius: var(--r-sm);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-caption);
   color: var(--ink-soft);
   background: rgba(255, 255, 255, 0.52);
 }
@@ -332,7 +335,7 @@ pre,
   background: var(--bg-raised);
   color: var(--ink-faint);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-caption);
 }
 
 .console-topbar__account {
@@ -373,7 +376,7 @@ pre,
   background: var(--ink);
   color: var(--bg-raised);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-caption);
   font-weight: 700;
 }
 
@@ -385,20 +388,20 @@ pre,
 }
 
 .console-topbar__user-copy strong {
-  font-size: 12px;
+  font-size: var(--text-secondary);
   font-weight: 600;
 }
 
 .console-topbar__user-copy span:last-child {
   color: var(--ink-faint);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-caption);
 }
 
 .console-topbar__account-caret {
   color: var(--ink-faint);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-caption);
 }
 
 .console-account-dropdown {
@@ -423,14 +426,14 @@ pre,
 }
 
 .console-account-dropdown__meta strong {
-  font-size: 12px;
+  font-size: var(--text-secondary);
   font-weight: 600;
 }
 
 .console-account-dropdown__meta span {
   color: var(--ink-faint);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-caption);
 }
 
 .console-account-dropdown__item {
@@ -442,7 +445,7 @@ pre,
   padding: 8px 10px;
   border-radius: var(--r-sm);
   color: var(--ink-soft);
-  font-size: 12px;
+  font-size: var(--text-secondary);
   cursor: pointer;
 }
 
@@ -493,7 +496,7 @@ pre,
   padding: 0 16px 6px;
   color: var(--ink-faint);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-caption);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -552,7 +555,7 @@ pre,
   background: var(--accent-tint);
   color: var(--accent-ink);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-caption);
 }
 
 .console-sidebar__foot {
@@ -561,7 +564,7 @@ pre,
   border-top: 1px dashed var(--line);
   color: var(--ink-faint);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-caption);
   line-height: 1.7;
 }
 
@@ -592,7 +595,7 @@ pre,
   margin-bottom: 10px;
   color: var(--ink-faint);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-caption);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -604,7 +607,7 @@ pre,
 .console-page-head__section {
   color: var(--ink-soft);
   font-family: var(--font-sans);
-  font-size: 11px;
+  font-size: var(--text-caption);
   font-weight: 500;
   letter-spacing: 0.04em;
   text-transform: none;
@@ -639,7 +642,7 @@ pre,
   max-width: 720px;
   margin: 6px 0 0;
   color: var(--ink-soft);
-  font-size: 13px;
+  font-size: var(--text-body);
 }
 
 .console-page-head__actions {
@@ -708,7 +711,7 @@ pre,
 .ant-modal-title {
   padding: 16px 0;
   color: var(--ink);
-  font-size: 13px;
+  font-size: var(--text-body);
   font-weight: 700;
   letter-spacing: 0.02em;
 }
@@ -737,7 +740,7 @@ pre,
 
 .ant-drawer-title {
   color: var(--ink) !important;
-  font-size: 13px !important;
+  font-size: var(--text-body) !important;
   font-weight: 700 !important;
   letter-spacing: 0.02em;
 }
@@ -759,7 +762,7 @@ pre,
 .create-modal__kicker {
   color: var(--ink-faint);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-caption);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -801,7 +804,7 @@ pre,
 .create-modal__body .ant-divider-inner-text {
   color: var(--ink-faint);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-caption);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -838,7 +841,7 @@ pre,
 .console-page-body .ant-row:first-child .ant-statistic-title {
   color: var(--ink-faint);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-caption);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -866,7 +869,7 @@ pre,
 .console-page-body .ant-list-item-meta-title {
   margin-bottom: 4px;
   color: var(--ink);
-  font-size: 13px;
+  font-size: var(--text-body);
   font-weight: 600;
 }
 
@@ -882,7 +885,7 @@ pre,
   padding: 0 0 12px;
   color: var(--ink-faint);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-caption);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -948,7 +951,7 @@ pre,
 .console-page-body .ant-tag {
   border-radius: 999px;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-caption);
 }
 
 .console-page-body .ant-divider {
@@ -984,13 +987,13 @@ pre,
   background: rgba(238, 235, 229, 0.5);
   color: var(--ink-faint);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-caption);
 }
 
 body .ant-form-vertical .ant-form-item-label > label {
   color: var(--ink-soft);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-caption);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -1049,7 +1052,7 @@ body textarea.ant-input,
 body .ant-mentions {
   min-height: 88px;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--text-secondary);
 }
 
 body .ant-select-selection-item,
@@ -1281,7 +1284,7 @@ body .ant-alert-error .ant-alert-message {
   background: var(--accent-tint);
   color: var(--accent-ink);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-caption);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -1322,7 +1325,7 @@ body .ant-alert-error .ant-alert-message {
   margin-bottom: 8px;
   color: var(--ink-faint);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-caption);
 }
 
 .graph-editor {
@@ -1398,7 +1401,7 @@ body .ant-alert-error .ant-alert-message {
 .graph-node__eyebrow {
   color: var(--ink-faint);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-caption);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -1416,7 +1419,7 @@ body .ant-alert-error .ant-alert-message {
 
 .graph-node__resources {
   color: var(--ink-faint);
-  font-size: 12px;
+  font-size: var(--text-secondary);
   line-height: 1.6;
 }
 
@@ -1453,7 +1456,7 @@ body .ant-alert-error .ant-alert-message {
   background: rgba(252, 251, 248, 0.94);
   color: var(--ink-soft);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-caption);
   box-shadow: var(--shadow-sm);
   text-align: center;
   cursor: pointer;

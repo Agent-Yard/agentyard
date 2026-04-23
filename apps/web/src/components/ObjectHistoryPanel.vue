@@ -110,7 +110,7 @@ watch(
 <style scoped>
 .history-meta {
   color: #6b7280;
-  font-size: 12px;
+  font-size: var(--text-secondary);
   margin-bottom: 4px;
 }
 

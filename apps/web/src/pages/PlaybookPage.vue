@@ -444,6 +444,6 @@ function openEditor(playbookId?: string) {
 .playbook-summary__line {
   color: var(--ink-soft);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-secondary);
 }
 </style>
