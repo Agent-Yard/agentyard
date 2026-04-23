@@ -68,6 +68,8 @@ lynxus:
     secret-key: ${LYNXUS_MINIO_SECRET_KEY:minioadmin}
   knowledge-service:
     base-url: ${LYNXUS_KNOWLEDGE_SERVICE_BASE_URL:http://127.0.0.1:8091}
+  channel-gateway:
+    base-url: ${LYNXUS_CHANNEL_GATEWAY_BASE_URL:http://127.0.0.1:8082}
   internal-auth:
     token: ${LYNXUS_INTERNAL_AUTH_TOKEN}
   redis:

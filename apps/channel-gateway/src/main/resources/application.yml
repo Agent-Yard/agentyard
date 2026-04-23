@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: lynxus-channel-gateway
+  docker:
+    compose:
+      enabled: false
+  jackson:
+    default-property-inclusion: non_null
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://127.0.0.1:5432/lynxus_core}
+    username: ${SPRING_DATASOURCE_USERNAME:lynxus}
+    password: ${SPRING_DATASOURCE_PASSWORD:lynxus}
+  flyway:
+    enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  structured:
+    format:
+      console: logstash
+    json:
+      context:
+        include: true
+        prefix: ""
+      add:
+        service: ${spring.application.name}
+
+server:
+  port: ${LYNXUS_CHANNEL_GATEWAY_PORT:8082}
+
+lynxus:
+  internal-auth:
+    token: ${LYNXUS_INTERNAL_AUTH_TOKEN}

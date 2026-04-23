@@ -3,7 +3,12 @@ import type {
   Assistant,
   BusinessDomain,
   CatalogSummary,
+  ChannelAccount,
+  ChannelConversationBinding,
+  ChannelInboundEvent,
+  ChannelOutboundDelivery,
   CreateAssistantPayload,
+  CreateChannelAccountPayload,
   CreateAgentPayload,
   CreateSessionPayload,
   CreateDomainPayload,
@@ -44,6 +49,7 @@ import type {
   HumanOperatorReplyPayload,
   UpdateAssistantPayload,
   UpdateAgentPayload,
+  UpdateChannelAccountPayload,
   UpdateDomainPayload,
   UpdateKnowledgeBasePayload,
   UpdatePlaybookPayload,
@@ -173,6 +179,18 @@ function externalCallbackIdempotencyKey(
 export const api = {
   getSession: () => request<UserSession>('/auth/session'),
   getCatalogSummary: () => request<CatalogSummary>('/catalog/summary'),
+  listChannelAccounts: () => request<ChannelAccount[]>('/channel-admin/accounts'),
+  getChannelAccount: (accountId: string) => request<ChannelAccount>(`/channel-admin/accounts/${accountId}`),
+  createChannelAccount: (payload: CreateChannelAccountPayload) =>
+    request<ChannelAccount>('/channel-admin/accounts', jsonOptions('POST', payload)),
+  updateChannelAccount: (accountId: string, payload: UpdateChannelAccountPayload) =>
+    request<ChannelAccount>(`/channel-admin/accounts/${accountId}`, jsonOptions('PUT', payload)),
+  listChannelBindings: (accountId: string) =>
+    request<ChannelConversationBinding[]>(`/channel-admin/accounts/${accountId}/bindings`),
+  listChannelInboundEvents: (accountId: string) =>
+    request<ChannelInboundEvent[]>(`/channel-admin/accounts/${accountId}/inbound-events`),
+  listChannelOutboundDeliveries: (accountId: string) =>
+    request<ChannelOutboundDelivery[]>(`/channel-admin/accounts/${accountId}/outbound-deliveries`),
   getObjectReferenceAnalysis: (objectType: ReferenceObjectType, objectId: string) =>
     request<ObjectReferenceAnalysis>(`/catalog/references/${objectType}/${objectId}`),
   getDeletionImpactPreview: (objectType: ReferenceObjectType, objectId: string) =>

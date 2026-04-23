@@ -1,0 +1,126 @@
+package com.lynxus.platform.channel;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+import com.lynxus.platform.shared.ConflictException;
+import com.sun.net.httpserver.HttpServer;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.NoSuchElementException;
+import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
+
+class ChannelGatewayClientTest {
+    @Test
+    void shouldSendInternalBearerToken() throws Exception {
+        AtomicReference<String> authorization = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/internal/channel-admin/accounts", exchange -> {
+            authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            writeJson(
+                exchange,
+                200,
+                """
+                    {
+                      "success": true,
+                      "data": [],
+                      "timestamp": "2026-04-23T00:00:00Z"
+                    }
+                    """
+            );
+        });
+        server.start();
+
+        try {
+            ChannelGatewayClient client = new ChannelGatewayClient(serverUrl(server), "internal-token", new ObjectMapper());
+            client.listAccounts();
+            assertEquals("Bearer internal-token", authorization.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void shouldTranslateBadRequestFromChannelGateway() throws Exception {
+        HttpServer server = errorServer(400, """
+            {
+              "type": "about:blank",
+              "title": "Bad Request",
+              "status": 400,
+              "detail": "channel account name is required"
+            }
+            """);
+
+        try {
+            ChannelGatewayClient client = new ChannelGatewayClient(serverUrl(server), "internal-token", new ObjectMapper());
+            IllegalArgumentException error = assertThrows(IllegalArgumentException.class, client::listAccounts);
+            assertEquals("channel account name is required", error.getMessage());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void shouldTranslateNotFoundFromChannelGateway() throws Exception {
+        HttpServer server = errorServer(404, """
+            {
+              "type": "about:blank",
+              "title": "Not Found",
+              "status": 404,
+              "detail": "channel account not found"
+            }
+            """);
+
+        try {
+            ChannelGatewayClient client = new ChannelGatewayClient(serverUrl(server), "internal-token", new ObjectMapper());
+            NoSuchElementException error = assertThrows(NoSuchElementException.class, client::listAccounts);
+            assertEquals("channel account not found", error.getMessage());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void shouldTranslateConflictFromChannelGateway() throws Exception {
+        HttpServer server = errorServer(409, """
+            {
+              "type": "about:blank",
+              "title": "Conflict",
+              "status": 409,
+              "detail": "channel account already exists"
+            }
+            """);
+
+        try {
+            ChannelGatewayClient client = new ChannelGatewayClient(serverUrl(server), "internal-token", new ObjectMapper());
+            ConflictException error = assertThrows(ConflictException.class, client::listAccounts);
+            assertEquals("channel account already exists", error.getMessage());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    private static String serverUrl(HttpServer server) {
+        return "http://localhost:" + server.getAddress().getPort();
+    }
+
+    private static HttpServer errorServer(int statusCode, String payload) throws IOException {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/internal/channel-admin/accounts", exchange -> writeJson(exchange, statusCode, payload));
+        server.start();
+        return server;
+    }
+
+    private static void writeJson(com.sun.net.httpserver.HttpExchange exchange, int statusCode, String payload) throws IOException {
+        byte[] body = payload.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json");
+        exchange.sendResponseHeaders(statusCode, body.length);
+        try (OutputStream outputStream = exchange.getResponseBody()) {
+            outputStream.write(body);
+        }
+    }
+}

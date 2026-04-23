@@ -14,6 +14,8 @@ import com.lynxus.platform.auth.AuthModels.PlatformUser;
 import com.lynxus.platform.auth.AuthModels.Role;
 import com.lynxus.platform.auth.AuthModels.UserStatus;
 import com.lynxus.platform.shared.logging.ApiLogContextFilter;
+import com.lynxus.platform.channel.ChannelAdminController;
+import com.lynxus.platform.channel.ChannelAdminService;
 import com.lynxus.platform.catalog.CatalogController;
 import com.lynxus.platform.catalog.CatalogDtos;
 import com.lynxus.platform.catalog.CatalogService;
@@ -25,6 +27,7 @@ import com.lynxus.platform.session.SessionRuntimeDtos;
 import com.lynxus.platform.session.SessionRuntimeService;
 import com.lynxus.platform.session.SessionRuntimeStreamService;
 import com.lynxus.platform.shared.ApiExceptionHandler;
+import com.lynxus.contracts.channel.ChannelContracts;
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -157,6 +160,51 @@ class ApiAuthorizationTest {
     }
 
     @Test
+    void shouldRejectBusinessUserChannelAdminReadRequest() throws Exception {
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(TestConfig.class, AuthSecurityConfiguration.class)) {
+            MockMvc mockMvc = mockMvc(context);
+
+            mockMvc.perform(get("/api/channel-admin/accounts").with(user("business")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.detail").value("Access is denied"));
+        }
+    }
+
+    @Test
+    void shouldAllowDeveloperChannelAdminWriteRequest() throws Exception {
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(TestConfig.class, AuthSecurityConfiguration.class)) {
+            ChannelAdminService channelAdminService = context.getBean(ChannelAdminService.class);
+            when(channelAdminService.createAccount(any())).thenReturn(new ChannelContracts.ChannelAccount(
+                "channel-account-1",
+                ChannelContracts.ChannelProviderType.FEISHU,
+                "飞书客服机器人",
+                ChannelContracts.ChannelAccountStatus.ACTIVE,
+                java.util.Map.of("appId", "cli_xxx"),
+                Instant.parse("2026-04-01T00:00:00Z"),
+                Instant.parse("2026-04-01T00:00:00Z")
+            ));
+
+            MockMvc mockMvc = mockMvc(context);
+
+            mockMvc.perform(post("/api/channel-admin/accounts")
+                    .with(user("developer"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""
+                        {
+                          "providerType": "FEISHU",
+                          "name": "飞书客服机器人",
+                          "status": "ACTIVE",
+                          "config": {
+                            "appId": "cli_xxx"
+                          }
+                        }
+                        """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value("channel-account-1"));
+        }
+    }
+
+    @Test
     void shouldRejectBusinessUserPlatformEventsQuery() throws Exception {
         try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(TestConfig.class, AuthSecurityConfiguration.class)) {
             MockMvc mockMvc = mockMvc(context);
@@ -186,6 +234,7 @@ class ApiAuthorizationTest {
         return MockMvcBuilders
             .standaloneSetup(
                 context.getBean(CatalogController.class),
+                context.getBean(ChannelAdminController.class),
                 context.getBean(SessionRuntimeController.class),
                 context.getBean(PlatformEventController.class)
             )
@@ -200,6 +249,11 @@ class ApiAuthorizationTest {
         @Bean
         CatalogController catalogController(CatalogService catalogService) {
             return new CatalogController(catalogService);
+        }
+
+        @Bean
+        ChannelAdminController channelAdminController(ChannelAdminService channelAdminService) {
+            return new ChannelAdminController(channelAdminService);
         }
 
         @Bean
@@ -218,6 +272,11 @@ class ApiAuthorizationTest {
         @Bean
         CatalogService catalogService() {
             return mock(CatalogService.class);
+        }
+
+        @Bean
+        ChannelAdminService channelAdminService() {
+            return mock(ChannelAdminService.class);
         }
 
         @Bean

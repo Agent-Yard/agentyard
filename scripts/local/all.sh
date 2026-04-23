@@ -104,6 +104,7 @@ start_service() {
 }
 
 start_service api "$ROOT_DIR/scripts/local/api.sh"
+start_service channel-gateway "$ROOT_DIR/scripts/local/channel-gateway.sh"
 start_service worker "$ROOT_DIR/scripts/local/worker.sh"
 start_service knowledge-service "$ROOT_DIR/scripts/local/knowledge-service.sh"
 start_service agent-runtime "$ROOT_DIR/scripts/local/agent-runtime.sh"

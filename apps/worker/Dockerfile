@@ -9,6 +9,7 @@ COPY packages/contracts-jvm packages/contracts-jvm
 COPY packages/persistence-jvm packages/persistence-jvm
 COPY packages/shared-redis-jvm packages/shared-redis-jvm
 COPY apps/api apps/api
+COPY apps/channel-gateway apps/channel-gateway
 COPY apps/worker apps/worker
 
 RUN ./gradlew --no-daemon :apps:worker:bootJar

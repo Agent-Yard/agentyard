@@ -1,0 +1,140 @@
+package com.lynxus.channel.gateway.auth;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.lynxus.channel.gateway.channel.ChannelAdminService;
+import com.lynxus.channel.gateway.channel.InternalChannelAdminController;
+import com.lynxus.channel.gateway.connector.feishu.FeishuWebhookController;
+import com.lynxus.channel.gateway.connector.feishu.FeishuWebhookService;
+import com.lynxus.channel.gateway.shared.ApiExceptionHandler;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.MapPropertySource;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.web.FilterChainProxy;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import tools.jackson.databind.ObjectMapper;
+
+class InternalAuthSecurityConfigurationTest {
+    @Test
+    void shouldRejectStartupWithoutInternalAuthToken() {
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+            context.register(MissingTokenTestConfig.class, InternalAuthSecurityConfiguration.class);
+            org.junit.jupiter.api.Assertions.assertThrows(Exception.class, context::refresh);
+        }
+    }
+
+    @Test
+    void shouldRejectInternalRouteWithoutBearerToken() throws Exception {
+        try (AnnotationConfigApplicationContext context = createAuthorizedContext()) {
+            MockMvc mockMvc = mockMvc(context);
+
+            mockMvc.perform(get("/internal/channel-admin/accounts"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.detail").value("Authentication is required"));
+        }
+    }
+
+    @Test
+    void shouldAllowInternalRouteWithValidBearerToken() throws Exception {
+        try (AnnotationConfigApplicationContext context = createAuthorizedContext()) {
+            ChannelAdminService channelAdminService = context.getBean(ChannelAdminService.class);
+            when(channelAdminService.listAccounts()).thenReturn(List.of());
+            MockMvc mockMvc = mockMvc(context);
+
+            mockMvc.perform(get("/internal/channel-admin/accounts").header("Authorization", "Bearer test-internal-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+        }
+    }
+
+    @Test
+    void shouldAllowFeishuWebhookWithoutInternalBearerToken() throws Exception {
+        try (AnnotationConfigApplicationContext context = createAuthorizedContext()) {
+            FeishuWebhookService feishuWebhookService = context.getBean(FeishuWebhookService.class);
+            when(feishuWebhookService.handleWebhook(any(), any())).thenReturn(java.util.Map.of("challenge", "ok"));
+            MockMvc mockMvc = mockMvc(context);
+
+            mockMvc.perform(post("/connectors/feishu/webhook")
+                    .contentType("application/json")
+                    .content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.challenge").value("ok"));
+        }
+    }
+
+    private AnnotationConfigApplicationContext createAuthorizedContext() {
+        AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
+        context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("test", java.util.Map.of(
+            "lynxus.internal-auth.token", "test-internal-token"
+        )));
+        context.register(TestConfig.class, InternalAuthSecurityConfiguration.class);
+        context.refresh();
+        return context;
+    }
+
+    private MockMvc mockMvc(AnnotationConfigApplicationContext context) {
+        FilterChainProxy securityFilter = new FilterChainProxy(context.getBeansOfType(SecurityFilterChain.class).values().stream().toList());
+        return MockMvcBuilders.standaloneSetup(
+                context.getBean(InternalChannelAdminController.class),
+                context.getBean(FeishuWebhookController.class)
+            )
+            .setControllerAdvice(context.getBean(ApiExceptionHandler.class))
+            .addFilters(securityFilter)
+            .build();
+    }
+
+    @Configuration
+    @EnableWebSecurity
+    static class TestConfig {
+        @Bean
+        InternalChannelAdminController internalChannelAdminController(ChannelAdminService channelAdminService) {
+            return new InternalChannelAdminController(channelAdminService);
+        }
+
+        @Bean
+        FeishuWebhookController feishuWebhookController(FeishuWebhookService feishuWebhookService) {
+            return new FeishuWebhookController(feishuWebhookService);
+        }
+
+        @Bean
+        ChannelAdminService channelAdminService() {
+            return mock(ChannelAdminService.class);
+        }
+
+        @Bean
+        FeishuWebhookService feishuWebhookService() {
+            return mock(FeishuWebhookService.class);
+        }
+
+        @Bean
+        ObjectMapper objectMapper() {
+            return new ObjectMapper();
+        }
+
+        @Bean
+        ApiExceptionHandler apiExceptionHandler() {
+            return new ApiExceptionHandler();
+        }
+    }
+
+    @Configuration
+    @EnableWebSecurity
+    static class MissingTokenTestConfig {
+        @Bean
+        ObjectMapper objectMapper() {
+            return new ObjectMapper();
+        }
+    }
+}

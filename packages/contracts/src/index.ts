@@ -23,6 +23,11 @@ export type KnowledgeIndexSnapshotStatus = 'QUEUED' | 'RUNNING' | 'READY' | 'FAI
 export type KnowledgeImportJobStage = 'QUEUED' | 'FETCHING_SOURCE' | 'PARSING' | 'CHUNKING' | 'PERSISTING' | 'SUCCEEDED' | 'FAILED';
 export type KnowledgeIndexSnapshotStage = 'QUEUED' | 'COLLECTING_DOCUMENTS' | 'INDEXING' | 'READY' | 'FAILED';
 export type ToolKind = 'RESOURCE' | 'BUILTIN';
+export type ChannelProviderType = 'FEISHU';
+export type ChannelAccountStatus = 'ACTIVE' | 'INACTIVE';
+export type ChannelConversationBindingStatus = 'ACTIVE' | 'ARCHIVED';
+export type ChannelInboundEventStatus = 'RECEIVED' | 'REJECTED';
+export type ChannelOutboundDeliveryStatus = 'PENDING' | 'SENT' | 'FAILED';
 
 export interface ToolOutcomeSummary {
   callId: string;
@@ -187,6 +192,74 @@ export interface PlatformEvent {
 export interface PlatformEventPage {
   items: PlatformEvent[];
   nextCursor: string | null;
+}
+
+export interface ChannelAccount {
+  id: string;
+  providerType: ChannelProviderType;
+  name: string;
+  status: ChannelAccountStatus;
+  config: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChannelConversationBinding {
+  id: string;
+  channelAccountId: string;
+  externalConversationId: string;
+  externalUserId: string | null;
+  assistantId: string | null;
+  customerId: string | null;
+  sessionId: string | null;
+  status: ChannelConversationBindingStatus;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChannelInboundEvent {
+  eventId: string;
+  channelAccountId: string;
+  providerType: ChannelProviderType;
+  eventType: string;
+  externalEventId: string | null;
+  externalConversationId: string | null;
+  externalMessageId: string | null;
+  dedupKey: string;
+  rawPayload: Record<string, unknown>;
+  normalizedPayload: Record<string, unknown>;
+  status: ChannelInboundEventStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChannelOutboundDelivery {
+  deliveryId: string;
+  channelAccountId: string;
+  providerType: ChannelProviderType;
+  sessionId: string | null;
+  sessionMessageId: string | null;
+  externalConversationId: string | null;
+  payload: Record<string, unknown>;
+  status: ChannelOutboundDeliveryStatus;
+  attemptCount: number;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateChannelAccountPayload {
+  providerType: ChannelProviderType;
+  name: string;
+  status?: ChannelAccountStatus | null;
+  config: Record<string, unknown>;
+}
+
+export interface UpdateChannelAccountPayload {
+  name: string;
+  status?: ChannelAccountStatus | null;
+  config: Record<string, unknown>;
 }
 
 export interface SessionRuntimeStreamEvent<Detail = unknown> {

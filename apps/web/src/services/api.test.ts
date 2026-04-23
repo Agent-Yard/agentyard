@@ -178,6 +178,70 @@ describe('api client', () => {
     );
   });
 
+  it('queries channel admin accounts through the control-plane api', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        data: [],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.listChannelAccounts();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/channel-admin/accounts',
+      expect.objectContaining({
+        credentials: 'include',
+        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
+      }),
+    );
+  });
+
+  it('posts channel account creation to the control-plane api', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        data: {
+          id: 'channel-account-1',
+          providerType: 'FEISHU',
+          name: '飞书客服机器人',
+          status: 'ACTIVE',
+          config: { appId: 'cli_xxx' },
+          createdAt: '2026-04-01T00:00:00Z',
+          updatedAt: '2026-04-01T00:00:00Z',
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.createChannelAccount({
+      providerType: 'FEISHU',
+      name: '飞书客服机器人',
+      status: 'ACTIVE',
+      config: { appId: 'cli_xxx' },
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/channel-admin/accounts',
+      expect.objectContaining({
+        credentials: 'include',
+        method: 'POST',
+        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          providerType: 'FEISHU',
+          name: '飞书客服机器人',
+          status: 'ACTIVE',
+          config: { appId: 'cli_xxx' },
+        }),
+      }),
+    );
+  });
+
   it('preserves the JSON content type when write requests do not provide custom headers', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({
