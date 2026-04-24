@@ -38,6 +38,6 @@ docs/
 ```
 
 ## Test Commands
-- java uses ./gradlew
-- node uses command in local system
-- python uses `uv run` from project root workspace
+- java starts with `./gradlew`
+- node starts with `pnpm`
+- python starts with `uv run`, do not need `PYTHONPATH`
