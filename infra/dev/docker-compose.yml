@@ -21,7 +21,7 @@ services:
     depends_on:
       - postgres
     volumes:
-      - ../local/postgres-bootstrap:/bootstrap:ro
+      - ../common/postgres-bootstrap:/bootstrap:ro
     entrypoint:
       - /bin/bash
       - /bootstrap/init-databases.sh
@@ -99,7 +99,7 @@ services:
     ports:
       - "${LYNXUS_DEV_TEMPORAL_UI_BIND_ADDRESS:-0.0.0.0}:${LYNXUS_DEV_TEMPORAL_UI_PORT:-8088}:8088"
     volumes:
-      - ../local/temporal-ui-gateway/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../common/temporal-ui-gateway/Caddyfile:/etc/caddy/Caddyfile:ro
     depends_on:
       - temporal-ui
 

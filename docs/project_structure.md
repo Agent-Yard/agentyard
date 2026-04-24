@@ -16,6 +16,7 @@ packages/
   python-common/      Python 服务共享工具库
   shared-redis-jvm/   JVM 侧共享 Redis keyspace / lock / pubsub / codec
 infra/
+  common/             local / dev 共享的依赖初始化脚本与网关配置
   local/              本机联调 Docker Compose
   dev/                开发服务器常驻 Docker Compose
 scripts/

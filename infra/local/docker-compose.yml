@@ -24,7 +24,7 @@ services:
     depends_on:
       - postgres
     volumes:
-      - ./postgres-bootstrap:/bootstrap:ro
+      - ../common/postgres-bootstrap:/bootstrap:ro
     entrypoint:
       - /bin/bash
       - /bootstrap/init-databases.sh
@@ -99,7 +99,7 @@ services:
     ports:
       - "0.0.0.0:8088:8088"
     volumes:
-      - ./temporal-ui-gateway/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../common/temporal-ui-gateway/Caddyfile:/etc/caddy/Caddyfile:ro
     depends_on:
       - temporal-ui
 

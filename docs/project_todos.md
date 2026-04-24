@@ -96,7 +96,7 @@
 
 - 五个应用（api / worker / web / agent-runtime / knowledge-service）均已具备 Dockerfile（多阶段构建）
 - API 已暴露 `/api/system/health`
-- 本地依赖通过 `infra/local`、`infra/dev` 提供 docker-compose 编排
+- 本地依赖通过 `infra/local`、`infra/dev` 提供 docker-compose 编排，公共初始化脚本与网关配置放在 `infra/common`
 
 待补：
 

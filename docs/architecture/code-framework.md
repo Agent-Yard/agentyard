@@ -31,6 +31,7 @@
 - `packages/contracts`：TypeScript 合同类型与 OpenAPI 文档
 - `packages/python-common`：Python 服务共享基础模块
 - `scripts`：本地开发启动脚本与环境变量装载
+- `infra/common`：local / dev compose 共享的依赖初始化脚本和网关配置
 - `infra/local`：本地 Docker 依赖
 
 当前仓库的构建方式是混合式的：
