@@ -10,7 +10,7 @@
   - `ToolOperation` 只保留业务能力：`name / description / inputSchema / outputSchema`。
   - `ToolConfig` 移除 `providerType/authType/http/mcp`，新增 `connector`：
     - `connectorType`: `SIMPLE_HTTP | BUSINESS_CODE_SECRET_HTTP | MCP`
-    - `accountId`: 可空；`BUSINESS_CODE_SECRET_HTTP` 必填
+    - `accountId`: 可空；`SIMPLE_HTTP` 可选用于 Bearer header 鉴权；`BUSINESS_CODE_SECRET_HTTP` 必填；`MCP` 暂不使用 account
     - `timeoutSeconds`
     - `retryPolicy`
     - `config`: connector 级配置
@@ -27,7 +27,7 @@
 - Runtime 执行链：
   - `SessionRuntimeService` 发布 Tool 时只投影 connector metadata 和 `accountId`，不把明文 secret 放进 session/Temporal history。
   - `agent-runtime` 新增 connector registry：
-    - `SimpleHttpConnector`: operation 映射到 `method/path/requestPlacement`，参数进入 query 或 JSON body。
+    - `SimpleHttpConnector`: operation 映射到 `method/path/requestPlacement`，参数进入 query 或 JSON body；可选绑定 `SIMPLE_HTTP` account，从 credential 的 `bearerToken` 注入 Bearer header。
     - `BusinessCodeSecretHttpConnector`: 从 control-plane 内部接口读取 account credential，使用 `businessCode + secretKey` 计算请求字段。
     - `McpConnector`: 承接现有 MCP 调用逻辑。
   - 新增 control-plane internal runtime endpoint：按 `accountId` 返回 decrypted runtime credential，仅 internal token 可访问。

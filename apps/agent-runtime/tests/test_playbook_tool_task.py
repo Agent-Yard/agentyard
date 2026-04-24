@@ -191,6 +191,66 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "connectorType must be BUSINESS_CODE_SECRET_HTTP"):
                 execute_playbook_tool_task(request)
 
+    def test_simple_http_connector_should_send_bearer_token_from_optional_account(self) -> None:
+        payload = _request_payload()
+        tool = payload["ownerAgent"]["tools"][0]
+        tool["connector"] = {
+            "connectorType": "SIMPLE_HTTP",
+            "accountId": "integration-account-simple",
+            "timeoutSeconds": 15,
+            "retryPolicy": "NONE",
+            "config": {"baseUrl": "https://tool.example"},
+            "operationMappings": {
+                "create_ticket": {"method": "POST", "path": "/create", "requestPlacement": "JSON_BODY"}
+            },
+        }
+        request = PlaybookToolTaskRequest.model_validate(payload)
+        request_log: list[dict] = []
+
+        with patch(
+            "lynxus_agent_runtime.tooling._load_runtime_integration_account",
+            return_value={
+                "accountId": "integration-account-simple",
+                "connectorType": "SIMPLE_HTTP",
+                "status": "ACTIVE",
+                "config": {},
+                "credential": {"bearerToken": "vendor-token"},
+            },
+        ):
+            with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=lambda *args, **kwargs: _FakeClient(request_log)):
+                result = execute_playbook_tool_task(request)
+
+        self.assertEqual(result.routeKey, "success")
+        self.assertEqual(request_log[0]["headers"], {"Authorization": "Bearer vendor-token"})
+
+    def test_simple_http_connector_should_reject_account_type_mismatch(self) -> None:
+        payload = _request_payload()
+        tool = payload["ownerAgent"]["tools"][0]
+        tool["connector"] = {
+            "connectorType": "SIMPLE_HTTP",
+            "accountId": "integration-account-business",
+            "timeoutSeconds": 15,
+            "retryPolicy": "NONE",
+            "config": {"baseUrl": "https://tool.example"},
+            "operationMappings": {
+                "create_ticket": {"method": "POST", "path": "/create", "requestPlacement": "JSON_BODY"}
+            },
+        }
+        request = PlaybookToolTaskRequest.model_validate(payload)
+
+        with patch(
+            "lynxus_agent_runtime.tooling._load_runtime_integration_account",
+            return_value={
+                "accountId": "integration-account-business",
+                "connectorType": "BUSINESS_CODE_SECRET_HTTP",
+                "status": "ACTIVE",
+                "config": {},
+                "credential": {"businessCode": "biz-001", "secretKey": "secret-001"},
+            },
+        ):
+            with self.assertRaisesRegex(ValueError, "connectorType must be SIMPLE_HTTP"):
+                execute_playbook_tool_task(request)
+
     def test_mcp_connector_should_not_send_internal_auth_by_default(self) -> None:
         payload = _request_payload()
         tool = payload["ownerAgent"]["tools"][0]

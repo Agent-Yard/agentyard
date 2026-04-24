@@ -17,6 +17,18 @@ const form = reactive({
 });
 
 const isEditing = computed(() => Boolean(editingAccountId.value));
+const credentialPlaceholder = computed(() => {
+  if (isEditing.value) {
+    return '留空则保留原凭证';
+  }
+  if (form.connectorType === 'SIMPLE_HTTP') {
+    return '{ bearerToken }';
+  }
+  if (form.connectorType === 'BUSINESS_CODE_SECRET_HTTP') {
+    return '{ businessCode, secretKey }';
+  }
+  return '{}';
+});
 const tableColumns = [
   { title: '名称', dataIndex: 'name', key: 'name' },
   { title: 'Connector', dataIndex: 'connectorType', key: 'connectorType' },
@@ -55,6 +67,18 @@ function openEditDrawer(account: IntegrationAccount) {
   form.configJson = JSON.stringify(account.config ?? {}, null, 2);
   form.credentialJson = '';
   drawerOpen.value = true;
+}
+
+function onConnectorTypeChange(value: ToolConnectorType) {
+  form.connectorType = value;
+  if (isEditing.value) {
+    return;
+  }
+  form.credentialJson = value === 'SIMPLE_HTTP'
+    ? '{\n  "bearerToken": ""\n}'
+    : value === 'BUSINESS_CODE_SECRET_HTTP'
+      ? '{\n  "businessCode": "",\n  "secretKey": ""\n}'
+      : '{}';
 }
 
 function parseJsonObject(rawValue: string, fieldName: string) {
@@ -137,13 +161,14 @@ async function submitAccount() {
       <a-form layout="vertical">
         <a-form-item label="Connector 类型">
           <a-select
-            v-model:value="form.connectorType"
+            :value="form.connectorType"
             :disabled="isEditing"
             :options="[
               { label: 'Simple HTTP', value: 'SIMPLE_HTTP' },
               { label: 'Business Code Secret HTTP', value: 'BUSINESS_CODE_SECRET_HTTP' },
               { label: 'MCP', value: 'MCP' },
             ]"
+            @update:value="onConnectorTypeChange"
           />
         </a-form-item>
         <a-form-item label="名称">
@@ -165,7 +190,7 @@ async function submitAccount() {
           <a-textarea
             v-model:value="form.credentialJson"
             :rows="6"
-            :placeholder="isEditing ? '留空则保留原凭证' : '{ businessCode, secretKey }'"
+            :placeholder="credentialPlaceholder"
           />
         </a-form-item>
       </a-form>

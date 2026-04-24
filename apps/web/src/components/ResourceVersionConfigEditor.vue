@@ -128,7 +128,7 @@ function onConnectorTypeChange(value: ToolConnectorType) {
     return;
   }
   connector.value.connectorType = value;
-  connector.value.accountId = value === 'BUSINESS_CODE_SECRET_HTTP' ? connector.value.accountId : null;
+  connector.value.accountId = value === 'MCP' ? null : connector.value.accountId;
   connector.value.config = value === 'MCP'
     ? {
         serverName: 'new-mcp-server',
@@ -203,9 +203,9 @@ function setConnectorConfigField(key: string, value: unknown) {
           <a-select
             v-model:value="connector.accountId"
             allow-clear
-            :disabled="connector.connectorType !== 'BUSINESS_CODE_SECRET_HTTP'"
+            :disabled="connector.connectorType === 'MCP'"
             :options="accountOptions"
-            placeholder="选择账号"
+            :placeholder="connector.connectorType === 'SIMPLE_HTTP' ? '可选 Bearer Token 账号' : '选择账号'"
           />
         </a-form-item>
       </a-col>
@@ -270,6 +270,14 @@ function setConnectorConfigField(key: string, value: unknown) {
             <a-input
               :value="String(connector.config.baseUrl ?? '')"
               @update:value="(value: string) => setConnectorConfigField('baseUrl', value)"
+            />
+          </a-form-item>
+        </a-col>
+        <a-col v-if="connector.connectorType === 'SIMPLE_HTTP'" :span="12">
+          <a-form-item label="Bearer Header">
+            <a-input
+              :value="String(connector.config.authorizationHeader ?? 'Authorization')"
+              @update:value="(value: string) => setConnectorConfigField('authorizationHeader', value)"
             />
           </a-form-item>
         </a-col>

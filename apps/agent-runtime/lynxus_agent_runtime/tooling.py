@@ -662,7 +662,8 @@ def _call_simple_http_connector(
 ) -> dict[str, Any]:
     mapping = _operation_mapping(connector, operation)
     endpoint = _http_connector_endpoint(connector, mapping)
-    response = _send_http_connector_request(endpoint, connector.timeoutSeconds, mapping, arguments)
+    headers = _simple_http_auth_headers(descriptor, connector)
+    response = _send_http_connector_request(endpoint, connector.timeoutSeconds, mapping, arguments, headers=headers)
     return _json_object_response(response, descriptor, operation)
 
 
@@ -732,10 +733,13 @@ def _send_http_connector_request(
     timeout_seconds: int,
     mapping: dict[str, Any],
     payload: dict[str, Any],
+    headers: dict[str, str] | None = None,
 ) -> Any:
     method = str(mapping.get("method") or "POST").upper()
     placement = str(mapping.get("requestPlacement") or ("QUERY" if method == "GET" else "JSON_BODY")).upper()
     request_kwargs: dict[str, Any] = {}
+    if headers:
+        request_kwargs["headers"] = headers
     if placement == "QUERY" or method == "GET":
         request_kwargs["params"] = payload
     else:
@@ -772,6 +776,28 @@ def _http_connector_endpoint(connector: ToolConnectorDescriptor, mapping: dict[s
         raise ValueError(f"{connector.connectorType} connector requires config.baseUrl or operation endpoint")
     path = str(mapping.get("path") or "").strip()
     return urljoin(base_url.rstrip("/") + "/", path.lstrip("/"))
+
+
+def _simple_http_auth_headers(descriptor: ToolDescriptor, connector: ToolConnectorDescriptor) -> dict[str, str]:
+    if not connector.accountId:
+        return {}
+    runtime_account = _load_runtime_integration_account(connector.accountId)
+    if str(runtime_account.get("connectorType") or "").upper() != "SIMPLE_HTTP":
+        raise ValueError(f"integration account {connector.accountId} connectorType must be SIMPLE_HTTP")
+    if str(runtime_account.get("status") or "").upper() != "ACTIVE":
+        raise ValueError(f"integration account {connector.accountId} is not ACTIVE")
+    credential = runtime_account.get("credential")
+    if not isinstance(credential, dict):
+        raise ValueError(f"integration account {connector.accountId} credential must be an object")
+    bearer_token = _first_non_blank(
+        str(credential.get("bearerToken") or "").strip() or None,
+        str(credential.get("token") or "").strip() or None,
+        str(credential.get("accessToken") or "").strip() or None,
+    )
+    if bearer_token is None:
+        raise ValueError(f"integration account {connector.accountId} for tool {descriptor.resourceVersionId} requires bearerToken")
+    header_name = str(connector.config.get("authorizationHeader") or "Authorization").strip() or "Authorization"
+    return {header_name: f"Bearer {bearer_token}"}
 
 
 def _load_runtime_integration_account(account_id: str) -> dict[str, Any]:
