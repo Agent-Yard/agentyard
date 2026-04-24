@@ -2077,22 +2077,10 @@ public class CatalogService {
     }
 
     private ToolConfigDto defaultToolConfig() {
-        Map<String, Object> defaultConfig = new LinkedHashMap<>();
-        defaultConfig.put("baseUrl", "http://localhost:8081");
-        Map<String, Object> defaultMapping = new LinkedHashMap<>();
-        defaultMapping.put("method", "POST");
-        defaultMapping.put("path", "/tools/invoke");
-        defaultMapping.put("requestPlacement", "JSON_BODY");
+        List<ToolOperationDto> operations = List.of(new ToolOperationDto("invoke", "执行通用工具动作", "{\"input\":\"string\"}", "{\"type\":\"object\",\"required\":[\"output\"],\"properties\":{\"output\":{\"type\":\"string\"}},\"additionalProperties\":false}"));
         return new ToolConfigDto(
-            List.of(new ToolOperationDto("invoke", "执行通用工具动作", "{\"input\":\"string\"}", "{\"type\":\"object\",\"required\":[\"output\"],\"properties\":{\"output\":{\"type\":\"string\"}},\"additionalProperties\":false}")),
-            new ToolConnectorConfigDto(
-                ToolConnectorType.SIMPLE_HTTP,
-                null,
-                15,
-                "NONE",
-                Map.copyOf(defaultConfig),
-                Map.of("invoke", Map.copyOf(defaultMapping))
-            )
+            operations,
+            ToolConnectorCatalog.defaultConnectorConfig(operations)
         );
     }
 
@@ -2137,36 +2125,23 @@ public class CatalogService {
         ToolConnectorType connectorType = configuration == null || configuration.connectorType() == null
             ? defaults.connectorType()
             : configuration.connectorType();
-        Map<String, Object> config = new LinkedHashMap<>(configuration == null || configuration.config() == null ? Map.of() : configuration.config());
-        if (connectorType == ToolConnectorType.SIMPLE_HTTP || connectorType == ToolConnectorType.BUSINESS_CODE_SECRET_HTTP) {
-            config.putIfAbsent("baseUrl", defaults.config().get("baseUrl"));
-        }
-        if (connectorType == ToolConnectorType.MCP) {
-            config.putIfAbsent("serverName", "default-mcp-server");
-            config.putIfAbsent("transport", "STREAMABLE_HTTP");
-            config.putIfAbsent("connectionUri", "http://localhost:8081/mcp");
-            config.putIfAbsent("namespace", "default.namespace");
-            config.putIfAbsent("heartbeatSeconds", 30);
-            config.putIfAbsent("internalAuthEnabled", false);
-        }
+        ToolConnectorCatalog.Definition definition = ToolConnectorCatalog.definition(connectorType);
+        Map<String, Object> config = new LinkedHashMap<>(definition.defaultConfig());
+        config.putAll(configuration == null || configuration.config() == null ? Map.of() : configuration.config());
         String accountId = normalizeOptionalText(configuration == null ? null : configuration.accountId());
-        if (connectorType == ToolConnectorType.BUSINESS_CODE_SECRET_HTTP && accountId.isBlank()) {
-            throw new IllegalArgumentException("BUSINESS_CODE_SECRET_HTTP connector requires accountId");
+        if (!definition.usesAccount()) {
+            accountId = "";
+        }
+        if (definition.requiresAccount() && accountId.isBlank()) {
+            throw new IllegalArgumentException(connectorType + " connector requires accountId");
         }
         Map<String, Map<String, Object>> operationMappings = new LinkedHashMap<>();
         Map<String, Map<String, Object>> requestedMappings = configuration == null || configuration.operationMappings() == null
             ? Map.of()
             : configuration.operationMappings();
         for (ToolOperationDto operation : operations) {
-            Map<String, Object> mapping = new LinkedHashMap<>(requestedMappings.getOrDefault(operation.name(), Map.of()));
-            if (connectorType == ToolConnectorType.SIMPLE_HTTP || connectorType == ToolConnectorType.BUSINESS_CODE_SECRET_HTTP) {
-                mapping.putIfAbsent("method", "POST");
-                mapping.putIfAbsent("path", "/tools/" + operation.name());
-                mapping.putIfAbsent("requestPlacement", "JSON_BODY");
-            }
-            if (connectorType == ToolConnectorType.MCP) {
-                mapping.putIfAbsent("tool", operation.name());
-            }
+            Map<String, Object> mapping = new LinkedHashMap<>(definition.defaultOperationMapping(operation.name()));
+            mapping.putAll(requestedMappings.getOrDefault(operation.name(), Map.of()));
             operationMappings.put(operation.name(), Map.copyOf(mapping));
         }
         return new ToolConnectorConfigDto(

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import PageHeaderCard from '../components/PageHeaderCard.vue';
+import { credentialPlaceholder, toolConnectorDefinition, toolConnectorOptions } from '../config/toolConnectors';
 import { api } from '../services/api';
 import type { CreateIntegrationAccountPayload, IntegrationAccount, ToolConnectorType, UpdateIntegrationAccountPayload } from '../types';
 
@@ -17,18 +18,7 @@ const form = reactive({
 });
 
 const isEditing = computed(() => Boolean(editingAccountId.value));
-const credentialPlaceholder = computed(() => {
-  if (isEditing.value) {
-    return '留空则保留原凭证';
-  }
-  if (form.connectorType === 'SIMPLE_HTTP') {
-    return '{ bearerToken }';
-  }
-  if (form.connectorType === 'BUSINESS_CODE_SECRET_HTTP') {
-    return '{ businessCode, secretKey }';
-  }
-  return '{}';
-});
+const credentialJsonPlaceholder = computed(() => credentialPlaceholder(form.connectorType, isEditing.value));
 const tableColumns = [
   { title: '名称', dataIndex: 'name', key: 'name' },
   { title: 'Connector', dataIndex: 'connectorType', key: 'connectorType' },
@@ -55,7 +45,7 @@ function openCreateDrawer() {
   form.name = '';
   form.status = 'ACTIVE';
   form.configJson = '{}';
-  form.credentialJson = '{\n  "businessCode": "",\n  "secretKey": ""\n}';
+  form.credentialJson = toolConnectorDefinition(form.connectorType).credentialTemplate;
   drawerOpen.value = true;
 }
 
@@ -74,11 +64,7 @@ function onConnectorTypeChange(value: ToolConnectorType) {
   if (isEditing.value) {
     return;
   }
-  form.credentialJson = value === 'SIMPLE_HTTP'
-    ? '{\n  "bearerToken": ""\n}'
-    : value === 'BUSINESS_CODE_SECRET_HTTP'
-      ? '{\n  "businessCode": "",\n  "secretKey": ""\n}'
-      : '{}';
+  form.credentialJson = toolConnectorDefinition(value).credentialTemplate;
 }
 
 function parseJsonObject(rawValue: string, fieldName: string) {
@@ -163,11 +149,7 @@ async function submitAccount() {
           <a-select
             :value="form.connectorType"
             :disabled="isEditing"
-            :options="[
-              { label: 'Simple HTTP', value: 'SIMPLE_HTTP' },
-              { label: 'Business Code Secret HTTP', value: 'BUSINESS_CODE_SECRET_HTTP' },
-              { label: 'MCP', value: 'MCP' },
-            ]"
+            :options="toolConnectorOptions"
             @update:value="onConnectorTypeChange"
           />
         </a-form-item>
@@ -190,7 +172,7 @@ async function submitAccount() {
           <a-textarea
             v-model:value="form.credentialJson"
             :rows="6"
-            :placeholder="credentialPlaceholder"
+            :placeholder="credentialJsonPlaceholder"
           />
         </a-form-item>
       </a-form>

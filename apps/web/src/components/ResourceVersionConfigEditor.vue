@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
+import {
+  createDefaultToolConnector,
+  DEFAULT_TOOL_CONNECTOR_TYPE,
+  defaultOperationMapping,
+  toolConnectorDefinition,
+  toolConnectorOptions,
+} from '../config/toolConnectors';
 import { api } from '../services/api';
+import type { ConnectorFieldDefinition } from '../config/toolConnectors';
 import type { IntegrationAccount, ResourceType, ResourceVersionConfiguration, ToolConnectorType } from '../types';
 
 const props = defineProps<{
@@ -12,6 +20,9 @@ const props = defineProps<{
 const tool = computed(() => props.configuration.tool!);
 const toolOperations = computed(() => tool.value.operations);
 const connector = computed(() => tool.value.connector);
+const connectorDefinition = computed(() => toolConnectorDefinition(connector.value?.connectorType ?? DEFAULT_TOOL_CONNECTOR_TYPE));
+const connectorConfigFields = computed(() => connectorDefinition.value.configFields);
+const operationMappingFields = computed(() => connectorDefinition.value.operationMappingFields);
 const llmModel = computed(() => props.configuration.llmModel!);
 const skill = computed(() => props.configuration.skill!);
 const isOpenAiCompatible = computed(() => llmModel.value?.providerType === 'OPENAI_COMPATIBLE');
@@ -29,32 +40,15 @@ function ensureConfigurationState(configuration: ResourceVersionConfiguration, r
   if (resourceType === 'TOOL') {
     configuration.tool ??= {
       operations: [],
-      connector: {
-        connectorType: 'SIMPLE_HTTP',
-        accountId: null,
-        timeoutSeconds: 15,
-        retryPolicy: 'NONE',
-        config: {
-          baseUrl: 'https://tool-gateway.internal',
-        },
-        operationMappings: {},
-      },
+      connector: createDefaultToolConnector(),
     };
     configuration.tool.operations ??= [];
-    configuration.tool.connector ??= {
-      connectorType: 'SIMPLE_HTTP',
-      accountId: null,
-      timeoutSeconds: 15,
-      retryPolicy: 'NONE',
-      config: {
-        baseUrl: 'https://tool-gateway.internal',
-      },
-      operationMappings: {},
-    };
+    configuration.tool.connector ??= createDefaultToolConnector();
     configuration.tool.connector.config ??= {};
     configuration.tool.connector.operationMappings ??= {};
-    if (configuration.tool.connector.connectorType === 'MCP') {
-      configuration.tool.connector.config.internalAuthEnabled ??= false;
+    const definition = toolConnectorDefinition(configuration.tool.connector.connectorType);
+    for (const field of definition.configFields) {
+      configuration.tool.connector.config[field.key] ??= field.defaultValue;
     }
     for (const operation of configuration.tool.operations) {
       const operationName = operation.name?.trim();
@@ -112,35 +106,14 @@ function removeToolOperation(index: number) {
   toolOperations.value.splice(index, 1);
 }
 
-function defaultOperationMapping(connectorType: ToolConnectorType, operationName: string): Record<string, unknown> {
-  if (connectorType === 'MCP') {
-    return { tool: operationName };
-  }
-  return {
-    method: 'POST',
-    path: `/tools/${operationName || 'invoke'}`,
-    requestPlacement: 'JSON_BODY',
-  };
-}
-
 function onConnectorTypeChange(value: ToolConnectorType) {
   if (!connector.value) {
     return;
   }
   connector.value.connectorType = value;
-  connector.value.accountId = value === 'MCP' ? null : connector.value.accountId;
-  connector.value.config = value === 'MCP'
-    ? {
-        serverName: 'new-mcp-server',
-        transport: 'STREAMABLE_HTTP',
-        connectionUri: 'https://mcp-gateway.internal/new-server',
-        namespace: 'default.namespace',
-        heartbeatSeconds: 30,
-        internalAuthEnabled: false,
-      }
-    : {
-        baseUrl: 'https://tool-gateway.internal',
-      };
+  const definition = toolConnectorDefinition(value);
+  connector.value.accountId = definition.accountMode === 'NONE' ? null : connector.value.accountId;
+  connector.value.config = Object.fromEntries(definition.configFields.map((field) => [field.key, field.defaultValue]));
   connector.value.operationMappings = Object.fromEntries(
     toolOperations.value
       .map((operation) => operation.name?.trim())
@@ -173,6 +146,14 @@ function setConnectorConfigField(key: string, value: unknown) {
   }
   connector.value.config[key] = value;
 }
+
+function connectorFieldValue(field: ConnectorFieldDefinition): unknown {
+  return connector.value?.config[field.key] ?? field.defaultValue;
+}
+
+function mappingFieldValue(operationName: string, field: ConnectorFieldDefinition): unknown {
+  return operationMapping(operationName)[field.key] ?? (field.key === 'tool' ? operationName : field.defaultValue);
+}
 </script>
 
 <template>
@@ -189,11 +170,7 @@ function setConnectorConfigField(key: string, value: unknown) {
         <a-form-item label="Connector 类型">
           <a-select
             :value="connector.connectorType"
-            :options="[
-              { label: 'Simple HTTP', value: 'SIMPLE_HTTP' },
-              { label: 'Business Code Secret HTTP', value: 'BUSINESS_CODE_SECRET_HTTP' },
-              { label: 'MCP', value: 'MCP' },
-            ]"
+            :options="toolConnectorOptions"
             @update:value="onConnectorTypeChange"
           />
         </a-form-item>
@@ -203,9 +180,9 @@ function setConnectorConfigField(key: string, value: unknown) {
           <a-select
             v-model:value="connector.accountId"
             allow-clear
-            :disabled="connector.connectorType === 'MCP'"
+            :disabled="connectorDefinition.accountMode === 'NONE'"
             :options="accountOptions"
-            :placeholder="connector.connectorType === 'SIMPLE_HTTP' ? '可选 Bearer Token 账号' : '选择账号'"
+            :placeholder="connectorDefinition.accountPlaceholder"
           />
         </a-form-item>
       </a-col>
@@ -263,93 +240,35 @@ function setConnectorConfigField(key: string, value: unknown) {
 
     <a-divider>Connector 配置</a-divider>
 
-    <template v-if="connector.connectorType !== 'MCP'">
-      <a-row :gutter="[16, 16]">
-        <a-col :span="12">
-          <a-form-item label="Base URL">
-            <a-input
-              :value="String(connector.config.baseUrl ?? '')"
-              @update:value="(value: string) => setConnectorConfigField('baseUrl', value)"
-            />
-          </a-form-item>
-        </a-col>
-        <a-col v-if="connector.connectorType === 'SIMPLE_HTTP'" :span="12">
-          <a-form-item label="Bearer Header">
-            <a-input
-              :value="String(connector.config.authorizationHeader ?? 'Authorization')"
-              @update:value="(value: string) => setConnectorConfigField('authorizationHeader', value)"
-            />
-          </a-form-item>
-        </a-col>
-        <a-col v-if="connector.connectorType === 'BUSINESS_CODE_SECRET_HTTP'" :span="6">
-          <a-form-item label="Business Code 字段">
-            <a-input
-              :value="String(connector.config.businessCodeField ?? 'businessCode')"
-              @update:value="(value: string) => setConnectorConfigField('businessCodeField', value)"
-            />
-          </a-form-item>
-        </a-col>
-        <a-col v-if="connector.connectorType === 'BUSINESS_CODE_SECRET_HTTP'" :span="6">
-          <a-form-item label="Encrypted 字段">
-            <a-input
-              :value="String(connector.config.encryptedField ?? 'encrypted')"
-              @update:value="(value: string) => setConnectorConfigField('encryptedField', value)"
-            />
-          </a-form-item>
-        </a-col>
-      </a-row>
-    </template>
-
-    <template v-else>
-      <a-row :gutter="[16, 16]">
-        <a-col :span="12">
-          <a-form-item label="MCP 服务名">
-            <a-input
-              :value="String(connector.config.serverName ?? '')"
-              @update:value="(value: string) => setConnectorConfigField('serverName', value)"
-            />
-          </a-form-item>
-        </a-col>
-        <a-col :span="12">
-          <a-form-item label="Transport">
-            <a-select
-              :value="String(connector.config.transport ?? 'STREAMABLE_HTTP')"
-              :options="[
-                { label: 'STREAMABLE_HTTP', value: 'STREAMABLE_HTTP' },
-                { label: 'SSE', value: 'SSE' },
-              ]"
-              @update:value="(value: string) => setConnectorConfigField('transport', value)"
-            />
-          </a-form-item>
-        </a-col>
-      </a-row>
-      <a-row :gutter="[16, 16]">
-        <a-col :span="16">
-          <a-form-item label="连接地址">
-            <a-input
-              :value="String(connector.config.connectionUri ?? '')"
-              @update:value="(value: string) => setConnectorConfigField('connectionUri', value)"
-            />
-          </a-form-item>
-        </a-col>
-        <a-col :span="8">
-          <a-form-item label="命名空间">
-            <a-input
-              :value="String(connector.config.namespace ?? '')"
-              @update:value="(value: string) => setConnectorConfigField('namespace', value)"
-            />
-          </a-form-item>
-        </a-col>
-        <a-col :span="8">
-          <a-form-item label="内部鉴权">
-            <a-switch
-              :checked="Boolean(connector.config.internalAuthEnabled)"
-              @update:checked="(value: boolean) => setConnectorConfigField('internalAuthEnabled', value)"
-            />
-          </a-form-item>
-        </a-col>
-      </a-row>
-    </template>
+    <a-row :gutter="[16, 16]">
+      <a-col v-for="field in connectorConfigFields" :key="field.key" :span="field.span">
+        <a-form-item :label="field.label">
+          <a-select
+            v-if="field.kind === 'select'"
+            :value="String(connectorFieldValue(field))"
+            :options="field.options"
+            @update:value="(value: string) => setConnectorConfigField(field.key, value)"
+          />
+          <a-switch
+            v-else-if="field.kind === 'switch'"
+            :checked="Boolean(connectorFieldValue(field))"
+            @update:checked="(value: boolean) => setConnectorConfigField(field.key, value)"
+          />
+          <a-input-number
+            v-else-if="field.kind === 'number'"
+            :value="Number(connectorFieldValue(field))"
+            :min="1"
+            style="width: 100%"
+            @update:value="(value: number) => setConnectorConfigField(field.key, value)"
+          />
+          <a-input
+            v-else
+            :value="String(connectorFieldValue(field))"
+            @update:value="(value: string) => setConnectorConfigField(field.key, value)"
+          />
+        </a-form-item>
+      </a-col>
+    </a-row>
 
     <a-card size="small" title="操作映射">
       <a-empty v-if="!toolOperations.length" description="新增操作后配置 Connector 映射。" />
@@ -360,47 +279,33 @@ function setConnectorConfigField(key: string, value: unknown) {
               <a-input :value="operation.name" disabled />
             </a-form-item>
           </a-col>
-          <template v-if="connector.connectorType === 'MCP'">
-            <a-col :span="18">
-              <a-form-item label="Remote Tool">
-                <a-input
-                  :value="String(operationMapping(operation.name).tool ?? operation.name)"
-                  @update:value="(value: string) => setOperationMappingField(operation.name, 'tool', value)"
-                />
-              </a-form-item>
-            </a-col>
-          </template>
-          <template v-else>
-            <a-col :span="5">
-              <a-form-item label="Method">
-                <a-select
-                  :value="String(operationMapping(operation.name).method ?? 'POST')"
-                  :options="['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((item) => ({ label: item, value: item }))"
-                  @update:value="(value: string) => setOperationMappingField(operation.name, 'method', value)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item label="Path">
-                <a-input
-                  :value="String(operationMapping(operation.name).path ?? '')"
-                  @update:value="(value: string) => setOperationMappingField(operation.name, 'path', value)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="5">
-              <a-form-item label="入参位置">
-                <a-select
-                  :value="String(operationMapping(operation.name).requestPlacement ?? 'JSON_BODY')"
-                  :options="[
-                    { label: 'JSON_BODY', value: 'JSON_BODY' },
-                    { label: 'QUERY', value: 'QUERY' },
-                  ]"
-                  @update:value="(value: string) => setOperationMappingField(operation.name, 'requestPlacement', value)"
-                />
-              </a-form-item>
-            </a-col>
-          </template>
+          <a-col v-for="field in operationMappingFields" :key="field.key" :span="field.span">
+            <a-form-item :label="field.label">
+              <a-select
+                v-if="field.kind === 'select'"
+                :value="String(mappingFieldValue(operation.name, field))"
+                :options="field.options"
+                @update:value="(value: string) => setOperationMappingField(operation.name, field.key, value)"
+              />
+              <a-input-number
+                v-else-if="field.kind === 'number'"
+                :value="Number(mappingFieldValue(operation.name, field))"
+                :min="1"
+                style="width: 100%"
+                @update:value="(value: number) => setOperationMappingField(operation.name, field.key, value)"
+              />
+              <a-switch
+                v-else-if="field.kind === 'switch'"
+                :checked="Boolean(mappingFieldValue(operation.name, field))"
+                @update:checked="(value: boolean) => setOperationMappingField(operation.name, field.key, value)"
+              />
+              <a-input
+                v-else
+                :value="String(mappingFieldValue(operation.name, field))"
+                @update:value="(value: string) => setOperationMappingField(operation.name, field.key, value)"
+              />
+            </a-form-item>
+          </a-col>
         </a-row>
       </a-space>
     </a-card>

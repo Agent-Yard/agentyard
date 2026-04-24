@@ -71,6 +71,7 @@ docs/
 
 - 当前项目结构与对象模型：`docs/project_structure.md`
 - 当前技术路线与代码框架：`docs/technical_route.md`、`docs/architecture/code-framework.md`
+- Tool Connector 开发指导：`docs/architecture/tool-connector-development.md`
 - 当前本地开发与开发服务器环境：`docs/architecture/local-development.md`、`docs/architecture/dev-environment.md`
 - 当前待办：`docs/todo/`
 - 记录性文档目录：`docs/develop_record/`

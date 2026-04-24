@@ -67,6 +67,6 @@ uv run --directory apps/agent-runtime --package lynxus-agent-runtime pytest test
 - 模型 usage 由 runtime 采集，worker 负责补齐业务上下文后落库；当前尚无展示接口
 - `AgentTurnRequest` 现在会携带 assistant release 冻结后的 model / skill / tool descriptor
 - `AgentTurnRequest` 也会携带冻结后的 knowledge binding；runtime 通过内部接口远程调用 knowledge-service 完成在线检索
-- tools 会以模型原生 function/tool definitions 暴露，并按 HTTP / MCP provider config 执行
+- tools 会以模型原生 function/tool definitions 暴露，并通过 Tool Connector registry 执行冻结后的 connector descriptor
 - skills 采用“目录先暴露，详情按需读取”的模式，模型可先返回 `skillReads` 请求具体 skill prompt
 - 未配置可用模型 provider 或执行失败时，runtime 直接返回错误，由 session workflow 统一走 `AGENT_TURN_FAILED` 降级链路
