@@ -26,8 +26,8 @@ TEST_DATABASE_URL = os.environ.get(
     f"postgresql+psycopg://lynxus:lynxus@127.0.0.1:{POSTGRES_PORT}/lynxus_knowledge",
 )
 os.environ["LYNXUS_KNOWLEDGE_DATABASE_URL"] = TEST_DATABASE_URL
-os.environ["LYNXUS_KNOWLEDGE_STORAGE_MODE"] = "filesystem"
-os.environ["LYNXUS_KNOWLEDGE_STORAGE_ROOT"] = temp_root
+os.environ["LYNXUS_OBJECT_STORAGE_MODE"] = "filesystem"
+os.environ["LYNXUS_OBJECT_STORAGE_ROOT"] = temp_root
 os.environ["LYNXUS_KNOWLEDGE_EMBEDDING_BASE_URL"] = "http://embedding.test/v1"
 os.environ["LYNXUS_KNOWLEDGE_EMBEDDING_MODEL"] = "test-embedding-model"
 os.environ["LYNXUS_KNOWLEDGE_EMBEDDING_API_KEY"] = "test-embedding-key"
@@ -38,6 +38,7 @@ os.environ["LYNXUS_INTERNAL_AUTH_TOKEN"] = "test-internal-token"
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+from lynxus_knowledge_service.object_storage import Storage, load_storage_settings
 from lynxus_knowledge_service.main import (
     Base,
     CompleteUploadRequest,
@@ -91,6 +92,101 @@ class FakeUrlResponse:
 
     def __exit__(self, exc_type, exc, tb):
         return False
+
+
+class ObjectStorageConfigurationTest(unittest.TestCase):
+    def test_filesystem_mode_should_not_initialize_object_storage_client(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "LYNXUS_OBJECT_STORAGE_MODE": "filesystem",
+                "LYNXUS_OBJECT_STORAGE_ROOT": temp_root,
+            },
+            clear=True,
+        ):
+            settings = load_storage_settings(Path("/tmp/default-knowledge-storage"))
+            client_factory = MagicMock()
+            configured_storage = Storage(settings, client_factory=client_factory)
+
+        self.assertIsNone(configured_storage.client)
+        client_factory.assert_not_called()
+
+    def test_minio_provider_should_parse_http_endpoint_and_create_bucket_when_enabled(self) -> None:
+        fake_client = MagicMock()
+        fake_client.bucket_exists.return_value = False
+        client_factory = MagicMock(return_value=fake_client)
+
+        with patch.dict(
+            os.environ,
+            {
+                "LYNXUS_OBJECT_STORAGE_MODE": "object-storage",
+                "LYNXUS_OBJECT_STORAGE_PROVIDER": "minio",
+                "LYNXUS_OBJECT_STORAGE_ENDPOINT": "http://127.0.0.1:9000",
+                "LYNXUS_OBJECT_STORAGE_ACCESS_KEY": "minioadmin",
+                "LYNXUS_OBJECT_STORAGE_SECRET_KEY": "minioadmin",
+                "LYNXUS_OBJECT_STORAGE_BUCKET": "lynxus-knowledge",
+                "LYNXUS_OBJECT_STORAGE_CREATE_BUCKET": "true",
+            },
+            clear=True,
+        ):
+            settings = load_storage_settings(Path("/tmp/default-knowledge-storage"))
+            Storage(settings, client_factory=client_factory)
+
+        client_factory.assert_called_once_with(
+            "127.0.0.1:9000",
+            access_key="minioadmin",
+            secret_key="minioadmin",
+            secure=False,
+            region=None,
+        )
+        fake_client.bucket_exists.assert_called_once_with("lynxus-knowledge")
+        fake_client.make_bucket.assert_called_once_with("lynxus-knowledge")
+
+    def test_s3_provider_should_require_region_and_not_create_bucket_when_disabled(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "LYNXUS_OBJECT_STORAGE_MODE": "object-storage",
+                "LYNXUS_OBJECT_STORAGE_PROVIDER": "s3",
+                "LYNXUS_OBJECT_STORAGE_ENDPOINT": "https://s3.ap-southeast-1.amazonaws.com",
+                "LYNXUS_OBJECT_STORAGE_ACCESS_KEY": "test-access-key",
+                "LYNXUS_OBJECT_STORAGE_SECRET_KEY": "test-secret-key",
+                "LYNXUS_OBJECT_STORAGE_BUCKET": "lynxus-knowledge-test",
+                "LYNXUS_OBJECT_STORAGE_CREATE_BUCKET": "false",
+            },
+            clear=True,
+        ):
+            with self.assertRaisesRegex(ValueError, "LYNXUS_OBJECT_STORAGE_REGION"):
+                load_storage_settings(Path("/tmp/default-knowledge-storage"))
+
+        fake_client = MagicMock()
+        client_factory = MagicMock(return_value=fake_client)
+        with patch.dict(
+            os.environ,
+            {
+                "LYNXUS_OBJECT_STORAGE_MODE": "object-storage",
+                "LYNXUS_OBJECT_STORAGE_PROVIDER": "s3",
+                "LYNXUS_OBJECT_STORAGE_ENDPOINT": "https://s3.ap-southeast-1.amazonaws.com",
+                "LYNXUS_OBJECT_STORAGE_REGION": "ap-southeast-1",
+                "LYNXUS_OBJECT_STORAGE_ACCESS_KEY": "test-access-key",
+                "LYNXUS_OBJECT_STORAGE_SECRET_KEY": "test-secret-key",
+                "LYNXUS_OBJECT_STORAGE_BUCKET": "lynxus-knowledge-test",
+                "LYNXUS_OBJECT_STORAGE_CREATE_BUCKET": "false",
+            },
+            clear=True,
+        ):
+            settings = load_storage_settings(Path("/tmp/default-knowledge-storage"))
+            Storage(settings, client_factory=client_factory)
+
+        client_factory.assert_called_once_with(
+            "s3.ap-southeast-1.amazonaws.com",
+            access_key="test-access-key",
+            secret_key="test-secret-key",
+            secure=True,
+            region="ap-southeast-1",
+        )
+        fake_client.bucket_exists.assert_not_called()
+        fake_client.make_bucket.assert_not_called()
 
 
 class KnowledgeServiceTest(unittest.TestCase):
@@ -662,6 +758,27 @@ class KnowledgeServiceTest(unittest.TestCase):
         self.assertEqual(payload["dependencies"]["database"]["status"], "UP")
         self.assertEqual(payload["dependencies"]["storage"]["status"], "UP")
         self.assertEqual(payload["embedding"]["status"], "configured")
+
+    def test_healthz_should_report_object_storage_details(self) -> None:
+        fake_storage = MagicMock()
+        fake_storage.check.return_value = {
+            "mode": "object-storage",
+            "provider": "s3",
+            "bucket": "lynxus-knowledge-test",
+            "endpoint": "https://s3.ap-southeast-1.amazonaws.com",
+        }
+
+        with patch("lynxus_knowledge_service.main.storage", fake_storage):
+            with TestClient(app) as client:
+                response = client.get("/healthz")
+
+        self.assertEqual(response.status_code, 200)
+        storage_dependency = response.json()["dependencies"]["storage"]
+        self.assertEqual(storage_dependency["status"], "UP")
+        self.assertEqual(storage_dependency["mode"], "object-storage")
+        self.assertEqual(storage_dependency["provider"], "s3")
+        self.assertEqual(storage_dependency["bucket"], "lynxus-knowledge-test")
+        self.assertEqual(storage_dependency["endpoint"], "https://s3.ap-southeast-1.amazonaws.com")
 
     def test_healthz_should_return_down_and_503_when_database_probe_fails(self) -> None:
         with TestClient(app) as client:

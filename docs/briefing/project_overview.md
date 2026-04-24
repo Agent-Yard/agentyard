@@ -155,7 +155,7 @@ Lynxus 当前的解法，是把这些问题收束到统一平台结构中：
 当前本地依赖包括：
 
 - PostgreSQL：控制面与运行态投影、知识服务数据存储
-- MinIO：知识对象存储
+- S3-compatible object storage：知识对象存储，本地/dev 使用 MinIO
 - Redis：共享登录态、分布式锁、幂等和 session SSE replay / broadcast
 - Temporal：session / playbook 长流程编排
 - sandbox：playbook `STEP` 节点代码执行沙箱
@@ -226,7 +226,7 @@ Lynxus 当前的解法，是把这些问题收束到统一平台结构中：
 ### 8.4 收敛生产化运行基座
 
 - 明确 external interaction provider、回调鉴权、补偿与监控方案
-- 收敛 pgvector、MinIO 等依赖在正式架构中的职责
+- 收敛 pgvector、S3-compatible object storage 等依赖在正式架构中的职责
 - 逐步补齐 CI、备份、恢复、容量规划和环境一致性能力
 
 ## 9. 汇报结论

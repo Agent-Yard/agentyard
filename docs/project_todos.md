@@ -128,7 +128,7 @@
 目标：
 
 1. PostgreSQL：配置 WAL archiving + 定期 pg_dump，至少支持 point-in-time recovery
-2. MinIO：配置 bucket versioning + 定期 mirror 到备份存储
+2. S3-compatible object storage：配置 bucket versioning + 定期 mirror 到备份存储
 3. pgvector：知识索引可重建，备份优先级低于 PostgreSQL
 4. Temporal：使用 Temporal 自带的 visibility store，不额外备份
 5. 敏感配置（数据库密码、API key、OIDC secret）统一走 K8s Secret 或 Vault，不在代码/配置文件中明文存储
@@ -214,7 +214,7 @@
 
 1. 数据层：schema 级或 row 级租户隔离
 2. 运行态：Temporal namespace 级隔离
-3. 资源层：MinIO bucket 级隔离
+3. 资源层：对象存储 bucket 级隔离
 4. 计量：按租户统计用量
 
 ### 4.5 成本治理与 SLO

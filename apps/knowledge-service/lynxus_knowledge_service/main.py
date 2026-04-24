@@ -21,6 +21,7 @@ from urllib.request import Request as UrlRequest, urlopen
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request as FastAPIRequest
 from fastapi.responses import JSONResponse
+from lynxus_knowledge_service.object_storage import Storage, load_storage_settings
 from lynxus_common import (
     ReadinessCheck,
     TRACEPARENT_HEADER,
@@ -29,7 +30,6 @@ from lynxus_common import (
     clear_log_context,
     configure_structured_logging,
 )
-from minio import Minio
 from pydantic import BaseModel, Field
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, bindparam, cast, create_engine, func, select, text
 from sqlalchemy.engine import make_url
@@ -57,13 +57,7 @@ DEFAULT_DATABASE_URL = "postgresql+psycopg://lynxus:lynxus@127.0.0.1:5432/lynxus
 
 
 DATABASE_URL = os.getenv("LYNXUS_KNOWLEDGE_DATABASE_URL", DEFAULT_DATABASE_URL)
-STORAGE_MODE = os.getenv("LYNXUS_KNOWLEDGE_STORAGE_MODE", "filesystem").lower()
-STORAGE_ROOT = Path(os.getenv("LYNXUS_KNOWLEDGE_STORAGE_ROOT", str(DEFAULT_STORAGE_ROOT)))
-MINIO_ENDPOINT = os.getenv("LYNXUS_MINIO_ENDPOINT", "127.0.0.1:9000").replace("http://", "").replace("https://", "")
-MINIO_ACCESS_KEY = os.getenv("LYNXUS_MINIO_ACCESS_KEY", "minioadmin")
-MINIO_SECRET_KEY = os.getenv("LYNXUS_MINIO_SECRET_KEY", "minioadmin")
-MINIO_SECURE = os.getenv("LYNXUS_MINIO_ENDPOINT", "http://127.0.0.1:9000").startswith("https://")
-MINIO_BUCKET = os.getenv("LYNXUS_KNOWLEDGE_MINIO_BUCKET", "lynxus-knowledge")
+STORAGE_SETTINGS = load_storage_settings(DEFAULT_STORAGE_ROOT)
 URL_IMPORT_TIMEOUT_SECONDS = float(os.getenv("LYNXUS_KNOWLEDGE_URL_IMPORT_TIMEOUT_SECONDS", "15"))
 URL_IMPORT_USER_AGENT = os.getenv(
     "LYNXUS_KNOWLEDGE_URL_IMPORT_USER_AGENT",
@@ -78,8 +72,6 @@ EMBEDDING_TIMEOUT_SECONDS = float(os.getenv("LYNXUS_KNOWLEDGE_EMBEDDING_TIMEOUT_
 DEFAULT_SNAPSHOT_RETRIEVAL_MODE = os.getenv("LYNXUS_KNOWLEDGE_DEFAULT_RETRIEVAL_MODE", "HYBRID").upper()
 DEFAULT_SNAPSHOT_RETRIEVAL_BACKEND = "PGVECTOR"
 INSTANCE_ID = (os.getenv("LYNXUS_INSTANCE_ID") or "lynxus-knowledge-service").strip() or "lynxus-knowledge-service"
-if STORAGE_MODE == "filesystem":
-    STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
 
 engine = create_engine(DATABASE_URL, future=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
@@ -482,66 +474,6 @@ class ParsedSegment:
     page_number: Optional[int] = None
 
 
-class Storage:
-    def __init__(self) -> None:
-        self.client = None
-        if STORAGE_MODE == "minio":
-            self.client = Minio(
-                MINIO_ENDPOINT,
-                access_key=MINIO_ACCESS_KEY,
-                secret_key=MINIO_SECRET_KEY,
-                secure=MINIO_SECURE,
-            )
-            self._ensure_bucket()
-        else:
-            STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
-
-    def _ensure_bucket(self) -> None:
-        assert self.client is not None
-        if not self.client.bucket_exists(MINIO_BUCKET):
-            self.client.make_bucket(MINIO_BUCKET)
-
-    def put_bytes(self, object_key: str, payload: bytes, content_type: str) -> None:
-        if self.client is None:
-            target = STORAGE_ROOT / object_key
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(payload)
-            return
-        stream = io.BytesIO(payload)
-        self.client.put_object(
-            MINIO_BUCKET,
-            object_key,
-            stream,
-            length=len(payload),
-            content_type=content_type or "application/octet-stream",
-        )
-
-    def get_bytes(self, object_key: str) -> bytes:
-        if self.client is None:
-            return (STORAGE_ROOT / object_key).read_bytes()
-        response = self.client.get_object(MINIO_BUCKET, object_key)
-        try:
-            return response.read()
-        finally:
-            response.close()
-            response.release_conn()
-
-    def delete_object(self, object_key: str) -> bool:
-        if not object_key:
-            return False
-        if self.client is None:
-            target = STORAGE_ROOT / object_key
-            if not target.exists():
-                return False
-            target.unlink()
-            return True
-        try:
-            self.client.remove_object(MINIO_BUCKET, object_key)
-            return True
-        except Exception:
-            return False
-
-
 class EmbeddingClient:
     def __init__(self) -> None:
         self.base_url = EMBEDDING_BASE_URL
@@ -762,7 +694,7 @@ class PostgresRetrievalStore:
         return dict(sorted(combined.items(), key=lambda item: item[1], reverse=True)[:size])
 
 
-storage = Storage()
+storage = Storage(STORAGE_SETTINGS)
 embedding_client = EmbeddingClient()
 retrieval_store = PostgresRetrievalStore(EMBEDDING_DIMENSIONS, EMBEDDING_MODEL)
 
@@ -795,17 +727,7 @@ async def healthz() -> JSONResponse:
         return {"backend": "postgresql"}
 
     def check_storage() -> dict[str, object]:
-        if storage.client is None:
-            if not STORAGE_ROOT.exists() or not STORAGE_ROOT.is_dir():
-                raise RuntimeError(f"storage root is not available: {STORAGE_ROOT}")
-            return {"mode": STORAGE_MODE, "root": str(STORAGE_ROOT)}
-        if not storage.client.bucket_exists(MINIO_BUCKET):
-            raise RuntimeError(f"minio bucket is not available: {MINIO_BUCKET}")
-        return {
-            "mode": STORAGE_MODE,
-            "bucket": MINIO_BUCKET,
-            "endpoint": MINIO_ENDPOINT,
-        }
+        return storage.check()
 
     report = await build_readiness_report(
         service_name="lynxus-knowledge-service",

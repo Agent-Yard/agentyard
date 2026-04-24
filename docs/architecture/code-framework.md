@@ -139,7 +139,7 @@ Java core 数据访问当前以 `Flyway + jOOQ + packages/persistence-jvm` 为�
 - session 运行态已落盘，但还没有订阅式更新
 - Web 运行页仍缺人工操作面板
 - 资源执行层优先保证本地联调和演示闭环，生产级安全治理仍需补齐
-- MinIO / pgvector 已进入知识导入与检索正式链路，但线上职责、备份与监控仍需继续补齐
+- S3-compatible object storage / pgvector 已进入知识导入与检索正式链路；本地与 dev 使用 MinIO，测试环境可切 AWS S3，线上职责、备份与监控仍需继续补齐
 
 ## 版本基线
 
@@ -155,4 +155,4 @@ Java core 数据访问当前以 `Flyway + jOOQ + packages/persistence-jvm` 为�
 - FastAPI：0.115.12
 - Uvicorn：0.34.0
 - Ant Design Vue：4.2.6
-- PostgreSQL / MinIO / Temporal：通过本地 Docker 依赖接入
+- PostgreSQL / MinIO / Temporal：通过本地 Docker 依赖接入；知识服务通过通用对象存储配置访问 MinIO 或 S3

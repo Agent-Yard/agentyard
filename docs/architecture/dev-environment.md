@@ -109,6 +109,8 @@
 - Agent Runtime
 - Web
 
+Knowledge Service 使用通用 S3-compatible object storage 配置；`dev` 编排默认将 provider 固定为 `minio`，endpoint 固定为 Docker 网络内的 `http://minio:9000`，并允许自动创建知识库 bucket。
+
 ## 默认暴露端口
 
 - 控制台：`http://<server-host>:8080`
@@ -161,4 +163,4 @@
 - `dev` 仍然是开发环境，不是生产发布方案
 - 容器编排默认直接 `build` 当前工作树，不包含镜像仓库发布流程
 - 如果关闭开发态 bootstrap 登录，当前必须补齐 OIDC 客户端注册，否则 API 会按现有校验逻辑拒绝启动
-- MinIO、PostgreSQL、Redis、Temporal 的备份、高可用和监控仍不在这套配置里
+- MinIO、PostgreSQL、Redis、Temporal 的备份、高可用和监控仍不在这套配置里；测试环境使用 AWS S3 时应由部署侧预创建 bucket，并配置 `LYNXUS_OBJECT_STORAGE_MODE=object-storage`、`LYNXUS_OBJECT_STORAGE_PROVIDER=s3`、区域 endpoint、region、AK/SK、bucket 与 `LYNXUS_OBJECT_STORAGE_CREATE_BUCKET=false`

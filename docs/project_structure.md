@@ -34,7 +34,7 @@ demo/                 演示素材目录，不参与当前主实现说明
 - Gradle 多项目：`apps/api`、`apps/worker`、`packages/contracts-jvm`、`packages/persistence-jvm`、`packages/shared-redis-jvm`
 - pnpm workspace：`apps/web`、`packages/contracts`
 - uv workspace：`apps/agent-runtime`、`apps/knowledge-service`、`packages/python-common`
-- 本地依赖：PostgreSQL、MinIO、Redis、Temporal、sandbox
+- 本地依赖：PostgreSQL、MinIO（S3-compatible object storage 本地实现）、Redis、Temporal、sandbox
 
 ## 3. 治理主树
 

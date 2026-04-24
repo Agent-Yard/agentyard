@@ -12,7 +12,7 @@
 - sandbox
 
 这些依赖服务于当前“控制面 + Temporal + Python runtime + 前端控制台”的本地联调链路。
-其中当前主链路最依赖的是 PostgreSQL、Temporal、MinIO、Redis 和知识服务；知识快照构建与检索默认依赖 PostgreSQL 内的 `pgvector + pg_trgm + tsvector`。
+其中当前主链路最依赖的是 PostgreSQL、Temporal、MinIO、Redis 和知识服务；知识服务通过 S3-compatible object storage 配置访问对象存储，本地默认指向 MinIO。知识快照构建与检索默认依赖 PostgreSQL 内的 `pgvector + pg_trgm + tsvector`。
 本地 PostgreSQL 默认会准备 `lynxus_core` 和 `lynxus_knowledge` 两个数据库，避免 API/worker 的核心会话链路与 knowledge service 的自建表共享同一个 `public` schema。
 
 ## 本机前置条件
@@ -145,6 +145,7 @@ SPRING_PROFILES_ACTIVE=default pnpm local:worker
 - Temporal UI：`http://<host>:8088`（对外监听，经过 Basic Auth 保护）
 - Python 内部服务鉴权：`LYNXUS_INTERNAL_AUTH_TOKEN`，API / Worker / Agent Runtime / Knowledge Service 必须保持一致
 - Redis 统一配置：`LYNXUS_REDIS_HOST / PORT / DATABASE / USERNAME / PASSWORD / SSL_ENABLED`
+- 知识服务对象存储：本地默认 `LYNXUS_OBJECT_STORAGE_MODE=object-storage`、`LYNXUS_OBJECT_STORAGE_PROVIDER=minio`、`LYNXUS_OBJECT_STORAGE_ENDPOINT=http://127.0.0.1:9000`、`LYNXUS_OBJECT_STORAGE_BUCKET=lynxus-knowledge`、`LYNXUS_OBJECT_STORAGE_CREATE_BUCKET=true`
 - Java 结构化日志：默认非 `local` profile 输出 JSON，本地开发默认文本
 - Python 结构化日志：`LYNXUS_LOG_FORMAT` 默认开发态 `console`
 - `pnpm local:api` 会默认启用 `local` profile，并打开开发态 bootstrap 登录旁路
@@ -178,5 +179,5 @@ SPRING_PROFILES_ACTIVE=default pnpm local:worker
 - 接入真实企业 OIDC 提供方，并按环境关闭开发态 bootstrap 登录旁路
 - 补齐异步订阅式运行观测
 - 收敛知识检索的线上索引策略、生命周期治理和监控面
-- 明确 MinIO / pgvector 的线上职责并补齐监控与备份
+- 明确 S3-compatible object storage / pgvector 的线上职责并补齐监控与备份
 - 基于 Gradle wrapper 补齐 CI 校验

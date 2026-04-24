@@ -36,7 +36,7 @@
 - `apps/web`
 - `infra/local`
 - `infra/dev`
-- 共享依赖：PostgreSQL、Redis、Temporal、MinIO
+- 共享依赖：PostgreSQL、Redis、Temporal、S3-compatible object storage（本地/dev 为 MinIO）
 
 本文不覆盖：
 
@@ -97,7 +97,7 @@
 #### Knowledge Service
 
 - 结构化数据已落 PostgreSQL
-- 文件存储已落 MinIO 或 filesystem
+- 文件存储已落 S3-compatible object storage 或 filesystem
 - 异步导入 / 建索引由 Temporal workflow 驱动，不靠进程内后台线程
 - 已暴露 `/healthz`
 - 代码里没有明显的长期进程级业务缓存
@@ -226,7 +226,7 @@ flowchart LR
     PG["PostgreSQL"]
     Redis["Redis"]
     Temporal["Temporal"]
-    MinIO["MinIO"]
+    ObjectStorage["Object storage (MinIO/S3)"]
 
     Browser --> LB
     LB --> Web
@@ -254,8 +254,8 @@ flowchart LR
     RuntimeB --> Redis
     KsA --> PG
     KsB --> PG
-    KsA --> MinIO
-    KsB --> MinIO
+    KsA --> ObjectStorage
+    KsB --> ObjectStorage
 ```
 
 设计要点：

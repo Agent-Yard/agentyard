@@ -32,7 +32,6 @@ dependencies {
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.5")
     implementation("io.temporal:temporal-sdk:$temporalVersion")
     implementation("org.postgresql:postgresql:42.7.7")
-    implementation("io.minio:minio:8.5.17")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
