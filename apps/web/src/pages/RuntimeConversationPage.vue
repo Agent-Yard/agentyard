@@ -199,6 +199,8 @@ function eventTitle(event: SessionEvent) {
       return '决策被拒绝';
     case 'AGENT_TURN_FAILED':
       return 'Agent Turn 失败';
+    case 'USER_MESSAGE_SECURITY_BLOCKED':
+      return '安全拦截';
     default:
       return event.eventType;
   }

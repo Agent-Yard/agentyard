@@ -103,6 +103,7 @@ public final class SessionContracts {
     public enum SessionEventType {
         AGENT_DECISION_REJECTED,
         AGENT_TURN_FAILED,
+        USER_MESSAGE_SECURITY_BLOCKED,
         OWNER_SWITCH,
         PLAYBOOK_STARTED,
         PLAYBOOK_WAITING,
@@ -529,6 +530,17 @@ public final class SessionContracts {
         }
     }
 
+    public record SecurityAssessment(
+        String action,
+        List<String> categories,
+        String reason,
+        Double confidence
+    ) {
+        public SecurityAssessment {
+            categories = categories == null ? List.of() : List.copyOf(categories);
+        }
+    }
+
     public record AgentTurnRequest(
         String sessionId,
         String assistantId,
@@ -556,10 +568,19 @@ public final class SessionContracts {
     public record AgentTurnResult(
         AgentDecision decision,
         Map<String, Object> sharedState,
-        PrivacyMappingTelemetry mappingTelemetry
+        PrivacyMappingTelemetry mappingTelemetry,
+        SecurityAssessment securityAssessment
     ) {
         public AgentTurnResult {
             sharedState = immutableObjectMap(sharedState);
+        }
+
+        public AgentTurnResult(
+            AgentDecision decision,
+            Map<String, Object> sharedState,
+            PrivacyMappingTelemetry mappingTelemetry
+        ) {
+            this(decision, sharedState, mappingTelemetry, null);
         }
     }
 

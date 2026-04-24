@@ -36,6 +36,7 @@ import com.lynxus.contracts.session.SessionContracts.SessionStartRequest;
 import com.lynxus.contracts.session.SessionContracts.SessionTrigger;
 import com.lynxus.contracts.session.SessionContracts.SessionTriggerType;
 import com.lynxus.contracts.session.SessionContracts.SessionUserMessageUpdateResult;
+import com.lynxus.contracts.session.SessionContracts.SecurityAssessment;
 import com.lynxus.contracts.session.SessionContracts.UserMessage;
 import com.lynxus.contracts.session.SessionWorkflow;
 import io.temporal.activity.ActivityOptions;
@@ -58,6 +59,7 @@ import tools.jackson.databind.ObjectMapper;
 public class SessionWorkflowImpl implements SessionWorkflow {
     private static final String DECISION_REJECTED_REPLY = "当前无法完成该操作，请稍后再试";
     private static final String TURN_FAILED_REPLY = "当前处理遇到问题，请稍后再试";
+    private static final String SECURITY_BLOCKED_REPLY = "为了保护系统安全，我不能处理这类请求。";
     private static final String SYSTEM_SENDER_NAME = "System";
     private static final int RECENT_EVENT_WINDOW = 20;
     private static final int RECENT_MESSAGE_WINDOW = 20;
@@ -428,6 +430,15 @@ public class SessionWorkflowImpl implements SessionWorkflow {
                 break;
             }
             AgentTurnResult result = outcome.result();
+            if (isSecurityBlocked(result == null ? null : result.securityAssessment())) {
+                emitSecurityBlocked(
+                    result.securityAssessment(),
+                    trigger,
+                    currentOwnerAgentId,
+                    activePlaybookRunId
+                );
+                break;
+            }
             sharedState = result == null ? sharedState : result.sharedState();
             if (result != null && result.mappingTelemetry() != null) {
                 appendPrivacyMappingAuditEvents(currentOwnerAgentId, result.mappingTelemetry());
@@ -787,6 +798,35 @@ public class SessionWorkflowImpl implements SessionWorkflow {
                     || decision.action() == AgentDecisionAction.RUN_PLAYBOOK
                     || decision.action() == AgentDecisionAction.SESSION_HUMAN_HANDOFF
             );
+    }
+
+    private boolean isSecurityBlocked(SecurityAssessment assessment) {
+        return assessment != null && "BLOCK".equalsIgnoreCase(assessment.action());
+    }
+
+    private void emitSecurityBlocked(
+        SecurityAssessment assessment,
+        SessionTrigger trigger,
+        String ownerAgentId,
+        String activePlaybookRunId
+    ) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("action", assessment.action());
+        payload.put("categories", assessment.categories());
+        payload.put("reason", assessment.reason());
+        payload.put("confidence", assessment.confidence());
+        payload.put("triggerType", trigger.triggerType().name());
+        payload.put("triggerEventId", trigger.eventId());
+        payload.put("triggerMessageId", trigger.triggerMessageId());
+        payload.put("ownerAgentId", ownerAgentId);
+        emitSystemEventBackedReply(
+            SessionEventType.USER_MESSAGE_SECURITY_BLOCKED,
+            ownerAgentId,
+            payload,
+            activePlaybookRunId,
+            ownerAgentId,
+            textMessageInput(SECURITY_BLOCKED_REPLY)
+        );
     }
 
     private boolean canAcceptResumeSignal(String signalSessionId, PlaybookRun run, PlaybookWaitingType waitingType) {

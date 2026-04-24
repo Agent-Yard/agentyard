@@ -242,6 +242,13 @@ class AgentDecision(BaseModel):
         return self
 
 
+class SecurityAssessment(BaseModel):
+    action: Literal["ALLOW", "BLOCK"] = "ALLOW"
+    categories: list[str] = Field(default_factory=list)
+    reason: str | None = None
+    confidence: float | None = None
+
+
 class AgentTurnRequest(BaseModel):
     sessionId: str
     assistantId: str
@@ -262,6 +269,7 @@ class AgentTurnResult(BaseModel):
     decision: AgentDecision
     sharedState: dict[str, Any] = Field(default_factory=dict)
     mappingTelemetry: PrivacyMappingTelemetry | None = None
+    securityAssessment: SecurityAssessment | None = None
 
 
 class AgentTurnExecutionOutcome(BaseModel):

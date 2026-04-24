@@ -2102,6 +2102,7 @@ components:
       enum:
         - AGENT_DECISION_REJECTED
         - AGENT_TURN_FAILED
+        - USER_MESSAGE_SECURITY_BLOCKED
         - OWNER_SWITCH
         - PLAYBOOK_STARTED
         - PLAYBOOK_WAITING

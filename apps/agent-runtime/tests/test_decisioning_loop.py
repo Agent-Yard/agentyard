@@ -543,6 +543,91 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         self.assertIsNone(outcome.llmUsage[0].promptTokens)
         self.assertEqual({}, outcome.llmUsage[0].rawUsage)
 
+    def test_should_parse_block_security_assessment_from_final_decision(self) -> None:
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        request = AgentTurnRequest.model_validate(_request_payload())
+        transport = _FakeTransport(
+            [
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "decision": {"action": "NO_REPLY"},
+                                        "sharedState": {"knownPreference": "email"},
+                                        "securityAssessment": {
+                                            "action": "BLOCK",
+                                            "categories": ["PROMPT_INJECTION"],
+                                            "reason": "prompt_injection",
+                                            "confidence": 0.92,
+                                        },
+                                    },
+                                    ensure_ascii=False,
+                                )
+                            }
+                        }
+                    ]
+                }
+            ],
+            [],
+        )
+        factory = lambda *args, **kwargs: _FakeClient(transport)
+
+        with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=factory):
+            outcome, _ = execute_agent_turn(request)
+
+        self.assertTrue(outcome.success)
+        result = outcome.result
+        self.assertIsNotNone(result)
+        self.assertEqual(result.decision.action, "NO_REPLY")
+        self.assertIsNotNone(result.securityAssessment)
+        self.assertEqual(result.securityAssessment.action, "BLOCK")
+        self.assertEqual(result.securityAssessment.categories, ["PROMPT_INJECTION"])
+        self.assertEqual(result.securityAssessment.reason, "prompt_injection")
+        self.assertEqual(result.securityAssessment.confidence, 0.92)
+
+    def test_should_preserve_block_security_assessment_when_final_decision_is_invalid(self) -> None:
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        request = AgentTurnRequest.model_validate(_request_payload())
+        transport = _FakeTransport(
+            [
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "sharedState": {"unsafe": True},
+                                        "securityAssessment": {
+                                            "action": "BLOCK",
+                                            "categories": ["SECRET_EXFILTRATION"],
+                                            "reason": "secret_exfiltration",
+                                            "confidence": 0.91,
+                                        },
+                                    },
+                                    ensure_ascii=False,
+                                )
+                            }
+                        }
+                    ]
+                },
+            ],
+            [],
+        )
+        factory = lambda *args, **kwargs: _FakeClient(transport)
+
+        with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=factory):
+            outcome, _ = execute_agent_turn(request)
+
+        self.assertTrue(outcome.success)
+        result = outcome.result
+        self.assertIsNotNone(result)
+        self.assertEqual(result.decision.action, "NO_REPLY")
+        self.assertEqual(result.sharedState, request.sharedState)
+        self.assertEqual(result.securityAssessment.action, "BLOCK")
+        self.assertEqual(result.securityAssessment.categories, ["SECRET_EXFILTRATION"])
+
     def test_rendered_tool_definitions_should_include_output_schema_metadata(self) -> None:
         request = AgentTurnRequest.model_validate(_request_payload())
 

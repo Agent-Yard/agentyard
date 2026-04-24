@@ -14,7 +14,7 @@ from .openai_adapter import (
     render_openai_runtime_message,
     tool_result_message,
 )
-from .models import AgentDecision, AgentTurnExecutionOutcome, AgentTurnRequest, AgentTurnResult
+from .models import AgentDecision, AgentTurnExecutionOutcome, AgentTurnRequest, AgentTurnResult, SecurityAssessment
 from .prompting import PromptBundle, build_prompt_bundle, loaded_skill_runtime_message, render_openai_messages
 from .semantic import SemanticMessage, SemanticToolCall, SemanticToolResult
 from .tooling import execute_tool_call, load_skills, semantic_tool_definitions
@@ -120,12 +120,35 @@ def _execute_via_openai_compatible(
                 messages.append(render_openai_runtime_message(loaded_skill_runtime_message(loaded_skills)))
                 continue
             parsed = privacy_pipeline.restore_inbound("MODEL_FINAL_RESPONSE", parsed)
+            blocked_result = _blocked_security_result(parsed, request, privacy_pipeline)
+            if blocked_result is not None:
+                outcome = AgentTurnExecutionOutcome(
+                    success=True,
+                    result=blocked_result,
+                    llmUsage=usage_tracker.entries(),
+                )
+                LOGGER.info(
+                    "agent turn blocked by model security assessment",
+                    extra={
+                        "sessionId": request.sessionId,
+                        "assistantId": request.assistantId,
+                        "ownerAgentId": request.currentOwner.agentId,
+                        "securityCategories": blocked_result.securityAssessment.categories
+                        if blocked_result.securityAssessment is not None
+                        else [],
+                        "llmUsageCount": len(outcome.llmUsage),
+                    },
+                )
+                privacy_pipeline.close()
+                return outcome
             decision_payload = parsed.get("decision")
             shared_state = parsed.get("sharedState")
+            security_assessment = parsed.get("securityAssessment")
             result = AgentTurnResult(
                 decision=AgentDecision.model_validate(decision_payload or {}),
                 sharedState=shared_state if isinstance(shared_state, dict) else dict(request.sharedState),
                 mappingTelemetry=privacy_pipeline.telemetry(),
+                securityAssessment=security_assessment if isinstance(security_assessment, dict) else None,
             )
             outcome = AgentTurnExecutionOutcome(
                 success=True,
@@ -209,6 +232,40 @@ def _resolve_provider_settings(request: AgentTurnRequest) -> OpenAiCompatibleSet
 
 def _execute_model_tool_call(request: AgentTurnRequest, tool_call: SemanticToolCall) -> dict[str, Any]:
     return execute_tool_call(request, tool_call.tool_name, tool_call.arguments)
+
+
+def _blocked_security_result(
+    parsed: dict[str, Any],
+    request: AgentTurnRequest,
+    privacy_pipeline: Any,
+) -> AgentTurnResult | None:
+    assessment = _parse_security_assessment(parsed.get("securityAssessment"))
+    if assessment is None or not _is_block_assessment(assessment):
+        return None
+    return _security_block_result(request, assessment, privacy_pipeline)
+
+
+def _security_block_result(
+    request: AgentTurnRequest,
+    assessment: SecurityAssessment,
+    privacy_pipeline: Any,
+) -> AgentTurnResult:
+    return AgentTurnResult(
+        decision=AgentDecision.model_validate({"action": "NO_REPLY"}),
+        sharedState=dict(request.sharedState),
+        mappingTelemetry=privacy_pipeline.telemetry(),
+        securityAssessment=assessment,
+    )
+
+
+def _parse_security_assessment(raw_value: Any) -> SecurityAssessment | None:
+    if not isinstance(raw_value, dict):
+        return None
+    return SecurityAssessment.model_validate(raw_value)
+
+
+def _is_block_assessment(assessment: SecurityAssessment) -> bool:
+    return assessment.action.upper() == "BLOCK"
 
 
 def _is_skill_read_request(parsed: dict[str, Any]) -> bool:

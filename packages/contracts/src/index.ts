@@ -412,6 +412,7 @@ export type SessionActorType = 'CUSTOMER' | 'AGENT' | 'SYSTEM' | 'HUMAN_OPERATOR
 export type SessionEventType =
   | 'AGENT_DECISION_REJECTED'
   | 'AGENT_TURN_FAILED'
+  | 'USER_MESSAGE_SECURITY_BLOCKED'
   | 'OWNER_SWITCH'
   | 'PLAYBOOK_STARTED'
   | 'PLAYBOOK_WAITING'
@@ -753,6 +754,14 @@ export interface AgentTurnResult {
   decision: AgentDecision;
   sharedState: Record<string, unknown>;
   mappingTelemetry: PrivacyMappingTelemetry | null;
+  securityAssessment: SecurityAssessment | null;
+}
+
+export interface SecurityAssessment {
+  action: 'ALLOW' | 'BLOCK' | string;
+  categories: string[];
+  reason: string | null;
+  confidence: number | null;
 }
 
 export interface AgentTurnExecutionOutcome {
