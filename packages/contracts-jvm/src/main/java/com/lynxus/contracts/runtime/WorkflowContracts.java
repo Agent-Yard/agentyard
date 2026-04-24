@@ -22,8 +22,9 @@ public final class WorkflowContracts {
         SKILL
     }
 
-    public enum ToolProviderType {
-        HTTP,
+    public enum ToolConnectorType {
+        SIMPLE_HTTP,
+        BUSINESS_CODE_SECRET_HTTP,
         MCP
     }
 
@@ -48,7 +49,7 @@ public final class WorkflowContracts {
         String toolName,
         ToolKind toolKind,
         String operation,
-        String providerType,
+        String connectorType,
         String resourceId,
         String resourceName,
         Map<String, Object> result

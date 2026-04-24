@@ -145,6 +145,10 @@ const currentView = computed(() => {
         publishResourceVersion: catalogActions.handlePublishResourceVersion,
       },
     },
+    'integration-account': {
+      props: {},
+      handlers: {},
+    },
     runtime: {
       props: {
         scenarios: state.catalog.value!.scenarios,

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import hmac
+import hashlib
 import os
 import re
 from typing import Any
+from urllib.parse import urljoin
 
 from .json_schema import validate_json_schema_value
 from .models import (
@@ -13,6 +16,7 @@ from .models import (
     PlaybookToolTaskRequest,
     PlaybookToolTaskResult,
     ToolDescriptor,
+    ToolConnectorDescriptor,
     ToolOperationDescriptor,
 )
 from .http_clients import shared_http_client_for_url
@@ -50,7 +54,7 @@ def execute_tool_call(request: AgentTurnRequest, tool_name: str, arguments: dict
                 {
                     "resourceVersionId": tool.resourceVersionId,
                     "resourceName": tool.resourceName,
-                    "providerType": tool.providerType,
+                    "connectorType": None if tool.connector is None else tool.connector.connectorType,
                     "operations": [operation.name for operation in tool.operations],
                 }
                 for tool in request.currentOwner.tools
@@ -83,12 +87,7 @@ def execute_playbook_tool_task(request: PlaybookToolTaskRequest) -> PlaybookTool
     arguments = _build_playbook_tool_arguments(request)
     input_schema = _parse_json_schema(operation.inputSchema)
     validate_json_schema_value(arguments, input_schema)
-    if descriptor.providerType.upper() == "HTTP":
-        output = _call_http_tool(descriptor, operation, arguments)
-    elif descriptor.providerType.upper() == "MCP":
-        output = _call_mcp_tool(descriptor, operation, arguments)
-    else:
-        raise ValueError(f"unsupported tool provider: {descriptor.providerType}")
+    output = _call_connector_tool(descriptor, operation, arguments)
     output_schema = _parse_json_schema(operation.outputSchema)
     validate_json_schema_value(output, output_schema)
     route_key = _first_non_blank(
@@ -356,7 +355,7 @@ def _resource_tool_definitions(request: AgentTurnRequest) -> list[SemanticToolDe
                 _semantic_tool(
                     resource_tool_function_name(tool, operation),
                     operation.description
-                    or f"Invoke {tool.resourceName}.{operation.name} via {tool.providerType} provider.",
+                    or f"Invoke {tool.resourceName}.{operation.name} via {None if tool.connector is None else tool.connector.connectorType} connector.",
                     _parse_json_schema(operation.inputSchema),
                     _parse_json_schema(operation.outputSchema),
                 )
@@ -511,12 +510,7 @@ def _execute_resource_tool(request: AgentTurnRequest, tool_name: str, arguments:
     descriptor, operation = _resolve_resource_tool(request, tool_name)
     input_schema = _parse_json_schema(operation.inputSchema)
     validate_json_schema_value(arguments, input_schema)
-    if descriptor.providerType.upper() == "HTTP":
-        result = _call_http_tool(descriptor, operation, arguments)
-    elif descriptor.providerType.upper() == "MCP":
-        result = _call_mcp_tool(descriptor, operation, arguments)
-    else:
-        raise ValueError(f"unsupported tool provider: {descriptor.providerType}")
+    result = _call_connector_tool(descriptor, operation, arguments)
     output_schema = _parse_json_schema(operation.outputSchema)
     validate_json_schema_value(result, output_schema)
     return result
@@ -644,65 +638,167 @@ def _first_non_blank(*values: str | None) -> str | None:
     return None
 
 
-def _call_http_tool(
+def _call_connector_tool(
     descriptor: ToolDescriptor,
     operation: ToolOperationDescriptor,
     arguments: dict[str, Any],
 ) -> dict[str, Any]:
-    if descriptor.http is None:
-        raise ValueError(f"tool {descriptor.resourceVersionId} is missing HTTP provider config")
-    method = (descriptor.http.method or "POST").upper()
-    request_kwargs: dict[str, Any] = {"headers": _provider_headers(descriptor.authType)}
-    if method == "GET":
-        request_kwargs["params"] = arguments
-    else:
-        request_kwargs["json"] = arguments
-    timeout_seconds = max(1, descriptor.timeoutSeconds)
-    client = shared_http_client_for_url(descriptor.http.endpoint)
-    response = client.request(method, descriptor.http.endpoint, timeout=timeout_seconds, **request_kwargs)
-    response.raise_for_status()
-    payload = response.json()
-    if not isinstance(payload, dict):
-        raise ValueError(f"tool {descriptor.resourceName}.{operation.name} must return a JSON object")
-    return payload
+    connector = _require_tool_connector(descriptor)
+    connector_type = connector.connectorType.upper()
+    if connector_type == "SIMPLE_HTTP":
+        return _call_simple_http_connector(descriptor, connector, operation, arguments)
+    if connector_type == "BUSINESS_CODE_SECRET_HTTP":
+        return _call_business_code_secret_http_connector(descriptor, connector, operation, arguments)
+    if connector_type == "MCP":
+        return _call_mcp_connector(descriptor, connector, operation, arguments)
+    raise ValueError(f"unsupported tool connector: {connector.connectorType}")
 
 
-def _call_mcp_tool(
+def _call_simple_http_connector(
     descriptor: ToolDescriptor,
+    connector: ToolConnectorDescriptor,
     operation: ToolOperationDescriptor,
     arguments: dict[str, Any],
 ) -> dict[str, Any]:
-    if descriptor.mcp is None:
-        raise ValueError(f"tool {descriptor.resourceVersionId} is missing MCP provider config")
-    remote_operation = descriptor.mcp.operationMappings.get(operation.name, operation.name)
-    timeout_seconds = max(1, descriptor.timeoutSeconds)
-    client = shared_http_client_for_url(descriptor.mcp.connectionUri)
+    mapping = _operation_mapping(connector, operation)
+    endpoint = _http_connector_endpoint(connector, mapping)
+    response = _send_http_connector_request(endpoint, connector.timeoutSeconds, mapping, arguments)
+    return _json_object_response(response, descriptor, operation)
+
+
+def _call_business_code_secret_http_connector(
+    descriptor: ToolDescriptor,
+    connector: ToolConnectorDescriptor,
+    operation: ToolOperationDescriptor,
+    arguments: dict[str, Any],
+) -> dict[str, Any]:
+    if not connector.accountId:
+        raise ValueError(f"tool {descriptor.resourceVersionId} BUSINESS_CODE_SECRET_HTTP connector requires accountId")
+    runtime_account = _load_runtime_integration_account(connector.accountId)
+    if str(runtime_account.get("connectorType") or "").upper() != "BUSINESS_CODE_SECRET_HTTP":
+        raise ValueError(f"integration account {connector.accountId} connectorType must be BUSINESS_CODE_SECRET_HTTP")
+    if str(runtime_account.get("status") or "").upper() != "ACTIVE":
+        raise ValueError(f"integration account {connector.accountId} is not ACTIVE")
+    credential = runtime_account.get("credential")
+    if not isinstance(credential, dict):
+        raise ValueError(f"integration account {connector.accountId} credential must be an object")
+    business_code = str(credential.get("businessCode") or "").strip()
+    secret_key = str(credential.get("secretKey") or "").strip()
+    if not business_code or not secret_key:
+        raise ValueError(f"integration account {connector.accountId} requires businessCode and secretKey")
+    mapping = _operation_mapping(connector, operation)
+    endpoint = _http_connector_endpoint(connector, mapping)
+    payload = dict(arguments)
+    canonical_arguments = _stable_json_dumps(arguments)
+    encrypted = hmac.new(secret_key.encode("utf-8"), canonical_arguments.encode("utf-8"), hashlib.sha256).hexdigest()
+    payload[str(connector.config.get("businessCodeField") or "businessCode")] = business_code
+    payload[str(connector.config.get("encryptedField") or "encrypted")] = encrypted
+    response = _send_http_connector_request(endpoint, connector.timeoutSeconds, mapping, payload)
+    return _json_object_response(response, descriptor, operation)
+
+
+def _call_mcp_connector(
+    descriptor: ToolDescriptor,
+    connector: ToolConnectorDescriptor,
+    operation: ToolOperationDescriptor,
+    arguments: dict[str, Any],
+) -> dict[str, Any]:
+    connection_uri = str(connector.config.get("connectionUri") or "").strip()
+    if not connection_uri:
+        raise ValueError(f"tool {descriptor.resourceVersionId} MCP connector requires config.connectionUri")
+    mapping = _operation_mapping(connector, operation)
+    remote_operation = str(mapping.get("tool") or operation.name)
+    timeout_seconds = max(1, connector.timeoutSeconds)
+    client = shared_http_client_for_url(connection_uri)
+    headers = _internal_auth_headers() if _config_bool(connector.config, "internalAuthEnabled") else {}
     response = client.post(
-        descriptor.mcp.connectionUri,
-        headers=_provider_headers(descriptor.authType),
+        connection_uri,
+        headers=headers,
         json={
-            "serverName": descriptor.mcp.serverName,
-            "namespace": descriptor.mcp.namespace,
-            "transport": descriptor.mcp.transport,
+            "serverName": connector.config.get("serverName") or "",
+            "namespace": connector.config.get("namespace") or "",
+            "transport": connector.config.get("transport") or "STREAMABLE_HTTP",
             "tool": remote_operation,
             "arguments": arguments,
         },
         timeout=timeout_seconds,
     )
     response.raise_for_status()
+    return _json_object_response(response, descriptor, operation)
+
+
+def _send_http_connector_request(
+    endpoint: str,
+    timeout_seconds: int,
+    mapping: dict[str, Any],
+    payload: dict[str, Any],
+) -> Any:
+    method = str(mapping.get("method") or "POST").upper()
+    placement = str(mapping.get("requestPlacement") or ("QUERY" if method == "GET" else "JSON_BODY")).upper()
+    request_kwargs: dict[str, Any] = {}
+    if placement == "QUERY" or method == "GET":
+        request_kwargs["params"] = payload
+    else:
+        request_kwargs["json"] = payload
+    client = shared_http_client_for_url(endpoint)
+    response = client.request(method, endpoint, timeout=max(1, timeout_seconds), **request_kwargs)
+    response.raise_for_status()
+    return response
+
+
+def _json_object_response(response: Any, descriptor: ToolDescriptor, operation: ToolOperationDescriptor) -> dict[str, Any]:
     payload = response.json()
     if not isinstance(payload, dict):
         raise ValueError(f"tool {descriptor.resourceName}.{operation.name} must return a JSON object")
     return payload
 
 
-def _provider_headers(auth_type: str) -> dict[str, str]:
-    if (auth_type or "").strip().upper() != "SERVICE_ACCOUNT":
-        return {}
-    internal_token = (os.getenv("LYNXUS_INTERNAL_AUTH_TOKEN") or "").strip()
-    if not internal_token:
-        return {}
-    return {"Authorization": f"Bearer {internal_token}"}
+def _require_tool_connector(descriptor: ToolDescriptor) -> ToolConnectorDescriptor:
+    if descriptor.connector is None:
+        raise ValueError(f"tool {descriptor.resourceVersionId} is missing connector config")
+    return descriptor.connector
+
+
+def _operation_mapping(connector: ToolConnectorDescriptor, operation: ToolOperationDescriptor) -> dict[str, Any]:
+    return dict(connector.operationMappings.get(operation.name) or {})
+
+
+def _http_connector_endpoint(connector: ToolConnectorDescriptor, mapping: dict[str, Any]) -> str:
+    endpoint = str(mapping.get("endpoint") or "").strip()
+    if endpoint:
+        return endpoint
+    base_url = str(connector.config.get("baseUrl") or "").strip()
+    if not base_url:
+        raise ValueError(f"{connector.connectorType} connector requires config.baseUrl or operation endpoint")
+    path = str(mapping.get("path") or "").strip()
+    return urljoin(base_url.rstrip("/") + "/", path.lstrip("/"))
+
+
+def _load_runtime_integration_account(account_id: str) -> dict[str, Any]:
+    endpoint = _control_plane_base_url() + f"/internal/integration/accounts/{account_id}/credential"
+    client = shared_http_client_for_url(endpoint)
+    response = client.get(endpoint, headers=_internal_auth_headers(), timeout=10.0)
+    response.raise_for_status()
+    payload = response.json()
+    data = payload.get("data") if isinstance(payload, dict) and "data" in payload else payload
+    if not isinstance(data, dict):
+        raise ValueError(f"integration account credential response must be an object: {account_id}")
+    return data
+
+
+def _stable_json_dumps(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _config_bool(config: dict[str, Any], key: str, default: bool = False) -> bool:
+    value = config.get(key)
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes", "y", "on"}
+    return bool(value)
 
 
 def _internal_auth_headers() -> dict[str, str]:
@@ -714,6 +810,10 @@ def _internal_auth_headers() -> dict[str, str]:
 
 def _knowledge_service_base_url() -> str:
     return (os.getenv("LYNXUS_KNOWLEDGE_SERVICE_BASE_URL") or "http://127.0.0.1:8091").rstrip("/")
+
+
+def _control_plane_base_url() -> str:
+    return (os.getenv("LYNXUS_API_BASE_URL") or "http://127.0.0.1:8080/api").rstrip("/")
 
 
 def _require_knowledge_binding(binding: KnowledgeBindingDescriptor | None) -> KnowledgeBindingDescriptor:

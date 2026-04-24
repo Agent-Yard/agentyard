@@ -122,6 +122,8 @@ Java core 数据访问当前以 `Flyway + jOOQ + packages/persistence-jvm` 为�
 
 - 发布版 assistant release 是运行唯一配置锚点
 - owner agent 的知识检索、tool calling、skill 读取都发生在 `agent-runtime` 内部推理循环
+- Tool 是业务能力契约；Connector 是接入实现；Integration Account/Credential 是账号与密钥状态。Agent / Playbook 只看 Tool operation schema，不接触签名、cookie、secret 等 provider 协议细节
+- Tool v1 内置 `SIMPLE_HTTP`、`BUSINESS_CODE_SECRET_HTTP`、`MCP` connector，执行仍在 `agent-runtime` 内，复杂厂商协议后续通过 connector registry 扩展
 - playbook 只承担强业务流程，不重复承载 owner 推理
 - `sharedState` 只承载认知性上下文，不承载 owner / handoff / playbook 生命周期这类操作性权威状态
 - Java 持久化默认使用 jOOQ DSL，不再新增 `JdbcTemplate` / `NamedParameterJdbcTemplate` repository

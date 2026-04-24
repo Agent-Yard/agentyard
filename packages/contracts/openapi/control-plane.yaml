@@ -39,6 +39,62 @@ paths:
       responses:
         '200':
           description: Aggregate catalog state with assistants, agents, resources, and knowledge bases
+  /integration/accounts:
+    get:
+      summary: List integration accounts
+      responses:
+        '200':
+          description: Integration accounts with credential state redacted
+    post:
+      summary: Create integration account
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateIntegrationAccountPayload'
+      responses:
+        '200':
+          description: Created integration account
+  /integration/accounts/{accountId}:
+    get:
+      summary: Get integration account
+      parameters:
+        - in: path
+          name: accountId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Integration account with credential state redacted
+    put:
+      summary: Update integration account
+      parameters:
+        - in: path
+          name: accountId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateIntegrationAccountPayload'
+      responses:
+        '200':
+          description: Updated integration account
+  /internal/integration/accounts/{accountId}/credential:
+    get:
+      summary: Internal runtime credential lookup
+      parameters:
+        - in: path
+          name: accountId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Runtime credential for connector execution
   /catalog/references/{objectType}/{objectId}:
     get:
       summary: Get unified object reference analysis
@@ -1080,12 +1136,72 @@ components:
     ShareScope:
       type: string
       enum: [PRIVATE, DOMAIN_SHARED]
-    ToolProviderType:
+    ToolConnectorType:
       type: string
-      enum: [HTTP, MCP]
+      enum: [SIMPLE_HTTP, BUSINESS_CODE_SECRET_HTTP, MCP]
     ToolKind:
       type: string
       enum: [RESOURCE, BUILTIN]
+    IntegrationAccountStatus:
+      type: string
+      enum: [ACTIVE, INACTIVE]
+    IntegrationAccount:
+      type: object
+      properties:
+        id:
+          type: string
+        connectorType:
+          $ref: '#/components/schemas/ToolConnectorType'
+        name:
+          type: string
+        status:
+          $ref: '#/components/schemas/IntegrationAccountStatus'
+        config:
+          type: object
+          additionalProperties: true
+        credentialConfigured:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CreateIntegrationAccountPayload:
+      type: object
+      properties:
+        connectorType:
+          $ref: '#/components/schemas/ToolConnectorType'
+        name:
+          type: string
+        status:
+          $ref: '#/components/schemas/IntegrationAccountStatus'
+          nullable: true
+        config:
+          type: object
+          additionalProperties: true
+          nullable: true
+        credential:
+          type: object
+          additionalProperties: true
+          nullable: true
+    UpdateIntegrationAccountPayload:
+      type: object
+      properties:
+        name:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/IntegrationAccountStatus'
+          nullable: true
+        config:
+          type: object
+          additionalProperties: true
+          nullable: true
+        credential:
+          type: object
+          additionalProperties: true
+          nullable: true
     ToolOperation:
       type: object
       properties:
@@ -1097,30 +1213,26 @@ components:
           type: string
         outputSchema:
           type: string
-    HttpToolProviderConfig:
+    ToolConnectorConfig:
       type: object
       properties:
-        endpoint:
+        connectorType:
+          $ref: '#/components/schemas/ToolConnectorType'
+        accountId:
           type: string
-        method:
-          type: string
-    McpToolProviderConfig:
-      type: object
-      properties:
-        serverName:
-          type: string
-        transport:
-          type: string
-        connectionUri:
-          type: string
-        namespace:
-          type: string
-        heartbeatSeconds:
+          nullable: true
+        timeoutSeconds:
           type: integer
+        retryPolicy:
+          type: string
+        config:
+          type: object
+          additionalProperties: true
         operationMappings:
           type: object
           additionalProperties:
-            type: string
+            type: object
+            additionalProperties: true
     ToolConfig:
       type: object
       properties:
@@ -1128,22 +1240,8 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ToolOperation'
-        providerType:
-          $ref: '#/components/schemas/ToolProviderType'
-        authType:
-          type: string
-        timeoutSeconds:
-          type: integer
-        retryPolicy:
-          type: string
-        http:
-          allOf:
-            - $ref: '#/components/schemas/HttpToolProviderConfig'
-          nullable: true
-        mcp:
-          allOf:
-            - $ref: '#/components/schemas/McpToolProviderConfig'
-          nullable: true
+        connector:
+          $ref: '#/components/schemas/ToolConnectorConfig'
     LlmModelConfig:
       type: object
       properties:
@@ -1159,6 +1257,8 @@ components:
           type: number
         maxTokens:
           type: integer
+        privateDeployment:
+          type: boolean
     SkillConfig:
       type: object
       properties:

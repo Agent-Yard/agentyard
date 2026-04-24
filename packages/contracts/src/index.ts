@@ -1,5 +1,5 @@
 export type ResourceType = 'TOOL' | 'LLM_MODEL' | 'SKILL';
-export type ToolProviderType = 'HTTP' | 'MCP';
+export type ToolConnectorType = 'SIMPLE_HTTP' | 'BUSINESS_CODE_SECRET_HTTP' | 'MCP';
 export type ShareScope = 'PRIVATE' | 'DOMAIN_SHARED';
 export type VersionStatus = 'DRAFT' | 'PUBLISHED';
 export type ReferenceObjectType = 'DOMAIN' | 'SCENARIO' | 'ASSISTANT' | 'PLAYBOOK' | 'AGENT' | 'RESOURCE' | 'KNOWLEDGE_BASE';
@@ -23,6 +23,7 @@ export type KnowledgeIndexSnapshotStatus = 'QUEUED' | 'RUNNING' | 'READY' | 'FAI
 export type KnowledgeImportJobStage = 'QUEUED' | 'FETCHING_SOURCE' | 'PARSING' | 'CHUNKING' | 'PERSISTING' | 'SUCCEEDED' | 'FAILED';
 export type KnowledgeIndexSnapshotStage = 'QUEUED' | 'COLLECTING_DOCUMENTS' | 'INDEXING' | 'READY' | 'FAILED';
 export type ToolKind = 'RESOURCE' | 'BUILTIN';
+export type IntegrationAccountStatus = 'ACTIVE' | 'INACTIVE';
 export type ChannelProviderType = 'FEISHU';
 export type ChannelAccountStatus = 'ACTIVE' | 'INACTIVE';
 export type ChannelConversationBindingStatus = 'ACTIVE' | 'ARCHIVED';
@@ -35,10 +36,36 @@ export interface ToolOutcomeSummary {
   toolName: string;
   toolKind: ToolKind;
   operation: string;
-  providerType: string;
+  connectorType: string;
   resourceId: string | null;
   resourceName: string | null;
   result: Record<string, unknown>;
+}
+
+export interface IntegrationAccount {
+  id: string;
+  connectorType: ToolConnectorType;
+  name: string;
+  status: IntegrationAccountStatus;
+  config: Record<string, unknown>;
+  credentialConfigured: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateIntegrationAccountPayload {
+  connectorType: ToolConnectorType;
+  name: string;
+  status?: IntegrationAccountStatus | null;
+  config?: Record<string, unknown> | null;
+  credential?: Record<string, unknown> | null;
+}
+
+export interface UpdateIntegrationAccountPayload {
+  name?: string | null;
+  status?: IntegrationAccountStatus | null;
+  config?: Record<string, unknown> | null;
+  credential?: Record<string, unknown> | null;
 }
 
 export interface KnowledgeBindingSnapshot {
@@ -456,18 +483,13 @@ export interface ToolOperationDescriptor {
   outputSchema: string;
 }
 
-export interface HttpToolProviderDescriptor {
-  endpoint: string;
-  method: string;
-}
-
-export interface McpToolProviderDescriptor {
-  serverName: string;
-  transport: string;
-  connectionUri: string;
-  namespace: string;
-  heartbeatSeconds: number;
-  operationMappings: Record<string, string>;
+export interface ToolConnectorDescriptor {
+  connectorType: string;
+  accountId: string | null;
+  timeoutSeconds: number;
+  retryPolicy: string;
+  config: Record<string, unknown>;
+  operationMappings: Record<string, Record<string, unknown>>;
 }
 
 export interface ToolDescriptor {
@@ -476,12 +498,7 @@ export interface ToolDescriptor {
   resourceVersionId: string;
   resourceVersion: string;
   operations: ToolOperationDescriptor[];
-  providerType: string;
-  authType: string;
-  timeoutSeconds: number;
-  retryPolicy: string;
-  http: HttpToolProviderDescriptor | null;
-  mcp: McpToolProviderDescriptor | null;
+  connector: ToolConnectorDescriptor | null;
 }
 
 export interface AssistantSessionConfig {

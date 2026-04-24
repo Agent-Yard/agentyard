@@ -220,22 +220,23 @@ public final class SessionContracts {
     ) {
     }
 
-    public record HttpToolProviderDescriptor(
-        String endpoint,
-        String method
+    public record ToolConnectorDescriptor(
+        String connectorType,
+        String accountId,
+        int timeoutSeconds,
+        String retryPolicy,
+        Map<String, Object> config,
+        Map<String, Map<String, Object>> operationMappings
     ) {
-    }
-
-    public record McpToolProviderDescriptor(
-        String serverName,
-        String transport,
-        String connectionUri,
-        String namespace,
-        int heartbeatSeconds,
-        Map<String, String> operationMappings
-    ) {
-        public McpToolProviderDescriptor {
-            operationMappings = immutableStringMap(operationMappings);
+        public ToolConnectorDescriptor {
+            config = immutableObjectMap(config);
+            if (operationMappings == null || operationMappings.isEmpty()) {
+                operationMappings = Map.of();
+            } else {
+                Map<String, Map<String, Object>> copy = new LinkedHashMap<>();
+                operationMappings.forEach((key, value) -> copy.put(key, immutableObjectMap(value)));
+                operationMappings = Collections.unmodifiableMap(copy);
+            }
         }
     }
 
@@ -245,12 +246,7 @@ public final class SessionContracts {
         String resourceVersionId,
         String resourceVersion,
         List<ToolOperationDescriptor> operations,
-        String providerType,
-        String authType,
-        int timeoutSeconds,
-        String retryPolicy,
-        HttpToolProviderDescriptor http,
-        McpToolProviderDescriptor mcp
+        ToolConnectorDescriptor connector
     ) {
         public ToolDescriptor {
             operations = operations == null ? List.of() : List.copyOf(operations);

@@ -53,6 +53,7 @@ public class AuthSecurityConfiguration {
                     "/api/system/health/ready",
                     "/api/auth/login",
                     "/api/auth/dev-bootstrap-login",
+                    "/api/internal/**",
                     "/oauth2/authorization/**",
                     "/login/oauth2/code/**",
                     "/swagger-ui/**",

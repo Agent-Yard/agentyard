@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import type { ResourceType, ResourceVersionConfiguration } from '../types';
+import { computed, onMounted, ref } from 'vue';
+import { api } from '../services/api';
+import type { IntegrationAccount, ResourceType, ResourceVersionConfiguration } from '../types';
 
 const props = defineProps<{
   resourceType: ResourceType;
@@ -10,21 +11,57 @@ const props = defineProps<{
 const toolOperationNames = computed(() =>
   props.configuration.tool?.operations?.map((operation) => operation.name).filter(Boolean).join(' / ') || '-',
 );
+
+const toolConnector = computed(() => props.configuration.tool?.connector);
+const integrationAccounts = ref<IntegrationAccount[]>([]);
+const boundAccount = computed(() => {
+  const accountId = toolConnector.value?.accountId;
+  if (!accountId) {
+    return null;
+  }
+  return integrationAccounts.value.find((account) => account.id === accountId) ?? null;
+});
+const accountLabel = computed(() => {
+  const accountId = toolConnector.value?.accountId;
+  if (!accountId) {
+    return '未绑定';
+  }
+  return boundAccount.value ? `${boundAccount.value.name} (${boundAccount.value.id})` : accountId;
+});
+const accountStatusLabel = computed(() => {
+  const accountId = toolConnector.value?.accountId;
+  if (!accountId) {
+    return '未绑定';
+  }
+  if (!boundAccount.value) {
+    return '未找到';
+  }
+  return `${boundAccount.value.status} / ${boundAccount.value.credentialConfigured ? '凭证已配置' : '凭证未配置'}`;
+});
+
+onMounted(async () => {
+  if (props.resourceType !== 'TOOL') {
+    return;
+  }
+  try {
+    integrationAccounts.value = await api.listIntegrationAccounts();
+  } catch {
+    integrationAccounts.value = [];
+  }
+});
 </script>
 
 <template>
   <a-descriptions v-if="resourceType === 'TOOL' && configuration.tool" :column="2" size="small">
-    <a-descriptions-item label="Provider">{{ configuration.tool.providerType }}</a-descriptions-item>
-    <a-descriptions-item label="鉴权方式">{{ configuration.tool.authType }}</a-descriptions-item>
-    <a-descriptions-item label="超时秒数">{{ configuration.tool.timeoutSeconds }}</a-descriptions-item>
-    <a-descriptions-item label="重试策略">{{ configuration.tool.retryPolicy }}</a-descriptions-item>
+    <a-descriptions-item label="Connector">{{ toolConnector?.connectorType ?? '-' }}</a-descriptions-item>
+    <a-descriptions-item label="Account">{{ accountLabel }}</a-descriptions-item>
+    <a-descriptions-item label="Account Status">{{ accountStatusLabel }}</a-descriptions-item>
+    <a-descriptions-item label="超时秒数">{{ toolConnector?.timeoutSeconds ?? '-' }}</a-descriptions-item>
+    <a-descriptions-item label="重试策略">{{ toolConnector?.retryPolicy ?? '-' }}</a-descriptions-item>
     <a-descriptions-item label="操作定义" :span="2">{{ toolOperationNames }}</a-descriptions-item>
-    <a-descriptions-item v-if="configuration.tool.http" label="HTTP Method">{{ configuration.tool.http.method }}</a-descriptions-item>
-    <a-descriptions-item v-if="configuration.tool.http" label="HTTP Endpoint">{{ configuration.tool.http.endpoint }}</a-descriptions-item>
-    <a-descriptions-item v-if="configuration.tool.mcp" label="MCP 服务">{{ configuration.tool.mcp.serverName }}</a-descriptions-item>
-    <a-descriptions-item v-if="configuration.tool.mcp" label="MCP 传输">{{ configuration.tool.mcp.transport }}</a-descriptions-item>
-    <a-descriptions-item v-if="configuration.tool.mcp" label="连接地址">{{ configuration.tool.mcp.connectionUri }}</a-descriptions-item>
-    <a-descriptions-item v-if="configuration.tool.mcp" label="命名空间">{{ configuration.tool.mcp.namespace }}</a-descriptions-item>
+    <a-descriptions-item v-if="toolConnector?.config.baseUrl" label="Base URL">{{ toolConnector.config.baseUrl }}</a-descriptions-item>
+    <a-descriptions-item v-if="toolConnector?.config.connectionUri" label="连接地址">{{ toolConnector.config.connectionUri }}</a-descriptions-item>
+    <a-descriptions-item v-if="toolConnector?.config.namespace" label="命名空间">{{ toolConnector.config.namespace }}</a-descriptions-item>
   </a-descriptions>
 
   <a-descriptions v-else-if="resourceType === 'LLM_MODEL' && configuration.llmModel" :column="2" size="small">

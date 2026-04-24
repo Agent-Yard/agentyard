@@ -35,7 +35,7 @@ def build_prompt_bundle(request: AgentTurnRequest) -> PromptBundle:
                 "resourceId": tool.resourceId,
                 "resourceVersionId": tool.resourceVersionId,
                 "resourceName": tool.resourceName,
-                "providerType": tool.providerType,
+                "connectorType": None if tool.connector is None else tool.connector.connectorType,
                 "operations": [
                     {
                         "name": operation.name,

@@ -12,7 +12,7 @@ import com.lynxus.platform.knowledge.KnowledgeWorkflowGateway;
 import com.lynxus.contracts.session.SessionContracts.AgentDecisionAction;
 import com.lynxus.contracts.runtime.WorkflowContracts.ResourceType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
-import com.lynxus.contracts.runtime.WorkflowContracts.ToolProviderType;
+import com.lynxus.contracts.runtime.WorkflowContracts.ToolConnectorType;
 import com.lynxus.contracts.runtime.WorkflowContracts.VersionStatus;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -1151,8 +1151,8 @@ public class CatalogService {
             new ResourceBlueprintDto(
                 ResourceType.TOOL,
                 "Tool",
-                "承载 agent 可调用的业务能力，并通过 provider 定义其 HTTP 或 MCP 实现方式。",
-                List.of("操作定义", "Provider 类型", "鉴权方式", "超时设置", "重试策略", "HTTP / MCP Provider 配置"),
+                "承载 agent 可调用的业务能力，并通过 connector 绑定接入实现和账号。",
+                List.of("操作定义", "Connector 类型", "Integration Account", "超时设置", "重试策略", "Connector 配置", "操作映射"),
                 defaultConfiguration(ResourceType.TOOL)
             ),
             new ResourceBlueprintDto(
@@ -2077,39 +2077,35 @@ public class CatalogService {
     }
 
     private ToolConfigDto defaultToolConfig() {
+        Map<String, Object> defaultConfig = new LinkedHashMap<>();
+        defaultConfig.put("baseUrl", "http://localhost:8081");
+        Map<String, Object> defaultMapping = new LinkedHashMap<>();
+        defaultMapping.put("method", "POST");
+        defaultMapping.put("path", "/tools/invoke");
+        defaultMapping.put("requestPlacement", "JSON_BODY");
         return new ToolConfigDto(
             List.of(new ToolOperationDto("invoke", "执行通用工具动作", "{\"input\":\"string\"}", "{\"type\":\"object\",\"required\":[\"output\"],\"properties\":{\"output\":{\"type\":\"string\"}},\"additionalProperties\":false}")),
-            ToolProviderType.HTTP,
-            "SERVICE_ACCOUNT",
-            15,
-            "NONE",
-            new HttpToolProviderConfigDto("http://localhost:8081/tools/invoke", "POST"),
-            null
+            new ToolConnectorConfigDto(
+                ToolConnectorType.SIMPLE_HTTP,
+                null,
+                15,
+                "NONE",
+                Map.copyOf(defaultConfig),
+                Map.of("invoke", Map.copyOf(defaultMapping))
+            )
         );
     }
 
     private ToolConfigDto normalizeToolConfig(ToolConfigDto configuration) {
         ToolConfigDto defaults = defaultToolConfig();
-        ToolProviderType providerType = configuration == null || configuration.providerType() == null ? defaults.providerType() : configuration.providerType();
         List<ToolOperationDto> operations = normalizeToolOperations(configuration == null ? null : configuration.operations());
         if (operations.isEmpty()) {
             operations = defaults.operations();
         }
-        HttpToolProviderConfigDto http = providerType == ToolProviderType.HTTP
-            ? normalizeHttpToolProvider(configuration == null ? null : configuration.http())
-            : null;
-        McpToolProviderConfigDto mcp = providerType == ToolProviderType.MCP
-            ? normalizeMcpToolProvider(configuration == null ? null : configuration.mcp(), operations)
-            : null;
 
         return new ToolConfigDto(
             List.copyOf(operations),
-            providerType,
-            configuration == null || configuration.authType() == null || configuration.authType().isBlank() ? defaults.authType() : configuration.authType(),
-            configuration == null || configuration.timeoutSeconds() <= 0 ? defaults.timeoutSeconds() : configuration.timeoutSeconds(),
-            configuration == null || configuration.retryPolicy() == null || configuration.retryPolicy().isBlank() ? defaults.retryPolicy() : configuration.retryPolicy(),
-            http,
-            mcp
+            normalizeToolConnector(configuration == null ? null : configuration.connector(), operations)
         );
     }
 
@@ -2136,28 +2132,49 @@ public class CatalogService {
         return List.copyOf(normalized);
     }
 
-    private HttpToolProviderConfigDto normalizeHttpToolProvider(HttpToolProviderConfigDto configuration) {
-        HttpToolProviderConfigDto defaults = defaultToolConfig().http();
-        return new HttpToolProviderConfigDto(
-            configuration == null || configuration.endpoint() == null || configuration.endpoint().isBlank() ? defaults.endpoint() : configuration.endpoint(),
-            configuration == null || configuration.method() == null || configuration.method().isBlank() ? defaults.method() : configuration.method()
-        );
-    }
-
-    private McpToolProviderConfigDto normalizeMcpToolProvider(McpToolProviderConfigDto configuration, List<ToolOperationDto> operations) {
-        Map<String, String> operationMappings = new LinkedHashMap<>();
-        Map<String, String> requestedMappings = configuration == null || configuration.operationMappings() == null
+    private ToolConnectorConfigDto normalizeToolConnector(ToolConnectorConfigDto configuration, List<ToolOperationDto> operations) {
+        ToolConnectorConfigDto defaults = defaultToolConfig().connector();
+        ToolConnectorType connectorType = configuration == null || configuration.connectorType() == null
+            ? defaults.connectorType()
+            : configuration.connectorType();
+        Map<String, Object> config = new LinkedHashMap<>(configuration == null || configuration.config() == null ? Map.of() : configuration.config());
+        if (connectorType == ToolConnectorType.SIMPLE_HTTP || connectorType == ToolConnectorType.BUSINESS_CODE_SECRET_HTTP) {
+            config.putIfAbsent("baseUrl", defaults.config().get("baseUrl"));
+        }
+        if (connectorType == ToolConnectorType.MCP) {
+            config.putIfAbsent("serverName", "default-mcp-server");
+            config.putIfAbsent("transport", "STREAMABLE_HTTP");
+            config.putIfAbsent("connectionUri", "http://localhost:8081/mcp");
+            config.putIfAbsent("namespace", "default.namespace");
+            config.putIfAbsent("heartbeatSeconds", 30);
+            config.putIfAbsent("internalAuthEnabled", false);
+        }
+        String accountId = normalizeOptionalText(configuration == null ? null : configuration.accountId());
+        if (connectorType == ToolConnectorType.BUSINESS_CODE_SECRET_HTTP && accountId.isBlank()) {
+            throw new IllegalArgumentException("BUSINESS_CODE_SECRET_HTTP connector requires accountId");
+        }
+        Map<String, Map<String, Object>> operationMappings = new LinkedHashMap<>();
+        Map<String, Map<String, Object>> requestedMappings = configuration == null || configuration.operationMappings() == null
             ? Map.of()
             : configuration.operationMappings();
         for (ToolOperationDto operation : operations) {
-            operationMappings.put(operation.name(), normalizeOptionalText(requestedMappings.getOrDefault(operation.name(), operation.name())));
+            Map<String, Object> mapping = new LinkedHashMap<>(requestedMappings.getOrDefault(operation.name(), Map.of()));
+            if (connectorType == ToolConnectorType.SIMPLE_HTTP || connectorType == ToolConnectorType.BUSINESS_CODE_SECRET_HTTP) {
+                mapping.putIfAbsent("method", "POST");
+                mapping.putIfAbsent("path", "/tools/" + operation.name());
+                mapping.putIfAbsent("requestPlacement", "JSON_BODY");
+            }
+            if (connectorType == ToolConnectorType.MCP) {
+                mapping.putIfAbsent("tool", operation.name());
+            }
+            operationMappings.put(operation.name(), Map.copyOf(mapping));
         }
-        return new McpToolProviderConfigDto(
-            configuration == null || configuration.serverName() == null || configuration.serverName().isBlank() ? "default-mcp-server" : configuration.serverName(),
-            configuration == null || configuration.transport() == null || configuration.transport().isBlank() ? "STREAMABLE_HTTP" : configuration.transport(),
-            configuration == null || configuration.connectionUri() == null || configuration.connectionUri().isBlank() ? "http://localhost:8081/mcp" : configuration.connectionUri(),
-            configuration == null || configuration.namespace() == null || configuration.namespace().isBlank() ? "default.namespace" : configuration.namespace(),
-            configuration == null || configuration.heartbeatSeconds() <= 0 ? 30 : configuration.heartbeatSeconds(),
+        return new ToolConnectorConfigDto(
+            connectorType,
+            accountId,
+            configuration == null || configuration.timeoutSeconds() <= 0 ? defaults.timeoutSeconds() : configuration.timeoutSeconds(),
+            configuration == null || configuration.retryPolicy() == null || configuration.retryPolicy().isBlank() ? defaults.retryPolicy() : configuration.retryPolicy(),
+            Map.copyOf(config),
             Map.copyOf(operationMappings)
         );
     }

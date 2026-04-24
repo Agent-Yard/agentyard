@@ -174,11 +174,16 @@ def _request_payload() -> dict:
                     "resourceName": "Ticket Tool",
                     "resourceVersionId": "tool-ver-1",
                     "resourceVersion": "1.0.0",
-                    "providerType": "HTTP",
-                    "authType": "SERVICE_ACCOUNT",
-                    "timeoutSeconds": 15,
-                    "retryPolicy": "NONE",
-                    "http": {"endpoint": "https://tool.example/invoke", "method": "POST"},
+                    "connector": {
+                        "connectorType": "SIMPLE_HTTP",
+                        "accountId": None,
+                        "timeoutSeconds": 15,
+                        "retryPolicy": "NONE",
+                        "config": {"baseUrl": "https://tool.example"},
+                        "operationMappings": {
+                            "create_ticket": {"method": "POST", "path": "/invoke", "requestPlacement": "JSON_BODY"}
+                        },
+                    },
                     "operations": [
                         {
                             "name": "create_ticket",

@@ -2,7 +2,7 @@ package com.lynxus.platform.catalog;
 
 import com.lynxus.contracts.runtime.WorkflowContracts.ResourceType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
-import com.lynxus.contracts.runtime.WorkflowContracts.ToolProviderType;
+import com.lynxus.contracts.runtime.WorkflowContracts.ToolConnectorType;
 import com.lynxus.contracts.runtime.WorkflowContracts.VersionStatus;
 import com.lynxus.contracts.session.SessionContracts.AgentDecisionAction;
 import com.lynxus.contracts.session.SessionContracts.PlaybookNodeType;
@@ -568,30 +568,19 @@ public final class CatalogDtos {
     ) {
     }
 
-    public record HttpToolProviderConfigDto(
-        String endpoint,
-        String method
-    ) {
-    }
-
-    public record McpToolProviderConfigDto(
-        String serverName,
-        String transport,
-        String connectionUri,
-        String namespace,
-        int heartbeatSeconds,
-        Map<String, String> operationMappings
+    public record ToolConnectorConfigDto(
+        ToolConnectorType connectorType,
+        String accountId,
+        int timeoutSeconds,
+        String retryPolicy,
+        Map<String, Object> config,
+        Map<String, Map<String, Object>> operationMappings
     ) {
     }
 
     public record ToolConfigDto(
         List<ToolOperationDto> operations,
-        ToolProviderType providerType,
-        String authType,
-        int timeoutSeconds,
-        String retryPolicy,
-        HttpToolProviderConfigDto http,
-        McpToolProviderConfigDto mcp
+        ToolConnectorConfigDto connector
     ) {
     }
 

@@ -70,6 +70,9 @@ lynxus:
     base-url: ${LYNXUS_KNOWLEDGE_SERVICE_BASE_URL:http://127.0.0.1:8091}
   channel-gateway:
     base-url: ${LYNXUS_CHANNEL_GATEWAY_BASE_URL:http://127.0.0.1:8082}
+  integration:
+    credentials:
+      encryption-key: ${LYNXUS_INTEGRATION_CREDENTIAL_ENCRYPTION_KEY:}
   internal-auth:
     token: ${LYNXUS_INTERNAL_AUTH_TOKEN}
   redis:

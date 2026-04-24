@@ -256,7 +256,7 @@ class SessionRuntimeServiceTest {
                 && startRequest.agents().getFirst().skills().size() == 1
                 && "退款技能".equals(startRequest.agents().getFirst().skills().getFirst().skillName())
                 && startRequest.agents().getFirst().tools().size() == 1
-                && "HTTP".equals(startRequest.agents().getFirst().tools().getFirst().providerType())
+                && "SIMPLE_HTTP".equals(startRequest.agents().getFirst().tools().getFirst().connector().connectorType())
                 && "rv-tool-1".equals(startRequest.agents().getFirst().tools().getFirst().resourceVersionId())
         ));
     }
@@ -610,12 +610,14 @@ class SessionRuntimeServiceTest {
                         com.lynxus.contracts.runtime.WorkflowContracts.ResourceType.TOOL,
                         new CatalogDtos.ToolConfigDto(
                             List.of(new CatalogDtos.ToolOperationDto("create_ticket", "创建工单", "{\"type\":\"object\"}", "{\"type\":\"object\"}")),
-                            com.lynxus.contracts.runtime.WorkflowContracts.ToolProviderType.HTTP,
-                            "SERVICE_ACCOUNT",
-                            15,
-                            "NONE",
-                            new CatalogDtos.HttpToolProviderConfigDto("https://tool.example/invoke", "POST"),
-                            null
+                            new CatalogDtos.ToolConnectorConfigDto(
+                                com.lynxus.contracts.runtime.WorkflowContracts.ToolConnectorType.SIMPLE_HTTP,
+                                null,
+                                15,
+                                "NONE",
+                                Map.of("baseUrl", "https://tool.example"),
+                                Map.of("create_ticket", Map.of("method", "POST", "path", "/invoke", "requestPlacement", "JSON_BODY"))
+                            )
                         ),
                         null,
                         null

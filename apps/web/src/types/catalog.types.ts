@@ -1,6 +1,6 @@
 export type Role = 'PLATFORM_ADMIN' | 'DOMAIN_ADMIN' | 'DEVELOPER' | 'BUSINESS_USER';
 export type ResourceType = 'TOOL' | 'LLM_MODEL' | 'SKILL';
-export type ToolProviderType = 'HTTP' | 'MCP';
+export type ToolConnectorType = 'SIMPLE_HTTP' | 'BUSINESS_CODE_SECRET_HTTP' | 'MCP';
 export type ShareScope = 'PRIVATE' | 'DOMAIN_SHARED';
 export type ResourceOwnerType = 'DOMAIN' | 'ASSISTANT';
 export type VersionStatus = 'DRAFT' | 'PUBLISHED';
@@ -305,28 +305,18 @@ export interface ToolOperation {
   outputSchema: string;
 }
 
-export interface HttpToolProviderConfig {
-  endpoint: string;
-  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'RPC';
-}
-
-export interface McpToolProviderConfig {
-  serverName: string;
-  transport: 'SSE' | 'STREAMABLE_HTTP' | 'STDIO';
-  connectionUri: string;
-  namespace: string;
-  heartbeatSeconds: number;
-  operationMappings: Record<string, string>;
+export interface ToolConnectorConfig {
+  connectorType: ToolConnectorType;
+  accountId?: string | null;
+  timeoutSeconds: number;
+  retryPolicy: string;
+  config: Record<string, unknown>;
+  operationMappings: Record<string, Record<string, unknown>>;
 }
 
 export interface ToolConfig {
   operations: ToolOperation[];
-  providerType: ToolProviderType;
-  authType: 'NONE' | 'API_KEY' | 'SERVICE_ACCOUNT' | 'OAUTH';
-  timeoutSeconds: number;
-  retryPolicy: string;
-  http?: HttpToolProviderConfig | null;
-  mcp?: McpToolProviderConfig | null;
+  connector: ToolConnectorConfig;
 }
 
 export interface LlmModelConfig {

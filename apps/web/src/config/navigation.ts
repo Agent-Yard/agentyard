@@ -7,6 +7,7 @@ export type PageKey =
   | 'playbook-editor'
   | 'knowledge-library'
   | 'resource-library'
+  | 'integration-account'
   | 'runtime';
 
 export type SectionKey = 'design' | 'build' | 'knowledge' | 'resource' | 'runtime-observe';
@@ -94,6 +95,13 @@ export const pageMeta: Record<PageKey, { label: string; title: string; subtitle:
     section: 'resource',
     path: `${consoleBasePath}/resources`,
   },
+  'integration-account': {
+    label: '接入账号',
+    title: 'Integration Account',
+    subtitle: '维护 Tool Connector 执行时使用的账号、配置和凭证状态。',
+    section: 'resource',
+    path: `${consoleBasePath}/integration-accounts`,
+  },
   runtime: {
     label: '会话运行',
     title: '运行时对话页',
@@ -139,6 +147,7 @@ export const menuItems = [
     label: sectionMeta.resource.label,
     children: [
       { key: 'resource-library', label: pageMeta['resource-library'].label },
+      { key: 'integration-account', label: pageMeta['integration-account'].label },
     ],
   },
   {

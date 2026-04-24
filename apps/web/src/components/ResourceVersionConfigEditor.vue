@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue';
-import type { ResourceType, ResourceVersionConfiguration } from '../types';
+import { computed, onMounted, ref, watch } from 'vue';
+import { api } from '../services/api';
+import type { IntegrationAccount, ResourceType, ResourceVersionConfiguration, ToolConnectorType } from '../types';
 
 const props = defineProps<{
   resourceType: ResourceType;
@@ -10,49 +11,55 @@ const props = defineProps<{
 
 const tool = computed(() => props.configuration.tool!);
 const toolOperations = computed(() => tool.value.operations);
+const connector = computed(() => tool.value.connector);
 const llmModel = computed(() => props.configuration.llmModel!);
 const skill = computed(() => props.configuration.skill!);
 const isOpenAiCompatible = computed(() => llmModel.value?.providerType === 'OPENAI_COMPATIBLE');
+const integrationAccounts = ref<IntegrationAccount[]>([]);
+const accountOptions = computed(() =>
+  integrationAccounts.value
+    .filter((account) => account.connectorType === connector.value?.connectorType && account.status === 'ACTIVE')
+    .map((account) => ({
+      label: account.credentialConfigured ? account.name : `${account.name}（未配置凭证）`,
+      value: account.id,
+    })),
+);
 
 function ensureConfigurationState(configuration: ResourceVersionConfiguration, resourceType: ResourceType) {
   if (resourceType === 'TOOL') {
     configuration.tool ??= {
       operations: [],
-      providerType: 'HTTP',
-      authType: 'SERVICE_ACCOUNT',
-      timeoutSeconds: 15,
-      retryPolicy: 'NONE',
-      http: {
-        endpoint: 'https://tool-gateway.internal/new-tool',
-        method: 'POST',
-      },
-      mcp: {
-        serverName: 'new-mcp-server',
-        transport: 'STREAMABLE_HTTP',
-        connectionUri: 'https://mcp-gateway.internal/new-server',
-        namespace: 'default.namespace',
-        heartbeatSeconds: 30,
+      connector: {
+        connectorType: 'SIMPLE_HTTP',
+        accountId: null,
+        timeoutSeconds: 15,
+        retryPolicy: 'NONE',
+        config: {
+          baseUrl: 'https://tool-gateway.internal',
+        },
         operationMappings: {},
       },
     };
     configuration.tool.operations ??= [];
-    configuration.tool.mcp ??= {
-      serverName: 'new-mcp-server',
-      transport: 'STREAMABLE_HTTP',
-      connectionUri: 'https://mcp-gateway.internal/new-server',
-      namespace: 'default.namespace',
-      heartbeatSeconds: 30,
+    configuration.tool.connector ??= {
+      connectorType: 'SIMPLE_HTTP',
+      accountId: null,
+      timeoutSeconds: 15,
+      retryPolicy: 'NONE',
+      config: {
+        baseUrl: 'https://tool-gateway.internal',
+      },
       operationMappings: {},
     };
-    configuration.tool.http ??= {
-      endpoint: 'https://tool-gateway.internal/new-tool',
-      method: 'POST',
-    };
-    configuration.tool.mcp.operationMappings ??= {};
+    configuration.tool.connector.config ??= {};
+    configuration.tool.connector.operationMappings ??= {};
+    if (configuration.tool.connector.connectorType === 'MCP') {
+      configuration.tool.connector.config.internalAuthEnabled ??= false;
+    }
     for (const operation of configuration.tool.operations) {
       const operationName = operation.name?.trim();
-      if (operationName && !configuration.tool.mcp.operationMappings[operationName]) {
-        configuration.tool.mcp.operationMappings[operationName] = operationName;
+      if (operationName && !configuration.tool.connector.operationMappings[operationName]) {
+        configuration.tool.connector.operationMappings[operationName] = defaultOperationMapping(configuration.tool.connector.connectorType, operationName);
       }
     }
     return;
@@ -84,6 +91,14 @@ watch(
   { immediate: true, deep: true },
 );
 
+onMounted(async () => {
+  try {
+    integrationAccounts.value = await api.listIntegrationAccounts();
+  } catch {
+    integrationAccounts.value = [];
+  }
+});
+
 function addToolOperation() {
   toolOperations.value.push({
     name: '',
@@ -96,6 +111,68 @@ function addToolOperation() {
 function removeToolOperation(index: number) {
   toolOperations.value.splice(index, 1);
 }
+
+function defaultOperationMapping(connectorType: ToolConnectorType, operationName: string): Record<string, unknown> {
+  if (connectorType === 'MCP') {
+    return { tool: operationName };
+  }
+  return {
+    method: 'POST',
+    path: `/tools/${operationName || 'invoke'}`,
+    requestPlacement: 'JSON_BODY',
+  };
+}
+
+function onConnectorTypeChange(value: ToolConnectorType) {
+  if (!connector.value) {
+    return;
+  }
+  connector.value.connectorType = value;
+  connector.value.accountId = value === 'BUSINESS_CODE_SECRET_HTTP' ? connector.value.accountId : null;
+  connector.value.config = value === 'MCP'
+    ? {
+        serverName: 'new-mcp-server',
+        transport: 'STREAMABLE_HTTP',
+        connectionUri: 'https://mcp-gateway.internal/new-server',
+        namespace: 'default.namespace',
+        heartbeatSeconds: 30,
+        internalAuthEnabled: false,
+      }
+    : {
+        baseUrl: 'https://tool-gateway.internal',
+      };
+  connector.value.operationMappings = Object.fromEntries(
+    toolOperations.value
+      .map((operation) => operation.name?.trim())
+      .filter(Boolean)
+      .map((operationName) => [operationName, defaultOperationMapping(value, operationName!)]),
+  );
+}
+
+function operationMapping(operationName: string) {
+  const normalizedName = operationName?.trim();
+  if (!connector.value || !normalizedName) {
+    return {};
+  }
+  connector.value.operationMappings[normalizedName] ??= defaultOperationMapping(connector.value.connectorType, normalizedName);
+  return connector.value.operationMappings[normalizedName];
+}
+
+function setOperationMappingField(operationName: string, key: string, value: unknown) {
+  const normalizedName = operationName?.trim();
+  if (!connector.value || !normalizedName) {
+    return;
+  }
+  const mapping = operationMapping(normalizedName);
+  mapping[key] = value;
+}
+
+function setConnectorConfigField(key: string, value: unknown) {
+  if (!connector.value) {
+    return;
+  }
+  connector.value.config[key] = value;
+}
 </script>
 
 <template>
@@ -104,31 +181,31 @@ function removeToolOperation(index: number) {
       type="info"
       show-icon
       style="margin-bottom: 16px"
-      message="Tool 负责定义能力契约，Provider 负责定义接入方式"
-      description="建议先稳定操作名和输入输出 Schema，再补齐 HTTP 或 MCP provider 的连接信息。"
+      message="Tool 负责定义能力契约，Connector 负责定义接入方式"
+      description="建议先稳定操作名和输入输出 Schema，再补齐 Connector 的账号、连接信息和操作映射。"
     />
     <a-row :gutter="[16, 16]">
       <a-col :span="12">
-        <a-form-item label="Provider 类型">
+        <a-form-item label="Connector 类型">
           <a-select
-            v-model:value="tool.providerType"
+            :value="connector.connectorType"
             :options="[
-              { label: 'HTTP', value: 'HTTP' },
+              { label: 'Simple HTTP', value: 'SIMPLE_HTTP' },
+              { label: 'Business Code Secret HTTP', value: 'BUSINESS_CODE_SECRET_HTTP' },
               { label: 'MCP', value: 'MCP' },
             ]"
+            @update:value="onConnectorTypeChange"
           />
         </a-form-item>
       </a-col>
       <a-col :span="12">
-        <a-form-item label="鉴权方式">
+        <a-form-item label="Integration Account">
           <a-select
-            v-model:value="tool.authType"
-            :options="[
-              { label: '无鉴权', value: 'NONE' },
-              { label: 'API Key', value: 'API_KEY' },
-              { label: '服务账号', value: 'SERVICE_ACCOUNT' },
-              { label: 'OAuth', value: 'OAUTH' },
-            ]"
+            v-model:value="connector.accountId"
+            allow-clear
+            :disabled="connector.connectorType !== 'BUSINESS_CODE_SECRET_HTTP'"
+            :options="accountOptions"
+            placeholder="选择账号"
           />
         </a-form-item>
       </a-col>
@@ -137,12 +214,12 @@ function removeToolOperation(index: number) {
     <a-row :gutter="[16, 16]">
       <a-col :span="12">
         <a-form-item label="超时秒数">
-          <a-input-number v-model:value="tool.timeoutSeconds" :min="1" style="width: 100%" />
+          <a-input-number v-model:value="connector.timeoutSeconds" :min="1" style="width: 100%" />
         </a-form-item>
       </a-col>
       <a-col :span="12">
         <a-form-item label="重试策略">
-          <a-input v-model:value="tool.retryPolicy" placeholder="例如：NONE / EXPONENTIAL_BACKOFF" />
+          <a-input v-model:value="connector.retryPolicy" placeholder="例如：NONE / EXPONENTIAL_BACKOFF" />
         </a-form-item>
       </a-col>
     </a-row>
@@ -184,20 +261,31 @@ function removeToolOperation(index: number) {
       </a-space>
     </a-card>
 
-    <a-divider>Provider 配置</a-divider>
+    <a-divider>Connector 配置</a-divider>
 
-    <template v-if="tool.providerType === 'HTTP'">
+    <template v-if="connector.connectorType !== 'MCP'">
       <a-row :gutter="[16, 16]">
-        <a-col :span="16">
-          <a-form-item label="HTTP Endpoint">
-            <a-input v-model:value="tool.http!.endpoint" />
+        <a-col :span="12">
+          <a-form-item label="Base URL">
+            <a-input
+              :value="String(connector.config.baseUrl ?? '')"
+              @update:value="(value: string) => setConnectorConfigField('baseUrl', value)"
+            />
           </a-form-item>
         </a-col>
-        <a-col :span="8">
-          <a-form-item label="Method">
-            <a-select
-              v-model:value="tool.http!.method"
-              :options="['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((item) => ({ label: item, value: item }))"
+        <a-col v-if="connector.connectorType === 'BUSINESS_CODE_SECRET_HTTP'" :span="6">
+          <a-form-item label="Business Code 字段">
+            <a-input
+              :value="String(connector.config.businessCodeField ?? 'businessCode')"
+              @update:value="(value: string) => setConnectorConfigField('businessCodeField', value)"
+            />
+          </a-form-item>
+        </a-col>
+        <a-col v-if="connector.connectorType === 'BUSINESS_CODE_SECRET_HTTP'" :span="6">
+          <a-form-item label="Encrypted 字段">
+            <a-input
+              :value="String(connector.config.encryptedField ?? 'encrypted')"
+              @update:value="(value: string) => setConnectorConfigField('encryptedField', value)"
             />
           </a-form-item>
         </a-col>
@@ -208,17 +296,21 @@ function removeToolOperation(index: number) {
       <a-row :gutter="[16, 16]">
         <a-col :span="12">
           <a-form-item label="MCP 服务名">
-            <a-input v-model:value="tool.mcp!.serverName" />
+            <a-input
+              :value="String(connector.config.serverName ?? '')"
+              @update:value="(value: string) => setConnectorConfigField('serverName', value)"
+            />
           </a-form-item>
         </a-col>
         <a-col :span="12">
           <a-form-item label="Transport">
             <a-select
-              v-model:value="tool.mcp!.transport"
+              :value="String(connector.config.transport ?? 'STREAMABLE_HTTP')"
               :options="[
                 { label: 'STREAMABLE_HTTP', value: 'STREAMABLE_HTTP' },
                 { label: 'SSE', value: 'SSE' },
               ]"
+              @update:value="(value: string) => setConnectorConfigField('transport', value)"
             />
           </a-form-item>
         </a-col>
@@ -226,16 +318,84 @@ function removeToolOperation(index: number) {
       <a-row :gutter="[16, 16]">
         <a-col :span="16">
           <a-form-item label="连接地址">
-            <a-input v-model:value="tool.mcp!.connectionUri" />
+            <a-input
+              :value="String(connector.config.connectionUri ?? '')"
+              @update:value="(value: string) => setConnectorConfigField('connectionUri', value)"
+            />
           </a-form-item>
         </a-col>
         <a-col :span="8">
           <a-form-item label="命名空间">
-            <a-input v-model:value="tool.mcp!.namespace" />
+            <a-input
+              :value="String(connector.config.namespace ?? '')"
+              @update:value="(value: string) => setConnectorConfigField('namespace', value)"
+            />
+          </a-form-item>
+        </a-col>
+        <a-col :span="8">
+          <a-form-item label="内部鉴权">
+            <a-switch
+              :checked="Boolean(connector.config.internalAuthEnabled)"
+              @update:checked="(value: boolean) => setConnectorConfigField('internalAuthEnabled', value)"
+            />
           </a-form-item>
         </a-col>
       </a-row>
     </template>
+
+    <a-card size="small" title="操作映射">
+      <a-empty v-if="!toolOperations.length" description="新增操作后配置 Connector 映射。" />
+      <a-space v-else direction="vertical" style="width: 100%" size="middle">
+        <a-row v-for="operation in toolOperations" :key="operation.name || 'blank-operation'" :gutter="[16, 16]">
+          <a-col :span="6">
+            <a-form-item label="操作">
+              <a-input :value="operation.name" disabled />
+            </a-form-item>
+          </a-col>
+          <template v-if="connector.connectorType === 'MCP'">
+            <a-col :span="18">
+              <a-form-item label="Remote Tool">
+                <a-input
+                  :value="String(operationMapping(operation.name).tool ?? operation.name)"
+                  @update:value="(value: string) => setOperationMappingField(operation.name, 'tool', value)"
+                />
+              </a-form-item>
+            </a-col>
+          </template>
+          <template v-else>
+            <a-col :span="5">
+              <a-form-item label="Method">
+                <a-select
+                  :value="String(operationMapping(operation.name).method ?? 'POST')"
+                  :options="['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((item) => ({ label: item, value: item }))"
+                  @update:value="(value: string) => setOperationMappingField(operation.name, 'method', value)"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="Path">
+                <a-input
+                  :value="String(operationMapping(operation.name).path ?? '')"
+                  @update:value="(value: string) => setOperationMappingField(operation.name, 'path', value)"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="5">
+              <a-form-item label="入参位置">
+                <a-select
+                  :value="String(operationMapping(operation.name).requestPlacement ?? 'JSON_BODY')"
+                  :options="[
+                    { label: 'JSON_BODY', value: 'JSON_BODY' },
+                    { label: 'QUERY', value: 'QUERY' },
+                  ]"
+                  @update:value="(value: string) => setOperationMappingField(operation.name, 'requestPlacement', value)"
+                />
+              </a-form-item>
+            </a-col>
+          </template>
+        </a-row>
+      </a-space>
+    </a-card>
   </template>
 
   <template v-else-if="resourceType === 'LLM_MODEL'">

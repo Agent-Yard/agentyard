@@ -68,18 +68,13 @@ class ToolOperationDescriptor(BaseModel):
     outputSchema: str = ""
 
 
-class HttpToolProviderDescriptor(BaseModel):
-    endpoint: str
-    method: str = "POST"
-
-
-class McpToolProviderDescriptor(BaseModel):
-    serverName: str
-    transport: str
-    connectionUri: str
-    namespace: str = ""
-    heartbeatSeconds: int = 30
-    operationMappings: dict[str, str] = Field(default_factory=dict)
+class ToolConnectorDescriptor(BaseModel):
+    connectorType: str
+    accountId: str | None = None
+    timeoutSeconds: int = 15
+    retryPolicy: str = "NONE"
+    config: dict[str, Any] = Field(default_factory=dict)
+    operationMappings: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 class ToolDescriptor(BaseModel):
@@ -88,12 +83,7 @@ class ToolDescriptor(BaseModel):
     resourceVersionId: str
     resourceVersion: str
     operations: list[ToolOperationDescriptor] = Field(default_factory=list)
-    providerType: str
-    authType: str = ""
-    timeoutSeconds: int = 15
-    retryPolicy: str = "NONE"
-    http: HttpToolProviderDescriptor | None = None
-    mcp: McpToolProviderDescriptor | None = None
+    connector: ToolConnectorDescriptor | None = None
 
 class PlaybookConfig(BaseModel):
     playbookId: str

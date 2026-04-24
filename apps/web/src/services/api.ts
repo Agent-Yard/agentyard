@@ -14,6 +14,7 @@ import type {
   CreateDomainPayload,
   CreateKnowledgeBasePayload,
   CreateKnowledgeReleasePayload,
+  CreateIntegrationAccountPayload,
   CreatePlaybookPayload,
   CreateResourcePayload,
   CreateResourceVersionPayload,
@@ -32,6 +33,7 @@ import type {
   KnowledgeRelease,
   KnowledgeUploadCompletion,
   KnowledgeUploadSession,
+  IntegrationAccount,
   LogoutResponse,
   ObjectReferenceAnalysis,
   Playbook,
@@ -52,6 +54,7 @@ import type {
   UpdateChannelAccountPayload,
   UpdateDomainPayload,
   UpdateKnowledgeBasePayload,
+  UpdateIntegrationAccountPayload,
   UpdatePlaybookPayload,
   UpdateResourcePayload,
   UpdateResourceVersionPayload,
@@ -191,6 +194,12 @@ export const api = {
     request<ChannelInboundEvent[]>(`/channel-admin/accounts/${accountId}/inbound-events`),
   listChannelOutboundDeliveries: (accountId: string) =>
     request<ChannelOutboundDelivery[]>(`/channel-admin/accounts/${accountId}/outbound-deliveries`),
+  listIntegrationAccounts: () => request<IntegrationAccount[]>('/integration/accounts'),
+  getIntegrationAccount: (accountId: string) => request<IntegrationAccount>(`/integration/accounts/${accountId}`),
+  createIntegrationAccount: (payload: CreateIntegrationAccountPayload) =>
+    request<IntegrationAccount>('/integration/accounts', jsonOptions('POST', payload)),
+  updateIntegrationAccount: (accountId: string, payload: UpdateIntegrationAccountPayload) =>
+    request<IntegrationAccount>(`/integration/accounts/${accountId}`, jsonOptions('PUT', payload)),
   getObjectReferenceAnalysis: (objectType: ReferenceObjectType, objectId: string) =>
     request<ObjectReferenceAnalysis>(`/catalog/references/${objectType}/${objectId}`),
   getDeletionImpactPreview: (objectType: ReferenceObjectType, objectId: string) =>

@@ -10,10 +10,8 @@ import com.lynxus.contracts.session.SessionContracts.ExternalCallbackSignal;
 import com.lynxus.contracts.session.SessionContracts.EndHumanHandoffSignal;
 import com.lynxus.contracts.session.SessionContracts.HumanResumeSignal;
 import com.lynxus.contracts.session.SessionContracts.HumanOperatorReplySignal;
-import com.lynxus.contracts.session.SessionContracts.HttpToolProviderDescriptor;
 import com.lynxus.contracts.session.SessionContracts.KnowledgeBindingDescriptor;
 import com.lynxus.contracts.session.SessionContracts.LlmModelDescriptor;
-import com.lynxus.contracts.session.SessionContracts.McpToolProviderDescriptor;
 import com.lynxus.contracts.session.SessionContracts.SessionMessageDeliveryStatus;
 import com.lynxus.contracts.session.SessionContracts.SessionMessageInput;
 import com.lynxus.contracts.session.SessionContracts.SessionOwnerPolicy;
@@ -22,6 +20,7 @@ import com.lynxus.contracts.session.SessionContracts.SessionStartRequest;
 import com.lynxus.contracts.session.SessionContracts.SessionUserMessageUpdateResult;
 import com.lynxus.contracts.session.SessionContracts.SkillDescriptor;
 import com.lynxus.contracts.session.SessionContracts.ToolDescriptor;
+import com.lynxus.contracts.session.SessionContracts.ToolConnectorDescriptor;
 import com.lynxus.contracts.session.SessionContracts.ToolOperationDescriptor;
 import com.lynxus.contracts.session.SessionContracts.UserMessage;
 import com.lynxus.contracts.session.SessionContracts.AssistantSessionConfig;
@@ -29,12 +28,11 @@ import com.lynxus.platform.catalog.CatalogDtos.AssistantDto;
 import com.lynxus.platform.catalog.CatalogDtos.AssistantReleaseAgentDto;
 import com.lynxus.platform.catalog.CatalogDtos.AssistantReleaseDto;
 import com.lynxus.platform.catalog.CatalogDtos.AssistantReleaseResourceDto;
-import com.lynxus.platform.catalog.CatalogDtos.HttpToolProviderConfigDto;
 import com.lynxus.platform.catalog.CatalogDtos.KnowledgeBindingSnapshotDto;
 import com.lynxus.platform.catalog.CatalogDtos.LlmModelConfigDto;
-import com.lynxus.platform.catalog.CatalogDtos.McpToolProviderConfigDto;
 import com.lynxus.platform.catalog.CatalogDtos.SkillConfigDto;
 import com.lynxus.platform.catalog.CatalogDtos.ToolConfigDto;
+import com.lynxus.platform.catalog.CatalogDtos.ToolConnectorConfigDto;
 import com.lynxus.platform.catalog.CatalogDtos.ToolOperationDto;
 import com.lynxus.platform.catalog.CatalogService;
 import com.lynxus.platform.shared.ConflictException;
@@ -420,12 +418,7 @@ public class SessionRuntimeService {
             resource.resourceVersionId(),
             resource.resourceVersion(),
             tool.operations() == null ? List.of() : tool.operations().stream().map(this::toToolOperationDescriptor).toList(),
-            tool.providerType() == null ? null : tool.providerType().name(),
-            tool.authType(),
-            tool.timeoutSeconds(),
-            tool.retryPolicy(),
-            toHttpToolProviderDescriptor(tool.http()),
-            toMcpToolProviderDescriptor(tool.mcp())
+            toToolConnectorDescriptor(tool.connector())
         );
     }
 
@@ -438,24 +431,17 @@ public class SessionRuntimeService {
         );
     }
 
-    private HttpToolProviderDescriptor toHttpToolProviderDescriptor(HttpToolProviderConfigDto http) {
-        if (http == null) {
+    private ToolConnectorDescriptor toToolConnectorDescriptor(ToolConnectorConfigDto connector) {
+        if (connector == null) {
             return null;
         }
-        return new HttpToolProviderDescriptor(http.endpoint(), http.method());
-    }
-
-    private McpToolProviderDescriptor toMcpToolProviderDescriptor(McpToolProviderConfigDto mcp) {
-        if (mcp == null) {
-            return null;
-        }
-        return new McpToolProviderDescriptor(
-            mcp.serverName(),
-            mcp.transport(),
-            mcp.connectionUri(),
-            mcp.namespace(),
-            mcp.heartbeatSeconds(),
-            mcp.operationMappings()
+        return new ToolConnectorDescriptor(
+            connector.connectorType() == null ? null : connector.connectorType().name(),
+            connector.accountId(),
+            connector.timeoutSeconds(),
+            connector.retryPolicy(),
+            connector.config(),
+            connector.operationMappings()
         );
     }
 
