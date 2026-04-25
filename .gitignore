@@ -37,6 +37,8 @@ data/
 .env.local
 .env.dev
 .env.dev.local
+.env.test
+.env.test.local
 
 output/
 

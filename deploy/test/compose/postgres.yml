@@ -1,0 +1,48 @@
+name: lynxus-test-postgres
+
+services:
+  postgres:
+    image: ${LYNXUS_IMAGE_POSTGRES:?LYNXUS_IMAGE_POSTGRES is required}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: ${LYNXUS_POSTGRES_ADMIN_USER:?LYNXUS_POSTGRES_ADMIN_USER is required}
+      POSTGRES_PASSWORD: ${LYNXUS_POSTGRES_ADMIN_PASSWORD:?LYNXUS_POSTGRES_ADMIN_PASSWORD is required}
+    ports:
+      - "${LYNXUS_POSTGRES_BIND_ADDRESS:-0.0.0.0}:${LYNXUS_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$$POSTGRES_USER" -d postgres
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  postgres-bootstrap:
+    image: ${LYNXUS_IMAGE_POSTGRES_BOOTSTRAP:?LYNXUS_IMAGE_POSTGRES_BOOTSTRAP is required}
+    restart: "no"
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${LYNXUS_POSTGRES_ADMIN_USER:?LYNXUS_POSTGRES_ADMIN_USER is required}
+      POSTGRES_PASSWORD: ${LYNXUS_POSTGRES_ADMIN_PASSWORD:?LYNXUS_POSTGRES_ADMIN_PASSWORD is required}
+      LYNXUS_APP_DATABASE_USER: ${SPRING_DATASOURCE_USERNAME:?SPRING_DATASOURCE_USERNAME is required}
+      LYNXUS_APP_DATABASE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:?SPRING_DATASOURCE_PASSWORD is required}
+      LYNXUS_TEMPORAL_DATABASE_USER: ${LYNXUS_TEMPORAL_POSTGRES_USER:?LYNXUS_TEMPORAL_POSTGRES_USER is required}
+      LYNXUS_TEMPORAL_DATABASE_PASSWORD: ${LYNXUS_TEMPORAL_POSTGRES_PASSWORD:?LYNXUS_TEMPORAL_POSTGRES_PASSWORD is required}
+      LYNXUS_CORE_DATABASE: ${LYNXUS_CORE_DATABASE:-lynxus_core}
+      LYNXUS_KNOWLEDGE_DATABASE: ${LYNXUS_KNOWLEDGE_DATABASE:-lynxus_knowledge}
+      LYNXUS_TEMPORAL_DATABASE: ${LYNXUS_TEMPORAL_DATABASE:-temporal}
+      LYNXUS_TEMPORAL_VISIBILITY_DATABASE: ${LYNXUS_TEMPORAL_VISIBILITY_DATABASE:-temporal_visibility}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../../common/postgres-bootstrap:/bootstrap:ro
+    entrypoint:
+      - /bin/bash
+      - /bootstrap/init-databases.sh
+
+volumes:
+  postgres_data:

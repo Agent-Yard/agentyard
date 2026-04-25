@@ -1,47 +1,78 @@
 package com.lynxus.shared.redis;
 
 import com.lynxus.contracts.runtime.SharedStateKeyspace;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 @Component
 public class RedisKeyspace {
+    private static final String DEFAULT_ROOT_PREFIX = "lynxus";
+
+    private final String rootPrefix;
+
+    public RedisKeyspace() {
+        this(DEFAULT_ROOT_PREFIX);
+    }
+
+    public RedisKeyspace(@Value("${lynxus.redis.key-prefix:lynxus}") String rootPrefix) {
+        this.rootPrefix = normalizeRootPrefix(rootPrefix);
+    }
+
     public String lock(String domain, String key) {
-        return SharedStateKeyspace.lock(domain, key);
+        return qualify(SharedStateKeyspace.lock(domain, key));
     }
 
     public String idempotency(String domain, String key) {
-        return SharedStateKeyspace.idempotency(domain, key);
+        return qualify(SharedStateKeyspace.idempotency(domain, key));
     }
 
     public String sseEvents(String sessionId) {
-        return SharedStateKeyspace.sseEvents(sessionId);
+        return qualify(SharedStateKeyspace.sseEvents(sessionId));
     }
 
     public String sseEventDedup(String sessionId, String eventId) {
-        return SharedStateKeyspace.sseEventDedup(sessionId, eventId);
+        return qualify(SharedStateKeyspace.sseEventDedup(sessionId, eventId));
     }
 
     public String sseChannelSessionChanged() {
-        return SharedStateKeyspace.sseChannelSessionChanged();
+        return qualify(SharedStateKeyspace.sseChannelSessionChanged());
     }
 
     public String sseChannelSessionUpdated() {
-        return SharedStateKeyspace.sseChannelSessionUpdated();
+        return qualify(SharedStateKeyspace.sseChannelSessionUpdated());
     }
 
     public String privacySessionSummary(String sessionId) {
-        return SharedStateKeyspace.privacySessionSummary(sessionId);
+        return qualify(SharedStateKeyspace.privacySessionSummary(sessionId));
     }
 
     public String catalogInvalidationChannel() {
-        return SharedStateKeyspace.catalogInvalidationChannel();
+        return qualify(SharedStateKeyspace.catalogInvalidationChannel());
     }
 
     public String knowledgeInvalidationChannel() {
-        return SharedStateKeyspace.knowledgeInvalidationChannel();
+        return qualify(SharedStateKeyspace.knowledgeInvalidationChannel());
     }
 
     public String httpSessionNamespace() {
-        return SharedStateKeyspace.httpSessionNamespace();
+        return qualify(SharedStateKeyspace.httpSessionNamespace());
+    }
+
+    private String qualify(String key) {
+        if (DEFAULT_ROOT_PREFIX.equals(rootPrefix)) {
+            return key;
+        }
+        if (key.startsWith(DEFAULT_ROOT_PREFIX + ":")) {
+            return rootPrefix + key.substring(DEFAULT_ROOT_PREFIX.length());
+        }
+        return rootPrefix + ":" + key;
+    }
+
+    private static String normalizeRootPrefix(String value) {
+        String normalized = value == null ? "" : value.trim();
+        while (normalized.endsWith(":")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized.isBlank() ? DEFAULT_ROOT_PREFIX : normalized;
     }
 }

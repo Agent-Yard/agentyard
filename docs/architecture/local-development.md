@@ -2,7 +2,7 @@
 
 ## 依赖服务
 
-`infra/local/docker-compose.yml` 包含：
+`deploy/local/docker-compose.yml` 包含：
 
 - PostgreSQL
 - PostgreSQL bootstrap 初始化器

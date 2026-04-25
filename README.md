@@ -47,9 +47,11 @@ packages/
   persistence-jvm/ Shared JVM PostgreSQL persistence layer
   python-common/ Shared Python utilities
   shared-redis-jvm/ Shared JVM Redis keyspace / lock / pubsub layer
-infra/
+deploy/
+  common/      Shared deploy/runtime materials
   local/       Docker Compose for local development
   dev/         Docker Compose for persistent development environment
+  test/        Modular test deployment templates
 scripts/       Startup wrappers and env loading
 docs/
   architecture/ current architecture and startup notes
@@ -83,7 +85,7 @@ docs/
 ### 1. 启动本地依赖
 
 ```bash
-cd infra/local
+cd deploy/local
 docker compose up -d
 ```
 

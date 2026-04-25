@@ -1,0 +1,10 @@
+name: lynxus-test-temporal-ui
+
+services:
+  temporal-ui:
+    image: ${LYNXUS_IMAGE_TEMPORAL_UI:?LYNXUS_IMAGE_TEMPORAL_UI is required}
+    restart: unless-stopped
+    environment:
+      TEMPORAL_ADDRESS: ${LYNXUS_TEMPORAL_UI_TARGET:?LYNXUS_TEMPORAL_UI_TARGET is required}
+    ports:
+      - "${LYNXUS_TEMPORAL_UI_BIND_ADDRESS:-127.0.0.1}:${LYNXUS_TEMPORAL_UI_PORT:-8088}:8080"

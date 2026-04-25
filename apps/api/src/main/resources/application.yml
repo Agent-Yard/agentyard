@@ -73,6 +73,7 @@ lynxus:
     token: ${LYNXUS_INTERNAL_AUTH_TOKEN}
   redis:
     health-check-enabled: ${LYNXUS_REDIS_HEALTH_CHECK_ENABLED:true}
+    key-prefix: ${LYNXUS_REDIS_KEY_PREFIX:lynxus}
   shared-state:
     instance-id: ${LYNXUS_INSTANCE_ID:}
     lock-ttl: ${LYNXUS_SHARED_STATE_LOCK_TTL:10s}

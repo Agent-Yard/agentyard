@@ -15,10 +15,11 @@ packages/
   persistence-jvm/    JVM 侧 PostgreSQL 持久化基座与 jOOQ schema
   python-common/      Python 服务共享工具库
   shared-redis-jvm/   JVM 侧共享 Redis keyspace / lock / pubsub / codec
-infra/
-  common/             local / dev 共享的依赖初始化脚本与网关配置
+deploy/
+  common/             local / dev / test / prd 可共享的无密钥运行材料
   local/              本机联调 Docker Compose
   dev/                开发服务器常驻 Docker Compose
+  test/               测试环境分模块发布模板
 scripts/
   local/              本地源码直跑脚本
   dev/                开发服务器源码直跑脚本

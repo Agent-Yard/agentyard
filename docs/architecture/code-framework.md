@@ -31,8 +31,10 @@
 - `packages/contracts`：TypeScript 合同类型与 OpenAPI 文档
 - `packages/python-common`：Python 服务共享基础模块
 - `scripts`：本地开发启动脚本与环境变量装载
-- `infra/common`：local / dev compose 共享的依赖初始化脚本和网关配置
-- `infra/local`：本地 Docker 依赖
+- `deploy/common`：local / dev / test / prd 可共享的无密钥运行材料
+- `deploy/local`：本地 Docker 依赖
+- `deploy/dev`：共享开发服务器一体化编排
+- `deploy/test`：测试环境分模块发布模板
 
 当前仓库的构建方式是混合式的：
 

@@ -34,8 +34,8 @@
 - `apps/agent-runtime`
 - `apps/knowledge-service`
 - `apps/web`
-- `infra/local`
-- `infra/dev`
+- `deploy/local`
+- `deploy/dev`
 - 共享依赖：PostgreSQL、Redis、Temporal、S3-compatible object storage（本地/dev 为 MinIO）
 
 本文不覆盖：
@@ -157,7 +157,7 @@
 
 虽然问题不少，但并不是从零开始。当前仓库已经具备以下前提：
 
-1. `infra/local` 和 `infra/dev` 都已提供 Redis
+1. `deploy/local` 和 `deploy/dev` 都已提供 Redis
 2. API / Worker / Agent Runtime 已统一接入 `LYNXUS_REDIS_*`
 3. Session 运行态、平台用户、catalog、knowledge 元数据已经落 PostgreSQL
 4. Worker 的工作流执行边界已经收敛到 Temporal
@@ -474,10 +474,10 @@ TTL 原则：
 
 - [main.py](/Users/eric/projects/lynxus/apps/knowledge-service/lynxus_knowledge_service/main.py)
 
-#### `infra`
+#### `deploy`
 
-- [infra/dev/docker-compose.yml](/Users/eric/projects/lynxus/infra/dev/docker-compose.yml)
-- [infra/local/docker-compose.yml](/Users/eric/projects/lynxus/infra/local/docker-compose.yml)
+- [deploy/dev/docker-compose.yml](/Users/eric/projects/lynxus/deploy/dev/docker-compose.yml)
+- [deploy/local/docker-compose.yml](/Users/eric/projects/lynxus/deploy/local/docker-compose.yml)
 
 ## 9. 测试与验收矩阵
 

@@ -18,4 +18,13 @@ class RedisKeyspaceTest {
         assertEquals("lynxus:privacy:session:session-1:summary", keyspace.privacySessionSummary("session-1"));
         assertEquals("lynxus:session:http", keyspace.httpSessionNamespace());
     }
+
+    @Test
+    void shouldApplyEnvironmentRootPrefix() {
+        RedisKeyspace testKeyspace = new RedisKeyspace("lynxus:test");
+
+        assertEquals("lynxus:test:lock:session:session-1", testKeyspace.lock("session", "session-1"));
+        assertEquals("lynxus:test:sse:channel:session-changed", testKeyspace.sseChannelSessionChanged());
+        assertEquals("lynxus:test:cache:invalidate:knowledge", testKeyspace.knowledgeInvalidationChannel());
+    }
 }

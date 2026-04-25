@@ -53,9 +53,9 @@
 
 新增编排文件：
 
-- [infra/dev/docker-compose.yml](/Users/eric/projects/lynxus/infra/dev/docker-compose.yml)
+- [docker-compose.yml](/Users/eric/projects/lynxus/deploy/dev/docker-compose.yml)
 
-其中 Web 容器通过 [infra/dev/web.conf](/Users/eric/projects/lynxus/infra/dev/web.conf) 反向代理：
+其中 Web 容器通过 [web.conf](/Users/eric/projects/lynxus/deploy/dev/web.conf) 反向代理：
 
 - `/api`
 - `/oauth2`
@@ -65,7 +65,7 @@
 
 `pnpm dev` 下的 Web 虽然是 `vite build` 后由 nginx 托管，但它仍然属于“开发部署环境”。
 前端环境语义不应依赖 `import.meta.env.DEV`；当前统一预留四个环境值：`local`、`dev`、`test`、`prd`。
-其中 `infra/dev` 会显式向 Web 传入 `VITE_DEPLOY_ENV=dev`，不要求你在 `.env.dev` 里额外声明。
+其中 `deploy/dev` 会显式向 Web 传入 `VITE_DEPLOY_ENV=dev`，不要求你在 `.env.dev` 里额外声明。
 
 ## 源码直跑
 

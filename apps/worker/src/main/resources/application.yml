@@ -43,6 +43,7 @@ lynxus:
     token: ${LYNXUS_INTERNAL_AUTH_TOKEN}
   redis:
     health-check-enabled: ${LYNXUS_REDIS_HEALTH_CHECK_ENABLED:true}
+    key-prefix: ${LYNXUS_REDIS_KEY_PREFIX:lynxus}
   temporal:
     target: ${LYNXUS_TEMPORAL_TARGET:127.0.0.1:7233}
     namespace: ${LYNXUS_TEMPORAL_NAMESPACE:default}
