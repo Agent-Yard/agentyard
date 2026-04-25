@@ -21,9 +21,11 @@ packages/
   persistence-jvm/ Shared JVM PostgreSQL persistence layer
   python-common/ Shared Python utilities
   shared-redis-jvm/ Shared JVM Redis keyspace / lock / pubsub layer
-infra/
-  dev/         Docker Compose for dev environment
-  local/       Docker Compose for local development
+deploy/
+  common/      Shared secret-free runtime materials for environment compose files
+  local/       Docker Compose for local development dependencies
+  dev/         Docker Compose for persistent dev environment
+  test/        Modular test deployment templates, including compose and web/Nginx examples
 scripts/
   common/      Shared env loading and process helpers
   dev/         Source-run wrappers for dev environment
