@@ -91,6 +91,70 @@ PostgreSQL 可以使用已有/托管服务，也可以作为独立模块发布�
 
 测试环境没有现成 Temporal，因此 Temporal 作为独立模块发布。Sandbox 也作为独立模块发布，不并入 Worker 或应用组。
 
+## 初始化顺序
+
+各模块 compose 文件是故意独立的，因为实际部署可能分布在不同机器上。跨模块依赖不通过 `depends_on` 表达，必须由发布流水线或运维 runbook 保证。
+
+使用本发布包自建 PostgreSQL 时，推荐顺序：
+
+1. PostgreSQL
+
+   ```bash
+   docker compose --env-file test/.env -f test/compose/postgres.yml up -d
+   ```
+
+   需要等待 `postgres-bootstrap` 成功退出。它负责创建 `lynxus_core`、`lynxus_knowledge`、`temporal`、`temporal_visibility`，并启用知识库扩展。
+
+2. Temporal
+
+   ```bash
+   docker compose --env-file test/.env -f test/compose/temporal.yml up -d
+   ```
+
+3. Sandbox
+
+   ```bash
+   docker compose --env-file test/.env -f test/compose/sandbox.yml up -d
+   ```
+
+4. 内部服务
+
+   ```bash
+   docker compose --env-file test/.env -f test/compose/channel-gateway.yml up -d
+   docker compose --env-file test/.env -f test/compose/knowledge-service.yml up -d
+   docker compose --env-file test/.env -f test/compose/agent-runtime.yml up -d
+   ```
+
+5. Worker
+
+   ```bash
+   docker compose --env-file test/.env -f test/compose/worker.yml up -d
+   ```
+
+6. API
+
+   ```bash
+   docker compose --env-file test/.env -f test/compose/api.yml up -d
+   ```
+
+7. Web 静态资源与 Nginx
+
+如果使用已有或托管 PostgreSQL，则部署侧必须提前准备好 `lynxus_core`、`lynxus_knowledge`、`temporal`、`temporal_visibility`，并在 `lynxus_knowledge` 中启用 `vector` 和 `pg_trgm`。
+
+## 依赖矩阵
+
+| 模块 | 依赖 |
+| --- | --- |
+| postgres | 持久化磁盘 |
+| temporal | PostgreSQL `temporal`、`temporal_visibility` |
+| sandbox | 无 Lynxus 服务依赖 |
+| channel-gateway | PostgreSQL `lynxus_core` |
+| knowledge-service | PostgreSQL `lynxus_knowledge`、S3-compatible object storage、embedding provider |
+| agent-runtime | Redis、API URL、Knowledge Service URL、按需配置模型供应商密钥 |
+| worker | PostgreSQL `lynxus_core`、Redis、Temporal、Agent Runtime、Knowledge Service、Sandbox |
+| api | PostgreSQL `lynxus_core`、Redis、Temporal、Knowledge Service、Channel Gateway、OIDC |
+| web | Nginx 下的 `/api`、`/oauth2`、`/login/oauth2` 反向代理 |
+
 ## PostgreSQL 要求
 
 使用 PostgreSQL 16+，推荐 PostgreSQL 17。

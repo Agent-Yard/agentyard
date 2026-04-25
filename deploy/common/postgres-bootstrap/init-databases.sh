@@ -22,15 +22,24 @@ wait_for_postgres() {
   done
 }
 
+sql_literal() {
+  printf "%s" "$1" | sed "s/'/''/g"
+}
+
+sql_identifier() {
+  printf "%s" "$1" | sed 's/"/""/g'
+}
+
 create_database_if_missing() {
   local database_name="$1"
   local owner_name="${2:-$POSTGRES_USER}"
   local exists
+  local database_literal
 
+  database_literal="$(sql_literal "$database_name")"
   exists="$(
-    psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d postgres \
-      -v database_name="$database_name" \
-      -tAc "select 1 from pg_database where datname = :'database_name'"
+    psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d postgres -tAc \
+      "select 1 from pg_database where datname = '$database_literal'"
   )"
 
   if [[ "$exists" != "1" ]]; then
@@ -41,15 +50,26 @@ create_database_if_missing() {
 create_role_if_missing() {
   local role_name="$1"
   local role_password="$2"
+  local role_literal
+  local role_identifier
+  local password_literal
+  local exists
 
-  psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d postgres \
-    -v role_name="$role_name" \
-    -v role_password="$role_password" \
-    -tAc "select case
-      when exists (select 1 from pg_roles where rolname = :'role_name')
-        then format('alter role %I login password %L', :'role_name', :'role_password')
-      else format('create role %I login password %L', :'role_name', :'role_password')
-    end" | psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d postgres >/dev/null
+  role_literal="$(sql_literal "$role_name")"
+  role_identifier="$(sql_identifier "$role_name")"
+  password_literal="$(sql_literal "$role_password")"
+  exists="$(
+    psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d postgres -tAc \
+      "select 1 from pg_roles where rolname = '$role_literal'"
+  )"
+
+  if [[ "$exists" == "1" ]]; then
+    psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d postgres \
+      -c "alter role \"$role_identifier\" login password '$password_literal'" >/dev/null
+  else
+    psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d postgres \
+      -c "create role \"$role_identifier\" login password '$password_literal'" >/dev/null
+  fi
 }
 
 enable_extension_if_missing() {

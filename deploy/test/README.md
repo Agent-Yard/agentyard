@@ -74,6 +74,70 @@ Temporal is included as its own module because test has no existing Temporal ser
 
 Sandbox is also a separate module. Deploy it with [compose/sandbox.yml](/Users/eric/projects/lynxus/deploy/test/compose/sandbox.yml).
 
+## Startup Order
+
+The compose files are intentionally independent because modules may run on different hosts. Cross-module order is not expressed with `depends_on`; the deployment pipeline or runbook must enforce it.
+
+Recommended order when PostgreSQL is deployed by this package:
+
+1. PostgreSQL:
+
+   ```bash
+   docker compose --env-file test/.env -f test/compose/postgres.yml up -d
+   ```
+
+   Wait for `postgres-bootstrap` to exit successfully before starting Temporal or application services.
+
+2. Temporal:
+
+   ```bash
+   docker compose --env-file test/.env -f test/compose/temporal.yml up -d
+   ```
+
+3. Sandbox:
+
+   ```bash
+   docker compose --env-file test/.env -f test/compose/sandbox.yml up -d
+   ```
+
+4. Internal services:
+
+   ```bash
+   docker compose --env-file test/.env -f test/compose/channel-gateway.yml up -d
+   docker compose --env-file test/.env -f test/compose/knowledge-service.yml up -d
+   docker compose --env-file test/.env -f test/compose/agent-runtime.yml up -d
+   ```
+
+5. Worker:
+
+   ```bash
+   docker compose --env-file test/.env -f test/compose/worker.yml up -d
+   ```
+
+6. API:
+
+   ```bash
+   docker compose --env-file test/.env -f test/compose/api.yml up -d
+   ```
+
+7. Web static assets and Nginx.
+
+When PostgreSQL is managed outside this package, the deployer must create `lynxus_core`, `lynxus_knowledge`, `temporal`, and `temporal_visibility` before starting Temporal or application services. The knowledge database must have `vector` and `pg_trgm` enabled.
+
+## Dependency Matrix
+
+| Module | Requires |
+| --- | --- |
+| postgres | Persistent disk |
+| temporal | PostgreSQL `temporal` and `temporal_visibility` databases |
+| sandbox | No Lynxus service dependency |
+| channel-gateway | PostgreSQL `lynxus_core` |
+| knowledge-service | PostgreSQL `lynxus_knowledge`, S3-compatible object storage, embedding provider |
+| agent-runtime | Redis, API URL, Knowledge Service URL, model provider credentials as needed |
+| worker | PostgreSQL `lynxus_core`, Redis, Temporal, Agent Runtime, Knowledge Service, Sandbox |
+| api | PostgreSQL `lynxus_core`, Redis, Temporal, Knowledge Service, Channel Gateway, OIDC |
+| web | API through Nginx `/api`, `/oauth2`, and `/login/oauth2` routes |
+
 ## PostgreSQL Requirement
 
 Use PostgreSQL 16+; PostgreSQL 17 is recommended. The knowledge database must have `pgvector` with HNSW support and `pg_trgm` available.

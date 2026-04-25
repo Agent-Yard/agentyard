@@ -1,15 +1,15 @@
-# Deploy Layout
+# 部署布局
 
-`deploy/` is the single place for runtime composition and environment deployment templates.
+`deploy/` 是运行时组合与环境部署模板的唯一位置。
 
 ```text
 deploy/
-  common/  shared, versioned, secret-free runtime materials
-  local/   local development dependency compose
-  dev/     shared development server compose
-  test/    modular test deployment templates
+  common/  共享的、已版本化的、不含密钥的运行时材料
+  local/   本地开发依赖组合
+  dev/     共享的开发服务器组合
+  test/    模块化测试部署模板
 ```
 
-`deploy/common` may be referenced by environment directories. When publishing an environment package to a target host, package that environment directory together with `deploy/common` if any compose file needs shared material.
+`deploy/common` 可被各环境目录引用。当将环境包发布到目标主机时，如果任一 compose 文件需要共享材料，请将该环境目录与 `deploy/common` 一起打包。
 
-Release environments such as `test` and future `prd` are deployed by module. Do not assume all services run on one host.
+`test` 以及未来的 `prd` 等发布环境将按模块进行部署。不要假设所有服务都运行在同一台主机上。
