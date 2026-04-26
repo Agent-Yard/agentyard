@@ -27,6 +27,7 @@ import com.lynxus.persistence.jooq.tables.ConversationMessage;
 import com.lynxus.persistence.jooq.tables.ConversationSession;
 import com.lynxus.persistence.jooq.tables.ExternalInteractionEvent;
 import com.lynxus.persistence.jooq.tables.ExternalInteractionTask;
+import com.lynxus.persistence.jooq.tables.IntegrationAccount;
 import com.lynxus.persistence.jooq.tables.KnowledgeBase;
 import com.lynxus.persistence.jooq.tables.KnowledgeRelease;
 import com.lynxus.persistence.jooq.tables.LlmUsageRecord;
@@ -166,6 +167,11 @@ public class Tables {
      * The table <code>public.external_interaction_task</code>.
      */
     public static final ExternalInteractionTask EXTERNAL_INTERACTION_TASK = ExternalInteractionTask.EXTERNAL_INTERACTION_TASK;
+
+    /**
+     * The table <code>public.integration_account</code>.
+     */
+    public static final IntegrationAccount INTEGRATION_ACCOUNT = IntegrationAccount.INTEGRATION_ACCOUNT;
 
     /**
      * The table <code>public.knowledge_base</code>.

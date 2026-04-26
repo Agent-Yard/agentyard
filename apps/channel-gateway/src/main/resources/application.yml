@@ -11,7 +11,10 @@ spring:
     username: ${SPRING_DATASOURCE_USERNAME:lynxus}
     password: ${SPRING_DATASOURCE_PASSWORD:lynxus}
   flyway:
-    enabled: false
+    enabled: true
+    table: channel_gateway_schema_history
+    baseline-on-migrate: true
+    baseline-version: 0
 
 management:
   endpoints:

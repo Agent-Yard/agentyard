@@ -3,6 +3,7 @@ package com.lynxus.persistence.codegen;
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
 import java.io.File;
 import java.nio.file.Path;
+import java.util.List;
 import org.flywaydb.core.Flyway;
 import org.jooq.codegen.GenerationTool;
 import org.jooq.meta.jaxb.Configuration;
@@ -24,7 +25,10 @@ public final class JooqCodegenMain {
 
         Path repoRoot = Path.of(args[0]).toAbsolutePath().normalize();
         Path outputDir = Path.of(args[1]).toAbsolutePath().normalize();
-        Path migrationDir = repoRoot.resolve("apps/api/src/main/resources/db/migration");
+        List<MigrationOwner> migrationOwners = List.of(
+            new MigrationOwner(repoRoot.resolve("apps/api/src/main/resources/db/migration"), "flyway_schema_history"),
+            new MigrationOwner(repoRoot.resolve("apps/channel-gateway/src/main/resources/db/migration"), "channel_gateway_schema_history")
+        );
 
         File outputFile = outputDir.toFile();
         if (!outputFile.exists() && !outputFile.mkdirs()) {
@@ -32,11 +36,16 @@ public final class JooqCodegenMain {
         }
 
         try (EmbeddedPostgres postgres = EmbeddedPostgres.builder().start()) {
-            Flyway.configure()
-                .dataSource(postgres.getPostgresDatabase())
-                .locations("filesystem:" + migrationDir)
-                .load()
-                .migrate();
+            for (MigrationOwner owner : migrationOwners) {
+                Flyway.configure()
+                    .dataSource(postgres.getPostgresDatabase())
+                    .locations("filesystem:" + owner.migrationDir())
+                    .table(owner.historyTable())
+                    .baselineOnMigrate(true)
+                    .baselineVersion("0")
+                    .load()
+                    .migrate();
+            }
 
             String jdbcUrl = postgres.getJdbcUrl("postgres", "postgres");
             Configuration configuration = new Configuration()
@@ -52,7 +61,7 @@ public final class JooqCodegenMain {
                         .withName("org.jooq.meta.postgres.PostgresDatabase")
                         .withInputSchema("public")
                         .withIncludes(".*")
-                        .withExcludes("flyway_schema_history"))
+                        .withExcludes("flyway_schema_history|channel_gateway_schema_history"))
                     .withGenerate(new Generate()
                         .withDeprecated(false)
                         .withRecords(true)
@@ -65,5 +74,8 @@ public final class JooqCodegenMain {
 
             GenerationTool.generate(configuration);
         }
+    }
+
+    private record MigrationOwner(Path migrationDir, String historyTable) {
     }
 }

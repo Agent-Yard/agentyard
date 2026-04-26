@@ -27,6 +27,7 @@ import com.lynxus.persistence.jooq.tables.ConversationMessage;
 import com.lynxus.persistence.jooq.tables.ConversationSession;
 import com.lynxus.persistence.jooq.tables.ExternalInteractionEvent;
 import com.lynxus.persistence.jooq.tables.ExternalInteractionTask;
+import com.lynxus.persistence.jooq.tables.IntegrationAccount;
 import com.lynxus.persistence.jooq.tables.KnowledgeBase;
 import com.lynxus.persistence.jooq.tables.KnowledgeRelease;
 import com.lynxus.persistence.jooq.tables.LlmUsageRecord;
@@ -182,6 +183,11 @@ public class Public extends SchemaImpl {
     public final ExternalInteractionTask EXTERNAL_INTERACTION_TASK = ExternalInteractionTask.EXTERNAL_INTERACTION_TASK;
 
     /**
+     * The table <code>public.integration_account</code>.
+     */
+    public final IntegrationAccount INTEGRATION_ACCOUNT = IntegrationAccount.INTEGRATION_ACCOUNT;
+
+    /**
      * The table <code>public.knowledge_base</code>.
      */
     public final KnowledgeBase KNOWLEDGE_BASE = KnowledgeBase.KNOWLEDGE_BASE;
@@ -305,6 +311,7 @@ public class Public extends SchemaImpl {
             ConversationSession.CONVERSATION_SESSION,
             ExternalInteractionEvent.EXTERNAL_INTERACTION_EVENT,
             ExternalInteractionTask.EXTERNAL_INTERACTION_TASK,
+            IntegrationAccount.INTEGRATION_ACCOUNT,
             KnowledgeBase.KNOWLEDGE_BASE,
             KnowledgeRelease.KNOWLEDGE_RELEASE,
             LlmUsageRecord.LLM_USAGE_RECORD,

@@ -25,6 +25,8 @@ spring:
       namespace: ${LYNXUS_SESSION_REDIS_NAMESPACE:lynxus:session:http}
   flyway:
     enabled: true
+    baseline-on-migrate: true
+    baseline-version: 0
 
 management:
   endpoints:

@@ -23,6 +23,7 @@ import com.lynxus.persistence.jooq.tables.ConversationMessage;
 import com.lynxus.persistence.jooq.tables.ConversationSession;
 import com.lynxus.persistence.jooq.tables.ExternalInteractionEvent;
 import com.lynxus.persistence.jooq.tables.ExternalInteractionTask;
+import com.lynxus.persistence.jooq.tables.IntegrationAccount;
 import com.lynxus.persistence.jooq.tables.KnowledgeBase;
 import com.lynxus.persistence.jooq.tables.KnowledgeRelease;
 import com.lynxus.persistence.jooq.tables.LlmUsageRecord;
@@ -72,6 +73,7 @@ public class Indexes {
     public static final Index IDX_EXTERNAL_INTERACTION_TASK_PROVIDER_REF = Internal.createIndex(DSL.name("idx_external_interaction_task_provider_ref"), ExternalInteractionTask.EXTERNAL_INTERACTION_TASK, new OrderField[] { ExternalInteractionTask.EXTERNAL_INTERACTION_TASK.PROVIDER, ExternalInteractionTask.EXTERNAL_INTERACTION_TASK.PROVIDER_REFERENCE }, false);
     public static final Index IDX_EXTERNAL_INTERACTION_TASK_SESSION = Internal.createIndex(DSL.name("idx_external_interaction_task_session"), ExternalInteractionTask.EXTERNAL_INTERACTION_TASK, new OrderField[] { ExternalInteractionTask.EXTERNAL_INTERACTION_TASK.SESSION_ID, ExternalInteractionTask.EXTERNAL_INTERACTION_TASK.UPDATED_AT.desc() }, false);
     public static final Index IDX_EXTERNAL_INTERACTION_TASK_WORKFLOW = Internal.createIndex(DSL.name("idx_external_interaction_task_workflow"), ExternalInteractionTask.EXTERNAL_INTERACTION_TASK, new OrderField[] { ExternalInteractionTask.EXTERNAL_INTERACTION_TASK.WORKFLOW_INSTANCE_ID }, false);
+    public static final Index IDX_INTEGRATION_ACCOUNT_CONNECTOR_UPDATED = Internal.createIndex(DSL.name("idx_integration_account_connector_updated"), IntegrationAccount.INTEGRATION_ACCOUNT, new OrderField[] { IntegrationAccount.INTEGRATION_ACCOUNT.CONNECTOR_TYPE, IntegrationAccount.INTEGRATION_ACCOUNT.UPDATED_AT.desc() }, false);
     public static final Index IDX_KNOWLEDGE_BASE_DOMAIN = Internal.createIndex(DSL.name("idx_knowledge_base_domain"), KnowledgeBase.KNOWLEDGE_BASE, new OrderField[] { KnowledgeBase.KNOWLEDGE_BASE.DOMAIN_ID, KnowledgeBase.KNOWLEDGE_BASE.NAME }, false);
     public static final Index IDX_KNOWLEDGE_RELEASE_BASE = Internal.createIndex(DSL.name("idx_knowledge_release_base"), KnowledgeRelease.KNOWLEDGE_RELEASE, new OrderField[] { KnowledgeRelease.KNOWLEDGE_RELEASE.KNOWLEDGE_BASE_ID, KnowledgeRelease.KNOWLEDGE_RELEASE.CREATED_AT, KnowledgeRelease.KNOWLEDGE_RELEASE.ID }, false);
     public static final Index IDX_LLM_USAGE_RECORD_ASSISTANT_OCCURRED = Internal.createIndex(DSL.name("idx_llm_usage_record_assistant_occurred"), LlmUsageRecord.LLM_USAGE_RECORD, new OrderField[] { LlmUsageRecord.LLM_USAGE_RECORD.ASSISTANT_ID, LlmUsageRecord.LLM_USAGE_RECORD.OCCURRED_AT.desc() }, false);
