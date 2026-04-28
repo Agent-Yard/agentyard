@@ -7,7 +7,7 @@ spring:
   jackson:
     default-property-inclusion: non_null
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://127.0.0.1:5432/lynxus_core}
+    url: ${LYNXUS_CHANNEL_GATEWAY_DATASOURCE_URL:jdbc:postgresql://127.0.0.1:5432/lynxus_channel_gateway}
     username: ${SPRING_DATASOURCE_USERNAME:lynxus}
     password: ${SPRING_DATASOURCE_PASSWORD:lynxus}
   flyway:

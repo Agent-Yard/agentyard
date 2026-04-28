@@ -64,6 +64,7 @@ PostgreSQL is listed as its own module because test may either use a managed/exi
 The PostgreSQL module uses [../common/postgres-bootstrap/init-databases.sh](/Users/eric/projects/lynxus/deploy/common/postgres-bootstrap/init-databases.sh) through the published `common + test` layout. Its one-shot bootstrap service creates:
 
 - `lynxus_core`
+- `lynxus_channel_gateway`
 - `lynxus_knowledge`
 - `temporal`
 - `temporal_visibility`
@@ -122,7 +123,7 @@ Recommended order when PostgreSQL is deployed by this package:
 
 7. Web static assets and Nginx.
 
-When PostgreSQL is managed outside this package, the deployer must create `lynxus_core`, `lynxus_knowledge`, `temporal`, and `temporal_visibility` before starting Temporal or application services. The knowledge database must have `vector` and `pg_trgm` enabled.
+When PostgreSQL is managed outside this package, the deployer must create `lynxus_core`, `lynxus_channel_gateway`, `lynxus_knowledge`, `temporal`, and `temporal_visibility` before starting Temporal or application services. The knowledge database must have `vector` and `pg_trgm` enabled.
 
 ## Dependency Matrix
 
@@ -131,7 +132,7 @@ When PostgreSQL is managed outside this package, the deployer must create `lynxu
 | postgres | Persistent disk |
 | temporal | PostgreSQL `temporal` and `temporal_visibility` databases |
 | sandbox | No Lynxus service dependency |
-| channel-gateway | PostgreSQL `lynxus_core` |
+| channel-gateway | PostgreSQL `lynxus_channel_gateway` |
 | knowledge-service | PostgreSQL `lynxus_knowledge`, S3-compatible object storage, embedding provider |
 | agent-runtime | Redis, API URL, Knowledge Service URL, model provider credentials as needed |
 | worker | PostgreSQL `lynxus_core`, Redis, Temporal, Agent Runtime, Knowledge Service, Sandbox |

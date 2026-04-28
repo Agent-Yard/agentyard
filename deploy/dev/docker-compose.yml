@@ -17,6 +17,7 @@ services:
       POSTGRES_USER: ${SPRING_DATASOURCE_USERNAME:-lynxus}
       POSTGRES_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-lynxus}
       LYNXUS_CORE_DATABASE: lynxus_core
+      LYNXUS_CHANNEL_GATEWAY_DATABASE: lynxus_channel_gateway
       LYNXUS_KNOWLEDGE_DATABASE: lynxus_knowledge
     depends_on:
       - postgres
@@ -263,7 +264,7 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
       LYNXUS_CHANNEL_GATEWAY_PORT: 8082
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/lynxus_core
+      LYNXUS_CHANNEL_GATEWAY_DATASOURCE_URL: jdbc:postgresql://postgres:5432/lynxus_channel_gateway
       SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-lynxus}
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-lynxus}
       LYNXUS_INTERNAL_AUTH_TOKEN: ${LYNXUS_INTERNAL_AUTH_TOKEN}

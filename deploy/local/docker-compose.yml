@@ -20,6 +20,7 @@ services:
       POSTGRES_USER: lynxus
       POSTGRES_PASSWORD: lynxus
       LYNXUS_CORE_DATABASE: lynxus_core
+      LYNXUS_CHANNEL_GATEWAY_DATABASE: lynxus_channel_gateway
       LYNXUS_KNOWLEDGE_DATABASE: lynxus_knowledge
     depends_on:
       - postgres

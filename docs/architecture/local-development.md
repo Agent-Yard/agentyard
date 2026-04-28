@@ -13,7 +13,7 @@
 
 这些依赖服务于当前“控制面 + Temporal + Python runtime + 前端控制台”的本地联调链路。
 其中当前主链路最依赖的是 PostgreSQL、Temporal、MinIO、Redis 和知识服务；知识服务通过 S3-compatible object storage 配置访问对象存储，本地默认指向 MinIO。知识快照构建与检索默认依赖 PostgreSQL 内的 `pgvector + pg_trgm + tsvector`。
-本地 PostgreSQL 默认会准备 `lynxus_core` 和 `lynxus_knowledge` 两个数据库，避免 API/worker 的核心会话链路与 knowledge service 的自建表共享同一个 `public` schema。
+本地 PostgreSQL 默认会准备 `lynxus_core`、`lynxus_channel_gateway` 和 `lynxus_knowledge` 三个数据库，避免 API/worker、channel-gateway 与 knowledge service 的运行表共享同一个 `public` schema。
 
 ## 本机前置条件
 

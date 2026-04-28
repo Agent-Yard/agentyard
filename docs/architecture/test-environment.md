@@ -103,7 +103,7 @@ PostgreSQL 可以使用已有/托管服务，也可以作为独立模块发布�
    docker compose --env-file test/.env -f test/compose/postgres.yml up -d
    ```
 
-   需要等待 `postgres-bootstrap` 成功退出。它负责创建 `lynxus_core`、`lynxus_knowledge`、`temporal`、`temporal_visibility`，并启用知识库扩展。
+   需要等待 `postgres-bootstrap` 成功退出。它负责创建 `lynxus_core`、`lynxus_channel_gateway`、`lynxus_knowledge`、`temporal`、`temporal_visibility`，并启用知识库扩展。
 
 2. Temporal
 
@@ -139,7 +139,7 @@ PostgreSQL 可以使用已有/托管服务，也可以作为独立模块发布�
 
 7. Web 静态资源与 Nginx
 
-如果使用已有或托管 PostgreSQL，则部署侧必须提前准备好 `lynxus_core`、`lynxus_knowledge`、`temporal`、`temporal_visibility`，并在 `lynxus_knowledge` 中启用 `vector` 和 `pg_trgm`。
+如果使用已有或托管 PostgreSQL，则部署侧必须提前准备好 `lynxus_core`、`lynxus_channel_gateway`、`lynxus_knowledge`、`temporal`、`temporal_visibility`，并在 `lynxus_knowledge` 中启用 `vector` 和 `pg_trgm`。
 
 ## 依赖矩阵
 
@@ -148,7 +148,7 @@ PostgreSQL 可以使用已有/托管服务，也可以作为独立模块发布�
 | postgres | 持久化磁盘 |
 | temporal | PostgreSQL `temporal`、`temporal_visibility` |
 | sandbox | 无 Lynxus 服务依赖 |
-| channel-gateway | PostgreSQL `lynxus_core` |
+| channel-gateway | PostgreSQL `lynxus_channel_gateway` |
 | knowledge-service | PostgreSQL `lynxus_knowledge`、S3-compatible object storage、embedding provider |
 | agent-runtime | Redis、API URL、Knowledge Service URL、按需配置模型供应商密钥 |
 | worker | PostgreSQL `lynxus_core`、Redis、Temporal、Agent Runtime、Knowledge Service、Sandbox |
@@ -169,6 +169,7 @@ Knowledge database 必须具备：
 自建测试 PostgreSQL 时，`postgres` 模块会启动 PostgreSQL，并通过 [deploy/common/postgres-bootstrap/init-databases.sh](/Users/eric/projects/lynxus/deploy/common/postgres-bootstrap/init-databases.sh) 这个一次性 bootstrap 创建：
 
 - `lynxus_core`
+- `lynxus_channel_gateway`
 - `lynxus_knowledge`
 - `temporal`
 - `temporal_visibility`
