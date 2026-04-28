@@ -53,8 +53,10 @@ subprojects {
 
 tasks.register("generateJooq") {
     dependsOn(":packages:persistence-jvm:generateJooq")
+    dependsOn(":apps:channel-gateway:generateJooq")
 }
 
 tasks.register("verifyJooqGenerated") {
     dependsOn(":packages:persistence-jvm:verifyJooqGenerated")
+    dependsOn(":apps:channel-gateway:verifyJooqGenerated")
 }

@@ -19,10 +19,6 @@ import com.lynxus.persistence.jooq.tables.CatalogRefResourceBinding;
 import com.lynxus.persistence.jooq.tables.CatalogResource;
 import com.lynxus.persistence.jooq.tables.CatalogResourceVersions;
 import com.lynxus.persistence.jooq.tables.CatalogScenario;
-import com.lynxus.persistence.jooq.tables.ChannelAccount;
-import com.lynxus.persistence.jooq.tables.ChannelConversationBinding;
-import com.lynxus.persistence.jooq.tables.ChannelInboundEvent;
-import com.lynxus.persistence.jooq.tables.ChannelOutboundDelivery;
 import com.lynxus.persistence.jooq.tables.ConversationMessage;
 import com.lynxus.persistence.jooq.tables.ConversationSession;
 import com.lynxus.persistence.jooq.tables.ExternalInteractionEvent;
@@ -127,26 +123,6 @@ public class Tables {
      * The table <code>public.catalog_scenario</code>.
      */
     public static final CatalogScenario CATALOG_SCENARIO = CatalogScenario.CATALOG_SCENARIO;
-
-    /**
-     * The table <code>public.channel_account</code>.
-     */
-    public static final ChannelAccount CHANNEL_ACCOUNT = ChannelAccount.CHANNEL_ACCOUNT;
-
-    /**
-     * The table <code>public.channel_conversation_binding</code>.
-     */
-    public static final ChannelConversationBinding CHANNEL_CONVERSATION_BINDING = ChannelConversationBinding.CHANNEL_CONVERSATION_BINDING;
-
-    /**
-     * The table <code>public.channel_inbound_event</code>.
-     */
-    public static final ChannelInboundEvent CHANNEL_INBOUND_EVENT = ChannelInboundEvent.CHANNEL_INBOUND_EVENT;
-
-    /**
-     * The table <code>public.channel_outbound_delivery</code>.
-     */
-    public static final ChannelOutboundDelivery CHANNEL_OUTBOUND_DELIVERY = ChannelOutboundDelivery.CHANNEL_OUTBOUND_DELIVERY;
 
     /**
      * The table <code>public.conversation_message</code>.

@@ -1,12 +1,11 @@
 package com.lynxus.channel.gateway.channel;
 
+import com.lynxus.channel.gateway.jooqsupport.JooqJsonbSupport;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelAccount;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderType;
-import com.lynxus.persistence.channel.ChannelStore;
-import com.lynxus.persistence.jooqsupport.JooqJsonbSupport;
 import java.util.List;
 import java.util.Optional;
 import org.jooq.DSLContext;

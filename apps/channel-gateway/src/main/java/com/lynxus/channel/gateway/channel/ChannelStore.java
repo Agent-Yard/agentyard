@@ -1,5 +1,7 @@
-package com.lynxus.persistence.channel;
+package com.lynxus.channel.gateway.channel;
 
+import com.lynxus.channel.gateway.jooqsupport.JooqJsonbSupport;
+import com.lynxus.channel.gateway.jooqsupport.JooqTimeSupport;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelAccount;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelAccountStatus;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
@@ -9,49 +11,46 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEventStatus;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDeliveryStatus;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderType;
-import com.lynxus.persistence.jooqsupport.JooqJsonbSupport;
-import com.lynxus.persistence.jooqsupport.JooqTimeSupport;
-import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.jooq.DSLContext;
 import org.jooq.Record;
 
-import static com.lynxus.persistence.jooq.Tables.CHANNEL_ACCOUNT;
-import static com.lynxus.persistence.jooq.Tables.CHANNEL_CONVERSATION_BINDING;
-import static com.lynxus.persistence.jooq.Tables.CHANNEL_INBOUND_EVENT;
-import static com.lynxus.persistence.jooq.Tables.CHANNEL_OUTBOUND_DELIVERY;
+import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_ACCOUNT;
+import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_CONVERSATION_BINDING;
+import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_INBOUND_EVENT;
+import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_OUTBOUND_DELIVERY;
 
-public final class ChannelStore {
+final class ChannelStore {
     private final DSLContext dsl;
     private final JooqJsonbSupport jsonbSupport;
 
-    public ChannelStore(DSLContext dsl, JooqJsonbSupport jsonbSupport) {
+    ChannelStore(DSLContext dsl, JooqJsonbSupport jsonbSupport) {
         this.dsl = dsl;
         this.jsonbSupport = jsonbSupport;
     }
 
-    public List<ChannelAccount> listAccounts() {
+    List<ChannelAccount> listAccounts() {
         return dsl.selectFrom(CHANNEL_ACCOUNT)
             .orderBy(CHANNEL_ACCOUNT.UPDATED_AT.desc(), CHANNEL_ACCOUNT.ID.asc())
             .fetch(this::mapAccount);
     }
 
-    public Optional<ChannelAccount> findAccount(String accountId) {
+    Optional<ChannelAccount> findAccount(String accountId) {
         return dsl.selectFrom(CHANNEL_ACCOUNT)
             .where(CHANNEL_ACCOUNT.ID.eq(accountId))
             .fetchOptional(this::mapAccount);
     }
 
-    public List<ChannelAccount> listAccountsByProvider(ChannelProviderType providerType) {
+    List<ChannelAccount> listAccountsByProvider(ChannelProviderType providerType) {
         return dsl.selectFrom(CHANNEL_ACCOUNT)
             .where(CHANNEL_ACCOUNT.PROVIDER_TYPE.eq(providerType.name()))
             .orderBy(CHANNEL_ACCOUNT.UPDATED_AT.desc(), CHANNEL_ACCOUNT.ID.asc())
             .fetch(this::mapAccount);
     }
 
-    public void saveAccount(ChannelAccount account) {
+    void saveAccount(ChannelAccount account) {
         dsl.insertInto(CHANNEL_ACCOUNT)
             .set(CHANNEL_ACCOUNT.ID, account.id())
             .set(CHANNEL_ACCOUNT.PROVIDER_TYPE, account.providerType().name())
@@ -71,14 +70,14 @@ public final class ChannelStore {
             .execute();
     }
 
-    public List<ChannelConversationBinding> listBindings(String accountId) {
+    List<ChannelConversationBinding> listBindings(String accountId) {
         return dsl.selectFrom(CHANNEL_CONVERSATION_BINDING)
             .where(CHANNEL_CONVERSATION_BINDING.CHANNEL_ACCOUNT_ID.eq(accountId))
             .orderBy(CHANNEL_CONVERSATION_BINDING.UPDATED_AT.desc(), CHANNEL_CONVERSATION_BINDING.ID.asc())
             .fetch(this::mapBinding);
     }
 
-    public void saveBinding(ChannelConversationBinding binding) {
+    void saveBinding(ChannelConversationBinding binding) {
         dsl.insertInto(CHANNEL_CONVERSATION_BINDING)
             .set(CHANNEL_CONVERSATION_BINDING.ID, binding.id())
             .set(CHANNEL_CONVERSATION_BINDING.CHANNEL_ACCOUNT_ID, binding.channelAccountId())
@@ -106,20 +105,20 @@ public final class ChannelStore {
             .execute();
     }
 
-    public List<ChannelInboundEvent> listInboundEvents(String accountId) {
+    List<ChannelInboundEvent> listInboundEvents(String accountId) {
         return dsl.selectFrom(CHANNEL_INBOUND_EVENT)
             .where(CHANNEL_INBOUND_EVENT.CHANNEL_ACCOUNT_ID.eq(accountId))
             .orderBy(CHANNEL_INBOUND_EVENT.CREATED_AT.desc(), CHANNEL_INBOUND_EVENT.EVENT_ID.asc())
             .fetch(this::mapInboundEvent);
     }
 
-    public Optional<ChannelInboundEvent> findInboundEventByDedupKey(String dedupKey) {
+    Optional<ChannelInboundEvent> findInboundEventByDedupKey(String dedupKey) {
         return dsl.selectFrom(CHANNEL_INBOUND_EVENT)
             .where(CHANNEL_INBOUND_EVENT.DEDUP_KEY.eq(dedupKey))
             .fetchOptional(this::mapInboundEvent);
     }
 
-    public void saveInboundEvent(ChannelInboundEvent event) {
+    void saveInboundEvent(ChannelInboundEvent event) {
         dsl.insertInto(CHANNEL_INBOUND_EVENT)
             .set(CHANNEL_INBOUND_EVENT.EVENT_ID, event.eventId())
             .set(CHANNEL_INBOUND_EVENT.CHANNEL_ACCOUNT_ID, event.channelAccountId())
@@ -151,14 +150,14 @@ public final class ChannelStore {
             .execute();
     }
 
-    public List<ChannelOutboundDelivery> listOutboundDeliveries(String accountId) {
+    List<ChannelOutboundDelivery> listOutboundDeliveries(String accountId) {
         return dsl.selectFrom(CHANNEL_OUTBOUND_DELIVERY)
             .where(CHANNEL_OUTBOUND_DELIVERY.CHANNEL_ACCOUNT_ID.eq(accountId))
             .orderBy(CHANNEL_OUTBOUND_DELIVERY.CREATED_AT.desc(), CHANNEL_OUTBOUND_DELIVERY.DELIVERY_ID.asc())
             .fetch(this::mapOutboundDelivery);
     }
 
-    public void saveOutboundDelivery(ChannelOutboundDelivery delivery) {
+    void saveOutboundDelivery(ChannelOutboundDelivery delivery) {
         dsl.insertInto(CHANNEL_OUTBOUND_DELIVERY)
             .set(CHANNEL_OUTBOUND_DELIVERY.DELIVERY_ID, delivery.deliveryId())
             .set(CHANNEL_OUTBOUND_DELIVERY.CHANNEL_ACCOUNT_ID, delivery.channelAccountId())

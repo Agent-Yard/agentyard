@@ -61,13 +61,12 @@ tasks.register<Delete>("cleanGeneratedJooq") {
 
 tasks.register<JavaExec>("generateJooq") {
     group = "code generation"
-    description = "Generate jOOQ classes from the Flyway-managed PostgreSQL schemas."
+    description = "Generate jOOQ classes from the API Flyway-managed PostgreSQL schema."
     dependsOn("codegenClasses")
     classpath = sourceSets["codegen"].runtimeClasspath
     mainClass.set("com.lynxus.persistence.codegen.JooqCodegenMain")
     args(rootProject.projectDir.absolutePath, generatedJooqDir.asFile.absolutePath)
     inputs.dir(rootProject.file("apps/api/src/main/resources/db/migration"))
-    inputs.dir(rootProject.file("apps/channel-gateway/src/main/resources/db/migration"))
     outputs.dir(generatedJooqDir)
 }
 
@@ -79,7 +78,6 @@ tasks.register<JavaExec>("generateJooqVerification") {
     mainClass.set("com.lynxus.persistence.codegen.JooqCodegenMain")
     args(rootProject.projectDir.absolutePath, verificationJooqDir.get().asFile.absolutePath)
     inputs.dir(rootProject.file("apps/api/src/main/resources/db/migration"))
-    inputs.dir(rootProject.file("apps/channel-gateway/src/main/resources/db/migration"))
     outputs.dir(verificationJooqDir)
 }
 

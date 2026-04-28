@@ -1,4 +1,4 @@
-package com.lynxus.persistence.codegen;
+package com.lynxus.channel.gateway.codegen;
 
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
 import java.io.File;
@@ -13,8 +13,8 @@ import org.jooq.meta.jaxb.Jdbc;
 import org.jooq.meta.jaxb.Strategy;
 import org.jooq.meta.jaxb.Target;
 
-public final class JooqCodegenMain {
-    private JooqCodegenMain() {
+public final class ChannelGatewayJooqCodegenMain {
+    private ChannelGatewayJooqCodegenMain() {
     }
 
     public static void main(String[] args) throws Exception {
@@ -24,7 +24,7 @@ public final class JooqCodegenMain {
 
         Path repoRoot = Path.of(args[0]).toAbsolutePath().normalize();
         Path outputDir = Path.of(args[1]).toAbsolutePath().normalize();
-        Path migrationDir = repoRoot.resolve("apps/api/src/main/resources/db/migration");
+        Path migrationDir = repoRoot.resolve("apps/channel-gateway/src/main/resources/db/migration");
 
         File outputFile = outputDir.toFile();
         if (!outputFile.exists() && !outputFile.mkdirs()) {
@@ -35,7 +35,7 @@ public final class JooqCodegenMain {
             Flyway.configure()
                 .dataSource(postgres.getPostgresDatabase())
                 .locations("filesystem:" + migrationDir)
-                .table("flyway_schema_history")
+                .table("channel_gateway_schema_history")
                 .baselineOnMigrate(true)
                 .baselineVersion("0")
                 .load()
@@ -55,7 +55,7 @@ public final class JooqCodegenMain {
                         .withName("org.jooq.meta.postgres.PostgresDatabase")
                         .withInputSchema("public")
                         .withIncludes(".*")
-                        .withExcludes("flyway_schema_history"))
+                        .withExcludes("channel_gateway_schema_history"))
                     .withGenerate(new Generate()
                         .withDeprecated(false)
                         .withRecords(true)
@@ -63,7 +63,7 @@ public final class JooqCodegenMain {
                         .withDaos(false)
                         .withFluentSetters(false))
                     .withTarget(new Target()
-                        .withPackageName("com.lynxus.persistence.jooq")
+                        .withPackageName("com.lynxus.channel.gateway.jooq")
                         .withDirectory(outputDir.toString())));
 
             GenerationTool.generate(configuration);
