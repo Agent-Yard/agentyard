@@ -1,5 +1,8 @@
 package com.lynxus.channel.gateway.channel;
 
+import com.lynxus.channel.gateway.extension.ChannelProviderDescriptor;
+import com.lynxus.channel.gateway.extension.ChannelProviderRegistry;
+import com.lynxus.channel.gateway.shared.ConflictException;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileAccountSnapshot;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileStatus;
@@ -8,7 +11,6 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
 import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileInternalRequest;
 import com.lynxus.contracts.channel.ChannelContracts.UpdateChannelProfileInternalRequest;
-import com.lynxus.channel.gateway.shared.ConflictException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -19,9 +21,11 @@ import org.springframework.stereotype.Service;
 @Service
 public class ChannelAdminService {
     private final ChannelAdminRepository repository;
+    private final ChannelProviderRegistry channelProviderRegistry;
 
-    public ChannelAdminService(ChannelAdminRepository repository) {
+    public ChannelAdminService(ChannelAdminRepository repository, ChannelProviderRegistry channelProviderRegistry) {
         this.repository = repository;
+        this.channelProviderRegistry = channelProviderRegistry;
     }
 
     public List<ChannelGatewayProfile> listProfiles() {
@@ -31,13 +35,18 @@ public class ChannelAdminService {
     public ChannelGatewayProfile createProfile(CreateChannelProfileInternalRequest request) {
         Instant now = Instant.now();
         ChannelProfileAccountSnapshot accountSnapshot = request.accountSnapshot();
+        ChannelProviderDescriptor descriptor = channelProviderRegistry.requireProvider(request.providerType());
+        Map<String, Object> config = channelProviderRegistry.materializeAndValidateProfileConfig(
+            descriptor.providerType(),
+            request.config()
+        );
         ChannelGatewayProfile profile = new ChannelGatewayProfile(
             nextId("channel-profile"),
-            requireProviderType(request.providerType()),
+            descriptor.providerType(),
             requireText(request.displayName(), "channelProfile.displayName"),
             request.status() == null ? ChannelProfileStatus.ACTIVE : request.status(),
             request.inboundEnabled() == null || request.inboundEnabled(),
-            request.config() == null ? Map.of() : request.config(),
+            config,
             request.assistantBinding(),
             accountSnapshot == null ? null : normalizeOptionalText(accountSnapshot.accountId()),
             accountSnapshot != null && hasText(accountSnapshot.externalSecretRef()),
@@ -58,13 +67,18 @@ public class ChannelAdminService {
         ChannelGatewayProfile existing = getProfile(channelProfileId);
         long expectedRevision = requireExpectedRevision(request.expectedRevision());
         ChannelProfileAccountSnapshot accountSnapshot = request.accountSnapshot();
+        ChannelProviderDescriptor descriptor = channelProviderRegistry.requireProvider(request.providerType());
+        Map<String, Object> config = channelProviderRegistry.materializeAndValidateProfileConfig(
+            descriptor.providerType(),
+            request.config()
+        );
         ChannelGatewayProfile updated = new ChannelGatewayProfile(
             existing.id(),
-            requireProviderType(request.providerType()),
+            descriptor.providerType(),
             requireText(request.displayName(), "channelProfile.displayName"),
             request.status() == null ? existing.status() : request.status(),
             request.inboundEnabled() == null ? existing.inboundEnabled() : request.inboundEnabled(),
-            request.config() == null ? existing.config() : request.config(),
+            config,
             request.assistantBinding() == null ? existing.assistantBinding() : request.assistantBinding(),
             accountSnapshot == null ? null : normalizeOptionalText(accountSnapshot.accountId()),
             accountSnapshot != null && hasText(accountSnapshot.externalSecretRef()),
@@ -116,13 +130,6 @@ public class ChannelAdminService {
 
     public String nextId(String prefix) {
         return prefix + "-" + UUID.randomUUID().toString().substring(0, 8);
-    }
-
-    private static String requireProviderType(String providerType) {
-        if (providerType == null || providerType.isBlank()) {
-            throw new IllegalArgumentException("channelProfile.providerType is required");
-        }
-        return providerType.trim();
     }
 
     private static String requireText(String value, String field) {

@@ -69,6 +69,32 @@ final class ChannelProviderRegistryValidationServiceTest {
     }
 
     @Test
+    void validationReflectsLoadedRuntimeRegistrySnapshotWithoutReloading() {
+        CapturingFetcher fetcher = new CapturingFetcher();
+        fetcher.responses.put("acme-channel-provider", manifest(channelDescriptor("enterprise.acme.internal-im")));
+        ChannelProviderRegistryValidationService service = service("""
+            lynxus:
+              extensions:
+                services:
+                  - registrationId: acme-channel-provider
+                    baseUrl: http://channel.example.com
+                    exposes:
+                      channelProviderTypes:
+                        - enterprise.acme.internal-im
+                    auth:
+                      type: INTERNAL_TOKEN
+            """, fetcher);
+        fetcher.calls.clear();
+        fetcher.responses.clear();
+
+        ChannelProviderRegistryValidation validation = service.validate();
+
+        assertEquals("READY", validation.status());
+        assertEquals(List.of("enterprise.acme.internal-im", "feishu"), validation.loadedDescriptorIds());
+        assertTrue(fetcher.calls.isEmpty());
+    }
+
+    @Test
     void notReadyReportsMissingUnexpectedDuplicateAndReturnsHttp503() throws Exception {
         CapturingFetcher fetcher = new CapturingFetcher();
         fetcher.responses.put("acme-a", manifest(
@@ -184,9 +210,12 @@ final class ChannelProviderRegistryValidationServiceTest {
             : registrationServiceFromYaml(operatorYaml);
         return new ChannelProviderRegistryValidationService(
             registrationService,
-            new ChannelGatewayDescriptorProvider(),
-            fetcher,
-            "internal-token"
+            new RuntimeChannelProviderRegistry(new ChannelProviderRegistryLoader(
+                registrationService,
+                new ChannelGatewayDescriptorProvider(),
+                fetcher,
+                "internal-token"
+            ))
         );
     }
 

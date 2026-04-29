@@ -422,7 +422,7 @@ export interface CreateChannelProfileInternalPayload {
   displayName: string;
   status?: ChannelProfileStatus | null;
   inboundEnabled?: boolean | null;
-  config: Record<string, unknown>;
+  config?: Record<string, unknown> | null;
   assistantBinding?: ChannelAssistantBinding | null;
   accountSnapshot?: ChannelProfileAccountSnapshot | null;
 }
@@ -432,7 +432,7 @@ export interface UpdateChannelProfileInternalPayload {
   displayName: string;
   status?: ChannelProfileStatus | null;
   inboundEnabled?: boolean | null;
-  config: Record<string, unknown>;
+  config?: Record<string, unknown> | null;
   assistantBinding?: ChannelAssistantBinding | null;
   accountSnapshot?: ChannelProfileAccountSnapshot | null;
   expectedRevision: number;

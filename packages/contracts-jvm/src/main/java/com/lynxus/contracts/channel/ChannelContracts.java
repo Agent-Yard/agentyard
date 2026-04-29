@@ -17,6 +17,13 @@ public final class ChannelContracts {
         return Collections.unmodifiableMap(new LinkedHashMap<>(source));
     }
 
+    private static Map<String, Object> nullableImmutableObjectMap(Map<String, Object> source) {
+        if (source == null) {
+            return null;
+        }
+        return immutableObjectMap(source);
+    }
+
     public enum ChannelProfileStatus {
         ACTIVE,
         INACTIVE
@@ -197,7 +204,7 @@ public final class ChannelContracts {
         ChannelProfileAccountSnapshot accountSnapshot
     ) {
         public CreateChannelProfileInternalRequest {
-            config = immutableObjectMap(config);
+            config = nullableImmutableObjectMap(config);
         }
     }
 
@@ -212,7 +219,7 @@ public final class ChannelContracts {
         Long expectedRevision
     ) {
         public UpdateChannelProfileInternalRequest {
-            config = immutableObjectMap(config);
+            config = nullableImmutableObjectMap(config);
         }
     }
 }

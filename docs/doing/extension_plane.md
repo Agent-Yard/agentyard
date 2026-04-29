@@ -13,7 +13,7 @@
 ## Current Position
 
 - Current slice: Slice 8 - Channel provider registry + profile rename + gateway internal admin.
-- Current subtask: Slice 8B materialized Channel Profile account snapshot and internal DTO boundary. Provider job, template binding, outbound delivery semantics, internal OpenAPI coverage, and schema-driven Web pages remain later Slice 8/9/10 subtasks.
+- Current subtask: Slice 8C channel-gateway `ChannelProviderRegistry` and profile config/default validation. Provider job, template binding, outbound delivery semantics, internal OpenAPI coverage, and schema-driven Web pages remain later Slice 8/9/10 subtasks.
 - Main-agent role: orchestration, integration decisions, ledger maintenance, review of worker/checker output.
 - Implementation flow: worker implements each bounded subtask, independent checker reviews read-only, then main agent decides follow-up.
 
@@ -81,9 +81,18 @@
 - Decision: Slice 8 is too large for one worker. 8A will be a strict foundation rename and path move only. Channel Profile accountSnapshot materialization, registry-backed provider validation, internal OpenAPI coverage, template binding, provider job, and manual run APIs will be separate subtasks after the old naming is removed from the active code path.
 - Decision: `packages/contracts/openapi/channel-gateway-internal.yaml` does not exist yet in the repo; create it in a later Slice 8 subtask after the concrete internal DTO shape stabilizes. This is implementation ordering, not a change to the target architecture.
 - Decision: Slice 8B will split Web-facing profile requests from gateway internal write requests. API will accept optional `integrationAccountId`, call Slice 6 account availability for `CHANNEL_PROVIDER + providerType`, and send only an internal `accountSnapshot` to `channel-gateway`. `channel-gateway` may persist `external_secret_ref`, but read DTOs must expose only `accountId` and `hasExternalSecretRef`.
+- Decision: Slice 8C will make `channel-gateway` profile writes consume a runtime-local `ChannelProviderRegistry` built from the same channel-provider registration load path as validation. The first version will validate `providerType`, apply descriptor `defaultConfig` when config is omitted, and validate submitted config against descriptor `configSchema`. It will not add remote provider invocation, provider job execution, template binding, assistant/scenario existence checks, or internal OpenAPI artifacts.
 
 ## Worker / Checker Notes
 
+- Worker 8C completed channel-gateway runtime-local `ChannelProviderRegistry` and profile config/default validation.
+  - Added shared channel provider registry loading for the validation endpoint and runtime registry. It filters to registrations with `exposes.channelProviderTypes`, ignores tool-only registrations, loads `core-channel-gateway` from in-process `ChannelGatewayDescriptorProvider`, fetches remote manifests with SDK URL/header helpers plus internal auth, validates manifests through the JVM SDK validator, and computes definition digests with the SDK helper.
+  - Added runtime registry behavior for profile writes: unknown provider types fail clearly, registry-not-ready blocks writes, omitted/empty config materializes descriptor `defaultConfig` or `{}`, effective profile config validates against descriptor `configSchema`, and descriptor `defaultConfig` is validated during registry load.
+  - Updated `ChannelAdminService` create/update to use the registry before persisting profile config while preserving the Slice 8B account snapshot boundary; no API-owned account/credential/assistant/definition runtime calls were added.
+  - Verification:
+    - `./gradlew :apps:channel-gateway:test --tests '*ChannelProviderRegistry*' --tests '*ChannelAdmin*' --tests '*Feishu*' --tests '*InternalAuth*'` passed.
+    - `rg "ChannelAccount|channel_account|channel_account_id|/channel-admin/accounts|ChannelProviderType" ...` still shows only the intentional old `/accounts` negative internal-auth test.
+    - `git diff --check` passed.
 - Worker 8B completed Slice 8B materialized Channel Profile account snapshot and internal DTO boundary.
   - Split Web-facing profile write DTOs (`integrationAccountId`) from API -> channel-gateway internal write DTOs (`accountSnapshot.accountId` / optional `accountSnapshot.externalSecretRef`).
   - API now materializes channel profile account snapshots through Slice 6 Integration Account availability for `CHANNEL_PROVIDER + providerType`; hard-block states stop writes before calling `channel-gateway`, while risk-only credential states remain allowed. Web-facing profile reads expose `accountId`, `hasExternalSecretRef`, and optional Integration Account display / availability summary only.
@@ -97,7 +106,35 @@
     - `rg "externalSecretRef" ...` showed only internal account snapshot/materialization/persistence usage plus existing Tool connector snapshot type.
     - `rg "ChannelAccount|channel_account|channel_account_id|/channel-admin/accounts|ChannelProviderType" ...` showed only the intentional old `/accounts` negative test.
     - `git diff --check` passed.
+- Worker 8C implemented initial channel-gateway runtime provider registry and profile config validation.
+  - Added runtime registry/load path under `apps/channel-gateway/src/main/java/com/lynxus/channel/gateway/extension/**`.
+  - Refactored registry validation service to reuse loader behavior.
+  - Updated profile create/update to require known provider type, apply defaults, and validate config against provider `configSchema`.
+  - Verification reported:
+    - `./gradlew :apps:channel-gateway:test --tests '*ChannelProviderRegistry*' --tests '*ChannelAdmin*' --tests '*Feishu*' --tests '*InternalAuth*'` passed.
+    - old account naming guardrail scan only returned the intentional old `/accounts` negative test.
+    - `git diff --check` passed.
+- Checker 8C verdict: fail.
+  - Blocking: validation endpoint reloaded manifests on every request instead of reporting the already-loaded `RuntimeChannelProviderRegistry` snapshot used by profile writes, allowing validation output to drift from actual runtime registry.
+  - Blocking: internal write DTO constructors collapsed null and empty config to `{}`, then runtime registry treated both as omitted and applied `defaultConfig`; explicit empty `{}` must remain explicit and fail validation when schema requires fields.
+  - No overreach into provider job/template binding/outbound delivery/internal OpenAPI/schema-driven Web/Slice 11 was found.
   - Follow-ups left for later Slice 8 subtasks: provider registry-backed config schema validation, assistant/scenario existence validation if a cheap API is available, provider job, template binding, outbound delivery changes, internal OpenAPI file, and schema-driven Web page.
+- Worker 8C-Repair fixed the two Checker 8C P1 findings.
+  - `ChannelProviderRegistryValidationService` now builds validation output from the injected runtime registry snapshot used by profile writes, while preserving `registrationConfigDigest` from `ExtensionRegistrationService`.
+  - Internal channel profile create/update contracts now preserve `config == null`; runtime config materialization applies `defaultConfig` only for null/omitted config, and explicit `{}` is validated as `{}`.
+  - Added regressions for validation snapshot reuse, null internal write config preservation, omitted config defaulting, and explicit empty config failing a required `configSchema`.
+  - Verification:
+    - `./gradlew :apps:channel-gateway:test --tests '*ChannelProviderRegistry*' --tests '*ChannelAdmin*' --tests '*Feishu*' --tests '*InternalAuth*'` passed.
+    - `rg "ChannelAccount|channel_account|channel_account_id|/channel-admin/accounts|ChannelProviderType" ...` still returns only the intentional old `/accounts` negative internal-auth test.
+    - `git diff --check` passed.
+- Checker 8C-Repair verdict: pass.
+  - Confirmed validation reports the runtime registry snapshot and does not reload manifests in `validate()`.
+  - Confirmed `defaultConfig` applies only to null/omitted config; explicit `{}` is preserved and validated as submitted.
+  - Confirmed nullable internal write config contracts, non-null persisted/read profile config, and regression coverage.
+  - Main forced verification after checker:
+    - `./gradlew :apps:channel-gateway:test --tests '*ChannelProviderRegistry*' --tests '*ChannelAdmin*' --tests '*Feishu*' --tests '*InternalAuth*' --rerun-tasks` passed.
+    - old account naming guardrail scan still returns only the intentional old `/accounts` negative internal-auth test.
+    - `git diff --check` passed.
 - Checker 8B verdict: pass.
   - Confirmed DTO separation, API materialization, gateway persistence/revision behavior, secret redaction, and scope discipline match Slice 8B.
   - Non-blocking drift found: `channel_profile.external_secret_ref` was `varchar(1024)` while API-owned `integration_account.external_secret_ref` and credential spec cap at 512.
@@ -1022,4 +1059,6 @@
 
 ## Blockers / Rework
 
-- No active Slice 8A blockers after checker review; include untracked generated jOOQ profile files before checkpoint commit.
+- Active Slice 8C rework:
+  - Make registry validation report the loaded runtime registry snapshot instead of reloading manifests.
+  - Preserve null-vs-empty config for profile write DTOs; only null/omitted config materializes descriptor `defaultConfig`, while explicit `{}` is validated as submitted.

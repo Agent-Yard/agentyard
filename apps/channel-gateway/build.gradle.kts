@@ -42,6 +42,9 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-flyway")
     implementation("org.flywaydb:flyway-database-postgresql")
     implementation("org.postgresql:postgresql:42.7.7")
+    implementation("com.networknt:json-schema-validator:2.0.1") {
+        exclude(group = "com.fasterxml.jackson.dataformat", module = "jackson-dataformat-yaml")
+    }
 
     codegenImplementation("org.flywaydb:flyway-core")
     codegenImplementation("org.flywaydb:flyway-database-postgresql")

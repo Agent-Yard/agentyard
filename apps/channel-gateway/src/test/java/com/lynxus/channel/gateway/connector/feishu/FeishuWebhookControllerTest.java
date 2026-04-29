@@ -7,6 +7,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.lynxus.channel.gateway.channel.ChannelAdminRepository;
 import com.lynxus.channel.gateway.channel.ChannelAdminService;
+import com.lynxus.channel.gateway.extension.ChannelGatewayDescriptorProvider;
+import com.lynxus.channel.gateway.extension.ChannelProviderRegistryLoader;
+import com.lynxus.channel.gateway.extension.ExtensionManifestFetcher;
+import com.lynxus.channel.gateway.extension.ExtensionRegistrationProperties;
+import com.lynxus.channel.gateway.extension.ExtensionRegistrationService;
+import com.lynxus.channel.gateway.extension.RuntimeChannelProviderRegistry;
 import com.lynxus.channel.gateway.shared.ApiExceptionHandler;
 import com.lynxus.channel.gateway.testing.EmbeddedPostgresTestDatabase;
 import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileInternalRequest;
@@ -41,7 +47,7 @@ class FeishuWebhookControllerTest {
         database.reset();
         ObjectMapper objectMapper = new ObjectMapper();
         repository = new ChannelAdminRepository(database.dsl(), objectMapper);
-        ChannelAdminService channelAdminService = new ChannelAdminService(repository);
+        ChannelAdminService channelAdminService = new ChannelAdminService(repository, coreRegistry());
         FeishuWebhookService feishuWebhookService = new FeishuWebhookService(channelAdminService, objectMapper);
         mockMvc = MockMvcBuilders.standaloneSetup(new FeishuWebhookController(feishuWebhookService))
             .setControllerAdvice(new ApiExceptionHandler())
@@ -55,6 +61,21 @@ class FeishuWebhookControllerTest {
             Map.of("appId", "cli_xxx", "verificationToken", "verify-token"),
             null,
             null
+        ));
+    }
+
+    private static RuntimeChannelProviderRegistry coreRegistry() {
+        ExtensionManifestFetcher fetcher = (manifestUrl, headers) -> {
+            throw new AssertionError("core channel gateway registry must not fetch self HTTP");
+        };
+        ExtensionRegistrationService registrationService = new ExtensionRegistrationService(
+            new ExtensionRegistrationProperties(null, "http://channel-gateway.example.com", "http://agent-runtime.example.com")
+        );
+        return new RuntimeChannelProviderRegistry(new ChannelProviderRegistryLoader(
+            registrationService,
+            new ChannelGatewayDescriptorProvider(),
+            fetcher,
+            "internal-token"
         ));
     }
 
