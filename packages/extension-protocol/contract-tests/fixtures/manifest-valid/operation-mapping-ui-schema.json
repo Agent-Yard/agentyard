@@ -1,0 +1,72 @@
+{
+  "name": "operation mapping UI schema",
+  "expectedErrorCode": null,
+  "manifest": {
+    "extensionApiVersion": 1,
+    "coreMinVersion": "0.8.0",
+    "coreMaxVersion": "0.9.x",
+    "descriptors": {
+      "channelProviders": [],
+      "toolConnectors": [
+        {
+          "connectorType": "enterprise.acme.erp",
+          "title": "Acme ERP",
+          "accountConfigSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          },
+          "accountConfigUiSchema": [],
+          "configSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          },
+          "configUiSchema": [],
+          "operationMappingSchema": {
+            "type": "object",
+            "properties": {
+              "remoteOperation": {
+                "type": "string"
+              },
+              "method": {
+                "type": "string",
+                "enum": ["GET", "POST"]
+              }
+            },
+            "required": ["remoteOperation"],
+            "additionalProperties": false
+          },
+          "operationMappingUiSchema": [
+            {
+              "key": "/remoteOperation",
+              "label": "Remote operation",
+              "component": "text",
+              "required": true,
+              "order": 10
+            },
+            {
+              "key": "/method",
+              "label": "Method",
+              "component": "select",
+              "options": [
+                {
+                  "label": "GET",
+                  "value": "GET"
+                },
+                {
+                  "label": "POST",
+                  "value": "POST"
+                }
+              ],
+              "order": 20
+            }
+          ],
+          "endpoints": {
+            "invoke": "/tools/invoke"
+          }
+        }
+      ]
+    }
+  }
+}

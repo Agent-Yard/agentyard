@@ -1,0 +1,7 @@
+{
+  "name": "unsafe integer rejection",
+  "input": "{\"value\":9007199254740992}",
+  "expectedCanonicalUtf8Hex": null,
+  "expectedDigest": null,
+  "expectedErrorCode": "CANONICAL_JSON_UNSAFE_INTEGER"
+}

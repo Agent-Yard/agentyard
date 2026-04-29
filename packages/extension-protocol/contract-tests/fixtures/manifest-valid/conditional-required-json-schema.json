@@ -1,0 +1,87 @@
+{
+  "name": "conditional required expressed by JSON Schema",
+  "expectedErrorCode": null,
+  "manifest": {
+    "extensionApiVersion": 1,
+    "coreMinVersion": "0.8.0",
+    "coreMaxVersion": "0.9.x",
+    "descriptors": {
+      "channelProviders": [],
+      "toolConnectors": [
+        {
+          "connectorType": "enterprise.acme.conditional",
+          "title": "Acme Conditional",
+          "accountConfigSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          },
+          "accountConfigUiSchema": [],
+          "configSchema": {
+            "type": "object",
+            "properties": {
+              "authMode": {
+                "type": "string",
+                "enum": ["none", "apiKey"]
+              },
+              "apiKeyRef": {
+                "type": "string"
+              }
+            },
+            "required": ["authMode"],
+            "if": {
+              "properties": {
+                "authMode": {
+                  "const": "apiKey"
+                }
+              }
+            },
+            "then": {
+              "required": ["apiKeyRef"]
+            },
+            "additionalProperties": false
+          },
+          "configUiSchema": [
+            {
+              "key": "/authMode",
+              "label": "Auth mode",
+              "component": "select",
+              "required": true,
+              "options": [
+                {
+                  "label": "None",
+                  "value": "none"
+                },
+                {
+                  "label": "API key",
+                  "value": "apiKey"
+                }
+              ],
+              "order": 10
+            },
+            {
+              "key": "/apiKeyRef",
+              "label": "API key reference",
+              "component": "text",
+              "visibilityCondition": {
+                "field": "/authMode",
+                "operator": "equals",
+                "value": "apiKey"
+              },
+              "order": 20
+            }
+          ],
+          "operationMappingSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          },
+          "operationMappingUiSchema": [],
+          "endpoints": {
+            "invoke": "/tools/invoke"
+          }
+        }
+      ]
+    }
+  }
+}

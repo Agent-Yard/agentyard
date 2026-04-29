@@ -1,0 +1,9 @@
+{
+  "name": "baseUrl path cannot contain raw whitespace",
+  "operatorYaml": "lynxus:\n  extensions:\n    services:\n      - registrationId: acme-channel-provider\n        baseUrl: http://Example.com/a b/\n        exposes:\n          channelProviderTypes:\n            - enterprise.acme.internal-im\n        auth:\n          type: INTERNAL_TOKEN\n",
+  "environment": {
+    "LYNXUS_AGENT_RUNTIME_URL": "http://agent-runtime:8080",
+    "LYNXUS_CHANNEL_GATEWAY_URL": "http://channel-gateway:8080"
+  },
+  "expectedErrorCode": "REGISTRATION_CONFIG_INVALID"
+}

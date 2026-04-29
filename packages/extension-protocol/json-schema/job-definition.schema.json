@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lynxus.dev/schemas/extension-protocol/job-definition.schema.json",
+  "title": "Channel provider job definition",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["jobType", "title", "jobConfigSchema", "jobConfigUiSchema"],
+  "properties": {
+    "jobType": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "jobConfigSchema": {
+      "type": "object"
+    },
+    "jobConfigUiSchema": {
+      "$ref": "ui-field.schema.json"
+    },
+    "defaultSchedule": {
+      "$ref": "schedule-config.schema.json"
+    },
+    "defaultEnabled": {
+      "type": "boolean"
+    },
+    "defaultJobTimeoutSeconds": {
+      "type": "integer",
+      "minimum": 1
+    }
+  }
+}

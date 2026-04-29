@@ -1,0 +1,44 @@
+{
+  "name": "invalid UI key missing JSON Schema property",
+  "expectedErrorCode": "UI_SCHEMA_PROPERTY_NOT_FOUND",
+  "manifest": {
+    "extensionApiVersion": 1,
+    "coreMinVersion": "0.8.0",
+    "coreMaxVersion": "0.9.x",
+    "descriptors": {
+      "channelProviders": [
+        {
+          "providerType": "enterprise.acme.invalid-missing",
+          "title": "Invalid Missing",
+          "accountConfigSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          },
+          "accountConfigUiSchema": [],
+          "configSchema": {
+            "type": "object",
+            "properties": {
+              "tenantId": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "configUiSchema": [
+            {
+              "key": "/missing",
+              "label": "Missing",
+              "component": "text",
+              "order": 10
+            }
+          ],
+          "endpoints": {
+            "sendOutbound": "/channel/send-outbound"
+          }
+        }
+      ],
+      "toolConnectors": []
+    }
+  }
+}

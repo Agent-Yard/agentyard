@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lynxus.dev/schemas/extension-protocol/ui-field.schema.json",
+  "title": "Lynxus UI field schema",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["key", "label", "component"],
+    "properties": {
+      "key": {
+        "type": "string",
+        "pattern": "^(/([^/~]|~0|~1)*)+$"
+      },
+      "label": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 120
+      },
+      "description": {
+        "type": "string",
+        "maxLength": 1000
+      },
+      "placeholder": {
+        "type": "string",
+        "maxLength": 200
+      },
+      "component": {
+        "type": "string",
+        "enum": [
+          "text",
+          "textarea",
+          "password",
+          "number",
+          "boolean",
+          "select",
+          "multiSelect",
+          "radio",
+          "checkboxGroup",
+          "json",
+          "cron",
+          "duration",
+          "url",
+          "email",
+          "dateTime"
+        ]
+      },
+      "required": {
+        "type": "boolean"
+      },
+      "defaultValue": true,
+      "options": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["label", "value"],
+          "properties": {
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "value": {
+              "type": ["string", "number", "boolean"]
+            }
+          }
+        }
+      },
+      "visibilityCondition": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["field", "operator"],
+        "properties": {
+          "field": {
+            "type": "string",
+            "pattern": "^(/([^/~]|~0|~1)*)+$"
+          },
+          "operator": {
+            "type": "string",
+            "enum": ["equals", "notEquals", "in", "notIn", "exists", "notExists"]
+          },
+          "value": true
+        }
+      },
+      "validationMessage": {
+        "type": "string",
+        "maxLength": 500
+      },
+      "secret": {
+        "type": "boolean"
+      },
+      "readOnly": {
+        "type": "boolean"
+      },
+      "order": {
+        "type": "integer"
+      },
+      "group": {
+        "type": "string",
+        "maxLength": 120
+      }
+    }
+  },
+  "uniqueItems": true
+}

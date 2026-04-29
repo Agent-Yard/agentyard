@@ -1,0 +1,7 @@
+{
+  "name": "duplicate key rejection",
+  "input": "{\"a\":1,\"a\":2}",
+  "expectedCanonicalUtf8Hex": null,
+  "expectedDigest": null,
+  "expectedErrorCode": "CANONICAL_JSON_DUPLICATE_KEY"
+}

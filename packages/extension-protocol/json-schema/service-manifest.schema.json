@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lynxus.dev/schemas/extension-protocol/service-manifest.schema.json",
+  "title": "Extension service manifest envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["extensionApiVersion", "coreMinVersion", "coreMaxVersion", "descriptors"],
+  "properties": {
+    "extensionApiVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "coreMinVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "coreMaxVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "descriptors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["channelProviders", "toolConnectors"],
+      "anyOf": [
+        {
+          "required": ["channelProviders"],
+          "properties": {
+            "channelProviders": {
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "required": ["toolConnectors"],
+          "properties": {
+            "toolConnectors": {
+              "minItems": 1
+            }
+          }
+        }
+      ],
+      "properties": {
+        "channelProviders": {
+          "type": "array",
+          "items": {
+            "$ref": "channel-provider-descriptor.schema.json"
+          }
+        },
+        "toolConnectors": {
+          "type": "array",
+          "items": {
+            "$ref": "tool-connector-descriptor.schema.json"
+          }
+        }
+      }
+    }
+  }
+}

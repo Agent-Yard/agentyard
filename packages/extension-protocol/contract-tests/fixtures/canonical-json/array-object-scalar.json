@@ -1,0 +1,7 @@
+{
+  "name": "array with object, empty array, empty object, null, and boolean",
+  "input": "{\"items\":[{\"b\":2,\"a\":1},[],{}],\"ok\":true,\"none\":null}",
+  "expectedCanonicalUtf8Hex": "7b226974656d73223a5b7b2261223a312c2262223a327d2c5b5d2c7b7d5d2c226e6f6e65223a6e756c6c2c226f6b223a747275657d",
+  "expectedDigest": "sha256:dd15ca3f0a1dbe4745d2155bff11eef3ed486d24e4daaeb991c95f65fd63fe10",
+  "expectedErrorCode": null
+}

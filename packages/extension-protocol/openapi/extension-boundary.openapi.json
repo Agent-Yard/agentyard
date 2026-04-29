@@ -1,0 +1,1477 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Lynxus Extension Boundary Protocol",
+    "version": "0.1.0",
+    "description": "Extension Plane HTTP operations between Lynxus core runtime/control-plane services and extension services."
+  },
+  "paths": {
+    "/extension/manifest": {
+      "get": {
+        "operationId": "getExtensionManifest",
+        "summary": "Fetch the service-level extension manifest envelope.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AuthorizationHeader"
+          },
+          {
+            "$ref": "#/components/parameters/RegistrationIdHeaderOptional"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service-level manifest envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceManifestEnvelope"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/ExtensionErrorResponse"
+          }
+        }
+      }
+    },
+    "/extension/health": {
+      "get": {
+        "operationId": "getExtensionHealth",
+        "summary": "Optional extension service diagnostic health endpoint.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AuthorizationHeader"
+          },
+          {
+            "$ref": "#/components/parameters/RegistrationIdHeaderOptional"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Extension diagnostic health.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtensionHealth"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/ExtensionErrorResponse"
+          }
+        }
+      }
+    },
+    "/health/live": {
+      "get": {
+        "operationId": "getHealthLive",
+        "summary": "Service liveness endpoint.",
+        "responses": {
+          "200": {
+            "description": "Service is live.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthProbe"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "operationId": "getHealthReady",
+        "summary": "Service readiness endpoint.",
+        "responses": {
+          "200": {
+            "description": "Service is ready.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthProbe"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tools/invoke": {
+      "post": {
+        "operationId": "invokeToolConnector",
+        "summary": "Representative path for toolConnector.endpoints.invoke. Actual path is manifest-declared.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AuthorizationHeader"
+          },
+          {
+            "$ref": "#/components/parameters/RegistrationIdHeaderRequired"
+          },
+          {
+            "$ref": "#/components/parameters/DescriptorTypeHeader"
+          },
+          {
+            "$ref": "#/components/parameters/DescriptorIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/TraceIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/RequestIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteToolInvokeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool invocation succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolInvokeResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/ExtensionErrorResponse"
+          }
+        }
+      }
+    },
+    "/channel/send-outbound": {
+      "post": {
+        "operationId": "sendChannelOutbound",
+        "summary": "Representative path for channelProvider.endpoints.sendOutbound. Actual path is manifest-declared.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AuthorizationHeader"
+          },
+          {
+            "$ref": "#/components/parameters/RegistrationIdHeaderRequired"
+          },
+          {
+            "$ref": "#/components/parameters/DescriptorTypeHeader"
+          },
+          {
+            "$ref": "#/components/parameters/DescriptorIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/TraceIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/RequestIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelOutboundRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Outbound delivery result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelOutboundResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/ExtensionErrorResponse"
+          }
+        }
+      }
+    },
+    "/channel/run-job": {
+      "post": {
+        "operationId": "runChannelProviderJob",
+        "summary": "Representative path for channelProvider.endpoints.runJob. Actual path is manifest-declared.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AuthorizationHeader"
+          },
+          {
+            "$ref": "#/components/parameters/RegistrationIdHeaderRequired"
+          },
+          {
+            "$ref": "#/components/parameters/DescriptorTypeHeader"
+          },
+          {
+            "$ref": "#/components/parameters/DescriptorIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/TraceIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/RequestIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelRunJobRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Provider job run result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelRunJobResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/ExtensionErrorResponse"
+          }
+        }
+      }
+    },
+    "/credentials": {
+      "post": {
+        "operationId": "createCredential",
+        "summary": "Representative path for descriptor.endpoints.createCredential. Actual path is manifest-declared.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AuthorizationHeader"
+          },
+          {
+            "$ref": "#/components/parameters/TraceIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/RequestIdHeader"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCredentialRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Credential created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateCredentialResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/ExtensionErrorResponse"
+          }
+        }
+      }
+    },
+    "/credentials/rotate": {
+      "post": {
+        "operationId": "rotateCredential",
+        "summary": "Representative path for descriptor.endpoints.rotateCredential. Actual path is manifest-declared.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AuthorizationHeader"
+          },
+          {
+            "$ref": "#/components/parameters/TraceIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/RequestIdHeader"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RotateCredentialRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Credential rotated in-place.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RotateCredentialResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/ExtensionErrorResponse"
+          }
+        }
+      }
+    },
+    "/credentials/revoke": {
+      "post": {
+        "operationId": "revokeCredential",
+        "summary": "Representative path for descriptor.endpoints.revokeCredential. Actual path is manifest-declared.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AuthorizationHeader"
+          },
+          {
+            "$ref": "#/components/parameters/TraceIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/RequestIdHeader"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeCredentialRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Credential revoked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeCredentialResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/ExtensionErrorResponse"
+          }
+        }
+      }
+    },
+    "/credentials/validate": {
+      "post": {
+        "operationId": "validateCredential",
+        "summary": "Representative path for descriptor.endpoints.validateCredential. Actual path is manifest-declared.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AuthorizationHeader"
+          },
+          {
+            "$ref": "#/components/parameters/TraceIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/RequestIdHeader"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValidateCredentialRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Credential validation result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidateCredentialResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/ExtensionErrorResponse"
+          }
+        }
+      }
+    },
+    "/internal/channel-events/normalized": {
+      "post": {
+        "operationId": "ingestNormalizedChannelEvent",
+        "summary": "Core internal endpoint called by remote channel providers.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AuthorizationHeader"
+          },
+          {
+            "$ref": "#/components/parameters/RegistrationIdHeaderRequired"
+          },
+          {
+            "$ref": "#/components/parameters/DescriptorTypeHeader"
+          },
+          {
+            "$ref": "#/components/parameters/DescriptorIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/TraceIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/RequestIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NormalizedChannelInboundEvent"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Event accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NormalizedEventAccepted"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/ExtensionErrorResponse"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "AuthorizationHeader": {
+        "name": "Authorization",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "RegistrationIdHeaderOptional": {
+        "name": "X-Lynxus-Extension-Registration-Id",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "RegistrationIdHeaderRequired": {
+        "name": "X-Lynxus-Extension-Registration-Id",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "DescriptorTypeHeader": {
+        "name": "X-Lynxus-Extension-Descriptor-Type",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "enum": ["TOOL_CONNECTOR", "CHANNEL_PROVIDER"]
+        }
+      },
+      "DescriptorIdHeader": {
+        "name": "X-Lynxus-Extension-Descriptor-Id",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "TraceIdHeader": {
+        "name": "X-Lynxus-Trace-Id",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "RequestIdHeader": {
+        "name": "X-Lynxus-Request-Id",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "IdempotencyKeyHeader": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/IdempotencyKey"
+        }
+      }
+    },
+    "responses": {
+      "ExtensionErrorResponse": {
+        "description": "Structured extension error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ExtensionError"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "IdempotencyKey": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9._:-]+$"
+      },
+      "TraceContext": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["traceparent"],
+        "properties": {
+          "traceparent": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "tracestate": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "baggage": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ExternalSecretRef": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "JsonObject": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "ExtensionError": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["errorCode", "message", "category", "retryable", "details"],
+        "properties": {
+          "errorCode": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "AUTH",
+              "BAD_REQUEST",
+              "REMOTE_TIMEOUT",
+              "REMOTE_UNAVAILABLE",
+              "REMOTE_RATE_LIMITED",
+              "REMOTE_BUSINESS_REJECTED",
+              "PROTOCOL_ERROR",
+              "CIRCUIT_OPEN",
+              "UNKNOWN"
+            ]
+          },
+          "retryable": {
+            "type": "boolean"
+          },
+          "details": {
+            "$ref": "#/components/schemas/JsonObject"
+          }
+        }
+      },
+      "ServiceManifestEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["extensionApiVersion", "coreMinVersion", "coreMaxVersion", "descriptors"],
+        "properties": {
+          "extensionApiVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "coreMinVersion": {
+            "type": "string"
+          },
+          "coreMaxVersion": {
+            "type": "string"
+          },
+          "descriptors": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["channelProviders", "toolConnectors"],
+            "anyOf": [
+              {
+                "required": ["channelProviders"],
+                "properties": {
+                  "channelProviders": {
+                    "minItems": 1
+                  }
+                }
+              },
+              {
+                "required": ["toolConnectors"],
+                "properties": {
+                  "toolConnectors": {
+                    "minItems": 1
+                  }
+                }
+              }
+            ],
+            "properties": {
+              "channelProviders": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ChannelProviderDescriptor"
+                }
+              },
+              "toolConnectors": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ToolConnectorDescriptor"
+                }
+              }
+            }
+          }
+        }
+      },
+      "UiFieldArray": {
+        "type": "array",
+        "items": {
+          "type": "object"
+        }
+      },
+      "ChannelProviderDescriptor": {
+        "type": "object",
+        "required": ["providerType", "title", "accountConfigSchema", "accountConfigUiSchema", "configSchema", "configUiSchema", "endpoints"],
+        "properties": {
+          "providerType": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "accountConfigSchema": {
+            "$ref": "#/components/schemas/JsonObject"
+          },
+          "accountConfigUiSchema": {
+            "$ref": "#/components/schemas/UiFieldArray"
+          },
+          "credentialSchema": {
+            "$ref": "#/components/schemas/JsonObject"
+          },
+          "credentialUiSchema": {
+            "$ref": "#/components/schemas/UiFieldArray"
+          },
+          "configSchema": {
+            "$ref": "#/components/schemas/JsonObject"
+          },
+          "configUiSchema": {
+            "$ref": "#/components/schemas/UiFieldArray"
+          },
+          "defaultConfig": {
+            "$ref": "#/components/schemas/JsonObject"
+          },
+          "jobDefinitions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChannelJobDefinition"
+            }
+          },
+          "endpoints": {
+            "$ref": "#/components/schemas/ChannelProviderEndpoints"
+          }
+        }
+      },
+      "ToolConnectorDescriptor": {
+        "type": "object",
+        "required": ["connectorType", "title", "accountConfigSchema", "accountConfigUiSchema", "configSchema", "configUiSchema", "operationMappingSchema", "operationMappingUiSchema", "endpoints"],
+        "properties": {
+          "connectorType": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "accountConfigSchema": {
+            "$ref": "#/components/schemas/JsonObject"
+          },
+          "accountConfigUiSchema": {
+            "$ref": "#/components/schemas/UiFieldArray"
+          },
+          "configSchema": {
+            "$ref": "#/components/schemas/JsonObject"
+          },
+          "configUiSchema": {
+            "$ref": "#/components/schemas/UiFieldArray"
+          },
+          "credentialSchema": {
+            "$ref": "#/components/schemas/JsonObject"
+          },
+          "credentialUiSchema": {
+            "$ref": "#/components/schemas/UiFieldArray"
+          },
+          "operationMappingSchema": {
+            "$ref": "#/components/schemas/JsonObject"
+          },
+          "operationMappingUiSchema": {
+            "$ref": "#/components/schemas/UiFieldArray"
+          },
+          "endpoints": {
+            "$ref": "#/components/schemas/ToolConnectorEndpoints"
+          }
+        }
+      },
+      "DeclaredPath": {
+        "type": "string",
+        "pattern": "^/[^?#]*$"
+      },
+      "ToolConnectorEndpoints": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["invoke"],
+        "properties": {
+          "invoke": {
+            "$ref": "#/components/schemas/DeclaredPath"
+          },
+          "createCredential": {
+            "$ref": "#/components/schemas/DeclaredPath"
+          },
+          "rotateCredential": {
+            "$ref": "#/components/schemas/DeclaredPath"
+          },
+          "revokeCredential": {
+            "$ref": "#/components/schemas/DeclaredPath"
+          },
+          "validateCredential": {
+            "$ref": "#/components/schemas/DeclaredPath"
+          }
+        }
+      },
+      "ChannelProviderEndpoints": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sendOutbound"],
+        "properties": {
+          "sendOutbound": {
+            "$ref": "#/components/schemas/DeclaredPath"
+          },
+          "runJob": {
+            "$ref": "#/components/schemas/DeclaredPath"
+          },
+          "createCredential": {
+            "$ref": "#/components/schemas/DeclaredPath"
+          },
+          "rotateCredential": {
+            "$ref": "#/components/schemas/DeclaredPath"
+          },
+          "revokeCredential": {
+            "$ref": "#/components/schemas/DeclaredPath"
+          },
+          "validateCredential": {
+            "$ref": "#/components/schemas/DeclaredPath"
+          }
+        }
+      },
+      "ChannelJobDefinition": {
+        "type": "object",
+        "required": ["jobType", "title", "jobConfigSchema", "jobConfigUiSchema"],
+        "properties": {
+          "jobType": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "jobConfigSchema": {
+            "$ref": "#/components/schemas/JsonObject"
+          },
+          "jobConfigUiSchema": {
+            "$ref": "#/components/schemas/UiFieldArray"
+          },
+          "defaultSchedule": {
+            "$ref": "#/components/schemas/ScheduleConfig"
+          },
+          "defaultEnabled": {
+            "type": "boolean"
+          },
+          "defaultJobTimeoutSeconds": {
+            "type": "integer"
+          }
+        }
+      },
+      "ScheduleConfig": {
+        "type": "object",
+        "required": ["scheduleType", "timezone", "jobConfig"],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "scheduleType": {
+            "type": "string",
+            "enum": ["INTERVAL", "CRON", "MANUAL"]
+          },
+          "intervalSeconds": {
+            "type": ["integer", "null"]
+          },
+          "cronExpression": {
+            "type": ["string", "null"]
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "jobTimeoutSeconds": {
+            "type": ["integer", "null"]
+          },
+          "jobConfig": {
+            "$ref": "#/components/schemas/JsonObject"
+          }
+        }
+      },
+      "DescriptorRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "id"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["TOOL_CONNECTOR", "CHANNEL_PROVIDER"]
+          },
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateCredentialAccount": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["config"],
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/JsonObject"
+          }
+        }
+      },
+      "ExistingCredentialAccount": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["config", "externalSecretRef"],
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/JsonObject"
+          },
+          "externalSecretRef": {
+            "$ref": "#/components/schemas/ExternalSecretRef"
+          }
+        }
+      },
+      "CreateCredentialRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["descriptor", "account", "credential", "traceContext"],
+        "properties": {
+          "descriptor": {
+            "$ref": "#/components/schemas/DescriptorRef"
+          },
+          "account": {
+            "$ref": "#/components/schemas/CreateCredentialAccount"
+          },
+          "credential": {
+            "$ref": "#/components/schemas/JsonObject"
+          },
+          "traceContext": {
+            "$ref": "#/components/schemas/TraceContext"
+          }
+        }
+      },
+      "RotateCredentialRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["descriptor", "account", "credential", "traceContext"],
+        "properties": {
+          "descriptor": {
+            "$ref": "#/components/schemas/DescriptorRef"
+          },
+          "account": {
+            "$ref": "#/components/schemas/ExistingCredentialAccount"
+          },
+          "credential": {
+            "$ref": "#/components/schemas/JsonObject"
+          },
+          "traceContext": {
+            "$ref": "#/components/schemas/TraceContext"
+          }
+        }
+      },
+      "ValidateCredentialRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["descriptor", "account", "traceContext"],
+        "properties": {
+          "descriptor": {
+            "$ref": "#/components/schemas/DescriptorRef"
+          },
+          "account": {
+            "$ref": "#/components/schemas/ExistingCredentialAccount"
+          },
+          "traceContext": {
+            "$ref": "#/components/schemas/TraceContext"
+          }
+        }
+      },
+      "RevokeCredentialRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["descriptor", "account", "traceContext"],
+        "properties": {
+          "descriptor": {
+            "$ref": "#/components/schemas/DescriptorRef"
+          },
+          "account": {
+            "$ref": "#/components/schemas/ExistingCredentialAccount"
+          },
+          "traceContext": {
+            "$ref": "#/components/schemas/TraceContext"
+          }
+        }
+      },
+      "CreateCredentialResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["externalSecretRef", "credentialStatus"],
+        "properties": {
+          "externalSecretRef": {
+            "$ref": "#/components/schemas/ExternalSecretRef"
+          },
+          "credentialStatus": {
+            "type": "string",
+            "const": "ACTIVE"
+          }
+        }
+      },
+      "RotateCredentialResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["externalSecretRef", "credentialStatus"],
+        "properties": {
+          "externalSecretRef": {
+            "$ref": "#/components/schemas/ExternalSecretRef"
+          },
+          "credentialStatus": {
+            "type": "string",
+            "const": "ACTIVE"
+          }
+        }
+      },
+      "ValidateCredentialResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["credentialStatus"],
+        "properties": {
+          "credentialStatus": {
+            "type": "string",
+            "enum": ["ACTIVE", "VALIDATION_FAILED", "ROTATION_REQUIRED"]
+          }
+        }
+      },
+      "RevokeCredentialResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["credentialStatus"],
+        "properties": {
+          "credentialStatus": {
+            "type": "string",
+            "const": "REVOKED"
+          }
+        }
+      },
+      "RemoteToolInvokeRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["connectorType", "tool", "operation", "config", "input", "execution"],
+        "properties": {
+          "connectorType": {
+            "type": "string"
+          },
+          "externalSecretRef": {
+            "$ref": "#/components/schemas/ExternalSecretRef"
+          },
+          "tool": {
+            "type": "object",
+            "required": ["resourceId", "resourceVersionId", "name"],
+            "properties": {
+              "resourceId": {
+                "type": "string"
+              },
+              "resourceVersionId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "operation": {
+            "type": "object",
+            "required": ["name"],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            }
+          },
+          "config": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["connector", "operationMapping"],
+            "properties": {
+              "connector": {
+                "$ref": "#/components/schemas/JsonObject"
+              },
+              "operationMapping": {
+                "$ref": "#/components/schemas/JsonObject"
+              }
+            }
+          },
+          "input": {
+            "type": "object",
+            "required": ["arguments"],
+            "properties": {
+              "arguments": {
+                "$ref": "#/components/schemas/JsonObject"
+              }
+            }
+          },
+          "execution": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["idempotencyKey", "timeoutSeconds", "traceContext"],
+            "properties": {
+              "idempotencyKey": {
+                "$ref": "#/components/schemas/IdempotencyKey"
+              },
+              "timeoutSeconds": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "traceContext": {
+                "$ref": "#/components/schemas/TraceContext"
+              }
+            }
+          }
+        }
+      },
+      "ToolInvokeResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "output", "metadata"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "SUCCEEDED"
+          },
+          "output": {
+            "$ref": "#/components/schemas/JsonObject"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/JsonObject"
+          }
+        }
+      },
+      "ChannelOutboundRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["providerType", "channelProfileId", "config", "idempotencyKey", "traceContext", "payload"],
+        "properties": {
+          "providerType": {
+            "type": "string"
+          },
+          "channelProfileId": {
+            "type": "string"
+          },
+          "config": {
+            "$ref": "#/components/schemas/JsonObject"
+          },
+          "externalSecretRef": {
+            "$ref": "#/components/schemas/ExternalSecretRef"
+          },
+          "idempotencyKey": {
+            "$ref": "#/components/schemas/IdempotencyKey"
+          },
+          "traceContext": {
+            "$ref": "#/components/schemas/TraceContext"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/ChannelOutboundPayload"
+          }
+        }
+      },
+      "ChannelOutboundPayload": {
+        "type": "object",
+        "required": ["externalConversationId", "messageBlock"],
+        "properties": {
+          "externalConversationId": {
+            "type": "string"
+          },
+          "messageBlock": {
+            "$ref": "#/components/schemas/JsonObject"
+          },
+          "resolvedTemplate": {
+            "$ref": "#/components/schemas/ResolvedTemplate"
+          }
+        }
+      },
+      "ResolvedTemplate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["messageType", "messageVersion", "externalTemplateId"],
+        "properties": {
+          "messageType": {
+            "type": "string"
+          },
+          "messageSubtype": {
+            "type": ["string", "null"]
+          },
+          "messageVersion": {
+            "type": "string"
+          },
+          "externalTemplateId": {
+            "type": "string"
+          },
+          "externalTemplateVersion": {
+            "type": ["string", "null"]
+          }
+        }
+      },
+      "ChannelOutboundResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "retryable", "metadata"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["SENT", "ACCEPTED"]
+          },
+          "externalMessageId": {
+            "type": "string"
+          },
+          "retryable": {
+            "type": "boolean"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/JsonObject"
+          }
+        }
+      },
+      "ChannelRunJobRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["providerType", "channelProfileId", "config", "idempotencyKey", "traceContext", "payload"],
+        "properties": {
+          "providerType": {
+            "type": "string"
+          },
+          "channelProfileId": {
+            "type": "string"
+          },
+          "config": {
+            "$ref": "#/components/schemas/JsonObject"
+          },
+          "externalSecretRef": {
+            "$ref": "#/components/schemas/ExternalSecretRef"
+          },
+          "idempotencyKey": {
+            "$ref": "#/components/schemas/IdempotencyKey"
+          },
+          "traceContext": {
+            "$ref": "#/components/schemas/TraceContext"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["jobType", "jobConfig"],
+            "properties": {
+              "jobType": {
+                "type": "string"
+              },
+              "jobConfig": {
+                "$ref": "#/components/schemas/JsonObject"
+              },
+              "scheduledAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        }
+      },
+      "ChannelRunJobResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "events", "metadata"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["SUCCEEDED", "NOOP"]
+          },
+          "nextCursor": {
+            "type": ["string", "null"]
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NormalizedChannelInboundEvent"
+            }
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/JsonObject"
+          }
+        }
+      },
+      "NormalizedChannelInboundEvent": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["providerType", "channelProfileId", "eventType", "dedupKey", "normalizedPayload", "traceContext"],
+        "properties": {
+          "providerType": {
+            "type": "string"
+          },
+          "channelProfileId": {
+            "type": "string"
+          },
+          "eventType": {
+            "type": "string",
+            "enum": [
+              "MESSAGE_RECEIVED",
+              "MESSAGE_UPDATED",
+              "MESSAGE_DELETED",
+              "CONVERSATION_UPDATED",
+              "MEMBER_JOINED",
+              "MEMBER_LEFT",
+              "REACTION_ADDED",
+              "FILE_RECEIVED",
+              "WEBHOOK_VERIFIED",
+              "UNKNOWN"
+            ]
+          },
+          "dedupKey": {
+            "$ref": "#/components/schemas/IdempotencyKey"
+          },
+          "externalEventId": {
+            "type": "string"
+          },
+          "externalConversationId": {
+            "type": "string"
+          },
+          "externalMessageId": {
+            "type": "string"
+          },
+          "externalUserId": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "conversation": {
+            "$ref": "#/components/schemas/NormalizedConversation"
+          },
+          "sender": {
+            "$ref": "#/components/schemas/NormalizedSender"
+          },
+          "message": {
+            "$ref": "#/components/schemas/NormalizedMessage"
+          },
+          "normalizedPayload": {
+            "$ref": "#/components/schemas/JsonObject"
+          },
+          "rawPayload": {
+            "$ref": "#/components/schemas/JsonObject"
+          },
+          "traceContext": {
+            "$ref": "#/components/schemas/TraceContext"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/JsonObject"
+          }
+        }
+      },
+      "NormalizedConversation": {
+        "type": "object",
+        "required": ["externalConversationId", "type", "metadata"],
+        "properties": {
+          "externalConversationId": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["DIRECT", "GROUP", "CHANNEL", "UNKNOWN"]
+          },
+          "title": {
+            "type": "string"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/JsonObject"
+          }
+        }
+      },
+      "NormalizedSender": {
+        "type": "object",
+        "required": ["externalUserId", "metadata"],
+        "properties": {
+          "externalUserId": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/JsonObject"
+          }
+        }
+      },
+      "NormalizedMessage": {
+        "type": "object",
+        "required": ["type", "metadata"],
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "externalMessageId": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JsonObject"
+            }
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/JsonObject"
+          }
+        }
+      },
+      "NormalizedEventAccepted": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["accepted"],
+        "properties": {
+          "accepted": {
+            "type": "boolean",
+            "const": true
+          }
+        }
+      },
+      "ExtensionHealth": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["UP", "DOWN", "DEGRADED"]
+          },
+          "details": {
+            "$ref": "#/components/schemas/JsonObject"
+          }
+        }
+      },
+      "HealthProbe": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["UP"]
+          }
+        }
+      }
+    }
+  }
+}

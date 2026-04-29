@@ -1,0 +1,7 @@
+{
+  "errorCode": "REMOTE_AUTH_FAILED",
+  "message": "credential expired",
+  "category": "AUTH",
+  "retryable": false,
+  "details": {}
+}

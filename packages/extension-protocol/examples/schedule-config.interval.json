@@ -1,0 +1,11 @@
+{
+  "enabled": true,
+  "scheduleType": "INTERVAL",
+  "intervalSeconds": 60,
+  "cronExpression": null,
+  "timezone": "UTC",
+  "jobTimeoutSeconds": 60,
+  "jobConfig": {
+    "lookbackMinutes": 15
+  }
+}

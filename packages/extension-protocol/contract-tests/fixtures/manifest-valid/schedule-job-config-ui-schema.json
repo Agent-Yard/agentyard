@@ -1,0 +1,92 @@
+{
+  "name": "schedule job config UI schema",
+  "expectedErrorCode": null,
+  "manifest": {
+    "extensionApiVersion": 1,
+    "coreMinVersion": "0.8.0",
+    "coreMaxVersion": "0.9.x",
+    "descriptors": {
+      "channelProviders": [
+        {
+          "providerType": "enterprise.acme.ticket",
+          "title": "Acme Ticket",
+          "accountConfigSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          },
+          "accountConfigUiSchema": [],
+          "configSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          },
+          "configUiSchema": [],
+          "jobDefinitions": [
+            {
+              "jobType": "PULL_TICKETS",
+              "title": "Pull tickets",
+              "jobConfigSchema": {
+                "type": "object",
+                "properties": {
+                  "lookbackMinutes": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "priority": {
+                    "type": "string",
+                    "enum": ["all", "high"]
+                  }
+                },
+                "required": ["lookbackMinutes"],
+                "additionalProperties": false
+              },
+              "jobConfigUiSchema": [
+                {
+                  "key": "/lookbackMinutes",
+                  "label": "Lookback minutes",
+                  "component": "number",
+                  "required": true,
+                  "order": 10
+                },
+                {
+                  "key": "/priority",
+                  "label": "Priority",
+                  "component": "radio",
+                  "options": [
+                    {
+                      "label": "All",
+                      "value": "all"
+                    },
+                    {
+                      "label": "High",
+                      "value": "high"
+                    }
+                  ],
+                  "order": 20
+                }
+              ],
+              "defaultSchedule": {
+                "scheduleType": "INTERVAL",
+                "intervalSeconds": 60,
+                "cronExpression": null,
+                "timezone": "UTC",
+                "jobConfig": {
+                  "lookbackMinutes": 15,
+                  "priority": "all"
+                }
+              },
+              "defaultEnabled": false,
+              "defaultJobTimeoutSeconds": 60
+            }
+          ],
+          "endpoints": {
+            "sendOutbound": "/channel/send-outbound",
+            "runJob": "/channel/run-job"
+          }
+        }
+      ],
+      "toolConnectors": []
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "service-level ready health does not require trace header",
+  "operation": "healthReady",
+  "expectedErrorCode": null,
+  "headers": {}
+}

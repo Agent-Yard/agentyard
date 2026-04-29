@@ -1,0 +1,212 @@
+{
+  "extensionApiVersion": 1,
+  "coreMinVersion": "0.8.0",
+  "coreMaxVersion": "0.9.x",
+  "descriptors": {
+    "channelProviders": [
+      {
+        "providerType": "enterprise.acme.internal-im",
+        "title": "Acme Internal IM",
+        "description": "Remote enterprise channel provider example.",
+        "accountConfigSchema": {
+          "type": "object",
+          "properties": {
+            "tenantId": {
+              "type": "string"
+            }
+          },
+          "required": ["tenantId"],
+          "additionalProperties": false
+        },
+        "accountConfigUiSchema": [
+          {
+            "key": "/tenantId",
+            "label": "Tenant",
+            "component": "text",
+            "required": true,
+            "order": 10
+          }
+        ],
+        "credentialSchema": {
+          "type": "object",
+          "properties": {
+            "apiKey": {
+              "type": "string"
+            }
+          },
+          "required": ["apiKey"],
+          "additionalProperties": false
+        },
+        "credentialUiSchema": [
+          {
+            "key": "/apiKey",
+            "label": "API key",
+            "component": "password",
+            "required": true,
+            "secret": true,
+            "order": 10
+          }
+        ],
+        "configSchema": {
+          "type": "object",
+          "properties": {
+            "roomPrefix": {
+              "type": "string"
+            }
+          },
+          "required": ["roomPrefix"],
+          "additionalProperties": false
+        },
+        "configUiSchema": [
+          {
+            "key": "/roomPrefix",
+            "label": "Room prefix",
+            "component": "text",
+            "required": true,
+            "order": 10
+          }
+        ],
+        "defaultConfig": {
+          "roomPrefix": "support-"
+        },
+        "jobDefinitions": [
+          {
+            "jobType": "PULL_MESSAGES",
+            "title": "Pull messages",
+            "description": "Pull missed messages from the provider.",
+            "jobConfigSchema": {
+              "type": "object",
+              "properties": {
+                "lookbackMinutes": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": ["lookbackMinutes"],
+              "additionalProperties": false
+            },
+            "jobConfigUiSchema": [
+              {
+                "key": "/lookbackMinutes",
+                "label": "Lookback minutes",
+                "component": "number",
+                "required": true,
+                "order": 10
+              }
+            ],
+            "defaultSchedule": {
+              "scheduleType": "INTERVAL",
+              "intervalSeconds": 60,
+              "cronExpression": null,
+              "timezone": "UTC",
+              "jobConfig": {
+                "lookbackMinutes": 15
+              }
+            },
+            "defaultEnabled": false,
+            "defaultJobTimeoutSeconds": 60
+          }
+        ],
+        "endpoints": {
+          "sendOutbound": "/channel/send-outbound",
+          "runJob": "/channel/run-job",
+          "createCredential": "/credentials",
+          "rotateCredential": "/credentials/rotate",
+          "revokeCredential": "/credentials/revoke",
+          "validateCredential": "/credentials/validate"
+        }
+      }
+    ],
+    "toolConnectors": [
+      {
+        "connectorType": "enterprise.acme.crm",
+        "title": "Acme CRM",
+        "description": "Remote enterprise tool connector example.",
+        "accountConfigSchema": {
+          "type": "object",
+          "properties": {
+            "tenantId": {
+              "type": "string"
+            }
+          },
+          "required": ["tenantId"],
+          "additionalProperties": false
+        },
+        "accountConfigUiSchema": [
+          {
+            "key": "/tenantId",
+            "label": "Tenant",
+            "component": "text",
+            "required": true,
+            "order": 10
+          }
+        ],
+        "configSchema": {
+          "type": "object",
+          "properties": {
+            "basePath": {
+              "type": "string"
+            }
+          },
+          "required": ["basePath"],
+          "additionalProperties": false
+        },
+        "configUiSchema": [
+          {
+            "key": "/basePath",
+            "label": "Base path",
+            "component": "text",
+            "required": true,
+            "order": 10
+          }
+        ],
+        "credentialSchema": {
+          "type": "object",
+          "properties": {
+            "apiKey": {
+              "type": "string"
+            }
+          },
+          "required": ["apiKey"],
+          "additionalProperties": false
+        },
+        "credentialUiSchema": [
+          {
+            "key": "/apiKey",
+            "label": "API key",
+            "component": "password",
+            "required": true,
+            "secret": true,
+            "order": 10
+          }
+        ],
+        "operationMappingSchema": {
+          "type": "object",
+          "properties": {
+            "remoteOperation": {
+              "type": "string"
+            }
+          },
+          "required": ["remoteOperation"],
+          "additionalProperties": false
+        },
+        "operationMappingUiSchema": [
+          {
+            "key": "/remoteOperation",
+            "label": "Remote operation",
+            "component": "text",
+            "required": true,
+            "order": 10
+          }
+        ],
+        "endpoints": {
+          "invoke": "/tools/invoke",
+          "createCredential": "/credentials",
+          "rotateCredential": "/credentials/rotate",
+          "revokeCredential": "/credentials/revoke",
+          "validateCredential": "/credentials/validate"
+        }
+      }
+    ]
+  }
+}

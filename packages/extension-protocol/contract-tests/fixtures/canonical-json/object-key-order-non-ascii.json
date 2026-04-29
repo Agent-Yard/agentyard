@@ -1,0 +1,7 @@
+{
+  "name": "object key UTF-16 order with non-ASCII keys",
+  "input": "{\"é\":1,\"a\":2,\"𐐷\":3}",
+  "expectedCanonicalUtf8Hex": "7b2261223a322c22c3a9223a312c22f09090b7223a337d",
+  "expectedDigest": "sha256:64247433ad047e13fd6357e0235ce6e1f1d5f419271bc5b9ff2b656751363756",
+  "expectedErrorCode": null
+}

@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lynxus.dev/schemas/extension-protocol/external-template-binding.schema.json",
+  "title": "Channel external template binding",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "assistantId",
+    "channelProfileId",
+    "messageType",
+    "messageVersion",
+    "externalTemplateId",
+    "enabled"
+  ],
+  "properties": {
+    "assistantId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "channelProfileId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "messageType": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "messageSubtype": {
+      "type": ["string", "null"],
+      "maxLength": 64
+    },
+    "messageVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "externalTemplateId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "externalTemplateVersion": {
+      "type": ["string", "null"],
+      "maxLength": 128
+    },
+    "variableSchema": {
+      "type": "object"
+    },
+    "externalEditUrl": {
+      "type": ["string", "null"],
+      "maxLength": 2048
+    },
+    "enabled": {
+      "type": "boolean"
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "service-level health fetch does not require trace header",
+  "operation": "extensionHealth",
+  "expectedErrorCode": null,
+  "headers": {
+    "Authorization": "Bearer internal-token",
+    "X-Lynxus-Extension-Registration-Id": "acme-extension"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "name": "safe integer lower and upper boundary",
+  "input": "{\"min\":-9007199254740991,\"max\":9007199254740991}",
+  "expectedCanonicalUtf8Hex": "7b226d6178223a393030373139393235343734303939312c226d696e223a2d393030373139393235343734303939317d",
+  "expectedDigest": "sha256:63546eb60913dcb1cdd5118f7bf4885beed344af930c8a9d5f38fad243fd4819",
+  "expectedErrorCode": null
+}

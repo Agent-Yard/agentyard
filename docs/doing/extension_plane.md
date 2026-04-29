@@ -1,0 +1,359 @@
+# Extension Plane Execution Ledger
+
+## Scope
+
+- Target: implement `docs/todo/extension_plane/implementation-roadmap.md` Slice 1-10.
+- Explicitly excluded: Slice 11 enterprise sample repo, private-style sample extensions, Docker/compose/Helm overlays, deployment smoke check scripts, deployment smoke runbook artifacts.
+- Architecture source of truth read before implementation:
+  - `docs/todo/extension_plane/README.md`
+  - `docs/todo/extension_plane/overview.md`
+  - `docs/todo/extension_plane/implementation-roadmap.md`
+  - Slice 1 topic docs: `extension-protocol.md`, `web-configuration.md`, `repository-and-packaging.md`
+
+## Current Position
+
+- Current slice: Slice 3 - Static registration loader + core preset merge.
+- Current subtask: Slice 3 registration loader foundation.
+- Main-agent role: orchestration, integration decisions, ledger maintenance, review of worker/checker output.
+- Implementation flow: worker implements each bounded subtask, independent checker reviews read-only, then main agent decides follow-up.
+
+## Completed
+
+- Read project `AGENTS.md` and confirmed key constraints:
+  - no compatibility layer for old data/API,
+  - holistic impact review across modules/docs,
+  - do not edit `docs/develop_record/`,
+  - do not execute git commands in parallel.
+- Read roadmap Slice 1-10 and §6 Impact Checklist.
+- Read Slice 1 relevant topic docs.
+- Slice 1 worker completed initial protocol package under `packages/extension-protocol`.
+- Slice 1 completed after checker repair and rerun; no blocking findings remain.
+- Slice 2 completed after checker repair and Slice 1-2 checkpoint; no blocking findings remain.
+
+## Cross-Module Impact Under Watch
+
+- `packages/extension-protocol` is the only committed source for extension boundary OpenAPI / JSON Schema / examples / fixtures.
+- Web-facing control-plane APIs remain in `packages/contracts/openapi/*`; Slice 1 must not add Web pages or control-plane definition endpoints.
+- SDK generated sources must not be committed later; generated output belongs under build directories.
+- `agent-runtime` must eventually reuse `packages/extension-sdk-python`; it must not grow a second canonical JSON / manifest / `ExtensionError` implementation.
+- API, `agent-runtime`, and `channel-gateway` must eventually share registration loader behavior and digest input.
+
+## Decisions / Questions
+
+- Decision: Slice 11 artifacts are excluded from this implementation pass even where repository/deployment docs describe them as future packaging examples.
+- Decision: Slice 1 should be protocol-only and testable via a self-check command; no runtime adapter, Web form, registry aggregation, or SDK source generation in this slice.
+- Question to revisit: exact package manager integration for protocol self-check after inspecting current Node/Python workspace conventions.
+- Decision: Checker blocking findings are source-of-truth issues and must be fixed before Slice 2. Do not rely on self-check custom code if OpenAPI / JSON Schema facts remain permissive.
+
+## Worker / Checker Notes
+
+- Worker `Peirce` (`019dd76f-6cec-7623-9d42-8f2e59f1ef71`) completed Slice 1 protocol assets + self-check.
+  - Changed only `packages/extension-protocol/**`.
+  - Reported verification:
+    - `node packages/extension-protocol/scripts/self-check.mjs` passed.
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+    - self-check summary: `jsonAssets=45`, `jsonSchemas=9`, `examples=4`, `manifestFixtures=10`, `requestFixtures=6`, `canonicalFixtures=15`.
+  - Deliberate minimal choice: Node built-ins and targeted protocol validation, not Ajv/OpenAPI parser dependencies.
+- Checker `Leibniz` (`019dd780-622d-7681-b3d5-5dbbb87ce588`) verdict: fail.
+  - Blocking: credential lifecycle OpenAPI reused permissive account/status DTOs; must encode create without `externalSecretRef`, rotate/validate/revoke with required `externalSecretRef`, and operation-specific success statuses.
+  - Blocking: service manifest JSON Schema / OpenAPI did not encode non-empty descriptor envelope; self-check caught it only in custom logic.
+  - Non-blocking: add fixtures for rotate/validate/revoke credential edge cases, service live/ready no-trace, and partial credential endpoint declaration.
+- Worker `Galileo` (`019dd785-dd98-7260-8e2e-5daaa10d9aa5`) completed Slice 1 protocol fact-source repair.
+  - Narrowed credential lifecycle OpenAPI to operation-specific account/request/response schemas.
+  - Encoded non-empty descriptor envelope in service manifest JSON Schema and OpenAPI via descriptor-level `anyOf`.
+  - Added request fixtures for credential edge cases and live/ready no-trace cases.
+  - Added invalid manifest fixtures for partial credential endpoints and empty descriptor envelope.
+  - Reported `pnpm --filter @lynxus/extension-protocol self-check` passed with `jsonAssets=65`, `jsonSchemas=9`, `examples=4`, `manifestFixtures=12`, `requestFixtures=24`, `canonicalFixtures=15`.
+- Checker `Leibniz` rerun verdict: pass-with-follow-ups; no blocking findings.
+  - Confirmed credential lifecycle OpenAPI now has operation-specific DTOs.
+  - Confirmed non-empty descriptor envelope is encoded in both JSON Schema and OpenAPI.
+  - Confirmed no SDK/generated/app/deploy/Slice 11 artifacts.
+  - Follow-up for Slice 2: SDK contract tests should use real OpenAPI / JSON Schema validators, not just self-check assertions.
+- Optional fixture follow-up: rotate response `externalSecretRef` equals request `account.externalSecretRef`; this is cross-field and not directly schema-expressible.
+- Pending Slice 2 worker: SDK skeleton build integration plus canonical JSON contract tests.
+- Worker `Aristotle` (`019dd791-0d6a-7a32-bf7f-09d20e983a5a`) assigned Slice 2 SDK skeleton + canonical JSON contract tests.
+- Worker `Aristotle` completed Slice 2 SDK skeleton + canonical JSON contract tests.
+  - Added `packages/extension-sdk-jvm` with canonical JSON helper and JUnit fixture contract tests.
+  - Added `packages/extension-sdk-python` with canonical JSON helper and pytest fixture contract tests.
+  - Updated Gradle settings, uv workspace, and `uv.lock`.
+  - Reported verification:
+    - `./gradlew :packages:extension-sdk-jvm:test` passed.
+    - `uv run pytest packages/extension-sdk-python/tests` passed (`15 passed`).
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+  - Deferred remaining Slice 2 items: code generation wiring, manifest validator / JSON Schema runtime validation, protocol facades/constants, `ExtensionError` parsing, HTTP helper contracts, and `agent-runtime` reuse.
+- Checker `James` (`019dd79b-fb7c-7290-9fb9-9b8dff7ef423`) verdict for Slice 2 SDK skeleton: pass-with-follow-ups; no blocking findings.
+  - Confirmed Gradle / uv workspace wiring.
+  - Confirmed both SDKs read shared protocol canonical fixtures directly.
+  - Confirmed canonical JSON behavior matches fixture profile.
+  - Follow-up: consider splitting Python raw JSON text and decoded value entrypoints before stabilizing public facade.
+  - Follow-up already handled by main: removed `packages/extension-sdk-jvm/build`, Python `.pytest_cache`, and Python `__pycache__` files after checker noted test artifacts.
+- Worker `Hypatia` (`019dd7a0-d61c-7fa0-9907-447dfc267c02`) assigned Slice 2 manifest validator + ExtensionError + protocol constants/facade.
+- Worker `Hypatia` completed Slice 2 manifest validator + ExtensionError + protocol constants/facade.
+  - Added JVM and Python SDK protocol constants/header facade, `ExtensionError` parser/model, lightweight manifest validator, and contract tests.
+  - Reported verification:
+    - `./gradlew :packages:extension-sdk-jvm:test` passed.
+    - `uv run pytest packages/extension-sdk-python/tests` passed (`30 passed`).
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+  - Deferred remaining Slice 2 items: OpenAPI Generator wiring, `datamodel-code-generator` wiring, HTTP client/server helper contracts, and `agent-runtime` reuse integration.
+- Checker `Ramanujan` (`019dd7bc-e0a5-7420-af81-05e6cef12888`) verdict for Slice 2 facade/validator: pass-with-follow-ups; no blocking findings.
+  - Confirmed SDK constants/header groups/category facade are constrained by OpenAPI / JSON Schema tests.
+  - Confirmed `ExtensionError` parser/model shape validation and shared example coverage.
+  - Confirmed manifest validator runs shared valid/invalid fixtures and no generated/app/Slice 3/Slice 11 overreach.
+  - Follow-up: directly constrain SDK path / endpoint constants to OpenAPI path keys and JSON Schema endpoint property keys.
+  - Follow-up: before agent-runtime reuse, add real JSON Schema runtime validation or stronger equivalent schema contract coverage.
+  - Follow-up already planned by main: clean regenerated build/cache artifacts.
+- Worker `Kierkegaard` (`019dd7c2-ee0c-76d0-b257-3c20f5b3052c`) assigned Slice 2 SDK contract strengthening: path/endpoint constants and JSON Schema validation coverage.
+- Worker `Kierkegaard` completed Slice 2 SDK contract strengthening.
+  - Added direct SDK constant checks against OpenAPI path keys and JSON Schema endpoint property keys.
+  - Added real JSON Schema validation dependencies / entrypoints:
+    - JVM: `com.networknt:json-schema-validator:2.0.1`.
+    - Python: `jsonschema` + `referencing`.
+  - Manifest validator runs service manifest JSON Schema validation when a protocol schema dir is supplied, then semantic checks.
+  - Reported verification:
+    - `./gradlew :packages:extension-sdk-jvm:test` passed.
+    - `uv run pytest packages/extension-sdk-python/tests` passed (`39 passed`).
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+  - Risk for checker: no-arg manifest validation remains lightweight because protocol schema assets are not bundled in SDK packages yet.
+- Checker `Ptolemy` (`019dd7cd-0e66-7a03-b7b0-9ac6379a6a86`) verdict for Slice 2 SDK contract strengthening: pass-with-follow-ups; no blocking findings.
+  - Confirmed SDK path constants are directly checked against OpenAPI path keys.
+  - Confirmed endpoint constants are checked against descriptor JSON Schema endpoint properties.
+  - Confirmed JVM and Python validators run real Draft 2020-12 JSON Schema validation when a protocol schema dir is supplied.
+  - Confirmed added dependencies are limited to JSON Schema validation and no generated SDK source is committed.
+  - Follow-up before `agent-runtime` reuse: make schema-backed manifest validation the hard/default path, or rename no-schema entrypoints as explicitly lightweight.
+  - Checker verification:
+    - `./gradlew :packages:extension-sdk-jvm:test` passed.
+    - `uv run pytest packages/extension-sdk-python/tests` passed (`39 passed`).
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+- Worker `Pasteur` (`019dd7d4-c0d1-72a1-bef2-ea80debc0de1`) assigned Slice 2 SDK codegen wiring.
+  - Scope: OpenAPI Generator wiring for JVM SDK and `datamodel-code-generator` wiring for Python SDK, output only to build directories.
+  - Explicitly out of scope: HTTP helper contracts, `agent-runtime` reuse, Slice 3, Slice 11, and generated source commits.
+- Worker `Pasteur` completed Slice 2 SDK codegen wiring.
+  - Added OpenAPI Generator Gradle wiring for JVM SDK; generated output path is `packages/extension-sdk-jvm/build/generated/extension-protocol/java`.
+  - Added Python `datamodel-code-generator` script and smoke test; generated output path is `packages/extension-sdk-python/build/generated/extension_protocol/models.py`.
+  - Added tests that prove generated output comes from `packages/extension-protocol/openapi/extension-boundary.openapi.json`, stays under build directories, and contains service manifest / `ExtensionError` / descriptor-related models.
+  - Did not modify `packages/extension-protocol/**`.
+  - Reported verification:
+    - `./gradlew :packages:extension-sdk-jvm:test` passed.
+    - `./gradlew :packages:extension-sdk-jvm:generateExtensionProtocolJavaModels` passed.
+    - `uv run pytest packages/extension-sdk-python/tests` passed (`40 passed`).
+    - `uv run python packages/extension-sdk-python/scripts/generate_protocol_models.py` passed.
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+  - Deferred remaining Slice 2 items: HTTP client/server helper contracts and `agent-runtime` SDK reuse.
+- Checker `Copernicus` (`019dd7dd-c1f9-7eb0-97d2-48bee0c93c0d`) verdict for Slice 2 SDK codegen wiring: pass-with-follow-ups; no blocking findings for codegen wiring itself.
+  - Confirmed JVM task uses `packages/extension-protocol/openapi/extension-boundary.openapi.json` and writes under Gradle `build/generated`.
+  - Confirmed Python script uses `datamodel-code-generator` with Pydantic v2 and writes under Python `build/generated`.
+  - Confirmed generated models are not written under SDK `src`, and validator tests still use runtime JSON Schema validation.
+  - Checker verification:
+    - `./gradlew :packages:extension-sdk-jvm:test` passed.
+    - `./gradlew :packages:extension-sdk-jvm:generateExtensionProtocolJavaModels` passed.
+    - `uv run pytest packages/extension-sdk-python/tests` passed (`40 passed`).
+    - `uv run python packages/extension-sdk-python/scripts/generate_protocol_models.py` passed.
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+  - Required before HTTP helper / SDK consumer work: add JVM generated DTO compile/import coverage, because current test only checks file existence and supporting files are disabled; add equivalent Python import smoke if generated models become runtime helper inputs.
+- Worker `Godel` (`019dd7e1-7fcf-7ff3-ba69-a8c17230b40e`) assigned Slice 2 codegen usability repair.
+  - Scope: JVM generated DTO compile/import smoke and Python generated model import smoke.
+  - Explicitly out of scope: HTTP helper contracts, `agent-runtime` reuse, Slice 3, Slice 11, and generated source commits.
+- Worker `Godel` completed Slice 2 codegen usability repair.
+  - Added JVM `compileGeneratedExtensionProtocolJavaModels` compile smoke that compiles generated DTO sources plus a generated import-smoke source under Gradle `build/**`.
+  - Enabled generated support files needed for DTO compile smoke in build output only.
+  - Added Python import smoke for generated `models.py`.
+  - Reported verification:
+    - `./gradlew :packages:extension-sdk-jvm:test` passed.
+    - `./gradlew :packages:extension-sdk-jvm:generateExtensionProtocolJavaModels` passed.
+    - `./gradlew :packages:extension-sdk-jvm:compileGeneratedExtensionProtocolJavaModels` passed.
+    - `uv run pytest packages/extension-sdk-python/tests` passed (`40 passed`).
+    - `uv run python packages/extension-sdk-python/scripts/generate_protocol_models.py` passed.
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+  - Architecture concern for checker: worker changed `NormalizedEventAccepted.accepted` in `packages/extension-protocol/openapi/extension-boundary.openapi.json` from boolean `const: true` to `default: true` to work around OpenAPI Generator output. This may weaken protocol semantics; checker must decide whether to keep it or require a generator-only workaround.
+- Checker `Pauli` (`019dd7ef-8468-7a90-b686-3b1f6f759b51`) verdict for Slice 2 codegen usability repair: fail.
+  - Blocking: `NormalizedEventAccepted.accepted` changed from `const: true` to `default: true`, weakening the OpenAPI 3.1 protocol fact source by allowing `accepted: false`.
+  - Required rework: restore source OpenAPI `const: true`; if OpenAPI Generator cannot compile boolean const output, copy/transform the OpenAPI into a Gradle build directory as generator-only input. Add self-check coverage so the protocol source keeps `const: true`.
+  - Non-blocking confirmation: JVM compile smoke and Python import smoke approach are otherwise sound and stay within build directories.
+- Worker `McClintock` (`019dd7f3-913b-7062-ac7f-4eea41c77110`) completed Slice 2 codegen fact-source repair.
+  - Restored source OpenAPI `NormalizedEventAccepted.accepted.const === true`.
+  - Added protocol self-check assertion that the source OpenAPI keeps that strict `const: true` invariant.
+  - Added Gradle `prepareExtensionProtocolJavaGeneratorOpenApi` generator-only input preparation. It writes `packages/extension-sdk-jvm/build/generated/extension-protocol/openapi/extension-boundary.openapi.generator.json` and only in that build copy converts the generator-hostile boolean const to default for OpenAPI Generator 7.10.
+  - `generateExtensionProtocolJavaModels` now reads the build-directory generator input copy, not the source OpenAPI directly.
+  - Reported verification:
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+    - `./gradlew :packages:extension-sdk-jvm:compileGeneratedExtensionProtocolJavaModels` passed.
+    - `./gradlew :packages:extension-sdk-jvm:test` passed.
+    - `uv run pytest packages/extension-sdk-python/tests` passed (`40 passed`).
+    - `uv run python packages/extension-sdk-python/scripts/generate_protocol_models.py` passed.
+- Checker `Turing` (`019dd7f9-aa0d-7630-ab0e-65f9b94b014c`) verdict for Slice 2 codegen fact-source repair: pass; no blockers.
+  - Confirmed source OpenAPI keeps `NormalizedEventAccepted.accepted` as `const: true`.
+  - Confirmed protocol self-check protects that invariant.
+  - Confirmed Gradle generator-only OpenAPI copy writes only under build and `generateExtensionProtocolJavaModels` reads that copy.
+  - Confirmed JVM compile smoke and Python import smoke remain in place, with generated outputs in build directories only.
+  - Confirmed no HTTP helper, `agent-runtime` reuse, Slice 3, or Slice 11 overreach.
+  - Checker verification:
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+    - `./gradlew :packages:extension-sdk-jvm:compileGeneratedExtensionProtocolJavaModels` passed.
+    - `./gradlew :packages:extension-sdk-jvm:test` passed.
+    - `uv run pytest packages/extension-sdk-python/tests` passed (`40 passed`).
+    - `uv run python packages/extension-sdk-python/scripts/generate_protocol_models.py` passed.
+- Worker `Lorentz` (`019dd7fd-8c74-7220-bcaa-c838428354c5`) assigned Slice 2 HTTP helper contracts and `agent-runtime` SDK reuse proof.
+  - Scope: JVM/Python SDK thin HTTP helper contract APIs and tests; `agent-runtime` thin Python SDK reuse adapter/tests.
+  - Explicitly out of scope: registration loader, runtime manifest endpoints, `DescriptorProvider`, remote invocation adapter, definition endpoints, Web, and Slice 11.
+- Worker `Lorentz` completed Slice 2 HTTP helper contracts and `agent-runtime` SDK reuse proof.
+  - Added JVM `LynxusExtensionHttp` helper for service-level, descriptor-level, credential lifecycle headers, manifest URL joining, and non-2xx `ExtensionError` parsing.
+  - Added equivalent Python SDK helper functions in the protocol facade.
+  - Added Python SDK testing helpers for shared protocol fixture paths.
+  - Added `apps/agent-runtime` dependency on `lynxus-extension-sdk`.
+  - Added `lynxus_agent_runtime.extension_protocol` as a thin adapter that re-exports/wraps SDK canonical JSON, manifest validation, and `ExtensionError` parsing; no change to `tool_connectors.py` HMAC JSON helper.
+  - Added runtime reuse tests asserting function object reuse and shared canonical JSON / manifest / `ExtensionError` fixture behavior.
+  - Reported verification:
+    - `./gradlew :packages:extension-sdk-jvm:test` passed.
+    - `uv run pytest packages/extension-sdk-python/tests` passed (`46 passed`).
+    - `uv run pytest apps/agent-runtime/tests/test_extension_protocol_sdk_reuse.py` passed (`4 passed`).
+    - `uv run pytest apps/agent-runtime/tests` passed (`42 passed`).
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+  - Follow-up for Slice 4 packaging: runtime schema-dir wrapper currently points at repo protocol schemas for tests/future runtime; packaging of schema assets should be settled when manifest endpoint/DescriptorProvider work starts.
+- Checker `Linnaeus` (`019dd80a-9080-7173-a45f-cbe7a2e81d6c`) verdict for Slice 2 HTTP helper / `agent-runtime` SDK reuse: fail.
+  - Blocking: root-level verification commands `uv run pytest apps/agent-runtime/tests/test_extension_protocol_sdk_reuse.py` and `uv run pytest apps/agent-runtime/tests` fail in a fresh isolated copy because `lynxus_agent_runtime` and its dependencies are not selected/importable.
+  - Root cause: root `pyproject.toml` has `package = false`; `apps/agent-runtime/pyproject.toml` does not configure pytest `pythonpath` like the SDK package.
+  - Confirmation: implementation passes when run as `uv run --package lynxus-agent-runtime pytest ...`; SDK helper and reuse boundaries are otherwise sound, and no Slice 3/4/7/11 overreach was found.
+- Worker `Dewey` (`019dd812-581d-7631-ba9f-299895d50af8`) completed Slice 2 root pytest entry repair.
+  - Added root dev dependency/source wiring for `lynxus-agent-runtime` so root `uv run pytest apps/agent-runtime/tests...` selects runtime package dependencies.
+  - Added agent-runtime pytest `pythonpath = ["."]`, matching the SDK package pattern.
+  - Refreshed `uv.lock`.
+  - Reported verification:
+    - `uv run pytest apps/agent-runtime/tests/test_extension_protocol_sdk_reuse.py` passed (`4 passed`).
+    - `uv run pytest apps/agent-runtime/tests` passed (`42 passed`).
+    - `uv run --package lynxus-agent-runtime pytest apps/agent-runtime/tests` passed (`42 passed`).
+    - `uv run pytest packages/extension-sdk-python/tests` passed (`46 passed`).
+    - clean temporary `UV_PROJECT_ENVIRONMENT` run for `uv run pytest apps/agent-runtime/tests` passed (`42 passed`).
+- Checker `Sagan` (`019dd81c-db58-70a0-a7d9-57140769f86c`) verdict for Slice 2 root pytest entry repair: pass; no blockers.
+  - Confirmed root `pyproject.toml` dev dependency/source wiring for `lynxus-agent-runtime` is minimal.
+  - Confirmed agent-runtime pytest `pythonpath = ["."]` matches existing SDK package pattern.
+  - Confirmed no `sys.path` hacks, no business/SDK helper logic changes, and no Slice 3/4/7/11 overreach.
+  - Checker verification:
+    - `uv lock --check` passed.
+    - `uv run pytest apps/agent-runtime/tests/test_extension_protocol_sdk_reuse.py` passed (`4 passed`).
+    - `uv run pytest apps/agent-runtime/tests` passed (`42 passed`).
+    - `uv run --package lynxus-agent-runtime pytest apps/agent-runtime/tests` passed (`42 passed`).
+    - `uv run pytest packages/extension-sdk-python/tests` passed (`46 passed`).
+- Worker `Heisenberg` (`019dd820-ad53-7f80-b7b9-e1743c1436c9`) assigned Slice 3 registration loader foundation.
+  - Scope: shared JVM/Python registration loader helpers, core preset injection, baseUrl placeholder/normalization, registrationConfigDigest, and shared fixtures/tests.
+  - Explicitly out of scope: manifest fetch, runtime registry startup, API aggregation/definition endpoints, runtime manifest endpoints, Web, remote adapter, and Slice 11 deployment/sample artifacts.
+- Worker `Heisenberg` completed Slice 3 registration loader foundation.
+  - Added shared registration-loader fixtures under `packages/extension-protocol/contract-tests/fixtures/registration-loader` and extended protocol self-check.
+  - Added JVM registration loader helpers in `packages/extension-sdk-jvm/src/main/java/com/lynxus/extension/sdk/registration`.
+  - Added Python registration loader helpers in `packages/extension-sdk-python/src/lynxus_extension_sdk/registration`.
+  - Loader injects `core-channel-gateway` and `core-agent-runtime`, resolves preset URLs from `LYNXUS_CHANNEL_GATEWAY_URL` / `LYNXUS_AGENT_RUNTIME_URL`, rejects operator `core-` registration ids, supports `INTERNAL_TOKEN`, defaults expose lists to empty arrays, and requires each operator service to expose at least one descriptor type.
+  - `registrationConfigDigest` input uses sorted `registrationId`, `source`, normalized `baseUrl`, sorted exposes lists, and `auth.type`; token/secret/manifest/health/runtime state do not enter digest.
+  - Reported verification:
+    - `uv lock --check` passed.
+    - `./gradlew :packages:extension-sdk-jvm:test` passed.
+    - `uv run pytest packages/extension-sdk-python/tests` passed (`52 passed`).
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed with `registrationLoaderFixtures=6`.
+  - Remaining Slice 3 work: service entry wiring for API, `agent-runtime`, and `channel-gateway` to use this shared loader and digest.
+- Checker `Descartes` (`019dd82f-f439-7420-8b3a-93ceefcc8c2c`) verdict for Slice 3 registration loader foundation: fail.
+  - Blocking: Python loader treats malformed `services` values such as `false`, empty string, or object as empty list, while JVM rejects non-array `services`; shared loader behavior diverges.
+  - Blocking: Python URL validation accepts invalid URLs such as paths with spaces, while JVM `URI` rejects them; baseUrl legality must match.
+  - Confirmed otherwise: shared fixtures, preset ids/exposes, digest input, token exclusion, and no Slice 4/5/7/11 overreach are sound.
+  - Follow-up for Slice 3 completion: API, `agent-runtime`, and `channel-gateway` still need to be wired to this shared loader/digest.
+- Worker `Plato` (`019dd834-c246-7ef1-a265-f1d07d64ae47`) completed Slice 3 registration loader foundation repair.
+  - Fixed Python loader to treat only missing/null `services` as empty; non-list values such as `false`, `""`, or `{}` now fail with `REGISTRATION_CONFIG_INVALID`, matching JVM behavior.
+  - Strengthened Python `normalize_base_url` to reject raw whitespace and illegal path characters/percent escapes, matching JVM URL legality expectations.
+  - Added shared invalid fixtures for malformed `services` values and URL path whitespace.
+  - Reported verification:
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed with `registrationLoaderFixtures=10`.
+    - `./gradlew :packages:extension-sdk-jvm:test` passed.
+    - `uv run pytest packages/extension-sdk-python/tests` passed (`56 passed`).
+    - `uv lock --check` passed.
+- Checker `Cicero` (`019dd83b-6249-7130-9da7-bd7dbaf0a039`) verdict for Slice 3 registration loader foundation repair: pass; no blockers.
+  - Confirmed Python and JVM loader behavior is consistent across 10 shared registration-loader fixtures.
+  - Confirmed malformed `services` values and invalid URL path whitespace are covered by both SDK contract tests.
+  - Confirmed Python URL validation rejects invalid path characters / bad percent escapes without over-rejecting legal percent encoding.
+  - Confirmed no manifest fetch, `DescriptorProvider`, API definitions, Web, or Slice 11 overreach.
+  - Checker verification:
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed with `registrationLoaderFixtures=10`.
+    - `./gradlew :packages:extension-sdk-jvm:test` passed.
+    - `uv run pytest packages/extension-sdk-python/tests` passed (`56 passed`).
+    - `uv lock --check` passed.
+
+## Local Commit Policy
+
+- User approved local git commits after each stage is confirmed OK.
+- Commit only after the current stage has worker + checker pass and required checkpoint verification.
+- Do not run git commands in parallel.
+- Worker `Godel` completed Slice 2 codegen usability repair.
+  - Added a JVM generated DTO compile smoke task that compiles OpenAPI-generated Java models plus a build-directory import smoke for `ServiceManifestEnvelope`, `ExtensionError`, `ChannelProviderDescriptor`, and `ToolConnectorDescriptor`.
+  - Kept generated Java output under `packages/extension-sdk-jvm/build/generated/**` and generated compile smoke sources/classes under Gradle `build/**`; generated models are not exposed as SDK main sources.
+  - Added minimal generated support files required by the Java models (`JSON.java`, `AbstractOpenApiSchema.java`, `ApiException.java`) and kept their compile dependencies on a dedicated smoke-only Gradle configuration.
+  - Changed OpenAPI `NormalizedEventAccepted.accepted` from boolean `const` to boolean `default` because OpenAPI Generator 7.10 emits uncompilable Java for boolean const enums.
+  - Changed Python generated model smoke from source-text checks to a real `importlib` import/exec check for the same manifest, error, and descriptor models.
+  - Reported verification:
+    - `./gradlew :packages:extension-sdk-jvm:test` passed.
+    - `./gradlew :packages:extension-sdk-jvm:generateExtensionProtocolJavaModels` passed.
+    - `./gradlew :packages:extension-sdk-jvm:compileGeneratedExtensionProtocolJavaModels` passed.
+    - `uv run pytest packages/extension-sdk-python/tests` passed (`40 passed`).
+    - `uv run python packages/extension-sdk-python/scripts/generate_protocol_models.py` passed.
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+  - Deferred remaining Slice 2 items: HTTP client/server helper contracts and `agent-runtime` SDK reuse.
+- Codex completed Slice 2 HTTP helper contracts and `agent-runtime` Python SDK reuse proof.
+  - Added JVM/Python thin HTTP helper APIs for service-level, descriptor-level, and credential lifecycle headers; manifest URL assembly; and non-2xx `ExtensionError` body parsing.
+  - Added OpenAPI/header/error-response contract tests to keep helper behavior constrained by `packages/extension-protocol` rather than becoming a second fact source.
+  - Added Python SDK testing fixture helpers for shared protocol schema, manifest, canonical JSON, and error fixtures.
+  - Added `agent-runtime` workspace dependency on `lynxus-extension-sdk`, a thin `lynxus_agent_runtime.extension_protocol` adapter, and tests proving runtime reuses SDK canonical JSON, manifest validation, and `ExtensionError` parsing.
+  - Did not implement registration loader, runtime manifest endpoint, `DescriptorProvider`, remote adapter, definition endpoints, Web, or Slice 11 artifacts.
+- Codex completed Slice 3 registration loader foundation.
+  - Added shared registration-loader fixtures under `packages/extension-protocol/contract-tests/fixtures/registration-loader` and protocol self-check coverage.
+  - Added JVM SDK registration loader/domain helpers for operator yaml parsing, core preset injection, env placeholder resolution, normalized `baseUrl`, sorted/deduplicated exposes, and `registrationConfigDigest`.
+  - Added Python SDK equivalent helpers with the same fixture coverage and digest input.
+  - Digest input is limited to `registrationId`, `source`, normalized `baseUrl`, sorted `exposes`, and `auth.type`; token values are not read or included.
+  - Explicitly did not connect API, `channel-gateway`, or `agent-runtime` startup loading; manifest fetch, `DescriptorProvider`, definition aggregation, remote adapter, Web, and Slice 11 remain out of scope.
+
+## Verification Log
+
+- Main rerun: `pnpm --filter @lynxus/extension-protocol self-check` passed with `jsonAssets=45`, `jsonSchemas=9`, `examples=4`, `manifestFixtures=10`, `requestFixtures=6`, `canonicalFixtures=15`.
+- Main rerun after repair: `pnpm --filter @lynxus/extension-protocol self-check` passed with `jsonAssets=65`, `jsonSchemas=9`, `examples=4`, `manifestFixtures=12`, `requestFixtures=24`, `canonicalFixtures=15`.
+- Pending Slice 2 verification: Gradle SDK tests and uv Python SDK tests.
+- Main rerun: `./gradlew :packages:extension-sdk-jvm:test` passed.
+- Main rerun: `uv run pytest packages/extension-sdk-python/tests` passed (`15 passed`).
+- Main rerun after facade/validator: `./gradlew :packages:extension-sdk-jvm:test` passed.
+- Main rerun after facade/validator: `uv run pytest packages/extension-sdk-python/tests` passed (`30 passed`).
+- Main rerun after facade/validator: `pnpm --filter @lynxus/extension-protocol self-check` passed.
+- Main rerun after SDK contract strengthening: `./gradlew :packages:extension-sdk-jvm:test` passed.
+- Main rerun after SDK contract strengthening: `uv run pytest packages/extension-sdk-python/tests` passed (`39 passed`).
+- Main rerun after SDK contract strengthening: `pnpm --filter @lynxus/extension-protocol self-check` passed.
+- Checker verified after codegen fact-source repair:
+  - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+  - `./gradlew :packages:extension-sdk-jvm:compileGeneratedExtensionProtocolJavaModels` passed.
+  - `./gradlew :packages:extension-sdk-jvm:test` passed.
+  - `uv run pytest packages/extension-sdk-python/tests` passed (`40 passed`).
+  - `uv run python packages/extension-sdk-python/scripts/generate_protocol_models.py` passed.
+- Checker verified after root pytest entry repair:
+  - `uv lock --check` passed.
+  - `uv run pytest apps/agent-runtime/tests/test_extension_protocol_sdk_reuse.py` passed (`4 passed`).
+  - `uv run pytest apps/agent-runtime/tests` passed (`42 passed`).
+  - `uv run --package lynxus-agent-runtime pytest apps/agent-runtime/tests` passed (`42 passed`).
+  - `uv run pytest packages/extension-sdk-python/tests` passed (`46 passed`).
+- Main Slice 1-2 checkpoint:
+  - `pnpm --filter @lynxus/extension-protocol self-check` passed with `jsonAssets=65`, `jsonSchemas=9`, `examples=4`, `manifestFixtures=12`, `requestFixtures=24`, `canonicalFixtures=15`.
+  - `./gradlew :packages:extension-sdk-jvm:test` passed.
+  - `uv run pytest packages/extension-sdk-python/tests` passed (`46 passed`).
+  - `uv lock --check` passed.
+  - `uv run pytest apps/agent-runtime/tests` passed (`42 passed`).
+- Main rerun after codegen usability repair: `./gradlew :packages:extension-sdk-jvm:test` passed.
+- Main rerun after codegen usability repair: `./gradlew :packages:extension-sdk-jvm:generateExtensionProtocolJavaModels` passed.
+- Main rerun after codegen usability repair: `./gradlew :packages:extension-sdk-jvm:compileGeneratedExtensionProtocolJavaModels` passed.
+- Main rerun after codegen usability repair: `uv run pytest packages/extension-sdk-python/tests` passed (`40 passed`).
+- Main rerun after codegen usability repair: `uv run python packages/extension-sdk-python/scripts/generate_protocol_models.py` passed.
+- Main rerun after codegen usability repair: `pnpm --filter @lynxus/extension-protocol self-check` passed.
+- Codex rerun after HTTP helper / agent-runtime reuse:
+  - `./gradlew :packages:extension-sdk-jvm:test` passed.
+  - `uv run pytest packages/extension-sdk-python/tests` passed (`46 passed`).
+  - `uv run pytest apps/agent-runtime/tests/test_extension_protocol_sdk_reuse.py` passed (`4 passed`).
+  - `uv run pytest apps/agent-runtime/tests` passed (`42 passed`).
+  - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+- Codex rerun after Slice 3 registration loader foundation:
+  - `uv lock --check` passed.
+  - `./gradlew :packages:extension-sdk-jvm:test` passed.
+  - `uv run pytest packages/extension-sdk-python/tests` passed (`52 passed`).
+  - `pnpm --filter @lynxus/extension-protocol self-check` passed with `jsonAssets=71`, `jsonSchemas=9`, `examples=4`, `manifestFixtures=12`, `requestFixtures=24`, `canonicalFixtures=15`, `registrationLoaderFixtures=6`.
+
+## Blockers / Rework
+
+- None currently.

@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lynxus.dev/schemas/extension-protocol/tool-connector-descriptor.schema.json",
+  "title": "Tool connector descriptor",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "connectorType",
+    "title",
+    "accountConfigSchema",
+    "accountConfigUiSchema",
+    "configSchema",
+    "configUiSchema",
+    "operationMappingSchema",
+    "operationMappingUiSchema",
+    "endpoints"
+  ],
+  "properties": {
+    "connectorType": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "accountConfigSchema": {
+      "type": "object"
+    },
+    "accountConfigUiSchema": {
+      "$ref": "ui-field.schema.json"
+    },
+    "configSchema": {
+      "type": "object"
+    },
+    "configUiSchema": {
+      "$ref": "ui-field.schema.json"
+    },
+    "credentialSchema": {
+      "type": "object"
+    },
+    "credentialUiSchema": {
+      "$ref": "ui-field.schema.json"
+    },
+    "operationMappingSchema": {
+      "type": "object"
+    },
+    "operationMappingUiSchema": {
+      "$ref": "ui-field.schema.json"
+    },
+    "endpoints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["invoke"],
+      "properties": {
+        "invoke": {
+          "$ref": "#/$defs/declaredPath"
+        },
+        "createCredential": {
+          "$ref": "#/$defs/declaredPath"
+        },
+        "rotateCredential": {
+          "$ref": "#/$defs/declaredPath"
+        },
+        "revokeCredential": {
+          "$ref": "#/$defs/declaredPath"
+        },
+        "validateCredential": {
+          "$ref": "#/$defs/declaredPath"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "declaredPath": {
+      "type": "string",
+      "pattern": "^/[^?#]*$"
+    }
+  }
+}

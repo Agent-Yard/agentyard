@@ -1,0 +1,7 @@
+{
+  "name": "string escape, quote, backslash, control char, and Unicode",
+  "input": "{\"text\":\"line\\nquote\\\"slash\\\\\",\"emoji\":\"😀\"}",
+  "expectedCanonicalUtf8Hex": "7b22656d6f6a69223a22f09f9880222c2274657874223a226c696e655c6e71756f74655c22736c6173685c5c227d",
+  "expectedDigest": "sha256:a5adff70e1a536caf444f793bd1e495c9b133731fd05a504c3243f8e425b1ae8",
+  "expectedErrorCode": null
+}

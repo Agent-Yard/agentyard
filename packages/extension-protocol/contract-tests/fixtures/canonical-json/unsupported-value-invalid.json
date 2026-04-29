@@ -1,0 +1,7 @@
+{
+  "name": "unsupported JSON value rejection",
+  "input": "{\"value\":NaN}",
+  "expectedCanonicalUtf8Hex": null,
+  "expectedDigest": null,
+  "expectedErrorCode": "CANONICAL_JSON_UNSUPPORTED_VALUE"
+}

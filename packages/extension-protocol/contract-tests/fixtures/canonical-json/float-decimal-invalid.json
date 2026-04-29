@@ -1,0 +1,7 @@
+{
+  "name": "decimal number rejection",
+  "input": "{\"value\":1.25}",
+  "expectedCanonicalUtf8Hex": null,
+  "expectedDigest": null,
+  "expectedErrorCode": "CANONICAL_JSON_UNSUPPORTED_NUMBER"
+}

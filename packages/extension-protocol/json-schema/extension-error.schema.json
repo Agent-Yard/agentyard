@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lynxus.dev/schemas/extension-protocol/extension-error.schema.json",
+  "title": "ExtensionError",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["errorCode", "message", "category", "retryable", "details"],
+  "properties": {
+    "errorCode": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "AUTH",
+        "BAD_REQUEST",
+        "REMOTE_TIMEOUT",
+        "REMOTE_UNAVAILABLE",
+        "REMOTE_RATE_LIMITED",
+        "REMOTE_BUSINESS_REJECTED",
+        "PROTOCOL_ERROR",
+        "CIRCUIT_OPEN",
+        "UNKNOWN"
+      ]
+    },
+    "retryable": {
+      "type": "boolean"
+    },
+    "details": {
+      "type": "object"
+    }
+  }
+}

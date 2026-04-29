@@ -1,0 +1,9 @@
+{
+  "name": "service-level manifest fetch does not require trace header",
+  "operation": "serviceManifest",
+  "expectedErrorCode": null,
+  "headers": {
+    "Authorization": "Bearer internal-token",
+    "X-Lynxus-Extension-Registration-Id": "acme-extension"
+  }
+}

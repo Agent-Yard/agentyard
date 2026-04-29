@@ -1,0 +1,55 @@
+{
+  "name": "invalid options drift from enum",
+  "expectedErrorCode": "UI_SCHEMA_OPTIONS_DRIFT",
+  "manifest": {
+    "extensionApiVersion": 1,
+    "coreMinVersion": "0.8.0",
+    "coreMaxVersion": "0.9.x",
+    "descriptors": {
+      "channelProviders": [
+        {
+          "providerType": "enterprise.acme.invalid-options",
+          "title": "Invalid Options",
+          "accountConfigSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          },
+          "accountConfigUiSchema": [],
+          "configSchema": {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": ["sandbox", "production"]
+              }
+            },
+            "additionalProperties": false
+          },
+          "configUiSchema": [
+            {
+              "key": "/mode",
+              "label": "Mode",
+              "component": "select",
+              "options": [
+                {
+                  "label": "Sandbox",
+                  "value": "sandbox"
+                },
+                {
+                  "label": "Staging",
+                  "value": "staging"
+                }
+              ],
+              "order": 10
+            }
+          ],
+          "endpoints": {
+            "sendOutbound": "/channel/send-outbound"
+          }
+        }
+      ],
+      "toolConnectors": []
+    }
+  }
+}

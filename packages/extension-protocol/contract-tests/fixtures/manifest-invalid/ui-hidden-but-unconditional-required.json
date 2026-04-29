@@ -1,0 +1,72 @@
+{
+  "name": "invalid UI hidden while JSON Schema unconditional required",
+  "expectedErrorCode": "UI_SCHEMA_VISIBILITY_REQUIRED_CONFLICT",
+  "manifest": {
+    "extensionApiVersion": 1,
+    "coreMinVersion": "0.8.0",
+    "coreMaxVersion": "0.9.x",
+    "descriptors": {
+      "channelProviders": [
+        {
+          "providerType": "enterprise.acme.invalid-hidden-required",
+          "title": "Invalid Hidden Required",
+          "accountConfigSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          },
+          "accountConfigUiSchema": [],
+          "configSchema": {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": ["enabled", "disabled"]
+              },
+              "endpointUrl": {
+                "type": "string"
+              }
+            },
+            "required": ["mode", "endpointUrl"],
+            "additionalProperties": false
+          },
+          "configUiSchema": [
+            {
+              "key": "/mode",
+              "label": "Mode",
+              "component": "select",
+              "required": true,
+              "options": [
+                {
+                  "label": "Enabled",
+                  "value": "enabled"
+                },
+                {
+                  "label": "Disabled",
+                  "value": "disabled"
+                }
+              ],
+              "order": 10
+            },
+            {
+              "key": "/endpointUrl",
+              "label": "Endpoint URL",
+              "component": "url",
+              "required": true,
+              "visibilityCondition": {
+                "field": "/mode",
+                "operator": "equals",
+                "value": "enabled"
+              },
+              "order": 20
+            }
+          ],
+          "endpoints": {
+            "sendOutbound": "/channel/send-outbound"
+          }
+        }
+      ],
+      "toolConnectors": []
+    }
+  }
+}

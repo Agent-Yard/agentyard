@@ -1,0 +1,9 @@
+{
+  "name": "operator yaml cannot use reserved core prefix",
+  "operatorYaml": "lynxus:\n  extensions:\n    services:\n      - registrationId: core-enterprise-shadow\n        baseUrl: http://enterprise-shadow:8080\n        exposes:\n          toolConnectorTypes:\n            - enterprise.shadow\n        auth:\n          type: INTERNAL_TOKEN\n",
+  "environment": {
+    "LYNXUS_AGENT_RUNTIME_URL": "http://agent-runtime:8080",
+    "LYNXUS_CHANNEL_GATEWAY_URL": "http://channel-gateway:8080"
+  },
+  "expectedErrorCode": "REGISTRATION_CONFIG_INVALID"
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lynxus.dev/schemas/extension-protocol/assistant-binding.schema.json",
+  "title": "Channel profile assistant binding",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["assistantId"],
+  "properties": {
+    "assistantId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "scenarioId": {
+      "type": ["string", "null"],
+      "maxLength": 128
+    },
+    "conversationReuse": {
+      "type": "string",
+      "enum": ["PER_EXTERNAL_CONVERSATION", "PER_EXTERNAL_USER", "ALWAYS_NEW"]
+    },
+    "metadata": {
+      "type": "object"
+    }
+  }
+}

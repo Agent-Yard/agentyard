@@ -1,0 +1,7 @@
+{
+  "name": "invalid Unicode rejection",
+  "input": "{\"bad\":\"\\uD800\"}",
+  "expectedCanonicalUtf8Hex": null,
+  "expectedDigest": null,
+  "expectedErrorCode": "CANONICAL_JSON_INVALID_UNICODE"
+}

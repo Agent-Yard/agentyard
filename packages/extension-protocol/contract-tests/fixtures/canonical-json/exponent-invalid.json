@@ -1,0 +1,7 @@
+{
+  "name": "exponent number rejection",
+  "input": "{\"value\":1e2}",
+  "expectedCanonicalUtf8Hex": null,
+  "expectedDigest": null,
+  "expectedErrorCode": "CANONICAL_JSON_UNSUPPORTED_NUMBER"
+}

@@ -1,0 +1,70 @@
+{
+  "name": "config schema + UI schema",
+  "expectedErrorCode": null,
+  "manifest": {
+    "extensionApiVersion": 1,
+    "coreMinVersion": "0.8.0",
+    "coreMaxVersion": "0.9.x",
+    "descriptors": {
+      "channelProviders": [
+        {
+          "providerType": "enterprise.acme.internal-im",
+          "title": "Acme Internal IM",
+          "accountConfigSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          },
+          "accountConfigUiSchema": [],
+          "configSchema": {
+            "type": "object",
+            "properties": {
+              "tenantId": {
+                "type": "string"
+              },
+              "mode": {
+                "type": "string",
+                "enum": ["sandbox", "production"]
+              }
+            },
+            "required": ["tenantId"],
+            "additionalProperties": false
+          },
+          "configUiSchema": [
+            {
+              "key": "/tenantId",
+              "label": "Tenant",
+              "component": "text",
+              "required": true,
+              "order": 10
+            },
+            {
+              "key": "/mode",
+              "label": "Mode",
+              "component": "select",
+              "options": [
+                {
+                  "label": "Sandbox",
+                  "value": "sandbox"
+                },
+                {
+                  "label": "Production",
+                  "value": "production"
+                }
+              ],
+              "order": 20
+            }
+          ],
+          "defaultConfig": {
+            "tenantId": "acme",
+            "mode": "sandbox"
+          },
+          "endpoints": {
+            "sendOutbound": "/channel/send-outbound"
+          }
+        }
+      ],
+      "toolConnectors": []
+    }
+  }
+}

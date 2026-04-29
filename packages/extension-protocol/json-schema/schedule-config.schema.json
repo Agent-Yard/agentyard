@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lynxus.dev/schemas/extension-protocol/schedule-config.schema.json",
+  "title": "Channel provider schedule config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["scheduleType", "timezone", "jobConfig"],
+  "properties": {
+    "enabled": {
+      "type": "boolean",
+      "description": "Write/default DTO hint only; persistence projects this to job status."
+    },
+    "scheduleType": {
+      "type": "string",
+      "enum": ["INTERVAL", "CRON", "MANUAL"]
+    },
+    "intervalSeconds": {
+      "type": ["integer", "null"],
+      "minimum": 1
+    },
+    "cronExpression": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "timezone": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "jobTimeoutSeconds": {
+      "type": ["integer", "null"],
+      "minimum": 1
+    },
+    "jobConfig": {
+      "type": "object"
+    }
+  }
+}

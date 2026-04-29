@@ -1,0 +1,7 @@
+{
+  "name": "large integer modeled as string",
+  "input": "{\"value\":\"9007199254740992\"}",
+  "expectedCanonicalUtf8Hex": "7b2276616c7565223a2239303037313939323534373430393932227d",
+  "expectedDigest": "sha256:8ce95aa99f56dd6f1c06d4a8471d51659fa417398316440e914911c1502b3a9b",
+  "expectedErrorCode": null
+}

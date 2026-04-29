@@ -1,0 +1,13 @@
+{
+  "name": "invalid empty service manifest descriptors",
+  "expectedErrorCode": "MANIFEST_EMPTY",
+  "manifest": {
+    "extensionApiVersion": 1,
+    "coreMinVersion": "0.8.0",
+    "coreMaxVersion": "0.9.x",
+    "descriptors": {
+      "channelProviders": [],
+      "toolConnectors": []
+    }
+  }
+}

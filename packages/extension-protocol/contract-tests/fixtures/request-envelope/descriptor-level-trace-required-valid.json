@@ -1,0 +1,40 @@
+{
+  "name": "descriptor-level request envelope includes traceContext.traceparent",
+  "operation": "toolInvoke",
+  "expectedErrorCode": null,
+  "headers": {
+    "Authorization": "Bearer internal-token",
+    "X-Lynxus-Extension-Registration-Id": "acme-connectors",
+    "X-Lynxus-Extension-Descriptor-Type": "TOOL_CONNECTOR",
+    "X-Lynxus-Extension-Descriptor-Id": "enterprise.acme.crm",
+    "X-Lynxus-Trace-Id": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "X-Lynxus-Request-Id": "request-1",
+    "Idempotency-Key": "tool-call-1"
+  },
+  "request": {
+    "connectorType": "enterprise.acme.crm",
+    "tool": {
+      "resourceId": "resource-1",
+      "resourceVersionId": "resource-version-1",
+      "name": "CRM query"
+    },
+    "operation": {
+      "name": "query_customer",
+      "description": "Query customer"
+    },
+    "config": {
+      "connector": {},
+      "operationMapping": {}
+    },
+    "input": {
+      "arguments": {}
+    },
+    "execution": {
+      "idempotencyKey": "tool-call-1",
+      "timeoutSeconds": 15,
+      "traceContext": {
+        "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+      }
+    }
+  }
+}

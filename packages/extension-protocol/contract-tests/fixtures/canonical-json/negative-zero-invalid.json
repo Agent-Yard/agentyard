@@ -1,0 +1,7 @@
+{
+  "name": "negative zero rejection",
+  "input": "{\"value\":-0}",
+  "expectedCanonicalUtf8Hex": null,
+  "expectedDigest": null,
+  "expectedErrorCode": "CANONICAL_JSON_UNSUPPORTED_NUMBER"
+}
