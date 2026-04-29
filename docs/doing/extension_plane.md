@@ -518,6 +518,36 @@
   - `./gradlew :apps:api:test --tests '*ExtensionDefinition*'` passed.
   - `./gradlew :packages:extension-sdk-jvm:test` passed.
   - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+- Worker `Singer` (`019dd8ee-753b-7342-9d41-23197837abbb`) completed Slice 5B API aggregate runtime-owner validation.
+  - Added `GET /internal/extension-registry/validation` with aggregate registry validation shape (`service=api`, `component=EXTENSION_REGISTRY`, `registryType=AGGREGATE`) and HTTP 200/503 mapping.
+  - Reuses Slice 5A `ExtensionDefinitionService.loadRegistry()` plus `ExtensionRegistrationService.registrationConfigDigest()`.
+  - Adds runtime validation client calls to agent-runtime and channel-gateway owner validation endpoints using bearer auth only, 5s timeout, and no descriptor/idempotency headers.
+  - Compares registration config digest, descriptor id sets, and descriptor definition digests.
+  - Normalizes runtime failures/non-200/non-ready/malformed responses to `RUNTIME_REGISTRY_UNREACHABLE` without URL/token/raw body/exception leakage.
+  - Did not update OpenAPI because the endpoint is internal and represented by JVM-local DTOs.
+  - Reported verification:
+    - `./gradlew :apps:api:test --tests '*ExtensionRegistry*'` passed.
+    - `./gradlew :apps:api:test --tests '*Extension*'` passed.
+    - `./gradlew :packages:extension-sdk-jvm:test` passed.
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+- Checker `Hume` (`019dd8fa-6f77-7f10-9d08-347775785daf`) verdict for Slice 5B: pass; no blockers.
+  - Confirmed documented `/internal/extension-registry/validation` endpoint, bearer auth enforced in controller, and 200/503 status mapping.
+  - Confirmed aggregate validation reuses API local registry/digest, calls both runtime owner validations, compares registration config digest, descriptor id sets, and definition digests, and maps runtime failures to `RUNTIME_REGISTRY_UNREACHABLE` with `details.phase = AGGREGATE_VALIDATION`.
+  - Confirmed runtime client uses 5s timeout, bearer auth only, fixed validation paths, and sanitized failure reasons without URL/token/raw body leakage.
+  - Confirmed no Slice 6, Web, or compatibility work was introduced.
+  - Checker verification:
+    - `./gradlew :apps:api:test --tests '*ExtensionRegistry*'` passed.
+    - `./gradlew :apps:api:test --tests '*Extension*'` passed.
+    - `./gradlew :packages:extension-sdk-jvm:test` passed.
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+  - Residual non-blocking risk: no direct test for missing/invalid auth on this endpoint; controller still calls `InternalRuntimeAuth.requireBearer`.
+- Main Slice 5 checkpoint passed after Slice 5B checker approval:
+  - `./gradlew :apps:api:test` passed; 5 Docker/multi-instance tests skipped by existing test conditions.
+  - `./gradlew :apps:channel-gateway:test` passed.
+  - `uv run pytest apps/agent-runtime/tests -q` passed (`56 passed`).
+  - `./gradlew :packages:extension-sdk-jvm:test` passed.
+  - `uv run pytest packages/extension-sdk-python/tests -q` passed (`58 passed`).
+  - `pnpm --filter @lynxus/extension-protocol self-check` passed.
 
 ## Local Commit Policy
 
@@ -610,7 +640,14 @@
   - `./gradlew :apps:api:test --tests '*ExtensionDefinition*'` passed.
   - `./gradlew :packages:extension-sdk-jvm:test` passed.
   - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+- Main Slice 5 checkpoint:
+  - `./gradlew :apps:api:test` passed; 5 Docker/multi-instance tests skipped by existing test conditions.
+  - `./gradlew :apps:channel-gateway:test` passed.
+  - `uv run pytest apps/agent-runtime/tests -q` passed (`56 passed`).
+  - `./gradlew :packages:extension-sdk-jvm:test` passed.
+  - `uv run pytest packages/extension-sdk-python/tests -q` passed (`58 passed`).
+  - `pnpm --filter @lynxus/extension-protocol self-check` passed.
 
 ## Blockers / Rework
 
-- Pending local commit for Slice 5A.
+- Pending local commit for Slice 5B.
