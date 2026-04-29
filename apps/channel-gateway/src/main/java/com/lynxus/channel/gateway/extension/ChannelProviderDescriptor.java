@@ -9,6 +9,9 @@ import java.util.TreeMap;
 
 public record ChannelProviderDescriptor(
     String providerType,
+    String registrationId,
+    String baseUrl,
+    String runJobPath,
     Map<String, Object> descriptor,
     String definitionDigest,
     Map<String, Object> configSchema,
@@ -20,12 +23,19 @@ public record ChannelProviderDescriptor(
             throw new IllegalArgumentException("providerType is required");
         }
         providerType = providerType.trim();
+        registrationId = normalizeOptional(registrationId);
+        baseUrl = normalizeOptional(baseUrl);
+        runJobPath = normalizeOptional(runJobPath);
         descriptor = immutableObject(descriptor);
         configSchema = immutableObject(configSchema);
         defaultConfig = immutableObject(defaultConfig);
         jobDefinitionsByType = jobDefinitionsByType == null || jobDefinitionsByType.isEmpty()
             ? Map.of()
             : Collections.unmodifiableMap(new TreeMap<>(jobDefinitionsByType));
+    }
+
+    private static String normalizeOptional(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     public Optional<ChannelProviderJobDefinition> findJobDefinition(String jobType) {

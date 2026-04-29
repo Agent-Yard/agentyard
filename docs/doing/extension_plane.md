@@ -13,7 +13,7 @@
 ## Current Position
 
 - Current slice: Slice 9 - Normalized event + provider job + outbound/template binding.
-- Current subtask: Slice 9B provider job configuration data model and admin API foundation. Provider job scanner/Redis execution, outbound delivery conversion, template binding CRUD/resolution, and schema-driven Web pages remain later subtasks.
+- Current subtask: Slice 9C provider job execution foundation. Outbound delivery conversion, template binding CRUD/resolution, and schema-driven Web pages remain later subtasks.
 - Main-agent role: orchestration, integration decisions, ledger maintenance, review of worker/checker output.
 - Implementation flow: worker implements each bounded subtask, independent checker reviews read-only, then main agent decides follow-up.
 
@@ -87,9 +87,27 @@
 - Decision: Slice 9A will implement only the normalized inbound event foundation: JVM/TS/internal OpenAPI DTOs, `POST /internal/channel-events/normalized`, header/profile/provider validation, eventType matrix validation, dedup, event store, and local conversation binding snapshot creation/update. It will not add provider job scanner, outbound delivery invocation, template binding CRUD/resolution, remote provider outbound/runJob adapter, Core -> provider mapping API, inbound verification status, or schema-driven Web pages.
 - Decision: current `ChannelAssistantBinding` is still the Slice 8 thin shape (`assistantId` / `scenarioId`). Slice 9A will route/bind using the saved `assistantId` and default customer identity from `externalUserId` falling back to `externalConversationId`; the fuller assistant binding fields in the docs remain a follow-up when the Web/profile schema-driven work expands that DTO.
 - Decision: Slice 9B will add provider job runtime tables, DTOs, validation, and Web-facing/internal channel-admin job config/history endpoints. It will not start the scheduled scanner, acquire Redis locks, execute remote/gateway-native `runJob`, or create manual run records yet. `DELETE` on a provider job will be implemented as disable/status transition rather than physical deletion so run history remains meaningful.
+- Decision: Slice 9C will implement provider job execution foundation: due-job scanner, manual run endpoint, Redis per-job lock, DB claim/status state machine, run row creation/completion/failure/timeout recovery, remote `runJob` invocation with descriptor headers and generated idempotency key, and ingestion of normalized events returned by the provider. It will not implement outbound delivery conversion, template binding CRUD/resolution, schema-driven Web pages, credential refresh/rotate/status sync jobs, scheduled outbound retry, Core -> provider mapping/status API, or Slice 11 artifacts.
 
 ## Worker / Checker Notes
 
+- Worker 9C completed provider job execution foundation.
+  - Added channel-gateway provider job execution state machine: scheduled due-job scan, manual run path, exact Redis lock key format `channel-provider-job:{jobId}`, DB row-lock claim using `channel_profile_job.status`, run-row creation only after successful claim, success/failure/timeout completion, stale `RUNNING` recovery when the Redis lock is absent, and terminal-run protection for late completion.
+  - Added remote provider `runJob` adapter using loaded descriptor registration metadata (`registrationId`, `baseUrl`, manifest `endpoints.runJob`) without exposing runtime URL/path through definition endpoints. Requests use `LynxusExtensionHttp.descriptorLevelHeaders(...)`, `Idempotency-Key`, generated idempotency keys, runtime profile config, optional runtime `externalSecretRef`, and the protocol `ChannelRunJobRequest` envelope. Returned events are ingested through the existing normalized event service.
+  - Added manual run proxy path: channel-gateway internal `POST /internal/channel-admin/profiles/{channelProfileId}/jobs/{jobType}/runs`, API `POST /api/channel-admin/profiles/{channelProfileId}/jobs/{jobType}/runs`, Web service method, OpenAPI coverage, JVM/TS thin DTOs for `ChannelRunJobRequest/Response`.
+  - Added `spring-boot-starter-data-redis` / shared Redis dependency to channel-gateway and a small provider-job-specific lock wrapper because provider job recovery needs direct owner-value checks, not only callback-style locking.
+  - Explicitly did not implement outbound delivery conversion/sendOutbound, external template binding CRUD/resolution, schema-driven Web pages, credential refresh/rotate/status sync jobs, scheduled outbound retry, Core -> provider mapping/status API, inbound verification status, or Slice 11 artifacts.
+  - Verification:
+    - `./gradlew :apps:channel-gateway:test --tests '*ProviderJob*' --tests '*ChannelAdmin*' --tests '*InternalAuth*'` passed.
+    - `./gradlew :apps:api:test --tests '*ChannelGatewayClient*' --tests '*ChannelAdmin*' --tests '*ApiAuthorization*'` passed.
+    - `pnpm --filter @lynxus/web test -- api` passed (`16` tests).
+    - `ruby -e 'require "yaml"; Dir["packages/contracts/openapi/*.yaml"].each { |path| YAML.load_file(path) }; puts "openapi yaml ok"'` passed.
+    - old channel account naming guardrail scan shows only intentional negative authorization tests for removed `/channel-admin/accounts` paths.
+    - `externalSecretRef` guardrail scan shows only internal account snapshot persistence/materialization, normalized-event rejection tests, provider `runJob` invocation envelope, sanitization test, and the shared runtime invocation DTO; Web/control-plane read DTOs still do not expose the raw secret ref.
+    - `git diff --check` passed.
+  - Residual risks:
+    - Provider job lock uses Redis directly and will require deployment Redis connectivity for scanner/manual execution; existing non-execution admin paths remain DB-only.
+    - Gateway-native `runJob` adapter is not implemented because current gateway-native descriptors have no job definitions; this remains a future extension if a built-in provider declares provider jobs.
 - Worker 9A completed normalized inbound event foundation.
   - Added normalized event DTOs to JVM and shared TypeScript contracts, including the documented `eventType` set, conversation/sender/message/attachment/trace payloads, immutable/non-null map handling, and internal ingest result DTO.
   - Added `POST /internal/channel-events/normalized` to `packages/contracts/openapi/channel-gateway-internal.yaml` only. No Web-facing control-plane normalized event endpoint was added.
@@ -1179,7 +1197,31 @@
   - Confirmed gateway now rejects provided write schedule configs with null/missing `enabled`, while null `scheduleConfig` still uses descriptor `defaultEnabled`.
   - Confirmed no manual run creation, provider job scanner, Redis provider job lock acquisition, provider `runJob` execution, outbound/template binding implementation, schema-driven Web pages, credential refresh/status sync provider job, or Slice 11 artifacts.
   - Residual risks: checker did not run full Java/Node suites; JVM records follow current repo style and do not enforce read DTO non-null fields at construction time.
+- Worker 9C completed provider job execution foundation.
+  - Added channel-gateway scheduled due-job scanner, manual run endpoint, Redis per-job lock using `channel-provider-job:{jobId}`, DB claim/state transition logic, run row creation, completion/failure/timeout persistence, stale `RUNNING` recovery, and remote provider `runJob` adapter.
+  - Manual and scanner execution share the same claim path. Manual runs require `ACTIVE`; `DISABLED` / `PAUSED` and `RUNNING` produce conflict semantics without creating run rows. Automatic scanning skips `MANUAL` schedules.
+  - Remote `runJob` invocation uses manifest-declared `endpoints.runJob`, registration base URL, descriptor-level headers, generated idempotency key, profile config, optional runtime-only `externalSecretRef`, trace context, and job payload. Returned normalized events are ingested through the existing normalized event service.
+  - Added API proxy and thin Web service method for `POST /runs`; API does not create run ids, compute Redis lock keys, or read channel runtime tables.
+  - Updated JVM/TS/OpenAPI contracts for manual run response and extension `ChannelRunJobRequest` / `ChannelRunJobResponse` DTOs.
+  - Explicitly did not implement outbound conversion/sendOutbound, template binding CRUD/resolution, schema-driven Web pages, credential refresh/rotate/status sync jobs, scheduled outbound retry, Core -> provider mapping/status API, inbound verification status, or Slice 11 artifacts.
+  - Worker verification:
+    - `./gradlew :apps:channel-gateway:test --tests '*ProviderJob*' --tests '*ChannelAdmin*' --tests '*InternalAuth*'` passed.
+    - `./gradlew :apps:api:test --tests '*ChannelGatewayClient*' --tests '*ChannelAdmin*' --tests '*ApiAuthorization*'` passed.
+    - `pnpm --filter @lynxus/web test -- api` passed (`16` tests).
+    - OpenAPI YAML parse passed.
+    - Guardrail scans passed for old channel account naming and `externalSecretRef` exposure.
+    - `git diff --check` passed.
+  - Residual risk: provider job execution now requires Redis connectivity for scanner/manual run locking; gateway-native `runJob` is not implemented because current gateway-native descriptors have no provider job definitions.
+- Checker 9C verdict: pass.
+  - Confirmed scanner/manual run, Redis key, DB claim-before-run-row semantics, terminal-state protection, remote envelope/headers/idempotency, normalized event ingestion through existing service, API proxy-only behavior, and thin Web method.
+  - Checker verification:
+    - `./gradlew :apps:channel-gateway:test --tests '*ProviderJob*' --tests '*ChannelAdmin*' --tests '*InternalAuth*' --rerun-tasks` passed.
+    - `./gradlew :apps:api:test --tests '*ChannelGatewayClient*' --tests '*ChannelAdmin*' --tests '*ApiAuthorization*' --rerun-tasks` passed.
+    - `pnpm --filter @lynxus/web test -- api` passed (`16` tests).
+    - OpenAPI YAML parse passed.
+    - Guardrail scans found only expected/internal `externalSecretRef` usage, intentional old `/accounts` negative auth tests, and no out-of-scope outbound/template/schema-driven/Slice 11 implementation.
+  - Residual risks: Redis connectivity failure surfaces as execution dependency; no focused connectivity-failure regression. Gateway-native `runJob` remains unimplemented but no current gateway-native descriptor declares provider jobs.
 
 ## Blockers / Rework
 
-- No active blockers for completed Slice 9B.
+- No active blockers for completed Slice 9C.

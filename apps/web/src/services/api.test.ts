@@ -394,6 +394,47 @@ describe('api client', () => {
     );
   });
 
+  it('runs provider jobs manually through the control-plane api', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        data: {
+          id: 'channel-job-run-1',
+          runId: 'channel-job-run-1',
+          jobId: 'channel-job-1',
+          status: 'SUCCEEDED',
+          scheduledAt: '2026-04-01T00:00:00Z',
+          startedAt: '2026-04-01T00:00:01Z',
+          jobTimeoutSeconds: 60,
+          finishedAt: '2026-04-01T00:00:02Z',
+          durationMs: 1000,
+          idempotencyKey: 'channel-job-run:channel-job-run-1',
+          attempt: 1,
+          eventsIngested: 0,
+          nextCursor: 'cursor-2',
+          error: {},
+          metadata: {},
+          createdAt: '2026-04-01T00:00:01Z',
+          updatedAt: '2026-04-01T00:00:02Z',
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.runChannelProviderJob('channel-profile-1', 'PULL_MESSAGES');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/channel-admin/profiles/channel-profile-1/jobs/PULL_MESSAGES/runs',
+      expect.objectContaining({
+        credentials: 'include',
+        method: 'POST',
+        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
+      }),
+    );
+  });
+
   it('preserves the JSON content type when write requests do not provide custom headers', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({

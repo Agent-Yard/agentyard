@@ -164,6 +164,14 @@ public class ChannelGatewayClient {
             .body(CHANNEL_PROVIDER_JOB_RUN_LIST)));
     }
 
+    public ChannelProviderJobRun runJob(String channelProfileId, String jobType) {
+        return invoke(() -> body(restClient.post()
+            .uri("/internal/channel-admin/profiles/{channelProfileId}/jobs/{jobType}/runs", channelProfileId, jobType)
+            .retrieve()
+            .body(new ParameterizedTypeReference<ApiEnvelope<ChannelProviderJobRun>>() {
+            })));
+    }
+
     private static String requireInternalAuthToken(String internalAuthToken) {
         if (internalAuthToken == null || internalAuthToken.isBlank()) {
             throw new IllegalStateException("lynxus.internal-auth.token must be configured");

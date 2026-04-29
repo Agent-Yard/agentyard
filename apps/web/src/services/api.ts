@@ -215,6 +215,8 @@ export const api = {
     ),
   listChannelProviderJobRuns: (channelProfileId: string, jobType: string) =>
     request<ChannelProviderJobRun[]>(`/channel-admin/profiles/${channelProfileId}/jobs/${encodeURIComponent(jobType)}/runs`),
+  runChannelProviderJob: (channelProfileId: string, jobType: string) =>
+    request<ChannelProviderJobRun>(`/channel-admin/profiles/${channelProfileId}/jobs/${encodeURIComponent(jobType)}/runs`, jsonOptions('POST')),
   listIntegrationAccounts: () => request<IntegrationAccount[]>('/integration/accounts'),
   getIntegrationAccount: (accountId: string) => request<IntegrationAccount>(`/integration/accounts/${accountId}`),
   createIntegrationAccount: (payload: CreateIntegrationAccountPayload) =>

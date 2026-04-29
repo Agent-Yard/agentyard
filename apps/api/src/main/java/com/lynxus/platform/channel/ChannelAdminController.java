@@ -98,4 +98,10 @@ public class ChannelAdminController {
     public ApiResponse<?> jobRuns(@PathVariable String channelProfileId, @PathVariable String jobType) {
         return ApiResponse.ok(channelAdminService.listJobRuns(channelProfileId, jobType));
     }
+
+    @PostMapping("/{channelProfileId}/jobs/{jobType}/runs")
+    @RequireGovernanceWrite
+    public ApiResponse<?> runJob(@PathVariable String channelProfileId, @PathVariable String jobType) {
+        return ApiResponse.ok(channelAdminService.runJob(channelProfileId, jobType));
+    }
 }

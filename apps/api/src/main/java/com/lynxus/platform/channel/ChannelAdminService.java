@@ -119,6 +119,11 @@ public class ChannelAdminService {
         return channelGatewayClient.listJobRuns(channelProfileId, jobType);
     }
 
+    public ChannelProviderJobRun runJob(String channelProfileId, String jobType) {
+        requireJobDefinition(channelProfileId, jobType);
+        return channelGatewayClient.runJob(channelProfileId, jobType);
+    }
+
     private ChannelProfileAccountSnapshot materializeAccountSnapshot(String integrationAccountId, String providerType) {
         if (integrationAccountId == null || integrationAccountId.isBlank()) {
             return null;

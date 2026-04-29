@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.Optional;
 import org.jooq.DSLContext;
 import org.jooq.Record;
+import org.jooq.impl.DSL;
 
 import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_PROFILE;
 import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_CONVERSATION_BINDING;
@@ -295,6 +296,12 @@ final class ChannelStore {
             .fetchOptional(this::mapJob);
     }
 
+    Optional<ChannelProviderJobConfig> findJobById(String jobId) {
+        return dsl.selectFrom(CHANNEL_PROFILE_JOB)
+            .where(CHANNEL_PROFILE_JOB.ID.eq(jobId))
+            .fetchOptional(this::mapJob);
+    }
+
     void createJob(String channelProfileId, ChannelProviderJobConfig job) {
         dsl.insertInto(CHANNEL_PROFILE_JOB)
             .set(CHANNEL_PROFILE_JOB.ID, job.jobId())
@@ -347,6 +354,184 @@ final class ChannelStore {
             .fetch(this::mapJobRun);
     }
 
+    List<String> listDueActiveJobIds(Instant now, int limit) {
+        return dsl.select(CHANNEL_PROFILE_JOB.ID)
+            .from(CHANNEL_PROFILE_JOB)
+            .where(CHANNEL_PROFILE_JOB.STATUS.eq(ChannelProviderJobStatus.ACTIVE.name()))
+            .and(CHANNEL_PROFILE_JOB.NEXT_RUN_AT.le(JooqTimeSupport.toOffsetDateTime(now)))
+            .and(scheduleTypeField().ne(ChannelProviderJobScheduleType.MANUAL.name()))
+            .orderBy(CHANNEL_PROFILE_JOB.NEXT_RUN_AT.asc(), CHANNEL_PROFILE_JOB.ID.asc())
+            .limit(Math.max(1, limit))
+            .fetch(CHANNEL_PROFILE_JOB.ID);
+    }
+
+    Optional<ProviderJobClaim> claimJob(
+        String jobId,
+        String runId,
+        String idempotencyKey,
+        boolean manual,
+        Instant now
+    ) {
+        return dsl.transactionResult(configuration -> {
+            DSLContext tx = DSL.using(configuration);
+            Record record = tx.select()
+                .from(CHANNEL_PROFILE_JOB)
+                .join(CHANNEL_PROFILE)
+                .on(CHANNEL_PROFILE.ID.eq(CHANNEL_PROFILE_JOB.CHANNEL_PROFILE_ID))
+                .where(CHANNEL_PROFILE_JOB.ID.eq(jobId))
+                .forUpdate()
+                .fetchOne();
+            if (record == null || !ChannelProviderJobStatus.ACTIVE.name().equals(record.get(CHANNEL_PROFILE_JOB.STATUS))) {
+                return Optional.empty();
+            }
+            ChannelProviderJobScheduleConfig scheduleConfig = readScheduleConfig(record);
+            Instant nextRunAt = JooqTimeSupport.toInstant(record.get(CHANNEL_PROFILE_JOB.NEXT_RUN_AT));
+            if (!manual) {
+                if (scheduleConfig.scheduleType() == ChannelProviderJobScheduleType.MANUAL) {
+                    return Optional.empty();
+                }
+                if (nextRunAt == null || nextRunAt.isAfter(now)) {
+                    return Optional.empty();
+                }
+            }
+            int timeoutSeconds = scheduleConfig.jobTimeoutSeconds();
+            int attempt = record.get(CHANNEL_PROFILE_JOB.FAILURE_COUNT) + 1;
+            tx.insertInto(CHANNEL_PROFILE_JOB_RUN)
+                .set(CHANNEL_PROFILE_JOB_RUN.ID, runId)
+                .set(CHANNEL_PROFILE_JOB_RUN.JOB_ID, jobId)
+                .set(CHANNEL_PROFILE_JOB_RUN.STATUS, ChannelProviderJobRunStatus.RUNNING.name())
+                .set(CHANNEL_PROFILE_JOB_RUN.SCHEDULED_AT, JooqTimeSupport.toOffsetDateTime(manual ? now : nextRunAt))
+                .set(CHANNEL_PROFILE_JOB_RUN.STARTED_AT, JooqTimeSupport.toOffsetDateTime(now))
+                .set(CHANNEL_PROFILE_JOB_RUN.JOB_TIMEOUT_SECONDS, timeoutSeconds)
+                .set(CHANNEL_PROFILE_JOB_RUN.IDEMPOTENCY_KEY, idempotencyKey)
+                .set(CHANNEL_PROFILE_JOB_RUN.ATTEMPT, attempt)
+                .set(CHANNEL_PROFILE_JOB_RUN.EVENTS_INGESTED, 0)
+                .set(CHANNEL_PROFILE_JOB_RUN.ERROR, jsonbSupport.toJsonb(Map.of()))
+                .set(CHANNEL_PROFILE_JOB_RUN.METADATA, jsonbSupport.toJsonb(Map.of()))
+                .set(CHANNEL_PROFILE_JOB_RUN.CREATED_AT, JooqTimeSupport.toOffsetDateTime(now))
+                .set(CHANNEL_PROFILE_JOB_RUN.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(now))
+                .execute();
+            tx.update(CHANNEL_PROFILE_JOB)
+                .set(CHANNEL_PROFILE_JOB.STATUS, ChannelProviderJobStatus.RUNNING.name())
+                .set(CHANNEL_PROFILE_JOB.LAST_RUN_ID, runId)
+                .set(CHANNEL_PROFILE_JOB.LAST_RUN_AT, JooqTimeSupport.toOffsetDateTime(now))
+                .set(CHANNEL_PROFILE_JOB.REVISION, record.get(CHANNEL_PROFILE_JOB.REVISION) + 1)
+                .set(CHANNEL_PROFILE_JOB.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(now))
+                .where(CHANNEL_PROFILE_JOB.ID.eq(jobId))
+                .execute();
+            return Optional.of(new ProviderJobClaim(
+                jobId,
+                runId,
+                idempotencyKey,
+                record.get(CHANNEL_PROFILE.ID),
+                record.get(CHANNEL_PROFILE.PROVIDER_TYPE),
+                jsonbSupport.readObjectMap(record.get(CHANNEL_PROFILE.CONFIG)),
+                record.get(CHANNEL_PROFILE.EXTERNAL_SECRET_REF),
+                record.get(CHANNEL_PROFILE_JOB.JOB_TYPE),
+                scheduleConfig,
+                record.get(CHANNEL_PROFILE_JOB.CURSOR),
+                manual ? now : nextRunAt,
+                now,
+                timeoutSeconds
+            ));
+        });
+    }
+
+    boolean completeRunSucceeded(String jobId, String runId, ProviderJobExecutionResult result, Instant now) {
+        return completeRun(jobId, runId, ChannelProviderJobRunStatus.SUCCEEDED, result, null, now, false);
+    }
+
+    boolean completeRunFailed(String jobId, String runId, String error, Instant now) {
+        return completeRun(jobId, runId, ChannelProviderJobRunStatus.FAILED, ProviderJobExecutionResult.empty(), error, now, true);
+    }
+
+    boolean completeRunTimedOut(String jobId, String runId, String error, Instant now) {
+        return completeRun(jobId, runId, ChannelProviderJobRunStatus.TIMED_OUT, ProviderJobExecutionResult.empty(), error, now, true);
+    }
+
+    List<ProviderJobRunningRun> listRunningRuns() {
+        return dsl.select()
+            .from(CHANNEL_PROFILE_JOB)
+            .join(CHANNEL_PROFILE_JOB_RUN)
+            .on(CHANNEL_PROFILE_JOB_RUN.ID.eq(CHANNEL_PROFILE_JOB.LAST_RUN_ID))
+            .where(CHANNEL_PROFILE_JOB.STATUS.eq(ChannelProviderJobStatus.RUNNING.name()))
+            .and(CHANNEL_PROFILE_JOB_RUN.STATUS.eq(ChannelProviderJobRunStatus.RUNNING.name()))
+            .fetch(record -> new ProviderJobRunningRun(
+                record.get(CHANNEL_PROFILE_JOB.ID),
+                record.get(CHANNEL_PROFILE_JOB_RUN.ID),
+                readScheduleConfig(record),
+                JooqTimeSupport.toInstant(record.get(CHANNEL_PROFILE_JOB_RUN.STARTED_AT)),
+                record.get(CHANNEL_PROFILE_JOB_RUN.JOB_TIMEOUT_SECONDS)
+            ));
+    }
+
+    boolean recoverTimedOutRun(String jobId, String runId, String error, Instant now) {
+        return completeRun(jobId, runId, ChannelProviderJobRunStatus.TIMED_OUT, ProviderJobExecutionResult.empty(), error, now, true);
+    }
+
+    private boolean completeRun(
+        String jobId,
+        String runId,
+        ChannelProviderJobRunStatus status,
+        ProviderJobExecutionResult result,
+        String error,
+        Instant now,
+        boolean incrementFailure
+    ) {
+        return dsl.transactionResult(configuration -> {
+            DSLContext tx = DSL.using(configuration);
+            Record record = tx.select()
+                .from(CHANNEL_PROFILE_JOB)
+                .join(CHANNEL_PROFILE_JOB_RUN)
+                .on(CHANNEL_PROFILE_JOB_RUN.ID.eq(CHANNEL_PROFILE_JOB.LAST_RUN_ID))
+                .where(CHANNEL_PROFILE_JOB.ID.eq(jobId))
+                .and(CHANNEL_PROFILE_JOB.LAST_RUN_ID.eq(runId))
+                .forUpdate()
+                .fetchOne();
+            if (record == null
+                || !ChannelProviderJobStatus.RUNNING.name().equals(record.get(CHANNEL_PROFILE_JOB.STATUS))
+                || !ChannelProviderJobRunStatus.RUNNING.name().equals(record.get(CHANNEL_PROFILE_JOB_RUN.STATUS))) {
+                return false;
+            }
+            ChannelProviderJobScheduleConfig scheduleConfig = readScheduleConfig(record);
+            Instant startedAt = JooqTimeSupport.toInstant(record.get(CHANNEL_PROFILE_JOB_RUN.STARTED_AT));
+            Instant nextRunAt = ChannelProviderJobScheduleCalculator.nextRunAt(scheduleConfig, now);
+            tx.update(CHANNEL_PROFILE_JOB_RUN)
+                .set(CHANNEL_PROFILE_JOB_RUN.STATUS, status.name())
+                .set(CHANNEL_PROFILE_JOB_RUN.FINISHED_AT, JooqTimeSupport.toOffsetDateTime(now))
+                .set(CHANNEL_PROFILE_JOB_RUN.DURATION_MS, Math.max(0L, java.time.Duration.between(startedAt, now).toMillis()))
+                .set(CHANNEL_PROFILE_JOB_RUN.EVENTS_INGESTED, result.eventsIngested())
+                .set(CHANNEL_PROFILE_JOB_RUN.NEXT_CURSOR, result.nextCursor())
+                .set(CHANNEL_PROFILE_JOB_RUN.ERROR, jsonbSupport.toJsonb(error == null ? Map.of() : Map.of("message", error)))
+                .set(CHANNEL_PROFILE_JOB_RUN.METADATA, jsonbSupport.toJsonb(result.metadata() == null ? Map.of() : result.metadata()))
+                .set(CHANNEL_PROFILE_JOB_RUN.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(now))
+                .where(CHANNEL_PROFILE_JOB_RUN.ID.eq(runId))
+                .and(CHANNEL_PROFILE_JOB_RUN.STATUS.eq(ChannelProviderJobRunStatus.RUNNING.name()))
+                .execute();
+            var update = tx.update(CHANNEL_PROFILE_JOB)
+                .set(CHANNEL_PROFILE_JOB.STATUS, ChannelProviderJobStatus.ACTIVE.name())
+                .set(CHANNEL_PROFILE_JOB.NEXT_RUN_AT, JooqTimeSupport.toOffsetDateTime(nextRunAt))
+                .set(CHANNEL_PROFILE_JOB.REVISION, record.get(CHANNEL_PROFILE_JOB.REVISION) + 1)
+                .set(CHANNEL_PROFILE_JOB.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(now));
+            if (status == ChannelProviderJobRunStatus.SUCCEEDED) {
+                update.set(CHANNEL_PROFILE_JOB.CURSOR, result.nextCursor())
+                    .set(CHANNEL_PROFILE_JOB.LAST_SUCCESS_AT, JooqTimeSupport.toOffsetDateTime(now))
+                    .set(CHANNEL_PROFILE_JOB.LAST_ERROR, (String) null)
+                    .set(CHANNEL_PROFILE_JOB.LAST_ERROR_AT, JooqTimeSupport.toOffsetDateTime(null));
+            }
+            if (incrementFailure) {
+                update.set(CHANNEL_PROFILE_JOB.FAILURE_COUNT, record.get(CHANNEL_PROFILE_JOB.FAILURE_COUNT) + 1)
+                    .set(CHANNEL_PROFILE_JOB.LAST_ERROR, error)
+                    .set(CHANNEL_PROFILE_JOB.LAST_ERROR_AT, JooqTimeSupport.toOffsetDateTime(now));
+            }
+            update.where(CHANNEL_PROFILE_JOB.ID.eq(jobId))
+                .and(CHANNEL_PROFILE_JOB.STATUS.eq(ChannelProviderJobStatus.RUNNING.name()))
+                .and(CHANNEL_PROFILE_JOB.LAST_RUN_ID.eq(runId))
+                .execute();
+            return true;
+        });
+    }
+
     private ChannelGatewayProfile mapProfile(Record record) {
         String externalSecretRef = record.get(CHANNEL_PROFILE.EXTERNAL_SECRET_REF);
         return new ChannelGatewayProfile(
@@ -363,6 +548,10 @@ final class ChannelStore {
             JooqTimeSupport.toInstant(record.get(CHANNEL_PROFILE.CREATED_AT)),
             JooqTimeSupport.toInstant(record.get(CHANNEL_PROFILE.UPDATED_AT))
         );
+    }
+
+    private static org.jooq.Field<String> scheduleTypeField() {
+        return DSL.field("{0}->>'scheduleType'", String.class, CHANNEL_PROFILE_JOB.SCHEDULE_CONFIG);
     }
 
     private ChannelAssistantBinding readAssistantBinding(Record record) {

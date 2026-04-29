@@ -31,8 +31,10 @@ val codegenImplementation by configurations.getting {
 dependencies {
     implementation(project(":packages:contracts-jvm"))
     implementation(project(":packages:extension-sdk-jvm"))
+    implementation(project(":packages:shared-redis-jvm"))
 
     implementation("org.springframework.boot:spring-boot-starter-web")
+    implementation("org.springframework.boot:spring-boot-starter-data-redis")
     implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("org.springframework.boot:spring-boot-starter-actuator")

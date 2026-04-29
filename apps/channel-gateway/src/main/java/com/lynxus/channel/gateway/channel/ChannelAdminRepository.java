@@ -107,6 +107,10 @@ public class ChannelAdminRepository {
         return store.findJob(channelProfileId, jobType);
     }
 
+    public Optional<ChannelProviderJobConfig> findJobById(String jobId) {
+        return store.findJobById(jobId);
+    }
+
     public void createJob(String channelProfileId, ChannelProviderJobConfig job) {
         store.createJob(channelProfileId, job);
     }
@@ -121,5 +125,39 @@ public class ChannelAdminRepository {
 
     public List<ChannelProviderJobRun> listJobRuns(String jobId) {
         return store.listJobRuns(jobId);
+    }
+
+    public List<String> listDueActiveJobIds(Instant now, int limit) {
+        return store.listDueActiveJobIds(now, limit);
+    }
+
+    public Optional<ProviderJobClaim> claimJob(
+        String jobId,
+        String runId,
+        String idempotencyKey,
+        boolean manual,
+        Instant now
+    ) {
+        return store.claimJob(jobId, runId, idempotencyKey, manual, now);
+    }
+
+    public boolean completeRunSucceeded(String jobId, String runId, ProviderJobExecutionResult result, Instant now) {
+        return store.completeRunSucceeded(jobId, runId, result, now);
+    }
+
+    public boolean completeRunFailed(String jobId, String runId, String error, Instant now) {
+        return store.completeRunFailed(jobId, runId, error, now);
+    }
+
+    public boolean completeRunTimedOut(String jobId, String runId, String error, Instant now) {
+        return store.completeRunTimedOut(jobId, runId, error, now);
+    }
+
+    public List<ProviderJobRunningRun> listRunningRuns() {
+        return store.listRunningRuns();
+    }
+
+    public boolean recoverTimedOutRun(String jobId, String runId, String error, Instant now) {
+        return store.recoverTimedOutRun(jobId, runId, error, now);
     }
 }

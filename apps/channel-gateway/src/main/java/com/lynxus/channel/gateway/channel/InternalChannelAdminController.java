@@ -4,6 +4,7 @@ import com.lynxus.channel.gateway.shared.ApiResponse;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfigWriteRequest;
 import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileInternalRequest;
 import com.lynxus.contracts.channel.ChannelContracts.UpdateChannelProfileInternalRequest;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -18,9 +19,19 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/internal/channel-admin/profiles")
 public class InternalChannelAdminController {
     private final ChannelAdminService channelAdminService;
+    private final ProviderJobExecutionService providerJobExecutionService;
+
+    @Autowired
+    public InternalChannelAdminController(
+        ChannelAdminService channelAdminService,
+        ProviderJobExecutionService providerJobExecutionService
+    ) {
+        this.channelAdminService = channelAdminService;
+        this.providerJobExecutionService = providerJobExecutionService;
+    }
 
     public InternalChannelAdminController(ChannelAdminService channelAdminService) {
-        this.channelAdminService = channelAdminService;
+        this(channelAdminService, null);
     }
 
     @GetMapping
@@ -89,5 +100,10 @@ public class InternalChannelAdminController {
     @GetMapping("/{channelProfileId}/jobs/{jobType}/runs")
     public ApiResponse<?> jobRuns(@PathVariable String channelProfileId, @PathVariable String jobType) {
         return ApiResponse.ok(channelAdminService.listJobRuns(channelProfileId, jobType));
+    }
+
+    @PostMapping("/{channelProfileId}/jobs/{jobType}/runs")
+    public ApiResponse<?> runJob(@PathVariable String channelProfileId, @PathVariable String jobType) {
+        return ApiResponse.ok(providerJobExecutionService.runManual(channelProfileId, jobType));
     }
 }

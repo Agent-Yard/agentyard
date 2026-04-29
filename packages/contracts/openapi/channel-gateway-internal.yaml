@@ -295,6 +295,32 @@ paths:
           description: Channel profile or provider job not found
         '422':
           description: Provider job definition is invalid
+    post:
+      summary: Manually run a provider job through the gateway execution path
+      parameters:
+        - in: path
+          name: channelProfileId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: jobType
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Provider job run result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseChannelProviderJobRun'
+        '404':
+          description: Channel profile or provider job not found
+        '409':
+          description: Provider job is already running or not active
+        '422':
+          description: Provider job definition is invalid
 components:
   parameters:
     ExtensionRegistrationIdHeader:
@@ -1061,6 +1087,16 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ChannelProviderJobConfig'
+        timestamp:
+          type: string
+          format: date-time
+    ApiResponseChannelProviderJobRun:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/ChannelProviderJobRun'
         timestamp:
           type: string
           format: date-time

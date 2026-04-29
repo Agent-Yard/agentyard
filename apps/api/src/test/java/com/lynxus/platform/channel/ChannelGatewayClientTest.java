@@ -350,6 +350,54 @@ class ChannelGatewayClientTest {
     }
 
     @Test
+    void shouldProxyProviderJobManualRunToGateway() throws Exception {
+        AtomicReference<String> method = new AtomicReference<>();
+        AtomicReference<String> requestUri = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/internal/channel-admin/profiles/channel-profile-1/jobs/PULL_MESSAGES/runs", exchange -> {
+            method.set(exchange.getRequestMethod());
+            requestUri.set(exchange.getRequestURI().toString());
+            writeJson(exchange, 200, """
+                {
+                  "success": true,
+                  "data": {
+                    "id": "channel-job-run-1",
+                    "runId": "channel-job-run-1",
+                    "jobId": "channel-job-1",
+                    "status": "SUCCEEDED",
+                    "scheduledAt": "2026-04-23T00:00:00Z",
+                    "startedAt": "2026-04-23T00:00:01Z",
+                    "jobTimeoutSeconds": 60,
+                    "finishedAt": "2026-04-23T00:00:02Z",
+                    "durationMs": 1000,
+                    "idempotencyKey": "channel-job-run:channel-job-run-1",
+                    "attempt": 1,
+                    "eventsIngested": 0,
+                    "nextCursor": "cursor-2",
+                    "error": {},
+                    "metadata": {},
+                    "createdAt": "2026-04-23T00:00:01Z",
+                    "updatedAt": "2026-04-23T00:00:02Z"
+                  },
+                  "timestamp": "2026-04-23T00:00:02Z"
+                }
+                """);
+        });
+        server.start();
+
+        try {
+            ChannelGatewayClient client = new ChannelGatewayClient(serverUrl(server), "internal-token", new ObjectMapper());
+            var run = client.runJob("channel-profile-1", "PULL_MESSAGES");
+
+            assertEquals("POST", method.get());
+            assertEquals("/internal/channel-admin/profiles/channel-profile-1/jobs/PULL_MESSAGES/runs", requestUri.get());
+            assertEquals("cursor-2", run.nextCursor());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void shouldTranslateUnprocessableProviderJobErrorsFromGateway() throws Exception {
         HttpServer server = errorServer(422, """
             {

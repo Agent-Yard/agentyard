@@ -122,6 +122,9 @@ public final class ChannelProviderRegistryLoader {
                     providerType,
                     new ChannelProviderDescriptor(
                         providerType,
+                        registration.registrationId(),
+                        registration.baseUrl(),
+                        runJobPath(descriptor),
                         descriptor,
                         definitionDigest,
                         configSchema,
@@ -172,6 +175,16 @@ public final class ChannelProviderRegistryLoader {
             Collections.unmodifiableMap(new TreeMap<>(descriptorDefinitionDigests)),
             Collections.unmodifiableMap(new TreeMap<>(descriptorsByProviderType))
         );
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String runJobPath(Map<String, Object> descriptor) {
+        Object endpoints = descriptor.get("endpoints");
+        if (!(endpoints instanceof Map<?, ?> rawEndpoints)) {
+            return null;
+        }
+        Object value = rawEndpoints.get("runJob");
+        return value instanceof String path && !path.isBlank() ? path.trim() : null;
     }
 
     private List<ExtensionRegistration> channelProviderRegistrations() {

@@ -364,6 +364,47 @@ public final class ChannelContracts {
         }
     }
 
+    public record ChannelRunJobPayload(
+        String jobType,
+        Map<String, Object> jobConfig,
+        Instant scheduledAt
+    ) {
+        public ChannelRunJobPayload {
+            jobConfig = requiredImmutableObjectMap(jobConfig, "payload.jobConfig");
+        }
+    }
+
+    public record ChannelRunJobRequest(
+        String providerType,
+        String channelProfileId,
+        Map<String, Object> config,
+        String externalSecretRef,
+        String idempotencyKey,
+        NormalizedChannelTraceContext traceContext,
+        ChannelRunJobPayload payload
+    ) {
+        public ChannelRunJobRequest {
+            config = requiredImmutableObjectMap(config, "config");
+        }
+    }
+
+    public enum ChannelRunJobResponseStatus {
+        SUCCEEDED,
+        NOOP
+    }
+
+    public record ChannelRunJobResponse(
+        ChannelRunJobResponseStatus status,
+        String nextCursor,
+        List<NormalizedChannelInboundEvent> events,
+        Map<String, Object> metadata
+    ) {
+        public ChannelRunJobResponse {
+            events = events == null || events.isEmpty() ? List.of() : List.copyOf(events);
+            metadata = requiredImmutableObjectMap(metadata, "metadata");
+        }
+    }
+
     public record CreateChannelProfileRequest(
         String providerType,
         String displayName,

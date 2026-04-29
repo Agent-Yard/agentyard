@@ -23,12 +23,10 @@ import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileInterna
 import com.lynxus.contracts.channel.ChannelContracts.UpdateChannelProfileInternalRequest;
 import java.time.ZoneId;
 import java.time.Instant;
-import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.UUID;
-import org.springframework.scheduling.support.CronExpression;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -179,7 +177,9 @@ public class ChannelAdminService {
         ChannelProviderJobStatus status = enabled(request == null ? null : request.scheduleConfig(), jobDefinition)
             ? ChannelProviderJobStatus.ACTIVE
             : ChannelProviderJobStatus.DISABLED;
-        Instant nextRunAt = status == ChannelProviderJobStatus.ACTIVE ? nextRunAt(scheduleConfig, now) : null;
+        Instant nextRunAt = status == ChannelProviderJobStatus.ACTIVE
+            ? ChannelProviderJobScheduleCalculator.nextRunAt(scheduleConfig, now)
+            : null;
 
         if (existing == null) {
             Long expectedRevision = request == null ? null : request.expectedRevision();
@@ -413,18 +413,6 @@ public class ChannelAdminService {
         }
     }
 
-    private static Instant nextRunAt(ChannelProviderJobScheduleConfig scheduleConfig, Instant now) {
-        return switch (scheduleConfig.scheduleType()) {
-            case INTERVAL -> now.plusSeconds(scheduleConfig.intervalSeconds());
-            case CRON -> {
-                ZonedDateTime base = now.atZone(ZoneId.of(scheduleConfig.timezone()));
-                ZonedDateTime next = CronExpression.parse(scheduleConfig.cronExpression()).next(base);
-                yield next == null ? null : next.toInstant();
-            }
-            case MANUAL -> null;
-        };
-    }
-
     private static ChannelProviderJobScheduleType scheduleType(Object value) {
         if (value instanceof ChannelProviderJobScheduleType type) {
             return type;
@@ -473,7 +461,7 @@ public class ChannelAdminService {
             normalized = "0 " + normalized;
         }
         try {
-            CronExpression.parse(normalized);
+            org.springframework.scheduling.support.CronExpression.parse(normalized);
             return normalized;
         } catch (RuntimeException error) {
             throw new UnprocessableEntityException("scheduleConfig.cronExpression is invalid");

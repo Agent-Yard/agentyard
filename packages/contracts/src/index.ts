@@ -38,6 +38,7 @@ export type ChannelOutboundDeliveryStatus = 'PENDING' | 'SENT' | 'FAILED';
 export type ChannelProviderJobScheduleType = 'INTERVAL' | 'CRON' | 'MANUAL';
 export type ChannelProviderJobStatus = 'ACTIVE' | 'RUNNING' | 'PAUSED' | 'DISABLED';
 export type ChannelProviderJobRunStatus = 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'TIMED_OUT';
+export type ChannelRunJobResponseStatus = 'SUCCEEDED' | 'NOOP';
 export type NormalizedChannelEventType =
   | 'MESSAGE_RECEIVED'
   | 'MESSAGE_UPDATED'
@@ -527,6 +528,29 @@ export interface ChannelProviderJobRun {
   metadata: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ChannelRunJobPayload {
+  jobType: string;
+  jobConfig: Record<string, unknown>;
+  scheduledAt?: string | null;
+}
+
+export interface ChannelRunJobRequest {
+  providerType: string;
+  channelProfileId: string;
+  config: Record<string, unknown>;
+  externalSecretRef?: string | null;
+  idempotencyKey: string;
+  traceContext: NormalizedChannelTraceContext;
+  payload: ChannelRunJobPayload;
+}
+
+export interface ChannelRunJobResponse {
+  status: ChannelRunJobResponseStatus;
+  nextCursor?: string | null;
+  events: NormalizedChannelInboundEvent[];
+  metadata: Record<string, unknown>;
 }
 
 export interface CreateChannelProfilePayload {
