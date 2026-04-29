@@ -12,8 +12,8 @@
 
 ## Current Position
 
-- Current slice: Slice 8 - Channel provider registry + profile rename + gateway internal admin.
-- Current subtask: Slice 8D profile admin contract completion: add profile DELETE/disable semantics and OpenAPI coverage for implemented Web-facing/internal profile admin endpoints. Provider job, template binding, outbound delivery semantics, and schema-driven Web pages remain later Slice 8/9/10 subtasks.
+- Current slice: Slice 9 - Normalized event + provider job + outbound/template binding.
+- Current subtask: Slice 9A normalized inbound event contract and internal ingest foundation. Provider job scanner, outbound delivery conversion, template binding CRUD/resolution, and schema-driven Web pages remain later subtasks.
 - Main-agent role: orchestration, integration decisions, ledger maintenance, review of worker/checker output.
 - Implementation flow: worker implements each bounded subtask, independent checker reviews read-only, then main agent decides follow-up.
 
@@ -41,6 +41,7 @@
 - Slice 2 completed after checker repair and Slice 1-2 checkpoint; no blocking findings remain.
 - Slice 7 completed after 7A / 7B / 7C worker-checker cycles and checkpoint; no blocking findings remain.
 - Read Slice 8 roadmap, channel provider rename/profile materialization sections, credentials persistence profile boundary, and §6 Impact Checklist before starting Slice 8A.
+- Read Slice 9 roadmap, `channel-provider.md` normalized inbound / provider job / outbound sections, `web-configuration.md` channel template binding and schema-driven page boundaries, and §6 Impact Checklist before starting Slice 9A.
 
 ## Cross-Module Impact Under Watch
 
@@ -83,9 +84,40 @@
 - Decision: Slice 8B will split Web-facing profile requests from gateway internal write requests. API will accept optional `integrationAccountId`, call Slice 6 account availability for `CHANNEL_PROVIDER + providerType`, and send only an internal `accountSnapshot` to `channel-gateway`. `channel-gateway` may persist `external_secret_ref`, but read DTOs must expose only `accountId` and `hasExternalSecretRef`.
 - Decision: Slice 8C will make `channel-gateway` profile writes consume a runtime-local `ChannelProviderRegistry` built from the same channel-provider registration load path as validation. The first version will validate `providerType`, apply descriptor `defaultConfig` when config is omitted, and validate submitted config against descriptor `configSchema`. It will not add remote provider invocation, provider job execution, template binding, assistant/scenario existence checks, or internal OpenAPI artifacts.
 - Decision: Slice 8D will cover the implemented profile admin surface in OpenAPI (`profile` CRUD plus current read-only bindings/inbound-events/outbound-deliveries) and add the missing profile DELETE/disable path with `expectedRevision`. Template binding and provider job OpenAPI will be added with their Slice 9 implementations instead of declaring unavailable endpoints early.
+- Decision: Slice 9A will implement only the normalized inbound event foundation: JVM/TS/internal OpenAPI DTOs, `POST /internal/channel-events/normalized`, header/profile/provider validation, eventType matrix validation, dedup, event store, and local conversation binding snapshot creation/update. It will not add provider job scanner, outbound delivery invocation, template binding CRUD/resolution, remote provider outbound/runJob adapter, Core -> provider mapping API, inbound verification status, or schema-driven Web pages.
+- Decision: current `ChannelAssistantBinding` is still the Slice 8 thin shape (`assistantId` / `scenarioId`). Slice 9A will route/bind using the saved `assistantId` and default customer identity from `externalUserId` falling back to `externalConversationId`; the fuller assistant binding fields in the docs remain a follow-up when the Web/profile schema-driven work expands that DTO.
 
 ## Worker / Checker Notes
 
+- Worker 9A completed normalized inbound event foundation.
+  - Added normalized event DTOs to JVM and shared TypeScript contracts, including the documented `eventType` set, conversation/sender/message/attachment/trace payloads, immutable/non-null map handling, and internal ingest result DTO.
+  - Added `POST /internal/channel-events/normalized` to `packages/contracts/openapi/channel-gateway-internal.yaml` only. No Web-facing control-plane normalized event endpoint was added.
+  - Implemented channel-gateway normalized ingest with existing internal bearer auth plus descriptor headers, registration exposure validation, idempotency header equality, trace/request header checks, protocol dedup key validation, top-level `accountId` / `externalSecretRef` rejection, profile status/inbound/provider validation, event type matrix validation, dedup persistence, and local conversation binding create/update for `MESSAGE_RECEIVED` / `FILE_RECEIVED`.
+  - Binding creation uses saved `channel_profile.assistant_binding.assistantId`, `externalConversationId`, `externalUserId`, and `customerId = externalUserId` falling back to `externalConversationId`; it does not dispatch to session runtime or read API-owned assistant/scenario tables.
+  - `WEBHOOK_VERIFIED` and other non-message events are stored as inbound events without conversation binding.
+  - No provider job scanner, provider job CRUD/run history, outbound delivery invocation/conversion, template binding CRUD/resolution, Core -> provider mapping/status API, inbound verification status, old `/accounts` compatibility path, schema-driven Web page, or Slice 11 artifact was added.
+  - Verification:
+    - `./gradlew :apps:channel-gateway:test --tests '*Normalized*'` passed.
+    - `./gradlew :apps:channel-gateway:test --tests '*Normalized*' --tests '*ChannelAdmin*' --tests '*InternalAuth*'` passed.
+    - `./gradlew :packages:contracts-jvm:test` passed (`NO-SOURCE` tests after compile).
+    - `pnpm --filter @lynxus/web test -- api` passed (`13` tests).
+    - `ruby -e 'require "yaml"; Dir["packages/contracts/openapi/*.yaml"].each { |path| YAML.load_file(path) }; puts "openapi yaml ok"'` passed.
+    - `rg "externalSecretRef|accountId" ...` shows no normalized event DTO fields carrying those values; remaining hits are the pre-existing internal channel profile/account snapshot boundary plus explicit normalized request rejection.
+    - `rg "ChannelAccount|channel_account|channel_account_id|/channel-admin/accounts|ChannelProviderType" apps/channel-gateway packages/contracts packages/contracts-jvm` still returns only the intentional old `/accounts` negative internal-auth test.
+    - `git diff --check` passed.
+- Checker 9A repair completed.
+  - Fixed normalized event dedup handling so `NormalizedChannelEventIngestService.ingest` validates the requested profile existence, `ACTIVE` status, inbound enablement, provider type, and assistant binding requirements before returning an existing dedup event.
+  - Duplicate dedup reuse now requires the existing event to match the request's `channelProfileId`, `providerType`, and `eventType`; mismatched duplicate surfaces are rejected instead of returning duplicate success.
+  - `POST /internal/channel-events/normalized` now validates the raw request body contains `normalizedPayload` as an object before DTO construction, preserving explicit `{}` while rejecting omission/null.
+  - Event insert and message conversation binding upsert now run inside one jOOQ transaction. Added rollback coverage that forces binding insert failure and verifies no inbound event remains.
+  - Checker rerun verdict: pass. Main follow-up also made the JVM `NormalizedChannelInboundEvent` DTO reject direct construction with `normalizedPayload == null`, aligning direct contract usage with HTTP/OpenAPI required semantics.
+  - Verification:
+    - `./gradlew :apps:channel-gateway:test --tests '*Normalized*'` passed.
+    - `./gradlew :apps:channel-gateway:test --tests '*Normalized*' --tests '*ChannelAdmin*' --tests '*InternalAuth*'` passed.
+    - `./gradlew :packages:contracts-jvm:test` passed (`NO-SOURCE` tests after compile).
+    - `pnpm --filter @lynxus/web test -- api` passed (`13` tests).
+    - OpenAPI YAML parse passed.
+    - `git diff --check` passed.
 - Checker 8D-P1 repair verdict: pass.
   - Confirmed control-plane OpenAPI and exported Web-facing Tool Connector / Channel Profile shapes no longer expose raw `externalSecretRef`; Tool Connector public snapshots expose `accountId` plus `hasExternalSecretRef`.
   - Confirmed API session startup still uses `CatalogService.getAssistantRuntimeSnapshot(...)` so the internal JVM session contract can carry `externalSecretRef` to agent-runtime.

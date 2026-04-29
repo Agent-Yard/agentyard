@@ -5,6 +5,35 @@ info:
 servers:
   - url: http://127.0.0.1:8082
 paths:
+  /internal/channel-events/normalized:
+    post:
+      summary: Ingest a normalized channel inbound event
+      parameters:
+        - $ref: '#/components/parameters/ExtensionRegistrationIdHeader'
+        - $ref: '#/components/parameters/ExtensionDescriptorTypeHeader'
+        - $ref: '#/components/parameters/ExtensionDescriptorIdHeader'
+        - $ref: '#/components/parameters/LynxusTraceIdHeader'
+        - $ref: '#/components/parameters/LynxusRequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NormalizedChannelInboundEvent'
+      responses:
+        '200':
+          description: Stored inbound event, or existing event for duplicate dedupKey
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseNormalizedChannelInboundEventResult'
+        '400':
+          description: Normalized event payload or descriptor headers are invalid
+        '401':
+          description: Internal auth is missing or invalid
+        '404':
+          description: Channel profile not found
   /internal/channel-admin/profiles:
     get:
       summary: List channel profiles
@@ -160,6 +189,47 @@ paths:
         '404':
           description: Channel profile not found
 components:
+  parameters:
+    ExtensionRegistrationIdHeader:
+      in: header
+      name: X-Lynxus-Extension-Registration-Id
+      required: true
+      schema:
+        type: string
+    ExtensionDescriptorTypeHeader:
+      in: header
+      name: X-Lynxus-Extension-Descriptor-Type
+      required: true
+      schema:
+        type: string
+        enum: [CHANNEL_PROVIDER]
+    ExtensionDescriptorIdHeader:
+      in: header
+      name: X-Lynxus-Extension-Descriptor-Id
+      required: true
+      schema:
+        type: string
+    LynxusTraceIdHeader:
+      in: header
+      name: X-Lynxus-Trace-Id
+      required: true
+      schema:
+        type: string
+    LynxusRequestIdHeader:
+      in: header
+      name: X-Lynxus-Request-Id
+      required: true
+      schema:
+        type: string
+    IdempotencyKeyHeader:
+      in: header
+      name: Idempotency-Key
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^[A-Za-z0-9._:-]+$'
   schemas:
     ChannelProfileStatus:
       type: string
@@ -173,6 +243,19 @@ components:
     ChannelOutboundDeliveryStatus:
       type: string
       enum: [PENDING, SENT, FAILED]
+    NormalizedChannelEventType:
+      type: string
+      enum:
+        - MESSAGE_RECEIVED
+        - MESSAGE_UPDATED
+        - MESSAGE_DELETED
+        - CONVERSATION_UPDATED
+        - MEMBER_JOINED
+        - MEMBER_LEFT
+        - REACTION_ADDED
+        - FILE_RECEIVED
+        - WEBHOOK_VERIFIED
+        - UNKNOWN
     ChannelAssistantBinding:
       type: object
       properties:
@@ -192,6 +275,178 @@ components:
           type: string
           nullable: true
           maxLength: 512
+    NormalizedChannelConversation:
+      type: object
+      required:
+        - metadata
+      properties:
+        externalConversationId:
+          type: string
+          nullable: true
+        type:
+          type: string
+          nullable: true
+        title:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+    NormalizedChannelSender:
+      type: object
+      required:
+        - metadata
+      properties:
+        externalUserId:
+          type: string
+          nullable: true
+        displayName:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+    NormalizedChannelAttachment:
+      type: object
+      required:
+        - metadata
+      properties:
+        externalAttachmentId:
+          type: string
+          nullable: true
+        externalFileId:
+          type: string
+          nullable: true
+        fileName:
+          type: string
+          nullable: true
+        mimeType:
+          type: string
+          nullable: true
+        url:
+          type: string
+          nullable: true
+        sizeBytes:
+          type: integer
+          format: int64
+          nullable: true
+          minimum: 0
+        metadata:
+          type: object
+          additionalProperties: true
+    NormalizedChannelMessage:
+      type: object
+      required:
+        - attachments
+        - metadata
+      properties:
+        externalMessageId:
+          type: string
+          nullable: true
+        type:
+          type: string
+          nullable: true
+        text:
+          type: string
+          nullable: true
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/NormalizedChannelAttachment'
+        metadata:
+          type: object
+          additionalProperties: true
+    NormalizedChannelTraceContext:
+      type: object
+      required:
+        - traceparent
+      properties:
+        traceparent:
+          type: string
+          minLength: 1
+        tracestate:
+          type: string
+          nullable: true
+    NormalizedChannelInboundEvent:
+      type: object
+      required:
+        - providerType
+        - channelProfileId
+        - eventType
+        - dedupKey
+        - normalizedPayload
+        - traceContext
+      properties:
+        providerType:
+          type: string
+          maxLength: 128
+        channelProfileId:
+          type: string
+        eventType:
+          $ref: '#/components/schemas/NormalizedChannelEventType'
+        dedupKey:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: '^[A-Za-z0-9._:-]+$'
+        externalEventId:
+          type: string
+          nullable: true
+        externalConversationId:
+          type: string
+          nullable: true
+        externalMessageId:
+          type: string
+          nullable: true
+        externalUserId:
+          type: string
+          nullable: true
+        occurredAt:
+          type: string
+          format: date-time
+          nullable: true
+        conversation:
+          $ref: '#/components/schemas/NormalizedChannelConversation'
+          nullable: true
+        sender:
+          $ref: '#/components/schemas/NormalizedChannelSender'
+          nullable: true
+        message:
+          $ref: '#/components/schemas/NormalizedChannelMessage'
+          nullable: true
+        normalizedPayload:
+          type: object
+          additionalProperties: true
+        rawPayload:
+          type: object
+          additionalProperties: true
+          nullable: true
+        traceContext:
+          $ref: '#/components/schemas/NormalizedChannelTraceContext'
+        metadata:
+          type: object
+          additionalProperties: true
+          nullable: true
+    NormalizedChannelInboundEventResult:
+      type: object
+      required:
+        - eventId
+        - duplicate
+      properties:
+        eventId:
+          type: string
+        duplicate:
+          type: boolean
+    ApiResponseNormalizedChannelInboundEventResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/NormalizedChannelInboundEventResult'
+        timestamp:
+          type: string
+          format: date-time
     ChannelGatewayProfile:
       type: object
       required:

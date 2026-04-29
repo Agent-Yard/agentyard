@@ -104,6 +104,16 @@ final class ChannelStore {
             .fetch(this::mapBinding);
     }
 
+    Optional<ChannelConversationBinding> findBindingByProfileAndExternalConversation(
+        String channelProfileId,
+        String externalConversationId
+    ) {
+        return dsl.selectFrom(CHANNEL_CONVERSATION_BINDING)
+            .where(CHANNEL_CONVERSATION_BINDING.CHANNEL_PROFILE_ID.eq(channelProfileId))
+            .and(CHANNEL_CONVERSATION_BINDING.EXTERNAL_CONVERSATION_ID.eq(externalConversationId))
+            .fetchOptional(this::mapBinding);
+    }
+
     void saveBinding(ChannelConversationBinding binding) {
         dsl.insertInto(CHANNEL_CONVERSATION_BINDING)
             .set(CHANNEL_CONVERSATION_BINDING.ID, binding.id())
@@ -128,6 +138,30 @@ final class ChannelStore {
             .set(CHANNEL_CONVERSATION_BINDING.STATUS, binding.status().name())
             .set(CHANNEL_CONVERSATION_BINDING.METADATA, jsonbSupport.toJsonb(binding.metadata() == null ? Map.of() : binding.metadata()))
             .set(CHANNEL_CONVERSATION_BINDING.CREATED_AT, JooqTimeSupport.toOffsetDateTime(binding.createdAt()))
+            .set(CHANNEL_CONVERSATION_BINDING.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(binding.updatedAt()))
+            .execute();
+    }
+
+    void saveBindingForConversation(ChannelConversationBinding binding) {
+        dsl.insertInto(CHANNEL_CONVERSATION_BINDING)
+            .set(CHANNEL_CONVERSATION_BINDING.ID, binding.id())
+            .set(CHANNEL_CONVERSATION_BINDING.CHANNEL_PROFILE_ID, binding.channelProfileId())
+            .set(CHANNEL_CONVERSATION_BINDING.EXTERNAL_CONVERSATION_ID, binding.externalConversationId())
+            .set(CHANNEL_CONVERSATION_BINDING.EXTERNAL_USER_ID, binding.externalUserId())
+            .set(CHANNEL_CONVERSATION_BINDING.ASSISTANT_ID, binding.assistantId())
+            .set(CHANNEL_CONVERSATION_BINDING.CUSTOMER_ID, binding.customerId())
+            .set(CHANNEL_CONVERSATION_BINDING.SESSION_ID, binding.sessionId())
+            .set(CHANNEL_CONVERSATION_BINDING.STATUS, binding.status().name())
+            .set(CHANNEL_CONVERSATION_BINDING.METADATA, jsonbSupport.toJsonb(binding.metadata() == null ? Map.of() : binding.metadata()))
+            .set(CHANNEL_CONVERSATION_BINDING.CREATED_AT, JooqTimeSupport.toOffsetDateTime(binding.createdAt()))
+            .set(CHANNEL_CONVERSATION_BINDING.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(binding.updatedAt()))
+            .onConflict(CHANNEL_CONVERSATION_BINDING.CHANNEL_PROFILE_ID, CHANNEL_CONVERSATION_BINDING.EXTERNAL_CONVERSATION_ID)
+            .doUpdate()
+            .set(CHANNEL_CONVERSATION_BINDING.EXTERNAL_USER_ID, binding.externalUserId())
+            .set(CHANNEL_CONVERSATION_BINDING.ASSISTANT_ID, binding.assistantId())
+            .set(CHANNEL_CONVERSATION_BINDING.CUSTOMER_ID, binding.customerId())
+            .set(CHANNEL_CONVERSATION_BINDING.STATUS, binding.status().name())
+            .set(CHANNEL_CONVERSATION_BINDING.METADATA, jsonbSupport.toJsonb(binding.metadata() == null ? Map.of() : binding.metadata()))
             .set(CHANNEL_CONVERSATION_BINDING.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(binding.updatedAt()))
             .execute();
     }
@@ -175,6 +209,27 @@ final class ChannelStore {
             .set(CHANNEL_INBOUND_EVENT.CREATED_AT, JooqTimeSupport.toOffsetDateTime(event.createdAt()))
             .set(CHANNEL_INBOUND_EVENT.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(event.updatedAt()))
             .execute();
+    }
+
+    boolean saveInboundEventIfAbsent(ChannelInboundEvent event) {
+        int rows = dsl.insertInto(CHANNEL_INBOUND_EVENT)
+            .set(CHANNEL_INBOUND_EVENT.EVENT_ID, event.eventId())
+            .set(CHANNEL_INBOUND_EVENT.CHANNEL_PROFILE_ID, event.channelProfileId())
+            .set(CHANNEL_INBOUND_EVENT.PROVIDER_TYPE, event.providerType())
+            .set(CHANNEL_INBOUND_EVENT.EVENT_TYPE, event.eventType())
+            .set(CHANNEL_INBOUND_EVENT.EXTERNAL_EVENT_ID, event.externalEventId())
+            .set(CHANNEL_INBOUND_EVENT.EXTERNAL_CONVERSATION_ID, event.externalConversationId())
+            .set(CHANNEL_INBOUND_EVENT.EXTERNAL_MESSAGE_ID, event.externalMessageId())
+            .set(CHANNEL_INBOUND_EVENT.DEDUP_KEY, event.dedupKey())
+            .set(CHANNEL_INBOUND_EVENT.RAW_PAYLOAD, jsonbSupport.toJsonb(event.rawPayload() == null ? Map.of() : event.rawPayload()))
+            .set(CHANNEL_INBOUND_EVENT.NORMALIZED_PAYLOAD, jsonbSupport.toJsonb(event.normalizedPayload() == null ? Map.of() : event.normalizedPayload()))
+            .set(CHANNEL_INBOUND_EVENT.STATUS, event.status().name())
+            .set(CHANNEL_INBOUND_EVENT.CREATED_AT, JooqTimeSupport.toOffsetDateTime(event.createdAt()))
+            .set(CHANNEL_INBOUND_EVENT.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(event.updatedAt()))
+            .onConflict(CHANNEL_INBOUND_EVENT.DEDUP_KEY)
+            .doNothing()
+            .execute();
+        return rows == 1;
     }
 
     List<ChannelOutboundDelivery> listOutboundDeliveries(String channelProfileId) {

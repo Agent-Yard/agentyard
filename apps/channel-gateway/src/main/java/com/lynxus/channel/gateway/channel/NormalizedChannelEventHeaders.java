@@ -1,0 +1,11 @@
+package com.lynxus.channel.gateway.channel;
+
+public record NormalizedChannelEventHeaders(
+    String registrationId,
+    String descriptorType,
+    String descriptorId,
+    String traceId,
+    String requestId,
+    String idempotencyKey
+) {
+}

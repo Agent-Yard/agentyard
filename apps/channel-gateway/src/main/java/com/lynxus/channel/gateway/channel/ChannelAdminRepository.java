@@ -8,16 +8,26 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Function;
 import org.jooq.DSLContext;
+import org.jooq.impl.DSL;
 import org.springframework.stereotype.Repository;
 import tools.jackson.databind.ObjectMapper;
 
 @Repository
 public class ChannelAdminRepository {
+    private final DSLContext dsl;
+    private final ObjectMapper objectMapper;
     private final ChannelStore store;
 
     public ChannelAdminRepository(DSLContext dsl, ObjectMapper objectMapper) {
+        this.dsl = dsl;
+        this.objectMapper = objectMapper;
         this.store = new ChannelStore(dsl, new JooqJsonbSupport(objectMapper));
+    }
+
+    public <T> T transactionResult(Function<ChannelAdminRepository, T> action) {
+        return dsl.transactionResult(configuration -> action.apply(new ChannelAdminRepository(DSL.using(configuration), objectMapper)));
     }
 
     public List<ChannelGatewayProfile> listProfiles() {
@@ -48,8 +58,19 @@ public class ChannelAdminRepository {
         return store.listBindings(channelProfileId);
     }
 
+    public Optional<ChannelConversationBinding> findBindingByProfileAndExternalConversation(
+        String channelProfileId,
+        String externalConversationId
+    ) {
+        return store.findBindingByProfileAndExternalConversation(channelProfileId, externalConversationId);
+    }
+
     public void saveBinding(ChannelConversationBinding binding) {
         store.saveBinding(binding);
+    }
+
+    public void saveBindingForConversation(ChannelConversationBinding binding) {
+        store.saveBindingForConversation(binding);
     }
 
     public List<ChannelInboundEvent> listInboundEvents(String channelProfileId) {
@@ -62,6 +83,10 @@ public class ChannelAdminRepository {
 
     public void saveInboundEvent(ChannelInboundEvent event) {
         store.saveInboundEvent(event);
+    }
+
+    public boolean saveInboundEventIfAbsent(ChannelInboundEvent event) {
+        return store.saveInboundEventIfAbsent(event);
     }
 
     public List<ChannelOutboundDelivery> listOutboundDeliveries(String channelProfileId) {

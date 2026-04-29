@@ -35,6 +35,17 @@ export type ChannelProfileStatus = 'ACTIVE' | 'INACTIVE';
 export type ChannelConversationBindingStatus = 'ACTIVE' | 'ARCHIVED';
 export type ChannelInboundEventStatus = 'RECEIVED' | 'REJECTED';
 export type ChannelOutboundDeliveryStatus = 'PENDING' | 'SENT' | 'FAILED';
+export type NormalizedChannelEventType =
+  | 'MESSAGE_RECEIVED'
+  | 'MESSAGE_UPDATED'
+  | 'MESSAGE_DELETED'
+  | 'CONVERSATION_UPDATED'
+  | 'MEMBER_JOINED'
+  | 'MEMBER_LEFT'
+  | 'REACTION_ADDED'
+  | 'FILE_RECEIVED'
+  | 'WEBHOOK_VERIFIED'
+  | 'UNKNOWN';
 export type CredentialCapabilityMode = 'REMOTE_LIFECYCLE' | 'CORE_ENCRYPTED_REFERENCE';
 
 export interface CredentialCapability {
@@ -349,6 +360,66 @@ export interface ChannelProfileIntegrationAccountSummary {
 export interface ChannelProfileAccountSnapshot {
   accountId?: string | null;
   externalSecretRef?: string | null;
+}
+
+export interface NormalizedChannelConversation {
+  externalConversationId?: string | null;
+  type?: string | null;
+  title?: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface NormalizedChannelSender {
+  externalUserId?: string | null;
+  displayName?: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface NormalizedChannelAttachment {
+  externalAttachmentId?: string | null;
+  externalFileId?: string | null;
+  fileName?: string | null;
+  mimeType?: string | null;
+  url?: string | null;
+  sizeBytes?: number | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface NormalizedChannelMessage {
+  externalMessageId?: string | null;
+  type?: string | null;
+  text?: string | null;
+  attachments: NormalizedChannelAttachment[];
+  metadata: Record<string, unknown>;
+}
+
+export interface NormalizedChannelTraceContext {
+  traceparent: string;
+  tracestate?: string | null;
+}
+
+export interface NormalizedChannelInboundEvent {
+  providerType: string;
+  channelProfileId: string;
+  eventType: NormalizedChannelEventType;
+  dedupKey: string;
+  externalEventId?: string | null;
+  externalConversationId?: string | null;
+  externalMessageId?: string | null;
+  externalUserId?: string | null;
+  occurredAt?: string | null;
+  conversation?: NormalizedChannelConversation | null;
+  sender?: NormalizedChannelSender | null;
+  message?: NormalizedChannelMessage | null;
+  normalizedPayload: Record<string, unknown>;
+  rawPayload?: Record<string, unknown> | null;
+  traceContext: NormalizedChannelTraceContext;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface NormalizedChannelInboundEventResult {
+  eventId: string;
+  duplicate: boolean;
 }
 
 export interface ChannelConversationBinding {

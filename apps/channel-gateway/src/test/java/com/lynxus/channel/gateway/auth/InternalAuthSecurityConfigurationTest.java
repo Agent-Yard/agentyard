@@ -9,7 +9,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.lynxus.channel.gateway.channel.ChannelAdminService;
+import com.lynxus.channel.gateway.channel.InternalNormalizedChannelEventController;
 import com.lynxus.channel.gateway.channel.InternalChannelAdminController;
+import com.lynxus.channel.gateway.channel.NormalizedChannelEventIngestService;
 import com.lynxus.channel.gateway.connector.feishu.FeishuWebhookController;
 import com.lynxus.channel.gateway.connector.feishu.FeishuWebhookService;
 import com.lynxus.channel.gateway.extension.ChannelGatewayDescriptorProvider;
@@ -58,6 +60,19 @@ class InternalAuthSecurityConfigurationTest {
             mockMvc.perform(get("/internal/channel-admin/profiles").header("Authorization", "Bearer test-internal-token"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
+        }
+    }
+
+    @Test
+    void shouldRejectNormalizedEventRouteWithoutBearerToken() throws Exception {
+        try (AnnotationConfigApplicationContext context = createAuthorizedContext()) {
+            MockMvc mockMvc = mockMvc(context);
+
+            mockMvc.perform(post("/internal/channel-events/normalized")
+                    .contentType("application/json")
+                    .content("{}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.detail").value("Authentication is required"));
         }
     }
 
@@ -131,6 +146,7 @@ class InternalAuthSecurityConfigurationTest {
         FilterChainProxy securityFilter = new FilterChainProxy(context.getBeansOfType(SecurityFilterChain.class).values().stream().toList());
         return MockMvcBuilders.standaloneSetup(
                 context.getBean(InternalChannelAdminController.class),
+                context.getBean(InternalNormalizedChannelEventController.class),
                 context.getBean(FeishuWebhookController.class),
                 context.getBean(ExtensionManifestController.class)
             )
@@ -145,6 +161,14 @@ class InternalAuthSecurityConfigurationTest {
         @Bean
         InternalChannelAdminController internalChannelAdminController(ChannelAdminService channelAdminService) {
             return new InternalChannelAdminController(channelAdminService);
+        }
+
+        @Bean
+        InternalNormalizedChannelEventController internalNormalizedChannelEventController(
+            NormalizedChannelEventIngestService ingestService,
+            ObjectMapper objectMapper
+        ) {
+            return new InternalNormalizedChannelEventController(ingestService, objectMapper);
         }
 
         @Bean
@@ -165,6 +189,11 @@ class InternalAuthSecurityConfigurationTest {
         @Bean
         ChannelAdminService channelAdminService() {
             return mock(ChannelAdminService.class);
+        }
+
+        @Bean
+        NormalizedChannelEventIngestService normalizedChannelEventIngestService() {
+            return mock(NormalizedChannelEventIngestService.class);
         }
 
         @Bean

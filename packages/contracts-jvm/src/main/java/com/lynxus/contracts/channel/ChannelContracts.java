@@ -24,6 +24,13 @@ public final class ChannelContracts {
         return immutableObjectMap(source);
     }
 
+    private static Map<String, Object> requiredImmutableObjectMap(Map<String, Object> source, String field) {
+        if (source == null) {
+            throw new IllegalArgumentException(field + " is required");
+        }
+        return immutableObjectMap(source);
+    }
+
     public enum ChannelProfileStatus {
         ACTIVE,
         INACTIVE
@@ -43,6 +50,19 @@ public final class ChannelContracts {
         PENDING,
         SENT,
         FAILED
+    }
+
+    public enum NormalizedChannelEventType {
+        MESSAGE_RECEIVED,
+        MESSAGE_UPDATED,
+        MESSAGE_DELETED,
+        CONVERSATION_UPDATED,
+        MEMBER_JOINED,
+        MEMBER_LEFT,
+        REACTION_ADDED,
+        FILE_RECEIVED,
+        WEBHOOK_VERIFIED,
+        UNKNOWN
     }
 
     public record ChannelProfile(
@@ -104,6 +124,91 @@ public final class ChannelContracts {
     public record ChannelProfileAccountSnapshot(
         String accountId,
         String externalSecretRef
+    ) {
+    }
+
+    public record NormalizedChannelConversation(
+        String externalConversationId,
+        String type,
+        String title,
+        Map<String, Object> metadata
+    ) {
+        public NormalizedChannelConversation {
+            metadata = immutableObjectMap(metadata);
+        }
+    }
+
+    public record NormalizedChannelSender(
+        String externalUserId,
+        String displayName,
+        Map<String, Object> metadata
+    ) {
+        public NormalizedChannelSender {
+            metadata = immutableObjectMap(metadata);
+        }
+    }
+
+    public record NormalizedChannelAttachment(
+        String externalAttachmentId,
+        String externalFileId,
+        String fileName,
+        String mimeType,
+        String url,
+        Long sizeBytes,
+        Map<String, Object> metadata
+    ) {
+        public NormalizedChannelAttachment {
+            metadata = immutableObjectMap(metadata);
+        }
+    }
+
+    public record NormalizedChannelMessage(
+        String externalMessageId,
+        String type,
+        String text,
+        List<NormalizedChannelAttachment> attachments,
+        Map<String, Object> metadata
+    ) {
+        public NormalizedChannelMessage {
+            attachments = attachments == null || attachments.isEmpty() ? List.of() : List.copyOf(attachments);
+            metadata = immutableObjectMap(metadata);
+        }
+    }
+
+    public record NormalizedChannelTraceContext(
+        String traceparent,
+        String tracestate
+    ) {
+    }
+
+    public record NormalizedChannelInboundEvent(
+        String providerType,
+        String channelProfileId,
+        NormalizedChannelEventType eventType,
+        String dedupKey,
+        String externalEventId,
+        String externalConversationId,
+        String externalMessageId,
+        String externalUserId,
+        Instant occurredAt,
+        NormalizedChannelConversation conversation,
+        NormalizedChannelSender sender,
+        NormalizedChannelMessage message,
+        Map<String, Object> normalizedPayload,
+        Map<String, Object> rawPayload,
+        NormalizedChannelTraceContext traceContext,
+        Map<String, Object> metadata
+    ) {
+        public NormalizedChannelInboundEvent {
+            normalizedPayload = requiredImmutableObjectMap(normalizedPayload, "normalizedPayload");
+            rawPayload = immutableObjectMap(rawPayload);
+            metadata = immutableObjectMap(metadata);
+        }
+    }
+
+    public record NormalizedChannelInboundEventResult(
+        String eventId,
+        boolean duplicate
     ) {
     }
 
