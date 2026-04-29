@@ -7,6 +7,7 @@ import type {
   ChannelConversationBinding,
   ChannelInboundEvent,
   ChannelOutboundDelivery,
+  ChannelProviderDefinition,
   ChannelProviderJobConfig,
   ChannelProviderJobConfigWritePayload,
   ChannelProviderJobRun,
@@ -56,6 +57,7 @@ import type {
   RotateIntegrationAccountCredentialPayload,
   SessionRuntimeSession,
   HumanOperatorReplyPayload,
+  ToolConnectorDefinition,
   UpdateAssistantPayload,
   UpdateAgentPayload,
   UpdateChannelProfilePayload,
@@ -189,6 +191,8 @@ function externalCallbackIdempotencyKey(
 export const api = {
   getSession: () => request<UserSession>('/auth/session'),
   getCatalogSummary: () => request<CatalogSummary>('/catalog/summary'),
+  listToolConnectorDefinitions: () => request<ToolConnectorDefinition[]>('/extensions/tool-connectors'),
+  listChannelProviderDefinitions: () => request<ChannelProviderDefinition[]>('/extensions/channel-providers'),
   listChannelProfiles: () => request<ChannelProfile[]>('/channel-admin/profiles'),
   getChannelProfile: (channelProfileId: string) => request<ChannelProfile>(`/channel-admin/profiles/${channelProfileId}`),
   createChannelProfile: (payload: CreateChannelProfilePayload) =>

@@ -1,12 +1,24 @@
 import type {
+  ChannelProviderDefinition as ContractsChannelProviderDefinition,
   CreateIntegrationAccountCredentialPayload as ContractsCreateIntegrationAccountCredentialPayload,
   CreateIntegrationAccountPayload as ContractsCreateIntegrationAccountPayload,
+  CredentialCapability as ContractsCredentialCapability,
   IntegrationAccount as ContractsIntegrationAccount,
+  IntegrationAccountCredentialStatus as ContractsIntegrationAccountCredentialStatus,
+  IntegrationAccountStatus as ContractsIntegrationAccountStatus,
+  IntegrationAccountSubjectType as ContractsIntegrationAccountSubjectType,
   RotateIntegrationAccountCredentialPayload as ContractsRotateIntegrationAccountCredentialPayload,
+  ToolConnectorDefinition as ContractsToolConnectorDefinition,
   UpdateIntegrationAccountPayload as ContractsUpdateIntegrationAccountPayload,
 } from '../../../../packages/contracts/src';
 
+export type ChannelProviderDefinition = ContractsChannelProviderDefinition;
+export type CredentialCapability = ContractsCredentialCapability;
 export type IntegrationAccount = ContractsIntegrationAccount;
+export type IntegrationAccountCredentialStatus = ContractsIntegrationAccountCredentialStatus;
+export type IntegrationAccountStatus = ContractsIntegrationAccountStatus;
+export type IntegrationAccountSubjectType = ContractsIntegrationAccountSubjectType;
+export type ToolConnectorDefinition = ContractsToolConnectorDefinition;
 export type CreateIntegrationAccountPayload = ContractsCreateIntegrationAccountPayload;
 export type CreateIntegrationAccountCredentialPayload = ContractsCreateIntegrationAccountCredentialPayload;
 export type RotateIntegrationAccountCredentialPayload = ContractsRotateIntegrationAccountCredentialPayload;

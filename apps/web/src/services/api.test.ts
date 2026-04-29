@@ -200,6 +200,84 @@ describe('api client', () => {
     );
   });
 
+  it('queries tool connector definitions through the extension definition api', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        data: [{
+          connectorType: 'enterprise.acme.crm',
+          title: 'Acme CRM',
+          description: 'CRM connector',
+          definitionDigest: 'sha256:tool',
+          accountConfigSchema: { type: 'object' },
+          accountConfigUiSchema: [],
+          credentialCapability: {
+            supported: true,
+            mode: 'REMOTE_LIFECYCLE',
+            credentialSchema: { type: 'object' },
+            credentialUiSchema: [],
+          },
+          configSchema: { type: 'object' },
+          configUiSchema: [],
+          operationMappingSchema: { type: 'object' },
+          operationMappingUiSchema: [],
+        }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.listToolConnectorDefinitions();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/extensions/tool-connectors',
+      expect.objectContaining({
+        credentials: 'include',
+        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
+      }),
+    );
+  });
+
+  it('queries channel provider definitions through the extension definition api', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        data: [{
+          providerType: 'enterprise.acme.internal-im',
+          title: 'Acme Internal IM',
+          description: 'Internal messaging provider',
+          definitionDigest: 'sha256:provider',
+          accountConfigSchema: { type: 'object' },
+          accountConfigUiSchema: [],
+          credentialCapability: {
+            supported: false,
+            mode: null,
+            credentialSchema: null,
+            credentialUiSchema: [],
+          },
+          configSchema: { type: 'object' },
+          configUiSchema: [],
+          defaultConfig: {},
+          jobDefinitions: [],
+        }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.listChannelProviderDefinitions();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/extensions/channel-providers',
+      expect.objectContaining({
+        credentials: 'include',
+        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
+      }),
+    );
+  });
+
   it('posts channel profile creation to the control-plane api', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({

@@ -13,7 +13,7 @@
 ## Current Position
 
 - Current slice: Slice 10 - Web schema-driven pages.
-- Current subtask: Slice 10A schema-driven form renderer foundation is complete. Next subtask: Slice 10B definition-endpoint Web client and Integration Account schema-driven management page.
+- Current subtask: Slice 10B definition-endpoint Web client and Integration Account schema-driven management page is complete. Next subtask: Slice 10C Tool Resource connector config / operation mapping definition-driven forms.
 - Main-agent role: orchestration, integration decisions, ledger maintenance, review of worker/checker output.
 - Implementation flow: worker implements each bounded subtask, independent checker reviews read-only, then main agent decides follow-up.
 
@@ -95,6 +95,7 @@
 - Decision: Slice 9D2 outbound execution entry point is `POST /internal/channel-outbound/deliveries`. It is channel-gateway internal, not Web-facing channel-admin, because session/runtime callers need an execution boundary while Web-facing channel-admin remains read/list only for outbound deliveries in this slice.
 - Decision: Slice 10 will be split into small Web subtasks. 10A creates the thin `SchemaDrivenForm` + Ajv 2020 validation foundation and renderer tests. Later subtasks will replace static Tool Connector / Channel Provider definitions in Integration Account, Tool connector config / operation mapping, Channel Profile, provider job, credential, and template binding pages with definition-endpoint driven flows.
 - Decision: 10A may add `ajv` to `apps/web` dependencies, but must not introduce a heavy form generator. It must not remove existing static connector config until a follow-up subtask can rewire the corresponding pages end-to-end.
+- Decision: 10B will wire Web to `/api/extensions/tool-connectors` and `/api/extensions/channel-providers`, then refactor the Integration Account management page to choose descriptor ids from those definition endpoints and render account config / supported credential forms with `SchemaDrivenForm`. It will not yet rewrite Tool Resource connector config / operation mapping, Channel Profile, provider job, or template binding pages.
 
 ## Worker / Checker Notes
 
@@ -120,6 +121,30 @@
     - `git diff --check` passed.
     - Targeted guardrail scans passed.
   - Main follow-up: strengthened `validateSchemaDrivenForm(..., { mode, uiSchema })` so secret boundary violations make validation invalid, not only visible in the component alert. Focused test and lint reruns passed.
+- Worker 10B completed definition-endpoint Web wiring and Integration Account management refactor.
+  - Added Web API client methods and tests for `GET /api/extensions/tool-connectors` and `GET /api/extensions/channel-providers`.
+  - Exported shared `ToolConnectorDefinition`, `ChannelProviderDefinition`, `CredentialCapability`, and Integration Account status/subject types through the Web integration type barrel.
+  - Refactored `IntegrationAccountPage.vue` to load descriptor definitions from API, choose `TOOL_CONNECTOR` or `CHANNEL_PROVIDER`, render account config with `SchemaDrivenForm` config mode, and render supported credential create/rotate forms with `SchemaDrivenForm` credential mode.
+  - Existing accounts show `hasExternalSecretRef`, `credentialConfigured`, and `credentialStatus` only; raw `externalSecretRef` is not rendered or submitted by Web.
+  - Extracted helper rules for descriptor options and credential action/status classification. `REVOKE_FAILED` / `REVOKED` are displayed as blocking statuses; `NOT_CONFIGURED` / `VALIDATION_FAILED` / `ROTATION_REQUIRED` are warnings. `REVOKED` offers no create/reset-style action.
+  - Explicitly did not rewrite Tool Resource connector config / operation mapping, Channel Profile, provider job, or template binding pages in this subtask.
+  - Verification:
+    - `pnpm --filter @lynxus/web test -- api` passed.
+    - `pnpm --filter @lynxus/web test -- IntegrationAccount` passed.
+    - `pnpm --filter @lynxus/web lint` passed.
+    - Guardrail greps found no `config/toolConnectors` / `ToolConnectorType` import in `IntegrationAccountPage.vue`, no raw `externalSecretRef` exposure in touched Web files, no credential lifecycle `Idempotency-Key`, and no Slice 11 artifact terms.
+    - `git diff --check` passed.
+  - Residual risks:
+    - Tests cover extracted Integration Account helper behavior rather than mounting the Vue page end-to-end; DOM/ref behavior is covered by `vue-tsc` plus review.
+- Checker 10B verdict: pass.
+  - Confirmed new definition API methods, definition-driven Integration Account subject/descriptor selection, `SchemaDrivenForm` config/credential use, credential status/action rules, and absence of raw `externalSecretRef`.
+  - Confirmed no premature `ResourceVersionConfigEditor` / Channel Profile rewrite and no Slice 11 artifacts.
+  - Checker verification:
+    - `pnpm --filter @lynxus/web test -- api` passed.
+    - `pnpm --filter @lynxus/web test -- IntegrationAccount` passed.
+    - `pnpm --filter @lynxus/web lint` passed.
+    - `git diff --check` passed.
+    - Targeted guardrail scans passed.
 - Worker 9D2 implemented outbound delivery execution/failure foundation.
   - Added channel-gateway-owned internal execution path `POST /internal/channel-outbound/deliveries` with request shape `channelProfileId`, `assistantId`, `externalConversationId`, optional `sessionId` / `sessionMessageId`, canonical `messageBlock`, and optional trace context. No Web-facing create/send endpoint was added.
   - Added `channel_outbound_delivery.idempotency_key`, `SENDING` status, regenerated channel-gateway jOOQ, and aligned JVM/TS/OpenAPI read/runtime DTOs. Existing Web-facing channel-admin outbound delivery remains list/read only and exposes no secret material.
