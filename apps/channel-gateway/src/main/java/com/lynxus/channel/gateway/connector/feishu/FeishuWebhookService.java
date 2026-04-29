@@ -1,15 +1,13 @@
 package com.lynxus.channel.gateway.connector.feishu;
 
 import com.lynxus.channel.gateway.channel.ChannelAdminService;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelAccount;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEventStatus;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderType;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import org.springframework.stereotype.Service;
@@ -17,7 +15,7 @@ import tools.jackson.databind.ObjectMapper;
 
 @Service
 public class FeishuWebhookService {
-    private static final String PROVIDER = ChannelProviderType.FEISHU.name();
+    private static final String PROVIDER = "feishu";
 
     private final ChannelAdminService channelAdminService;
     private final ObjectMapper objectMapper;
@@ -34,8 +32,8 @@ public class FeishuWebhookService {
             readNestedString(body, "header", "app_id"),
             readNestedString(body, "event", "app_id")
         );
-        ChannelAccount account = channelAdminService.findAccountByProviderAppId(ChannelProviderType.FEISHU, appId);
-        validateVerificationToken(account, body);
+        ChannelProfile profile = channelAdminService.findProfileByProviderAppId(PROVIDER, appId);
+        validateVerificationToken(profile, body);
 
         if ("url_verification".equals(readString(body.get("type")))) {
             String challenge = readString(body.get("challenge"));
@@ -59,8 +57,8 @@ public class FeishuWebhookService {
         Instant now = Instant.now();
         ChannelInboundEvent event = new ChannelInboundEvent(
             channelAdminService.nextId("channel-inbound-event"),
-            account.id(),
-            ChannelProviderType.FEISHU,
+            profile.id(),
+            PROVIDER,
             readString(normalizedPayload.get("eventType")),
             readString(normalizedPayload.get("externalEventId")),
             readString(normalizedPayload.get("externalConversationId")),
@@ -80,8 +78,8 @@ public class FeishuWebhookService {
         );
     }
 
-    private void validateVerificationToken(ChannelAccount account, Map<String, Object> payload) {
-        Object configuredToken = account.config().get("verificationToken");
+    private void validateVerificationToken(ChannelProfile profile, Map<String, Object> payload) {
+        Object configuredToken = profile.config().get("verificationToken");
         String expectedToken = configuredToken == null ? null : String.valueOf(configuredToken).trim();
         String actualToken = readString(payload.get("token"));
         if (expectedToken != null && !expectedToken.isBlank() && actualToken != null && !expectedToken.equals(actualToken)) {

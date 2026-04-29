@@ -4,10 +4,10 @@
 package com.lynxus.channel.gateway.jooq;
 
 
-import com.lynxus.channel.gateway.jooq.tables.ChannelAccount;
 import com.lynxus.channel.gateway.jooq.tables.ChannelConversationBinding;
 import com.lynxus.channel.gateway.jooq.tables.ChannelInboundEvent;
 import com.lynxus.channel.gateway.jooq.tables.ChannelOutboundDelivery;
+import com.lynxus.channel.gateway.jooq.tables.ChannelProfile;
 
 
 /**
@@ -15,11 +15,6 @@ import com.lynxus.channel.gateway.jooq.tables.ChannelOutboundDelivery;
  */
 @SuppressWarnings({ "all", "unchecked", "rawtypes", "this-escape" })
 public class Tables {
-
-    /**
-     * The table <code>public.channel_account</code>.
-     */
-    public static final ChannelAccount CHANNEL_ACCOUNT = ChannelAccount.CHANNEL_ACCOUNT;
 
     /**
      * The table <code>public.channel_conversation_binding</code>.
@@ -35,4 +30,9 @@ public class Tables {
      * The table <code>public.channel_outbound_delivery</code>.
      */
     public static final ChannelOutboundDelivery CHANNEL_OUTBOUND_DELIVERY = ChannelOutboundDelivery.CHANNEL_OUTBOUND_DELIVERY;
+
+    /**
+     * The table <code>public.channel_profile</code>.
+     */
+    public static final ChannelProfile CHANNEL_PROFILE = ChannelProfile.CHANNEL_PROFILE;
 }

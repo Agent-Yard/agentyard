@@ -2,22 +2,21 @@ package com.lynxus.channel.gateway.channel;
 
 import com.lynxus.channel.gateway.jooqsupport.JooqJsonbSupport;
 import com.lynxus.channel.gateway.jooqsupport.JooqTimeSupport;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelAccount;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelAccountStatus;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProfile;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileStatus;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBindingStatus;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEventStatus;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDeliveryStatus;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderType;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.jooq.DSLContext;
 import org.jooq.Record;
 
-import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_ACCOUNT;
+import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_PROFILE;
 import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_CONVERSATION_BINDING;
 import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_INBOUND_EVENT;
 import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_OUTBOUND_DELIVERY;
@@ -31,48 +30,48 @@ final class ChannelStore {
         this.jsonbSupport = jsonbSupport;
     }
 
-    List<ChannelAccount> listAccounts() {
-        return dsl.selectFrom(CHANNEL_ACCOUNT)
-            .orderBy(CHANNEL_ACCOUNT.UPDATED_AT.desc(), CHANNEL_ACCOUNT.ID.asc())
-            .fetch(this::mapAccount);
+    List<ChannelProfile> listProfiles() {
+        return dsl.selectFrom(CHANNEL_PROFILE)
+            .orderBy(CHANNEL_PROFILE.UPDATED_AT.desc(), CHANNEL_PROFILE.ID.asc())
+            .fetch(this::mapProfile);
     }
 
-    Optional<ChannelAccount> findAccount(String accountId) {
-        return dsl.selectFrom(CHANNEL_ACCOUNT)
-            .where(CHANNEL_ACCOUNT.ID.eq(accountId))
-            .fetchOptional(this::mapAccount);
+    Optional<ChannelProfile> findProfile(String channelProfileId) {
+        return dsl.selectFrom(CHANNEL_PROFILE)
+            .where(CHANNEL_PROFILE.ID.eq(channelProfileId))
+            .fetchOptional(this::mapProfile);
     }
 
-    List<ChannelAccount> listAccountsByProvider(ChannelProviderType providerType) {
-        return dsl.selectFrom(CHANNEL_ACCOUNT)
-            .where(CHANNEL_ACCOUNT.PROVIDER_TYPE.eq(providerType.name()))
-            .orderBy(CHANNEL_ACCOUNT.UPDATED_AT.desc(), CHANNEL_ACCOUNT.ID.asc())
-            .fetch(this::mapAccount);
+    List<ChannelProfile> listProfilesByProvider(String providerType) {
+        return dsl.selectFrom(CHANNEL_PROFILE)
+            .where(CHANNEL_PROFILE.PROVIDER_TYPE.eq(providerType))
+            .orderBy(CHANNEL_PROFILE.UPDATED_AT.desc(), CHANNEL_PROFILE.ID.asc())
+            .fetch(this::mapProfile);
     }
 
-    void saveAccount(ChannelAccount account) {
-        dsl.insertInto(CHANNEL_ACCOUNT)
-            .set(CHANNEL_ACCOUNT.ID, account.id())
-            .set(CHANNEL_ACCOUNT.PROVIDER_TYPE, account.providerType().name())
-            .set(CHANNEL_ACCOUNT.NAME, account.name())
-            .set(CHANNEL_ACCOUNT.STATUS, account.status().name())
-            .set(CHANNEL_ACCOUNT.CONFIG, jsonbSupport.toJsonb(account.config() == null ? Map.of() : account.config()))
-            .set(CHANNEL_ACCOUNT.CREATED_AT, JooqTimeSupport.toOffsetDateTime(account.createdAt()))
-            .set(CHANNEL_ACCOUNT.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(account.updatedAt()))
-            .onConflict(CHANNEL_ACCOUNT.ID)
+    void saveProfile(ChannelProfile profile) {
+        dsl.insertInto(CHANNEL_PROFILE)
+            .set(CHANNEL_PROFILE.ID, profile.id())
+            .set(CHANNEL_PROFILE.PROVIDER_TYPE, profile.providerType())
+            .set(CHANNEL_PROFILE.NAME, profile.name())
+            .set(CHANNEL_PROFILE.STATUS, profile.status().name())
+            .set(CHANNEL_PROFILE.CONFIG, jsonbSupport.toJsonb(profile.config() == null ? Map.of() : profile.config()))
+            .set(CHANNEL_PROFILE.CREATED_AT, JooqTimeSupport.toOffsetDateTime(profile.createdAt()))
+            .set(CHANNEL_PROFILE.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(profile.updatedAt()))
+            .onConflict(CHANNEL_PROFILE.ID)
             .doUpdate()
-            .set(CHANNEL_ACCOUNT.PROVIDER_TYPE, account.providerType().name())
-            .set(CHANNEL_ACCOUNT.NAME, account.name())
-            .set(CHANNEL_ACCOUNT.STATUS, account.status().name())
-            .set(CHANNEL_ACCOUNT.CONFIG, jsonbSupport.toJsonb(account.config() == null ? Map.of() : account.config()))
-            .set(CHANNEL_ACCOUNT.CREATED_AT, JooqTimeSupport.toOffsetDateTime(account.createdAt()))
-            .set(CHANNEL_ACCOUNT.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(account.updatedAt()))
+            .set(CHANNEL_PROFILE.PROVIDER_TYPE, profile.providerType())
+            .set(CHANNEL_PROFILE.NAME, profile.name())
+            .set(CHANNEL_PROFILE.STATUS, profile.status().name())
+            .set(CHANNEL_PROFILE.CONFIG, jsonbSupport.toJsonb(profile.config() == null ? Map.of() : profile.config()))
+            .set(CHANNEL_PROFILE.CREATED_AT, JooqTimeSupport.toOffsetDateTime(profile.createdAt()))
+            .set(CHANNEL_PROFILE.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(profile.updatedAt()))
             .execute();
     }
 
-    List<ChannelConversationBinding> listBindings(String accountId) {
+    List<ChannelConversationBinding> listBindings(String channelProfileId) {
         return dsl.selectFrom(CHANNEL_CONVERSATION_BINDING)
-            .where(CHANNEL_CONVERSATION_BINDING.CHANNEL_ACCOUNT_ID.eq(accountId))
+            .where(CHANNEL_CONVERSATION_BINDING.CHANNEL_PROFILE_ID.eq(channelProfileId))
             .orderBy(CHANNEL_CONVERSATION_BINDING.UPDATED_AT.desc(), CHANNEL_CONVERSATION_BINDING.ID.asc())
             .fetch(this::mapBinding);
     }
@@ -80,7 +79,7 @@ final class ChannelStore {
     void saveBinding(ChannelConversationBinding binding) {
         dsl.insertInto(CHANNEL_CONVERSATION_BINDING)
             .set(CHANNEL_CONVERSATION_BINDING.ID, binding.id())
-            .set(CHANNEL_CONVERSATION_BINDING.CHANNEL_ACCOUNT_ID, binding.channelAccountId())
+            .set(CHANNEL_CONVERSATION_BINDING.CHANNEL_PROFILE_ID, binding.channelProfileId())
             .set(CHANNEL_CONVERSATION_BINDING.EXTERNAL_CONVERSATION_ID, binding.externalConversationId())
             .set(CHANNEL_CONVERSATION_BINDING.EXTERNAL_USER_ID, binding.externalUserId())
             .set(CHANNEL_CONVERSATION_BINDING.ASSISTANT_ID, binding.assistantId())
@@ -92,7 +91,7 @@ final class ChannelStore {
             .set(CHANNEL_CONVERSATION_BINDING.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(binding.updatedAt()))
             .onConflict(CHANNEL_CONVERSATION_BINDING.ID)
             .doUpdate()
-            .set(CHANNEL_CONVERSATION_BINDING.CHANNEL_ACCOUNT_ID, binding.channelAccountId())
+            .set(CHANNEL_CONVERSATION_BINDING.CHANNEL_PROFILE_ID, binding.channelProfileId())
             .set(CHANNEL_CONVERSATION_BINDING.EXTERNAL_CONVERSATION_ID, binding.externalConversationId())
             .set(CHANNEL_CONVERSATION_BINDING.EXTERNAL_USER_ID, binding.externalUserId())
             .set(CHANNEL_CONVERSATION_BINDING.ASSISTANT_ID, binding.assistantId())
@@ -105,9 +104,9 @@ final class ChannelStore {
             .execute();
     }
 
-    List<ChannelInboundEvent> listInboundEvents(String accountId) {
+    List<ChannelInboundEvent> listInboundEvents(String channelProfileId) {
         return dsl.selectFrom(CHANNEL_INBOUND_EVENT)
-            .where(CHANNEL_INBOUND_EVENT.CHANNEL_ACCOUNT_ID.eq(accountId))
+            .where(CHANNEL_INBOUND_EVENT.CHANNEL_PROFILE_ID.eq(channelProfileId))
             .orderBy(CHANNEL_INBOUND_EVENT.CREATED_AT.desc(), CHANNEL_INBOUND_EVENT.EVENT_ID.asc())
             .fetch(this::mapInboundEvent);
     }
@@ -121,8 +120,8 @@ final class ChannelStore {
     void saveInboundEvent(ChannelInboundEvent event) {
         dsl.insertInto(CHANNEL_INBOUND_EVENT)
             .set(CHANNEL_INBOUND_EVENT.EVENT_ID, event.eventId())
-            .set(CHANNEL_INBOUND_EVENT.CHANNEL_ACCOUNT_ID, event.channelAccountId())
-            .set(CHANNEL_INBOUND_EVENT.PROVIDER_TYPE, event.providerType().name())
+            .set(CHANNEL_INBOUND_EVENT.CHANNEL_PROFILE_ID, event.channelProfileId())
+            .set(CHANNEL_INBOUND_EVENT.PROVIDER_TYPE, event.providerType())
             .set(CHANNEL_INBOUND_EVENT.EVENT_TYPE, event.eventType())
             .set(CHANNEL_INBOUND_EVENT.EXTERNAL_EVENT_ID, event.externalEventId())
             .set(CHANNEL_INBOUND_EVENT.EXTERNAL_CONVERSATION_ID, event.externalConversationId())
@@ -135,8 +134,8 @@ final class ChannelStore {
             .set(CHANNEL_INBOUND_EVENT.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(event.updatedAt()))
             .onConflict(CHANNEL_INBOUND_EVENT.EVENT_ID)
             .doUpdate()
-            .set(CHANNEL_INBOUND_EVENT.CHANNEL_ACCOUNT_ID, event.channelAccountId())
-            .set(CHANNEL_INBOUND_EVENT.PROVIDER_TYPE, event.providerType().name())
+            .set(CHANNEL_INBOUND_EVENT.CHANNEL_PROFILE_ID, event.channelProfileId())
+            .set(CHANNEL_INBOUND_EVENT.PROVIDER_TYPE, event.providerType())
             .set(CHANNEL_INBOUND_EVENT.EVENT_TYPE, event.eventType())
             .set(CHANNEL_INBOUND_EVENT.EXTERNAL_EVENT_ID, event.externalEventId())
             .set(CHANNEL_INBOUND_EVENT.EXTERNAL_CONVERSATION_ID, event.externalConversationId())
@@ -150,9 +149,9 @@ final class ChannelStore {
             .execute();
     }
 
-    List<ChannelOutboundDelivery> listOutboundDeliveries(String accountId) {
+    List<ChannelOutboundDelivery> listOutboundDeliveries(String channelProfileId) {
         return dsl.selectFrom(CHANNEL_OUTBOUND_DELIVERY)
-            .where(CHANNEL_OUTBOUND_DELIVERY.CHANNEL_ACCOUNT_ID.eq(accountId))
+            .where(CHANNEL_OUTBOUND_DELIVERY.CHANNEL_PROFILE_ID.eq(channelProfileId))
             .orderBy(CHANNEL_OUTBOUND_DELIVERY.CREATED_AT.desc(), CHANNEL_OUTBOUND_DELIVERY.DELIVERY_ID.asc())
             .fetch(this::mapOutboundDelivery);
     }
@@ -160,8 +159,8 @@ final class ChannelStore {
     void saveOutboundDelivery(ChannelOutboundDelivery delivery) {
         dsl.insertInto(CHANNEL_OUTBOUND_DELIVERY)
             .set(CHANNEL_OUTBOUND_DELIVERY.DELIVERY_ID, delivery.deliveryId())
-            .set(CHANNEL_OUTBOUND_DELIVERY.CHANNEL_ACCOUNT_ID, delivery.channelAccountId())
-            .set(CHANNEL_OUTBOUND_DELIVERY.PROVIDER_TYPE, delivery.providerType().name())
+            .set(CHANNEL_OUTBOUND_DELIVERY.CHANNEL_PROFILE_ID, delivery.channelProfileId())
+            .set(CHANNEL_OUTBOUND_DELIVERY.PROVIDER_TYPE, delivery.providerType())
             .set(CHANNEL_OUTBOUND_DELIVERY.SESSION_ID, delivery.sessionId())
             .set(CHANNEL_OUTBOUND_DELIVERY.SESSION_MESSAGE_ID, delivery.sessionMessageId())
             .set(CHANNEL_OUTBOUND_DELIVERY.EXTERNAL_CONVERSATION_ID, delivery.externalConversationId())
@@ -173,8 +172,8 @@ final class ChannelStore {
             .set(CHANNEL_OUTBOUND_DELIVERY.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(delivery.updatedAt()))
             .onConflict(CHANNEL_OUTBOUND_DELIVERY.DELIVERY_ID)
             .doUpdate()
-            .set(CHANNEL_OUTBOUND_DELIVERY.CHANNEL_ACCOUNT_ID, delivery.channelAccountId())
-            .set(CHANNEL_OUTBOUND_DELIVERY.PROVIDER_TYPE, delivery.providerType().name())
+            .set(CHANNEL_OUTBOUND_DELIVERY.CHANNEL_PROFILE_ID, delivery.channelProfileId())
+            .set(CHANNEL_OUTBOUND_DELIVERY.PROVIDER_TYPE, delivery.providerType())
             .set(CHANNEL_OUTBOUND_DELIVERY.SESSION_ID, delivery.sessionId())
             .set(CHANNEL_OUTBOUND_DELIVERY.SESSION_MESSAGE_ID, delivery.sessionMessageId())
             .set(CHANNEL_OUTBOUND_DELIVERY.EXTERNAL_CONVERSATION_ID, delivery.externalConversationId())
@@ -187,22 +186,22 @@ final class ChannelStore {
             .execute();
     }
 
-    private ChannelAccount mapAccount(Record record) {
-        return new ChannelAccount(
-            record.get(CHANNEL_ACCOUNT.ID),
-            ChannelProviderType.valueOf(record.get(CHANNEL_ACCOUNT.PROVIDER_TYPE)),
-            record.get(CHANNEL_ACCOUNT.NAME),
-            ChannelAccountStatus.valueOf(record.get(CHANNEL_ACCOUNT.STATUS)),
-            jsonbSupport.readObjectMap(record.get(CHANNEL_ACCOUNT.CONFIG)),
-            JooqTimeSupport.toInstant(record.get(CHANNEL_ACCOUNT.CREATED_AT)),
-            JooqTimeSupport.toInstant(record.get(CHANNEL_ACCOUNT.UPDATED_AT))
+    private ChannelProfile mapProfile(Record record) {
+        return new ChannelProfile(
+            record.get(CHANNEL_PROFILE.ID),
+            record.get(CHANNEL_PROFILE.PROVIDER_TYPE),
+            record.get(CHANNEL_PROFILE.NAME),
+            ChannelProfileStatus.valueOf(record.get(CHANNEL_PROFILE.STATUS)),
+            jsonbSupport.readObjectMap(record.get(CHANNEL_PROFILE.CONFIG)),
+            JooqTimeSupport.toInstant(record.get(CHANNEL_PROFILE.CREATED_AT)),
+            JooqTimeSupport.toInstant(record.get(CHANNEL_PROFILE.UPDATED_AT))
         );
     }
 
     private ChannelConversationBinding mapBinding(Record record) {
         return new ChannelConversationBinding(
             record.get(CHANNEL_CONVERSATION_BINDING.ID),
-            record.get(CHANNEL_CONVERSATION_BINDING.CHANNEL_ACCOUNT_ID),
+            record.get(CHANNEL_CONVERSATION_BINDING.CHANNEL_PROFILE_ID),
             record.get(CHANNEL_CONVERSATION_BINDING.EXTERNAL_CONVERSATION_ID),
             record.get(CHANNEL_CONVERSATION_BINDING.EXTERNAL_USER_ID),
             record.get(CHANNEL_CONVERSATION_BINDING.ASSISTANT_ID),
@@ -218,8 +217,8 @@ final class ChannelStore {
     private ChannelInboundEvent mapInboundEvent(Record record) {
         return new ChannelInboundEvent(
             record.get(CHANNEL_INBOUND_EVENT.EVENT_ID),
-            record.get(CHANNEL_INBOUND_EVENT.CHANNEL_ACCOUNT_ID),
-            ChannelProviderType.valueOf(record.get(CHANNEL_INBOUND_EVENT.PROVIDER_TYPE)),
+            record.get(CHANNEL_INBOUND_EVENT.CHANNEL_PROFILE_ID),
+            record.get(CHANNEL_INBOUND_EVENT.PROVIDER_TYPE),
             record.get(CHANNEL_INBOUND_EVENT.EVENT_TYPE),
             record.get(CHANNEL_INBOUND_EVENT.EXTERNAL_EVENT_ID),
             record.get(CHANNEL_INBOUND_EVENT.EXTERNAL_CONVERSATION_ID),
@@ -236,8 +235,8 @@ final class ChannelStore {
     private ChannelOutboundDelivery mapOutboundDelivery(Record record) {
         return new ChannelOutboundDelivery(
             record.get(CHANNEL_OUTBOUND_DELIVERY.DELIVERY_ID),
-            record.get(CHANNEL_OUTBOUND_DELIVERY.CHANNEL_ACCOUNT_ID),
-            ChannelProviderType.valueOf(record.get(CHANNEL_OUTBOUND_DELIVERY.PROVIDER_TYPE)),
+            record.get(CHANNEL_OUTBOUND_DELIVERY.CHANNEL_PROFILE_ID),
+            record.get(CHANNEL_OUTBOUND_DELIVERY.PROVIDER_TYPE),
             record.get(CHANNEL_OUTBOUND_DELIVERY.SESSION_ID),
             record.get(CHANNEL_OUTBOUND_DELIVERY.SESSION_MESSAGE_ID),
             record.get(CHANNEL_OUTBOUND_DELIVERY.EXTERNAL_CONVERSATION_ID),

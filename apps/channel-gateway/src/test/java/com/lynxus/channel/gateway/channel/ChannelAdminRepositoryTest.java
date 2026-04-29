@@ -5,15 +5,14 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.lynxus.channel.gateway.testing.EmbeddedPostgresTestDatabase;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelAccount;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelAccountStatus;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProfile;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileStatus;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBindingStatus;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEventStatus;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDeliveryStatus;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderType;
 import java.time.Instant;
 import java.util.Map;
 import org.jooq.exception.DataAccessException;
@@ -45,20 +44,20 @@ class ChannelAdminRepositoryTest {
     }
 
     @Test
-    void shouldPersistAccountsBindingsInboundEventsAndOutboundDeliveries() {
+    void shouldPersistProfilesBindingsInboundEventsAndOutboundDeliveries() {
         Instant now = Instant.parse("2026-04-23T00:00:00Z");
-        ChannelAccount account = new ChannelAccount(
-            "channel-account-1",
-            ChannelProviderType.FEISHU,
+        ChannelProfile profile = new ChannelProfile(
+            "channel-profile-1",
+            "feishu",
             "飞书客服机器人",
-            ChannelAccountStatus.ACTIVE,
+            ChannelProfileStatus.ACTIVE,
             Map.of("appId", "cli_xxx"),
             now,
             now
         );
         ChannelConversationBinding binding = new ChannelConversationBinding(
             "channel-binding-1",
-            account.id(),
+            profile.id(),
             "chat-1",
             "ou_user_1",
             "assistant-1",
@@ -71,8 +70,8 @@ class ChannelAdminRepositoryTest {
         );
         ChannelInboundEvent inboundEvent = new ChannelInboundEvent(
             "channel-inbound-event-1",
-            account.id(),
-            ChannelProviderType.FEISHU,
+            profile.id(),
+            "feishu",
             "im.message.receive_v1",
             "evt-1",
             "chat-1",
@@ -86,8 +85,8 @@ class ChannelAdminRepositoryTest {
         );
         ChannelOutboundDelivery outboundDelivery = new ChannelOutboundDelivery(
             "channel-outbound-delivery-1",
-            account.id(),
-            ChannelProviderType.FEISHU,
+            profile.id(),
+            "feishu",
             "session-1",
             "message-1",
             "chat-1",
@@ -99,35 +98,35 @@ class ChannelAdminRepositoryTest {
             now
         );
 
-        repository.saveAccount(account);
+        repository.saveProfile(profile);
         repository.saveBinding(binding);
         repository.saveInboundEvent(inboundEvent);
         repository.saveOutboundDelivery(outboundDelivery);
 
-        assertEquals(1, repository.listAccounts().size());
-        assertEquals("飞书客服机器人", repository.findAccount(account.id()).orElseThrow().name());
-        assertEquals(1, repository.listBindings(account.id()).size());
-        assertEquals(1, repository.listInboundEvents(account.id()).size());
-        assertEquals(1, repository.listOutboundDeliveries(account.id()).size());
+        assertEquals(1, repository.listProfiles().size());
+        assertEquals("飞书客服机器人", repository.findProfile(profile.id()).orElseThrow().name());
+        assertEquals(1, repository.listBindings(profile.id()).size());
+        assertEquals(1, repository.listInboundEvents(profile.id()).size());
+        assertEquals(1, repository.listOutboundDeliveries(profile.id()).size());
         assertNotNull(repository.findInboundEventByDedupKey("feishu:event:evt-1").orElse(null));
     }
 
     @Test
     void shouldEnforceInboundEventDedupKeyUniqueness() {
         Instant now = Instant.parse("2026-04-23T00:00:00Z");
-        repository.saveAccount(new ChannelAccount(
-            "channel-account-1",
-            ChannelProviderType.FEISHU,
+        repository.saveProfile(new ChannelProfile(
+            "channel-profile-1",
+            "feishu",
             "飞书客服机器人",
-            ChannelAccountStatus.ACTIVE,
+            ChannelProfileStatus.ACTIVE,
             Map.of("appId", "cli_xxx"),
             now,
             now
         ));
         repository.saveInboundEvent(new ChannelInboundEvent(
             "channel-inbound-event-1",
-            "channel-account-1",
-            ChannelProviderType.FEISHU,
+            "channel-profile-1",
+            "feishu",
             "im.message.receive_v1",
             "evt-1",
             "chat-1",
@@ -142,8 +141,8 @@ class ChannelAdminRepositoryTest {
 
         assertThrows(DataAccessException.class, () -> repository.saveInboundEvent(new ChannelInboundEvent(
             "channel-inbound-event-2",
-            "channel-account-1",
-            ChannelProviderType.FEISHU,
+            "channel-profile-1",
+            "feishu",
             "im.message.receive_v1",
             "evt-2",
             "chat-1",

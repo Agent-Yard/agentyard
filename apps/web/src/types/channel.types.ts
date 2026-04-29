@@ -1,15 +1,15 @@
 import type {
-  ChannelAccount as ContractsChannelAccount,
+  ChannelProfile as ContractsChannelProfile,
   ChannelConversationBinding as ContractsChannelConversationBinding,
   ChannelInboundEvent as ContractsChannelInboundEvent,
   ChannelOutboundDelivery as ContractsChannelOutboundDelivery,
-  CreateChannelAccountPayload as ContractsCreateChannelAccountPayload,
-  UpdateChannelAccountPayload as ContractsUpdateChannelAccountPayload,
+  CreateChannelProfilePayload as ContractsCreateChannelProfilePayload,
+  UpdateChannelProfilePayload as ContractsUpdateChannelProfilePayload,
 } from '../../../../packages/contracts/src';
 
-export type ChannelAccount = ContractsChannelAccount;
+export type ChannelProfile = ContractsChannelProfile;
 export type ChannelConversationBinding = ContractsChannelConversationBinding;
 export type ChannelInboundEvent = ContractsChannelInboundEvent;
 export type ChannelOutboundDelivery = ContractsChannelOutboundDelivery;
-export type CreateChannelAccountPayload = ContractsCreateChannelAccountPayload;
-export type UpdateChannelAccountPayload = ContractsUpdateChannelAccountPayload;
+export type CreateChannelProfilePayload = ContractsCreateChannelProfilePayload;
+export type UpdateChannelProfilePayload = ContractsUpdateChannelProfilePayload;

@@ -12,8 +12,8 @@
 
 ## Current Position
 
-- Current slice: Slice 7 - Tool connector manifest migration + remote invocation adapter completed and checker-confirmed.
-- Current subtask: Slice 7 checkpoint complete; prepare to enter Slice 8 after rereading Slice 8 docs.
+- Current slice: Slice 8 - Channel provider registry + profile rename + gateway internal admin.
+- Current subtask: Slice 8A foundation checker passed; main integration checkpoint in progress before moving to next Slice 8 subtask. Provider job, template binding, outbound delivery semantics, accountSnapshot materialization, internal OpenAPI coverage, and schema-driven Web pages remain later Slice 8/9/10 subtasks.
 - Main-agent role: orchestration, integration decisions, ledger maintenance, review of worker/checker output.
 - Implementation flow: worker implements each bounded subtask, independent checker reviews read-only, then main agent decides follow-up.
 
@@ -40,6 +40,7 @@
 - Slice 1 completed after checker repair and rerun; no blocking findings remain.
 - Slice 2 completed after checker repair and Slice 1-2 checkpoint; no blocking findings remain.
 - Slice 7 completed after 7A / 7B / 7C worker-checker cycles and checkpoint; no blocking findings remain.
+- Read Slice 8 roadmap, channel provider rename/profile materialization sections, credentials persistence profile boundary, and §6 Impact Checklist before starting Slice 8A.
 
 ## Cross-Module Impact Under Watch
 
@@ -77,6 +78,8 @@
   - descriptors without supported credential capability allow config-only accounts but reject credential lifecycle actions.
   No background retry, token refresh, status sync, provider job refresh, or logical idempotency state will be added.
 - Decision: Slice 6C account availability is an API-side Integration Account domain helper only. It evaluates `subjectType` / `subjectId`, account status, and credential status for later Tool publish and Channel Profile writes; it does not materialize Tool release snapshots or channel runtime profiles.
+- Decision: Slice 8 is too large for one worker. 8A will be a strict foundation rename and path move only. Channel Profile accountSnapshot materialization, registry-backed provider validation, internal OpenAPI coverage, template binding, provider job, and manual run APIs will be separate subtasks after the old naming is removed from the active code path.
+- Decision: `packages/contracts/openapi/channel-gateway-internal.yaml` does not exist yet in the repo; create it in a later Slice 8 subtask after the concrete internal DTO shape stabilizes. This is implementation ordering, not a change to the target architecture.
 
 ## Worker / Checker Notes
 
@@ -968,7 +971,28 @@
   - Focused regression tests passed after service repair.
   - `./gradlew :apps:api:test --tests '*Catalog*'` passed.
   - `git diff --check` passed.
+- Worker 8A foundation rename in progress:
+  - Renamed current channel runtime admin foundation from Channel Account to Channel Profile across JVM/TS contracts, channel-gateway DDL/jOOQ/runtime code, API channel admin client/controller/service, Feishu gateway-native lookup, and current Web service/types/tests.
+  - Moved current channel admin paths to `/api/channel-admin/profiles` and `/internal/channel-admin/profiles`; old `/accounts` paths are covered by negative 404 tests only.
+  - Removed `ChannelProviderType` from active channel contracts/code; channel `providerType` is now a string descriptor id and Feishu uses `feishu`.
+  - Kept Slice 8A bounded: no accountSnapshot materialization, provider registry validation, internal OpenAPI file, template binding, provider job, outbound retry semantics, schema-driven Web pages, or Slice 11 artifacts.
+  - Verification:
+    - `./gradlew :apps:channel-gateway:generateJooq` passed.
+    - `./gradlew :apps:channel-gateway:test --tests '*ChannelAdmin*' --tests '*Feishu*' --tests '*InternalAuth*'` passed.
+    - `./gradlew :apps:api:test --tests '*ChannelGatewayClient*' --tests '*ApiAuthorization*'` passed.
+    - `pnpm --filter @lynxus/web test -- api` passed (`1` file, `12` tests).
+    - `rg "ChannelAccount|channel_account|channel_account_id|/channel-admin/accounts|ChannelProviderType" apps/channel-gateway apps/api/src/main/java/com/lynxus/platform/channel apps/api/src/test/java/com/lynxus/platform/channel packages/contracts-jvm/src/main/java/com/lynxus/contracts/channel packages/contracts/src apps/web/src/services apps/web/src/types packages/contracts/openapi` returns only the intentional old internal `/accounts` 404 regression test.
+    - `git diff --check` passed.
+- Checker 8A verdict: pass.
+  - Confirmed contracts, DDL/jOOQ, API/internal/Web paths, Feishu semantics, and docs ledger align with bounded Slice 8A scope.
+  - Confirmed no `/accounts` compatibility route, no active `ChannelProviderType`, no channel Web/API `externalSecretRef` read DTO, and no Slice 8/11 overreach.
+  - Checker commands passed:
+    - `./gradlew :apps:channel-gateway:test --tests '*ChannelAdmin*' --tests '*Feishu*' --tests '*InternalAuth*'`
+    - `./gradlew :apps:api:test --tests '*ChannelGatewayClient*' --tests '*ApiAuthorization*'`
+    - `pnpm --filter @lynxus/web test -- api`
+    - `git diff --check`
+  - Main follow-up: ensure new generated jOOQ files `ChannelProfile.java` and `ChannelProfileRecord.java` are included before commit.
 
 ## Blockers / Rework
 
-- No active blockers after Worker 7A-NullConfigRepair; Slice 7A is ready for checker rerun.
+- No active Slice 8A blockers after checker review; include untracked generated jOOQ profile files before checkpoint commit.

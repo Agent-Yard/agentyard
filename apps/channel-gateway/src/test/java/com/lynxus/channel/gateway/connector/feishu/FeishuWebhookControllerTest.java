@@ -9,8 +9,7 @@ import com.lynxus.channel.gateway.channel.ChannelAdminRepository;
 import com.lynxus.channel.gateway.channel.ChannelAdminService;
 import com.lynxus.channel.gateway.shared.ApiExceptionHandler;
 import com.lynxus.channel.gateway.testing.EmbeddedPostgresTestDatabase;
-import com.lynxus.contracts.channel.ChannelContracts.CreateChannelAccountRequest;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderType;
+import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileRequest;
 import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -48,8 +47,8 @@ class FeishuWebhookControllerTest {
             .setControllerAdvice(new ApiExceptionHandler())
             .build();
 
-        channelAdminService.createAccount(new CreateChannelAccountRequest(
-            ChannelProviderType.FEISHU,
+        channelAdminService.createProfile(new CreateChannelProfileRequest(
+            "feishu",
             "飞书客服机器人",
             null,
             Map.of("appId", "cli_xxx", "verificationToken", "verify-token")
@@ -113,8 +112,8 @@ class FeishuWebhookControllerTest {
             .andExpect(jsonPath("$.status").value("ok"))
             .andExpect(jsonPath("$.duplicate").value(true));
 
-        String accountId = repository.listAccounts().getFirst().id();
-        assertEquals(1, repository.listInboundEvents(accountId).size());
-        assertEquals("evt_001", repository.listInboundEvents(accountId).getFirst().externalEventId());
+        String channelProfileId = repository.listProfiles().getFirst().id();
+        assertEquals(1, repository.listInboundEvents(channelProfileId).size());
+        assertEquals("evt_001", repository.listInboundEvents(channelProfileId).getFirst().externalEventId());
     }
 }

@@ -16,11 +16,7 @@ public final class ChannelContracts {
         return Collections.unmodifiableMap(new LinkedHashMap<>(source));
     }
 
-    public enum ChannelProviderType {
-        FEISHU
-    }
-
-    public enum ChannelAccountStatus {
+    public enum ChannelProfileStatus {
         ACTIVE,
         INACTIVE
     }
@@ -41,23 +37,23 @@ public final class ChannelContracts {
         FAILED
     }
 
-    public record ChannelAccount(
+    public record ChannelProfile(
         String id,
-        ChannelProviderType providerType,
+        String providerType,
         String name,
-        ChannelAccountStatus status,
+        ChannelProfileStatus status,
         Map<String, Object> config,
         Instant createdAt,
         Instant updatedAt
     ) {
-        public ChannelAccount {
+        public ChannelProfile {
             config = immutableObjectMap(config);
         }
     }
 
     public record ChannelConversationBinding(
         String id,
-        String channelAccountId,
+        String channelProfileId,
         String externalConversationId,
         String externalUserId,
         String assistantId,
@@ -75,8 +71,8 @@ public final class ChannelContracts {
 
     public record ChannelInboundEvent(
         String eventId,
-        String channelAccountId,
-        ChannelProviderType providerType,
+        String channelProfileId,
+        String providerType,
         String eventType,
         String externalEventId,
         String externalConversationId,
@@ -96,8 +92,8 @@ public final class ChannelContracts {
 
     public record ChannelOutboundDelivery(
         String deliveryId,
-        String channelAccountId,
-        ChannelProviderType providerType,
+        String channelProfileId,
+        String providerType,
         String sessionId,
         String sessionMessageId,
         String externalConversationId,
@@ -113,23 +109,23 @@ public final class ChannelContracts {
         }
     }
 
-    public record CreateChannelAccountRequest(
-        ChannelProviderType providerType,
+    public record CreateChannelProfileRequest(
+        String providerType,
         String name,
-        ChannelAccountStatus status,
+        ChannelProfileStatus status,
         Map<String, Object> config
     ) {
-        public CreateChannelAccountRequest {
+        public CreateChannelProfileRequest {
             config = immutableObjectMap(config);
         }
     }
 
-    public record UpdateChannelAccountRequest(
+    public record UpdateChannelProfileRequest(
         String name,
-        ChannelAccountStatus status,
+        ChannelProfileStatus status,
         Map<String, Object> config
     ) {
-        public UpdateChannelAccountRequest {
+        public UpdateChannelProfileRequest {
             config = immutableObjectMap(config);
         }
     }

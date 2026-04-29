@@ -4,14 +4,14 @@
 package com.lynxus.channel.gateway.jooq;
 
 
-import com.lynxus.channel.gateway.jooq.tables.ChannelAccount;
 import com.lynxus.channel.gateway.jooq.tables.ChannelConversationBinding;
 import com.lynxus.channel.gateway.jooq.tables.ChannelInboundEvent;
 import com.lynxus.channel.gateway.jooq.tables.ChannelOutboundDelivery;
-import com.lynxus.channel.gateway.jooq.tables.records.ChannelAccountRecord;
+import com.lynxus.channel.gateway.jooq.tables.ChannelProfile;
 import com.lynxus.channel.gateway.jooq.tables.records.ChannelConversationBindingRecord;
 import com.lynxus.channel.gateway.jooq.tables.records.ChannelInboundEventRecord;
 import com.lynxus.channel.gateway.jooq.tables.records.ChannelOutboundDeliveryRecord;
+import com.lynxus.channel.gateway.jooq.tables.records.ChannelProfileRecord;
 
 import org.jooq.TableField;
 import org.jooq.UniqueKey;
@@ -30,8 +30,8 @@ public class Keys {
     // UNIQUE and PRIMARY KEY definitions
     // -------------------------------------------------------------------------
 
-    public static final UniqueKey<ChannelAccountRecord> CHANNEL_ACCOUNT_PKEY = Internal.createUniqueKey(ChannelAccount.CHANNEL_ACCOUNT, DSL.name("channel_account_pkey"), new TableField[] { ChannelAccount.CHANNEL_ACCOUNT.ID }, true);
     public static final UniqueKey<ChannelConversationBindingRecord> CHANNEL_CONVERSATION_BINDING_PKEY = Internal.createUniqueKey(ChannelConversationBinding.CHANNEL_CONVERSATION_BINDING, DSL.name("channel_conversation_binding_pkey"), new TableField[] { ChannelConversationBinding.CHANNEL_CONVERSATION_BINDING.ID }, true);
     public static final UniqueKey<ChannelInboundEventRecord> CHANNEL_INBOUND_EVENT_PKEY = Internal.createUniqueKey(ChannelInboundEvent.CHANNEL_INBOUND_EVENT, DSL.name("channel_inbound_event_pkey"), new TableField[] { ChannelInboundEvent.CHANNEL_INBOUND_EVENT.EVENT_ID }, true);
     public static final UniqueKey<ChannelOutboundDeliveryRecord> CHANNEL_OUTBOUND_DELIVERY_PKEY = Internal.createUniqueKey(ChannelOutboundDelivery.CHANNEL_OUTBOUND_DELIVERY, DSL.name("channel_outbound_delivery_pkey"), new TableField[] { ChannelOutboundDelivery.CHANNEL_OUTBOUND_DELIVERY.DELIVERY_ID }, true);
+    public static final UniqueKey<ChannelProfileRecord> CHANNEL_PROFILE_PKEY = Internal.createUniqueKey(ChannelProfile.CHANNEL_PROFILE, DSL.name("channel_profile_pkey"), new TableField[] { ChannelProfile.CHANNEL_PROFILE.ID }, true);
 }

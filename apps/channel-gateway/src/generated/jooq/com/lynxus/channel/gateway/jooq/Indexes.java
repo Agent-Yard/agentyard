@@ -4,10 +4,10 @@
 package com.lynxus.channel.gateway.jooq;
 
 
-import com.lynxus.channel.gateway.jooq.tables.ChannelAccount;
 import com.lynxus.channel.gateway.jooq.tables.ChannelConversationBinding;
 import com.lynxus.channel.gateway.jooq.tables.ChannelInboundEvent;
 import com.lynxus.channel.gateway.jooq.tables.ChannelOutboundDelivery;
+import com.lynxus.channel.gateway.jooq.tables.ChannelProfile;
 
 import org.jooq.Index;
 import org.jooq.OrderField;
@@ -25,10 +25,10 @@ public class Indexes {
     // INDEX definitions
     // -------------------------------------------------------------------------
 
-    public static final Index IDX_CHANNEL_ACCOUNT_UPDATED = Internal.createIndex(DSL.name("idx_channel_account_updated"), ChannelAccount.CHANNEL_ACCOUNT, new OrderField[] { ChannelAccount.CHANNEL_ACCOUNT.UPDATED_AT.desc() }, false);
-    public static final Index IDX_CHANNEL_BINDING_ACCOUNT_UPDATED = Internal.createIndex(DSL.name("idx_channel_binding_account_updated"), ChannelConversationBinding.CHANNEL_CONVERSATION_BINDING, new OrderField[] { ChannelConversationBinding.CHANNEL_CONVERSATION_BINDING.CHANNEL_ACCOUNT_ID, ChannelConversationBinding.CHANNEL_CONVERSATION_BINDING.UPDATED_AT.desc() }, false);
-    public static final Index IDX_CHANNEL_INBOUND_ACCOUNT_CREATED = Internal.createIndex(DSL.name("idx_channel_inbound_account_created"), ChannelInboundEvent.CHANNEL_INBOUND_EVENT, new OrderField[] { ChannelInboundEvent.CHANNEL_INBOUND_EVENT.CHANNEL_ACCOUNT_ID, ChannelInboundEvent.CHANNEL_INBOUND_EVENT.CREATED_AT.desc() }, false);
-    public static final Index IDX_CHANNEL_OUTBOUND_ACCOUNT_CREATED = Internal.createIndex(DSL.name("idx_channel_outbound_account_created"), ChannelOutboundDelivery.CHANNEL_OUTBOUND_DELIVERY, new OrderField[] { ChannelOutboundDelivery.CHANNEL_OUTBOUND_DELIVERY.CHANNEL_ACCOUNT_ID, ChannelOutboundDelivery.CHANNEL_OUTBOUND_DELIVERY.CREATED_AT.desc() }, false);
-    public static final Index UK_CHANNEL_CONVERSATION_BINDING_EXTERNAL_CONVERSATION = Internal.createIndex(DSL.name("uk_channel_conversation_binding_external_conversation"), ChannelConversationBinding.CHANNEL_CONVERSATION_BINDING, new OrderField[] { ChannelConversationBinding.CHANNEL_CONVERSATION_BINDING.CHANNEL_ACCOUNT_ID, ChannelConversationBinding.CHANNEL_CONVERSATION_BINDING.EXTERNAL_CONVERSATION_ID }, true);
+    public static final Index IDX_CHANNEL_BINDING_PROFILE_UPDATED = Internal.createIndex(DSL.name("idx_channel_binding_profile_updated"), ChannelConversationBinding.CHANNEL_CONVERSATION_BINDING, new OrderField[] { ChannelConversationBinding.CHANNEL_CONVERSATION_BINDING.CHANNEL_PROFILE_ID, ChannelConversationBinding.CHANNEL_CONVERSATION_BINDING.UPDATED_AT.desc() }, false);
+    public static final Index IDX_CHANNEL_INBOUND_PROFILE_CREATED = Internal.createIndex(DSL.name("idx_channel_inbound_profile_created"), ChannelInboundEvent.CHANNEL_INBOUND_EVENT, new OrderField[] { ChannelInboundEvent.CHANNEL_INBOUND_EVENT.CHANNEL_PROFILE_ID, ChannelInboundEvent.CHANNEL_INBOUND_EVENT.CREATED_AT.desc() }, false);
+    public static final Index IDX_CHANNEL_OUTBOUND_PROFILE_CREATED = Internal.createIndex(DSL.name("idx_channel_outbound_profile_created"), ChannelOutboundDelivery.CHANNEL_OUTBOUND_DELIVERY, new OrderField[] { ChannelOutboundDelivery.CHANNEL_OUTBOUND_DELIVERY.CHANNEL_PROFILE_ID, ChannelOutboundDelivery.CHANNEL_OUTBOUND_DELIVERY.CREATED_AT.desc() }, false);
+    public static final Index IDX_CHANNEL_PROFILE_UPDATED = Internal.createIndex(DSL.name("idx_channel_profile_updated"), ChannelProfile.CHANNEL_PROFILE, new OrderField[] { ChannelProfile.CHANNEL_PROFILE.UPDATED_AT.desc() }, false);
+    public static final Index UK_CHANNEL_CONVERSATION_BINDING_PROFILE_EXTERNAL_CONVERSATION = Internal.createIndex(DSL.name("uk_channel_conversation_binding_profile_external_conversation"), ChannelConversationBinding.CHANNEL_CONVERSATION_BINDING, new OrderField[] { ChannelConversationBinding.CHANNEL_CONVERSATION_BINDING.CHANNEL_PROFILE_ID, ChannelConversationBinding.CHANNEL_CONVERSATION_BINDING.EXTERNAL_CONVERSATION_ID }, true);
     public static final Index UK_CHANNEL_INBOUND_EVENT_DEDUP_KEY = Internal.createIndex(DSL.name("uk_channel_inbound_event_dedup_key"), ChannelInboundEvent.CHANNEL_INBOUND_EVENT, new OrderField[] { ChannelInboundEvent.CHANNEL_INBOUND_EVENT.DEDUP_KEY }, true);
 }

@@ -178,7 +178,7 @@ describe('api client', () => {
     );
   });
 
-  it('queries channel admin accounts through the control-plane api', async () => {
+  it('queries channel admin profiles through the control-plane api', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({
         data: [],
@@ -189,10 +189,10 @@ describe('api client', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    await api.listChannelAccounts();
+    await api.listChannelProfiles();
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/channel-admin/accounts',
+      '/api/channel-admin/profiles',
       expect.objectContaining({
         credentials: 'include',
         headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
@@ -200,12 +200,12 @@ describe('api client', () => {
     );
   });
 
-  it('posts channel account creation to the control-plane api', async () => {
+  it('posts channel profile creation to the control-plane api', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({
         data: {
-          id: 'channel-account-1',
-          providerType: 'FEISHU',
+          id: 'channel-profile-1',
+          providerType: 'feishu',
           name: '飞书客服机器人',
           status: 'ACTIVE',
           config: { appId: 'cli_xxx' },
@@ -219,21 +219,21 @@ describe('api client', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    await api.createChannelAccount({
-      providerType: 'FEISHU',
+    await api.createChannelProfile({
+      providerType: 'feishu',
       name: '飞书客服机器人',
       status: 'ACTIVE',
       config: { appId: 'cli_xxx' },
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/channel-admin/accounts',
+      '/api/channel-admin/profiles',
       expect.objectContaining({
         credentials: 'include',
         method: 'POST',
         headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
-          providerType: 'FEISHU',
+          providerType: 'feishu',
           name: '飞书客服机器人',
           status: 'ACTIVE',
           config: { appId: 'cli_xxx' },

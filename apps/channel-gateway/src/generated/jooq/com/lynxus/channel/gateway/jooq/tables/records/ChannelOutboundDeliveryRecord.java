@@ -37,17 +37,17 @@ public class ChannelOutboundDeliveryRecord extends UpdatableRecordImpl<ChannelOu
 
     /**
      * Setter for
-     * <code>public.channel_outbound_delivery.channel_account_id</code>.
+     * <code>public.channel_outbound_delivery.channel_profile_id</code>.
      */
-    public void setChannelAccountId(String value) {
+    public void setChannelProfileId(String value) {
         set(1, value);
     }
 
     /**
      * Getter for
-     * <code>public.channel_outbound_delivery.channel_account_id</code>.
+     * <code>public.channel_outbound_delivery.channel_profile_id</code>.
      */
-    public String getChannelAccountId() {
+    public String getChannelProfileId() {
         return (String) get(1);
     }
 
@@ -218,11 +218,11 @@ public class ChannelOutboundDeliveryRecord extends UpdatableRecordImpl<ChannelOu
     /**
      * Create a detached, initialised ChannelOutboundDeliveryRecord
      */
-    public ChannelOutboundDeliveryRecord(String deliveryId, String channelAccountId, String providerType, String sessionId, String sessionMessageId, String externalConversationId, JSONB payload, String status, Integer attemptCount, String lastError, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+    public ChannelOutboundDeliveryRecord(String deliveryId, String channelProfileId, String providerType, String sessionId, String sessionMessageId, String externalConversationId, JSONB payload, String status, Integer attemptCount, String lastError, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
         super(ChannelOutboundDelivery.CHANNEL_OUTBOUND_DELIVERY);
 
         setDeliveryId(deliveryId);
-        setChannelAccountId(channelAccountId);
+        setChannelProfileId(channelProfileId);
         setProviderType(providerType);
         setSessionId(sessionId);
         setSessionMessageId(sessionMessageId);

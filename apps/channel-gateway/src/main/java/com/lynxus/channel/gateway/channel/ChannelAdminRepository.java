@@ -1,11 +1,10 @@
 package com.lynxus.channel.gateway.channel;
 
 import com.lynxus.channel.gateway.jooqsupport.JooqJsonbSupport;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelAccount;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderType;
 import java.util.List;
 import java.util.Optional;
 import org.jooq.DSLContext;
@@ -20,32 +19,32 @@ public class ChannelAdminRepository {
         this.store = new ChannelStore(dsl, new JooqJsonbSupport(objectMapper));
     }
 
-    public List<ChannelAccount> listAccounts() {
-        return store.listAccounts();
+    public List<ChannelProfile> listProfiles() {
+        return store.listProfiles();
     }
 
-    public Optional<ChannelAccount> findAccount(String accountId) {
-        return store.findAccount(accountId);
+    public Optional<ChannelProfile> findProfile(String channelProfileId) {
+        return store.findProfile(channelProfileId);
     }
 
-    public List<ChannelAccount> listAccountsByProvider(ChannelProviderType providerType) {
-        return store.listAccountsByProvider(providerType);
+    public List<ChannelProfile> listProfilesByProvider(String providerType) {
+        return store.listProfilesByProvider(providerType);
     }
 
-    public void saveAccount(ChannelAccount account) {
-        store.saveAccount(account);
+    public void saveProfile(ChannelProfile profile) {
+        store.saveProfile(profile);
     }
 
-    public List<ChannelConversationBinding> listBindings(String accountId) {
-        return store.listBindings(accountId);
+    public List<ChannelConversationBinding> listBindings(String channelProfileId) {
+        return store.listBindings(channelProfileId);
     }
 
     public void saveBinding(ChannelConversationBinding binding) {
         store.saveBinding(binding);
     }
 
-    public List<ChannelInboundEvent> listInboundEvents(String accountId) {
-        return store.listInboundEvents(accountId);
+    public List<ChannelInboundEvent> listInboundEvents(String channelProfileId) {
+        return store.listInboundEvents(channelProfileId);
     }
 
     public Optional<ChannelInboundEvent> findInboundEventByDedupKey(String dedupKey) {
@@ -56,8 +55,8 @@ public class ChannelAdminRepository {
         store.saveInboundEvent(event);
     }
 
-    public List<ChannelOutboundDelivery> listOutboundDeliveries(String accountId) {
-        return store.listOutboundDeliveries(accountId);
+    public List<ChannelOutboundDelivery> listOutboundDeliveries(String channelProfileId) {
+        return store.listOutboundDeliveries(channelProfileId);
     }
 
     public void saveOutboundDelivery(ChannelOutboundDelivery delivery) {

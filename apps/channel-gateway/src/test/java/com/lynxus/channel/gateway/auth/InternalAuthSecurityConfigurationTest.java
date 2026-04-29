@@ -42,7 +42,7 @@ class InternalAuthSecurityConfigurationTest {
         try (AnnotationConfigApplicationContext context = createAuthorizedContext()) {
             MockMvc mockMvc = mockMvc(context);
 
-            mockMvc.perform(get("/internal/channel-admin/accounts"))
+            mockMvc.perform(get("/internal/channel-admin/profiles"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.detail").value("Authentication is required"));
         }
@@ -52,12 +52,22 @@ class InternalAuthSecurityConfigurationTest {
     void shouldAllowInternalRouteWithValidBearerToken() throws Exception {
         try (AnnotationConfigApplicationContext context = createAuthorizedContext()) {
             ChannelAdminService channelAdminService = context.getBean(ChannelAdminService.class);
-            when(channelAdminService.listAccounts()).thenReturn(List.of());
+            when(channelAdminService.listProfiles()).thenReturn(List.of());
+            MockMvc mockMvc = mockMvc(context);
+
+            mockMvc.perform(get("/internal/channel-admin/profiles").header("Authorization", "Bearer test-internal-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+        }
+    }
+
+    @Test
+    void shouldNotExposeOldInternalChannelAdminAccountsPath() throws Exception {
+        try (AnnotationConfigApplicationContext context = createAuthorizedContext()) {
             MockMvc mockMvc = mockMvc(context);
 
             mockMvc.perform(get("/internal/channel-admin/accounts").header("Authorization", "Bearer test-internal-token"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true));
+                .andExpect(status().isNotFound());
         }
     }
 

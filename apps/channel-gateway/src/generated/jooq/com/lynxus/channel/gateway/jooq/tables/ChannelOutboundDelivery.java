@@ -62,9 +62,9 @@ public class ChannelOutboundDelivery extends TableImpl<ChannelOutboundDeliveryRe
 
     /**
      * The column
-     * <code>public.channel_outbound_delivery.channel_account_id</code>.
+     * <code>public.channel_outbound_delivery.channel_profile_id</code>.
      */
-    public final TableField<ChannelOutboundDeliveryRecord, String> CHANNEL_ACCOUNT_ID = createField(DSL.name("channel_account_id"), SQLDataType.VARCHAR(64).nullable(false), this, "");
+    public final TableField<ChannelOutboundDeliveryRecord, String> CHANNEL_PROFILE_ID = createField(DSL.name("channel_profile_id"), SQLDataType.VARCHAR(64).nullable(false), this, "");
 
     /**
      * The column <code>public.channel_outbound_delivery.provider_type</code>.
@@ -156,7 +156,7 @@ public class ChannelOutboundDelivery extends TableImpl<ChannelOutboundDeliveryRe
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_CHANNEL_OUTBOUND_ACCOUNT_CREATED);
+        return Arrays.asList(Indexes.IDX_CHANNEL_OUTBOUND_PROFILE_CREATED);
     }
 
     @Override

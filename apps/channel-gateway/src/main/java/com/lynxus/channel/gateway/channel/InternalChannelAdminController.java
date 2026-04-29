@@ -1,8 +1,8 @@
 package com.lynxus.channel.gateway.channel;
 
 import com.lynxus.channel.gateway.shared.ApiResponse;
-import com.lynxus.contracts.channel.ChannelContracts.CreateChannelAccountRequest;
-import com.lynxus.contracts.channel.ChannelContracts.UpdateChannelAccountRequest;
+import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileRequest;
+import com.lynxus.contracts.channel.ChannelContracts.UpdateChannelProfileRequest;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/internal/channel-admin/accounts")
+@RequestMapping("/internal/channel-admin/profiles")
 public class InternalChannelAdminController {
     private final ChannelAdminService channelAdminService;
 
@@ -21,37 +21,37 @@ public class InternalChannelAdminController {
     }
 
     @GetMapping
-    public ApiResponse<?> accounts() {
-        return ApiResponse.ok(channelAdminService.listAccounts());
+    public ApiResponse<?> profiles() {
+        return ApiResponse.ok(channelAdminService.listProfiles());
     }
 
     @PostMapping
-    public ApiResponse<?> createAccount(@RequestBody CreateChannelAccountRequest request) {
-        return ApiResponse.ok(channelAdminService.createAccount(request));
+    public ApiResponse<?> createProfile(@RequestBody CreateChannelProfileRequest request) {
+        return ApiResponse.ok(channelAdminService.createProfile(request));
     }
 
-    @GetMapping("/{accountId}")
-    public ApiResponse<?> account(@PathVariable String accountId) {
-        return ApiResponse.ok(channelAdminService.getAccount(accountId));
+    @GetMapping("/{channelProfileId}")
+    public ApiResponse<?> profile(@PathVariable String channelProfileId) {
+        return ApiResponse.ok(channelAdminService.getProfile(channelProfileId));
     }
 
-    @PutMapping("/{accountId}")
-    public ApiResponse<?> updateAccount(@PathVariable String accountId, @RequestBody UpdateChannelAccountRequest request) {
-        return ApiResponse.ok(channelAdminService.updateAccount(accountId, request));
+    @PutMapping("/{channelProfileId}")
+    public ApiResponse<?> updateProfile(@PathVariable String channelProfileId, @RequestBody UpdateChannelProfileRequest request) {
+        return ApiResponse.ok(channelAdminService.updateProfile(channelProfileId, request));
     }
 
-    @GetMapping("/{accountId}/bindings")
-    public ApiResponse<?> bindings(@PathVariable String accountId) {
-        return ApiResponse.ok(channelAdminService.listBindings(accountId));
+    @GetMapping("/{channelProfileId}/bindings")
+    public ApiResponse<?> bindings(@PathVariable String channelProfileId) {
+        return ApiResponse.ok(channelAdminService.listBindings(channelProfileId));
     }
 
-    @GetMapping("/{accountId}/inbound-events")
-    public ApiResponse<?> inboundEvents(@PathVariable String accountId) {
-        return ApiResponse.ok(channelAdminService.listInboundEvents(accountId));
+    @GetMapping("/{channelProfileId}/inbound-events")
+    public ApiResponse<?> inboundEvents(@PathVariable String channelProfileId) {
+        return ApiResponse.ok(channelAdminService.listInboundEvents(channelProfileId));
     }
 
-    @GetMapping("/{accountId}/outbound-deliveries")
-    public ApiResponse<?> outboundDeliveries(@PathVariable String accountId) {
-        return ApiResponse.ok(channelAdminService.listOutboundDeliveries(accountId));
+    @GetMapping("/{channelProfileId}/outbound-deliveries")
+    public ApiResponse<?> outboundDeliveries(@PathVariable String channelProfileId) {
+        return ApiResponse.ok(channelAdminService.listOutboundDeliveries(channelProfileId));
     }
 }

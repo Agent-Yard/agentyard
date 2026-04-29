@@ -1,11 +1,11 @@
 package com.lynxus.platform.channel;
 
-import com.lynxus.contracts.channel.ChannelContracts.ChannelAccount;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
-import com.lynxus.contracts.channel.ChannelContracts.CreateChannelAccountRequest;
-import com.lynxus.contracts.channel.ChannelContracts.UpdateChannelAccountRequest;
+import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileRequest;
+import com.lynxus.contracts.channel.ChannelContracts.UpdateChannelProfileRequest;
 import java.util.List;
 import org.springframework.stereotype.Service;
 
@@ -17,31 +17,31 @@ public class ChannelAdminService {
         this.channelGatewayClient = channelGatewayClient;
     }
 
-    public List<ChannelAccount> listAccounts() {
-        return channelGatewayClient.listAccounts();
+    public List<ChannelProfile> listProfiles() {
+        return channelGatewayClient.listProfiles();
     }
 
-    public ChannelAccount createAccount(CreateChannelAccountRequest request) {
-        return channelGatewayClient.createAccount(request);
+    public ChannelProfile createProfile(CreateChannelProfileRequest request) {
+        return channelGatewayClient.createProfile(request);
     }
 
-    public ChannelAccount getAccount(String accountId) {
-        return channelGatewayClient.getAccount(accountId);
+    public ChannelProfile getProfile(String channelProfileId) {
+        return channelGatewayClient.getProfile(channelProfileId);
     }
 
-    public ChannelAccount updateAccount(String accountId, UpdateChannelAccountRequest request) {
-        return channelGatewayClient.updateAccount(accountId, request);
+    public ChannelProfile updateProfile(String channelProfileId, UpdateChannelProfileRequest request) {
+        return channelGatewayClient.updateProfile(channelProfileId, request);
     }
 
-    public List<ChannelConversationBinding> listBindings(String accountId) {
-        return channelGatewayClient.listBindings(accountId);
+    public List<ChannelConversationBinding> listBindings(String channelProfileId) {
+        return channelGatewayClient.listBindings(channelProfileId);
     }
 
-    public List<ChannelInboundEvent> listInboundEvents(String accountId) {
-        return channelGatewayClient.listInboundEvents(accountId);
+    public List<ChannelInboundEvent> listInboundEvents(String channelProfileId) {
+        return channelGatewayClient.listInboundEvents(channelProfileId);
     }
 
-    public List<ChannelOutboundDelivery> listOutboundDeliveries(String accountId) {
-        return channelGatewayClient.listOutboundDeliveries(accountId);
+    public List<ChannelOutboundDelivery> listOutboundDeliveries(String channelProfileId) {
+        return channelGatewayClient.listOutboundDeliveries(channelProfileId);
     }
 }

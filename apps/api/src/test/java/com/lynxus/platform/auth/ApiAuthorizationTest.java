@@ -164,7 +164,7 @@ class ApiAuthorizationTest {
         try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(TestConfig.class, AuthSecurityConfiguration.class)) {
             MockMvc mockMvc = mockMvc(context);
 
-            mockMvc.perform(get("/api/channel-admin/accounts").with(user("business")))
+            mockMvc.perform(get("/api/channel-admin/profiles").with(user("business")))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.detail").value("Access is denied"));
         }
@@ -174,11 +174,11 @@ class ApiAuthorizationTest {
     void shouldAllowDeveloperChannelAdminWriteRequest() throws Exception {
         try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(TestConfig.class, AuthSecurityConfiguration.class)) {
             ChannelAdminService channelAdminService = context.getBean(ChannelAdminService.class);
-            when(channelAdminService.createAccount(any())).thenReturn(new ChannelContracts.ChannelAccount(
-                "channel-account-1",
-                ChannelContracts.ChannelProviderType.FEISHU,
+            when(channelAdminService.createProfile(any())).thenReturn(new ChannelContracts.ChannelProfile(
+                "channel-profile-1",
+                "feishu",
                 "飞书客服机器人",
-                ChannelContracts.ChannelAccountStatus.ACTIVE,
+                ChannelContracts.ChannelProfileStatus.ACTIVE,
                 java.util.Map.of("appId", "cli_xxx"),
                 Instant.parse("2026-04-01T00:00:00Z"),
                 Instant.parse("2026-04-01T00:00:00Z")
@@ -186,12 +186,12 @@ class ApiAuthorizationTest {
 
             MockMvc mockMvc = mockMvc(context);
 
-            mockMvc.perform(post("/api/channel-admin/accounts")
+            mockMvc.perform(post("/api/channel-admin/profiles")
                     .with(user("developer"))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content("""
                         {
-                          "providerType": "FEISHU",
+                          "providerType": "feishu",
                           "name": "飞书客服机器人",
                           "status": "ACTIVE",
                           "config": {
@@ -200,7 +200,17 @@ class ApiAuthorizationTest {
                         }
                         """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.id").value("channel-account-1"));
+                .andExpect(jsonPath("$.data.id").value("channel-profile-1"));
+        }
+    }
+
+    @Test
+    void shouldNotExposeOldChannelAdminAccountsPath() throws Exception {
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(TestConfig.class, AuthSecurityConfiguration.class)) {
+            MockMvc mockMvc = mockMvc(context);
+
+            mockMvc.perform(get("/api/channel-admin/accounts").with(user("developer")))
+                .andExpect(status().isNotFound());
         }
     }
 

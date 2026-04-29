@@ -19,7 +19,7 @@ class ChannelGatewayClientTest {
     void shouldSendInternalBearerToken() throws Exception {
         AtomicReference<String> authorization = new AtomicReference<>();
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
-        server.createContext("/internal/channel-admin/accounts", exchange -> {
+        server.createContext("/internal/channel-admin/profiles", exchange -> {
             authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
             writeJson(
                 exchange,
@@ -37,7 +37,7 @@ class ChannelGatewayClientTest {
 
         try {
             ChannelGatewayClient client = new ChannelGatewayClient(serverUrl(server), "internal-token", new ObjectMapper());
-            client.listAccounts();
+            client.listProfiles();
             assertEquals("Bearer internal-token", authorization.get());
         } finally {
             server.stop(0);
@@ -51,14 +51,14 @@ class ChannelGatewayClientTest {
               "type": "about:blank",
               "title": "Bad Request",
               "status": 400,
-              "detail": "channel account name is required"
+              "detail": "channel profile name is required"
             }
             """);
 
         try {
             ChannelGatewayClient client = new ChannelGatewayClient(serverUrl(server), "internal-token", new ObjectMapper());
-            IllegalArgumentException error = assertThrows(IllegalArgumentException.class, client::listAccounts);
-            assertEquals("channel account name is required", error.getMessage());
+            IllegalArgumentException error = assertThrows(IllegalArgumentException.class, client::listProfiles);
+            assertEquals("channel profile name is required", error.getMessage());
         } finally {
             server.stop(0);
         }
@@ -71,14 +71,14 @@ class ChannelGatewayClientTest {
               "type": "about:blank",
               "title": "Not Found",
               "status": 404,
-              "detail": "channel account not found"
+              "detail": "channel profile not found"
             }
             """);
 
         try {
             ChannelGatewayClient client = new ChannelGatewayClient(serverUrl(server), "internal-token", new ObjectMapper());
-            NoSuchElementException error = assertThrows(NoSuchElementException.class, client::listAccounts);
-            assertEquals("channel account not found", error.getMessage());
+            NoSuchElementException error = assertThrows(NoSuchElementException.class, client::listProfiles);
+            assertEquals("channel profile not found", error.getMessage());
         } finally {
             server.stop(0);
         }
@@ -91,14 +91,14 @@ class ChannelGatewayClientTest {
               "type": "about:blank",
               "title": "Conflict",
               "status": 409,
-              "detail": "channel account already exists"
+              "detail": "channel profile already exists"
             }
             """);
 
         try {
             ChannelGatewayClient client = new ChannelGatewayClient(serverUrl(server), "internal-token", new ObjectMapper());
-            ConflictException error = assertThrows(ConflictException.class, client::listAccounts);
-            assertEquals("channel account already exists", error.getMessage());
+            ConflictException error = assertThrows(ConflictException.class, client::listProfiles);
+            assertEquals("channel profile already exists", error.getMessage());
         } finally {
             server.stop(0);
         }
@@ -110,7 +110,7 @@ class ChannelGatewayClientTest {
 
     private static HttpServer errorServer(int statusCode, String payload) throws IOException {
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
-        server.createContext("/internal/channel-admin/accounts", exchange -> writeJson(exchange, statusCode, payload));
+        server.createContext("/internal/channel-admin/profiles", exchange -> writeJson(exchange, statusCode, payload));
         server.start();
         return server;
     }

@@ -36,16 +36,16 @@ public class ChannelInboundEventRecord extends UpdatableRecordImpl<ChannelInboun
     }
 
     /**
-     * Setter for <code>public.channel_inbound_event.channel_account_id</code>.
+     * Setter for <code>public.channel_inbound_event.channel_profile_id</code>.
      */
-    public void setChannelAccountId(String value) {
+    public void setChannelProfileId(String value) {
         set(1, value);
     }
 
     /**
-     * Getter for <code>public.channel_inbound_event.channel_account_id</code>.
+     * Getter for <code>public.channel_inbound_event.channel_profile_id</code>.
      */
-    public String getChannelAccountId() {
+    public String getChannelProfileId() {
         return (String) get(1);
     }
 
@@ -228,11 +228,11 @@ public class ChannelInboundEventRecord extends UpdatableRecordImpl<ChannelInboun
     /**
      * Create a detached, initialised ChannelInboundEventRecord
      */
-    public ChannelInboundEventRecord(String eventId, String channelAccountId, String providerType, String eventType, String externalEventId, String externalConversationId, String externalMessageId, String dedupKey, JSONB rawPayload, JSONB normalizedPayload, String status, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+    public ChannelInboundEventRecord(String eventId, String channelProfileId, String providerType, String eventType, String externalEventId, String externalConversationId, String externalMessageId, String dedupKey, JSONB rawPayload, JSONB normalizedPayload, String status, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
         super(ChannelInboundEvent.CHANNEL_INBOUND_EVENT);
 
         setEventId(eventId);
-        setChannelAccountId(channelAccountId);
+        setChannelProfileId(channelProfileId);
         setProviderType(providerType);
         setEventType(eventType);
         setExternalEventId(externalEventId);

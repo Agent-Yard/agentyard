@@ -3,12 +3,12 @@ import type {
   Assistant,
   BusinessDomain,
   CatalogSummary,
-  ChannelAccount,
+  ChannelProfile,
   ChannelConversationBinding,
   ChannelInboundEvent,
   ChannelOutboundDelivery,
   CreateAssistantPayload,
-  CreateChannelAccountPayload,
+  CreateChannelProfilePayload,
   CreateAgentPayload,
   CreateIntegrationAccountCredentialPayload,
   CreateSessionPayload,
@@ -53,7 +53,7 @@ import type {
   HumanOperatorReplyPayload,
   UpdateAssistantPayload,
   UpdateAgentPayload,
-  UpdateChannelAccountPayload,
+  UpdateChannelProfilePayload,
   UpdateDomainPayload,
   UpdateKnowledgeBasePayload,
   UpdateIntegrationAccountPayload,
@@ -184,18 +184,18 @@ function externalCallbackIdempotencyKey(
 export const api = {
   getSession: () => request<UserSession>('/auth/session'),
   getCatalogSummary: () => request<CatalogSummary>('/catalog/summary'),
-  listChannelAccounts: () => request<ChannelAccount[]>('/channel-admin/accounts'),
-  getChannelAccount: (accountId: string) => request<ChannelAccount>(`/channel-admin/accounts/${accountId}`),
-  createChannelAccount: (payload: CreateChannelAccountPayload) =>
-    request<ChannelAccount>('/channel-admin/accounts', jsonOptions('POST', payload)),
-  updateChannelAccount: (accountId: string, payload: UpdateChannelAccountPayload) =>
-    request<ChannelAccount>(`/channel-admin/accounts/${accountId}`, jsonOptions('PUT', payload)),
-  listChannelBindings: (accountId: string) =>
-    request<ChannelConversationBinding[]>(`/channel-admin/accounts/${accountId}/bindings`),
-  listChannelInboundEvents: (accountId: string) =>
-    request<ChannelInboundEvent[]>(`/channel-admin/accounts/${accountId}/inbound-events`),
-  listChannelOutboundDeliveries: (accountId: string) =>
-    request<ChannelOutboundDelivery[]>(`/channel-admin/accounts/${accountId}/outbound-deliveries`),
+  listChannelProfiles: () => request<ChannelProfile[]>('/channel-admin/profiles'),
+  getChannelProfile: (channelProfileId: string) => request<ChannelProfile>(`/channel-admin/profiles/${channelProfileId}`),
+  createChannelProfile: (payload: CreateChannelProfilePayload) =>
+    request<ChannelProfile>('/channel-admin/profiles', jsonOptions('POST', payload)),
+  updateChannelProfile: (channelProfileId: string, payload: UpdateChannelProfilePayload) =>
+    request<ChannelProfile>(`/channel-admin/profiles/${channelProfileId}`, jsonOptions('PUT', payload)),
+  listChannelBindings: (channelProfileId: string) =>
+    request<ChannelConversationBinding[]>(`/channel-admin/profiles/${channelProfileId}/bindings`),
+  listChannelInboundEvents: (channelProfileId: string) =>
+    request<ChannelInboundEvent[]>(`/channel-admin/profiles/${channelProfileId}/inbound-events`),
+  listChannelOutboundDeliveries: (channelProfileId: string) =>
+    request<ChannelOutboundDelivery[]>(`/channel-admin/profiles/${channelProfileId}/outbound-deliveries`),
   listIntegrationAccounts: () => request<IntegrationAccount[]>('/integration/accounts'),
   getIntegrationAccount: (accountId: string) => request<IntegrationAccount>(`/integration/accounts/${accountId}`),
   createIntegrationAccount: (payload: CreateIntegrationAccountPayload) =>

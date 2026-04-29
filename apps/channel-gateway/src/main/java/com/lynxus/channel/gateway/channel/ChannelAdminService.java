@@ -1,13 +1,12 @@
 package com.lynxus.channel.gateway.channel;
 
-import com.lynxus.contracts.channel.ChannelContracts.ChannelAccount;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelAccountStatus;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProfile;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileStatus;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderType;
-import com.lynxus.contracts.channel.ChannelContracts.CreateChannelAccountRequest;
-import com.lynxus.contracts.channel.ChannelContracts.UpdateChannelAccountRequest;
+import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileRequest;
+import com.lynxus.contracts.channel.ChannelContracts.UpdateChannelProfileRequest;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -23,66 +22,66 @@ public class ChannelAdminService {
         this.repository = repository;
     }
 
-    public List<ChannelAccount> listAccounts() {
-        return repository.listAccounts();
+    public List<ChannelProfile> listProfiles() {
+        return repository.listProfiles();
     }
 
-    public ChannelAccount createAccount(CreateChannelAccountRequest request) {
+    public ChannelProfile createProfile(CreateChannelProfileRequest request) {
         Instant now = Instant.now();
-        ChannelAccount account = new ChannelAccount(
-            nextId("channel-account"),
+        ChannelProfile profile = new ChannelProfile(
+            nextId("channel-profile"),
             requireProviderType(request.providerType()),
-            requireText(request.name(), "channelAccount.name"),
-            request.status() == null ? ChannelAccountStatus.ACTIVE : request.status(),
+            requireText(request.name(), "channelProfile.name"),
+            request.status() == null ? ChannelProfileStatus.ACTIVE : request.status(),
             request.config() == null ? Map.of() : request.config(),
             now,
             now
         );
-        repository.saveAccount(account);
-        return account;
+        repository.saveProfile(profile);
+        return profile;
     }
 
-    public ChannelAccount getAccount(String accountId) {
-        return repository.findAccount(accountId)
-            .orElseThrow(() -> new NoSuchElementException("channel account not found: " + accountId));
+    public ChannelProfile getProfile(String channelProfileId) {
+        return repository.findProfile(channelProfileId)
+            .orElseThrow(() -> new NoSuchElementException("channel profile not found: " + channelProfileId));
     }
 
-    public ChannelAccount updateAccount(String accountId, UpdateChannelAccountRequest request) {
-        ChannelAccount existing = getAccount(accountId);
-        ChannelAccount updated = new ChannelAccount(
+    public ChannelProfile updateProfile(String channelProfileId, UpdateChannelProfileRequest request) {
+        ChannelProfile existing = getProfile(channelProfileId);
+        ChannelProfile updated = new ChannelProfile(
             existing.id(),
             existing.providerType(),
-            requireText(request.name(), "channelAccount.name"),
+            requireText(request.name(), "channelProfile.name"),
             request.status() == null ? existing.status() : request.status(),
             request.config() == null ? existing.config() : request.config(),
             existing.createdAt(),
             Instant.now()
         );
-        repository.saveAccount(updated);
+        repository.saveProfile(updated);
         return updated;
     }
 
-    public List<ChannelConversationBinding> listBindings(String accountId) {
-        getAccount(accountId);
-        return repository.listBindings(accountId);
+    public List<ChannelConversationBinding> listBindings(String channelProfileId) {
+        getProfile(channelProfileId);
+        return repository.listBindings(channelProfileId);
     }
 
-    public List<ChannelInboundEvent> listInboundEvents(String accountId) {
-        getAccount(accountId);
-        return repository.listInboundEvents(accountId);
+    public List<ChannelInboundEvent> listInboundEvents(String channelProfileId) {
+        getProfile(channelProfileId);
+        return repository.listInboundEvents(channelProfileId);
     }
 
-    public List<ChannelOutboundDelivery> listOutboundDeliveries(String accountId) {
-        getAccount(accountId);
-        return repository.listOutboundDeliveries(accountId);
+    public List<ChannelOutboundDelivery> listOutboundDeliveries(String channelProfileId) {
+        getProfile(channelProfileId);
+        return repository.listOutboundDeliveries(channelProfileId);
     }
 
-    public ChannelAccount findAccountByProviderAppId(ChannelProviderType providerType, String appId) {
-        String normalizedAppId = requireText(appId, "channelAccount.config.appId");
-        return repository.listAccountsByProvider(providerType).stream()
-            .filter(account -> normalizedAppId.equals(String.valueOf(account.config().get("appId"))))
+    public ChannelProfile findProfileByProviderAppId(String providerType, String appId) {
+        String normalizedAppId = requireText(appId, "channelProfile.config.appId");
+        return repository.listProfilesByProvider(providerType).stream()
+            .filter(profile -> normalizedAppId.equals(String.valueOf(profile.config().get("appId"))))
             .findFirst()
-            .orElseThrow(() -> new NoSuchElementException("channel account not found for " + providerType.name() + " appId: " + normalizedAppId));
+            .orElseThrow(() -> new NoSuchElementException("channel profile not found for " + providerType + " appId: " + normalizedAppId));
     }
 
     public void saveInboundEvent(ChannelInboundEvent event) {
@@ -97,11 +96,11 @@ public class ChannelAdminService {
         return prefix + "-" + UUID.randomUUID().toString().substring(0, 8);
     }
 
-    private static ChannelProviderType requireProviderType(ChannelProviderType providerType) {
-        if (providerType == null) {
-            throw new IllegalArgumentException("channelAccount.providerType is required");
+    private static String requireProviderType(String providerType) {
+        if (providerType == null || providerType.isBlank()) {
+            throw new IllegalArgumentException("channelProfile.providerType is required");
         }
-        return providerType;
+        return providerType.trim();
     }
 
     private static String requireText(String value, String field) {

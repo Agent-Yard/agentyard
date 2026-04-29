@@ -1,4 +1,4 @@
-create table channel_account (
+create table channel_profile (
     id varchar(64) primary key,
     provider_type varchar(64) not null,
     name varchar(255) not null,
@@ -10,7 +10,7 @@ create table channel_account (
 
 create table channel_conversation_binding (
     id varchar(64) primary key,
-    channel_account_id varchar(64) not null,
+    channel_profile_id varchar(64) not null,
     external_conversation_id varchar(255) not null,
     external_user_id varchar(255),
     assistant_id varchar(64),
@@ -24,7 +24,7 @@ create table channel_conversation_binding (
 
 create table channel_inbound_event (
     event_id varchar(64) primary key,
-    channel_account_id varchar(64) not null,
+    channel_profile_id varchar(64) not null,
     provider_type varchar(64) not null,
     event_type varchar(128) not null,
     external_event_id varchar(255),
@@ -40,7 +40,7 @@ create table channel_inbound_event (
 
 create table channel_outbound_delivery (
     delivery_id varchar(64) primary key,
-    channel_account_id varchar(64) not null,
+    channel_profile_id varchar(64) not null,
     provider_type varchar(64) not null,
     session_id varchar(64),
     session_message_id varchar(64),
@@ -53,10 +53,10 @@ create table channel_outbound_delivery (
     updated_at timestamp with time zone not null
 );
 
-create unique index uk_channel_conversation_binding_external_conversation
-    on channel_conversation_binding (channel_account_id, external_conversation_id);
+create unique index uk_channel_conversation_binding_profile_external_conversation
+    on channel_conversation_binding (channel_profile_id, external_conversation_id);
 create unique index uk_channel_inbound_event_dedup_key on channel_inbound_event (dedup_key);
-create index idx_channel_account_updated on channel_account (updated_at desc);
-create index idx_channel_binding_account_updated on channel_conversation_binding (channel_account_id, updated_at desc);
-create index idx_channel_inbound_account_created on channel_inbound_event (channel_account_id, created_at desc);
-create index idx_channel_outbound_account_created on channel_outbound_delivery (channel_account_id, created_at desc);
+create index idx_channel_profile_updated on channel_profile (updated_at desc);
+create index idx_channel_binding_profile_updated on channel_conversation_binding (channel_profile_id, updated_at desc);
+create index idx_channel_inbound_profile_created on channel_inbound_event (channel_profile_id, created_at desc);
+create index idx_channel_outbound_profile_created on channel_outbound_delivery (channel_profile_id, created_at desc);

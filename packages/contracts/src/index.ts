@@ -31,8 +31,7 @@ export type IntegrationAccountCredentialStatus =
   | 'ROTATION_REQUIRED'
   | 'REVOKE_FAILED'
   | 'REVOKED';
-export type ChannelProviderType = 'FEISHU';
-export type ChannelAccountStatus = 'ACTIVE' | 'INACTIVE';
+export type ChannelProfileStatus = 'ACTIVE' | 'INACTIVE';
 export type ChannelConversationBindingStatus = 'ACTIVE' | 'ARCHIVED';
 export type ChannelInboundEventStatus = 'RECEIVED' | 'REJECTED';
 export type ChannelOutboundDeliveryStatus = 'PENDING' | 'SENT' | 'FAILED';
@@ -290,11 +289,11 @@ export interface PlatformEventPage {
   nextCursor: string | null;
 }
 
-export interface ChannelAccount {
+export interface ChannelProfile {
   id: string;
-  providerType: ChannelProviderType;
+  providerType: string;
   name: string;
-  status: ChannelAccountStatus;
+  status: ChannelProfileStatus;
   config: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
@@ -302,7 +301,7 @@ export interface ChannelAccount {
 
 export interface ChannelConversationBinding {
   id: string;
-  channelAccountId: string;
+  channelProfileId: string;
   externalConversationId: string;
   externalUserId: string | null;
   assistantId: string | null;
@@ -316,8 +315,8 @@ export interface ChannelConversationBinding {
 
 export interface ChannelInboundEvent {
   eventId: string;
-  channelAccountId: string;
-  providerType: ChannelProviderType;
+  channelProfileId: string;
+  providerType: string;
   eventType: string;
   externalEventId: string | null;
   externalConversationId: string | null;
@@ -332,8 +331,8 @@ export interface ChannelInboundEvent {
 
 export interface ChannelOutboundDelivery {
   deliveryId: string;
-  channelAccountId: string;
-  providerType: ChannelProviderType;
+  channelProfileId: string;
+  providerType: string;
   sessionId: string | null;
   sessionMessageId: string | null;
   externalConversationId: string | null;
@@ -345,16 +344,16 @@ export interface ChannelOutboundDelivery {
   updatedAt: string;
 }
 
-export interface CreateChannelAccountPayload {
-  providerType: ChannelProviderType;
+export interface CreateChannelProfilePayload {
+  providerType: string;
   name: string;
-  status?: ChannelAccountStatus | null;
+  status?: ChannelProfileStatus | null;
   config: Record<string, unknown>;
 }
 
-export interface UpdateChannelAccountPayload {
+export interface UpdateChannelProfilePayload {
   name: string;
-  status?: ChannelAccountStatus | null;
+  status?: ChannelProfileStatus | null;
   config: Record<string, unknown>;
 }
 

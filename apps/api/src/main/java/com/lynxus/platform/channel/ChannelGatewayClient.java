@@ -1,11 +1,11 @@
 package com.lynxus.platform.channel;
 
-import com.lynxus.contracts.channel.ChannelContracts.ChannelAccount;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
-import com.lynxus.contracts.channel.ChannelContracts.CreateChannelAccountRequest;
-import com.lynxus.contracts.channel.ChannelContracts.UpdateChannelAccountRequest;
+import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileRequest;
+import com.lynxus.contracts.channel.ChannelContracts.UpdateChannelProfileRequest;
 import com.lynxus.platform.shared.ConflictException;
 import com.lynxus.platform.shared.DownstreamServiceException;
 import com.lynxus.platform.shared.logging.PlatformLogContext;
@@ -24,7 +24,7 @@ import tools.jackson.databind.ObjectMapper;
 
 @Component
 public class ChannelGatewayClient {
-    private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelAccount>>> CHANNEL_ACCOUNT_LIST = new ParameterizedTypeReference<>() {
+    private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelProfile>>> CHANNEL_PROFILE_LIST = new ParameterizedTypeReference<>() {
     };
     private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelConversationBinding>>> CHANNEL_BINDING_LIST = new ParameterizedTypeReference<>() {
     };
@@ -54,56 +54,56 @@ public class ChannelGatewayClient {
             .build();
     }
 
-    public List<ChannelAccount> listAccounts() {
+    public List<ChannelProfile> listProfiles() {
         return invoke(() -> body(restClient.get()
-            .uri("/internal/channel-admin/accounts")
+            .uri("/internal/channel-admin/profiles")
             .retrieve()
-            .body(CHANNEL_ACCOUNT_LIST)));
+            .body(CHANNEL_PROFILE_LIST)));
     }
 
-    public ChannelAccount createAccount(CreateChannelAccountRequest request) {
+    public ChannelProfile createProfile(CreateChannelProfileRequest request) {
         return invoke(() -> body(restClient.post()
-            .uri("/internal/channel-admin/accounts")
+            .uri("/internal/channel-admin/profiles")
             .body(request)
             .retrieve()
-            .body(new ParameterizedTypeReference<ApiEnvelope<ChannelAccount>>() {
+            .body(new ParameterizedTypeReference<ApiEnvelope<ChannelProfile>>() {
             })));
     }
 
-    public ChannelAccount getAccount(String accountId) {
+    public ChannelProfile getProfile(String channelProfileId) {
         return invoke(() -> body(restClient.get()
-            .uri("/internal/channel-admin/accounts/{accountId}", accountId)
+            .uri("/internal/channel-admin/profiles/{channelProfileId}", channelProfileId)
             .retrieve()
-            .body(new ParameterizedTypeReference<ApiEnvelope<ChannelAccount>>() {
+            .body(new ParameterizedTypeReference<ApiEnvelope<ChannelProfile>>() {
             })));
     }
 
-    public ChannelAccount updateAccount(String accountId, UpdateChannelAccountRequest request) {
+    public ChannelProfile updateProfile(String channelProfileId, UpdateChannelProfileRequest request) {
         return invoke(() -> body(restClient.put()
-            .uri("/internal/channel-admin/accounts/{accountId}", accountId)
+            .uri("/internal/channel-admin/profiles/{channelProfileId}", channelProfileId)
             .body(request)
             .retrieve()
-            .body(new ParameterizedTypeReference<ApiEnvelope<ChannelAccount>>() {
+            .body(new ParameterizedTypeReference<ApiEnvelope<ChannelProfile>>() {
             })));
     }
 
-    public List<ChannelConversationBinding> listBindings(String accountId) {
+    public List<ChannelConversationBinding> listBindings(String channelProfileId) {
         return invoke(() -> body(restClient.get()
-            .uri("/internal/channel-admin/accounts/{accountId}/bindings", accountId)
+            .uri("/internal/channel-admin/profiles/{channelProfileId}/bindings", channelProfileId)
             .retrieve()
             .body(CHANNEL_BINDING_LIST)));
     }
 
-    public List<ChannelInboundEvent> listInboundEvents(String accountId) {
+    public List<ChannelInboundEvent> listInboundEvents(String channelProfileId) {
         return invoke(() -> body(restClient.get()
-            .uri("/internal/channel-admin/accounts/{accountId}/inbound-events", accountId)
+            .uri("/internal/channel-admin/profiles/{channelProfileId}/inbound-events", channelProfileId)
             .retrieve()
             .body(CHANNEL_INBOUND_EVENT_LIST)));
     }
 
-    public List<ChannelOutboundDelivery> listOutboundDeliveries(String accountId) {
+    public List<ChannelOutboundDelivery> listOutboundDeliveries(String channelProfileId) {
         return invoke(() -> body(restClient.get()
-            .uri("/internal/channel-admin/accounts/{accountId}/outbound-deliveries", accountId)
+            .uri("/internal/channel-admin/profiles/{channelProfileId}/outbound-deliveries", channelProfileId)
             .retrieve()
             .body(CHANNEL_OUTBOUND_DELIVERY_LIST)));
     }

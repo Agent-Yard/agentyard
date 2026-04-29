@@ -63,9 +63,9 @@ public class ChannelConversationBinding extends TableImpl<ChannelConversationBin
 
     /**
      * The column
-     * <code>public.channel_conversation_binding.channel_account_id</code>.
+     * <code>public.channel_conversation_binding.channel_profile_id</code>.
      */
-    public final TableField<ChannelConversationBindingRecord, String> CHANNEL_ACCOUNT_ID = createField(DSL.name("channel_account_id"), SQLDataType.VARCHAR(64).nullable(false), this, "");
+    public final TableField<ChannelConversationBindingRecord, String> CHANNEL_PROFILE_ID = createField(DSL.name("channel_profile_id"), SQLDataType.VARCHAR(64).nullable(false), this, "");
 
     /**
      * The column
@@ -152,7 +152,7 @@ public class ChannelConversationBinding extends TableImpl<ChannelConversationBin
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_CHANNEL_BINDING_ACCOUNT_UPDATED, Indexes.UK_CHANNEL_CONVERSATION_BINDING_EXTERNAL_CONVERSATION);
+        return Arrays.asList(Indexes.IDX_CHANNEL_BINDING_PROFILE_UPDATED, Indexes.UK_CHANNEL_CONVERSATION_BINDING_PROFILE_EXTERNAL_CONVERSATION);
     }
 
     @Override

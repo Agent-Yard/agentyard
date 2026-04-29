@@ -37,17 +37,17 @@ public class ChannelConversationBindingRecord extends UpdatableRecordImpl<Channe
 
     /**
      * Setter for
-     * <code>public.channel_conversation_binding.channel_account_id</code>.
+     * <code>public.channel_conversation_binding.channel_profile_id</code>.
      */
-    public void setChannelAccountId(String value) {
+    public void setChannelProfileId(String value) {
         set(1, value);
     }
 
     /**
      * Getter for
-     * <code>public.channel_conversation_binding.channel_account_id</code>.
+     * <code>public.channel_conversation_binding.channel_profile_id</code>.
      */
-    public String getChannelAccountId() {
+    public String getChannelProfileId() {
         return (String) get(1);
     }
 
@@ -204,11 +204,11 @@ public class ChannelConversationBindingRecord extends UpdatableRecordImpl<Channe
     /**
      * Create a detached, initialised ChannelConversationBindingRecord
      */
-    public ChannelConversationBindingRecord(String id, String channelAccountId, String externalConversationId, String externalUserId, String assistantId, String customerId, String sessionId, String status, JSONB metadata, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+    public ChannelConversationBindingRecord(String id, String channelProfileId, String externalConversationId, String externalUserId, String assistantId, String customerId, String sessionId, String status, JSONB metadata, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
         super(ChannelConversationBinding.CHANNEL_CONVERSATION_BINDING);
 
         setId(id);
-        setChannelAccountId(channelAccountId);
+        setChannelProfileId(channelProfileId);
         setExternalConversationId(externalConversationId);
         setExternalUserId(externalUserId);
         setAssistantId(assistantId);

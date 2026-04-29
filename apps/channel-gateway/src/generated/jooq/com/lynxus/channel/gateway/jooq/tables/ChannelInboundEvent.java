@@ -61,9 +61,9 @@ public class ChannelInboundEvent extends TableImpl<ChannelInboundEventRecord> {
     public final TableField<ChannelInboundEventRecord, String> EVENT_ID = createField(DSL.name("event_id"), SQLDataType.VARCHAR(64).nullable(false), this, "");
 
     /**
-     * The column <code>public.channel_inbound_event.channel_account_id</code>.
+     * The column <code>public.channel_inbound_event.channel_profile_id</code>.
      */
-    public final TableField<ChannelInboundEventRecord, String> CHANNEL_ACCOUNT_ID = createField(DSL.name("channel_account_id"), SQLDataType.VARCHAR(64).nullable(false), this, "");
+    public final TableField<ChannelInboundEventRecord, String> CHANNEL_PROFILE_ID = createField(DSL.name("channel_profile_id"), SQLDataType.VARCHAR(64).nullable(false), this, "");
 
     /**
      * The column <code>public.channel_inbound_event.provider_type</code>.
@@ -159,7 +159,7 @@ public class ChannelInboundEvent extends TableImpl<ChannelInboundEventRecord> {
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_CHANNEL_INBOUND_ACCOUNT_CREATED, Indexes.UK_CHANNEL_INBOUND_EVENT_DEDUP_KEY);
+        return Arrays.asList(Indexes.IDX_CHANNEL_INBOUND_PROFILE_CREATED, Indexes.UK_CHANNEL_INBOUND_EVENT_DEDUP_KEY);
     }
 
     @Override

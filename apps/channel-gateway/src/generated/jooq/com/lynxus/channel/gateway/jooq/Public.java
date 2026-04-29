@@ -4,10 +4,10 @@
 package com.lynxus.channel.gateway.jooq;
 
 
-import com.lynxus.channel.gateway.jooq.tables.ChannelAccount;
 import com.lynxus.channel.gateway.jooq.tables.ChannelConversationBinding;
 import com.lynxus.channel.gateway.jooq.tables.ChannelInboundEvent;
 import com.lynxus.channel.gateway.jooq.tables.ChannelOutboundDelivery;
+import com.lynxus.channel.gateway.jooq.tables.ChannelProfile;
 
 import java.util.Arrays;
 import java.util.List;
@@ -31,11 +31,6 @@ public class Public extends SchemaImpl {
     public static final Public PUBLIC = new Public();
 
     /**
-     * The table <code>public.channel_account</code>.
-     */
-    public final ChannelAccount CHANNEL_ACCOUNT = ChannelAccount.CHANNEL_ACCOUNT;
-
-    /**
      * The table <code>public.channel_conversation_binding</code>.
      */
     public final ChannelConversationBinding CHANNEL_CONVERSATION_BINDING = ChannelConversationBinding.CHANNEL_CONVERSATION_BINDING;
@@ -49,6 +44,11 @@ public class Public extends SchemaImpl {
      * The table <code>public.channel_outbound_delivery</code>.
      */
     public final ChannelOutboundDelivery CHANNEL_OUTBOUND_DELIVERY = ChannelOutboundDelivery.CHANNEL_OUTBOUND_DELIVERY;
+
+    /**
+     * The table <code>public.channel_profile</code>.
+     */
+    public final ChannelProfile CHANNEL_PROFILE = ChannelProfile.CHANNEL_PROFILE;
 
     /**
      * No further instances allowed
@@ -66,10 +66,10 @@ public class Public extends SchemaImpl {
     @Override
     public final List<Table<?>> getTables() {
         return Arrays.asList(
-            ChannelAccount.CHANNEL_ACCOUNT,
             ChannelConversationBinding.CHANNEL_CONVERSATION_BINDING,
             ChannelInboundEvent.CHANNEL_INBOUND_EVENT,
-            ChannelOutboundDelivery.CHANNEL_OUTBOUND_DELIVERY
+            ChannelOutboundDelivery.CHANNEL_OUTBOUND_DELIVERY,
+            ChannelProfile.CHANNEL_PROFILE
         );
     }
 }
