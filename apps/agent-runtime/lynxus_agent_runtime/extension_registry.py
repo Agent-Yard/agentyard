@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from copy import deepcopy
 import json
 import os
 from typing import Any, Callable, Protocol
@@ -11,7 +12,11 @@ from lynxus_extension_sdk.protocol import build_manifest_url, build_service_leve
 from lynxus_extension_sdk.registration import CORE_AGENT_RUNTIME_REGISTRATION_ID, ExtensionRegistration, ExtensionRegistrationSet
 from lynxus_extension_sdk.tool import tool_connector_definition_digest
 
-from .descriptor_provider import DescriptorProvider, default_descriptor_provider
+from .descriptor_provider import (
+    BUILT_IN_TOOL_CONNECTOR_DESCRIPTOR_IDS,
+    DescriptorProvider,
+    default_descriptor_provider,
+)
 from .extension_protocol import validate_manifest_against_protocol_schema
 from .extension_registration import load_extension_registration
 from .http_clients import shared_http_client_for_url
@@ -33,6 +38,68 @@ class LoadedToolConnectorManifest:
     errors: tuple[dict[str, Any], ...] = ()
 
 
+@dataclass(frozen=True)
+class ToolConnectorRegistryEntry:
+    connector_type: str
+    registration_id: str
+    base_url: str
+    descriptor: dict[str, Any]
+    invoke_path: str
+    in_process: bool = False
+
+
+class ToolConnectorRegistry:
+    def __init__(
+        self,
+        entries: tuple[ToolConnectorRegistryEntry, ...] | list[ToolConnectorRegistryEntry],
+        *,
+        validation_result: dict[str, Any] | None = None,
+    ) -> None:
+        entries_by_type: dict[str, ToolConnectorRegistryEntry] = {}
+        for entry in entries:
+            connector_type = entry.connector_type.strip()
+            if not connector_type:
+                raise ValueError("tool connector registry entry connector_type must not be blank")
+            if connector_type in entries_by_type:
+                raise ValueError(f"duplicate tool connector registry entry: {connector_type}")
+            entries_by_type[connector_type] = ToolConnectorRegistryEntry(
+                connector_type=connector_type,
+                registration_id=entry.registration_id,
+                base_url=entry.base_url,
+                descriptor=deepcopy(entry.descriptor),
+                invoke_path=entry.invoke_path,
+                in_process=entry.in_process,
+            )
+        self._entries_by_type = entries_by_type
+        self.validation_result = deepcopy(validation_result) if validation_result is not None else None
+
+    def get(self, connector_type: str) -> ToolConnectorRegistryEntry | None:
+        return self._entries_by_type.get(connector_type.strip())
+
+    def require(self, connector_type: str) -> ToolConnectorRegistryEntry:
+        entry = self.get(connector_type)
+        if entry is None:
+            raise ValueError(f"unsupported tool connector: {connector_type}")
+        return entry
+
+    def descriptor_ids(self) -> list[str]:
+        return _sorted_unique(self._entries_by_type)
+
+
+class ToolConnectorRegistryLoadError(RuntimeError):
+    def __init__(self, validation_result: dict[str, Any]) -> None:
+        self.validation_result = validation_result
+        super().__init__(validation_result.get("summary") or "Tool connector registry is not ready")
+
+
+@dataclass(frozen=True)
+class _LoadedToolConnectorRegistrySnapshot:
+    registration_set: ExtensionRegistrationSet
+    registrations: tuple[ExtensionRegistration, ...]
+    loaded_descriptor_entries: tuple[tuple[ExtensionRegistration, dict[str, Any]], ...]
+    manifest_errors: tuple[dict[str, Any], ...]
+
+
 def validate_tool_connector_registry(
     registration_set: ExtensionRegistrationSet | None = None,
     *,
@@ -42,22 +109,61 @@ def validate_tool_connector_registry(
     registration_set = registration_set or load_extension_registration()
     descriptor_provider = descriptor_provider or default_descriptor_provider()
     manifest_fetcher = manifest_fetcher or fetch_remote_manifest
+    snapshot = _load_tool_connector_registry_snapshot(registration_set, descriptor_provider, manifest_fetcher)
+    return _validation_result_from_snapshot(snapshot)
 
+
+def load_tool_connector_registry(
+    registration_set: ExtensionRegistrationSet | None = None,
+    *,
+    descriptor_provider: DescriptorProvider | None = None,
+    manifest_fetcher: ManifestFetcher | None = None,
+) -> ToolConnectorRegistry:
+    registration_set = registration_set or load_extension_registration()
+    descriptor_provider = descriptor_provider or default_descriptor_provider()
+    manifest_fetcher = manifest_fetcher or fetch_remote_manifest
+    snapshot = _load_tool_connector_registry_snapshot(registration_set, descriptor_provider, manifest_fetcher)
+    validation_result = _validation_result_from_snapshot(snapshot)
+    if validation_result.get("status") != "READY":
+        raise ToolConnectorRegistryLoadError(validation_result)
+    entries = tuple(_registry_entry(registration, descriptor) for registration, descriptor in snapshot.loaded_descriptor_entries)
+    return ToolConnectorRegistry(entries, validation_result=validation_result)
+
+
+def _load_tool_connector_registry_snapshot(
+    registration_set: ExtensionRegistrationSet,
+    descriptor_provider: DescriptorProvider,
+    manifest_fetcher: ManifestFetcher,
+) -> _LoadedToolConnectorRegistrySnapshot:
     registrations = _tool_connector_registrations(registration_set)
+    loaded_descriptor_entries: list[tuple[ExtensionRegistration, dict[str, Any]]] = []
+    manifest_errors: list[dict[str, Any]] = []
+
+    for registration in registrations:
+        loaded = _load_tool_connector_manifest(registration, descriptor_provider, manifest_fetcher)
+        loaded_descriptor_entries.extend((registration, descriptor) for descriptor in loaded.descriptors)
+        manifest_errors.extend(loaded.errors)
+
+    return _LoadedToolConnectorRegistrySnapshot(
+        registration_set=registration_set,
+        registrations=registrations,
+        loaded_descriptor_entries=tuple(loaded_descriptor_entries),
+        manifest_errors=tuple(manifest_errors),
+    )
+
+
+def _validation_result_from_snapshot(snapshot: _LoadedToolConnectorRegistrySnapshot) -> dict[str, Any]:
+    registrations = snapshot.registrations
     expected_descriptor_ids = _sorted_unique(
         descriptor_id
         for registration in registrations
         for descriptor_id in registration.exposes.tool_connector_types
     )
 
-    loaded_descriptor_entries: list[tuple[str, dict[str, Any]]] = []
-    manifest_errors: list[dict[str, Any]] = []
-
-    for registration in registrations:
-        loaded = _load_tool_connector_manifest(registration, descriptor_provider, manifest_fetcher)
-        loaded_descriptor_entries.extend((loaded.registration_id, descriptor) for descriptor in loaded.descriptors)
-        manifest_errors.extend(loaded.errors)
-
+    loaded_descriptor_entries = [
+        (registration.registration_id, descriptor)
+        for registration, descriptor in snapshot.loaded_descriptor_entries
+    ]
     loaded_descriptors = [descriptor for _, descriptor in loaded_descriptor_entries]
     loaded_descriptor_ids_in_order = [
         descriptor["connectorType"]
@@ -70,6 +176,7 @@ def validate_tool_connector_registry(
     loaded_set = set(loaded_descriptor_ids)
     missing_descriptor_ids = _sorted_unique(expected_set - loaded_set)
     unexpected_descriptor_ids = _sorted_unique(loaded_set - expected_set)
+    manifest_errors = list(snapshot.manifest_errors)
     descriptor_definition_digests = _definition_digests(loaded_descriptors, manifest_errors)
 
     registry_errors = _registry_descriptor_errors(
@@ -91,7 +198,7 @@ def validate_tool_connector_registry(
         "service": _SERVICE,
         "component": _COMPONENT,
         "registryType": TOOL_CONNECTOR_REGISTRY_TYPE,
-        "registrationConfigDigest": registration_set.registration_config_digest,
+        "registrationConfigDigest": snapshot.registration_set.registration_config_digest,
         "summary": "Tool connector registry is ready" if ready else "Tool connector registry is not ready",
         "errors": errors,
         "expectedDescriptorIds": expected_descriptor_ids,
@@ -102,6 +209,24 @@ def validate_tool_connector_registry(
         "duplicateDescriptorIds": duplicate_descriptor_ids,
         "manifestErrors": manifest_errors,
     }
+
+
+def _registry_entry(registration: ExtensionRegistration, descriptor: dict[str, Any]) -> ToolConnectorRegistryEntry:
+    connector_type = str(descriptor.get("connectorType") or "").strip()
+    endpoints = descriptor.get("endpoints")
+    invoke_path = ""
+    if isinstance(endpoints, dict):
+        invoke_path = str(endpoints.get("invoke") or "").strip()
+    if not connector_type or not invoke_path:
+        raise ValueError(f"tool connector descriptor {connector_type or '<unknown>'} is missing endpoints.invoke")
+    return ToolConnectorRegistryEntry(
+        connector_type=connector_type,
+        registration_id=registration.registration_id,
+        base_url=registration.base_url,
+        descriptor=deepcopy(descriptor),
+        invoke_path=invoke_path,
+        in_process=connector_type in BUILT_IN_TOOL_CONNECTOR_DESCRIPTOR_IDS,
+    )
 
 
 def fetch_remote_manifest(registration: ExtensionRegistration) -> bytes:
@@ -358,6 +483,10 @@ def _first_or_none(values: list[str] | None) -> str | None:
 __all__ = [
     "ManifestFetcher",
     "TOOL_CONNECTOR_REGISTRY_TYPE",
+    "ToolConnectorRegistry",
+    "ToolConnectorRegistryEntry",
+    "ToolConnectorRegistryLoadError",
     "fetch_remote_manifest",
+    "load_tool_connector_registry",
     "validate_tool_connector_registry",
 ]

@@ -20,10 +20,11 @@ from lynxus_common import (
 from .decisioning import execute_agent_turn
 from .descriptor_provider import default_descriptor_provider
 from .extension_registration import load_extension_registration
-from .extension_registry import validate_tool_connector_registry
+from .extension_registry import load_tool_connector_registry, validate_tool_connector_registry
 from .http_clients import reset_shared_http_client_registry
 from .models import AgentTurnExecutionOutcome, AgentTurnRequest, PlaybookToolTaskRequest, PlaybookToolTaskResult
 from .redis_support import RedisSettings, create_redis_client
+from .tool_connectors import reset_default_tool_connector_registry, set_default_tool_connector_registry
 from .tooling import execute_playbook_tool_task
 
 LOGGER = logging.getLogger("lynxus-agent-runtime")
@@ -47,13 +48,18 @@ async def lifespan(app: FastAPI):
     LOGGER = configure_structured_logging("agent-runtime", "LYNXUS_AGENT_RUNTIME_LOG_LEVEL", "lynxus-agent-runtime")
     extension_registration = load_extension_registration()
     app.state.extension_registration = extension_registration
-    app.state.extension_descriptor_provider = default_descriptor_provider()
+    descriptor_provider = default_descriptor_provider()
+    app.state.extension_descriptor_provider = descriptor_provider
+    tool_connector_registry = load_tool_connector_registry(extension_registration, descriptor_provider=descriptor_provider)
+    app.state.tool_connector_registry = tool_connector_registry
+    set_default_tool_connector_registry(tool_connector_registry)
     LOGGER.info(
         "extension registration loaded",
         extra={
             "instanceId": INSTANCE_ID,
             "registrationConfigDigest": extension_registration.registration_config_digest,
             "registrationCount": len(extension_registration.services),
+            "toolConnectorDescriptorIds": tool_connector_registry.descriptor_ids(),
         },
     )
     redis_settings = RedisSettings.from_env()
@@ -72,6 +78,7 @@ async def lifespan(app: FastAPI):
     app.state.redis_client = redis_client
     app.state.redis_settings = redis_settings
     yield
+    reset_default_tool_connector_registry()
     reset_shared_http_client_registry()
     await redis_client.aclose()
     clear_log_context()
@@ -131,9 +138,13 @@ async def tool_connector_registry_validation(
     request: Request,
     _: None = Depends(require_internal_bearer),
 ) -> JSONResponse:
-    registration_set = getattr(request.app.state, "extension_registration", None)
-    provider = getattr(request.app.state, "extension_descriptor_provider", None) or default_descriptor_provider()
-    result = validate_tool_connector_registry(registration_set, descriptor_provider=provider)
+    registry = getattr(request.app.state, "tool_connector_registry", None)
+    if registry is not None and registry.validation_result is not None:
+        result = registry.validation_result
+    else:
+        registration_set = getattr(request.app.state, "extension_registration", None)
+        provider = getattr(request.app.state, "extension_descriptor_provider", None) or default_descriptor_provider()
+        result = validate_tool_connector_registry(registration_set, descriptor_provider=provider)
     status_code = 200 if result.get("status") == "READY" else 503
     return JSONResponse(status_code=status_code, content=result)
 

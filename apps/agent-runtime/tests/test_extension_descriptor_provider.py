@@ -25,7 +25,7 @@ from lynxus_agent_runtime.descriptor_provider import (  # noqa: E402
     DescriptorProvider,
 )
 from lynxus_agent_runtime.extension_protocol import validate_manifest_against_protocol_schema  # noqa: E402
-from lynxus_agent_runtime.extension_registry import validate_tool_connector_registry  # noqa: E402
+from lynxus_agent_runtime.extension_registry import load_tool_connector_registry, validate_tool_connector_registry  # noqa: E402
 from lynxus_agent_runtime.extension_registry import fetch_remote_manifest  # noqa: E402
 from lynxus_agent_runtime.main import app  # noqa: E402
 
@@ -115,6 +115,31 @@ def test_core_preset_validation_uses_provider_without_self_http() -> None:
     fetcher.assert_not_called()
 
 
+def test_core_preset_registry_load_uses_provider_without_self_http() -> None:
+    provider = DescriptorProvider()
+    fetcher = Mock(side_effect=AssertionError("core preset must not fetch its own HTTP manifest"))
+
+    registry = load_tool_connector_registry(
+        _registration_set(
+            [
+                _registration(
+                    CORE_AGENT_RUNTIME_REGISTRATION_ID,
+                    tool_connector_types=BUILT_IN_TOOL_CONNECTOR_DESCRIPTOR_IDS,
+                    source=RegistrationSource.CORE_PRESET,
+                ),
+                _registration("channel-only", channel_provider_types=("enterprise.channel",)),
+            ]
+        ),
+        descriptor_provider=provider,
+        manifest_fetcher=fetcher,
+    )
+
+    assert registry.descriptor_ids() == list(BUILT_IN_TOOL_CONNECTOR_DESCRIPTOR_IDS)
+    assert registry.require("simple-http").in_process is True
+    assert registry.require("mcp").registration_id == CORE_AGENT_RUNTIME_REGISTRATION_ID
+    fetcher.assert_not_called()
+
+
 def test_non_core_validation_filters_to_tool_descriptors_and_calculates_digests() -> None:
     remote_tool = _remote_tool_descriptor("enterprise.acme.crm")
     channel_descriptor = {
@@ -163,6 +188,42 @@ def test_non_core_validation_filters_to_tool_descriptors_and_calculates_digests(
         "enterprise.acme.crm": tool_connector_definition_digest(remote_tool)
     }
     assert result["manifestErrors"] == []
+
+
+def test_non_core_registry_records_remote_invoke_metadata_and_ignores_channel_only_registration() -> None:
+    remote_tool = _remote_tool_descriptor("enterprise.acme.crm")
+    remote_manifest = {
+        "extensionApiVersion": 1,
+        "coreMinVersion": "0.8.0",
+        "coreMaxVersion": "0.9.x",
+        "descriptors": {
+            "channelProviders": [],
+            "toolConnectors": [remote_tool],
+        },
+    }
+    calls: list[str] = []
+
+    def fetcher(registration: ExtensionRegistration) -> bytes:
+        calls.append(registration.registration_id)
+        return canonical_bytes(remote_manifest)
+
+    registry = load_tool_connector_registry(
+        _registration_set(
+            [
+                _registration("enterprise-tools", tool_connector_types=("enterprise.acme.crm",)),
+                _registration("channel-only", channel_provider_types=("ignored.channel",)),
+            ]
+        ),
+        manifest_fetcher=fetcher,
+    )
+
+    entry = registry.require("enterprise.acme.crm")
+    assert calls == ["enterprise-tools"]
+    assert entry.in_process is False
+    assert entry.registration_id == "enterprise-tools"
+    assert entry.base_url == "https://extensions.example.test/enterprise-tools"
+    assert entry.invoke_path == "/tools/invoke"
+    assert entry.descriptor["connectorType"] == "enterprise.acme.crm"
 
 
 def test_validation_reports_structured_descriptor_registry_errors() -> None:
@@ -291,6 +352,7 @@ def test_validation_endpoint_returns_503_when_registry_is_not_ready() -> None:
 
     with patch("lynxus_agent_runtime.main.validate_tool_connector_registry", return_value=validation_result):
         with agent_runtime_client() as client:
+            client.app.state.tool_connector_registry = None
             response = client.get(
                 "/internal/extension-registry/tool-connectors/validation",
                 headers={"Authorization": "Bearer test-internal-token"},

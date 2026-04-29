@@ -654,6 +654,33 @@
   - Non-blocking follow-ups:
     - Web static connector config remains for Slice 10.
     - `retryPolicy` remains the existing string preset; structured retry parsing is deferred to later Slice 7 runtime adapter work.
+- Current subtask: Slice 7B agent-runtime ToolConnectorRegistry runtime lookup + remote invocation adapter.
+  - Scope target: agent-runtime consumes loaded tool connector descriptors for runtime dispatch; built-in reference descriptors still execute in-process, non-built-in descriptors execute through remote extension protocol.
+  - Keep API/Web/Channel/Slice 8+ untouched in 7B unless a compile/test contract requires a tiny adjustment.
+- Worker 7B completed agent-runtime ToolConnectorRegistry and remote invocation adapter.
+  - Added descriptor-backed `ToolConnectorRegistry` and startup-loaded default registry.
+  - Built-ins still dispatch in-process after registry lookup.
+  - Non-built-ins dispatch through `RemoteToolConnectorAdapter` using loaded registration `baseUrl` plus descriptor `endpoints.invoke`.
+  - Remote request body is release-snapshot-only and omits `accountId`, schemas, full descriptor, endpoint/baseUrl, token, credential material, and account config.
+  - Remote calls use SDK descriptor-level headers and SDK `ExtensionError` parsing.
+  - 2xx envelopes are validated and only `output` returns to existing tooling; existing output schema validation remains in `tooling`.
+  - Verification reported passed:
+    - `uv run pytest apps/agent-runtime/tests/test_remote_tool_connector.py -q`
+    - `uv run pytest apps/agent-runtime/tests/test_playbook_tool_task.py -q`
+    - `uv run pytest apps/agent-runtime/tests/test_extension_descriptor_provider.py -q`
+    - `uv run pytest apps/agent-runtime/tests -q`
+    - `git diff --check`
+  - Deferred follow-up: structured retry policy parsing / merge and circuit-breaker state remain pending; current adapter performs one foreground remote call only.
+- Checker 7B verdict: pass.
+  - Confirmed registry-backed dispatch, core preset self-load, built-in local execution, non-built-in remote adapter, SDK descriptor headers, snapshot-only request body, and response/error envelope handling.
+  - Confirmed no API/Web/Channel Profile/Slice 8/9/10/11 overreach.
+  - Verification passed:
+    - `uv run pytest apps/agent-runtime/tests/test_remote_tool_connector.py -q`
+    - `uv run pytest apps/agent-runtime/tests/test_playbook_tool_task.py -q`
+    - `uv run pytest apps/agent-runtime/tests/test_extension_descriptor_provider.py -q`
+    - `uv run pytest apps/agent-runtime/tests -q`
+    - `git diff --check`
+  - Non-blocking follow-up: revisit default idempotency key source before structured retry behavior lands so retries can use an explicit logical invocation id rather than only a content-derived key.
 - Worker 7A-DefaultRepair completed checker blocker repair.
   - Removed `CatalogService` static `simple-http` default connector choice and the default connector config helper.
   - Tool Resource normalization now rejects missing/null `connector` with a clear error; saved Tool resources must submit explicit `connectorType`, `config`, and `operationMappings`.
@@ -665,6 +692,19 @@
   - Missing Tool config and missing Tool connector config fail distinctly; LLM_MODEL and SKILL null-configuration default behavior is unchanged.
   - Added focused `CatalogServiceTest` coverage for Tool resource version create/update with top-level null configuration.
   - Kept agent-runtime, Web, contracts, Channel Profile, and Slice 11 artifacts out of scope.
+- Worker 7B completed agent-runtime Tool Connector registry dispatch and remote invocation adapter.
+  - Added a runtime `ToolConnectorRegistry` backed by the same descriptor/manifest loading path as validation; core `core-agent-runtime` self-load still reads `DescriptorProvider`, and channel-only registrations remain outside agent-runtime registry fetch.
+  - Runtime dispatch now requires a loaded registry descriptor entry before execution. Built-in descriptor ids (`simple-http`, `business-code-secret-http`, `mcp`) still execute in-process; non-built-in connector ids execute through the remote adapter using the loaded registration `baseUrl` plus descriptor `endpoints.invoke`.
+  - Remote invocation builds `RemoteToolInvokeRequest` only from the release snapshot: connector type, optional `accountSnapshot.externalSecretRef`, tool id/version/name, operation name/description, connector config, current operation mapping, input arguments, idempotency key, timeout, and traceparent. It omits account id, schemas, descriptor internals, endpoint/baseUrl/internal token, and credential material.
+  - Remote calls use Python SDK descriptor-level headers and `ExtensionError` parsing. 2xx responses must be JSON object envelopes with `status = SUCCEEDED`, object `output`, and object `metadata`; only `output` returns to existing tooling so output schema validation remains the core authority.
+  - Non-2xx valid `ExtensionError` maps to a structured runtime exception preserving HTTP status, category, error code, retryable, and details; invalid response envelopes raise protocol errors without logging or embedding `externalSecretRef`.
+  - Verification:
+    - `uv run pytest apps/agent-runtime/tests/test_remote_tool_connector.py -q` passed (`10 passed`).
+    - `uv run pytest apps/agent-runtime/tests/test_playbook_tool_task.py -q` passed (`8 passed`).
+    - `uv run pytest apps/agent-runtime/tests/test_extension_descriptor_provider.py -q` passed (`11 passed`).
+    - `uv run pytest apps/agent-runtime/tests -q` passed (`72 passed`).
+    - `git diff --check` passed.
+  - Deferred follow-up: structured connector retry policy parsing/merge and circuit-breaker state are still pending; 7B intentionally performs one foreground remote call and no scheduled/background retry work.
 
 ## Local Commit Policy
 
