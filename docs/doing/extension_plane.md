@@ -12,8 +12,8 @@
 
 ## Current Position
 
-- Current slice: Slice 7 - Tool connector manifest migration + remote invocation adapter.
-- Current subtask: Slice 7C retry/circuit acceptance for remote Tool Connector invocation.
+- Current slice: Slice 7 - Tool connector manifest migration + remote invocation adapter completed and checker-confirmed.
+- Current subtask: Slice 7 checkpoint complete; prepare to enter Slice 8 after rereading Slice 8 docs.
 - Main-agent role: orchestration, integration decisions, ledger maintenance, review of worker/checker output.
 - Implementation flow: worker implements each bounded subtask, independent checker reviews read-only, then main agent decides follow-up.
 
@@ -39,6 +39,7 @@
 - Slice 1 worker completed initial protocol package under `packages/extension-protocol`.
 - Slice 1 completed after checker repair and rerun; no blocking findings remain.
 - Slice 2 completed after checker repair and Slice 1-2 checkpoint; no blocking findings remain.
+- Slice 7 completed after 7A / 7B / 7C worker-checker cycles and checkpoint; no blocking findings remain.
 
 ## Cross-Module Impact Under Watch
 
@@ -710,6 +711,13 @@
     - `uv run pytest apps/agent-runtime/tests -q`
     - `git diff --check`
   - Non-blocking follow-up: add optional explicit coverage for `httpx.RequestError` connection failure and retry category mismatch if tests are expanded later.
+- Main Slice 7 checkpoint passed.
+  - `./gradlew :apps:api:test --tests '*Catalog*' --tests '*SessionRuntimeService*' --tests '*IntegrationAccount*'` passed.
+  - `uv run pytest apps/agent-runtime/tests -q` passed (`83 passed`).
+  - `pnpm --filter @lynxus/extension-protocol self-check` passed with `jsonAssets=77`, `jsonSchemas=9`, `examples=4`, `manifestFixtures=12`, `requestFixtures=24`, `canonicalFixtures=16`, `registrationLoaderFixtures=11`.
+  - `./gradlew :packages:contracts-jvm:compileJava :apps:api:compileJava` passed after removing unused `WorkflowContracts.ToolConnectorType`.
+  - Residual search confirmed no backend/runtime `ToolConnectorType` enum usage, `ToolConnectorCatalog`, or runtime top-level `connector.accountId` path remains.
+  - Remaining Web static connector config / `ToolConnectorType` remnants are explicitly deferred to Slice 10 schema-driven Web pages; not a Slice 7 backend/runtime blocker.
 - Worker 7C completed structured retry policy and remote retry/circuit acceptance.
   - Assistant release/session runtime contracts now carry structured Tool Connector retry policy (`mode`, attempts, delay/backoff, retryable categories, retryable error codes) instead of the saved catalog preset string.
   - API session runtime mapping converts saved `retryPolicy` presets only for `NONE`, `FIXED`, `EXPONENTIAL`, and `EXPONENTIAL_BACKOFF`; unknown presets fail clearly during release mapping.

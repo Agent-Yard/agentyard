@@ -22,12 +22,6 @@ public final class WorkflowContracts {
         SKILL
     }
 
-    public enum ToolConnectorType {
-        SIMPLE_HTTP,
-        BUSINESS_CODE_SECRET_HTTP,
-        MCP
-    }
-
     public enum ToolKind {
         RESOURCE,
         BUILTIN
