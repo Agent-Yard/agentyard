@@ -2,6 +2,7 @@ package com.lynxus.channel.gateway.channel;
 
 import com.lynxus.channel.gateway.shared.ApiResponse;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfigWriteRequest;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelTemplateBindingWriteRequest;
 import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileInternalRequest;
 import com.lynxus.contracts.channel.ChannelContracts.UpdateChannelProfileInternalRequest;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -72,6 +73,49 @@ public class InternalChannelAdminController {
     @GetMapping("/{channelProfileId}/outbound-deliveries")
     public ApiResponse<?> outboundDeliveries(@PathVariable String channelProfileId) {
         return ApiResponse.ok(channelAdminService.listOutboundDeliveries(channelProfileId));
+    }
+
+    @GetMapping("/{channelProfileId}/template-bindings")
+    public ApiResponse<?> templateBindings(@PathVariable String channelProfileId) {
+        return ApiResponse.ok(channelAdminService.listTemplateBindings(channelProfileId));
+    }
+
+    @PutMapping("/{channelProfileId}/template-bindings/{assistantId}/{messageType}/{messageSubtype}/{messageVersion}")
+    public ApiResponse<?> upsertTemplateBinding(
+        @PathVariable String channelProfileId,
+        @PathVariable String assistantId,
+        @PathVariable String messageType,
+        @PathVariable String messageSubtype,
+        @PathVariable String messageVersion,
+        @RequestBody ChannelTemplateBindingWriteRequest request
+    ) {
+        return ApiResponse.ok(channelAdminService.upsertTemplateBinding(
+            channelProfileId,
+            assistantId,
+            messageType,
+            messageSubtype,
+            messageVersion,
+            request
+        ));
+    }
+
+    @DeleteMapping("/{channelProfileId}/template-bindings/{assistantId}/{messageType}/{messageSubtype}/{messageVersion}")
+    public ApiResponse<?> deleteTemplateBinding(
+        @PathVariable String channelProfileId,
+        @PathVariable String assistantId,
+        @PathVariable String messageType,
+        @PathVariable String messageSubtype,
+        @PathVariable String messageVersion,
+        @RequestParam Long expectedRevision
+    ) {
+        return ApiResponse.ok(channelAdminService.deleteTemplateBinding(
+            channelProfileId,
+            assistantId,
+            messageType,
+            messageSubtype,
+            messageVersion,
+            expectedRevision
+        ));
     }
 
     @GetMapping("/{channelProfileId}/jobs")

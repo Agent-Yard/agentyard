@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -13,8 +14,11 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileStatus;
 import com.lynxus.channel.gateway.shared.ApiExceptionHandler;
 import com.lynxus.channel.gateway.shared.ConflictException;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelTemplateBinding;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelTemplateBindingWriteRequest;
 import com.lynxus.contracts.channel.ChannelContracts.UpdateChannelProfileInternalRequest;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -87,5 +91,80 @@ class InternalChannelAdminControllerTest {
                 .queryParam("expectedRevision", "2"))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.detail").value("channel profile revision conflict: channel-profile-1"));
+    }
+
+    @Test
+    void shouldExposeTemplateBindingCrudRoutes() throws Exception {
+        ChannelAdminService service = mock(ChannelAdminService.class);
+        ChannelTemplateBinding binding = new ChannelTemplateBinding(
+            "channel-template-binding-1",
+            "channel-profile-1",
+            "assistant-1",
+            "CARD",
+            "ORDER_STATUS",
+            "v1",
+            "tpl_123",
+            "published",
+            true,
+            Map.of("type", "object"),
+            "Order status",
+            "https://provider.example.com/templates/tpl_123",
+            1,
+            Instant.parse("2026-04-01T00:00:00Z"),
+            Instant.parse("2026-04-01T00:00:00Z")
+        );
+        when(service.listTemplateBindings("channel-profile-1")).thenReturn(List.of(binding));
+        when(service.upsertTemplateBinding(
+            eq("channel-profile-1"),
+            eq("assistant-1"),
+            eq("CARD"),
+            eq("ORDER_STATUS"),
+            eq("v1"),
+            any(ChannelTemplateBindingWriteRequest.class)
+        )).thenReturn(binding);
+        when(service.deleteTemplateBinding("channel-profile-1", "assistant-1", "CARD", "ORDER_STATUS", "v1", 1L))
+            .thenReturn(new ChannelTemplateBinding(
+                binding.id(),
+                binding.channelProfileId(),
+                binding.assistantId(),
+                binding.messageType(),
+                binding.messageSubtype(),
+                binding.messageVersion(),
+                binding.externalTemplateId(),
+                binding.externalTemplateVersion(),
+                false,
+                binding.variableSchema(),
+                binding.displayName(),
+                binding.externalEditUrl(),
+                2,
+                binding.createdAt(),
+                Instant.parse("2026-04-01T00:01:00Z")
+            ));
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new InternalChannelAdminController(service))
+            .setControllerAdvice(new ApiExceptionHandler())
+            .build();
+
+        mockMvc.perform(get("/internal/channel-admin/profiles/channel-profile-1/template-bindings"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data[0].externalTemplateId").value("tpl_123"));
+
+        mockMvc.perform(put("/internal/channel-admin/profiles/channel-profile-1/template-bindings/assistant-1/CARD/ORDER_STATUS/v1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "externalTemplateId": "tpl_123",
+                      "variableSchema": {},
+                      "displayName": "Order status",
+                      "enabled": true
+                    }
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.revision").value(1));
+
+        mockMvc.perform(delete("/internal/channel-admin/profiles/channel-profile-1/template-bindings/assistant-1/CARD/ORDER_STATUS/v1")
+                .queryParam("expectedRevision", "1"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.enabled").value(false))
+            .andExpect(jsonPath("$.data.revision").value(2));
     }
 }

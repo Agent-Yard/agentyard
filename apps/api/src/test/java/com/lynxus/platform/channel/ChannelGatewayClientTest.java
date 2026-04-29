@@ -10,6 +10,7 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileStatus;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfigWriteRequest;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobScheduleType;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobScheduleWriteConfig;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelTemplateBindingWriteRequest;
 import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileInternalRequest;
 import com.lynxus.platform.shared.ConflictException;
 import com.sun.net.httpserver.HttpServer;
@@ -301,6 +302,61 @@ class ChannelGatewayClientTest {
     }
 
     @Test
+    void shouldProxyTemplateBindingCrudToGateway() throws Exception {
+        AtomicReference<String> putMethod = new AtomicReference<>();
+        AtomicReference<String> putUri = new AtomicReference<>();
+        AtomicReference<String> putBody = new AtomicReference<>();
+        AtomicReference<String> deleteMethod = new AtomicReference<>();
+        AtomicReference<String> deleteUri = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/internal/channel-admin/profiles/channel-profile-1/template-bindings/assistant-1/CARD/ORDER_STATUS/v1", exchange -> {
+            if ("PUT".equals(exchange.getRequestMethod())) {
+                putMethod.set(exchange.getRequestMethod());
+                putUri.set(exchange.getRequestURI().toString());
+                putBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+                writeJson(exchange, 200, templateBindingJson(true, 1));
+                return;
+            }
+            deleteMethod.set(exchange.getRequestMethod());
+            deleteUri.set(exchange.getRequestURI().toString());
+            writeJson(exchange, 200, templateBindingJson(false, 2));
+        });
+        server.start();
+
+        try {
+            ChannelGatewayClient client = new ChannelGatewayClient(serverUrl(server), "internal-token", new ObjectMapper());
+            var saved = client.upsertTemplateBinding(
+                "channel-profile-1",
+                "assistant-1",
+                "CARD",
+                "ORDER_STATUS",
+                "v1",
+                new ChannelTemplateBindingWriteRequest(
+                    "tpl_123",
+                    "published",
+                    Map.of("type", "object"),
+                    "Order status",
+                    null,
+                    true,
+                    null
+                )
+            );
+            var disabled = client.deleteTemplateBinding("channel-profile-1", "assistant-1", "CARD", "ORDER_STATUS", "v1", 1L);
+
+            assertEquals("PUT", putMethod.get());
+            assertEquals("/internal/channel-admin/profiles/channel-profile-1/template-bindings/assistant-1/CARD/ORDER_STATUS/v1", putUri.get());
+            assertTrue(putBody.get().contains("\"externalTemplateId\":\"tpl_123\""));
+            assertEquals("tpl_123", saved.externalTemplateId());
+            assertEquals("DELETE", deleteMethod.get());
+            assertEquals("/internal/channel-admin/profiles/channel-profile-1/template-bindings/assistant-1/CARD/ORDER_STATUS/v1?expectedRevision=1", deleteUri.get());
+            assertFalse(disabled.enabled());
+            assertEquals(2, disabled.revision());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void shouldProxyProviderJobDeleteExpectedRevisionToGateway() throws Exception {
         AtomicReference<String> method = new AtomicReference<>();
         AtomicReference<String> requestUri = new AtomicReference<>();
@@ -435,5 +491,31 @@ class ChannelGatewayClientTest {
         try (OutputStream outputStream = exchange.getResponseBody()) {
             outputStream.write(body);
         }
+    }
+
+    private static String templateBindingJson(boolean enabled, int revision) {
+        return """
+            {
+              "success": true,
+              "data": {
+                "id": "channel-template-binding-1",
+                "channelProfileId": "channel-profile-1",
+                "assistantId": "assistant-1",
+                "messageType": "CARD",
+                "messageSubtype": "ORDER_STATUS",
+                "messageVersion": "v1",
+                "externalTemplateId": "tpl_123",
+                "externalTemplateVersion": "published",
+                "enabled": %s,
+                "variableSchema": {"type": "object"},
+                "displayName": "Order status",
+                "externalEditUrl": null,
+                "revision": %d,
+                "createdAt": "2026-04-23T00:00:00Z",
+                "updatedAt": "2026-04-23T00:00:00Z"
+              },
+              "timestamp": "2026-04-23T00:00:00Z"
+            }
+            """.formatted(enabled, revision);
     }
 }

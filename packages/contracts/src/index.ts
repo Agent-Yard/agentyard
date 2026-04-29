@@ -471,6 +471,51 @@ export interface ChannelOutboundDelivery {
   updatedAt: string;
 }
 
+export interface ChannelTemplateBindingKey {
+  channelProfileId: string;
+  assistantId: string;
+  messageType: string;
+  messageSubtype: string;
+  messageVersion: string;
+}
+
+export interface ChannelTemplateBinding {
+  id: string;
+  channelProfileId: string;
+  assistantId: string;
+  messageType: string;
+  messageSubtype: string;
+  messageVersion: string;
+  externalTemplateId: string;
+  externalTemplateVersion: string | null;
+  enabled: boolean;
+  variableSchema: Record<string, unknown>;
+  displayName: string;
+  externalEditUrl: string | null;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChannelTemplateBindingWritePayload {
+  externalTemplateId: string;
+  externalTemplateVersion?: string | null;
+  variableSchema?: Record<string, unknown> | null;
+  displayName: string;
+  externalEditUrl?: string | null;
+  enabled?: boolean | null;
+  expectedRevision?: number | null;
+}
+
+export interface ResolvedChannelTemplate {
+  externalTemplateId: string;
+  externalTemplateVersion: string | null;
+  variableSchema: Record<string, unknown>;
+  displayName: string;
+  externalEditUrl: string | null;
+  bindingRevision: number;
+}
+
 export interface ChannelProviderJobScheduleConfig {
   scheduleType: ChannelProviderJobScheduleType;
   intervalSeconds: number | null;

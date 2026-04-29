@@ -19,6 +19,9 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobScheduleC
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobScheduleType;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobScheduleWriteConfig;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobStatus;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelTemplateBinding;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelTemplateBindingKey;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelTemplateBindingWriteRequest;
 import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileInternalRequest;
 import com.lynxus.contracts.channel.ChannelContracts.UpdateChannelProfileInternalRequest;
 import java.time.ZoneId;
@@ -152,6 +155,113 @@ public class ChannelAdminService {
     public List<ChannelOutboundDelivery> listOutboundDeliveries(String channelProfileId) {
         getProfile(channelProfileId);
         return repository.listOutboundDeliveries(channelProfileId);
+    }
+
+    public List<ChannelTemplateBinding> listTemplateBindings(String channelProfileId) {
+        getProfile(channelProfileId);
+        return repository.listTemplateBindings(channelProfileId);
+    }
+
+    public ChannelTemplateBinding upsertTemplateBinding(
+        String channelProfileId,
+        String assistantId,
+        String messageType,
+        String messageSubtype,
+        String messageVersion,
+        ChannelTemplateBindingWriteRequest request
+    ) {
+        getProfile(channelProfileId);
+        ChannelTemplateBindingKey key = templateBindingKey(channelProfileId, assistantId, messageType, messageSubtype, messageVersion);
+        ChannelTemplateBinding existing = repository.findTemplateBinding(key).orElse(null);
+        Instant now = Instant.now();
+        String externalTemplateId = requireText(request == null ? null : request.externalTemplateId(), "templateBinding.externalTemplateId");
+        Map<String, Object> variableSchema = request == null ? Map.of() : request.variableSchema();
+        ChannelTemplateBindingVariableSchemaValidator.validate(variableSchema);
+
+        if (existing == null) {
+            Long expectedRevision = request == null ? null : request.expectedRevision();
+            if (expectedRevision != null && expectedRevision > 0) {
+                throw new ConflictException("channel template binding revision conflict: " + templateBindingLabel(key));
+            }
+            ChannelTemplateBinding created = new ChannelTemplateBinding(
+                nextId("channel-template-binding"),
+                key.channelProfileId(),
+                key.assistantId(),
+                key.messageType(),
+                key.messageSubtype(),
+                key.messageVersion(),
+                externalTemplateId,
+                normalizeOptionalText(request.externalTemplateVersion()),
+                request.enabled() == null || request.enabled(),
+                variableSchema,
+                normalizeDisplayName(request.displayName(), externalTemplateId),
+                normalizeOptionalText(request.externalEditUrl()),
+                1,
+                now,
+                now
+            );
+            repository.createTemplateBinding(created);
+            return created;
+        }
+
+        long expectedRevision = requireExpectedRevision(request == null ? null : request.expectedRevision(), "templateBinding.expectedRevision");
+        ChannelTemplateBinding updated = new ChannelTemplateBinding(
+            existing.id(),
+            existing.channelProfileId(),
+            existing.assistantId(),
+            existing.messageType(),
+            existing.messageSubtype(),
+            existing.messageVersion(),
+            externalTemplateId,
+            normalizeOptionalText(request.externalTemplateVersion()),
+            request.enabled() == null || request.enabled(),
+            variableSchema,
+            normalizeDisplayName(request.displayName(), externalTemplateId),
+            normalizeOptionalText(request.externalEditUrl()),
+            existing.revision() + 1,
+            existing.createdAt(),
+            now
+        );
+        if (!repository.updateTemplateBinding(updated, expectedRevision)) {
+            throw new ConflictException("channel template binding revision conflict: " + templateBindingLabel(key));
+        }
+        return updated;
+    }
+
+    public ChannelTemplateBinding deleteTemplateBinding(
+        String channelProfileId,
+        String assistantId,
+        String messageType,
+        String messageSubtype,
+        String messageVersion,
+        Long expectedRevisionValue
+    ) {
+        getProfile(channelProfileId);
+        ChannelTemplateBindingKey key = templateBindingKey(channelProfileId, assistantId, messageType, messageSubtype, messageVersion);
+        ChannelTemplateBinding existing = repository.findTemplateBinding(key)
+            .orElseThrow(() -> new NoSuchElementException("channel template binding not found: " + templateBindingLabel(key)));
+        long expectedRevision = requireExpectedRevision(expectedRevisionValue, "templateBinding.expectedRevision");
+        Instant now = Instant.now();
+        if (!repository.disableTemplateBinding(existing.id(), expectedRevision, existing.revision() + 1, now)) {
+            throw new ConflictException("channel template binding revision conflict: " + templateBindingLabel(key));
+        }
+        return new ChannelTemplateBinding(
+            existing.id(),
+            existing.channelProfileId(),
+            existing.assistantId(),
+            existing.messageType(),
+            existing.messageSubtype(),
+            existing.messageVersion(),
+            existing.externalTemplateId(),
+            existing.externalTemplateVersion(),
+            false,
+            existing.variableSchema(),
+            existing.displayName(),
+            existing.externalEditUrl(),
+            existing.revision() + 1,
+            existing.createdAt(),
+            now
+        );
     }
 
     public List<ChannelProviderJobConfig> listJobs(String channelProfileId) {
@@ -304,6 +414,11 @@ public class ChannelAdminService {
         return value == null || value.isBlank() ? null : value.trim();
     }
 
+    private static String normalizeDisplayName(String value, String externalTemplateId) {
+        String normalized = normalizeOptionalText(value);
+        return normalized == null ? externalTemplateId : normalized;
+    }
+
     private static boolean hasText(String value) {
         return value != null && !value.isBlank();
     }
@@ -313,6 +428,26 @@ public class ChannelAdminService {
         String normalizedJobType = requireText(jobType, "channelProviderJob.jobType");
         return descriptor.findJobDefinition(normalizedJobType)
             .orElseThrow(() -> new UnprocessableEntityException("unknown channel provider jobType: " + normalizedJobType));
+    }
+
+    private static ChannelTemplateBindingKey templateBindingKey(
+        String channelProfileId,
+        String assistantId,
+        String messageType,
+        String messageSubtype,
+        String messageVersion
+    ) {
+        return new ChannelTemplateBindingKey(
+            requireText(channelProfileId, "templateBinding.channelProfileId"),
+            requireText(assistantId, "templateBinding.assistantId"),
+            requireText(messageType, "templateBinding.messageType"),
+            requireText(messageSubtype, "templateBinding.messageSubtype"),
+            requireText(messageVersion, "templateBinding.messageVersion")
+        );
+    }
+
+    private static String templateBindingLabel(ChannelTemplateBindingKey key) {
+        return key.channelProfileId() + "/" + key.assistantId() + "/" + key.messageType() + "/" + key.messageSubtype() + "/" + key.messageVersion();
     }
 
     private ChannelProviderJobScheduleConfig normalizeScheduleConfig(

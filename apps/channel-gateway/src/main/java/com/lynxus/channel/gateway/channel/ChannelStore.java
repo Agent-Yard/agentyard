@@ -17,6 +17,8 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobRunStatus
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobScheduleConfig;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobScheduleType;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobStatus;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelTemplateBinding;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelTemplateBindingKey;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -31,6 +33,7 @@ import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_INBOUND_EVENT;
 import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_OUTBOUND_DELIVERY;
 import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_PROFILE_JOB;
 import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_PROFILE_JOB_RUN;
+import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_PROFILE_TEMPLATE_BINDING;
 
 final class ChannelStore {
     private final DSLContext dsl;
@@ -276,6 +279,76 @@ final class ChannelStore {
             .set(CHANNEL_OUTBOUND_DELIVERY.CREATED_AT, JooqTimeSupport.toOffsetDateTime(delivery.createdAt()))
             .set(CHANNEL_OUTBOUND_DELIVERY.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(delivery.updatedAt()))
             .execute();
+    }
+
+    List<ChannelTemplateBinding> listTemplateBindings(String channelProfileId) {
+        return dsl.selectFrom(CHANNEL_PROFILE_TEMPLATE_BINDING)
+            .where(CHANNEL_PROFILE_TEMPLATE_BINDING.CHANNEL_PROFILE_ID.eq(channelProfileId))
+            .orderBy(
+                CHANNEL_PROFILE_TEMPLATE_BINDING.UPDATED_AT.desc(),
+                CHANNEL_PROFILE_TEMPLATE_BINDING.ASSISTANT_ID.asc(),
+                CHANNEL_PROFILE_TEMPLATE_BINDING.MESSAGE_TYPE.asc(),
+                CHANNEL_PROFILE_TEMPLATE_BINDING.MESSAGE_SUBTYPE.asc(),
+                CHANNEL_PROFILE_TEMPLATE_BINDING.MESSAGE_VERSION.asc()
+            )
+            .fetch(this::mapTemplateBinding);
+    }
+
+    Optional<ChannelTemplateBinding> findTemplateBinding(ChannelTemplateBindingKey key) {
+        return dsl.selectFrom(CHANNEL_PROFILE_TEMPLATE_BINDING)
+            .where(CHANNEL_PROFILE_TEMPLATE_BINDING.CHANNEL_PROFILE_ID.eq(key.channelProfileId()))
+            .and(CHANNEL_PROFILE_TEMPLATE_BINDING.ASSISTANT_ID.eq(key.assistantId()))
+            .and(CHANNEL_PROFILE_TEMPLATE_BINDING.MESSAGE_TYPE.eq(key.messageType()))
+            .and(CHANNEL_PROFILE_TEMPLATE_BINDING.MESSAGE_SUBTYPE.eq(key.messageSubtype()))
+            .and(CHANNEL_PROFILE_TEMPLATE_BINDING.MESSAGE_VERSION.eq(key.messageVersion()))
+            .fetchOptional(this::mapTemplateBinding);
+    }
+
+    void createTemplateBinding(ChannelTemplateBinding binding) {
+        dsl.insertInto(CHANNEL_PROFILE_TEMPLATE_BINDING)
+            .set(CHANNEL_PROFILE_TEMPLATE_BINDING.ID, binding.id())
+            .set(CHANNEL_PROFILE_TEMPLATE_BINDING.CHANNEL_PROFILE_ID, binding.channelProfileId())
+            .set(CHANNEL_PROFILE_TEMPLATE_BINDING.ASSISTANT_ID, binding.assistantId())
+            .set(CHANNEL_PROFILE_TEMPLATE_BINDING.MESSAGE_TYPE, binding.messageType())
+            .set(CHANNEL_PROFILE_TEMPLATE_BINDING.MESSAGE_SUBTYPE, binding.messageSubtype())
+            .set(CHANNEL_PROFILE_TEMPLATE_BINDING.MESSAGE_VERSION, binding.messageVersion())
+            .set(CHANNEL_PROFILE_TEMPLATE_BINDING.EXTERNAL_TEMPLATE_ID, binding.externalTemplateId())
+            .set(CHANNEL_PROFILE_TEMPLATE_BINDING.EXTERNAL_TEMPLATE_VERSION, binding.externalTemplateVersion())
+            .set(CHANNEL_PROFILE_TEMPLATE_BINDING.ENABLED, binding.enabled())
+            .set(CHANNEL_PROFILE_TEMPLATE_BINDING.VARIABLE_SCHEMA, jsonbSupport.toJsonb(binding.variableSchema()))
+            .set(CHANNEL_PROFILE_TEMPLATE_BINDING.DISPLAY_NAME, binding.displayName())
+            .set(CHANNEL_PROFILE_TEMPLATE_BINDING.EXTERNAL_EDIT_URL, binding.externalEditUrl())
+            .set(CHANNEL_PROFILE_TEMPLATE_BINDING.REVISION, binding.revision())
+            .set(CHANNEL_PROFILE_TEMPLATE_BINDING.CREATED_AT, JooqTimeSupport.toOffsetDateTime(binding.createdAt()))
+            .set(CHANNEL_PROFILE_TEMPLATE_BINDING.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(binding.updatedAt()))
+            .execute();
+    }
+
+    boolean updateTemplateBinding(ChannelTemplateBinding binding, long expectedRevision) {
+        int rows = dsl.update(CHANNEL_PROFILE_TEMPLATE_BINDING)
+            .set(CHANNEL_PROFILE_TEMPLATE_BINDING.EXTERNAL_TEMPLATE_ID, binding.externalTemplateId())
+            .set(CHANNEL_PROFILE_TEMPLATE_BINDING.EXTERNAL_TEMPLATE_VERSION, binding.externalTemplateVersion())
+            .set(CHANNEL_PROFILE_TEMPLATE_BINDING.ENABLED, binding.enabled())
+            .set(CHANNEL_PROFILE_TEMPLATE_BINDING.VARIABLE_SCHEMA, jsonbSupport.toJsonb(binding.variableSchema()))
+            .set(CHANNEL_PROFILE_TEMPLATE_BINDING.DISPLAY_NAME, binding.displayName())
+            .set(CHANNEL_PROFILE_TEMPLATE_BINDING.EXTERNAL_EDIT_URL, binding.externalEditUrl())
+            .set(CHANNEL_PROFILE_TEMPLATE_BINDING.REVISION, binding.revision())
+            .set(CHANNEL_PROFILE_TEMPLATE_BINDING.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(binding.updatedAt()))
+            .where(CHANNEL_PROFILE_TEMPLATE_BINDING.ID.eq(binding.id()))
+            .and(CHANNEL_PROFILE_TEMPLATE_BINDING.REVISION.eq(expectedRevision))
+            .execute();
+        return rows == 1;
+    }
+
+    boolean disableTemplateBinding(String bindingId, long expectedRevision, long nextRevision, Instant updatedAt) {
+        int rows = dsl.update(CHANNEL_PROFILE_TEMPLATE_BINDING)
+            .set(CHANNEL_PROFILE_TEMPLATE_BINDING.ENABLED, false)
+            .set(CHANNEL_PROFILE_TEMPLATE_BINDING.REVISION, nextRevision)
+            .set(CHANNEL_PROFILE_TEMPLATE_BINDING.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(updatedAt))
+            .where(CHANNEL_PROFILE_TEMPLATE_BINDING.ID.eq(bindingId))
+            .and(CHANNEL_PROFILE_TEMPLATE_BINDING.REVISION.eq(expectedRevision))
+            .execute();
+        return rows == 1;
     }
 
     List<ChannelProviderJobConfig> listJobs(String channelProfileId, List<String> jobTypes) {
@@ -613,6 +686,26 @@ final class ChannelStore {
             record.get(CHANNEL_OUTBOUND_DELIVERY.LAST_ERROR),
             JooqTimeSupport.toInstant(record.get(CHANNEL_OUTBOUND_DELIVERY.CREATED_AT)),
             JooqTimeSupport.toInstant(record.get(CHANNEL_OUTBOUND_DELIVERY.UPDATED_AT))
+        );
+    }
+
+    private ChannelTemplateBinding mapTemplateBinding(Record record) {
+        return new ChannelTemplateBinding(
+            record.get(CHANNEL_PROFILE_TEMPLATE_BINDING.ID),
+            record.get(CHANNEL_PROFILE_TEMPLATE_BINDING.CHANNEL_PROFILE_ID),
+            record.get(CHANNEL_PROFILE_TEMPLATE_BINDING.ASSISTANT_ID),
+            record.get(CHANNEL_PROFILE_TEMPLATE_BINDING.MESSAGE_TYPE),
+            record.get(CHANNEL_PROFILE_TEMPLATE_BINDING.MESSAGE_SUBTYPE),
+            record.get(CHANNEL_PROFILE_TEMPLATE_BINDING.MESSAGE_VERSION),
+            record.get(CHANNEL_PROFILE_TEMPLATE_BINDING.EXTERNAL_TEMPLATE_ID),
+            record.get(CHANNEL_PROFILE_TEMPLATE_BINDING.EXTERNAL_TEMPLATE_VERSION),
+            record.get(CHANNEL_PROFILE_TEMPLATE_BINDING.ENABLED),
+            jsonbSupport.readObjectMap(record.get(CHANNEL_PROFILE_TEMPLATE_BINDING.VARIABLE_SCHEMA)),
+            record.get(CHANNEL_PROFILE_TEMPLATE_BINDING.DISPLAY_NAME),
+            record.get(CHANNEL_PROFILE_TEMPLATE_BINDING.EXTERNAL_EDIT_URL),
+            record.get(CHANNEL_PROFILE_TEMPLATE_BINDING.REVISION),
+            JooqTimeSupport.toInstant(record.get(CHANNEL_PROFILE_TEMPLATE_BINDING.CREATED_AT)),
+            JooqTimeSupport.toInstant(record.get(CHANNEL_PROFILE_TEMPLATE_BINDING.UPDATED_AT))
         );
     }
 

@@ -7,6 +7,8 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfig;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfigWriteRequest;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobRun;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelTemplateBinding;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelTemplateBindingWriteRequest;
 import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileInternalRequest;
 import com.lynxus.contracts.channel.ChannelContracts.UpdateChannelProfileInternalRequest;
 import com.lynxus.platform.shared.ConflictException;
@@ -34,6 +36,8 @@ public class ChannelGatewayClient {
     private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelInboundEvent>>> CHANNEL_INBOUND_EVENT_LIST = new ParameterizedTypeReference<>() {
     };
     private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelOutboundDelivery>>> CHANNEL_OUTBOUND_DELIVERY_LIST = new ParameterizedTypeReference<>() {
+    };
+    private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelTemplateBinding>>> CHANNEL_TEMPLATE_BINDING_LIST = new ParameterizedTypeReference<>() {
     };
     private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelProviderJobConfig>>> CHANNEL_PROVIDER_JOB_LIST = new ParameterizedTypeReference<>() {
     };
@@ -124,6 +128,54 @@ public class ChannelGatewayClient {
             .uri("/internal/channel-admin/profiles/{channelProfileId}/outbound-deliveries", channelProfileId)
             .retrieve()
             .body(CHANNEL_OUTBOUND_DELIVERY_LIST)));
+    }
+
+    public List<ChannelTemplateBinding> listTemplateBindings(String channelProfileId) {
+        return invoke(() -> body(restClient.get()
+            .uri("/internal/channel-admin/profiles/{channelProfileId}/template-bindings", channelProfileId)
+            .retrieve()
+            .body(CHANNEL_TEMPLATE_BINDING_LIST)));
+    }
+
+    public ChannelTemplateBinding upsertTemplateBinding(
+        String channelProfileId,
+        String assistantId,
+        String messageType,
+        String messageSubtype,
+        String messageVersion,
+        ChannelTemplateBindingWriteRequest request
+    ) {
+        return invoke(() -> body(restClient.put()
+            .uri(
+                "/internal/channel-admin/profiles/{channelProfileId}/template-bindings/{assistantId}/{messageType}/{messageSubtype}/{messageVersion}",
+                channelProfileId,
+                assistantId,
+                messageType,
+                messageSubtype,
+                messageVersion
+            )
+            .body(request)
+            .retrieve()
+            .body(new ParameterizedTypeReference<ApiEnvelope<ChannelTemplateBinding>>() {
+            })));
+    }
+
+    public ChannelTemplateBinding deleteTemplateBinding(
+        String channelProfileId,
+        String assistantId,
+        String messageType,
+        String messageSubtype,
+        String messageVersion,
+        long expectedRevision
+    ) {
+        return invoke(() -> body(restClient.delete()
+            .uri(uriBuilder -> uriBuilder
+                .path("/internal/channel-admin/profiles/{channelProfileId}/template-bindings/{assistantId}/{messageType}/{messageSubtype}/{messageVersion}")
+                .queryParam("expectedRevision", expectedRevision)
+                .build(channelProfileId, assistantId, messageType, messageSubtype, messageVersion))
+            .retrieve()
+            .body(new ParameterizedTypeReference<ApiEnvelope<ChannelTemplateBinding>>() {
+            })));
     }
 
     public List<ChannelProviderJobConfig> listJobs(String channelProfileId) {

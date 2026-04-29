@@ -13,7 +13,7 @@
 ## Current Position
 
 - Current slice: Slice 9 - Normalized event + provider job + outbound/template binding.
-- Current subtask: Slice 9C provider job execution foundation. Outbound delivery conversion, template binding CRUD/resolution, and schema-driven Web pages remain later subtasks.
+- Current subtask: Slice 9D1 external template binding CRUD + resolver foundation. Outbound delivery execution/failure foundation and schema-driven Web pages remain later subtasks.
 - Main-agent role: orchestration, integration decisions, ledger maintenance, review of worker/checker output.
 - Implementation flow: worker implements each bounded subtask, independent checker reviews read-only, then main agent decides follow-up.
 
@@ -88,9 +88,48 @@
 - Decision: current `ChannelAssistantBinding` is still the Slice 8 thin shape (`assistantId` / `scenarioId`). Slice 9A will route/bind using the saved `assistantId` and default customer identity from `externalUserId` falling back to `externalConversationId`; the fuller assistant binding fields in the docs remain a follow-up when the Web/profile schema-driven work expands that DTO.
 - Decision: Slice 9B will add provider job runtime tables, DTOs, validation, and Web-facing/internal channel-admin job config/history endpoints. It will not start the scheduled scanner, acquire Redis locks, execute remote/gateway-native `runJob`, or create manual run records yet. `DELETE` on a provider job will be implemented as disable/status transition rather than physical deletion so run history remains meaningful.
 - Decision: Slice 9C will implement provider job execution foundation: due-job scanner, manual run endpoint, Redis per-job lock, DB claim/status state machine, run row creation/completion/failure/timeout recovery, remote `runJob` invocation with descriptor headers and generated idempotency key, and ingestion of normalized events returned by the provider. It will not implement outbound delivery conversion, template binding CRUD/resolution, schema-driven Web pages, credential refresh/rotate/status sync jobs, scheduled outbound retry, Core -> provider mapping/status API, or Slice 11 artifacts.
+- Decision: Slice 9D will implement channel runtime external template binding CRUD/resolution and outbound delivery execution/failure foundation. It will keep outbound delivery single-attempt/no scheduled retry, snapshot canonical message block plus resolved external template reference, and route remote providers through manifest `sendOutbound`. It will not add schema-driven Web pages, provider-native template body parsing, scheduled outbound retry, provider job credential refresh/status sync, Core -> provider mapping/status API, or Slice 11 artifacts.
+- Decision: Split Slice 9D into 9D1 template binding CRUD/resolver and 9D2 outbound execution/failure state. 9D1 will add `channel_profile_template_binding`, Web-facing/internal CRUD contracts, thin Web service methods, secret-safe variable schema validation, and a resolver for assistant/profile/message type tuple. It will not execute outbound deliveries or call provider `sendOutbound`; that remains 9D2.
 
 ## Worker / Checker Notes
 
+- Worker 9D1 completed external template binding CRUD + resolver foundation.
+  - Added channel-gateway-owned `channel_profile_template_binding` with natural key `channel_profile_id + assistant_id + message_type + message_subtype + message_version`, soft-disable via `enabled = false`, revision increments, timestamps, external template id/version, variable schema, display name, and external edit URL. It stores no provider-native template body, card JSON, or provider-native payload.
+  - Regenerated committed channel-gateway jOOQ sources for the new table.
+  - Added JVM/TS contract types, internal OpenAPI `/internal/channel-admin/profiles/{channelProfileId}/template-bindings...`, Web-facing OpenAPI `/api/channel-admin/profiles/{channelProfileId}/template-bindings...`, API proxy methods, and thin Web service methods/types.
+  - Implemented gateway create/list/update/delete-disable behavior with profile existence validation, nonblank path tuple validation, required `externalTemplateId`, normalized display fields, expectedRevision semantics, stale revision 409, and secret-marker rejection in `variableSchema`.
+  - Added `ChannelTemplateBindingResolver`, which resolves only enabled bindings by `(assistantId, channelProfileId, messageType, messageSubtype, messageVersion)` and returns the external template reference plus variable schema/display metadata without parsing provider template bodies.
+  - Decisions:
+    - `messageSubtype` is a required nonblank path segment for this slice; no null sentinel was introduced.
+    - DELETE preserves the row with `enabled=false` and increments revision to keep admin history/display fields intact.
+    - API performs minimal syntactic tuple validation and validates `messageType` against `SessionMessageBlockType`. A cheap assistant visibility/publishability validator is not currently wired into `ChannelAdminService`, so full assistant/message tuple ownership validation remains deferred instead of overbuilding a cross-module dependency in 9D1.
+  - Explicitly did not implement outbound delivery execution/failure transitions, provider `sendOutbound`, provider-native payload conversion, schema-driven Web pages/forms, credential refresh/rotate/status sync provider jobs, scheduled outbound retry, Core -> provider mapping/status API, inbound verification status, or Slice 11 artifacts.
+  - Verification:
+    - `./gradlew :apps:channel-gateway:generateJooq` passed.
+    - `./gradlew :apps:channel-gateway:test --tests '*TemplateBinding*' --tests '*ChannelAdmin*' --tests '*InternalAuth*'` passed.
+    - `./gradlew :apps:api:test --tests '*ChannelGatewayClient*' --tests '*ChannelAdmin*' --tests '*ApiAuthorization*'` passed.
+    - `pnpm --filter @lynxus/web test -- api` passed (`18` tests).
+    - `ruby -e 'require "yaml"; Dir["packages/contracts/openapi/*.yaml"].each { |path| YAML.load_file(path) }; puts "openapi yaml ok"'` passed.
+    - Old channel account naming guardrail scan shows only intentional negative authorization tests for removed `/channel-admin/accounts` paths.
+    - `externalSecretRef` guardrail scan shows only existing internal account snapshot/materialization, normalized-event rejection/sanitization tests, provider job runtime invocation, and internal snapshot contract usage; template binding DTOs and Web-facing reads do not expose raw secret refs.
+    - Scope guardrail scan found only existing descriptor/test mentions of `sendOutbound`; 9D1 did not add outbound execution, provider-native template body storage, schema-driven Web pages, scheduled outbound retry, credential refresh/status sync, or Slice 11 artifacts.
+    - `git diff --check` passed.
+  - Residual risks:
+    - API-side assistant visibility/publishability and precise platform message tuple validation remain a follow-up because no cheap validator is currently available in the channel admin service boundary.
+- Checker 9D1 verdict: pass.
+  - Confirmed `channel_profile_template_binding` migration and generated jOOQ contain only external mapping fields, with no provider-native template body, card JSON, or payload storage.
+  - Confirmed gateway create/update/delete-disable revision semantics, profile existence check, tuple validation, recursive secret-marker rejection, and enabled-only resolver behavior.
+  - Confirmed API and Web additions are thin proxy/service additions and API does not read channel runtime tables.
+  - Confirmed no outbound send execution, scheduled outbound retry, credential refresh/status sync, schema-driven Web pages, or Slice 11 artifacts were added.
+  - Checker verification:
+    - `./gradlew :apps:channel-gateway:test --tests '*TemplateBinding*' --tests '*ChannelAdmin*' --tests '*InternalAuth*' --rerun-tasks` passed.
+    - `./gradlew :apps:api:test --tests '*ChannelGatewayClient*' --tests '*ChannelAdmin*' --tests '*ApiAuthorization*' --rerun-tasks` passed.
+    - `pnpm --filter @lynxus/web test -- api` passed (`18` tests).
+    - OpenAPI YAML parse passed.
+    - `git diff --check` passed.
+  - Main follow-up: broadened gateway secret-marker regression coverage to include `externalSecretRef`, snake/camel credential keys, password, API key, access/refresh tokens, private key, webhook signing secret, and `secret: true`; validator now normalizes key separators before matching. Focused channel-gateway test rerun passed.
+  - Residual risks:
+    - API-side assistant visibility/publishability and precise platform message tuple validation remain deferred to a later slice because no cheap validator is currently available in the channel admin service boundary.
 - Worker 9C completed provider job execution foundation.
   - Added channel-gateway provider job execution state machine: scheduled due-job scan, manual run path, exact Redis lock key format `channel-provider-job:{jobId}`, DB row-lock claim using `channel_profile_job.status`, run-row creation only after successful claim, success/failure/timeout completion, stale `RUNNING` recovery when the Redis lock is absent, and terminal-run protection for late completion.
   - Added remote provider `runJob` adapter using loaded descriptor registration metadata (`registrationId`, `baseUrl`, manifest `endpoints.runJob`) without exposing runtime URL/path through definition endpoints. Requests use `LynxusExtensionHttp.descriptorLevelHeaders(...)`, `Idempotency-Key`, generated idempotency keys, runtime profile config, optional runtime `externalSecretRef`, and the protocol `ChannelRunJobRequest` envelope. Returned events are ingested through the existing normalized event service.
@@ -1224,4 +1263,4 @@
 
 ## Blockers / Rework
 
-- No active blockers for completed Slice 9C.
+- No active blockers for completed Slice 9D1.

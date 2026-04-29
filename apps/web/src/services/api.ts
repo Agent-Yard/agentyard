@@ -10,6 +10,8 @@ import type {
   ChannelProviderJobConfig,
   ChannelProviderJobConfigWritePayload,
   ChannelProviderJobRun,
+  ChannelTemplateBinding,
+  ChannelTemplateBindingWritePayload,
   CreateAssistantPayload,
   CreateChannelProfilePayload,
   CreateAgentPayload,
@@ -204,6 +206,32 @@ export const api = {
     request<ChannelInboundEvent[]>(`/channel-admin/profiles/${channelProfileId}/inbound-events`),
   listChannelOutboundDeliveries: (channelProfileId: string) =>
     request<ChannelOutboundDelivery[]>(`/channel-admin/profiles/${channelProfileId}/outbound-deliveries`),
+  listChannelTemplateBindings: (channelProfileId: string) =>
+    request<ChannelTemplateBinding[]>(`/channel-admin/profiles/${channelProfileId}/template-bindings`),
+  upsertChannelTemplateBinding: (
+    channelProfileId: string,
+    assistantId: string,
+    messageType: string,
+    messageSubtype: string,
+    messageVersion: string,
+    payload: ChannelTemplateBindingWritePayload,
+  ) =>
+    request<ChannelTemplateBinding>(
+      `/channel-admin/profiles/${channelProfileId}/template-bindings/${encodeURIComponent(assistantId)}/${encodeURIComponent(messageType)}/${encodeURIComponent(messageSubtype)}/${encodeURIComponent(messageVersion)}`,
+      jsonOptions('PUT', payload),
+    ),
+  deleteChannelTemplateBinding: (
+    channelProfileId: string,
+    assistantId: string,
+    messageType: string,
+    messageSubtype: string,
+    messageVersion: string,
+    expectedRevision: number,
+  ) =>
+    request<ChannelTemplateBinding>(
+      `/channel-admin/profiles/${channelProfileId}/template-bindings/${encodeURIComponent(assistantId)}/${encodeURIComponent(messageType)}/${encodeURIComponent(messageSubtype)}/${encodeURIComponent(messageVersion)}?${new URLSearchParams({ expectedRevision: String(expectedRevision) }).toString()}`,
+      jsonOptions('DELETE'),
+    ),
   listChannelProviderJobs: (channelProfileId: string) =>
     request<ChannelProviderJobConfig[]>(`/channel-admin/profiles/${channelProfileId}/jobs`),
   upsertChannelProviderJob: (channelProfileId: string, jobType: string, payload: ChannelProviderJobConfigWritePayload) =>

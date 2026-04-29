@@ -10,10 +10,13 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfig;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfigWriteRequest;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobRun;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelTemplateBinding;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelTemplateBindingWriteRequest;
 import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileInternalRequest;
 import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileRequest;
 import com.lynxus.contracts.channel.ChannelContracts.UpdateChannelProfileInternalRequest;
 import com.lynxus.contracts.channel.ChannelContracts.UpdateChannelProfileRequest;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageBlockType;
 import com.lynxus.platform.extension.ExtensionDefinitionService;
 import com.lynxus.platform.extension.ExtensionDefinitionDtos.ChannelProviderDefinition;
 import com.lynxus.platform.integration.IntegrationAccountService;
@@ -94,6 +97,48 @@ public class ChannelAdminService {
 
     public List<ChannelOutboundDelivery> listOutboundDeliveries(String channelProfileId) {
         return channelGatewayClient.listOutboundDeliveries(channelProfileId);
+    }
+
+    public List<ChannelTemplateBinding> listTemplateBindings(String channelProfileId) {
+        return channelGatewayClient.listTemplateBindings(channelProfileId);
+    }
+
+    public ChannelTemplateBinding upsertTemplateBinding(
+        String channelProfileId,
+        String assistantId,
+        String messageType,
+        String messageSubtype,
+        String messageVersion,
+        ChannelTemplateBindingWriteRequest request
+    ) {
+        validateTemplateBindingTuple(assistantId, messageType, messageSubtype, messageVersion);
+        return channelGatewayClient.upsertTemplateBinding(
+            channelProfileId,
+            assistantId,
+            messageType,
+            messageSubtype,
+            messageVersion,
+            request
+        );
+    }
+
+    public ChannelTemplateBinding deleteTemplateBinding(
+        String channelProfileId,
+        String assistantId,
+        String messageType,
+        String messageSubtype,
+        String messageVersion,
+        long expectedRevision
+    ) {
+        validateTemplateBindingTuple(assistantId, messageType, messageSubtype, messageVersion);
+        return channelGatewayClient.deleteTemplateBinding(
+            channelProfileId,
+            assistantId,
+            messageType,
+            messageSubtype,
+            messageVersion,
+            expectedRevision
+        );
     }
 
     public List<ChannelProviderJobConfig> listJobs(String channelProfileId) {
@@ -193,5 +238,29 @@ public class ChannelAdminService {
         if (!found) {
             throw new IllegalArgumentException("unknown channel provider jobType: " + jobType);
         }
+    }
+
+    private static void validateTemplateBindingTuple(
+        String assistantId,
+        String messageType,
+        String messageSubtype,
+        String messageVersion
+    ) {
+        requireText(assistantId, "templateBinding.assistantId");
+        requireText(messageSubtype, "templateBinding.messageSubtype");
+        requireText(messageVersion, "templateBinding.messageVersion");
+        String normalizedMessageType = requireText(messageType, "templateBinding.messageType");
+        try {
+            SessionMessageBlockType.valueOf(normalizedMessageType);
+        } catch (IllegalArgumentException error) {
+            throw new IllegalArgumentException("unknown session message block type: " + messageType);
+        }
+    }
+
+    private static String requireText(String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(field + " is required");
+        }
+        return value.trim();
     }
 }

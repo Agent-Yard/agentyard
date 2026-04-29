@@ -8,6 +8,7 @@ import com.lynxus.channel.gateway.jooq.Indexes;
 import com.lynxus.channel.gateway.jooq.Keys;
 import com.lynxus.channel.gateway.jooq.Public;
 import com.lynxus.channel.gateway.jooq.tables.ChannelProfileJob.ChannelProfileJobPath;
+import com.lynxus.channel.gateway.jooq.tables.ChannelProfileTemplateBinding.ChannelProfileTemplateBindingPath;
 import com.lynxus.channel.gateway.jooq.tables.records.ChannelProfileRecord;
 
 import java.time.OffsetDateTime;
@@ -208,6 +209,19 @@ public class ChannelProfile extends TableImpl<ChannelProfileRecord> {
             _channelProfileJob = new ChannelProfileJobPath(this, null, Keys.CHANNEL_PROFILE_JOB__CHANNEL_PROFILE_JOB_CHANNEL_PROFILE_ID_FKEY.getInverseKey());
 
         return _channelProfileJob;
+    }
+
+    private transient ChannelProfileTemplateBindingPath _channelProfileTemplateBinding;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.channel_profile_template_binding</code> table
+     */
+    public ChannelProfileTemplateBindingPath channelProfileTemplateBinding() {
+        if (_channelProfileTemplateBinding == null)
+            _channelProfileTemplateBinding = new ChannelProfileTemplateBindingPath(this, null, Keys.CHANNEL_PROFILE_TEMPLATE_BINDING__CHANNEL_PROFILE_TEMPLATE_BINDING_CHANNEL_PROFILE_ID_FKEY.getInverseKey());
+
+        return _channelProfileTemplateBinding;
     }
 
     @Override

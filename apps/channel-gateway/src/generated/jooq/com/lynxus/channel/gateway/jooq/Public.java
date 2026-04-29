@@ -10,6 +10,7 @@ import com.lynxus.channel.gateway.jooq.tables.ChannelOutboundDelivery;
 import com.lynxus.channel.gateway.jooq.tables.ChannelProfile;
 import com.lynxus.channel.gateway.jooq.tables.ChannelProfileJob;
 import com.lynxus.channel.gateway.jooq.tables.ChannelProfileJobRun;
+import com.lynxus.channel.gateway.jooq.tables.ChannelProfileTemplateBinding;
 
 import java.util.Arrays;
 import java.util.List;
@@ -63,6 +64,11 @@ public class Public extends SchemaImpl {
     public final ChannelProfileJobRun CHANNEL_PROFILE_JOB_RUN = ChannelProfileJobRun.CHANNEL_PROFILE_JOB_RUN;
 
     /**
+     * The table <code>public.channel_profile_template_binding</code>.
+     */
+    public final ChannelProfileTemplateBinding CHANNEL_PROFILE_TEMPLATE_BINDING = ChannelProfileTemplateBinding.CHANNEL_PROFILE_TEMPLATE_BINDING;
+
+    /**
      * No further instances allowed
      */
     private Public() {
@@ -83,7 +89,8 @@ public class Public extends SchemaImpl {
             ChannelOutboundDelivery.CHANNEL_OUTBOUND_DELIVERY,
             ChannelProfile.CHANNEL_PROFILE,
             ChannelProfileJob.CHANNEL_PROFILE_JOB,
-            ChannelProfileJobRun.CHANNEL_PROFILE_JOB_RUN
+            ChannelProfileJobRun.CHANNEL_PROFILE_JOB_RUN,
+            ChannelProfileTemplateBinding.CHANNEL_PROFILE_TEMPLATE_BINDING
         );
     }
 }

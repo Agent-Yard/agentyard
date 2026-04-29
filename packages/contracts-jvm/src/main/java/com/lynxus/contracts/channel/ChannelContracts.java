@@ -290,6 +290,64 @@ public final class ChannelContracts {
         }
     }
 
+    public record ChannelTemplateBindingKey(
+        String channelProfileId,
+        String assistantId,
+        String messageType,
+        String messageSubtype,
+        String messageVersion
+    ) {
+    }
+
+    public record ChannelTemplateBinding(
+        String id,
+        String channelProfileId,
+        String assistantId,
+        String messageType,
+        String messageSubtype,
+        String messageVersion,
+        String externalTemplateId,
+        String externalTemplateVersion,
+        boolean enabled,
+        Map<String, Object> variableSchema,
+        String displayName,
+        String externalEditUrl,
+        long revision,
+        Instant createdAt,
+        Instant updatedAt
+    ) {
+        public ChannelTemplateBinding {
+            variableSchema = immutableObjectMap(variableSchema);
+        }
+    }
+
+    public record ChannelTemplateBindingWriteRequest(
+        String externalTemplateId,
+        String externalTemplateVersion,
+        Map<String, Object> variableSchema,
+        String displayName,
+        String externalEditUrl,
+        Boolean enabled,
+        Long expectedRevision
+    ) {
+        public ChannelTemplateBindingWriteRequest {
+            variableSchema = immutableObjectMap(variableSchema);
+        }
+    }
+
+    public record ResolvedChannelTemplate(
+        String externalTemplateId,
+        String externalTemplateVersion,
+        Map<String, Object> variableSchema,
+        String displayName,
+        String externalEditUrl,
+        long bindingRevision
+    ) {
+        public ResolvedChannelTemplate {
+            variableSchema = immutableObjectMap(variableSchema);
+        }
+    }
+
     public record ChannelProviderJobScheduleConfig(
         ChannelProviderJobScheduleType scheduleType,
         Integer intervalSeconds,

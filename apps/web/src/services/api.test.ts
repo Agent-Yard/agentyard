@@ -291,6 +291,97 @@ describe('api client', () => {
     );
   });
 
+  it('puts channel template bindings through the control-plane api', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        data: {
+          id: 'channel-template-binding-1',
+          channelProfileId: 'channel-profile-1',
+          assistantId: 'assistant-1',
+          messageType: 'CARD',
+          messageSubtype: 'ORDER_STATUS',
+          messageVersion: 'v1',
+          externalTemplateId: 'tpl_123',
+          externalTemplateVersion: 'published',
+          enabled: true,
+          variableSchema: { type: 'object' },
+          displayName: 'Order status',
+          externalEditUrl: null,
+          revision: 1,
+          createdAt: '2026-04-01T00:00:00Z',
+          updatedAt: '2026-04-01T00:00:00Z',
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.upsertChannelTemplateBinding('channel-profile-1', 'assistant-1', 'CARD', 'ORDER_STATUS', 'v1', {
+      externalTemplateId: 'tpl_123',
+      externalTemplateVersion: 'published',
+      variableSchema: { type: 'object' },
+      displayName: 'Order status',
+      enabled: true,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/channel-admin/profiles/channel-profile-1/template-bindings/assistant-1/CARD/ORDER_STATUS/v1',
+      expect.objectContaining({
+        credentials: 'include',
+        method: 'PUT',
+        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          externalTemplateId: 'tpl_123',
+          externalTemplateVersion: 'published',
+          variableSchema: { type: 'object' },
+          displayName: 'Order status',
+          enabled: true,
+        }),
+      }),
+    );
+  });
+
+  it('deletes channel template bindings with expected revision through the control-plane api', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        data: {
+          id: 'channel-template-binding-1',
+          channelProfileId: 'channel-profile-1',
+          assistantId: 'assistant-1',
+          messageType: 'CARD',
+          messageSubtype: 'ORDER_STATUS',
+          messageVersion: 'v1',
+          externalTemplateId: 'tpl_123',
+          externalTemplateVersion: 'published',
+          enabled: false,
+          variableSchema: { type: 'object' },
+          displayName: 'Order status',
+          externalEditUrl: null,
+          revision: 2,
+          createdAt: '2026-04-01T00:00:00Z',
+          updatedAt: '2026-04-01T00:01:00Z',
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.deleteChannelTemplateBinding('channel-profile-1', 'assistant-1', 'CARD', 'ORDER_STATUS', 'v1', 1);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/channel-admin/profiles/channel-profile-1/template-bindings/assistant-1/CARD/ORDER_STATUS/v1?expectedRevision=1',
+      expect.objectContaining({
+        credentials: 'include',
+        method: 'DELETE',
+        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
+      }),
+    );
+  });
+
   it('puts provider job config through the control-plane api', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({

@@ -10,6 +10,7 @@ import com.lynxus.channel.gateway.jooq.tables.ChannelOutboundDelivery;
 import com.lynxus.channel.gateway.jooq.tables.ChannelProfile;
 import com.lynxus.channel.gateway.jooq.tables.ChannelProfileJob;
 import com.lynxus.channel.gateway.jooq.tables.ChannelProfileJobRun;
+import com.lynxus.channel.gateway.jooq.tables.ChannelProfileTemplateBinding;
 
 
 /**
@@ -47,4 +48,9 @@ public class Tables {
      * The table <code>public.channel_profile_job_run</code>.
      */
     public static final ChannelProfileJobRun CHANNEL_PROFILE_JOB_RUN = ChannelProfileJobRun.CHANNEL_PROFILE_JOB_RUN;
+
+    /**
+     * The table <code>public.channel_profile_template_binding</code>.
+     */
+    public static final ChannelProfileTemplateBinding CHANNEL_PROFILE_TEMPLATE_BINDING = ChannelProfileTemplateBinding.CHANNEL_PROFILE_TEMPLATE_BINDING;
 }

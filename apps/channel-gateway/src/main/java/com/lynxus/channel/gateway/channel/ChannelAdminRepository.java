@@ -7,6 +7,8 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfig;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobRun;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelTemplateBinding;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelTemplateBindingKey;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -97,6 +99,26 @@ public class ChannelAdminRepository {
 
     public void saveOutboundDelivery(ChannelOutboundDelivery delivery) {
         store.saveOutboundDelivery(delivery);
+    }
+
+    public List<ChannelTemplateBinding> listTemplateBindings(String channelProfileId) {
+        return store.listTemplateBindings(channelProfileId);
+    }
+
+    public Optional<ChannelTemplateBinding> findTemplateBinding(ChannelTemplateBindingKey key) {
+        return store.findTemplateBinding(key);
+    }
+
+    public void createTemplateBinding(ChannelTemplateBinding binding) {
+        store.createTemplateBinding(binding);
+    }
+
+    public boolean updateTemplateBinding(ChannelTemplateBinding binding, long expectedRevision) {
+        return store.updateTemplateBinding(binding, expectedRevision);
+    }
+
+    public boolean disableTemplateBinding(String bindingId, long expectedRevision, long nextRevision, Instant updatedAt) {
+        return store.disableTemplateBinding(bindingId, expectedRevision, nextRevision, updatedAt);
     }
 
     public List<ChannelProviderJobConfig> listJobs(String channelProfileId, List<String> jobTypes) {

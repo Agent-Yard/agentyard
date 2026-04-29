@@ -13,6 +13,7 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelAssistantBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileStatus;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelTemplateBindingWriteRequest;
 import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileInternalRequest;
 import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileRequest;
 import com.lynxus.platform.integration.IntegrationAccountService;
@@ -198,5 +199,44 @@ class ChannelAdminServiceTest {
         assertEquals(3, profile.revision());
         String publicJson = new ObjectMapper().writeValueAsString(profile);
         assertFalse(publicJson.contains("externalSecretRef"));
+    }
+
+    @Test
+    void shouldProxyTemplateBindingWriteAfterMinimalTupleValidation() {
+        ChannelGatewayClient gatewayClient = mock(ChannelGatewayClient.class);
+        IntegrationAccountService integrationAccountService = mock(IntegrationAccountService.class);
+        ChannelAdminService service = new ChannelAdminService(gatewayClient, integrationAccountService);
+        ChannelTemplateBindingWriteRequest request = new ChannelTemplateBindingWriteRequest(
+            "tpl_123",
+            null,
+            Map.of(),
+            "Order status",
+            null,
+            true,
+            null
+        );
+
+        service.upsertTemplateBinding("channel-profile-1", "assistant-1", "CARD", "ORDER_STATUS", "v1", request);
+
+        verify(gatewayClient).upsertTemplateBinding("channel-profile-1", "assistant-1", "CARD", "ORDER_STATUS", "v1", request);
+    }
+
+    @Test
+    void shouldRejectUnknownTemplateBindingMessageTypeBeforeGatewayCall() {
+        ChannelGatewayClient gatewayClient = mock(ChannelGatewayClient.class);
+        IntegrationAccountService integrationAccountService = mock(IntegrationAccountService.class);
+        ChannelAdminService service = new ChannelAdminService(gatewayClient, integrationAccountService);
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> service.upsertTemplateBinding(
+            "channel-profile-1",
+            "assistant-1",
+            "UNKNOWN_BLOCK",
+            "ORDER_STATUS",
+            "v1",
+            new ChannelTemplateBindingWriteRequest("tpl_123", null, Map.of(), "Order status", null, true, null)
+        ));
+
+        assertEquals("unknown session message block type: UNKNOWN_BLOCK", error.getMessage());
+        verifyNoInteractions(gatewayClient);
     }
 }

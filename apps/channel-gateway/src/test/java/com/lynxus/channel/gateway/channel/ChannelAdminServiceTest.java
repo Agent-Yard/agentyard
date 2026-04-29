@@ -17,7 +17,10 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelAssistantBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileAccountSnapshot;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileStatus;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelTemplateBinding;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelTemplateBindingWriteRequest;
 import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileInternalRequest;
+import com.lynxus.contracts.channel.ChannelContracts.ResolvedChannelTemplate;
 import com.lynxus.contracts.channel.ChannelContracts.UpdateChannelProfileInternalRequest;
 import com.lynxus.extension.sdk.common.LynxusCanonicalJson;
 import com.lynxus.extension.sdk.protocol.LynxusExtensionHeaders;
@@ -321,6 +324,218 @@ class ChannelAdminServiceTest {
         ));
 
         assertEquals(Map.of("tenant", "acme", "region", "cn"), updated.config());
+    }
+
+    @Test
+    void shouldCreateListUpdateAndDisableTemplateBinding() {
+        ChannelGatewayProfile profile = createFeishuProfile();
+
+        ChannelTemplateBinding created = service.upsertTemplateBinding(
+            profile.id(),
+            "assistant-1",
+            "CARD",
+            "ORDER_STATUS",
+            "v1",
+            new ChannelTemplateBindingWriteRequest(
+                "tpl_123",
+                "published",
+                Map.of("type", "object", "properties", Map.of("orderId", Map.of("type", "string"))),
+                "Order status",
+                "https://provider.example.com/templates/tpl_123",
+                true,
+                null
+            )
+        );
+
+        assertEquals(1, created.revision());
+        assertEquals("tpl_123", created.externalTemplateId());
+        assertEquals(1, service.listTemplateBindings(profile.id()).size());
+
+        ChannelTemplateBinding updated = service.upsertTemplateBinding(
+            profile.id(),
+            "assistant-1",
+            "CARD",
+            "ORDER_STATUS",
+            "v1",
+            new ChannelTemplateBindingWriteRequest(
+                "tpl_456",
+                null,
+                Map.of("type", "object"),
+                "Order status updated",
+                " ",
+                true,
+                1L
+            )
+        );
+
+        assertEquals(2, updated.revision());
+        assertEquals("tpl_456", updated.externalTemplateId());
+        assertNull(updated.externalTemplateVersion());
+        assertNull(updated.externalEditUrl());
+
+        ChannelTemplateBinding disabled = service.deleteTemplateBinding(profile.id(), "assistant-1", "CARD", "ORDER_STATUS", "v1", 2L);
+
+        assertEquals(false, disabled.enabled());
+        assertEquals(3, disabled.revision());
+        assertEquals("tpl_456", disabled.externalTemplateId());
+        assertEquals(false, service.listTemplateBindings(profile.id()).get(0).enabled());
+    }
+
+    @Test
+    void shouldRejectStaleTemplateBindingRevision() {
+        ChannelGatewayProfile profile = createFeishuProfile();
+        service.upsertTemplateBinding(
+            profile.id(),
+            "assistant-1",
+            "CARD",
+            "ORDER_STATUS",
+            "v1",
+            new ChannelTemplateBindingWriteRequest("tpl_123", null, Map.of(), "Order status", null, true, null)
+        );
+
+        service.upsertTemplateBinding(
+            profile.id(),
+            "assistant-1",
+            "CARD",
+            "ORDER_STATUS",
+            "v1",
+            new ChannelTemplateBindingWriteRequest("tpl_456", null, Map.of(), "Order status", null, true, 1L)
+        );
+
+        assertThrows(ConflictException.class, () -> service.upsertTemplateBinding(
+            profile.id(),
+            "assistant-1",
+            "CARD",
+            "ORDER_STATUS",
+            "v1",
+            new ChannelTemplateBindingWriteRequest("tpl_789", null, Map.of(), "Order status", null, true, 1L)
+        ));
+        assertThrows(ConflictException.class, () -> service.deleteTemplateBinding(profile.id(), "assistant-1", "CARD", "ORDER_STATUS", "v1", 1L));
+    }
+
+    @Test
+    void shouldRejectSecretMarkersInTemplateVariableSchema() {
+        ChannelGatewayProfile profile = createFeishuProfile();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> service.upsertTemplateBinding(
+            profile.id(),
+            "assistant-1",
+            "CARD",
+            "ORDER_STATUS",
+            "v1",
+            new ChannelTemplateBindingWriteRequest(
+                "tpl_123",
+                null,
+                Map.of("properties", Map.of("apiKey", Map.of("type", "string"))),
+                "Order status",
+                null,
+                true,
+                null
+            )
+        ));
+
+        assertEquals("variableSchema.properties.apiKey must not contain secret material", error.getMessage());
+    }
+
+    @Test
+    void shouldRejectRequiredSecretMarkerVariantsInTemplateVariableSchema() {
+        ChannelGatewayProfile profile = createFeishuProfile();
+        List<String> secretMarkers = List.of(
+            "externalSecretRef",
+            "external_secret_ref",
+            "credentialPlaintext",
+            "credential_plaintext",
+            "password",
+            "apiKey",
+            "api_key",
+            "accessToken",
+            "access_token",
+            "refreshToken",
+            "privateKey",
+            "webhookSigningSecret",
+            "webhook_signing_secret"
+        );
+
+        for (String marker : secretMarkers) {
+            IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> service.upsertTemplateBinding(
+                profile.id(),
+                "assistant-1",
+                "CARD",
+                marker + "-subtype",
+                "v1",
+                new ChannelTemplateBindingWriteRequest(
+                    "tpl_123",
+                    null,
+                    Map.of("properties", Map.of(marker, Map.of("type", "string"))),
+                    "Order status",
+                    null,
+                    true,
+                    null
+                )
+            ), marker);
+            assertTrue(error.getMessage().contains("must not contain secret material"), marker);
+        }
+    }
+
+    @Test
+    void shouldRejectSecretTrueInTemplateVariableSchema() {
+        ChannelGatewayProfile profile = createFeishuProfile();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> service.upsertTemplateBinding(
+            profile.id(),
+            "assistant-1",
+            "CARD",
+            "ORDER_STATUS",
+            "v1",
+            new ChannelTemplateBindingWriteRequest(
+                "tpl_123",
+                null,
+                Map.of("properties", Map.of("customerToken", Map.of("type", "string", "secret", true))),
+                "Order status",
+                null,
+                true,
+                null
+            )
+        ));
+
+        assertEquals("variableSchema.properties.customerToken.secret must not contain secret material", error.getMessage());
+    }
+
+    @Test
+    void resolverReturnsOnlyEnabledTemplateBinding() {
+        ChannelGatewayProfile profile = createFeishuProfile();
+        ChannelTemplateBindingResolver resolver = new ChannelTemplateBindingResolver(new ChannelAdminRepository(database.dsl(), new ObjectMapper()));
+        service.upsertTemplateBinding(
+            profile.id(),
+            "assistant-1",
+            "CARD",
+            "ORDER_STATUS",
+            "v1",
+            new ChannelTemplateBindingWriteRequest("tpl_123", "published", Map.of("type", "object"), "Order status", null, true, null)
+        );
+
+        ResolvedChannelTemplate resolved = resolver.resolve("assistant-1", profile.id(), "CARD", "ORDER_STATUS", "v1").orElseThrow();
+
+        assertEquals("tpl_123", resolved.externalTemplateId());
+        assertEquals("published", resolved.externalTemplateVersion());
+        assertEquals(1, resolved.bindingRevision());
+
+        service.deleteTemplateBinding(profile.id(), "assistant-1", "CARD", "ORDER_STATUS", "v1", 1L);
+
+        assertTrue(resolver.resolve("assistant-1", profile.id(), "CARD", "ORDER_STATUS", "v1").isEmpty());
+        assertTrue(resolver.resolve("assistant-1", profile.id(), "CARD", "OTHER", "v1").isEmpty());
+    }
+
+    private ChannelGatewayProfile createFeishuProfile() {
+        return service.createProfile(new CreateChannelProfileInternalRequest(
+            "feishu",
+            "飞书客服机器人",
+            null,
+            true,
+            Map.of("appId", "cli_xxx"),
+            new ChannelAssistantBinding("assistant-1", null),
+            null
+        ));
     }
 
     private static RuntimeChannelProviderRegistry registry() {

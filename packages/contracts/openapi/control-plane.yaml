@@ -221,6 +221,116 @@ paths:
                 $ref: '#/components/schemas/ApiResponseChannelOutboundDeliveryList'
         '404':
           description: Channel profile not found
+  /channel-admin/profiles/{channelProfileId}/template-bindings:
+    get:
+      summary: List external template bindings for a channel profile
+      parameters:
+        - in: path
+          name: channelProfileId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: External template bindings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseChannelTemplateBindingList'
+        '404':
+          description: Channel profile not found
+  /channel-admin/profiles/{channelProfileId}/template-bindings/{assistantId}/{messageType}/{messageSubtype}/{messageVersion}:
+    put:
+      summary: Create or update an external template binding
+      parameters:
+        - in: path
+          name: channelProfileId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: assistantId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: messageType
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: messageSubtype
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: messageVersion
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChannelTemplateBindingWritePayload'
+      responses:
+        '200':
+          description: Saved external template binding
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseChannelTemplateBinding'
+        '409':
+          description: Template binding expectedRevision is stale
+        '422':
+          description: Template binding tuple or variable schema is invalid
+    delete:
+      summary: Disable an external template binding
+      parameters:
+        - in: path
+          name: channelProfileId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: assistantId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: messageType
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: messageSubtype
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: messageVersion
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: expectedRevision
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        '200':
+          description: Disabled external template binding
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseChannelTemplateBinding'
+        '404':
+          description: Channel profile or template binding not found
+        '409':
+          description: Template binding expectedRevision is stale
   /channel-admin/profiles/{channelProfileId}/jobs:
     get:
       summary: List provider jobs for a channel profile
@@ -2064,6 +2174,111 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ChannelProfile'
+        timestamp:
+          type: string
+          format: date-time
+    ChannelTemplateBinding:
+      type: object
+      required:
+        - id
+        - channelProfileId
+        - assistantId
+        - messageType
+        - messageSubtype
+        - messageVersion
+        - externalTemplateId
+        - enabled
+        - variableSchema
+        - displayName
+        - revision
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        channelProfileId:
+          type: string
+        assistantId:
+          type: string
+        messageType:
+          type: string
+        messageSubtype:
+          type: string
+        messageVersion:
+          type: string
+        externalTemplateId:
+          type: string
+        externalTemplateVersion:
+          type: string
+          nullable: true
+        enabled:
+          type: boolean
+        variableSchema:
+          type: object
+          additionalProperties: true
+        displayName:
+          type: string
+        externalEditUrl:
+          type: string
+          nullable: true
+        revision:
+          type: integer
+          format: int64
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ChannelTemplateBindingWritePayload:
+      type: object
+      required:
+        - externalTemplateId
+        - displayName
+      properties:
+        externalTemplateId:
+          type: string
+          minLength: 1
+        externalTemplateVersion:
+          type: string
+          nullable: true
+        variableSchema:
+          type: object
+          additionalProperties: true
+          nullable: true
+        displayName:
+          type: string
+        externalEditUrl:
+          type: string
+          nullable: true
+        enabled:
+          type: boolean
+          nullable: true
+        expectedRevision:
+          type: integer
+          format: int64
+          minimum: 0
+          nullable: true
+    ApiResponseChannelTemplateBinding:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/ChannelTemplateBinding'
+        timestamp:
+          type: string
+          format: date-time
+    ApiResponseChannelTemplateBindingList:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChannelTemplateBinding'
         timestamp:
           type: string
           format: date-time

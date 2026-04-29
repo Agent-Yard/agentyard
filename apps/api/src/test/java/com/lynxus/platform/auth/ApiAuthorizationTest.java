@@ -238,6 +238,19 @@ class ApiAuthorizationTest {
     }
 
     @Test
+    void shouldRequireGovernanceWriteForTemplateBindingDeleteRequest() throws Exception {
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(TestConfig.class, AuthSecurityConfiguration.class)) {
+            MockMvc mockMvc = mockMvc(context);
+
+            mockMvc.perform(delete("/api/channel-admin/profiles/channel-profile-1/template-bindings/assistant-1/CARD/ORDER_STATUS/v1")
+                    .queryParam("expectedRevision", "1")
+                    .with(user("business")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.detail").value("Access is denied"));
+        }
+    }
+
+    @Test
     void shouldAllowDeveloperChannelAdminDeleteRequest() throws Exception {
         try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(TestConfig.class, AuthSecurityConfiguration.class)) {
             ChannelAdminService channelAdminService = context.getBean(ChannelAdminService.class);
