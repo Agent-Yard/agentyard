@@ -52,11 +52,31 @@ final class LynxusCanonicalJsonContractTest {
             }
             assertEquals(fixture.get("expectedCanonicalUtf8Hex"), utf8Hex(canonical), file + " canonical hex");
             assertEquals(fixture.get("expectedDigest"), LynxusCanonicalJson.sha256ValueDigest(value), file + " digest");
+            assertDescriptorDigestHelper(fixture, file);
         } catch (LynxusCanonicalJsonException exception) {
             if (expectedErrorCode == null) {
                 fail(file + " unexpected canonical JSON error " + exception.code(), exception);
             }
             assertEquals(expectedErrorCode, exception.code(), file + " error code");
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void assertDescriptorDigestHelper(Map<String, Object> fixture, Path file) {
+        String type = (String) fixture.get("type");
+        if ("channelProviderDefinitionDigest".equals(type)) {
+            assertEquals(
+                fixture.get("expectedDigest"),
+                DescriptorDefinitionDigests.channelProviderDefinitionDigest((Map<String, Object>) fixture.get("input")),
+                file + " channel provider helper digest"
+            );
+        }
+        if ("toolConnectorDefinitionDigest".equals(type)) {
+            assertEquals(
+                fixture.get("expectedDigest"),
+                DescriptorDefinitionDigests.toolConnectorDefinitionDigest((Map<String, Object>) fixture.get("input")),
+                file + " tool connector helper digest"
+            );
         }
     }
 
@@ -67,10 +87,10 @@ final class LynxusCanonicalJsonContractTest {
             return normalizeRegistrationConfig((Map<String, Object>) fixture.get("input"));
         }
         if ("channelProviderDefinitionDigest".equals(type)) {
-            return channelProviderDigestObject((Map<String, Object>) fixture.get("input"));
+            return DescriptorDefinitionDigests.channelProviderDefinitionDigestInput((Map<String, Object>) fixture.get("input"));
         }
         if ("toolConnectorDefinitionDigest".equals(type)) {
-            return toolConnectorDigestObject((Map<String, Object>) fixture.get("input"));
+            return DescriptorDefinitionDigests.toolConnectorDefinitionDigestInput((Map<String, Object>) fixture.get("input"));
         }
         return LynxusCanonicalJson.parse((String) fixture.get("input"));
     }
@@ -121,77 +141,6 @@ final class LynxusCanonicalJsonContractTest {
         } catch (URISyntaxException exception) {
             throw new IllegalArgumentException("REGISTRATION_CONFIG_INVALID", exception);
         }
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> channelProviderDigestObject(Map<String, Object> descriptor) {
-        List<Map<String, Object>> jobs = new ArrayList<>();
-        for (Map<String, Object> job : (List<Map<String, Object>>) descriptor.getOrDefault("jobDefinitions", List.of())) {
-            Map<String, Object> next = new LinkedHashMap<>();
-            next.put("jobType", job.get("jobType"));
-            next.put("jobConfigSchema", validationOnlySchema(job.get("jobConfigSchema")));
-            jobs.add(next);
-        }
-        jobs.sort(Comparator.comparing(job -> (String) job.get("jobType")));
-
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("descriptorType", "CHANNEL_PROVIDER");
-        result.put("providerType", descriptor.get("providerType"));
-        result.put("accountConfigSchema", validationOnlySchema(descriptor.get("accountConfigSchema")));
-        result.put("credentialSchema", validationOnlySchema(descriptor.get("credentialSchema")));
-
-        Map<String, Object> descriptorEndpoints = (Map<String, Object>) descriptor.getOrDefault("endpoints", Map.of());
-        Map<String, Object> endpoints = new LinkedHashMap<>();
-        endpoints.put("sendOutbound", descriptorEndpoints.get("sendOutbound"));
-        endpoints.put("runJob", descriptorEndpoints.get("runJob"));
-        endpoints.put("createCredential", descriptorEndpoints.get("createCredential"));
-        endpoints.put("rotateCredential", descriptorEndpoints.get("rotateCredential"));
-        endpoints.put("revokeCredential", descriptorEndpoints.get("revokeCredential"));
-        endpoints.put("validateCredential", descriptorEndpoints.get("validateCredential"));
-        result.put("endpoints", endpoints);
-
-        result.put("configSchema", validationOnlySchema(descriptor.get("configSchema")));
-        result.put("jobDefinitions", jobs);
-        return result;
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> toolConnectorDigestObject(Map<String, Object> descriptor) {
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("descriptorType", "TOOL_CONNECTOR");
-        result.put("connectorType", descriptor.get("connectorType"));
-        result.put("accountConfigSchema", validationOnlySchema(descriptor.get("accountConfigSchema")));
-        result.put("credentialSchema", validationOnlySchema(descriptor.get("credentialSchema")));
-        result.put("configSchema", validationOnlySchema(descriptor.get("configSchema")));
-        result.put("operationMappingSchema", validationOnlySchema(descriptor.get("operationMappingSchema")));
-
-        Map<String, Object> descriptorEndpoints = (Map<String, Object>) descriptor.getOrDefault("endpoints", Map.of());
-        Map<String, Object> endpoints = new LinkedHashMap<>();
-        endpoints.put("invoke", descriptorEndpoints.get("invoke"));
-        endpoints.put("createCredential", descriptorEndpoints.get("createCredential"));
-        endpoints.put("rotateCredential", descriptorEndpoints.get("rotateCredential"));
-        endpoints.put("revokeCredential", descriptorEndpoints.get("revokeCredential"));
-        endpoints.put("validateCredential", descriptorEndpoints.get("validateCredential"));
-        result.put("endpoints", endpoints);
-        return result;
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Object validationOnlySchema(Object value) {
-        if (value instanceof List<?> list) {
-            return list.stream().map(LynxusCanonicalJsonContractTest::validationOnlySchema).toList();
-        }
-        if (!(value instanceof Map<?, ?> map)) {
-            return value;
-        }
-        Map<String, Object> next = new LinkedHashMap<>();
-        for (Map.Entry<String, Object> entry : ((Map<String, Object>) map).entrySet()) {
-            if (entry.getKey().equals("title") || entry.getKey().equals("description") || entry.getKey().equals("default")) {
-                continue;
-            }
-            next.put(entry.getKey(), validationOnlySchema(entry.getValue()));
-        }
-        return next;
     }
 
     @SuppressWarnings("unchecked")

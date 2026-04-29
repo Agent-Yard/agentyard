@@ -12,8 +12,8 @@
 
 ## Current Position
 
-- Current slice: Slice 3 - Static registration loader + core preset merge.
-- Current subtask: Slice 3 service entry wiring for shared registration loader.
+- Current slice: Slice 4 - Runtime manifest endpoints + internal DescriptorProvider.
+- Current subtask: Slice 4A shared descriptor definition digest helpers for SDK/runtime reuse.
 - Main-agent role: orchestration, integration decisions, ledger maintenance, review of worker/checker output.
 - Implementation flow: worker implements each bounded subtask, independent checker reviews read-only, then main agent decides follow-up.
 
@@ -26,6 +26,11 @@
   - do not execute git commands in parallel.
 - Read roadmap Slice 1-10 and §6 Impact Checklist.
 - Read Slice 1 relevant topic docs.
+- Read Slice 4 relevant topic docs / sections:
+  - `static-registration.md` manifest pull rules, `DescriptorProvider`, and definition digest rules (§2.2, §5, §6.1).
+  - `extension-protocol.md` extension implementation contract test requirement for HTTP path and internal `DescriptorProvider` path.
+  - `channel-provider.md` gateway-native `DescriptorProvider` responsibilities.
+  - `tool-connector.md` built-in reference connector `DescriptorProvider` responsibilities.
 - Slice 1 worker completed initial protocol package under `packages/extension-protocol`.
 - Slice 1 completed after checker repair and rerun; no blocking findings remain.
 - Slice 2 completed after checker repair and Slice 1-2 checkpoint; no blocking findings remain.
@@ -37,6 +42,7 @@
 - SDK generated sources must not be committed later; generated output belongs under build directories.
 - `agent-runtime` must eventually reuse `packages/extension-sdk-python`; it must not grow a second canonical JSON / manifest / `ExtensionError` implementation.
 - API, `agent-runtime`, and `channel-gateway` must eventually share registration loader behavior and digest input.
+- Runtime owner manifest/validation must not copy descriptor definition digest field selection in each service; add SDK helpers first, then have runtime owners call them.
 
 ## Decisions / Questions
 
@@ -44,6 +50,7 @@
 - Decision: Slice 1 should be protocol-only and testable via a self-check command; no runtime adapter, Web form, registry aggregation, or SDK source generation in this slice.
 - Question to revisit: exact package manager integration for protocol self-check after inspecting current Node/Python workspace conventions.
 - Decision: Checker blocking findings are source-of-truth issues and must be fixed before Slice 2. Do not rely on self-check custom code if OpenAPI / JSON Schema facts remain permissive.
+- Decision: Slice 4 will be split into shared SDK digest helpers, then `agent-runtime` DescriptorProvider/manifest/validation, then `channel-gateway` DescriptorProvider/manifest/validation. This keeps descriptor digest normalization in SDKs rather than duplicating it in runtime owners.
 
 ## Worker / Checker Notes
 
@@ -307,6 +314,45 @@
     - `uv run pytest apps/agent-runtime/tests/test_extension_protocol_sdk_reuse.py -q` passed (`4 passed`).
     - `uv run pytest packages/extension-sdk-python/tests -q` passed (`57 passed`).
     - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+- Local commit created after Slice 3 service entry wiring pass:
+  - `a9c4692 Wire extension registration loader into services`
+- Worker `Ohm` (`019dd853-5b2f-7a53-98bb-e1bba2317a00`) completed Slice 4A shared descriptor definition digest helpers.
+  - Added JVM SDK `DescriptorDefinitionDigests` for channel provider and tool connector digest input/digest.
+  - Added Python SDK `definition_digest.py` helpers and exported them through common/channel/tool/root SDK modules.
+  - Updated JVM/Python canonical fixture tests to call SDK helpers for `channel-provider-definition-digest.json` and `tool-connector-definition-digest.json` rather than duplicating descriptor digest normalization in tests.
+  - Did not implement runtime manifest endpoints, `DescriptorProvider`, registry validation endpoint, API aggregation, Web, remote invocation, DB migrations, or Slice 11 artifacts.
+  - Reported verification:
+    - `./gradlew :packages:extension-sdk-jvm:test` passed.
+    - `uv run pytest packages/extension-sdk-python/tests -q` passed (`57 passed`).
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+  - Next: independent checker must verify digest field sets, validation-only schema stripping, null/default materialization, cross-language fixture coverage, exports, and scope boundaries.
+- Checker `Boyle` (`019dd857-8b97-78d1-aa04-ae8d309abae2`) verdict for Slice 4A shared descriptor definition digest helpers: fail.
+  - Blocking: JVM and Python `validationOnlySchema` strip every object key named `title`, `description`, or `default`, including user property names under JSON Schema `properties`; this can hide validation-contract changes from definition digests.
+  - Blocking follow-up: make schema annotation stripping context-aware, preserving property-map entry names while still stripping annotation keywords from schema objects.
+  - Follow-up: protocol self-check helper has equivalent stripping behavior and needs the same fix plus a canonical fixture covering property names such as `default`, `title`, or `description`.
+  - Checker verification still passed, so tests must be strengthened:
+    - `./gradlew :packages:extension-sdk-jvm:test` passed.
+    - `uv run pytest packages/extension-sdk-python/tests -q` passed (`57 passed`).
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+- Decision clarification: validation-only schema view strips JSON Schema annotation keywords `title` / `description` / `default`, but preserves user/schema map entry names under containers such as `properties`; otherwise two different validation contracts can share a digest. If the product goal changes to forbid such property names, that must be an explicit manifest validation/doc rule, not a silent digest normalization.
+- Worker `Maxwell` (`019dd859-a792-73a2-9c45-3e06a9b8b474`) completed Slice 4A repair.
+  - Made JVM SDK, Python SDK, and protocol self-check schema annotation stripping context-aware.
+  - Preserves schema-map entry names under `properties`, `$defs`, `definitions`, `patternProperties`, and `dependentSchemas`, while still recursively stripping annotation keywords inside schema values.
+  - Added shared canonical fixture `tool-connector-definition-digest-schema-map-keys.json` proving user property names `default`, `title`, and `description` are preserved while their schema annotations are excluded.
+  - Reported verification:
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+    - `./gradlew :packages:extension-sdk-jvm:test` passed.
+    - `uv run pytest packages/extension-sdk-python/tests -q` passed (`58 passed`).
+- Checker `Jason` (`019dd85e-9f31-78b1-8354-ccd1ae4f2e78`) verdict for Slice 4A repair: pass; no blockers.
+  - Confirmed existing docs require stripping JSON Schema annotation keywords, not silently dropping schema-map entry names under `properties`, `$defs`, `definitions`, `patternProperties`, or `dependentSchemas`.
+  - Confirmed protocol self-check, JVM SDK helper, and Python SDK helper now use equivalent context-aware schema traversal.
+  - Confirmed new shared canonical fixture covers user property names `default`, `title`, and `description` and is exercised by protocol self-check, JVM SDK tests, and Python SDK tests.
+  - Confirmed no runtime endpoints, code `DescriptorProvider`, registry validation endpoint, API aggregation, Web feature, DB migration, deploy/compose/Helm/smoke, or Slice 11 implementation artifacts were introduced.
+  - Checker verification:
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed with `canonicalFixtures=16`.
+    - `./gradlew :packages:extension-sdk-jvm:test` passed.
+    - `uv run pytest packages/extension-sdk-python/tests -q` passed (`58 passed`).
+  - Residual non-blocking risk: fixture explicitly covers `$defs`, `properties`, `patternProperties`, and `dependentSchemas`; `definitions` support is verified by code inspection but not separately fixture-locked.
 
 ## Local Commit Policy
 

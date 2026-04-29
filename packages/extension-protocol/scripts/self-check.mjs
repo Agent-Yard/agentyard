@@ -9,6 +9,8 @@ const packageRoot = path.resolve(__dirname, "..");
 const safeIntegerMax = 9007199254740991n;
 const safeIntegerMin = -9007199254740991n;
 const idempotencyPattern = /^[A-Za-z0-9._:-]{1,128}$/;
+const schemaAnnotationKeywords = new Set(["title", "description", "default"]);
+const schemaMapKeywords = new Set(["properties", "$defs", "definitions", "patternProperties", "dependentSchemas"]);
 
 class CheckFailure extends Error {
   constructor(message) {
@@ -1237,7 +1239,7 @@ function toolConnectorDigestObject(descriptor) {
   };
 }
 
-function validationOnlySchema(value) {
+function validationOnlySchema(value, schemaMapEntries = false) {
   if (Array.isArray(value)) {
     return value.map((item) => validationOnlySchema(item));
   }
@@ -1246,10 +1248,10 @@ function validationOnlySchema(value) {
   }
   const next = Object.create(null);
   for (const key of Object.keys(value)) {
-    if (["title", "description", "default"].includes(key)) {
+    if (!schemaMapEntries && schemaAnnotationKeywords.has(key)) {
       continue;
     }
-    next[key] = validationOnlySchema(value[key]);
+    next[key] = validationOnlySchema(value[key], !schemaMapEntries && schemaMapKeywords.has(key));
   }
   return next;
 }

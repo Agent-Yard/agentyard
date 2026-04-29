@@ -1,4 +1,17 @@
-"""Tool connector SDK facade package.
+"""Tool connector SDK facade package."""
 
-Protocol DTO generation is intentionally deferred to a later Slice 2 subtask.
-"""
+from lynxus_extension_sdk.common.definition_digest import (
+    TOOL_CONNECTOR_DESCRIPTOR_TYPE,
+    tool_connector_definition_canonical_bytes,
+    tool_connector_definition_canonical_json,
+    tool_connector_definition_digest,
+    tool_connector_definition_digest_input,
+)
+
+__all__ = [
+    "TOOL_CONNECTOR_DESCRIPTOR_TYPE",
+    "tool_connector_definition_canonical_bytes",
+    "tool_connector_definition_canonical_json",
+    "tool_connector_definition_digest",
+    "tool_connector_definition_digest_input",
+]

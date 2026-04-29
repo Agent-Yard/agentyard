@@ -1,4 +1,17 @@
-"""Channel provider SDK facade package.
+"""Channel provider SDK facade package."""
 
-Protocol DTO generation is intentionally deferred to a later Slice 2 subtask.
-"""
+from lynxus_extension_sdk.common.definition_digest import (
+    CHANNEL_PROVIDER_DESCRIPTOR_TYPE,
+    channel_provider_definition_canonical_bytes,
+    channel_provider_definition_canonical_json,
+    channel_provider_definition_digest,
+    channel_provider_definition_digest_input,
+)
+
+__all__ = [
+    "CHANNEL_PROVIDER_DESCRIPTOR_TYPE",
+    "channel_provider_definition_canonical_bytes",
+    "channel_provider_definition_canonical_json",
+    "channel_provider_definition_digest",
+    "channel_provider_definition_digest_input",
+]

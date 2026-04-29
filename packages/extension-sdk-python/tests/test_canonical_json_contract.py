@@ -12,6 +12,12 @@ from lynxus_extension_sdk.common.canonical_json import (
     canonical_bytes,
     sha256_digest,
 )
+from lynxus_extension_sdk.common.definition_digest import (
+    channel_provider_definition_digest,
+    channel_provider_definition_digest_input,
+    tool_connector_definition_digest,
+    tool_connector_definition_digest_input,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -29,10 +35,19 @@ def test_canonical_json_fixtures_match_protocol_contract(fixture_path: Path) -> 
             pytest.fail(f"{fixture_path} expected {expected_error_code}, got valid canonical JSON")
         assert canonical_bytes(value).hex() == fixture["expectedCanonicalUtf8Hex"]
         assert sha256_digest(value) == fixture["expectedDigest"]
+        _assert_descriptor_digest_helper(fixture)
     except CanonicalJsonError as error:
         if expected_error_code is None:
             pytest.fail(f"{fixture_path} unexpected canonical JSON error {error.code}")
         assert error.code == expected_error_code
+
+
+def _assert_descriptor_digest_helper(fixture: dict[str, Any]) -> None:
+    fixture_type = fixture.get("type")
+    if fixture_type == "channelProviderDefinitionDigest":
+        assert channel_provider_definition_digest(fixture["input"]) == fixture["expectedDigest"]
+    if fixture_type == "toolConnectorDefinitionDigest":
+        assert tool_connector_definition_digest(fixture["input"]) == fixture["expectedDigest"]
 
 
 def _fixture_value(fixture: dict[str, Any]) -> Any:
@@ -40,9 +55,9 @@ def _fixture_value(fixture: dict[str, Any]) -> Any:
     if fixture_type == "registrationConfigDigest":
         return _normalize_registration_config(fixture["input"])
     if fixture_type == "channelProviderDefinitionDigest":
-        return _channel_provider_digest_object(fixture["input"])
+        return channel_provider_definition_digest_input(fixture["input"])
     if fixture_type == "toolConnectorDefinitionDigest":
-        return _tool_connector_digest_object(fixture["input"])
+        return tool_connector_definition_digest_input(fixture["input"])
     return _parse_json_text(fixture["input"])
 
 
@@ -81,66 +96,6 @@ def _normalize_base_url(value: str) -> str:
     authority = parsed.hostname.lower() if port is None or is_default_port else f"{parsed.hostname.lower()}:{port}"
     path = "" if parsed.path in {"", "/"} else parsed.path.rstrip("/")
     return f"{scheme}://{authority}{path}"
-
-
-def _channel_provider_digest_object(descriptor: dict[str, Any]) -> dict[str, Any]:
-    job_definitions = [
-        {
-            "jobType": job.get("jobType"),
-            "jobConfigSchema": _validation_only_schema(job.get("jobConfigSchema")),
-        }
-        for job in descriptor.get("jobDefinitions", [])
-    ]
-    job_definitions.sort(key=lambda job: _utf16_sort_key(job["jobType"]))
-
-    endpoints = descriptor.get("endpoints") or {}
-    return {
-        "descriptorType": "CHANNEL_PROVIDER",
-        "providerType": descriptor.get("providerType"),
-        "accountConfigSchema": _validation_only_schema(descriptor.get("accountConfigSchema")),
-        "credentialSchema": _validation_only_schema(descriptor.get("credentialSchema")),
-        "endpoints": {
-            "sendOutbound": endpoints.get("sendOutbound"),
-            "runJob": endpoints.get("runJob"),
-            "createCredential": endpoints.get("createCredential"),
-            "rotateCredential": endpoints.get("rotateCredential"),
-            "revokeCredential": endpoints.get("revokeCredential"),
-            "validateCredential": endpoints.get("validateCredential"),
-        },
-        "configSchema": _validation_only_schema(descriptor.get("configSchema")),
-        "jobDefinitions": job_definitions,
-    }
-
-
-def _tool_connector_digest_object(descriptor: dict[str, Any]) -> dict[str, Any]:
-    endpoints = descriptor.get("endpoints") or {}
-    return {
-        "descriptorType": "TOOL_CONNECTOR",
-        "connectorType": descriptor.get("connectorType"),
-        "accountConfigSchema": _validation_only_schema(descriptor.get("accountConfigSchema")),
-        "credentialSchema": _validation_only_schema(descriptor.get("credentialSchema")),
-        "configSchema": _validation_only_schema(descriptor.get("configSchema")),
-        "operationMappingSchema": _validation_only_schema(descriptor.get("operationMappingSchema")),
-        "endpoints": {
-            "invoke": endpoints.get("invoke"),
-            "createCredential": endpoints.get("createCredential"),
-            "rotateCredential": endpoints.get("rotateCredential"),
-            "revokeCredential": endpoints.get("revokeCredential"),
-            "validateCredential": endpoints.get("validateCredential"),
-        },
-    }
-
-
-def _validation_only_schema(value: Any) -> Any:
-    if isinstance(value, list):
-        return [_validation_only_schema(item) for item in value]
-    if not isinstance(value, dict):
-        return value
-    return {
-        key: _validation_only_schema(nested)
-        for key, nested in value.items()
-        if key not in {"title", "description", "default"}
-    }
 
 
 def _utf16_sort_key(value: str) -> bytes:
