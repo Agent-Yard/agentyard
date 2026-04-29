@@ -256,7 +256,10 @@ class SessionRuntimeServiceTest {
                 && startRequest.agents().getFirst().skills().size() == 1
                 && "退款技能".equals(startRequest.agents().getFirst().skills().getFirst().skillName())
                 && startRequest.agents().getFirst().tools().size() == 1
-                && "SIMPLE_HTTP".equals(startRequest.agents().getFirst().tools().getFirst().connector().connectorType())
+                && "simple-http".equals(startRequest.agents().getFirst().tools().getFirst().connector().connectorType())
+                && startRequest.agents().getFirst().tools().getFirst().connector().accountSnapshot() != null
+                && "integration-account-1".equals(startRequest.agents().getFirst().tools().getFirst().connector().accountSnapshot().accountId())
+                && "vault://tool-secret".equals(startRequest.agents().getFirst().tools().getFirst().connector().accountSnapshot().externalSecretRef())
                 && "rv-tool-1".equals(startRequest.agents().getFirst().tools().getFirst().resourceVersionId())
         ));
     }
@@ -611,8 +614,9 @@ class SessionRuntimeServiceTest {
                         new CatalogDtos.ToolConfigDto(
                             List.of(new CatalogDtos.ToolOperationDto("create_ticket", "创建工单", "{\"type\":\"object\"}", "{\"type\":\"object\"}")),
                             new CatalogDtos.ToolConnectorConfigDto(
-                                com.lynxus.contracts.runtime.WorkflowContracts.ToolConnectorType.SIMPLE_HTTP,
+                                "simple-http",
                                 null,
+                                new CatalogDtos.ToolConnectorAccountSnapshotDto("integration-account-1", "vault://tool-secret"),
                                 15,
                                 "NONE",
                                 Map.of("baseUrl", "https://tool.example"),

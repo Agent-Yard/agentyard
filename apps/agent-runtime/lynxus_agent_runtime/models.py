@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class AgentConfig(BaseModel):
@@ -68,9 +68,16 @@ class ToolOperationDescriptor(BaseModel):
     outputSchema: str = ""
 
 
+class ToolConnectorAccountSnapshot(BaseModel):
+    accountId: str
+    externalSecretRef: str | None = None
+
+
 class ToolConnectorDescriptor(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     connectorType: str
-    accountId: str | None = None
+    accountSnapshot: ToolConnectorAccountSnapshot | None = None
     timeoutSeconds: int = 15
     retryPolicy: str = "NONE"
     config: dict[str, Any] = Field(default_factory=dict)

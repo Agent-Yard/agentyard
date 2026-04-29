@@ -4,6 +4,12 @@ import static com.lynxus.platform.catalog.CatalogDtos.*;
 
 import com.lynxus.platform.event.PlatformEventDtos.PlatformAggregateType;
 import com.lynxus.platform.event.PlatformEventService;
+import com.lynxus.platform.extension.ExtensionDefinitionDtos.ToolConnectorDefinition;
+import com.lynxus.platform.extension.ExtensionDefinitionService;
+import com.lynxus.platform.integration.IntegrationAccountRepository;
+import com.lynxus.platform.integration.IntegrationAccountService;
+import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountSubjectType;
+import com.lynxus.platform.integration.IntegrationDtos.StoredIntegrationAccount;
 import com.lynxus.platform.knowledge.InMemoryKnowledgeRepository;
 import com.lynxus.platform.knowledge.KnowledgeRepository;
 import com.lynxus.platform.knowledge.KnowledgeService;
@@ -12,11 +18,16 @@ import com.lynxus.platform.knowledge.KnowledgeWorkflowGateway;
 import com.lynxus.contracts.session.SessionContracts.AgentDecisionAction;
 import com.lynxus.contracts.runtime.WorkflowContracts.ResourceType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
-import com.lynxus.contracts.runtime.WorkflowContracts.ToolConnectorType;
 import com.lynxus.contracts.runtime.WorkflowContracts.VersionStatus;
+import com.networknt.schema.InputFormat;
+import com.networknt.schema.Schema;
+import com.networknt.schema.SchemaLocation;
+import com.networknt.schema.SchemaRegistry;
+import com.networknt.schema.SpecificationVersion;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -30,14 +41,41 @@ import java.util.function.BiFunction;
 import java.util.function.Function;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import tools.jackson.databind.ObjectMapper;
 
 @Service
 public class CatalogService {
+    private static final String TOOL_CONNECTOR_CONFIG_SCHEMA_ID = "https://lynxus.local/schemas/tool-connector-config.schema.json";
+    private static final int DEFAULT_TOOL_CONNECTOR_TIMEOUT_SECONDS = 15;
+    private static final String DEFAULT_TOOL_CONNECTOR_RETRY_POLICY = "NONE";
+    private static final Set<String> SENSITIVE_CONFIG_KEYS = Set.of(
+        "externalsecretref",
+        "password",
+        "apikey",
+        "accesskey",
+        "accesstoken",
+        "refreshtoken",
+        "privatekey",
+        "clientsecret",
+        "appsecret",
+        "webhooksecret",
+        "webhooksigningsecret",
+        "signingsecret",
+        "secret",
+        "secretkey",
+        "token",
+        "bearertoken"
+    );
+    private static final ObjectMapper JSON = new ObjectMapper();
+
     private final CatalogRepository repository;
     private final KnowledgeRepository knowledgeRepository;
     private final KnowledgeService knowledgeService;
     private final PlatformEventService platformEventService;
     private final com.lynxus.platform.shared.redis.RedisInvalidationBus invalidationBus;
+    private final ExtensionDefinitionService extensionDefinitionService;
+    private final IntegrationAccountService integrationAccountService;
+    private final IntegrationAccountRepository integrationAccountRepository;
 
     public CatalogService() {
         this(
@@ -46,6 +84,9 @@ public class CatalogService {
             new KnowledgeServiceClient("http://127.0.0.1:8091", "in-memory-internal-token"),
             new NoOpKnowledgeWorkflowGateway(),
             PlatformEventService.disabled(),
+            null,
+            null,
+            null,
             null
         );
     }
@@ -59,13 +100,28 @@ public class CatalogService {
         CatalogRepository repository,
         KnowledgeService knowledgeService,
         PlatformEventService platformEventService,
-        com.lynxus.platform.shared.redis.RedisInvalidationBus invalidationBus
+        com.lynxus.platform.shared.redis.RedisInvalidationBus invalidationBus,
+        ExtensionDefinitionService extensionDefinitionService,
+        IntegrationAccountService integrationAccountService,
+        IntegrationAccountRepository integrationAccountRepository
     ) {
         this.repository = repository;
         this.knowledgeRepository = knowledgeService.repository();
         this.knowledgeService = knowledgeService;
         this.platformEventService = platformEventService;
         this.invalidationBus = invalidationBus;
+        this.extensionDefinitionService = extensionDefinitionService;
+        this.integrationAccountService = integrationAccountService;
+        this.integrationAccountRepository = integrationAccountRepository;
+    }
+
+    public CatalogService(
+        CatalogRepository repository,
+        KnowledgeService knowledgeService,
+        PlatformEventService platformEventService,
+        com.lynxus.platform.shared.redis.RedisInvalidationBus invalidationBus
+    ) {
+        this(repository, knowledgeService, platformEventService, invalidationBus, null, null, null);
     }
 
     public CatalogService(CatalogRepository repository, KnowledgeServiceClient knowledgeServiceClient, KnowledgeWorkflowGateway knowledgeWorkflowGateway) {
@@ -89,10 +145,37 @@ public class CatalogService {
         PlatformEventService platformEventService,
         com.lynxus.platform.shared.redis.RedisInvalidationBus invalidationBus
     ) {
+        this(
+            repository,
+            knowledgeRepository,
+            knowledgeServiceClient,
+            knowledgeWorkflowGateway,
+            platformEventService,
+            invalidationBus,
+            null,
+            null,
+            null
+        );
+    }
+
+    CatalogService(
+        CatalogRepository repository,
+        com.lynxus.platform.knowledge.KnowledgeRepository knowledgeRepository,
+        KnowledgeServiceClient knowledgeServiceClient,
+        KnowledgeWorkflowGateway knowledgeWorkflowGateway,
+        PlatformEventService platformEventService,
+        com.lynxus.platform.shared.redis.RedisInvalidationBus invalidationBus,
+        ExtensionDefinitionService extensionDefinitionService,
+        IntegrationAccountService integrationAccountService,
+        IntegrationAccountRepository integrationAccountRepository
+    ) {
         this.repository = repository;
         this.knowledgeRepository = knowledgeRepository;
         this.platformEventService = platformEventService;
         this.invalidationBus = invalidationBus;
+        this.extensionDefinitionService = extensionDefinitionService;
+        this.integrationAccountService = integrationAccountService;
+        this.integrationAccountRepository = integrationAccountRepository;
         this.knowledgeService = new KnowledgeService(
             knowledgeRepository,
             repository,
@@ -1420,6 +1503,7 @@ public class CatalogService {
         ResourceVersionDto version,
         String boundAgent
     ) {
+        ResourceVersionConfigurationDto releaseConfiguration = materializeReleaseConfiguration(version.configuration());
         AssistantReleaseResourceDto existing = snapshotMap.get(version.id());
         if (existing == null) {
             snapshotMap.put(
@@ -1431,7 +1515,7 @@ public class CatalogService {
                     version.id(),
                     version.version(),
                     List.of(boundAgent),
-                    version.configuration()
+                    releaseConfiguration
                 )
             );
         } else {
@@ -1448,6 +1532,50 @@ public class CatalogService {
                 )
             );
         }
+    }
+
+    private ResourceVersionConfigurationDto materializeReleaseConfiguration(ResourceVersionConfigurationDto configuration) {
+        if (configuration == null || configuration.type() != ResourceType.TOOL || configuration.tool() == null) {
+            return configuration;
+        }
+        ToolConfigDto normalizedTool = normalizeToolConfig(configuration.tool());
+        ToolConnectorConfigDto connector = normalizedTool.connector();
+        ToolConnectorConfigDto releaseConnector = new ToolConnectorConfigDto(
+            connector.connectorType(),
+            null,
+            materializeAccountSnapshot(connector.connectorType(), connector.accountId()),
+            connector.timeoutSeconds(),
+            connector.retryPolicy(),
+            connector.config(),
+            connector.operationMappings()
+        );
+        return new ResourceVersionConfigurationDto(
+            ResourceType.TOOL,
+            new ToolConfigDto(normalizedTool.operations(), releaseConnector),
+            null,
+            null
+        );
+    }
+
+    private ToolConnectorAccountSnapshotDto materializeAccountSnapshot(String connectorType, String accountId) {
+        if (accountId == null || accountId.isBlank()) {
+            return null;
+        }
+        if (integrationAccountService == null || integrationAccountRepository == null) {
+            throw new IllegalStateException("integration account materialization is unavailable");
+        }
+        integrationAccountService.requireAccountAvailability(
+            accountId,
+            IntegrationAccountSubjectType.TOOL_CONNECTOR,
+            connectorType
+        );
+        StoredIntegrationAccount account = integrationAccountRepository.findAccount(accountId)
+            .orElseThrow(() -> new NoSuchElementException("integration account not found: " + accountId));
+        String externalSecretRef = normalizeOptionalText(account.externalSecretRef());
+        return new ToolConnectorAccountSnapshotDto(
+            account.id(),
+            externalSecretRef.isBlank() ? null : externalSecretRef
+        );
     }
 
     private ObjectReferenceAnalysisDto analyzeDomainReferences(CatalogRepository state, KnowledgeRepository knowledgeState, BusinessDomainDto domain) {
@@ -2001,10 +2129,13 @@ public class CatalogService {
 
     private ResourceVersionConfigurationDto normalizeConfiguration(ResourceType type, ResourceVersionConfigurationDto configuration) {
         if (configuration == null) {
+            if (type == ResourceType.TOOL) {
+                throw new IllegalArgumentException("tool resource version configuration is required");
+            }
             return defaultConfiguration(type);
         }
         return switch (type) {
-            case TOOL -> new ResourceVersionConfigurationDto(type, normalizeToolConfig(configuration.tool()), null, null);
+            case TOOL -> new ResourceVersionConfigurationDto(type, normalizeRequiredToolConfig(configuration.tool()), null, null);
             case LLM_MODEL -> new ResourceVersionConfigurationDto(type, null, configuration.llmModel() == null ? defaultConfiguration(type).llmModel() : configuration.llmModel(), null);
             case SKILL -> new ResourceVersionConfigurationDto(type, null, null, configuration.skill() == null ? defaultConfiguration(type).skill() : normalizeSkillConfig(configuration.skill()));
         };
@@ -2077,24 +2208,33 @@ public class CatalogService {
     }
 
     private ToolConfigDto defaultToolConfig() {
-        List<ToolOperationDto> operations = List.of(new ToolOperationDto("invoke", "执行通用工具动作", "{\"input\":\"string\"}", "{\"type\":\"object\",\"required\":[\"output\"],\"properties\":{\"output\":{\"type\":\"string\"}},\"additionalProperties\":false}"));
         return new ToolConfigDto(
-            operations,
-            ToolConnectorCatalog.defaultConnectorConfig(operations)
+            defaultToolOperations(),
+            null
         );
     }
 
     private ToolConfigDto normalizeToolConfig(ToolConfigDto configuration) {
-        ToolConfigDto defaults = defaultToolConfig();
         List<ToolOperationDto> operations = normalizeToolOperations(configuration == null ? null : configuration.operations());
         if (operations.isEmpty()) {
-            operations = defaults.operations();
+            operations = defaultToolOperations();
         }
 
         return new ToolConfigDto(
             List.copyOf(operations),
             normalizeToolConnector(configuration == null ? null : configuration.connector(), operations)
         );
+    }
+
+    private ToolConfigDto normalizeRequiredToolConfig(ToolConfigDto configuration) {
+        if (configuration == null) {
+            throw new IllegalArgumentException("tool config is required");
+        }
+        return normalizeToolConfig(configuration);
+    }
+
+    private List<ToolOperationDto> defaultToolOperations() {
+        return List.of(new ToolOperationDto("invoke", "执行通用工具动作", "{\"input\":\"string\"}", "{\"type\":\"object\",\"required\":[\"output\"],\"properties\":{\"output\":{\"type\":\"string\"}},\"additionalProperties\":false}"));
     }
 
     private List<ToolOperationDto> normalizeToolOperations(List<ToolOperationDto> operations) {
@@ -2121,37 +2261,132 @@ public class CatalogService {
     }
 
     private ToolConnectorConfigDto normalizeToolConnector(ToolConnectorConfigDto configuration, List<ToolOperationDto> operations) {
-        ToolConnectorConfigDto defaults = defaultToolConfig().connector();
-        ToolConnectorType connectorType = configuration == null || configuration.connectorType() == null
-            ? defaults.connectorType()
-            : configuration.connectorType();
-        ToolConnectorCatalog.Definition definition = ToolConnectorCatalog.definition(connectorType);
-        Map<String, Object> config = new LinkedHashMap<>(definition.defaultConfig());
-        config.putAll(configuration == null || configuration.config() == null ? Map.of() : configuration.config());
-        String accountId = normalizeOptionalText(configuration == null ? null : configuration.accountId());
-        if (!definition.usesAccount()) {
-            accountId = "";
+        if (configuration == null) {
+            throw new IllegalArgumentException("tool connector config is required");
         }
-        if (definition.requiresAccount() && accountId.isBlank()) {
-            throw new IllegalArgumentException(connectorType + " connector requires accountId");
+
+        String connectorType = requireToolConnectorType(configuration.connectorType());
+        ToolConnectorDefinition definition = requireToolConnectorDefinition(connectorType);
+        Map<String, Object> config = immutableObjectMap(configuration.config(), "tool connector config");
+        rejectSensitiveMaterial(config, "connector.config");
+        validateSchema(definition.configSchema(), config, "tool connector config");
+
+        String accountId = normalizeOptionalText(configuration.accountId());
+        accountId = accountId.isBlank() ? null : accountId;
+
+        Map<String, Map<String, Object>> requestedMappings = configuration.operationMappings();
+        if (requestedMappings == null) {
+            throw new IllegalArgumentException("tool connector operationMappings are required");
         }
-        Map<String, Map<String, Object>> operationMappings = new LinkedHashMap<>();
-        Map<String, Map<String, Object>> requestedMappings = configuration == null || configuration.operationMappings() == null
-            ? Map.of()
-            : configuration.operationMappings();
+        Set<String> operationNames = new HashSet<>();
         for (ToolOperationDto operation : operations) {
-            Map<String, Object> mapping = new LinkedHashMap<>(definition.defaultOperationMapping(operation.name()));
-            mapping.putAll(requestedMappings.getOrDefault(operation.name(), Map.of()));
-            operationMappings.put(operation.name(), Map.copyOf(mapping));
+            operationNames.add(operation.name());
+        }
+        for (String mappingName : requestedMappings.keySet()) {
+            if (!operationNames.contains(mappingName)) {
+                throw new IllegalArgumentException("tool connector operationMappings contains unknown operation: " + mappingName);
+            }
+        }
+
+        Map<String, Map<String, Object>> operationMappings = new LinkedHashMap<>();
+        for (ToolOperationDto operation : operations) {
+            if (!requestedMappings.containsKey(operation.name())) {
+                throw new IllegalArgumentException("tool connector operationMappings missing operation: " + operation.name());
+            }
+            Map<String, Object> mapping = immutableObjectMap(requestedMappings.get(operation.name()), "tool connector operation mapping " + operation.name());
+            rejectSensitiveMaterial(mapping, "connector.operationMappings." + operation.name());
+            validateSchema(definition.operationMappingSchema(), mapping, "tool connector operation mapping " + operation.name());
+            operationMappings.put(operation.name(), mapping);
         }
         return new ToolConnectorConfigDto(
             connectorType,
             accountId,
-            configuration == null || configuration.timeoutSeconds() <= 0 ? defaults.timeoutSeconds() : configuration.timeoutSeconds(),
-            configuration == null || configuration.retryPolicy() == null || configuration.retryPolicy().isBlank() ? defaults.retryPolicy() : configuration.retryPolicy(),
-            Map.copyOf(config),
-            Map.copyOf(operationMappings)
+            null,
+            configuration.timeoutSeconds() <= 0 ? DEFAULT_TOOL_CONNECTOR_TIMEOUT_SECONDS : configuration.timeoutSeconds(),
+            configuration.retryPolicy() == null || configuration.retryPolicy().isBlank() ? DEFAULT_TOOL_CONNECTOR_RETRY_POLICY : configuration.retryPolicy(),
+            config,
+            Collections.unmodifiableMap(operationMappings)
         );
+    }
+
+    private ToolConnectorDefinition requireToolConnectorDefinition(String connectorType) {
+        return toolConnectorDefinitions().stream()
+            .filter(definition -> connectorType.equals(definition.connectorType()))
+            .findFirst()
+            .orElseThrow(() -> new IllegalArgumentException("tool connector definition not found: " + connectorType));
+    }
+
+    private List<ToolConnectorDefinition> toolConnectorDefinitions() {
+        if (extensionDefinitionService != null) {
+            return extensionDefinitionService.toolConnectors();
+        }
+        throw new IllegalStateException("tool connector definition registry is unavailable; ExtensionDefinitionService is required");
+    }
+
+    private static String requireToolConnectorType(String connectorType) {
+        String normalized = normalizeOptionalText(connectorType);
+        if (normalized.isBlank()) {
+            throw new IllegalArgumentException("tool connector connectorType is required");
+        }
+        return normalized;
+    }
+
+    private static Map<String, Object> immutableObjectMap(Map<String, Object> value, String label) {
+        if (value == null) {
+            throw new IllegalArgumentException(label + " is required");
+        }
+        Map<String, Object> copy = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : value.entrySet()) {
+            if (entry.getKey() == null || entry.getKey().isBlank()) {
+                throw new IllegalArgumentException(label + " contains a blank key");
+            }
+            copy.put(entry.getKey(), entry.getValue());
+        }
+        return Collections.unmodifiableMap(copy);
+    }
+
+    private static void validateSchema(Map<String, Object> schema, Map<String, Object> value, String label) {
+        try {
+            String schemaJson = JSON.writeValueAsString(schema == null ? Map.of() : schema);
+            String valueJson = JSON.writeValueAsString(value == null ? Map.of() : value);
+            SchemaRegistry schemaRegistry = SchemaRegistry.withDefaultDialect(
+                SpecificationVersion.DRAFT_2020_12,
+                builder -> builder.schemas(Map.of(TOOL_CONNECTOR_CONFIG_SCHEMA_ID, schemaJson))
+            );
+            Schema objectSchema = schemaRegistry.getSchema(SchemaLocation.of(TOOL_CONNECTOR_CONFIG_SCHEMA_ID));
+            if (!objectSchema.validate(valueJson, InputFormat.JSON).isEmpty()) {
+                throw new IllegalArgumentException(label + " does not satisfy connector schema");
+            }
+        } catch (IllegalArgumentException error) {
+            throw error;
+        } catch (Exception error) {
+            throw new IllegalArgumentException(label + " does not satisfy connector schema", error);
+        }
+    }
+
+    private static void rejectSensitiveMaterial(Object value, String path) {
+        if (value instanceof Map<?, ?> map) {
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                String key = entry.getKey() instanceof String keyText ? keyText : String.valueOf(entry.getKey());
+                if (SENSITIVE_CONFIG_KEYS.contains(normalizeSensitiveKey(key))) {
+                    throw new IllegalArgumentException("tool connector user-editable config contains secret-like key: " + path + "." + key);
+                }
+                rejectSensitiveMaterial(entry.getValue(), path + "." + key);
+            }
+        } else if (value instanceof Iterable<?> iterable) {
+            int index = 0;
+            for (Object item : iterable) {
+                rejectSensitiveMaterial(item, path + "[" + index + "]");
+                index++;
+            }
+        }
+    }
+
+    private static String normalizeSensitiveKey(String key) {
+        return normalizeOptionalText(key)
+            .replace("_", "")
+            .replace("-", "")
+            .toLowerCase(Locale.ROOT);
     }
 
     private AssistantModelPolicyDto normalizeAssistantModelPolicy(AssistantModelPolicyDto policy) {

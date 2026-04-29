@@ -175,8 +175,8 @@ def _request_payload() -> dict:
                     "resourceVersionId": "tool-ver-1",
                     "resourceVersion": "1.0.0",
                     "connector": {
-                        "connectorType": "SIMPLE_HTTP",
-                        "accountId": None,
+                        "connectorType": "simple-http",
+                        "accountSnapshot": None,
                         "timeoutSeconds": 15,
                         "retryPolicy": "NONE",
                         "config": {"baseUrl": "https://tool.example"},

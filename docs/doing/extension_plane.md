@@ -12,8 +12,8 @@
 
 ## Current Position
 
-- Current slice: Slice 6 - Integration Account target model + optional credential lifecycle completed and checker-confirmed.
-- Current subtask: stopping after Slice 6 completion and local commit, per user instruction; do not enter Slice 7 until resumed.
+- Current slice: Slice 7 - Tool connector manifest migration + remote invocation adapter.
+- Current subtask: Slice 7A API/catalog tool connector config and assistant release materialization alignment.
 - Main-agent role: orchestration, integration decisions, ledger maintenance, review of worker/checker output.
 - Implementation flow: worker implements each bounded subtask, independent checker reviews read-only, then main agent decides follow-up.
 
@@ -587,6 +587,84 @@
   - Current Integration Account API and DB are still old connector-scoped (`connector_type`, `connectorType`, `ACTIVE` / `INACTIVE`, `ToolConnectorType` enum).
   - Existing create/update accepts credential directly and encrypts locally for every connector; this must be replaced by descriptor-driven mode selection.
   - Web still has static connector definitions and will be addressed in Slice 10, not Slice 6A.
+- Main resumed after Slice 6 completion and reread:
+  - `docs/todo/extension_plane/README.md`
+  - `docs/todo/extension_plane/overview.md`
+  - `docs/todo/extension_plane/implementation-roadmap.md` Slice 1-10 and §6 Impact Checklist
+  - Slice 7 topic docs / sections: `tool-connector.md`, `credentials-and-persistence.md`, `static-registration.md`, `extension-protocol.md`, `web-configuration.md`
+- Slice 7 starting state:
+  - API catalog still uses static `ToolConnectorCatalog` and JVM `ToolConnectorType` for Tool Resource connector config.
+  - Assistant release runtime descriptor still carries `connector.accountId` directly and `connectorType().name()`, not `connector.accountSnapshot`.
+  - `agent-runtime` built-in connector dispatch still uppercases connector ids and validates old account shape (`connectorType`, `ACTIVE`); this must be reconciled with Slice 6 `subjectType` / `subjectId` / `ENABLED` and later remote adapter work.
+  - Web static connector definitions remain present and are reserved for Slice 10 removal; do not fix them during Slice 7 unless backend contract work requires a minimal type adjustment.
+- Worker 7A completed API/catalog connector config and release account snapshot materialization.
+  - Replaced API Tool Connector config DTO business field with string `connectorType`.
+  - Deleted `ToolConnectorCatalog.java`.
+  - API catalog normalization resolves connector definitions from `ExtensionDefinitionService`, validates connector config and per-operation mappings, rejects secret-like keys, and materializes release `connector.accountSnapshot`.
+  - `SessionContracts.ToolConnectorDescriptor` now carries `accountSnapshot` rather than top-level release `accountId`.
+  - Verification reported passed:
+    - `./gradlew :apps:api:test --tests '*Catalog*'`
+    - `./gradlew :apps:api:test --tests '*SessionRuntimeService*'`
+    - `./gradlew :apps:api:test --tests '*IntegrationAccount*'`
+    - `./gradlew :packages:contracts-jvm:test`
+    - `git diff --check`
+- Checker 7A verdict: fail.
+  - Blocking: `CatalogService` still has hard-coded fallback `ToolConnectorDefinition` objects when `ExtensionDefinitionService` is absent, which keeps a static API connector business source.
+  - Blocking: Python `agent-runtime` release model still exposes top-level `connector.accountId` and ignores `connector.accountSnapshot`, so JVM release contract and runtime consumer are split.
+  - Required repair before Slice 7B: remove static API fallback definitions, align agent-runtime model / connector account lookup to `accountSnapshot`, and add agent-runtime contract test for the new release JSON shape.
+- Worker 7A-Repair completed the first repair pass.
+  - Removed hard-coded fallback connector definition source; missing `ExtensionDefinitionService` now fails clearly.
+  - Aligned Python `agent-runtime` model to `connector.accountSnapshot`; legacy top-level `connector.accountId` is rejected.
+  - Built-in connector account lookup reads `accountSnapshot.accountId` and validates runtime account shape with `subjectType`, `subjectId`, `status`, and `accountId`.
+  - Verification reported passed:
+    - `./gradlew :apps:api:test --tests '*Catalog*'`
+    - `uv run pytest apps/agent-runtime/tests/test_models.py -q`
+    - `uv run pytest apps/agent-runtime/tests/test_playbook_tool_task.py -q`
+    - `uv run pytest apps/agent-runtime/tests -q`
+    - `git diff --check`
+- Checker 7A rerun verdict: fail.
+  - Blocking: API still makes a static default connector choice when Tool connector config is missing by selecting `simple-http` through `DEFAULT_TOOL_CONNECTOR_TYPE`. Slice 7 requires Tool Resource connector config to be explicitly saved and registry-owned; no static API default connector business choice should remain.
+  - Confirmed otherwise: registry schema validation, secret-like key rejection, accountSnapshot contract alignment across JVM/TS/API/Python runtime, missing `externalSecretRef` behavior, and Slice 6 availability blocking are sound.
+- Worker 7A-DefaultRepair completed the default connector repair.
+  - Removed the static Tool connector default path; missing `connector` inside Tool config now fails with `tool connector config is required`.
+  - Added missing-connector rejection coverage and updated implicit Tool config test callers to submit explicit `simple-http` config.
+  - Verification reported passed:
+    - `./gradlew :apps:api:test --tests '*Catalog*'`
+    - `git diff --check`
+- Checker 7A final rerun verdict: fail.
+  - Blocking: top-level `configuration = null` for Tool resource versions still routes through `defaultConfiguration(TOOL)`, producing a Tool version whose connector is `null` instead of failing during Tool connector normalization. Need reject missing top-level Tool configuration for Tool resources, or otherwise force it through the same explicit connector validation path.
+- Worker 7A-NullConfigRepair completed the top-level null configuration repair.
+  - Tool resource versions now reject top-level `configuration = null`; LLM_MODEL / SKILL defaults remain unchanged.
+  - Added focused create / update null-configuration rejection coverage plus distinct missing tool / connector tests.
+  - Verification reported passed:
+    - `./gradlew :apps:api:test --tests '*Catalog*'`
+    - `git diff --check`
+- Checker 7A closure verdict: pass.
+  - Confirmed TOOL resource-version null configuration, missing `tool`, and missing `connector` are rejected.
+  - Confirmed API no longer contains `ToolConnectorCatalog`, hard-coded fallback `ToolConnectorDefinition`, or static default `simple-http` choice for missing connector config.
+  - Confirmed connector definitions resolve through `ExtensionDefinitionService`; connector config and per-operation mappings validate against registry schemas and reject secret-like keys including `externalSecretRef`.
+  - Confirmed release materialization uses Slice 6 account availability and snapshots only `accountSnapshot.accountId` plus optional `externalSecretRef`.
+  - Confirmed JVM / TS / API / Python runtime contracts use `accountSnapshot`, Python rejects legacy top-level `accountId`, and built-in lookup reads `accountSnapshot.accountId`.
+  - Verification passed:
+    - `./gradlew :apps:api:test --tests '*Catalog*'`
+    - `./gradlew :apps:api:test --tests '*SessionRuntimeService*'`
+    - `uv run pytest apps/agent-runtime/tests/test_models.py -q`
+    - `uv run pytest apps/agent-runtime/tests/test_playbook_tool_task.py -q`
+    - `git diff --check`
+  - Non-blocking follow-ups:
+    - Web static connector config remains for Slice 10.
+    - `retryPolicy` remains the existing string preset; structured retry parsing is deferred to later Slice 7 runtime adapter work.
+- Worker 7A-DefaultRepair completed checker blocker repair.
+  - Removed `CatalogService` static `simple-http` default connector choice and the default connector config helper.
+  - Tool Resource normalization now rejects missing/null `connector` with a clear error; saved Tool resources must submit explicit `connectorType`, `config`, and `operationMappings`.
+  - Kept LLM/SKILL default configuration behavior unchanged; Tool blueprint defaults now carry default operations without selecting a connector.
+  - Adjusted catalog tests that relied on implicit Tool connector config to submit explicit `simple-http` config and added focused missing-connector rejection coverage.
+  - Kept agent-runtime, broader contracts, Channel Profile, Web static connector UI, and Slice 7B+ work out of scope.
+- Worker 7A-NullConfigRepair completed final checker blocker repair.
+  - `CatalogService` now rejects Tool resource version create/update requests with top-level `configuration = null` before they can route through `defaultConfiguration(TOOL)`.
+  - Missing Tool config and missing Tool connector config fail distinctly; LLM_MODEL and SKILL null-configuration default behavior is unchanged.
+  - Added focused `CatalogServiceTest` coverage for Tool resource version create/update with top-level null configuration.
+  - Kept agent-runtime, Web, contracts, Channel Profile, and Slice 11 artifacts out of scope.
 
 ## Local Commit Policy
 
@@ -659,6 +737,14 @@
   - Static Tool Connector config now has the temporary Slice 6A descriptor-id bridge: `SIMPLE_HTTP -> simple-http`, `BUSINESS_CODE_SECRET_HTTP -> business-code-secret-http`, `MCP -> mcp`.
   - Resource version account selection now filters Tool Connector accounts by `subjectType`, descriptor `subjectId`, and `ENABLED`; credential fields are only labels/status text.
   - Credential JSON editing remains disabled/removed until Slice 6B credential lifecycle work.
+- Worker Slice 7A completed API/catalog connector config and release materialization alignment.
+  - Replaced API Tool Resource connector config business fact from JVM `ToolConnectorType` to string descriptor id.
+  - Removed API catalog use of static `ToolConnectorCatalog`; save and publish normalization now resolve Tool Connector definitions from the Slice 5 `ExtensionDefinitionService` registry, with only a minimal in-memory fallback for non-Spring/default create flows.
+  - Tool connector save normalization validates submitted connector `config` and every explicit `operationMappings[operation.name]` against the current `ToolConnectorDefinition` JSON Schemas, rejects missing/unknown operation mappings, and blocks secret-like keys including `externalSecretRef` and common credential field names in user-editable config/mappings.
+  - Assistant release capture revalidates the current connector definition and materializes selected `connector.accountId` into release `connector.accountSnapshot.accountId` plus optional current `externalSecretRef` after calling Slice 6 account availability for `TOOL_CONNECTOR + connectorType`; unavailable accounts hard-block release creation, while accounts without `externalSecretRef` still publish with `externalSecretRef = null`.
+  - Session runtime contract mapping now exposes `ToolConnectorDescriptor.accountSnapshot` instead of top-level `accountId`.
+  - Did not implement the agent-runtime remote HTTP adapter, did not remove Web static connector UI, did not touch Channel Profile / Slice 8, and did not create Slice 11 deploy/sample artifacts.
+  - Deferred follow-up: `retryPolicy` remains the existing string preset in saved config and runtime descriptor; Slice 7 runtime-adapter work still needs structured retry policy parsing before remote retry execution.
 
 ## Verification Log
 
@@ -771,7 +857,25 @@
   - Checker commands passed:
     - `./gradlew :apps:api:test --tests com.lynxus.platform.integration.IntegrationAccountServiceTest --tests com.lynxus.platform.integration.IntegrationAccountRepositoryTest --tests com.lynxus.platform.integration.IntegrationAccountContractTest`
     - `pnpm --dir apps/web test -- --run api.test.ts`
+- Worker Slice 7A verification:
+  - `./gradlew :apps:api:test --tests '*Catalog*'` passed.
+  - `./gradlew :apps:api:test --tests '*SessionRuntimeService*'` passed.
+  - `./gradlew :apps:api:test --tests '*IntegrationAccount*'` passed.
+  - `./gradlew :packages:contracts-jvm:test` passed (`NO-SOURCE` test task after compile check).
+- Worker 7A-Repair verification:
+  - `./gradlew :apps:api:test --tests '*Catalog*'` passed.
+  - `uv run pytest apps/agent-runtime/tests/test_models.py apps/agent-runtime/tests/test_playbook_tool_task.py -q` passed (`15 passed`).
+  - `uv run pytest apps/agent-runtime/tests -q` passed (`60 passed`).
+  - `git diff --check` passed.
+- Worker 7A-DefaultRepair verification:
+  - `./gradlew :apps:api:test --tests '*Catalog*'` passed.
+  - `git diff --check` passed.
+- Worker 7A-NullConfigRepair verification:
+  - Focused regression precheck failed before service repair as expected for Tool resource version create/update with top-level null configuration.
+  - Focused regression tests passed after service repair.
+  - `./gradlew :apps:api:test --tests '*Catalog*'` passed.
+  - `git diff --check` passed.
 
 ## Blockers / Rework
 
-- No active blockers. Slice 6 is complete and checker-confirmed; next action after user resumes is Slice 7 planning.
+- No active blockers after Worker 7A-NullConfigRepair; Slice 7A is ready for checker rerun.

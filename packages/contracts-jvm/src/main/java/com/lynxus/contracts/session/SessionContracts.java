@@ -223,7 +223,7 @@ public final class SessionContracts {
 
     public record ToolConnectorDescriptor(
         String connectorType,
-        String accountId,
+        ToolConnectorAccountSnapshot accountSnapshot,
         int timeoutSeconds,
         String retryPolicy,
         Map<String, Object> config,
@@ -239,6 +239,12 @@ public final class SessionContracts {
                 operationMappings = Collections.unmodifiableMap(copy);
             }
         }
+    }
+
+    public record ToolConnectorAccountSnapshot(
+        String accountId,
+        String externalSecretRef
+    ) {
     }
 
     public record ToolDescriptor(

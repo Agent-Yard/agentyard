@@ -1,5 +1,4 @@
 export type ResourceType = 'TOOL' | 'LLM_MODEL' | 'SKILL';
-export type ToolConnectorType = 'SIMPLE_HTTP' | 'BUSINESS_CODE_SECRET_HTTP' | 'MCP';
 export type ShareScope = 'PRIVATE' | 'DOMAIN_SHARED';
 export type VersionStatus = 'DRAFT' | 'PUBLISHED';
 export type ReferenceObjectType = 'DOMAIN' | 'SCENARIO' | 'ASSISTANT' | 'PLAYBOOK' | 'AGENT' | 'RESOURCE' | 'KNOWLEDGE_BASE';
@@ -556,11 +555,16 @@ export interface ToolOperationDescriptor {
 
 export interface ToolConnectorDescriptor {
   connectorType: string;
-  accountId: string | null;
+  accountSnapshot: ToolConnectorAccountSnapshot | null;
   timeoutSeconds: number;
   retryPolicy: string;
   config: Record<string, unknown>;
   operationMappings: Record<string, Record<string, unknown>>;
+}
+
+export interface ToolConnectorAccountSnapshot {
+  accountId: string;
+  externalSecretRef: string | null;
 }
 
 export interface ToolDescriptor {

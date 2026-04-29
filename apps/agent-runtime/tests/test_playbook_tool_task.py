@@ -33,8 +33,9 @@ class _FakeClient:
             {
                 "data": {
                     "accountId": "integration-account-1",
-                    "connectorType": "BUSINESS_CODE_SECRET_HTTP",
-                    "status": "ACTIVE",
+                    "subjectType": "TOOL_CONNECTOR",
+                    "subjectId": "business-code-secret-http",
+                    "status": "ENABLED",
                     "config": {},
                     "credential": {
                         "businessCode": "biz-001",
@@ -83,8 +84,8 @@ def _request_payload() -> dict:
                         }
                     ],
                     "connector": {
-                        "connectorType": "SIMPLE_HTTP",
-                        "accountId": None,
+                        "connectorType": "simple-http",
+                        "accountSnapshot": None,
                         "timeoutSeconds": 15,
                         "retryPolicy": "NONE",
                         "config": {"baseUrl": "https://tool.example"},
@@ -130,8 +131,8 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
         payload = _request_payload()
         tool = payload["ownerAgent"]["tools"][0]
         tool["connector"] = {
-            "connectorType": "BUSINESS_CODE_SECRET_HTTP",
-            "accountId": "integration-account-1",
+            "connectorType": "business-code-secret-http",
+            "accountSnapshot": {"accountId": "integration-account-1"},
             "timeoutSeconds": 15,
             "retryPolicy": "NONE",
             "config": {
@@ -167,8 +168,8 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
         payload = _request_payload()
         tool = payload["ownerAgent"]["tools"][0]
         tool["connector"] = {
-            "connectorType": "BUSINESS_CODE_SECRET_HTTP",
-            "accountId": "integration-account-1",
+            "connectorType": "business-code-secret-http",
+            "accountSnapshot": {"accountId": "integration-account-1"},
             "timeoutSeconds": 15,
             "retryPolicy": "NONE",
             "config": {"baseUrl": "https://vendor.example"},
@@ -182,21 +183,22 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
             "lynxus_agent_runtime.tooling._load_runtime_integration_account",
             return_value={
                 "accountId": "integration-account-1",
-                "connectorType": "SIMPLE_HTTP",
-                "status": "ACTIVE",
+                "subjectType": "TOOL_CONNECTOR",
+                "subjectId": "simple-http",
+                "status": "ENABLED",
                 "config": {},
                 "credential": {"businessCode": "biz-001", "secretKey": "secret-001"},
             },
         ):
-            with self.assertRaisesRegex(ValueError, "connectorType must be BUSINESS_CODE_SECRET_HTTP"):
+            with self.assertRaisesRegex(ValueError, "subjectId must be business-code-secret-http"):
                 execute_playbook_tool_task(request)
 
     def test_simple_http_connector_should_send_bearer_token_from_optional_account(self) -> None:
         payload = _request_payload()
         tool = payload["ownerAgent"]["tools"][0]
         tool["connector"] = {
-            "connectorType": "SIMPLE_HTTP",
-            "accountId": "integration-account-simple",
+            "connectorType": "simple-http",
+            "accountSnapshot": {"accountId": "integration-account-simple"},
             "timeoutSeconds": 15,
             "retryPolicy": "NONE",
             "config": {"baseUrl": "https://tool.example"},
@@ -211,8 +213,9 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
             "lynxus_agent_runtime.tooling._load_runtime_integration_account",
             return_value={
                 "accountId": "integration-account-simple",
-                "connectorType": "SIMPLE_HTTP",
-                "status": "ACTIVE",
+                "subjectType": "TOOL_CONNECTOR",
+                "subjectId": "simple-http",
+                "status": "ENABLED",
                 "config": {},
                 "credential": {"bearerToken": "vendor-token"},
             },
@@ -227,8 +230,8 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
         payload = _request_payload()
         tool = payload["ownerAgent"]["tools"][0]
         tool["connector"] = {
-            "connectorType": "SIMPLE_HTTP",
-            "accountId": "integration-account-business",
+            "connectorType": "simple-http",
+            "accountSnapshot": {"accountId": "integration-account-business"},
             "timeoutSeconds": 15,
             "retryPolicy": "NONE",
             "config": {"baseUrl": "https://tool.example"},
@@ -242,21 +245,51 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
             "lynxus_agent_runtime.tooling._load_runtime_integration_account",
             return_value={
                 "accountId": "integration-account-business",
-                "connectorType": "BUSINESS_CODE_SECRET_HTTP",
-                "status": "ACTIVE",
+                "subjectType": "TOOL_CONNECTOR",
+                "subjectId": "business-code-secret-http",
+                "status": "ENABLED",
                 "config": {},
                 "credential": {"businessCode": "biz-001", "secretKey": "secret-001"},
             },
         ):
-            with self.assertRaisesRegex(ValueError, "connectorType must be SIMPLE_HTTP"):
+            with self.assertRaisesRegex(ValueError, "subjectId must be simple-http"):
+                execute_playbook_tool_task(request)
+
+    def test_simple_http_connector_should_reject_disabled_runtime_account(self) -> None:
+        payload = _request_payload()
+        tool = payload["ownerAgent"]["tools"][0]
+        tool["connector"] = {
+            "connectorType": "simple-http",
+            "accountSnapshot": {"accountId": "integration-account-disabled"},
+            "timeoutSeconds": 15,
+            "retryPolicy": "NONE",
+            "config": {"baseUrl": "https://tool.example"},
+            "operationMappings": {
+                "create_ticket": {"method": "POST", "path": "/create", "requestPlacement": "JSON_BODY"}
+            },
+        }
+        request = PlaybookToolTaskRequest.model_validate(payload)
+
+        with patch(
+            "lynxus_agent_runtime.tooling._load_runtime_integration_account",
+            return_value={
+                "accountId": "integration-account-disabled",
+                "subjectType": "TOOL_CONNECTOR",
+                "subjectId": "simple-http",
+                "status": "DISABLED",
+                "config": {},
+                "credential": {"bearerToken": "vendor-token"},
+            },
+        ):
+            with self.assertRaisesRegex(ValueError, "is not ENABLED"):
                 execute_playbook_tool_task(request)
 
     def test_mcp_connector_should_not_send_internal_auth_by_default(self) -> None:
         payload = _request_payload()
         tool = payload["ownerAgent"]["tools"][0]
         tool["connector"] = {
-            "connectorType": "MCP",
-            "accountId": None,
+            "connectorType": "mcp",
+            "accountSnapshot": None,
             "timeoutSeconds": 15,
             "retryPolicy": "NONE",
             "config": {
@@ -281,8 +314,8 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
         payload = _request_payload()
         tool = payload["ownerAgent"]["tools"][0]
         tool["connector"] = {
-            "connectorType": "MCP",
-            "accountId": None,
+            "connectorType": "mcp",
+            "accountSnapshot": None,
             "timeoutSeconds": 15,
             "retryPolicy": "NONE",
             "config": {

@@ -20,6 +20,7 @@ import com.lynxus.contracts.session.SessionContracts.SessionStartRequest;
 import com.lynxus.contracts.session.SessionContracts.SessionUserMessageUpdateResult;
 import com.lynxus.contracts.session.SessionContracts.SkillDescriptor;
 import com.lynxus.contracts.session.SessionContracts.ToolDescriptor;
+import com.lynxus.contracts.session.SessionContracts.ToolConnectorAccountSnapshot;
 import com.lynxus.contracts.session.SessionContracts.ToolConnectorDescriptor;
 import com.lynxus.contracts.session.SessionContracts.ToolOperationDescriptor;
 import com.lynxus.contracts.session.SessionContracts.UserMessage;
@@ -436,13 +437,20 @@ public class SessionRuntimeService {
             return null;
         }
         return new ToolConnectorDescriptor(
-            connector.connectorType() == null ? null : connector.connectorType().name(),
-            connector.accountId(),
+            connector.connectorType(),
+            toToolConnectorAccountSnapshot(connector.accountSnapshot()),
             connector.timeoutSeconds(),
             connector.retryPolicy(),
             connector.config(),
             connector.operationMappings()
         );
+    }
+
+    private ToolConnectorAccountSnapshot toToolConnectorAccountSnapshot(com.lynxus.platform.catalog.CatalogDtos.ToolConnectorAccountSnapshotDto accountSnapshot) {
+        if (accountSnapshot == null) {
+            return null;
+        }
+        return new ToolConnectorAccountSnapshot(accountSnapshot.accountId(), accountSnapshot.externalSecretRef());
     }
 
     private PlaybookConfig toPlaybookConfig(com.lynxus.platform.catalog.CatalogDtos.PlaybookDto playbook) {

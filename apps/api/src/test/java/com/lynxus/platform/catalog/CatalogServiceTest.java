@@ -3,9 +3,12 @@ package com.lynxus.platform.catalog;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.lynxus.extension.sdk.protocol.LynxusExtensionHeaders;
+import com.lynxus.extension.sdk.registration.ExtensionRegistrationLoader;
 import com.lynxus.contracts.runtime.WorkflowContracts.ResourceType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
 import com.lynxus.contracts.runtime.WorkflowContracts.VersionStatus;
@@ -17,13 +20,31 @@ import com.lynxus.platform.auth.CurrentUserResolver;
 import com.lynxus.platform.event.PlatformEventDtos.PlatformAggregateType;
 import com.lynxus.platform.event.PlatformEventRepository;
 import com.lynxus.platform.event.PlatformEventService;
+import com.lynxus.platform.extension.ExtensionDefinitionService;
+import com.lynxus.platform.extension.ExtensionRegistrationProperties;
+import com.lynxus.platform.extension.ExtensionRegistrationService;
+import com.lynxus.platform.integration.IntegrationAccountRepository;
+import com.lynxus.platform.integration.IntegrationAccountService;
+import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountAvailabilityDecision;
+import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountCredentialStatus;
+import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountStatus;
+import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountSubjectType;
+import com.lynxus.platform.integration.IntegrationDtos.StoredIntegrationAccount;
 import com.lynxus.platform.knowledge.KnowledgeServiceClient;
 import com.lynxus.platform.knowledge.KnowledgeWorkflowGateway;
+import com.lynxus.platform.shared.ApiProblemException;
 import com.lynxus.platform.shared.ConflictException;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import tools.jackson.databind.ObjectMapper;
 
 class CatalogServiceTest {
     @Test
@@ -81,11 +102,7 @@ class CatalogServiceTest {
 
     @Test
     void shouldExposeEmptyCatalogSummaryWithoutSeededData() {
-        CatalogService service = new CatalogService(
-            new InMemoryCatalogRepository(),
-            readySnapshotKnowledgeClient(),
-            noopKnowledgeWorkflowGateway()
-        );
+        CatalogService service = catalogServiceWithCoreToolConnectors();
         CatalogDtos.CatalogSummaryDto summary = service.summary();
 
         assertTrue(summary.domains().isEmpty());
@@ -97,11 +114,9 @@ class CatalogServiceTest {
     void shouldKeepFreshCatalogReadsReadOnlyAtRevisionZero() {
         ReadOnlyGuardCatalogRepository catalogRepository = new ReadOnlyGuardCatalogRepository();
         ReadOnlyGuardKnowledgeRepository knowledgeRepository = new ReadOnlyGuardKnowledgeRepository();
-        CatalogService service = new CatalogService(
+        CatalogService service = catalogServiceWithCoreToolConnectors(
             catalogRepository,
             knowledgeRepository,
-            readySnapshotKnowledgeClient(),
-            noopKnowledgeWorkflowGateway(),
             PlatformEventService.disabled(),
             null
         );
@@ -124,11 +139,9 @@ class CatalogServiceTest {
         com.lynxus.platform.knowledge.InMemoryKnowledgeRepository knowledgeRepository =
             new com.lynxus.platform.knowledge.InMemoryKnowledgeRepository();
         MutatingCatalogRepository catalogRepository = new MutatingCatalogRepository(knowledgeRepository);
-        CatalogService service = new CatalogService(
+        CatalogService service = catalogServiceWithCoreToolConnectors(
             catalogRepository,
             knowledgeRepository,
-            readySnapshotKnowledgeClient(),
-            noopKnowledgeWorkflowGateway(),
             PlatformEventService.disabled(),
             null
         );
@@ -848,7 +861,7 @@ class CatalogServiceTest {
 
     @Test
     void shouldKeepPublishedReleaseResourceAnchorsFrozenUntilAssistantRepublished() {
-        CatalogService catalogService = new CatalogService(new InMemoryCatalogRepository(), readySnapshotKnowledgeClient(), noopKnowledgeWorkflowGateway());
+        CatalogService catalogService = catalogServiceWithCoreToolConnectors();
         CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("冻结资源域", "验证资源版本冻结"));
         CatalogDtos.ScenarioDto scenario = catalogService.createScenario(
             new CatalogDtos.CreateScenarioRequest(domain.id(), "冻结资源场景", "测试资源版本锚点")
@@ -878,7 +891,11 @@ class CatalogServiceTest {
                 "初始工具版本",
                 "平台工具团队",
                 List.of("TOOL"),
-                new CatalogDtos.CreateResourceVersionRequest("Tool v1", VersionStatus.PUBLISHED, null)
+                new CatalogDtos.CreateResourceVersionRequest(
+                    "Tool v1",
+                    VersionStatus.PUBLISHED,
+                    toolResourceConfiguration(simpleHttpToolConfig())
+                )
             )
         );
         CatalogDtos.AssistantDto assistant = catalogService.createAssistant(
@@ -914,7 +931,11 @@ class CatalogServiceTest {
         );
         CatalogDtos.ResourceVersionDto newToolVersion = catalogService.createResourceVersion(
             tool.id(),
-            new CatalogDtos.CreateResourceVersionRequest("Tool v2", VersionStatus.PUBLISHED, null)
+            new CatalogDtos.CreateResourceVersionRequest(
+                "Tool v2",
+                VersionStatus.PUBLISHED,
+                toolResourceConfiguration(simpleHttpToolConfig())
+            )
         );
 
         CatalogDtos.AssistantDto unchangedRelease = catalogService.listAssistants().stream()
@@ -1051,7 +1072,7 @@ class CatalogServiceTest {
 
     @Test
     void shouldStillFreezeToolVersionsWhenPublishingAssistant() {
-        CatalogService catalogService = new CatalogService(new InMemoryCatalogRepository(), readySnapshotKnowledgeClient(), noopKnowledgeWorkflowGateway());
+        CatalogService catalogService = catalogServiceWithCoreToolConnectors();
         CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("交付域", "承载交付流程"));
         CatalogDtos.ScenarioDto scenario = catalogService.createScenario(
             new CatalogDtos.CreateScenarioRequest(domain.id(), "交付跟进", "跟进交付流程")
@@ -1091,7 +1112,11 @@ class CatalogServiceTest {
                 "处理交付回调",
                 "交付团队",
                 List.of("交付"),
-                null
+                new CatalogDtos.CreateResourceVersionRequest(
+                    "交付 Tool 初始版本",
+                    VersionStatus.DRAFT,
+                    toolResourceConfiguration(simpleHttpToolConfig())
+                )
             )
         );
         catalogService.createAgent(new CatalogDtos.CreateAgentRequest(
@@ -1109,7 +1134,7 @@ class CatalogServiceTest {
 
     @Test
     void shouldDeleteUnusedResourceAndProtectBoundResources() {
-        CatalogService catalogService = new CatalogService(new InMemoryCatalogRepository(), readySnapshotKnowledgeClient(), noopKnowledgeWorkflowGateway());
+        CatalogService catalogService = catalogServiceWithCoreToolConnectors();
         CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("质检域", "承载质检流程"));
         CatalogDtos.ResourceDto removable = catalogService.createResource(
             new CatalogDtos.CreateResourceRequest(
@@ -1122,7 +1147,11 @@ class CatalogServiceTest {
                 "质检工具",
                 "质检管理员",
                 List.of("质检"),
-                null
+                new CatalogDtos.CreateResourceVersionRequest(
+                    "质检 Tool 初始版本",
+                    VersionStatus.DRAFT,
+                    toolResourceConfiguration(simpleHttpToolConfig())
+                )
             )
         );
 
@@ -1183,12 +1212,7 @@ class CatalogServiceTest {
             new PlatformEventRepository.InMemoryPlatformEventRepository(),
             testCurrentUserResolver()
         );
-        CatalogService catalogService = new CatalogService(
-            new InMemoryCatalogRepository(),
-            readySnapshotKnowledgeClient(),
-            noopKnowledgeWorkflowGateway(),
-            platformEventService
-        );
+        CatalogService catalogService = catalogServiceWithCoreToolConnectors(platformEventService);
         CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("运营域", "承载运营资源"));
         CatalogDtos.ResourceDto resource = catalogService.createResource(
             new CatalogDtos.CreateResourceRequest(
@@ -1201,7 +1225,11 @@ class CatalogServiceTest {
                 "运营工具",
                 "运营团队",
                 List.of("运营"),
-                new CatalogDtos.CreateResourceVersionRequest("初始草稿", VersionStatus.DRAFT, null)
+                new CatalogDtos.CreateResourceVersionRequest(
+                    "初始草稿",
+                    VersionStatus.DRAFT,
+                    toolResourceConfiguration(simpleHttpToolConfig())
+                )
             )
         );
         CatalogDtos.ResourceVersionDto draftVersion = resource.versions().getFirst();
@@ -1247,6 +1275,788 @@ class CatalogServiceTest {
         assertTrue(eventTypes.contains("RESOURCE_VERSION_PUBLISHED"));
     }
 
+    @Test
+    void shouldNormalizeToolConnectorConfigFromExtensionDefinitionDescriptorId() {
+        CatalogService catalogService = catalogServiceWithToolConnectors(
+            List.of(crmToolConnectorDescriptor()),
+            null,
+            null
+        );
+        CatalogDtos.ResourceDto tool = createToolResource(
+            catalogService,
+            toolConfig(
+                "enterprise.acme.crm",
+                null,
+                Map.of("tenantId", "acme"),
+                Map.of("query_customer", Map.of("endpoint", "/customers"))
+            )
+        );
+
+        CatalogDtos.ToolConnectorConfigDto connector = tool.versions().getFirst().configuration().tool().connector();
+
+        assertEquals("enterprise.acme.crm", connector.connectorType());
+        assertNull(connector.accountId());
+        assertNull(connector.accountSnapshot());
+        assertEquals(Map.of("tenantId", "acme"), connector.config());
+        assertEquals(Map.of("endpoint", "/customers"), connector.operationMappings().get("query_customer"));
+    }
+
+    @Test
+    void shouldRejectToolConnectorConfigThatDoesNotMatchCurrentDefinitionSchema() {
+        CatalogService catalogService = catalogServiceWithToolConnectors(
+            List.of(crmToolConnectorDescriptor()),
+            null,
+            null
+        );
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> createToolResource(
+            catalogService,
+            toolConfig(
+                "enterprise.acme.crm",
+                null,
+                Map.of(),
+                Map.of("query_customer", Map.of("endpoint", "/customers"))
+            )
+        ));
+
+        assertTrue(error.getMessage().contains("tool connector config does not satisfy connector schema"));
+    }
+
+    @Test
+    void shouldRequireExplicitOperationMappingForEveryToolOperation() {
+        CatalogService catalogService = catalogServiceWithToolConnectors(
+            List.of(crmToolConnectorDescriptor()),
+            null,
+            null
+        );
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> createToolResource(
+            catalogService,
+            new CatalogDtos.ToolConfigDto(
+                List.of(
+                    new CatalogDtos.ToolOperationDto("query_customer", "查询客户", "{\"type\":\"object\"}", "{\"type\":\"object\"}"),
+                    new CatalogDtos.ToolOperationDto("create_ticket", "创建工单", "{\"type\":\"object\"}", "{\"type\":\"object\"}")
+                ),
+                new CatalogDtos.ToolConnectorConfigDto(
+                    "enterprise.acme.crm",
+                    null,
+                    null,
+                    20,
+                    "NONE",
+                    Map.of("tenantId", "acme"),
+                    Map.of("query_customer", Map.of("endpoint", "/customers"))
+                )
+            )
+        ));
+
+        assertTrue(error.getMessage().contains("operationMappings missing operation: create_ticket"));
+    }
+
+    @Test
+    void shouldRejectSecretLikeMaterialInToolConnectorConfigAndOperationMappings() {
+        CatalogService catalogService = catalogServiceWithToolConnectors(
+            List.of(crmToolConnectorDescriptor()),
+            null,
+            null
+        );
+
+        IllegalArgumentException configError = assertThrows(IllegalArgumentException.class, () -> createToolResource(
+            catalogService,
+            toolConfig(
+                "enterprise.acme.crm",
+                null,
+                Map.of("tenantId", "acme", "apiKey", "secret"),
+                Map.of("query_customer", Map.of("endpoint", "/customers"))
+            )
+        ));
+        IllegalArgumentException mappingError = assertThrows(IllegalArgumentException.class, () -> createToolResource(
+            catalogService,
+            toolConfig(
+                "enterprise.acme.crm",
+                null,
+                Map.of("tenantId", "acme"),
+                Map.of("query_customer", Map.of("endpoint", "/customers", "externalSecretRef", "vault://secret"))
+            )
+        ));
+
+        assertTrue(configError.getMessage().contains("secret-like key"));
+        assertTrue(mappingError.getMessage().contains("secret-like key"));
+    }
+
+    @Test
+    void shouldRejectToolResourceWithoutExplicitConnectorConfig() {
+        CatalogService catalogService = catalogServiceWithCoreToolConnectors();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> createToolResource(
+            catalogService,
+            new CatalogDtos.ToolConfigDto(
+                List.of(new CatalogDtos.ToolOperationDto("query_customer", "查询客户", "{\"type\":\"object\"}", "{\"type\":\"object\"}")),
+                null
+            )
+        ));
+
+        assertEquals("tool connector config is required", error.getMessage());
+    }
+
+    @Test
+    void shouldRejectToolResourceWithoutToolConfig() {
+        CatalogService catalogService = catalogServiceWithCoreToolConnectors();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> createToolResource(
+            catalogService,
+            null
+        ));
+
+        assertEquals("tool config is required", error.getMessage());
+    }
+
+    @Test
+    void shouldRejectToolResourceVersionCreateWithNullConfiguration() {
+        CatalogService catalogService = catalogServiceWithCoreToolConnectors();
+        CatalogDtos.ResourceDto resource = createToolResource(catalogService, simpleHttpToolConfig());
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> catalogService.createResourceVersion(
+            resource.id(),
+            new CatalogDtos.CreateResourceVersionRequest("null config", VersionStatus.DRAFT, null)
+        ));
+
+        assertEquals("tool resource version configuration is required", error.getMessage());
+    }
+
+    @Test
+    void shouldRejectToolResourceVersionUpdateWithNullConfiguration() {
+        CatalogService catalogService = catalogServiceWithCoreToolConnectors();
+        CatalogDtos.ResourceDto resource = createDraftToolResource(catalogService, simpleHttpToolConfig());
+        CatalogDtos.ResourceVersionDto draftVersion = resource.versions().getFirst();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> catalogService.updateResourceVersion(
+            resource.id(),
+            draftVersion.id(),
+            new CatalogDtos.UpdateResourceVersionRequest("null config", VersionStatus.DRAFT, null)
+        ));
+
+        assertEquals("tool resource version configuration is required", error.getMessage());
+    }
+
+    @Test
+    void shouldFailClearlyWhenToolConnectorDefinitionIsMissing() {
+        CatalogService catalogService = catalogServiceWithToolConnectors(
+            List.of(crmToolConnectorDescriptor()),
+            null,
+            null
+        );
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> createToolResource(
+            catalogService,
+            toolConfig(
+                "enterprise.missing",
+                null,
+                Map.of("tenantId", "acme"),
+                Map.of("query_customer", Map.of("endpoint", "/customers"))
+            )
+        ));
+
+        assertEquals("tool connector definition not found: enterprise.missing", error.getMessage());
+    }
+
+    @Test
+    void shouldFailClearlyWhenToolConnectorDefinitionsAreUnavailable() {
+        CatalogService catalogService = new CatalogService(
+            new InMemoryCatalogRepository(),
+            readySnapshotKnowledgeClient(),
+            noopKnowledgeWorkflowGateway()
+        );
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, () -> createToolResource(
+            catalogService,
+            simpleHttpToolConfig()
+        ));
+
+        assertEquals(
+            "tool connector definition registry is unavailable; ExtensionDefinitionService is required",
+            error.getMessage()
+        );
+    }
+
+    @Test
+    void shouldMaterializeToolConnectorAccountSnapshotWhenPublishingAssistantRelease() {
+        RecordingIntegrationAccountService accountService = new RecordingIntegrationAccountService();
+        CatalogService catalogService = catalogServiceWithToolConnectors(
+            List.of(crmToolConnectorDescriptor()),
+            accountService,
+            new FixedIntegrationAccountRepository(storedAccount(
+                "integration-account-1",
+                "enterprise.acme.crm",
+                "vault://tool-secret"
+            ))
+        );
+        CatalogDtos.ToolConnectorConfigDto connector = publishedReleaseToolConnector(
+            catalogService,
+            toolConfig(
+                "enterprise.acme.crm",
+                "integration-account-1",
+                Map.of("tenantId", "acme"),
+                Map.of("query_customer", Map.of("endpoint", "/customers"))
+            )
+        );
+
+        assertNull(connector.accountId());
+        assertNotNull(connector.accountSnapshot());
+        assertEquals("integration-account-1", connector.accountSnapshot().accountId());
+        assertEquals("vault://tool-secret", connector.accountSnapshot().externalSecretRef());
+        assertEquals(IntegrationAccountSubjectType.TOOL_CONNECTOR, accountService.expectedSubjectType);
+        assertEquals("enterprise.acme.crm", accountService.expectedSubjectId);
+        assertEquals("integration-account-1", accountService.accountId);
+    }
+
+    @Test
+    void shouldMaterializeToolConnectorAccountSnapshotWithoutExternalSecretRef() {
+        CatalogService catalogService = catalogServiceWithToolConnectors(
+            List.of(crmToolConnectorDescriptor()),
+            new RecordingIntegrationAccountService(),
+            new FixedIntegrationAccountRepository(storedAccount(
+                "integration-account-1",
+                "enterprise.acme.crm",
+                null
+            ))
+        );
+
+        CatalogDtos.ToolConnectorConfigDto connector = publishedReleaseToolConnector(
+            catalogService,
+            toolConfig(
+                "enterprise.acme.crm",
+                "integration-account-1",
+                Map.of("tenantId", "acme"),
+                Map.of("query_customer", Map.of("endpoint", "/customers"))
+            )
+        );
+
+        assertNotNull(connector.accountSnapshot());
+        assertEquals("integration-account-1", connector.accountSnapshot().accountId());
+        assertNull(connector.accountSnapshot().externalSecretRef());
+    }
+
+    @Test
+    void shouldHardBlockAssistantReleaseWhenSelectedToolConnectorAccountIsUnavailable() {
+        RecordingIntegrationAccountService accountService = new RecordingIntegrationAccountService();
+        accountService.error = new ApiProblemException(
+            HttpStatus.UNPROCESSABLE_ENTITY,
+            "INTEGRATION_ACCOUNT_AVAILABILITY_BLOCKED",
+            "INTEGRATION_ACCOUNT_AVAILABILITY_BLOCKED: blocked"
+        );
+        CatalogService catalogService = catalogServiceWithToolConnectors(
+            List.of(crmToolConnectorDescriptor()),
+            accountService,
+            new FixedIntegrationAccountRepository(storedAccount(
+                "integration-account-1",
+                "enterprise.acme.crm",
+                "vault://tool-secret"
+            ))
+        );
+
+        ApiProblemException error = assertThrows(ApiProblemException.class, () -> publishedReleaseToolConnector(
+            catalogService,
+            toolConfig(
+                "enterprise.acme.crm",
+                "integration-account-1",
+                Map.of("tenantId", "acme"),
+                Map.of("query_customer", Map.of("endpoint", "/customers"))
+            )
+        ));
+
+        assertEquals("INTEGRATION_ACCOUNT_AVAILABILITY_BLOCKED", error.code());
+    }
+
+    @Test
+    void shouldRevalidateToolConnectorOperationMappingsAgainstCurrentDefinitionWhenPublishingAssistantRelease() {
+        List<Map<String, Object>> descriptors = new java.util.ArrayList<>(List.of(crmToolConnectorDescriptor()));
+        CatalogService catalogService = catalogServiceWithToolConnectors(descriptors, null, null);
+        CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("漂移域", "schema drift"));
+        CatalogDtos.ScenarioDto scenario = catalogService.createScenario(new CatalogDtos.CreateScenarioRequest(domain.id(), "漂移场景", "schema drift"));
+        CatalogDtos.ResourceDto defaultModel = catalogService.createResource(
+            new CatalogDtos.CreateResourceRequest(
+                domain.id(),
+                "默认模型",
+                ResourceType.LLM_MODEL,
+                ShareScope.DOMAIN_SHARED,
+                "DOMAIN",
+                domain.id(),
+                "default model",
+                "model team",
+                List.of("llm"),
+                new CatalogDtos.CreateResourceVersionRequest("model", VersionStatus.PUBLISHED, null)
+            )
+        );
+        CatalogDtos.ResourceDto tool = catalogService.createResource(
+            new CatalogDtos.CreateResourceRequest(
+                domain.id(),
+                "CRM Tool",
+                ResourceType.TOOL,
+                ShareScope.DOMAIN_SHARED,
+                "DOMAIN",
+                domain.id(),
+                "CRM tool",
+                "Tool team",
+                List.of("crm"),
+                new CatalogDtos.CreateResourceVersionRequest(
+                    "tool",
+                    VersionStatus.PUBLISHED,
+                    new CatalogDtos.ResourceVersionConfigurationDto(
+                        ResourceType.TOOL,
+                        toolConfig(
+                            "enterprise.acme.crm",
+                            null,
+                            Map.of("tenantId", "acme"),
+                            Map.of("query_customer", Map.of("endpoint", "/customers"))
+                        ),
+                        null,
+                        null
+                    )
+                )
+            )
+        );
+        Map<String, Object> stricterDescriptor = new LinkedHashMap<>(crmToolConnectorDescriptor());
+        stricterDescriptor.put("operationMappingSchema", objectSchema(
+            Map.of("route", Map.of("type", "string", "minLength", 1)),
+            List.of("route")
+        ));
+        descriptors.set(0, stricterDescriptor);
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () ->
+            publishAssistantWithTool(catalogService, scenario.id(), defaultModel.id(), tool.id())
+        );
+
+        assertTrue(error.getMessage().contains("tool connector operation mapping query_customer does not satisfy connector schema"));
+    }
+
+    private static CatalogService catalogServiceWithToolConnectors(
+        List<Map<String, Object>> toolConnectorDescriptors,
+        IntegrationAccountService integrationAccountService,
+        IntegrationAccountRepository integrationAccountRepository
+    ) {
+        ExtensionDefinitionService definitionService = extensionDefinitionService(toolConnectorDescriptors);
+        return new CatalogService(
+            new InMemoryCatalogRepository(),
+            new com.lynxus.platform.knowledge.InMemoryKnowledgeRepository(),
+            readySnapshotKnowledgeClient(),
+            noopKnowledgeWorkflowGateway(),
+            PlatformEventService.disabled(),
+            null,
+            definitionService,
+            integrationAccountService,
+            integrationAccountRepository
+        );
+    }
+
+    private static CatalogService catalogServiceWithCoreToolConnectors() {
+        return catalogServiceWithCoreToolConnectors(PlatformEventService.disabled());
+    }
+
+    private static CatalogService catalogServiceWithCoreToolConnectors(PlatformEventService platformEventService) {
+        return catalogServiceWithCoreToolConnectors(
+            new InMemoryCatalogRepository(),
+            new com.lynxus.platform.knowledge.InMemoryKnowledgeRepository(),
+            platformEventService,
+            null
+        );
+    }
+
+    private static CatalogService catalogServiceWithCoreToolConnectors(
+        CatalogRepository catalogRepository,
+        com.lynxus.platform.knowledge.KnowledgeRepository knowledgeRepository,
+        PlatformEventService platformEventService,
+        com.lynxus.platform.shared.redis.RedisInvalidationBus invalidationBus
+    ) {
+        return new CatalogService(
+            catalogRepository,
+            knowledgeRepository,
+            readySnapshotKnowledgeClient(),
+            noopKnowledgeWorkflowGateway(),
+            platformEventService,
+            invalidationBus,
+            extensionDefinitionService(List.of()),
+            null,
+            null
+        );
+    }
+
+    private static ExtensionDefinitionService extensionDefinitionService(List<Map<String, Object>> toolConnectorDescriptors) {
+        return new ExtensionDefinitionService(
+            registrationServiceWithRemoteToolConnector(!toolConnectorDescriptors.isEmpty()),
+            (manifestUrl, headers) -> {
+                String registrationId = headers.get(LynxusExtensionHeaders.REGISTRATION_ID);
+                if (ExtensionRegistrationLoader.CORE_CHANNEL_GATEWAY_REGISTRATION_ID.equals(registrationId)) {
+                    return manifest(List.of(channelProviderDescriptor("feishu")), List.of());
+                }
+                if (ExtensionRegistrationLoader.CORE_AGENT_RUNTIME_REGISTRATION_ID.equals(registrationId)) {
+                    return manifest(List.of(), coreToolConnectorDescriptors());
+                }
+                if ("acme-remote".equals(registrationId)) {
+                    return manifest(List.of(), toolConnectorDescriptors);
+                }
+                throw new AssertionError("unexpected registration id: " + registrationId);
+            },
+            "internal-token"
+        );
+    }
+
+    private static ExtensionRegistrationService registrationServiceWithRemoteToolConnector(boolean includeRemoteToolConnector) {
+        try {
+            Path tempFile = Files.createTempFile("lynxus-catalog-tool-connector", ".yaml");
+            Files.writeString(tempFile, includeRemoteToolConnector
+                ? """
+                    lynxus:
+                      extensions:
+                        services:
+                          - registrationId: acme-remote
+                            baseUrl: https://remote.example.com/private
+                            exposes:
+                              toolConnectorTypes:
+                                - enterprise.acme.crm
+                            auth:
+                              type: INTERNAL_TOKEN
+                    """
+                : """
+                    lynxus:
+                      extensions:
+                        services: []
+                    """);
+            return new ExtensionRegistrationService(
+                new ExtensionRegistrationProperties(
+                    tempFile.toString(),
+                    "http://channel-gateway.example.com",
+                    "http://agent-runtime.example.com"
+                )
+            );
+        } catch (IOException error) {
+            throw new AssertionError(error);
+        }
+    }
+
+    private static CatalogDtos.ResourceDto createToolResource(CatalogService service, CatalogDtos.ToolConfigDto toolConfig) {
+        CatalogDtos.BusinessDomainDto domain = service.createDomain(new CatalogDtos.CreateDomainRequest("工具域-" + System.nanoTime(), "tool config"));
+        return service.createResource(
+            new CatalogDtos.CreateResourceRequest(
+                domain.id(),
+                "CRM Tool",
+                ResourceType.TOOL,
+                ShareScope.DOMAIN_SHARED,
+                "DOMAIN",
+                domain.id(),
+                "CRM tool",
+                "Tool team",
+                List.of("crm"),
+                new CatalogDtos.CreateResourceVersionRequest(
+                    "tool version",
+                    VersionStatus.PUBLISHED,
+                    new CatalogDtos.ResourceVersionConfigurationDto(ResourceType.TOOL, toolConfig, null, null)
+                )
+            )
+        );
+    }
+
+    private static CatalogDtos.ResourceDto createDraftToolResource(CatalogService service, CatalogDtos.ToolConfigDto toolConfig) {
+        CatalogDtos.BusinessDomainDto domain = service.createDomain(new CatalogDtos.CreateDomainRequest("草稿工具域-" + System.nanoTime(), "tool config"));
+        return service.createResource(
+            new CatalogDtos.CreateResourceRequest(
+                domain.id(),
+                "Draft CRM Tool",
+                ResourceType.TOOL,
+                ShareScope.DOMAIN_SHARED,
+                "DOMAIN",
+                domain.id(),
+                "Draft CRM tool",
+                "Tool team",
+                List.of("crm"),
+                new CatalogDtos.CreateResourceVersionRequest(
+                    "draft tool version",
+                    VersionStatus.DRAFT,
+                    new CatalogDtos.ResourceVersionConfigurationDto(ResourceType.TOOL, toolConfig, null, null)
+                )
+            )
+        );
+    }
+
+    private static CatalogDtos.ToolConnectorConfigDto publishedReleaseToolConnector(
+        CatalogService service,
+        CatalogDtos.ToolConfigDto toolConfig
+    ) {
+        CatalogDtos.BusinessDomainDto domain = service.createDomain(new CatalogDtos.CreateDomainRequest("发布域-" + System.nanoTime(), "release"));
+        CatalogDtos.ScenarioDto scenario = service.createScenario(new CatalogDtos.CreateScenarioRequest(domain.id(), "发布场景", "release"));
+        CatalogDtos.ResourceDto defaultModel = service.createResource(
+            new CatalogDtos.CreateResourceRequest(
+                domain.id(),
+                "默认模型",
+                ResourceType.LLM_MODEL,
+                ShareScope.DOMAIN_SHARED,
+                "DOMAIN",
+                domain.id(),
+                "default model",
+                "model team",
+                List.of("llm"),
+                new CatalogDtos.CreateResourceVersionRequest("model", VersionStatus.PUBLISHED, null)
+            )
+        );
+        CatalogDtos.ResourceDto tool = service.createResource(
+            new CatalogDtos.CreateResourceRequest(
+                domain.id(),
+                "CRM Tool",
+                ResourceType.TOOL,
+                ShareScope.DOMAIN_SHARED,
+                "DOMAIN",
+                domain.id(),
+                "CRM tool",
+                "Tool team",
+                List.of("crm"),
+                new CatalogDtos.CreateResourceVersionRequest(
+                    "tool",
+                    VersionStatus.PUBLISHED,
+                    new CatalogDtos.ResourceVersionConfigurationDto(ResourceType.TOOL, toolConfig, null, null)
+                )
+            )
+        );
+        CatalogDtos.AssistantDto assistant = service.createAssistant(
+            new CatalogDtos.CreateAssistantRequest(
+                scenario.id(),
+                "发布助手",
+                "release assistant",
+                new CatalogDtos.AssistantModelPolicyDto(defaultModel.id()),
+                null,
+                null
+            )
+        );
+        CatalogDtos.AssistantDto published = publishAssistantWithTool(service, assistant, tool.id());
+        return published.currentRelease().resources().stream()
+            .filter(resource -> resource.resourceType() == ResourceType.TOOL)
+            .findFirst()
+            .orElseThrow()
+            .configuration()
+            .tool()
+            .connector();
+    }
+
+    private static CatalogDtos.AssistantDto publishAssistantWithTool(
+        CatalogService service,
+        String scenarioId,
+        String defaultModelId,
+        String toolId
+    ) {
+        CatalogDtos.AssistantDto assistant = service.createAssistant(
+            new CatalogDtos.CreateAssistantRequest(
+                scenarioId,
+                "发布助手",
+                "release assistant",
+                new CatalogDtos.AssistantModelPolicyDto(defaultModelId),
+                null,
+                null
+            )
+        );
+        return publishAssistantWithTool(service, assistant, toolId);
+    }
+
+    private static CatalogDtos.AssistantDto publishAssistantWithTool(
+        CatalogService service,
+        CatalogDtos.AssistantDto assistant,
+        String toolId
+    ) {
+        service.createAgent(new CatalogDtos.CreateAgentRequest(
+            assistant.id(),
+            "工具智能体",
+            "owner",
+            "owns tool calls",
+            new CatalogDtos.AgentExecutionPolicyDto(true, null, "", false, false, null, 8, List.of(), List.of(toolId))
+        ));
+        return publishAssistant(service, assistant);
+    }
+
+    private static CatalogDtos.ToolConfigDto toolConfig(
+        String connectorType,
+        String accountId,
+        Map<String, Object> config,
+        Map<String, Map<String, Object>> operationMappings
+    ) {
+        return new CatalogDtos.ToolConfigDto(
+            List.of(new CatalogDtos.ToolOperationDto("query_customer", "查询客户", "{\"type\":\"object\"}", "{\"type\":\"object\"}")),
+            new CatalogDtos.ToolConnectorConfigDto(
+                connectorType,
+                accountId,
+                null,
+                20,
+                "NONE",
+                config,
+                operationMappings
+            )
+        );
+    }
+
+    private static CatalogDtos.ToolConfigDto simpleHttpToolConfig() {
+        return toolConfig(
+            "simple-http",
+            null,
+            Map.of("baseUrl", "https://tools.example.com"),
+            Map.of("query_customer", Map.of("endpoint", "/customers"))
+        );
+    }
+
+    private static CatalogDtos.ResourceVersionConfigurationDto toolResourceConfiguration(CatalogDtos.ToolConfigDto toolConfig) {
+        return new CatalogDtos.ResourceVersionConfigurationDto(ResourceType.TOOL, toolConfig, null, null);
+    }
+
+    private static List<Map<String, Object>> coreToolConnectorDescriptors() {
+        return List.of(
+            toolConnectorDescriptor(
+                "business-code-secret-http",
+                objectSchema(Map.of("baseUrl", Map.of("type", "string")), List.of()),
+                objectSchema(Map.of("endpoint", Map.of("type", "string")), List.of())
+            ),
+            toolConnectorDescriptor(
+                "mcp",
+                objectSchema(Map.of("connectionUri", Map.of("type", "string")), List.of()),
+                objectSchema(Map.of("tool", Map.of("type", "string")), List.of())
+            ),
+            toolConnectorDescriptor(
+                "simple-http",
+                objectSchema(Map.of("baseUrl", Map.of("type", "string")), List.of()),
+                objectSchema(Map.of("endpoint", Map.of("type", "string")), List.of())
+            )
+        );
+    }
+
+    private static Map<String, Object> crmToolConnectorDescriptor() {
+        return toolConnectorDescriptor(
+            "enterprise.acme.crm",
+            objectSchema(Map.of("tenantId", Map.of("type", "string", "minLength", 1)), List.of("tenantId")),
+            objectSchema(Map.of("endpoint", Map.of("type", "string", "minLength", 1)), List.of("endpoint"))
+        );
+    }
+
+    private static Map<String, Object> toolConnectorDescriptor(
+        String connectorType,
+        Map<String, Object> configSchema,
+        Map<String, Object> operationMappingSchema
+    ) {
+        Map<String, Object> descriptor = new LinkedHashMap<>();
+        descriptor.put("connectorType", connectorType);
+        descriptor.put("title", connectorType);
+        descriptor.put("description", connectorType + " description");
+        descriptor.put("accountConfigSchema", objectSchema(Map.of(), List.of()));
+        descriptor.put("accountConfigUiSchema", List.of());
+        descriptor.put("configSchema", configSchema);
+        descriptor.put("configUiSchema", List.of());
+        descriptor.put("operationMappingSchema", operationMappingSchema);
+        descriptor.put("operationMappingUiSchema", List.of());
+        descriptor.put("endpoints", Map.of("invoke", "/tools/" + connectorType.replace(".", "-") + "/invoke"));
+        return descriptor;
+    }
+
+    private static Map<String, Object> channelProviderDescriptor(String providerType) {
+        Map<String, Object> descriptor = new LinkedHashMap<>();
+        descriptor.put("providerType", providerType);
+        descriptor.put("title", providerType);
+        descriptor.put("description", providerType + " description");
+        descriptor.put("accountConfigSchema", objectSchema(Map.of(), List.of()));
+        descriptor.put("accountConfigUiSchema", List.of());
+        descriptor.put("configSchema", objectSchema(Map.of(), List.of()));
+        descriptor.put("configUiSchema", List.of());
+        descriptor.put("defaultConfig", Map.of());
+        descriptor.put("jobDefinitions", List.of());
+        descriptor.put("endpoints", Map.of("sendOutbound", "/channel/send-outbound"));
+        return descriptor;
+    }
+
+    private static Map<String, Object> objectSchema(Map<String, Object> properties, List<String> required) {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", properties);
+        schema.put("additionalProperties", false);
+        if (!required.isEmpty()) {
+            schema.put("required", required);
+        }
+        return Map.copyOf(schema);
+    }
+
+    private static String manifest(List<Map<String, Object>> channelProviders, List<Map<String, Object>> toolConnectors) {
+        Map<String, Object> descriptors = new LinkedHashMap<>();
+        descriptors.put("channelProviders", channelProviders);
+        descriptors.put("toolConnectors", toolConnectors);
+        Map<String, Object> manifest = new LinkedHashMap<>();
+        manifest.put("extensionApiVersion", 1);
+        manifest.put("coreMinVersion", "0.8.0");
+        manifest.put("coreMaxVersion", "0.9.x");
+        manifest.put("descriptors", descriptors);
+        return new ObjectMapper().writeValueAsString(manifest);
+    }
+
+    private static StoredIntegrationAccount storedAccount(String accountId, String subjectId, String externalSecretRef) {
+        Instant now = Instant.now();
+        return new StoredIntegrationAccount(
+            accountId,
+            IntegrationAccountSubjectType.TOOL_CONNECTOR,
+            subjectId,
+            "CRM Account",
+            IntegrationAccountStatus.ENABLED,
+            Map.of(),
+            externalSecretRef,
+            null,
+            null,
+            IntegrationAccountCredentialStatus.ACTIVE,
+            Map.of(),
+            now,
+            now
+        );
+    }
+
+    private static final class RecordingIntegrationAccountService extends IntegrationAccountService {
+        String accountId;
+        IntegrationAccountSubjectType expectedSubjectType;
+        String expectedSubjectId;
+        ApiProblemException error;
+
+        RecordingIntegrationAccountService() {
+            super(null, null, null, null);
+        }
+
+        @Override
+        public IntegrationAccountAvailabilityDecision requireAccountAvailability(
+            String accountId,
+            IntegrationAccountSubjectType expectedSubjectType,
+            String expectedSubjectId
+        ) {
+            this.accountId = accountId;
+            this.expectedSubjectType = expectedSubjectType;
+            this.expectedSubjectId = expectedSubjectId;
+            if (error != null) {
+                throw error;
+            }
+            return new IntegrationAccountAvailabilityDecision(
+                accountId,
+                expectedSubjectType,
+                expectedSubjectId,
+                IntegrationAccountStatus.ENABLED,
+                IntegrationAccountCredentialStatus.ACTIVE,
+                null,
+                List.of()
+            );
+        }
+    }
+
+    private static final class FixedIntegrationAccountRepository extends IntegrationAccountRepository {
+        private final StoredIntegrationAccount account;
+
+        FixedIntegrationAccountRepository(StoredIntegrationAccount account) {
+            super(null, new ObjectMapper());
+            this.account = account;
+        }
+
+        @Override
+        public Optional<StoredIntegrationAccount> findAccount(String accountId) {
+            if (account.id().equals(accountId)) {
+                return Optional.of(account);
+            }
+            return Optional.empty();
+        }
+    }
+
     private static KnowledgeServiceClient readySnapshotKnowledgeClient() {
         return new KnowledgeServiceClient("http://localhost:8091", "test-internal-token") {
             @Override
@@ -1290,12 +2100,7 @@ class CatalogServiceTest {
     }
 
     private static CustomerOpsFixture customerOpsFixture(PlatformEventService platformEventService) {
-        CatalogService service = new CatalogService(
-            new InMemoryCatalogRepository(),
-            readySnapshotKnowledgeClient(),
-            noopKnowledgeWorkflowGateway(),
-            platformEventService
-        );
+        CatalogService service = catalogServiceWithCoreToolConnectors(platformEventService);
         CatalogDtos.BusinessDomainDto domain = service.createDomain(new CatalogDtos.CreateDomainRequest("客服运营域", "承载客服体验数据"));
         CatalogDtos.ScenarioDto scenario = service.createScenario(
             new CatalogDtos.CreateScenarioRequest(domain.id(), "客服处理", "处理用户咨询与售后问题")
@@ -1365,7 +2170,11 @@ class CatalogServiceTest {
                 "提交客服工单",
                 "客服平台",
                 List.of("工单"),
-                null
+                new CatalogDtos.CreateResourceVersionRequest(
+                    "工单工具初始版本",
+                    VersionStatus.DRAFT,
+                    toolResourceConfiguration(simpleHttpToolConfig())
+                )
             )
         );
         CatalogDtos.AgentDto agent = service.createAgent(new CatalogDtos.CreateAgentRequest(

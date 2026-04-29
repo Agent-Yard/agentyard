@@ -1501,9 +1501,6 @@ components:
     ShareScope:
       type: string
       enum: [PRIVATE, DOMAIN_SHARED]
-    ToolConnectorType:
-      type: string
-      enum: [SIMPLE_HTTP, BUSINESS_CODE_SECRET_HTTP, MCP]
     ToolKind:
       type: string
       enum: [RESOURCE, BUILTIN]
@@ -1658,9 +1655,13 @@ components:
       type: object
       properties:
         connectorType:
-          $ref: '#/components/schemas/ToolConnectorType'
+          type: string
+          maxLength: 128
         accountId:
           type: string
+          nullable: true
+        accountSnapshot:
+          $ref: '#/components/schemas/ToolConnectorAccountSnapshot'
           nullable: true
         timeoutSeconds:
           type: integer
@@ -1674,6 +1675,16 @@ components:
           additionalProperties:
             type: object
             additionalProperties: true
+    ToolConnectorAccountSnapshot:
+      type: object
+      required:
+        - accountId
+      properties:
+        accountId:
+          type: string
+        externalSecretRef:
+          type: string
+          nullable: true
     ToolConfig:
       type: object
       properties:

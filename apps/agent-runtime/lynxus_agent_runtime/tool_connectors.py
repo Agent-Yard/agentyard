@@ -34,7 +34,7 @@ class ToolConnector(Protocol):
 
 
 class SimpleHttpConnector:
-    connector_type = "SIMPLE_HTTP"
+    connector_type = "simple-http"
 
     def call(self, request: ConnectorCall) -> dict[str, Any]:
         mapping = operation_mapping(request.connector, request.operation)
@@ -51,12 +51,13 @@ class SimpleHttpConnector:
 
     def _auth_headers(self, request: ConnectorCall) -> dict[str, str]:
         connector = request.connector
-        if not connector.accountId:
+        account_id = connector_account_id(connector)
+        if account_id is None:
             return {}
         account = load_matching_account(request, self.connector_type)
         credential = account.get("credential")
         if not isinstance(credential, dict):
-            raise ValueError(f"integration account {connector.accountId} credential must be an object")
+            raise ValueError(f"integration account {account_id} credential must be an object")
         bearer_token = first_non_blank(
             str(credential.get("bearerToken") or "").strip() or None,
             str(credential.get("token") or "").strip() or None,
@@ -64,24 +65,25 @@ class SimpleHttpConnector:
         )
         if bearer_token is None:
             raise ValueError(
-                f"integration account {connector.accountId} for tool {request.descriptor.resourceVersionId} requires bearerToken"
+                f"integration account {account_id} for tool {request.descriptor.resourceVersionId} requires bearerToken"
             )
         header_name = str(connector.config.get("authorizationHeader") or "Authorization").strip() or "Authorization"
         return {header_name: f"Bearer {bearer_token}"}
 
 
 class BusinessCodeSecretHttpConnector:
-    connector_type = "BUSINESS_CODE_SECRET_HTTP"
+    connector_type = "business-code-secret-http"
 
     def call(self, request: ConnectorCall) -> dict[str, Any]:
         account = load_matching_account(request, self.connector_type, required=True)
+        account_id = connector_account_id(request.connector)
         credential = account.get("credential")
         if not isinstance(credential, dict):
-            raise ValueError(f"integration account {request.connector.accountId} credential must be an object")
+            raise ValueError(f"integration account {account_id} credential must be an object")
         business_code = str(credential.get("businessCode") or "").strip()
         secret_key = str(credential.get("secretKey") or "").strip()
         if not business_code or not secret_key:
-            raise ValueError(f"integration account {request.connector.accountId} requires businessCode and secretKey")
+            raise ValueError(f"integration account {account_id} requires businessCode and secretKey")
 
         mapping = operation_mapping(request.connector, request.operation)
         endpoint = http_connector_endpoint(request.connector, mapping)
@@ -98,7 +100,7 @@ class BusinessCodeSecretHttpConnector:
 
 
 class McpConnector:
-    connector_type = "MCP"
+    connector_type = "mcp"
 
     def call(self, request: ConnectorCall) -> dict[str, Any]:
         connection_uri = str(request.connector.config.get("connectionUri") or "").strip()
@@ -142,7 +144,7 @@ def call_connector_tool(
     runtime: ConnectorRuntime,
 ) -> dict[str, Any]:
     connector = require_tool_connector(descriptor)
-    connector_type = connector.connectorType.upper()
+    connector_type = connector.connectorType.strip()
     implementation = CONNECTOR_REGISTRY.get(connector_type)
     if implementation is None:
         raise ValueError(f"unsupported tool connector: {connector.connectorType}")
@@ -157,16 +159,30 @@ def require_tool_connector(descriptor: ToolDescriptor) -> ToolConnectorDescripto
 
 def load_matching_account(request: ConnectorCall, expected_connector_type: str, required: bool = False) -> dict[str, Any]:
     connector = request.connector
-    if not connector.accountId:
+    account_id = connector_account_id(connector)
+    if account_id is None:
         if required:
-            raise ValueError(f"tool {request.descriptor.resourceVersionId} {expected_connector_type} connector requires accountId")
+            raise ValueError(
+                f"tool {request.descriptor.resourceVersionId} {expected_connector_type} connector requires accountSnapshot.accountId"
+            )
         return {}
-    account = request.runtime.load_integration_account(connector.accountId)
-    if str(account.get("connectorType") or "").upper() != expected_connector_type:
-        raise ValueError(f"integration account {connector.accountId} connectorType must be {expected_connector_type}")
-    if str(account.get("status") or "").upper() != "ACTIVE":
-        raise ValueError(f"integration account {connector.accountId} is not ACTIVE")
+    account = request.runtime.load_integration_account(account_id)
+    if str(account.get("accountId") or "").strip() != account_id:
+        raise ValueError(f"integration account response accountId must be {account_id}")
+    if str(account.get("subjectType") or "").upper() != "TOOL_CONNECTOR":
+        raise ValueError(f"integration account {account_id} subjectType must be TOOL_CONNECTOR")
+    if str(account.get("subjectId") or "").strip() != expected_connector_type:
+        raise ValueError(f"integration account {account_id} subjectId must be {expected_connector_type}")
+    if str(account.get("status") or "").upper() != "ENABLED":
+        raise ValueError(f"integration account {account_id} is not ENABLED")
     return account
+
+
+def connector_account_id(connector: ToolConnectorDescriptor) -> str | None:
+    if connector.accountSnapshot is None:
+        return None
+    account_id = connector.accountSnapshot.accountId.strip()
+    return account_id or None
 
 
 def operation_mapping(connector: ToolConnectorDescriptor, operation: ToolOperationDescriptor) -> dict[str, Any]:

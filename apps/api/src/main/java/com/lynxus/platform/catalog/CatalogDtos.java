@@ -2,7 +2,6 @@ package com.lynxus.platform.catalog;
 
 import com.lynxus.contracts.runtime.WorkflowContracts.ResourceType;
 import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
-import com.lynxus.contracts.runtime.WorkflowContracts.ToolConnectorType;
 import com.lynxus.contracts.runtime.WorkflowContracts.VersionStatus;
 import com.lynxus.contracts.session.SessionContracts.AgentDecisionAction;
 import com.lynxus.contracts.session.SessionContracts.PlaybookNodeType;
@@ -569,12 +568,19 @@ public final class CatalogDtos {
     }
 
     public record ToolConnectorConfigDto(
-        ToolConnectorType connectorType,
+        String connectorType,
         String accountId,
+        ToolConnectorAccountSnapshotDto accountSnapshot,
         int timeoutSeconds,
         String retryPolicy,
         Map<String, Object> config,
         Map<String, Map<String, Object>> operationMappings
+    ) {
+    }
+
+    public record ToolConnectorAccountSnapshotDto(
+        String accountId,
+        String externalSecretRef
     ) {
     }
 
