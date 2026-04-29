@@ -11,6 +11,12 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEventStatus;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDeliveryStatus;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfig;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobRun;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobRunStatus;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobScheduleConfig;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobScheduleType;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobStatus;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +28,8 @@ import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_PROFILE;
 import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_CONVERSATION_BINDING;
 import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_INBOUND_EVENT;
 import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_OUTBOUND_DELIVERY;
+import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_PROFILE_JOB;
+import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_PROFILE_JOB_RUN;
 
 final class ChannelStore {
     private final DSLContext dsl;
@@ -269,6 +277,76 @@ final class ChannelStore {
             .execute();
     }
 
+    List<ChannelProviderJobConfig> listJobs(String channelProfileId, List<String> jobTypes) {
+        if (jobTypes == null || jobTypes.isEmpty()) {
+            return List.of();
+        }
+        return dsl.selectFrom(CHANNEL_PROFILE_JOB)
+            .where(CHANNEL_PROFILE_JOB.CHANNEL_PROFILE_ID.eq(channelProfileId))
+            .and(CHANNEL_PROFILE_JOB.JOB_TYPE.in(jobTypes))
+            .orderBy(CHANNEL_PROFILE_JOB.JOB_TYPE.asc())
+            .fetch(this::mapJob);
+    }
+
+    Optional<ChannelProviderJobConfig> findJob(String channelProfileId, String jobType) {
+        return dsl.selectFrom(CHANNEL_PROFILE_JOB)
+            .where(CHANNEL_PROFILE_JOB.CHANNEL_PROFILE_ID.eq(channelProfileId))
+            .and(CHANNEL_PROFILE_JOB.JOB_TYPE.eq(jobType))
+            .fetchOptional(this::mapJob);
+    }
+
+    void createJob(String channelProfileId, ChannelProviderJobConfig job) {
+        dsl.insertInto(CHANNEL_PROFILE_JOB)
+            .set(CHANNEL_PROFILE_JOB.ID, job.jobId())
+            .set(CHANNEL_PROFILE_JOB.CHANNEL_PROFILE_ID, channelProfileId)
+            .set(CHANNEL_PROFILE_JOB.JOB_TYPE, job.jobType())
+            .set(CHANNEL_PROFILE_JOB.STATUS, job.status().name())
+            .set(CHANNEL_PROFILE_JOB.SCHEDULE_CONFIG, jsonbSupport.toJsonb(scheduleConfigJson(job.scheduleConfig())))
+            .set(CHANNEL_PROFILE_JOB.NEXT_RUN_AT, JooqTimeSupport.toOffsetDateTime(job.nextRunAt()))
+            .set(CHANNEL_PROFILE_JOB.LAST_RUN_AT, JooqTimeSupport.toOffsetDateTime(job.lastRunAt()))
+            .set(CHANNEL_PROFILE_JOB.LAST_SUCCESS_AT, JooqTimeSupport.toOffsetDateTime(job.lastSuccessAt()))
+            .set(CHANNEL_PROFILE_JOB.LAST_ERROR, job.lastError())
+            .set(CHANNEL_PROFILE_JOB.FAILURE_COUNT, job.failureCount())
+            .set(CHANNEL_PROFILE_JOB.REVISION, job.revision())
+            .set(CHANNEL_PROFILE_JOB.CREATED_AT, JooqTimeSupport.toOffsetDateTime(job.createdAt()))
+            .set(CHANNEL_PROFILE_JOB.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(job.updatedAt()))
+            .execute();
+    }
+
+    boolean updateJob(ChannelProviderJobConfig job, long expectedRevision) {
+        int rows = dsl.update(CHANNEL_PROFILE_JOB)
+            .set(CHANNEL_PROFILE_JOB.STATUS, job.status().name())
+            .set(CHANNEL_PROFILE_JOB.SCHEDULE_CONFIG, jsonbSupport.toJsonb(scheduleConfigJson(job.scheduleConfig())))
+            .set(CHANNEL_PROFILE_JOB.NEXT_RUN_AT, JooqTimeSupport.toOffsetDateTime(job.nextRunAt()))
+            .set(CHANNEL_PROFILE_JOB.REVISION, job.revision())
+            .set(CHANNEL_PROFILE_JOB.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(job.updatedAt()))
+            .where(CHANNEL_PROFILE_JOB.ID.eq(job.jobId()))
+            .and(CHANNEL_PROFILE_JOB.REVISION.eq(expectedRevision))
+            .and(CHANNEL_PROFILE_JOB.STATUS.ne(ChannelProviderJobStatus.RUNNING.name()))
+            .execute();
+        return rows == 1;
+    }
+
+    boolean disableJob(String jobId, long expectedRevision, long nextRevision, Instant updatedAt) {
+        int rows = dsl.update(CHANNEL_PROFILE_JOB)
+            .set(CHANNEL_PROFILE_JOB.STATUS, ChannelProviderJobStatus.DISABLED.name())
+            .set(CHANNEL_PROFILE_JOB.NEXT_RUN_AT, JooqTimeSupport.toOffsetDateTime(null))
+            .set(CHANNEL_PROFILE_JOB.REVISION, nextRevision)
+            .set(CHANNEL_PROFILE_JOB.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(updatedAt))
+            .where(CHANNEL_PROFILE_JOB.ID.eq(jobId))
+            .and(CHANNEL_PROFILE_JOB.REVISION.eq(expectedRevision))
+            .and(CHANNEL_PROFILE_JOB.STATUS.ne(ChannelProviderJobStatus.RUNNING.name()))
+            .execute();
+        return rows == 1;
+    }
+
+    List<ChannelProviderJobRun> listJobRuns(String jobId) {
+        return dsl.selectFrom(CHANNEL_PROFILE_JOB_RUN)
+            .where(CHANNEL_PROFILE_JOB_RUN.JOB_ID.eq(jobId))
+            .orderBy(CHANNEL_PROFILE_JOB_RUN.SCHEDULED_AT.desc(), CHANNEL_PROFILE_JOB_RUN.ID.asc())
+            .fetch(this::mapJobRun);
+    }
+
     private ChannelGatewayProfile mapProfile(Record record) {
         String externalSecretRef = record.get(CHANNEL_PROFILE.EXTERNAL_SECRET_REF);
         return new ChannelGatewayProfile(
@@ -347,5 +425,86 @@ final class ChannelStore {
             JooqTimeSupport.toInstant(record.get(CHANNEL_OUTBOUND_DELIVERY.CREATED_AT)),
             JooqTimeSupport.toInstant(record.get(CHANNEL_OUTBOUND_DELIVERY.UPDATED_AT))
         );
+    }
+
+    private ChannelProviderJobConfig mapJob(Record record) {
+        return new ChannelProviderJobConfig(
+            record.get(CHANNEL_PROFILE_JOB.ID),
+            record.get(CHANNEL_PROFILE_JOB.JOB_TYPE),
+            ChannelProviderJobStatus.valueOf(record.get(CHANNEL_PROFILE_JOB.STATUS)),
+            readScheduleConfig(record),
+            JooqTimeSupport.toInstant(record.get(CHANNEL_PROFILE_JOB.NEXT_RUN_AT)),
+            JooqTimeSupport.toInstant(record.get(CHANNEL_PROFILE_JOB.LAST_RUN_AT)),
+            JooqTimeSupport.toInstant(record.get(CHANNEL_PROFILE_JOB.LAST_SUCCESS_AT)),
+            record.get(CHANNEL_PROFILE_JOB.LAST_ERROR),
+            record.get(CHANNEL_PROFILE_JOB.FAILURE_COUNT),
+            record.get(CHANNEL_PROFILE_JOB.REVISION),
+            JooqTimeSupport.toInstant(record.get(CHANNEL_PROFILE_JOB.CREATED_AT)),
+            JooqTimeSupport.toInstant(record.get(CHANNEL_PROFILE_JOB.UPDATED_AT))
+        );
+    }
+
+    private ChannelProviderJobRun mapJobRun(Record record) {
+        String id = record.get(CHANNEL_PROFILE_JOB_RUN.ID);
+        return new ChannelProviderJobRun(
+            id,
+            id,
+            record.get(CHANNEL_PROFILE_JOB_RUN.JOB_ID),
+            ChannelProviderJobRunStatus.valueOf(record.get(CHANNEL_PROFILE_JOB_RUN.STATUS)),
+            JooqTimeSupport.toInstant(record.get(CHANNEL_PROFILE_JOB_RUN.SCHEDULED_AT)),
+            JooqTimeSupport.toInstant(record.get(CHANNEL_PROFILE_JOB_RUN.STARTED_AT)),
+            record.get(CHANNEL_PROFILE_JOB_RUN.JOB_TIMEOUT_SECONDS),
+            JooqTimeSupport.toInstant(record.get(CHANNEL_PROFILE_JOB_RUN.FINISHED_AT)),
+            record.get(CHANNEL_PROFILE_JOB_RUN.DURATION_MS),
+            record.get(CHANNEL_PROFILE_JOB_RUN.IDEMPOTENCY_KEY),
+            record.get(CHANNEL_PROFILE_JOB_RUN.ATTEMPT),
+            record.get(CHANNEL_PROFILE_JOB_RUN.EVENTS_INGESTED),
+            record.get(CHANNEL_PROFILE_JOB_RUN.NEXT_CURSOR),
+            jsonbSupport.readObjectMap(record.get(CHANNEL_PROFILE_JOB_RUN.ERROR)),
+            jsonbSupport.readObjectMap(record.get(CHANNEL_PROFILE_JOB_RUN.METADATA)),
+            JooqTimeSupport.toInstant(record.get(CHANNEL_PROFILE_JOB_RUN.CREATED_AT)),
+            JooqTimeSupport.toInstant(record.get(CHANNEL_PROFILE_JOB_RUN.UPDATED_AT))
+        );
+    }
+
+    private ChannelProviderJobScheduleConfig readScheduleConfig(Record record) {
+        Map<String, Object> raw = jsonbSupport.readObjectMap(record.get(CHANNEL_PROFILE_JOB.SCHEDULE_CONFIG));
+        return new ChannelProviderJobScheduleConfig(
+            ChannelProviderJobScheduleType.valueOf(String.valueOf(raw.get("scheduleType"))),
+            integerValue(raw.get("intervalSeconds")),
+            stringValue(raw.get("cronExpression")),
+            stringValue(raw.get("timezone")),
+            integerValue(raw.get("jobTimeoutSeconds")),
+            raw.get("jobConfig") instanceof Map<?, ?> ? stringKeyMap((Map<?, ?>) raw.get("jobConfig")) : Map.of()
+        );
+    }
+
+    private static Map<String, Object> scheduleConfigJson(ChannelProviderJobScheduleConfig scheduleConfig) {
+        java.util.LinkedHashMap<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("scheduleType", scheduleConfig.scheduleType().name());
+        result.put("intervalSeconds", scheduleConfig.intervalSeconds());
+        result.put("cronExpression", scheduleConfig.cronExpression());
+        result.put("timezone", scheduleConfig.timezone());
+        result.put("jobTimeoutSeconds", scheduleConfig.jobTimeoutSeconds());
+        result.put("jobConfig", scheduleConfig.jobConfig());
+        return result;
+    }
+
+    private static Integer integerValue(Object value) {
+        return value instanceof Number number ? number.intValue() : null;
+    }
+
+    private static String stringValue(Object value) {
+        return value instanceof String string ? string : null;
+    }
+
+    private static Map<String, Object> stringKeyMap(Map<?, ?> raw) {
+        java.util.LinkedHashMap<String, Object> result = new java.util.LinkedHashMap<>();
+        raw.forEach((key, value) -> {
+            if (key instanceof String stringKey) {
+                result.put(stringKey, value);
+            }
+        });
+        return result;
     }
 }

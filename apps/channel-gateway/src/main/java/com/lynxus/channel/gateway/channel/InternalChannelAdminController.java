@@ -1,6 +1,7 @@
 package com.lynxus.channel.gateway.channel;
 
 import com.lynxus.channel.gateway.shared.ApiResponse;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfigWriteRequest;
 import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileInternalRequest;
 import com.lynxus.contracts.channel.ChannelContracts.UpdateChannelProfileInternalRequest;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -60,5 +61,33 @@ public class InternalChannelAdminController {
     @GetMapping("/{channelProfileId}/outbound-deliveries")
     public ApiResponse<?> outboundDeliveries(@PathVariable String channelProfileId) {
         return ApiResponse.ok(channelAdminService.listOutboundDeliveries(channelProfileId));
+    }
+
+    @GetMapping("/{channelProfileId}/jobs")
+    public ApiResponse<?> jobs(@PathVariable String channelProfileId) {
+        return ApiResponse.ok(channelAdminService.listJobs(channelProfileId));
+    }
+
+    @PutMapping("/{channelProfileId}/jobs/{jobType}")
+    public ApiResponse<?> upsertJob(
+        @PathVariable String channelProfileId,
+        @PathVariable String jobType,
+        @RequestBody ChannelProviderJobConfigWriteRequest request
+    ) {
+        return ApiResponse.ok(channelAdminService.upsertJob(channelProfileId, jobType, request));
+    }
+
+    @DeleteMapping("/{channelProfileId}/jobs/{jobType}")
+    public ApiResponse<?> deleteJob(
+        @PathVariable String channelProfileId,
+        @PathVariable String jobType,
+        @RequestParam Long expectedRevision
+    ) {
+        return ApiResponse.ok(channelAdminService.deleteJob(channelProfileId, jobType, expectedRevision));
+    }
+
+    @GetMapping("/{channelProfileId}/jobs/{jobType}/runs")
+    public ApiResponse<?> jobRuns(@PathVariable String channelProfileId, @PathVariable String jobType) {
+        return ApiResponse.ok(channelAdminService.listJobRuns(channelProfileId, jobType));
     }
 }

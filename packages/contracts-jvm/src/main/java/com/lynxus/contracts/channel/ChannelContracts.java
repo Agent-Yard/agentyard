@@ -52,6 +52,26 @@ public final class ChannelContracts {
         FAILED
     }
 
+    public enum ChannelProviderJobScheduleType {
+        INTERVAL,
+        CRON,
+        MANUAL
+    }
+
+    public enum ChannelProviderJobStatus {
+        ACTIVE,
+        RUNNING,
+        PAUSED,
+        DISABLED
+    }
+
+    public enum ChannelProviderJobRunStatus {
+        RUNNING,
+        SUCCEEDED,
+        FAILED,
+        TIMED_OUT
+    }
+
     public enum NormalizedChannelEventType {
         MESSAGE_RECEIVED,
         MESSAGE_UPDATED,
@@ -267,6 +287,80 @@ public final class ChannelContracts {
     ) {
         public ChannelOutboundDelivery {
             payload = immutableObjectMap(payload);
+        }
+    }
+
+    public record ChannelProviderJobScheduleConfig(
+        ChannelProviderJobScheduleType scheduleType,
+        Integer intervalSeconds,
+        String cronExpression,
+        String timezone,
+        Integer jobTimeoutSeconds,
+        Map<String, Object> jobConfig
+    ) {
+        public ChannelProviderJobScheduleConfig {
+            jobConfig = immutableObjectMap(jobConfig);
+        }
+    }
+
+    public record ChannelProviderJobScheduleWriteConfig(
+        Boolean enabled,
+        ChannelProviderJobScheduleType scheduleType,
+        Integer intervalSeconds,
+        String cronExpression,
+        String timezone,
+        Integer jobTimeoutSeconds,
+        Map<String, Object> jobConfig
+    ) {
+        public ChannelProviderJobScheduleWriteConfig {
+            jobConfig = immutableObjectMap(jobConfig);
+        }
+    }
+
+    public record ChannelProviderJobConfig(
+        String jobId,
+        String jobType,
+        ChannelProviderJobStatus status,
+        ChannelProviderJobScheduleConfig scheduleConfig,
+        Instant nextRunAt,
+        Instant lastRunAt,
+        Instant lastSuccessAt,
+        String lastError,
+        int failureCount,
+        long revision,
+        Instant createdAt,
+        Instant updatedAt
+    ) {
+    }
+
+    public record ChannelProviderJobConfigWriteRequest(
+        ChannelProviderJobScheduleWriteConfig scheduleConfig,
+        Long expectedRevision
+    ) {
+    }
+
+    public record ChannelProviderJobRun(
+        String id,
+        String runId,
+        String jobId,
+        ChannelProviderJobRunStatus status,
+        Instant scheduledAt,
+        Instant startedAt,
+        int jobTimeoutSeconds,
+        Instant finishedAt,
+        Long durationMs,
+        String idempotencyKey,
+        int attempt,
+        int eventsIngested,
+        String nextCursor,
+        Map<String, Object> error,
+        Map<String, Object> metadata,
+        Instant createdAt,
+        Instant updatedAt
+    ) {
+        public ChannelProviderJobRun {
+            error = immutableObjectMap(error);
+            metadata = immutableObjectMap(metadata);
         }
     }
 

@@ -35,6 +35,9 @@ export type ChannelProfileStatus = 'ACTIVE' | 'INACTIVE';
 export type ChannelConversationBindingStatus = 'ACTIVE' | 'ARCHIVED';
 export type ChannelInboundEventStatus = 'RECEIVED' | 'REJECTED';
 export type ChannelOutboundDeliveryStatus = 'PENDING' | 'SENT' | 'FAILED';
+export type ChannelProviderJobScheduleType = 'INTERVAL' | 'CRON' | 'MANUAL';
+export type ChannelProviderJobStatus = 'ACTIVE' | 'RUNNING' | 'PAUSED' | 'DISABLED';
+export type ChannelProviderJobRunStatus = 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'TIMED_OUT';
 export type NormalizedChannelEventType =
   | 'MESSAGE_RECEIVED'
   | 'MESSAGE_UPDATED'
@@ -463,6 +466,65 @@ export interface ChannelOutboundDelivery {
   status: ChannelOutboundDeliveryStatus;
   attemptCount: number;
   lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChannelProviderJobScheduleConfig {
+  scheduleType: ChannelProviderJobScheduleType;
+  intervalSeconds: number | null;
+  cronExpression: string | null;
+  timezone: string;
+  jobTimeoutSeconds: number;
+  jobConfig: Record<string, unknown>;
+}
+
+export interface ChannelProviderJobScheduleWriteConfig {
+  enabled: boolean;
+  scheduleType?: ChannelProviderJobScheduleType | null;
+  intervalSeconds?: number | null;
+  cronExpression?: string | null;
+  timezone?: string | null;
+  jobTimeoutSeconds?: number | null;
+  jobConfig?: Record<string, unknown> | null;
+}
+
+export interface ChannelProviderJobConfig {
+  jobId: string;
+  jobType: string;
+  status: ChannelProviderJobStatus;
+  scheduleConfig: ChannelProviderJobScheduleConfig;
+  nextRunAt: string | null;
+  lastRunAt: string | null;
+  lastSuccessAt: string | null;
+  lastError: string | null;
+  failureCount: number;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChannelProviderJobConfigWritePayload {
+  scheduleConfig?: ChannelProviderJobScheduleWriteConfig | null;
+  expectedRevision?: number | null;
+}
+
+export interface ChannelProviderJobRun {
+  id: string;
+  runId: string;
+  jobId: string;
+  status: ChannelProviderJobRunStatus;
+  scheduledAt: string;
+  startedAt: string;
+  jobTimeoutSeconds: number;
+  finishedAt: string | null;
+  durationMs: number | null;
+  idempotencyKey: string;
+  attempt: number;
+  eventsIngested: number;
+  nextCursor: string | null;
+  error: Record<string, unknown>;
+  metadata: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
 }

@@ -291,6 +291,109 @@ describe('api client', () => {
     );
   });
 
+  it('puts provider job config through the control-plane api', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        data: {
+          jobId: 'channel-job-1',
+          jobType: 'PULL_MESSAGES',
+          status: 'ACTIVE',
+          scheduleConfig: {
+            scheduleType: 'INTERVAL',
+            intervalSeconds: 60,
+            cronExpression: null,
+            timezone: 'UTC',
+            jobTimeoutSeconds: 60,
+            jobConfig: {},
+          },
+          nextRunAt: '2026-04-01T00:01:00Z',
+          lastRunAt: null,
+          lastSuccessAt: null,
+          lastError: null,
+          failureCount: 0,
+          revision: 1,
+          createdAt: '2026-04-01T00:00:00Z',
+          updatedAt: '2026-04-01T00:00:00Z',
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.upsertChannelProviderJob('channel-profile-1', 'PULL_MESSAGES', {
+      scheduleConfig: {
+        enabled: true,
+        scheduleType: 'INTERVAL',
+        intervalSeconds: 60,
+        jobConfig: {},
+      },
+      expectedRevision: 1,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/channel-admin/profiles/channel-profile-1/jobs/PULL_MESSAGES',
+      expect.objectContaining({
+        credentials: 'include',
+        method: 'PUT',
+        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          scheduleConfig: {
+            enabled: true,
+            scheduleType: 'INTERVAL',
+            intervalSeconds: 60,
+            jobConfig: {},
+          },
+          expectedRevision: 1,
+        }),
+      }),
+    );
+  });
+
+  it('deletes provider jobs with expected revision through the control-plane api', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        data: {
+          jobId: 'channel-job-1',
+          jobType: 'PULL_MESSAGES',
+          status: 'DISABLED',
+          scheduleConfig: {
+            scheduleType: 'INTERVAL',
+            intervalSeconds: 60,
+            cronExpression: null,
+            timezone: 'UTC',
+            jobTimeoutSeconds: 60,
+            jobConfig: {},
+          },
+          nextRunAt: null,
+          lastRunAt: null,
+          lastSuccessAt: null,
+          lastError: null,
+          failureCount: 0,
+          revision: 2,
+          createdAt: '2026-04-01T00:00:00Z',
+          updatedAt: '2026-04-01T00:00:00Z',
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.deleteChannelProviderJob('channel-profile-1', 'PULL_MESSAGES', 1);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/channel-admin/profiles/channel-profile-1/jobs/PULL_MESSAGES?expectedRevision=1',
+      expect.objectContaining({
+        credentials: 'include',
+        method: 'DELETE',
+        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
+      }),
+    );
+  });
+
   it('preserves the JSON content type when write requests do not provide custom headers', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({

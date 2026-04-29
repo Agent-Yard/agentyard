@@ -5,6 +5,8 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfig;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobRun;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -95,5 +97,29 @@ public class ChannelAdminRepository {
 
     public void saveOutboundDelivery(ChannelOutboundDelivery delivery) {
         store.saveOutboundDelivery(delivery);
+    }
+
+    public List<ChannelProviderJobConfig> listJobs(String channelProfileId, List<String> jobTypes) {
+        return store.listJobs(channelProfileId, jobTypes);
+    }
+
+    public Optional<ChannelProviderJobConfig> findJob(String channelProfileId, String jobType) {
+        return store.findJob(channelProfileId, jobType);
+    }
+
+    public void createJob(String channelProfileId, ChannelProviderJobConfig job) {
+        store.createJob(channelProfileId, job);
+    }
+
+    public boolean updateJob(ChannelProviderJobConfig job, long expectedRevision) {
+        return store.updateJob(job, expectedRevision);
+    }
+
+    public boolean disableJob(String jobId, long expectedRevision, long nextRevision, Instant updatedAt) {
+        return store.disableJob(jobId, expectedRevision, nextRevision, updatedAt);
+    }
+
+    public List<ChannelProviderJobRun> listJobRuns(String jobId) {
+        return store.listJobRuns(jobId);
     }
 }

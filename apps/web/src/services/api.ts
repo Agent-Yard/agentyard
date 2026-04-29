@@ -7,6 +7,9 @@ import type {
   ChannelConversationBinding,
   ChannelInboundEvent,
   ChannelOutboundDelivery,
+  ChannelProviderJobConfig,
+  ChannelProviderJobConfigWritePayload,
+  ChannelProviderJobRun,
   CreateAssistantPayload,
   CreateChannelProfilePayload,
   CreateAgentPayload,
@@ -201,6 +204,17 @@ export const api = {
     request<ChannelInboundEvent[]>(`/channel-admin/profiles/${channelProfileId}/inbound-events`),
   listChannelOutboundDeliveries: (channelProfileId: string) =>
     request<ChannelOutboundDelivery[]>(`/channel-admin/profiles/${channelProfileId}/outbound-deliveries`),
+  listChannelProviderJobs: (channelProfileId: string) =>
+    request<ChannelProviderJobConfig[]>(`/channel-admin/profiles/${channelProfileId}/jobs`),
+  upsertChannelProviderJob: (channelProfileId: string, jobType: string, payload: ChannelProviderJobConfigWritePayload) =>
+    request<ChannelProviderJobConfig>(`/channel-admin/profiles/${channelProfileId}/jobs/${encodeURIComponent(jobType)}`, jsonOptions('PUT', payload)),
+  deleteChannelProviderJob: (channelProfileId: string, jobType: string, expectedRevision: number) =>
+    request<ChannelProviderJobConfig>(
+      `/channel-admin/profiles/${channelProfileId}/jobs/${encodeURIComponent(jobType)}?${new URLSearchParams({ expectedRevision: String(expectedRevision) }).toString()}`,
+      jsonOptions('DELETE'),
+    ),
+  listChannelProviderJobRuns: (channelProfileId: string, jobType: string) =>
+    request<ChannelProviderJobRun[]>(`/channel-admin/profiles/${channelProfileId}/jobs/${encodeURIComponent(jobType)}/runs`),
   listIntegrationAccounts: () => request<IntegrationAccount[]>('/integration/accounts'),
   getIntegrationAccount: (accountId: string) => request<IntegrationAccount>(`/integration/accounts/${accountId}`),
   createIntegrationAccount: (payload: CreateIntegrationAccountPayload) =>

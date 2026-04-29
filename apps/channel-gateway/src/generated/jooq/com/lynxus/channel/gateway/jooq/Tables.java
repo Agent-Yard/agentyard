@@ -8,6 +8,8 @@ import com.lynxus.channel.gateway.jooq.tables.ChannelConversationBinding;
 import com.lynxus.channel.gateway.jooq.tables.ChannelInboundEvent;
 import com.lynxus.channel.gateway.jooq.tables.ChannelOutboundDelivery;
 import com.lynxus.channel.gateway.jooq.tables.ChannelProfile;
+import com.lynxus.channel.gateway.jooq.tables.ChannelProfileJob;
+import com.lynxus.channel.gateway.jooq.tables.ChannelProfileJobRun;
 
 
 /**
@@ -35,4 +37,14 @@ public class Tables {
      * The table <code>public.channel_profile</code>.
      */
     public static final ChannelProfile CHANNEL_PROFILE = ChannelProfile.CHANNEL_PROFILE;
+
+    /**
+     * The table <code>public.channel_profile_job</code>.
+     */
+    public static final ChannelProfileJob CHANNEL_PROFILE_JOB = ChannelProfileJob.CHANNEL_PROFILE_JOB;
+
+    /**
+     * The table <code>public.channel_profile_job_run</code>.
+     */
+    public static final ChannelProfileJobRun CHANNEL_PROFILE_JOB_RUN = ChannelProfileJobRun.CHANNEL_PROFILE_JOB_RUN;
 }

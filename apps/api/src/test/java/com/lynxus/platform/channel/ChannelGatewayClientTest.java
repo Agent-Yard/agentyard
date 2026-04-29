@@ -7,6 +7,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileAccountSnapshot;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileStatus;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfigWriteRequest;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobScheduleType;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobScheduleWriteConfig;
 import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileInternalRequest;
 import com.lynxus.platform.shared.ConflictException;
 import com.sun.net.httpserver.HttpServer;
@@ -228,6 +231,139 @@ class ChannelGatewayClientTest {
             ChannelGatewayClient client = new ChannelGatewayClient(serverUrl(server), "internal-token", new ObjectMapper());
             ConflictException error = assertThrows(ConflictException.class, () -> client.deleteProfile("channel-profile-1", 1L));
             assertEquals("channel profile revision conflict: channel-profile-1", error.getMessage());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void shouldProxyProviderJobConfigWritesToGateway() throws Exception {
+        AtomicReference<String> method = new AtomicReference<>();
+        AtomicReference<String> requestUri = new AtomicReference<>();
+        AtomicReference<String> requestBody = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/internal/channel-admin/profiles/channel-profile-1/jobs/PULL_MESSAGES", exchange -> {
+            method.set(exchange.getRequestMethod());
+            requestUri.set(exchange.getRequestURI().toString());
+            requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            writeJson(exchange, 200, """
+                {
+                  "success": true,
+                  "data": {
+                    "jobId": "channel-job-1",
+                    "jobType": "PULL_MESSAGES",
+                    "status": "ACTIVE",
+                    "scheduleConfig": {
+                      "scheduleType": "INTERVAL",
+                      "intervalSeconds": 60,
+                      "cronExpression": null,
+                      "timezone": "UTC",
+                      "jobTimeoutSeconds": 60,
+                      "jobConfig": {}
+                    },
+                    "nextRunAt": "2026-04-23T00:01:00Z",
+                    "lastRunAt": null,
+                    "lastSuccessAt": null,
+                    "lastError": null,
+                    "failureCount": 0,
+                    "revision": 1,
+                    "createdAt": "2026-04-23T00:00:00Z",
+                    "updatedAt": "2026-04-23T00:00:00Z"
+                  },
+                  "timestamp": "2026-04-23T00:00:00Z"
+                }
+                """);
+        });
+        server.start();
+
+        try {
+            ChannelGatewayClient client = new ChannelGatewayClient(serverUrl(server), "internal-token", new ObjectMapper());
+            var job = client.upsertJob("channel-profile-1", "PULL_MESSAGES", new ChannelProviderJobConfigWriteRequest(
+                new ChannelProviderJobScheduleWriteConfig(
+                    true,
+                    ChannelProviderJobScheduleType.INTERVAL,
+                    60,
+                    null,
+                    null,
+                    null,
+                    Map.of()
+                ),
+                null
+            ));
+
+            assertEquals("PUT", method.get());
+            assertEquals("/internal/channel-admin/profiles/channel-profile-1/jobs/PULL_MESSAGES", requestUri.get());
+            assertTrue(requestBody.get().contains("\"enabled\":true"));
+            assertEquals("PULL_MESSAGES", job.jobType());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void shouldProxyProviderJobDeleteExpectedRevisionToGateway() throws Exception {
+        AtomicReference<String> method = new AtomicReference<>();
+        AtomicReference<String> requestUri = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/internal/channel-admin/profiles/channel-profile-1/jobs/PULL_MESSAGES", exchange -> {
+            method.set(exchange.getRequestMethod());
+            requestUri.set(exchange.getRequestURI().toString());
+            writeJson(exchange, 200, """
+                {
+                  "success": true,
+                  "data": {
+                    "jobId": "channel-job-1",
+                    "jobType": "PULL_MESSAGES",
+                    "status": "DISABLED",
+                    "scheduleConfig": {
+                      "scheduleType": "INTERVAL",
+                      "intervalSeconds": 60,
+                      "cronExpression": null,
+                      "timezone": "UTC",
+                      "jobTimeoutSeconds": 60,
+                      "jobConfig": {}
+                    },
+                    "nextRunAt": null,
+                    "lastRunAt": null,
+                    "lastSuccessAt": null,
+                    "lastError": null,
+                    "failureCount": 0,
+                    "revision": 2,
+                    "createdAt": "2026-04-23T00:00:00Z",
+                    "updatedAt": "2026-04-23T00:00:00Z"
+                  },
+                  "timestamp": "2026-04-23T00:00:00Z"
+                }
+                """);
+        });
+        server.start();
+
+        try {
+            ChannelGatewayClient client = new ChannelGatewayClient(serverUrl(server), "internal-token", new ObjectMapper());
+            client.deleteJob("channel-profile-1", "PULL_MESSAGES", 1L);
+
+            assertEquals("DELETE", method.get());
+            assertEquals("/internal/channel-admin/profiles/channel-profile-1/jobs/PULL_MESSAGES?expectedRevision=1", requestUri.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void shouldTranslateUnprocessableProviderJobErrorsFromGateway() throws Exception {
+        HttpServer server = errorServer(422, """
+            {
+              "type": "about:blank",
+              "title": "Unprocessable Entity",
+              "status": 422,
+              "detail": "unknown channel provider jobType: PULL_MESSAGES"
+            }
+            """);
+
+        try {
+            ChannelGatewayClient client = new ChannelGatewayClient(serverUrl(server), "internal-token", new ObjectMapper());
+            IllegalArgumentException error = assertThrows(IllegalArgumentException.class, client::listProfiles);
+            assertEquals("unknown channel provider jobType: PULL_MESSAGES", error.getMessage());
         } finally {
             server.stop(0);
         }

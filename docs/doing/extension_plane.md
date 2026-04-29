@@ -13,7 +13,7 @@
 ## Current Position
 
 - Current slice: Slice 9 - Normalized event + provider job + outbound/template binding.
-- Current subtask: Slice 9A normalized inbound event contract and internal ingest foundation. Provider job scanner, outbound delivery conversion, template binding CRUD/resolution, and schema-driven Web pages remain later subtasks.
+- Current subtask: Slice 9B provider job configuration data model and admin API foundation. Provider job scanner/Redis execution, outbound delivery conversion, template binding CRUD/resolution, and schema-driven Web pages remain later subtasks.
 - Main-agent role: orchestration, integration decisions, ledger maintenance, review of worker/checker output.
 - Implementation flow: worker implements each bounded subtask, independent checker reviews read-only, then main agent decides follow-up.
 
@@ -86,6 +86,7 @@
 - Decision: Slice 8D will cover the implemented profile admin surface in OpenAPI (`profile` CRUD plus current read-only bindings/inbound-events/outbound-deliveries) and add the missing profile DELETE/disable path with `expectedRevision`. Template binding and provider job OpenAPI will be added with their Slice 9 implementations instead of declaring unavailable endpoints early.
 - Decision: Slice 9A will implement only the normalized inbound event foundation: JVM/TS/internal OpenAPI DTOs, `POST /internal/channel-events/normalized`, header/profile/provider validation, eventType matrix validation, dedup, event store, and local conversation binding snapshot creation/update. It will not add provider job scanner, outbound delivery invocation, template binding CRUD/resolution, remote provider outbound/runJob adapter, Core -> provider mapping API, inbound verification status, or schema-driven Web pages.
 - Decision: current `ChannelAssistantBinding` is still the Slice 8 thin shape (`assistantId` / `scenarioId`). Slice 9A will route/bind using the saved `assistantId` and default customer identity from `externalUserId` falling back to `externalConversationId`; the fuller assistant binding fields in the docs remain a follow-up when the Web/profile schema-driven work expands that DTO.
+- Decision: Slice 9B will add provider job runtime tables, DTOs, validation, and Web-facing/internal channel-admin job config/history endpoints. It will not start the scheduled scanner, acquire Redis locks, execute remote/gateway-native `runJob`, or create manual run records yet. `DELETE` on a provider job will be implemented as disable/status transition rather than physical deletion so run history remains meaningful.
 
 ## Worker / Checker Notes
 
@@ -1122,8 +1123,63 @@
     - `git diff --check`
   - Main follow-up: ensure new generated jOOQ files `ChannelProfile.java` and `ChannelProfileRecord.java` are included before commit.
 
+- Worker 9B completed provider job configuration model and admin API foundation.
+  - Added JVM and shared TypeScript DTOs for provider job schedule config, job config read/write, job status, job run read, and run status. Write DTOs carry `scheduleConfig.enabled`; persisted/read schedule config excludes `enabled`.
+  - Added channel-gateway-owned `channel_profile_job` and `channel_profile_job_run` migration, regenerated committed jOOQ sources, and implemented gateway repository/service/controller support for job config list/upsert/disable and run history read.
+  - Provider job writes validate the job type against the loaded provider descriptor `jobDefinitions`, normalize defaults from `defaultSchedule` / `defaultEnabled` / `defaultJobTimeoutSeconds` with `60s` fallback, validate schedule fields, validate `jobConfig` against `jobConfigSchema`, reject direct secret markers in `jobConfig`, reject stale revisions, and reject update/delete while `RUNNING`.
+  - `DELETE` disables jobs by setting status `DISABLED`, `nextRunAt = null`, and incrementing revision; it does not delete job or run history.
+  - Added API proxy endpoints and `ChannelGatewayClient` methods for Web-facing provider job list/upsert/disable/run-history. API remains a proxy/governance layer and does not read channel runtime tables, create run ids, or acquire locks.
+  - Updated control-plane and channel-gateway internal OpenAPI for implemented job config/list/history endpoints only. No manual `POST /runs` endpoint was added.
+  - Added thin Web service methods/types for provider job config and run history; no schema-driven pages were added.
+  - Verification:
+    - `./gradlew :apps:channel-gateway:generateJooq` passed.
+    - `./gradlew :apps:channel-gateway:test --tests '*ProviderJob*' --tests '*ChannelAdmin*' --tests '*InternalAuth*'` passed.
+    - `./gradlew :apps:api:test --tests '*ChannelGatewayClient*' --tests '*ChannelAdmin*' --tests '*ApiAuthorization*'` passed.
+    - `pnpm --filter @lynxus/web test -- api` passed (`1` file, `15` tests).
+    - OpenAPI YAML parse passed.
+    - Old account naming scan returns only intentional old `/accounts` negative authorization tests in API/channel-gateway.
+    - `externalSecretRef` guardrail scan over control-plane OpenAPI, Web, API channel package, and shared TS contracts has no job/control-plane schema exposure; remaining hits are the existing internal account snapshot TS type and API materialization into channel-gateway internal write DTO.
+    - `git diff --check` passed.
+  - Residual risk: cron next-run calculation uses Spring `CronExpression` and normalizes five-field cron strings by prefixing seconds. Manual run creation/scanning/Redis claim/stale recovery remains deliberately out of scope for 9C.
+- Checker 9B verdict: fail with one blocking contract drift.
+  - Blocking finding: shared TypeScript job write contract made `scheduleType` and `expectedRevision` required, while OpenAPI/JVM and Slice 9B behavior allow descriptor defaults and create without existing revision.
+  - Checker verification still passed for backend/Web tests, jOOQ generated check, OpenAPI YAML parse, and scope guardrails. No `POST /runs`, scanner, Redis lock, provider `runJob`, outbound, template binding, schema-driven Web page, credential refresh job, or Slice 11 overreach was found.
+  - Residual risks noted by checker: CRON/MANUAL and stale revision conflict tests are thin; API pre-validates job definitions before proxying and could diverge if API and gateway registries differ.
+- Main 9B repair:
+  - Updated shared TypeScript `ChannelProviderJobScheduleWriteConfig.scheduleType` and `ChannelProviderJobConfigWritePayload.expectedRevision` to match OpenAPI/JVM defaultable/nullability semantics.
+- Checker 9B repair verdict: fail with one remaining OpenAPI nullability drift.
+  - Blocking finding: Web-facing and internal OpenAPI schemas still modeled `ChannelProviderJobScheduleWriteConfig.scheduleType` as a non-null `$ref`, while TS/JVM/defaulting behavior accepts omitted or explicit null schedule type.
+  - Scope guardrails remained clean: `/runs` is GET-only history, and no manual run creation, scanner, Redis lock, provider `runJob`, outbound, template binding, schema-driven Web page, credential refresh/status sync job, or Slice 11 artifacts were found.
+- Main 9B repair follow-up:
+  - Updated both control-plane and channel-gateway internal OpenAPI schemas so provider job write `scheduleType` is nullable via `allOf` plus `nullable: true`, matching shared TS and JVM DTO semantics.
+  - Verification after repair:
+    - `pnpm --filter @lynxus/web test -- api` passed (`15` tests).
+    - `./gradlew :apps:channel-gateway:test --tests '*ProviderJob*' --tests '*ChannelAdmin*' --tests '*InternalAuth*'` passed.
+    - `./gradlew :apps:api:test --tests '*ChannelGatewayClient*' --tests '*ChannelAdmin*' --tests '*ApiAuthorization*'` passed.
+    - OpenAPI YAML parse passed.
+    - `git diff --check` passed.
+    - Guardrail scans found no job/control-plane `externalSecretRef` exposure, no active old channel account naming except the intentional old `/accounts` negative auth test, and no 9B overreach beyond GET run history. Broad Redis/Scheduled hits are existing session/runtime health code outside provider job execution.
+- Checker 9B second repair verdict: fail.
+  - Blocking finding: previous OpenAPI patch accidentally changed the read `ChannelProviderJobScheduleConfig.scheduleType` to nullable instead of the write schema; the write `ChannelProviderJobScheduleWriteConfig.scheduleType` still had a bare non-null `$ref`.
+  - Blocking finding: service accepted `scheduleConfig` with missing/null `enabled`, falling back to descriptor default despite TS/OpenAPI requiring `enabled` when `scheduleConfig` is present.
+  - Scope scan remained clean for manual run creation, scanner, Redis provider job lock, provider `runJob`, outbound/template binding, schema-driven Web, credential refresh/status sync provider jobs, and Slice 11.
+- Main 9B repair follow-up 2:
+  - Restored read `ChannelProviderJobScheduleConfig.scheduleType` to non-null `$ref`.
+  - Updated write `ChannelProviderJobScheduleWriteConfig.scheduleType` to nullable `allOf + nullable` in both OpenAPI files.
+  - Added gateway validation rejecting write schedule configs with missing/null `enabled`, plus regression coverage.
+  - Verification after follow-up 2:
+    - `./gradlew :apps:channel-gateway:test --tests '*ProviderJob*' --tests '*ChannelAdmin*' --tests '*InternalAuth*'` passed.
+    - `./gradlew :apps:api:test --tests '*ChannelGatewayClient*' --tests '*ChannelAdmin*' --tests '*ApiAuthorization*'` passed.
+    - `pnpm --filter @lynxus/web test -- api` passed (`15` tests).
+    - OpenAPI YAML parse passed.
+    - `git diff --check` passed.
+    - Guardrail scan found only in-scope GET job run history plus unrelated pre-existing session/health Redis/Scheduled usage; no provider job scanner/Redis lock, manual run creation, provider `runJob`, outbound/template binding, schema-driven Web, credential refresh/status-sync provider job, or Slice 11 artifacts were found.
+- Checker 9B final verdict: pass.
+  - Confirmed shared TS, JVM contract shape, control-plane OpenAPI, and internal OpenAPI align for provider job read/write schedule config semantics.
+  - Confirmed gateway now rejects provided write schedule configs with null/missing `enabled`, while null `scheduleConfig` still uses descriptor `defaultEnabled`.
+  - Confirmed no manual run creation, provider job scanner, Redis provider job lock acquisition, provider `runJob` execution, outbound/template binding implementation, schema-driven Web pages, credential refresh/status sync provider job, or Slice 11 artifacts.
+  - Residual risks: checker did not run full Java/Node suites; JVM records follow current repo style and do not enforce read DTO non-null fields at construction time.
+
 ## Blockers / Rework
 
-- Active Slice 8C rework:
-  - Make registry validation report the loaded runtime registry snapshot instead of reloading manifests.
-  - Preserve null-vs-empty config for profile write DTOs; only null/omitted config materializes descriptor `defaultConfig`, while explicit `{}` is validated as submitted.
+- No active blockers for completed Slice 9B.

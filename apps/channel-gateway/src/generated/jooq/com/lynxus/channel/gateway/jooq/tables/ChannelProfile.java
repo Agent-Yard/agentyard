@@ -7,6 +7,7 @@ package com.lynxus.channel.gateway.jooq.tables;
 import com.lynxus.channel.gateway.jooq.Indexes;
 import com.lynxus.channel.gateway.jooq.Keys;
 import com.lynxus.channel.gateway.jooq.Public;
+import com.lynxus.channel.gateway.jooq.tables.ChannelProfileJob.ChannelProfileJobPath;
 import com.lynxus.channel.gateway.jooq.tables.records.ChannelProfileRecord;
 
 import java.time.OffsetDateTime;
@@ -16,11 +17,15 @@ import java.util.List;
 
 import org.jooq.Condition;
 import org.jooq.Field;
+import org.jooq.ForeignKey;
 import org.jooq.Index;
+import org.jooq.InverseForeignKey;
 import org.jooq.JSONB;
 import org.jooq.Name;
+import org.jooq.Path;
 import org.jooq.PlainSQL;
 import org.jooq.QueryPart;
+import org.jooq.Record;
 import org.jooq.SQL;
 import org.jooq.Schema;
 import org.jooq.Select;
@@ -144,6 +149,39 @@ public class ChannelProfile extends TableImpl<ChannelProfileRecord> {
         this(DSL.name("channel_profile"), null);
     }
 
+    public <O extends Record> ChannelProfile(Table<O> path, ForeignKey<O, ChannelProfileRecord> childPath, InverseForeignKey<O, ChannelProfileRecord> parentPath) {
+        super(path, childPath, parentPath, CHANNEL_PROFILE);
+    }
+
+    /**
+     * A subtype implementing {@link Path} for simplified path-based joins.
+     */
+    public static class ChannelProfilePath extends ChannelProfile implements Path<ChannelProfileRecord> {
+
+        private static final long serialVersionUID = 1L;
+        public <O extends Record> ChannelProfilePath(Table<O> path, ForeignKey<O, ChannelProfileRecord> childPath, InverseForeignKey<O, ChannelProfileRecord> parentPath) {
+            super(path, childPath, parentPath);
+        }
+        private ChannelProfilePath(Name alias, Table<ChannelProfileRecord> aliased) {
+            super(alias, aliased);
+        }
+
+        @Override
+        public ChannelProfilePath as(String alias) {
+            return new ChannelProfilePath(DSL.name(alias), this);
+        }
+
+        @Override
+        public ChannelProfilePath as(Name alias) {
+            return new ChannelProfilePath(alias, this);
+        }
+
+        @Override
+        public ChannelProfilePath as(Table<?> alias) {
+            return new ChannelProfilePath(alias.getQualifiedName(), this);
+        }
+    }
+
     @Override
     public Schema getSchema() {
         return aliased() ? null : Public.PUBLIC;
@@ -157,6 +195,19 @@ public class ChannelProfile extends TableImpl<ChannelProfileRecord> {
     @Override
     public UniqueKey<ChannelProfileRecord> getPrimaryKey() {
         return Keys.CHANNEL_PROFILE_PKEY;
+    }
+
+    private transient ChannelProfileJobPath _channelProfileJob;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.channel_profile_job</code> table
+     */
+    public ChannelProfileJobPath channelProfileJob() {
+        if (_channelProfileJob == null)
+            _channelProfileJob = new ChannelProfileJobPath(this, null, Keys.CHANNEL_PROFILE_JOB__CHANNEL_PROFILE_JOB_CHANNEL_PROFILE_ID_FKEY.getInverseKey());
+
+        return _channelProfileJob;
     }
 
     @Override

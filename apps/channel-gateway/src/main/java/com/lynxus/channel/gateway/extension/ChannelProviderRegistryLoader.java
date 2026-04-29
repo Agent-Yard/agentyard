@@ -120,7 +120,14 @@ public final class ChannelProviderRegistryLoader {
                 descriptorDefinitionDigests.putIfAbsent(providerType, definitionDigest);
                 descriptorsByProviderType.putIfAbsent(
                     providerType,
-                    new ChannelProviderDescriptor(providerType, descriptor, definitionDigest, configSchema, defaultConfig)
+                    new ChannelProviderDescriptor(
+                        providerType,
+                        descriptor,
+                        definitionDigest,
+                        configSchema,
+                        defaultConfig,
+                        ChannelProviderDescriptor.jobDefinitions(descriptor)
+                    )
                 );
             }
 

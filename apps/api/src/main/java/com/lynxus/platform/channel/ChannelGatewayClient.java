@@ -4,6 +4,9 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfig;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfigWriteRequest;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobRun;
 import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileInternalRequest;
 import com.lynxus.contracts.channel.ChannelContracts.UpdateChannelProfileInternalRequest;
 import com.lynxus.platform.shared.ConflictException;
@@ -31,6 +34,10 @@ public class ChannelGatewayClient {
     private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelInboundEvent>>> CHANNEL_INBOUND_EVENT_LIST = new ParameterizedTypeReference<>() {
     };
     private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelOutboundDelivery>>> CHANNEL_OUTBOUND_DELIVERY_LIST = new ParameterizedTypeReference<>() {
+    };
+    private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelProviderJobConfig>>> CHANNEL_PROVIDER_JOB_LIST = new ParameterizedTypeReference<>() {
+    };
+    private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelProviderJobRun>>> CHANNEL_PROVIDER_JOB_RUN_LIST = new ParameterizedTypeReference<>() {
     };
 
     private final RestClient restClient;
@@ -119,6 +126,44 @@ public class ChannelGatewayClient {
             .body(CHANNEL_OUTBOUND_DELIVERY_LIST)));
     }
 
+    public List<ChannelProviderJobConfig> listJobs(String channelProfileId) {
+        return invoke(() -> body(restClient.get()
+            .uri("/internal/channel-admin/profiles/{channelProfileId}/jobs", channelProfileId)
+            .retrieve()
+            .body(CHANNEL_PROVIDER_JOB_LIST)));
+    }
+
+    public ChannelProviderJobConfig upsertJob(
+        String channelProfileId,
+        String jobType,
+        ChannelProviderJobConfigWriteRequest request
+    ) {
+        return invoke(() -> body(restClient.put()
+            .uri("/internal/channel-admin/profiles/{channelProfileId}/jobs/{jobType}", channelProfileId, jobType)
+            .body(request)
+            .retrieve()
+            .body(new ParameterizedTypeReference<ApiEnvelope<ChannelProviderJobConfig>>() {
+            })));
+    }
+
+    public ChannelProviderJobConfig deleteJob(String channelProfileId, String jobType, long expectedRevision) {
+        return invoke(() -> body(restClient.delete()
+            .uri(uriBuilder -> uriBuilder
+                .path("/internal/channel-admin/profiles/{channelProfileId}/jobs/{jobType}")
+                .queryParam("expectedRevision", expectedRevision)
+                .build(channelProfileId, jobType))
+            .retrieve()
+            .body(new ParameterizedTypeReference<ApiEnvelope<ChannelProviderJobConfig>>() {
+            })));
+    }
+
+    public List<ChannelProviderJobRun> listJobRuns(String channelProfileId, String jobType) {
+        return invoke(() -> body(restClient.get()
+            .uri("/internal/channel-admin/profiles/{channelProfileId}/jobs/{jobType}/runs", channelProfileId, jobType)
+            .retrieve()
+            .body(CHANNEL_PROVIDER_JOB_RUN_LIST)));
+    }
+
     private static String requireInternalAuthToken(String internalAuthToken) {
         if (internalAuthToken == null || internalAuthToken.isBlank()) {
             throw new IllegalStateException("lynxus.internal-auth.token must be configured");
@@ -145,7 +190,7 @@ public class ChannelGatewayClient {
         String detail = extractDetail(error);
         HttpStatusCode status = error.getStatusCode();
         return switch (status.value()) {
-            case 400 -> new IllegalArgumentException(detail);
+            case 400, 422 -> new IllegalArgumentException(detail);
             case 404 -> new NoSuchElementException(detail);
             case 409 -> new ConflictException(detail);
             default -> new DownstreamServiceException(status, detail);

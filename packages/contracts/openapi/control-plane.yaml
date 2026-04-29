@@ -221,6 +221,113 @@ paths:
                 $ref: '#/components/schemas/ApiResponseChannelOutboundDeliveryList'
         '404':
           description: Channel profile not found
+  /channel-admin/profiles/{channelProfileId}/jobs:
+    get:
+      summary: List provider jobs for a channel profile
+      parameters:
+        - in: path
+          name: channelProfileId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Provider job configs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseChannelProviderJobConfigList'
+        '404':
+          description: Channel profile not found
+  /channel-admin/profiles/{channelProfileId}/jobs/{jobType}:
+    put:
+      summary: Create or update a provider job config
+      parameters:
+        - in: path
+          name: channelProfileId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: jobType
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChannelProviderJobConfigWritePayload'
+      responses:
+        '200':
+          description: Saved provider job config
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseChannelProviderJobConfig'
+        '409':
+          description: Provider job is running or expectedRevision is stale
+        '422':
+          description: Provider job definition, schedule config, or job config is invalid
+    delete:
+      summary: Disable a provider job config
+      parameters:
+        - in: path
+          name: channelProfileId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: jobType
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: expectedRevision
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        '200':
+          description: Disabled provider job config
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseChannelProviderJobConfig'
+        '404':
+          description: Channel profile or provider job not found
+        '409':
+          description: Provider job is running or expectedRevision is stale
+        '422':
+          description: Provider job definition is invalid
+  /channel-admin/profiles/{channelProfileId}/jobs/{jobType}/runs:
+    get:
+      summary: List provider job run history
+      parameters:
+        - in: path
+          name: channelProfileId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: jobType
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Provider job run history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseChannelProviderJobRunList'
+        '404':
+          description: Channel profile or provider job not found
+        '422':
+          description: Provider job definition is invalid
   /integration/accounts:
     get:
       summary: List integration accounts
@@ -1810,6 +1917,15 @@ components:
     ChannelOutboundDeliveryStatus:
       type: string
       enum: [PENDING, SENT, FAILED]
+    ChannelProviderJobScheduleType:
+      type: string
+      enum: [INTERVAL, CRON, MANUAL]
+    ChannelProviderJobStatus:
+      type: string
+      enum: [ACTIVE, RUNNING, PAUSED, DISABLED]
+    ChannelProviderJobRunStatus:
+      type: string
+      enum: [RUNNING, SUCCEEDED, FAILED, TIMED_OUT]
     ChannelAssistantBinding:
       type: object
       properties:
@@ -2117,6 +2233,187 @@ components:
         updatedAt:
           type: string
           format: date-time
+    ChannelProviderJobScheduleConfig:
+      type: object
+      required:
+        - scheduleType
+        - timezone
+        - jobTimeoutSeconds
+        - jobConfig
+      properties:
+        scheduleType:
+          $ref: '#/components/schemas/ChannelProviderJobScheduleType'
+        intervalSeconds:
+          type: integer
+          minimum: 1
+          nullable: true
+        cronExpression:
+          type: string
+          nullable: true
+        timezone:
+          type: string
+        jobTimeoutSeconds:
+          type: integer
+          minimum: 1
+        jobConfig:
+          type: object
+          additionalProperties: true
+    ChannelProviderJobScheduleWriteConfig:
+      type: object
+      required:
+        - enabled
+      properties:
+        enabled:
+          type: boolean
+        scheduleType:
+          allOf:
+            - $ref: '#/components/schemas/ChannelProviderJobScheduleType'
+          nullable: true
+        intervalSeconds:
+          type: integer
+          minimum: 1
+          nullable: true
+        cronExpression:
+          type: string
+          nullable: true
+        timezone:
+          type: string
+          nullable: true
+        jobTimeoutSeconds:
+          type: integer
+          minimum: 1
+          nullable: true
+        jobConfig:
+          type: object
+          additionalProperties: true
+          nullable: true
+    ChannelProviderJobConfig:
+      type: object
+      required:
+        - jobId
+        - jobType
+        - status
+        - scheduleConfig
+        - failureCount
+        - revision
+        - createdAt
+        - updatedAt
+      properties:
+        jobId:
+          type: string
+        jobType:
+          type: string
+        status:
+          $ref: '#/components/schemas/ChannelProviderJobStatus'
+        scheduleConfig:
+          $ref: '#/components/schemas/ChannelProviderJobScheduleConfig'
+        nextRunAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastRunAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastSuccessAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastError:
+          type: string
+          nullable: true
+        failureCount:
+          type: integer
+          minimum: 0
+        revision:
+          type: integer
+          format: int64
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ChannelProviderJobConfigWritePayload:
+      type: object
+      properties:
+        scheduleConfig:
+          $ref: '#/components/schemas/ChannelProviderJobScheduleWriteConfig'
+          nullable: true
+        expectedRevision:
+          type: integer
+          format: int64
+          minimum: 0
+          nullable: true
+    ChannelProviderJobRun:
+      type: object
+      required:
+        - id
+        - runId
+        - jobId
+        - status
+        - scheduledAt
+        - startedAt
+        - jobTimeoutSeconds
+        - idempotencyKey
+        - attempt
+        - eventsIngested
+        - error
+        - metadata
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        runId:
+          type: string
+        jobId:
+          type: string
+        status:
+          $ref: '#/components/schemas/ChannelProviderJobRunStatus'
+        scheduledAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+        jobTimeoutSeconds:
+          type: integer
+          minimum: 1
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        durationMs:
+          type: integer
+          format: int64
+          nullable: true
+        idempotencyKey:
+          type: string
+          minLength: 1
+          maxLength: 128
+        attempt:
+          type: integer
+          minimum: 1
+        eventsIngested:
+          type: integer
+          minimum: 0
+        nextCursor:
+          type: string
+          nullable: true
+        error:
+          type: object
+          additionalProperties: true
+        metadata:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
     ApiResponseChannelConversationBindingList:
       type: object
       properties:
@@ -2150,6 +2447,40 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ChannelOutboundDelivery'
+        timestamp:
+          type: string
+          format: date-time
+    ApiResponseChannelProviderJobConfig:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/ChannelProviderJobConfig'
+        timestamp:
+          type: string
+          format: date-time
+    ApiResponseChannelProviderJobConfigList:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChannelProviderJobConfig'
+        timestamp:
+          type: string
+          format: date-time
+    ApiResponseChannelProviderJobRunList:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChannelProviderJobRun'
         timestamp:
           type: string
           format: date-time

@@ -7,10 +7,15 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileIntegrationAc
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfig;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfigWriteRequest;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobRun;
 import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileInternalRequest;
 import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileRequest;
 import com.lynxus.contracts.channel.ChannelContracts.UpdateChannelProfileInternalRequest;
 import com.lynxus.contracts.channel.ChannelContracts.UpdateChannelProfileRequest;
+import com.lynxus.platform.extension.ExtensionDefinitionService;
+import com.lynxus.platform.extension.ExtensionDefinitionDtos.ChannelProviderDefinition;
 import com.lynxus.platform.integration.IntegrationAccountService;
 import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountAvailabilityDecision;
 import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountDto;
@@ -24,10 +29,20 @@ import org.springframework.stereotype.Service;
 public class ChannelAdminService {
     private final ChannelGatewayClient channelGatewayClient;
     private final IntegrationAccountService integrationAccountService;
+    private final ExtensionDefinitionService extensionDefinitionService;
 
-    public ChannelAdminService(ChannelGatewayClient channelGatewayClient, IntegrationAccountService integrationAccountService) {
+    public ChannelAdminService(
+        ChannelGatewayClient channelGatewayClient,
+        IntegrationAccountService integrationAccountService,
+        ExtensionDefinitionService extensionDefinitionService
+    ) {
         this.channelGatewayClient = channelGatewayClient;
         this.integrationAccountService = integrationAccountService;
+        this.extensionDefinitionService = extensionDefinitionService;
+    }
+
+    ChannelAdminService(ChannelGatewayClient channelGatewayClient, IntegrationAccountService integrationAccountService) {
+        this(channelGatewayClient, integrationAccountService, null);
     }
 
     public List<ChannelProfile> listProfiles() {
@@ -79,6 +94,29 @@ public class ChannelAdminService {
 
     public List<ChannelOutboundDelivery> listOutboundDeliveries(String channelProfileId) {
         return channelGatewayClient.listOutboundDeliveries(channelProfileId);
+    }
+
+    public List<ChannelProviderJobConfig> listJobs(String channelProfileId) {
+        return channelGatewayClient.listJobs(channelProfileId);
+    }
+
+    public ChannelProviderJobConfig upsertJob(
+        String channelProfileId,
+        String jobType,
+        ChannelProviderJobConfigWriteRequest request
+    ) {
+        requireJobDefinition(channelProfileId, jobType);
+        return channelGatewayClient.upsertJob(channelProfileId, jobType, request);
+    }
+
+    public ChannelProviderJobConfig deleteJob(String channelProfileId, String jobType, long expectedRevision) {
+        requireJobDefinition(channelProfileId, jobType);
+        return channelGatewayClient.deleteJob(channelProfileId, jobType, expectedRevision);
+    }
+
+    public List<ChannelProviderJobRun> listJobRuns(String channelProfileId, String jobType) {
+        requireJobDefinition(channelProfileId, jobType);
+        return channelGatewayClient.listJobRuns(channelProfileId, jobType);
     }
 
     private ChannelProfileAccountSnapshot materializeAccountSnapshot(String integrationAccountId, String providerType) {
@@ -133,6 +171,22 @@ public class ChannelAdminService {
             );
         } catch (NoSuchElementException ignored) {
             return null;
+        }
+    }
+
+    private void requireJobDefinition(String channelProfileId, String jobType) {
+        if (extensionDefinitionService == null) {
+            return;
+        }
+        ChannelGatewayProfile profile = channelGatewayClient.getProfile(channelProfileId);
+        ChannelProviderDefinition providerDefinition = extensionDefinitionService.channelProviders().stream()
+            .filter(definition -> definition.providerType().equals(profile.providerType()))
+            .findFirst()
+            .orElseThrow(() -> new IllegalArgumentException("unknown channel provider: " + profile.providerType()));
+        boolean found = providerDefinition.jobDefinitions().stream()
+            .anyMatch(definition -> definition.jobType().equals(jobType));
+        if (!found) {
+            throw new IllegalArgumentException("unknown channel provider jobType: " + jobType);
         }
     }
 }
