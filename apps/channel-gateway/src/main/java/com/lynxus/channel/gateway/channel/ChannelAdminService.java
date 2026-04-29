@@ -97,6 +97,35 @@ public class ChannelAdminService {
         return updated;
     }
 
+    public ChannelGatewayProfile deleteProfile(String channelProfileId, Long expectedRevisionValue) {
+        ChannelGatewayProfile existing = getProfile(channelProfileId);
+        long expectedRevision = requireExpectedRevision(expectedRevisionValue);
+        ChannelGatewayProfile disabled = new ChannelGatewayProfile(
+            existing.id(),
+            existing.providerType(),
+            existing.displayName(),
+            ChannelProfileStatus.INACTIVE,
+            existing.inboundEnabled(),
+            existing.config(),
+            existing.assistantBinding(),
+            existing.accountId(),
+            existing.hasExternalSecretRef(),
+            existing.revision() + 1,
+            existing.createdAt(),
+            Instant.now()
+        );
+        boolean updatedRow = repository.disableProfile(
+            disabled.id(),
+            expectedRevision,
+            disabled.revision(),
+            disabled.updatedAt()
+        );
+        if (!updatedRow) {
+            throw new ConflictException("channel profile revision conflict: " + channelProfileId);
+        }
+        return disabled;
+    }
+
     public List<ChannelConversationBinding> listBindings(String channelProfileId) {
         getProfile(channelProfileId);
         return repository.listBindings(channelProfileId);

@@ -5,6 +5,7 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.jooq.DSLContext;
@@ -37,6 +38,10 @@ public class ChannelAdminRepository {
 
     public boolean updateProfile(ChannelGatewayProfile profile, long expectedRevision, String externalSecretRef) {
         return store.updateProfile(profile, expectedRevision, externalSecretRef);
+    }
+
+    public boolean disableProfile(String channelProfileId, long expectedRevision, long nextRevision, Instant updatedAt) {
+        return store.disableProfile(channelProfileId, expectedRevision, nextRevision, updatedAt);
     }
 
     public List<ChannelConversationBinding> listBindings(String channelProfileId) {

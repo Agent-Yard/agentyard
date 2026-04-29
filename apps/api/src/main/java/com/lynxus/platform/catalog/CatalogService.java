@@ -248,7 +248,7 @@ public class CatalogService {
     }
 
     public CatalogSummaryDto summary() {
-        return withReadState((state, knowledgeState) -> new CatalogSummaryDto(
+        return withReadState((state, knowledgeState) -> redactToolConnectorSecrets(new CatalogSummaryDto(
             listDomains(state, knowledgeState),
             listScenarios(state),
             listAssistants(state),
@@ -257,7 +257,7 @@ public class CatalogService {
             knowledgeBases(knowledgeState),
             resourceCenter(state),
             resourceBlueprints()
-        ));
+        )));
     }
 
     public ObjectReferenceAnalysisDto objectReferences(String objectType, String objectId) {
@@ -636,6 +636,10 @@ public class CatalogService {
         return withReadState(state -> {
         return toAssistantView(state, findAssistant(state, assistantId));
         });
+    }
+
+    public AssistantDto getAssistantRuntimeSnapshot(String assistantId) {
+        return withReadState(state -> toAssistantView(state, findAssistant(state, assistantId), false));
     }
 
     public AgentDto createAgent(CreateAgentRequest request) {
@@ -1287,9 +1291,14 @@ public class CatalogService {
     }
 
     private AssistantDto toAssistantView(CatalogRepository state, AssistantDto assistant) {
+        return toAssistantView(state, assistant, true);
+    }
+
+    private AssistantDto toAssistantView(CatalogRepository state, AssistantDto assistant, boolean redactToolConnectorSecrets) {
         List<AgentDto> assistantAgents = orderAgentsForAssistant(state, assistant.id());
         List<AssistantReleaseDto> releases = assistantReleases(state, assistant.id()).stream()
             .sorted(Comparator.comparing(AssistantReleaseDto::createdAt).reversed())
+            .map(release -> redactToolConnectorSecrets ? redactToolConnectorSecrets(release) : release)
             .toList();
         return new AssistantDto(
             assistant.id(),
@@ -1316,7 +1325,7 @@ public class CatalogService {
 
     private ResourceDto toResourceView(CatalogRepository state, ResourceDto resource) {
         List<ResourceVersionDto> versions = versionsFor(state, resource.id());
-        return new ResourceDto(
+        return redactToolConnectorSecrets(new ResourceDto(
             resource.id(),
             resource.domainId(),
             resource.name(),
@@ -1330,6 +1339,171 @@ public class CatalogService {
             versions.isEmpty() ? null : versions.getLast(),
             versions.stream().filter(item -> item.status() == VersionStatus.PUBLISHED).reduce((__, item) -> item).orElse(null),
             versions
+        ));
+    }
+
+    private CatalogSummaryDto redactToolConnectorSecrets(CatalogSummaryDto summary) {
+        return new CatalogSummaryDto(
+            summary.domains() == null ? List.of() : summary.domains().stream().map(this::redactToolConnectorSecrets).toList(),
+            summary.scenarios() == null ? List.of() : summary.scenarios().stream().map(this::redactToolConnectorSecrets).toList(),
+            summary.assistants() == null ? List.of() : summary.assistants().stream().map(this::redactToolConnectorSecrets).toList(),
+            summary.agents(),
+            summary.resources() == null ? List.of() : summary.resources().stream().map(this::redactToolConnectorSecrets).toList(),
+            summary.knowledgeBases(),
+            summary.resourceCenter(),
+            summary.resourceBlueprints()
+        );
+    }
+
+    private BusinessDomainDto redactToolConnectorSecrets(BusinessDomainDto domain) {
+        return new BusinessDomainDto(
+            domain.id(),
+            domain.name(),
+            domain.description(),
+            domain.scenarios() == null ? List.of() : domain.scenarios().stream().map(this::redactToolConnectorSecrets).toList(),
+            domain.resources() == null ? List.of() : domain.resources().stream().map(this::redactToolConnectorSecrets).toList(),
+            domain.knowledgeBases()
+        );
+    }
+
+    private ScenarioDto redactToolConnectorSecrets(ScenarioDto scenario) {
+        return new ScenarioDto(
+            scenario.id(),
+            scenario.domainId(),
+            scenario.name(),
+            scenario.goal(),
+            scenario.version(),
+            scenario.assistants() == null ? List.of() : scenario.assistants().stream().map(this::redactToolConnectorSecrets).toList()
+        );
+    }
+
+    private AssistantDto redactToolConnectorSecrets(AssistantDto assistant) {
+        return new AssistantDto(
+            assistant.id(),
+            assistant.scenarioId(),
+            assistant.name(),
+            assistant.description(),
+            assistant.version(),
+            assistant.agents(),
+            assistant.playbooks(),
+            assistant.currentRelease() == null ? null : redactToolConnectorSecrets(assistant.currentRelease()),
+            assistant.releases() == null ? List.of() : assistant.releases().stream().map(this::redactToolConnectorSecrets).toList(),
+            assistant.primaryAgentId(),
+            assistant.ownerPolicy(),
+            assistant.sessionPolicy(),
+            assistant.replyPolicy(),
+            assistant.playbookPolicy(),
+            assistant.modelPolicy(),
+            assistant.privacyModelResourceId(),
+            assistant.privacyMappingEnabled(),
+            assistant.knowledgeAccessPolicy(),
+            assistant.memoryPolicy()
+        );
+    }
+
+    private ResourceDto redactToolConnectorSecrets(ResourceDto resource) {
+        return new ResourceDto(
+            resource.id(),
+            resource.domainId(),
+            resource.name(),
+            resource.type(),
+            resource.shareScope(),
+            resource.ownerType(),
+            resource.ownerId(),
+            resource.summary(),
+            resource.steward(),
+            resource.tags(),
+            resource.latestVersion() == null ? null : redactToolConnectorSecrets(resource.latestVersion()),
+            resource.effectiveVersion() == null ? null : redactToolConnectorSecrets(resource.effectiveVersion()),
+            resource.versions() == null ? List.of() : resource.versions().stream().map(this::redactToolConnectorSecrets).toList()
+        );
+    }
+
+    private AssistantReleaseDto redactToolConnectorSecrets(AssistantReleaseDto release) {
+        return new AssistantReleaseDto(
+            release.id(),
+            release.assistantId(),
+            release.releaseVersion(),
+            release.status(),
+            release.createdAt(),
+            release.publishedAt(),
+            release.assistantKnowledgeBinding(),
+            release.defaultModelBinding(),
+            release.privacyModelBinding(),
+            release.privacyMappingEnabled(),
+            release.resources() == null ? List.of() : release.resources().stream().map(this::redactToolConnectorSecrets).toList(),
+            release.agents(),
+            release.playbooks(),
+            release.primaryAgentId(),
+            release.ownerPolicy(),
+            release.sessionPolicy(),
+            release.replyPolicy(),
+            release.playbookPolicy(),
+            release.modelPolicy(),
+            release.knowledgeAccessPolicy(),
+            release.memoryPolicy()
+        );
+    }
+
+    private AssistantReleaseResourceDto redactToolConnectorSecrets(AssistantReleaseResourceDto resource) {
+        return new AssistantReleaseResourceDto(
+            resource.resourceId(),
+            resource.resourceName(),
+            resource.resourceType(),
+            resource.resourceVersionId(),
+            resource.resourceVersion(),
+            resource.boundAgents(),
+            redactToolConnectorSecrets(resource.configuration())
+        );
+    }
+
+    private ResourceVersionDto redactToolConnectorSecrets(ResourceVersionDto version) {
+        return new ResourceVersionDto(
+            version.id(),
+            version.resourceId(),
+            version.version(),
+            version.status(),
+            version.summary(),
+            version.createdAt(),
+            version.publishedAt(),
+            redactToolConnectorSecrets(version.configuration())
+        );
+    }
+
+    private ResourceVersionConfigurationDto redactToolConnectorSecrets(ResourceVersionConfigurationDto configuration) {
+        if (configuration == null || configuration.tool() == null || configuration.tool().connector() == null) {
+            return configuration;
+        }
+        ToolConfigDto tool = configuration.tool();
+        ToolConnectorConfigDto connector = tool.connector();
+        ToolConnectorAccountSnapshotDto redactedSnapshot = redactToolConnectorSecrets(connector.accountSnapshot());
+        return new ResourceVersionConfigurationDto(
+            configuration.type(),
+            new ToolConfigDto(
+                tool.operations(),
+                new ToolConnectorConfigDto(
+                    connector.connectorType(),
+                    connector.accountId(),
+                    redactedSnapshot,
+                    connector.timeoutSeconds(),
+                    connector.retryPolicy(),
+                    connector.config(),
+                    connector.operationMappings()
+                )
+            ),
+            configuration.llmModel(),
+            configuration.skill()
+        );
+    }
+
+    private ToolConnectorAccountSnapshotDto redactToolConnectorSecrets(ToolConnectorAccountSnapshotDto accountSnapshot) {
+        if (accountSnapshot == null) {
+            return null;
+        }
+        return new ToolConnectorAccountSnapshotDto(
+            accountSnapshot.accountId(),
+            accountSnapshot.hasExternalSecretRef() || !normalizeOptionalText(accountSnapshot.runtimeSecretRef()).isBlank(),
+            null
         );
     }
 
@@ -1571,10 +1745,10 @@ public class CatalogService {
         );
         StoredIntegrationAccount account = integrationAccountRepository.findAccount(accountId)
             .orElseThrow(() -> new NoSuchElementException("integration account not found: " + accountId));
-        String externalSecretRef = normalizeOptionalText(account.externalSecretRef());
+        String runtimeSecretRef = normalizeOptionalText(account.externalSecretRef());
         return new ToolConnectorAccountSnapshotDto(
             account.id(),
-            externalSecretRef.isBlank() ? null : externalSecretRef
+            runtimeSecretRef.isBlank() ? null : runtimeSecretRef
         );
     }
 
@@ -2517,7 +2691,7 @@ public class CatalogService {
     }
 
     private ResourceVersionDto toResourceVersionDto(StoredResourceVersion version) {
-        return new ResourceVersionDto(
+        return redactToolConnectorSecrets(new ResourceVersionDto(
             version.id(),
             version.resourceId(),
             version.version(),
@@ -2526,7 +2700,7 @@ public class CatalogService {
             version.createdAt(),
             version.publishedAt(),
             version.configuration()
-        );
+        ));
     }
 
     private static String nextId(String prefix) {

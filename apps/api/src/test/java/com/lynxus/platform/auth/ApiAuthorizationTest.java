@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -208,6 +209,50 @@ class ApiAuthorizationTest {
                         """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value("channel-profile-1"));
+        }
+    }
+
+    @Test
+    void shouldRequireGovernanceWriteForChannelAdminDeleteRequest() throws Exception {
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(TestConfig.class, AuthSecurityConfiguration.class)) {
+            MockMvc mockMvc = mockMvc(context);
+
+            mockMvc.perform(delete("/api/channel-admin/profiles/channel-profile-1")
+                    .queryParam("expectedRevision", "1")
+                    .with(user("business")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.detail").value("Access is denied"));
+        }
+    }
+
+    @Test
+    void shouldAllowDeveloperChannelAdminDeleteRequest() throws Exception {
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(TestConfig.class, AuthSecurityConfiguration.class)) {
+            ChannelAdminService channelAdminService = context.getBean(ChannelAdminService.class);
+            when(channelAdminService.deleteProfile("channel-profile-1", 1L)).thenReturn(new ChannelContracts.ChannelProfile(
+                "channel-profile-1",
+                "feishu",
+                "飞书客服机器人",
+                ChannelContracts.ChannelProfileStatus.INACTIVE,
+                true,
+                java.util.Map.of("appId", "cli_xxx"),
+                null,
+                null,
+                false,
+                2,
+                null,
+                Instant.parse("2026-04-01T00:00:00Z"),
+                Instant.parse("2026-04-01T00:01:00Z")
+            ));
+
+            MockMvc mockMvc = mockMvc(context);
+
+            mockMvc.perform(delete("/api/channel-admin/profiles/channel-profile-1")
+                    .queryParam("expectedRevision", "1")
+                    .with(user("developer")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("INACTIVE"))
+                .andExpect(jsonPath("$.data.revision").value(2));
         }
     }
 

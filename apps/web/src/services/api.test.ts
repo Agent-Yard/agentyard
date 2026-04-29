@@ -254,6 +254,43 @@ describe('api client', () => {
     );
   });
 
+  it('deletes channel profiles with expected revision through the control-plane api', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        data: {
+          id: 'channel-profile-1',
+          providerType: 'feishu',
+          displayName: '飞书客服机器人',
+          status: 'INACTIVE',
+          inboundEnabled: true,
+          config: { appId: 'cli_xxx' },
+          assistantBinding: null,
+          accountId: 'integration-account-1',
+          hasExternalSecretRef: true,
+          revision: 3,
+          integrationAccount: null,
+          createdAt: '2026-04-01T00:00:00Z',
+          updatedAt: '2026-04-01T00:01:00Z',
+        },
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.deleteChannelProfile('channel-profile-1', 2);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/channel-admin/profiles/channel-profile-1?expectedRevision=2',
+      expect.objectContaining({
+        credentials: 'include',
+        method: 'DELETE',
+        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
+      }),
+    );
+  });
+
   it('preserves the JSON content type when write requests do not provide custom headers', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({

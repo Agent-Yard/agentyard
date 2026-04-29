@@ -5,6 +5,7 @@ import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
 import com.lynxus.contracts.runtime.WorkflowContracts.VersionStatus;
 import com.lynxus.contracts.session.SessionContracts.AgentDecisionAction;
 import com.lynxus.contracts.session.SessionContracts.PlaybookNodeType;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -580,8 +581,13 @@ public final class CatalogDtos {
 
     public record ToolConnectorAccountSnapshotDto(
         String accountId,
-        String externalSecretRef
+        boolean hasExternalSecretRef,
+        @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+        String runtimeSecretRef
     ) {
+        public ToolConnectorAccountSnapshotDto(String accountId, String runtimeSecretRef) {
+            this(accountId, runtimeSecretRef != null && !runtimeSecretRef.isBlank(), runtimeSecretRef);
+        }
     }
 
     public record ToolConfigDto(

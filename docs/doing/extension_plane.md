@@ -13,7 +13,7 @@
 ## Current Position
 
 - Current slice: Slice 8 - Channel provider registry + profile rename + gateway internal admin.
-- Current subtask: Slice 8C channel-gateway `ChannelProviderRegistry` and profile config/default validation. Provider job, template binding, outbound delivery semantics, internal OpenAPI coverage, and schema-driven Web pages remain later Slice 8/9/10 subtasks.
+- Current subtask: Slice 8D profile admin contract completion: add profile DELETE/disable semantics and OpenAPI coverage for implemented Web-facing/internal profile admin endpoints. Provider job, template binding, outbound delivery semantics, and schema-driven Web pages remain later Slice 8/9/10 subtasks.
 - Main-agent role: orchestration, integration decisions, ledger maintenance, review of worker/checker output.
 - Implementation flow: worker implements each bounded subtask, independent checker reviews read-only, then main agent decides follow-up.
 
@@ -82,9 +82,42 @@
 - Decision: `packages/contracts/openapi/channel-gateway-internal.yaml` does not exist yet in the repo; create it in a later Slice 8 subtask after the concrete internal DTO shape stabilizes. This is implementation ordering, not a change to the target architecture.
 - Decision: Slice 8B will split Web-facing profile requests from gateway internal write requests. API will accept optional `integrationAccountId`, call Slice 6 account availability for `CHANNEL_PROVIDER + providerType`, and send only an internal `accountSnapshot` to `channel-gateway`. `channel-gateway` may persist `external_secret_ref`, but read DTOs must expose only `accountId` and `hasExternalSecretRef`.
 - Decision: Slice 8C will make `channel-gateway` profile writes consume a runtime-local `ChannelProviderRegistry` built from the same channel-provider registration load path as validation. The first version will validate `providerType`, apply descriptor `defaultConfig` when config is omitted, and validate submitted config against descriptor `configSchema`. It will not add remote provider invocation, provider job execution, template binding, assistant/scenario existence checks, or internal OpenAPI artifacts.
+- Decision: Slice 8D will cover the implemented profile admin surface in OpenAPI (`profile` CRUD plus current read-only bindings/inbound-events/outbound-deliveries) and add the missing profile DELETE/disable path with `expectedRevision`. Template binding and provider job OpenAPI will be added with their Slice 9 implementations instead of declaring unavailable endpoints early.
 
 ## Worker / Checker Notes
 
+- Checker 8D-P1 repair verdict: pass.
+  - Confirmed control-plane OpenAPI and exported Web-facing Tool Connector / Channel Profile shapes no longer expose raw `externalSecretRef`; Tool Connector public snapshots expose `accountId` plus `hasExternalSecretRef`.
+  - Confirmed API session startup still uses `CatalogService.getAssistantRuntimeSnapshot(...)` so the internal JVM session contract can carry `externalSecretRef` to agent-runtime.
+  - Main follow-up tightened the repair by proving public JSON does not serialize `runtimeSecretRef` and by preserving Jooq persistence/readback of runtime snapshot refs through an explicit storage JSON shape.
+  - Main verification:
+    - `./gradlew :apps:api:test --tests '*CatalogService*' --tests '*JooqCatalogRepository*' --tests '*SessionRuntimeService*' --tests '*ChannelGatewayClient*' --tests '*ChannelAdmin*'` passed.
+    - `./gradlew :apps:channel-gateway:test --tests '*ChannelAdmin*' --tests '*InternalAuth*'` passed.
+    - `pnpm --filter @lynxus/web test -- api` passed (`1` file, `13` tests).
+    - OpenAPI YAML parse passed.
+    - `git diff --check` passed.
+    - Old account path scan now shows only intentional negative authorization tests in API and channel-gateway.
+- Worker 8D-P1 repair completed Tool Connector account snapshot redaction at the control-plane/Web boundary.
+  - Removed `externalSecretRef` from public `ToolConnectorAccountSnapshot` OpenAPI and shared TS shape; public snapshot now exposes `accountId` plus `hasExternalSecretRef`.
+  - API catalog public views redact materialized Tool connector release snapshots by clearing the runtime secret ref while preserving the boolean presence marker. Session startup now calls `CatalogService.getAssistantRuntimeSnapshot(...)` so agent-runtime/session runtime still receives the raw ref through the internal JVM session contract.
+  - Added/updated regression coverage for public catalog snapshot redaction while preserving the existing SessionRuntimeService assertion that runtime receives `externalSecretRef`.
+  - Verification:
+    - `./gradlew :apps:api:test --tests '*CatalogService*' --tests '*SessionRuntimeService*' --tests '*ChannelGatewayClient*' --tests '*ChannelAdmin*'` passed.
+    - `pnpm --filter @lynxus/web test -- api` passed (`1` file, `13` tests).
+    - `rg "externalSecretRef" packages/contracts/openapi/control-plane.yaml packages/contracts/src apps/web/src apps/api/src/main/java/com/lynxus/platform/catalog apps/api/src/test/java/com/lynxus/platform/catalog apps/api/src/test/java/com/lynxus/platform/session` now shows no control-plane OpenAPI, Web, or Tool connector public TS snapshot exposure; remaining hits are internal channel-gateway write TS payload, runtime/session assertions, sensitive-key rejection tests, and integration-account materialization.
+- Worker 8D completed Slice 8D profile admin contract foundation.
+  - Added profile DELETE/disable semantics for Web-facing `/api/channel-admin/profiles/{channelProfileId}?expectedRevision=...` and internal `/internal/channel-admin/profiles/{channelProfileId}?expectedRevision=...`. The gateway performs a status-only update to `INACTIVE`, increments revision, preserves config / assistant binding / integration account id / external secret ref, and returns the redacted profile DTO. Stale revisions return 409 through the gateway and API client translation.
+  - Added control-plane OpenAPI coverage for currently implemented channel profile list/create/get/update/delete plus read-only bindings, inbound-events, and outbound-deliveries. Added new `packages/contracts/openapi/channel-gateway-internal.yaml` for the corresponding internal endpoints and DTOs; internal write payloads include optional `accountSnapshot.externalSecretRef`, while internal read DTOs expose only `accountId` and `hasExternalSecretRef`.
+  - Added Web API client `deleteChannelProfile` coverage. No provider job, template binding, outbound behavior, schema-driven Web page, old `/accounts` compatibility path, or Slice 11 artifacts were added.
+  - Verification:
+    - `./gradlew :apps:channel-gateway:test --tests '*ChannelAdmin*' --tests '*InternalAuth*'` passed.
+    - `./gradlew :apps:api:test --tests '*ChannelGatewayClient*' --tests '*ApiAuthorization*'` passed.
+    - `./gradlew :apps:api:test --tests '*ChannelAdmin*'` passed.
+    - `pnpm --filter @lynxus/web test -- api` passed (`13` tests).
+    - `rg "externalSecretRef" packages/contracts/openapi/control-plane.yaml apps/api/src/main/java/com/lynxus/platform/channel apps/web/src packages/contracts/src` remains limited to API materialization plus internal/tool snapshot contract types; channel profile Web read/write schemas do not expose raw secret refs.
+    - `rg "ChannelAccount|channel_account|channel_account_id|/channel-admin/accounts|ChannelProviderType" ...` returns only the intentional old `/accounts` negative internal-auth test.
+    - `ruby -e 'require "yaml"; Dir["packages/contracts/openapi/*.yaml"].each { |path| YAML.load_file(path) }; puts "openapi yaml ok"'` passed.
+    - `git diff --check` passed.
 - Worker 8C completed channel-gateway runtime-local `ChannelProviderRegistry` and profile config/default validation.
   - Added shared channel provider registry loading for the validation endpoint and runtime registry. It filters to registrations with `exposes.channelProviderTypes`, ignores tool-only registrations, loads `core-channel-gateway` from in-process `ChannelGatewayDescriptorProvider`, fetches remote manifests with SDK URL/header helpers plus internal auth, validates manifests through the JVM SDK validator, and computes definition digests with the SDK helper.
   - Added runtime registry behavior for profile writes: unknown provider types fail clearly, registry-not-ready blocks writes, omitted/empty config materializes descriptor `defaultConfig` or `{}`, effective profile config validates against descriptor `configSchema`, and descriptor `defaultConfig` is validated during registry load.

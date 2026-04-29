@@ -142,4 +142,61 @@ class ChannelAdminServiceTest {
         )));
         verifyNoInteractions(gatewayClient);
     }
+
+    @Test
+    void shouldDisableProfileThroughGatewayClientAndHideSecretInWebDto() throws Exception {
+        ChannelGatewayClient gatewayClient = mock(ChannelGatewayClient.class);
+        IntegrationAccountService integrationAccountService = mock(IntegrationAccountService.class);
+        ChannelAdminService service = new ChannelAdminService(gatewayClient, integrationAccountService);
+        Instant now = Instant.parse("2026-04-01T00:00:00Z");
+
+        when(gatewayClient.deleteProfile("channel-profile-1", 2L)).thenReturn(new ChannelGatewayProfile(
+            "channel-profile-1",
+            "feishu",
+            "飞书客服机器人",
+            ChannelProfileStatus.INACTIVE,
+            true,
+            Map.of("appId", "cli_xxx"),
+            null,
+            "integration-account-1",
+            true,
+            3,
+            now,
+            now
+        ));
+        when(integrationAccountService.getAccount("integration-account-1")).thenReturn(new IntegrationAccountDto(
+            "integration-account-1",
+            IntegrationAccountSubjectType.CHANNEL_PROVIDER,
+            "feishu",
+            "Feishu Account",
+            IntegrationAccountStatus.ENABLED,
+            Map.of(),
+            true,
+            true,
+            IntegrationAccountCredentialStatus.ACTIVE,
+            now,
+            now
+        ));
+        when(integrationAccountService.evaluateAccountAvailability(
+            "integration-account-1",
+            IntegrationAccountSubjectType.CHANNEL_PROVIDER,
+            "feishu"
+        )).thenReturn(new IntegrationAccountAvailabilityDecision(
+            "integration-account-1",
+            IntegrationAccountSubjectType.CHANNEL_PROVIDER,
+            "feishu",
+            IntegrationAccountStatus.ENABLED,
+            IntegrationAccountCredentialStatus.ACTIVE,
+            null,
+            List.of()
+        ));
+
+        ChannelProfile profile = service.deleteProfile("channel-profile-1", 2L);
+
+        verify(gatewayClient).deleteProfile("channel-profile-1", 2L);
+        assertEquals(ChannelProfileStatus.INACTIVE, profile.status());
+        assertEquals(3, profile.revision());
+        String publicJson = new ObjectMapper().writeValueAsString(profile);
+        assertFalse(publicJson.contains("externalSecretRef"));
+    }
 }

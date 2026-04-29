@@ -5,12 +5,14 @@ import com.lynxus.contracts.channel.ChannelContracts.UpdateChannelProfileRequest
 import com.lynxus.platform.auth.RequireGovernanceAccess;
 import com.lynxus.platform.auth.RequireGovernanceWrite;
 import com.lynxus.platform.shared.ApiResponse;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -43,6 +45,12 @@ public class ChannelAdminController {
     @RequireGovernanceWrite
     public ApiResponse<?> updateProfile(@PathVariable String channelProfileId, @RequestBody UpdateChannelProfileRequest request) {
         return ApiResponse.ok(channelAdminService.updateProfile(channelProfileId, request));
+    }
+
+    @DeleteMapping("/{channelProfileId}")
+    @RequireGovernanceWrite
+    public ApiResponse<?> deleteProfile(@PathVariable String channelProfileId, @RequestParam Long expectedRevision) {
+        return ApiResponse.ok(channelAdminService.deleteProfile(channelProfileId, expectedRevision));
     }
 
     @GetMapping("/{channelProfileId}/bindings")

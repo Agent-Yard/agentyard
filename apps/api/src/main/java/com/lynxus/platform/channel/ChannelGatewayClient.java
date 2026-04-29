@@ -87,6 +87,17 @@ public class ChannelGatewayClient {
             })));
     }
 
+    public ChannelGatewayProfile deleteProfile(String channelProfileId, long expectedRevision) {
+        return invoke(() -> body(restClient.delete()
+            .uri(uriBuilder -> uriBuilder
+                .path("/internal/channel-admin/profiles/{channelProfileId}")
+                .queryParam("expectedRevision", expectedRevision)
+                .build(channelProfileId))
+            .retrieve()
+            .body(new ParameterizedTypeReference<ApiEnvelope<ChannelGatewayProfile>>() {
+            })));
+    }
+
     public List<ChannelConversationBinding> listBindings(String channelProfileId) {
         return invoke(() -> body(restClient.get()
             .uri("/internal/channel-admin/profiles/{channelProfileId}/bindings", channelProfileId)

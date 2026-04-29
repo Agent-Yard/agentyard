@@ -1503,7 +1503,12 @@ class CatalogServiceTest {
         assertNull(connector.accountId());
         assertNotNull(connector.accountSnapshot());
         assertEquals("integration-account-1", connector.accountSnapshot().accountId());
-        assertEquals("vault://tool-secret", connector.accountSnapshot().externalSecretRef());
+        assertTrue(connector.accountSnapshot().hasExternalSecretRef());
+        assertNull(connector.accountSnapshot().runtimeSecretRef());
+        String publicJson = new ObjectMapper().writeValueAsString(connector);
+        assertTrue(publicJson.contains("hasExternalSecretRef"));
+        assertFalse(publicJson.contains("runtimeSecretRef"));
+        assertFalse(publicJson.contains("vault://tool-secret"));
         assertEquals(IntegrationAccountSubjectType.TOOL_CONNECTOR, accountService.expectedSubjectType);
         assertEquals("enterprise.acme.crm", accountService.expectedSubjectId);
         assertEquals("integration-account-1", accountService.accountId);
@@ -1533,7 +1538,8 @@ class CatalogServiceTest {
 
         assertNotNull(connector.accountSnapshot());
         assertEquals("integration-account-1", connector.accountSnapshot().accountId());
-        assertNull(connector.accountSnapshot().externalSecretRef());
+        assertFalse(connector.accountSnapshot().hasExternalSecretRef());
+        assertNull(connector.accountSnapshot().runtimeSecretRef());
     }
 
     @Test

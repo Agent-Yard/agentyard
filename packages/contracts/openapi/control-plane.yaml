@@ -63,6 +63,164 @@ paths:
                 $ref: '#/components/schemas/ApiResponseToolConnectorDefinitionList'
         '503':
           description: Extension definition registry is not ready
+  /channel-admin/profiles:
+    get:
+      summary: List channel profiles
+      responses:
+        '200':
+          description: Channel profiles with credential material redacted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseChannelProfileList'
+    post:
+      summary: Create channel profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateChannelProfilePayload'
+      responses:
+        '200':
+          description: Created channel profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseChannelProfile'
+        '400':
+          description: Channel profile payload is invalid
+        '422':
+          description: Integration account, assistant, scenario, or provider config is invalid
+        '503':
+          description: Channel provider registry is not ready
+  /channel-admin/profiles/{channelProfileId}:
+    get:
+      summary: Get channel profile
+      parameters:
+        - in: path
+          name: channelProfileId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Channel profile with credential material redacted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseChannelProfile'
+        '404':
+          description: Channel profile not found
+    put:
+      summary: Update channel profile
+      parameters:
+        - in: path
+          name: channelProfileId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateChannelProfilePayload'
+      responses:
+        '200':
+          description: Updated channel profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseChannelProfile'
+        '400':
+          description: Channel profile payload is invalid
+        '409':
+          description: Channel profile revision conflict
+        '422':
+          description: Integration account, assistant, scenario, or provider config is invalid
+        '503':
+          description: Channel provider registry is not ready
+    delete:
+      summary: Disable channel profile
+      parameters:
+        - in: path
+          name: channelProfileId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: expectedRevision
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        '200':
+          description: Disabled channel profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseChannelProfile'
+        '400':
+          description: expectedRevision is missing or invalid
+        '409':
+          description: Channel profile revision conflict
+  /channel-admin/profiles/{channelProfileId}/bindings:
+    get:
+      summary: List channel conversation bindings
+      parameters:
+        - in: path
+          name: channelProfileId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Channel conversation bindings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseChannelConversationBindingList'
+        '404':
+          description: Channel profile not found
+  /channel-admin/profiles/{channelProfileId}/inbound-events:
+    get:
+      summary: List channel inbound events
+      parameters:
+        - in: path
+          name: channelProfileId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Channel inbound events
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseChannelInboundEventList'
+        '404':
+          description: Channel profile not found
+  /channel-admin/profiles/{channelProfileId}/outbound-deliveries:
+    get:
+      summary: List channel outbound deliveries
+      parameters:
+        - in: path
+          name: channelProfileId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Channel outbound deliveries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseChannelOutboundDeliveryList'
+        '404':
+          description: Channel profile not found
   /integration/accounts:
     get:
       summary: List integration accounts
@@ -1640,6 +1798,361 @@ components:
         credential:
           type: object
           additionalProperties: true
+    ChannelProfileStatus:
+      type: string
+      enum: [ACTIVE, INACTIVE]
+    ChannelConversationBindingStatus:
+      type: string
+      enum: [ACTIVE, ARCHIVED]
+    ChannelInboundEventStatus:
+      type: string
+      enum: [RECEIVED, REJECTED]
+    ChannelOutboundDeliveryStatus:
+      type: string
+      enum: [PENDING, SENT, FAILED]
+    ChannelAssistantBinding:
+      type: object
+      properties:
+        assistantId:
+          type: string
+          nullable: true
+        scenarioId:
+          type: string
+          nullable: true
+    IntegrationAccountAvailabilityBlock:
+      type: string
+      enum: [SUBJECT_MISMATCH, ACCOUNT_STATUS_NOT_ENABLED, CREDENTIAL_REVOKE_FAILED, CREDENTIAL_REVOKED]
+    IntegrationAccountAvailabilityRisk:
+      type: string
+      enum: [CREDENTIAL_NOT_CONFIGURED, CREDENTIAL_VALIDATION_FAILED, CREDENTIAL_ROTATION_REQUIRED]
+    ChannelProfileIntegrationAccountSummary:
+      type: object
+      required:
+        - id
+        - name
+        - status
+        - credentialStatus
+        - credentialConfigured
+        - risks
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        status:
+          $ref: '#/components/schemas/IntegrationAccountStatus'
+        credentialStatus:
+          $ref: '#/components/schemas/IntegrationAccountCredentialStatus'
+        credentialConfigured:
+          type: boolean
+        availabilityHardBlock:
+          $ref: '#/components/schemas/IntegrationAccountAvailabilityBlock'
+          nullable: true
+        risks:
+          type: array
+          items:
+            $ref: '#/components/schemas/IntegrationAccountAvailabilityRisk'
+    ChannelProfile:
+      type: object
+      required:
+        - id
+        - providerType
+        - displayName
+        - status
+        - inboundEnabled
+        - config
+        - accountId
+        - hasExternalSecretRef
+        - revision
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        providerType:
+          type: string
+          maxLength: 128
+        displayName:
+          type: string
+          maxLength: 128
+        status:
+          $ref: '#/components/schemas/ChannelProfileStatus'
+        inboundEnabled:
+          type: boolean
+        config:
+          type: object
+          additionalProperties: true
+        assistantBinding:
+          $ref: '#/components/schemas/ChannelAssistantBinding'
+          nullable: true
+        accountId:
+          type: string
+          nullable: true
+        hasExternalSecretRef:
+          type: boolean
+        revision:
+          type: integer
+          format: int64
+          minimum: 1
+        integrationAccount:
+          $ref: '#/components/schemas/ChannelProfileIntegrationAccountSummary'
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ApiResponseChannelProfile:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/ChannelProfile'
+        timestamp:
+          type: string
+          format: date-time
+    ApiResponseChannelProfileList:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChannelProfile'
+        timestamp:
+          type: string
+          format: date-time
+    CreateChannelProfilePayload:
+      type: object
+      required:
+        - providerType
+        - displayName
+        - config
+      properties:
+        providerType:
+          type: string
+          maxLength: 128
+        displayName:
+          type: string
+          maxLength: 128
+        status:
+          $ref: '#/components/schemas/ChannelProfileStatus'
+          nullable: true
+        inboundEnabled:
+          type: boolean
+          nullable: true
+        config:
+          type: object
+          additionalProperties: true
+        assistantBinding:
+          $ref: '#/components/schemas/ChannelAssistantBinding'
+          nullable: true
+        integrationAccountId:
+          type: string
+          nullable: true
+    UpdateChannelProfilePayload:
+      type: object
+      required:
+        - providerType
+        - displayName
+        - config
+        - expectedRevision
+      properties:
+        providerType:
+          type: string
+          maxLength: 128
+        displayName:
+          type: string
+          maxLength: 128
+        status:
+          $ref: '#/components/schemas/ChannelProfileStatus'
+          nullable: true
+        inboundEnabled:
+          type: boolean
+          nullable: true
+        config:
+          type: object
+          additionalProperties: true
+        assistantBinding:
+          $ref: '#/components/schemas/ChannelAssistantBinding'
+          nullable: true
+        integrationAccountId:
+          type: string
+          nullable: true
+        expectedRevision:
+          type: integer
+          format: int64
+          minimum: 1
+    ChannelConversationBinding:
+      type: object
+      required:
+        - id
+        - channelProfileId
+        - externalConversationId
+        - status
+        - metadata
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        channelProfileId:
+          type: string
+        externalConversationId:
+          type: string
+        externalUserId:
+          type: string
+          nullable: true
+        assistantId:
+          type: string
+          nullable: true
+        customerId:
+          type: string
+          nullable: true
+        sessionId:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/ChannelConversationBindingStatus'
+        metadata:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ChannelInboundEvent:
+      type: object
+      required:
+        - eventId
+        - channelProfileId
+        - providerType
+        - eventType
+        - dedupKey
+        - rawPayload
+        - normalizedPayload
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        eventId:
+          type: string
+        channelProfileId:
+          type: string
+        providerType:
+          type: string
+        eventType:
+          type: string
+        externalEventId:
+          type: string
+          nullable: true
+        externalConversationId:
+          type: string
+          nullable: true
+        externalMessageId:
+          type: string
+          nullable: true
+        dedupKey:
+          type: string
+        rawPayload:
+          type: object
+          additionalProperties: true
+        normalizedPayload:
+          type: object
+          additionalProperties: true
+        status:
+          $ref: '#/components/schemas/ChannelInboundEventStatus'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ChannelOutboundDelivery:
+      type: object
+      required:
+        - deliveryId
+        - channelProfileId
+        - providerType
+        - payload
+        - status
+        - attemptCount
+        - createdAt
+        - updatedAt
+      properties:
+        deliveryId:
+          type: string
+        channelProfileId:
+          type: string
+        providerType:
+          type: string
+        sessionId:
+          type: string
+          nullable: true
+        sessionMessageId:
+          type: string
+          nullable: true
+        externalConversationId:
+          type: string
+          nullable: true
+        payload:
+          type: object
+          additionalProperties: true
+        status:
+          $ref: '#/components/schemas/ChannelOutboundDeliveryStatus'
+        attemptCount:
+          type: integer
+          minimum: 0
+        lastError:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ApiResponseChannelConversationBindingList:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChannelConversationBinding'
+        timestamp:
+          type: string
+          format: date-time
+    ApiResponseChannelInboundEventList:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChannelInboundEvent'
+        timestamp:
+          type: string
+          format: date-time
+    ApiResponseChannelOutboundDeliveryList:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChannelOutboundDelivery'
+        timestamp:
+          type: string
+          format: date-time
     ToolOperation:
       type: object
       properties:
@@ -1679,12 +2192,12 @@ components:
       type: object
       required:
         - accountId
+        - hasExternalSecretRef
       properties:
         accountId:
           type: string
-        externalSecretRef:
-          type: string
-          nullable: true
+        hasExternalSecretRef:
+          type: boolean
     ToolConfig:
       type: object
       properties:

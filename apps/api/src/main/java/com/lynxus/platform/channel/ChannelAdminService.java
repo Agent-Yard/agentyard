@@ -65,6 +65,10 @@ public class ChannelAdminService {
         return toWebProfile(channelGatewayClient.updateProfile(channelProfileId, internalRequest));
     }
 
+    public ChannelProfile deleteProfile(String channelProfileId, long expectedRevision) {
+        return toWebProfile(channelGatewayClient.deleteProfile(channelProfileId, expectedRevision));
+    }
+
     public List<ChannelConversationBinding> listBindings(String channelProfileId) {
         return channelGatewayClient.listBindings(channelProfileId);
     }

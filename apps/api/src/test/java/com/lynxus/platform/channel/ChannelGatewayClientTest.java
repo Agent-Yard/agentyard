@@ -163,6 +163,76 @@ class ChannelGatewayClientTest {
         }
     }
 
+    @Test
+    void shouldSendExpectedRevisionOnProfileDelete() throws Exception {
+        AtomicReference<String> method = new AtomicReference<>();
+        AtomicReference<String> requestUri = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/internal/channel-admin/profiles/channel-profile-1", exchange -> {
+            method.set(exchange.getRequestMethod());
+            requestUri.set(exchange.getRequestURI().toString());
+            writeJson(
+                exchange,
+                200,
+                """
+                    {
+                      "success": true,
+                      "data": {
+                        "id": "channel-profile-1",
+                        "providerType": "feishu",
+                        "displayName": "飞书客服机器人",
+                        "status": "INACTIVE",
+                        "inboundEnabled": true,
+                        "config": {"appId": "cli_xxx"},
+                        "assistantBinding": null,
+                        "accountId": "integration-account-1",
+                        "hasExternalSecretRef": true,
+                        "revision": 3,
+                        "createdAt": "2026-04-23T00:00:00Z",
+                        "updatedAt": "2026-04-23T00:01:00Z"
+                      },
+                      "timestamp": "2026-04-23T00:01:00Z"
+                    }
+                    """
+            );
+        });
+        server.start();
+
+        try {
+            ChannelGatewayClient client = new ChannelGatewayClient(serverUrl(server), "internal-token", new ObjectMapper());
+            var disabled = client.deleteProfile("channel-profile-1", 2L);
+
+            assertEquals("DELETE", method.get());
+            assertEquals("/internal/channel-admin/profiles/channel-profile-1?expectedRevision=2", requestUri.get());
+            assertEquals(ChannelProfileStatus.INACTIVE, disabled.status());
+            assertEquals(3, disabled.revision());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void shouldTranslateConflictFromProfileDelete() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/internal/channel-admin/profiles/channel-profile-1", exchange -> writeJson(exchange, 409, """
+            {
+              "type": "about:blank",
+              "title": "Conflict",
+              "status": 409,
+              "detail": "channel profile revision conflict: channel-profile-1"
+            }
+            """));
+        server.start();
+
+        try {
+            ChannelGatewayClient client = new ChannelGatewayClient(serverUrl(server), "internal-token", new ObjectMapper());
+            ConflictException error = assertThrows(ConflictException.class, () -> client.deleteProfile("channel-profile-1", 1L));
+            assertEquals("channel profile revision conflict: channel-profile-1", error.getMessage());
+        } finally {
+            server.stop(0);
+        }
+    }
+
     private static String serverUrl(HttpServer server) {
         return "http://localhost:" + server.getAddress().getPort();
     }

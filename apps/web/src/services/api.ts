@@ -190,6 +190,11 @@ export const api = {
     request<ChannelProfile>('/channel-admin/profiles', jsonOptions('POST', payload)),
   updateChannelProfile: (channelProfileId: string, payload: UpdateChannelProfilePayload) =>
     request<ChannelProfile>(`/channel-admin/profiles/${channelProfileId}`, jsonOptions('PUT', payload)),
+  deleteChannelProfile: (channelProfileId: string, expectedRevision: number) =>
+    request<ChannelProfile>(
+      `/channel-admin/profiles/${channelProfileId}?${new URLSearchParams({ expectedRevision: String(expectedRevision) }).toString()}`,
+      jsonOptions('DELETE'),
+    ),
   listChannelBindings: (channelProfileId: string) =>
     request<ChannelConversationBinding[]>(`/channel-admin/profiles/${channelProfileId}/bindings`),
   listChannelInboundEvents: (channelProfileId: string) =>

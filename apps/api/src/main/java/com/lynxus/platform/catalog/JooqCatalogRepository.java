@@ -23,6 +23,7 @@ import com.lynxus.persistence.jooqsupport.JooqJsonbSupport;
 import com.lynxus.persistence.jooqsupport.JooqTimeSupport;
 import com.lynxus.persistence.shared.SharedStateRevisionStore;
 import com.lynxus.platform.shared.ConflictException;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -634,7 +635,7 @@ public class JooqCatalogRepository implements CatalogRepository {
                 .set(CATALOG_RESOURCE_VERSIONS.CONFIG_DIGEST, version.configDigest())
                 .set(CATALOG_RESOURCE_VERSIONS.CREATED_AT, JooqTimeSupport.toOffsetDateTime(version.createdAt()))
                 .set(CATALOG_RESOURCE_VERSIONS.PUBLISHED_AT, JooqTimeSupport.toOffsetDateTime(version.publishedAt()))
-                .set(CATALOG_RESOURCE_VERSIONS.CONFIGURATION, jsonbSupport.toJsonb(version.configuration()))
+                .set(CATALOG_RESOURCE_VERSIONS.CONFIGURATION, configurationJsonb(version.configuration()))
                 .execute();
         }
     }
@@ -661,7 +662,7 @@ public class JooqCatalogRepository implements CatalogRepository {
                 .set(CATALOG_ASSISTANT_RELEASES.DEFAULT_MODEL_BINDING, jsonbOrNull(release.defaultModelBinding()))
                 .set(CATALOG_ASSISTANT_RELEASES.PRIVACY_MODEL_BINDING, jsonbOrNull(release.privacyModelBinding()))
                 .set(CATALOG_ASSISTANT_RELEASES.PRIVACY_MAPPING_ENABLED, release.privacyMappingEnabled())
-                .set(CATALOG_ASSISTANT_RELEASES.RESOURCES, jsonbSupport.toJsonb(safe(release.resources())))
+                .set(CATALOG_ASSISTANT_RELEASES.RESOURCES, releaseResourcesJsonb(release.resources()))
                 .set(CATALOG_ASSISTANT_RELEASES.AGENTS, jsonbSupport.toJsonb(safe(release.agents())))
                 .set(CATALOG_ASSISTANT_RELEASES.PLAYBOOKS, jsonbSupport.toJsonb(safe(release.playbooks())))
                 .set(CATALOG_ASSISTANT_RELEASES.PRIMARY_AGENT_ID, release.primaryAgentId())
@@ -884,6 +885,76 @@ public class JooqCatalogRepository implements CatalogRepository {
 
     private JSONB jsonbOrNull(Object value) {
         return value == null ? null : jsonbSupport.toJsonb(value);
+    }
+
+    private JSONB configurationJsonb(ResourceVersionConfigurationDto configuration) {
+        return jsonbOrNull(storageConfiguration(configuration));
+    }
+
+    private JSONB releaseResourcesJsonb(List<AssistantReleaseResourceDto> resources) {
+        return jsonbSupport.toJsonb(safe(resources).stream()
+            .map(this::storageReleaseResource)
+            .toList());
+    }
+
+    private Object storageReleaseResource(AssistantReleaseResourceDto resource) {
+        LinkedHashMap<String, Object> value = new LinkedHashMap<>();
+        value.put("resourceId", resource.resourceId());
+        value.put("resourceName", resource.resourceName());
+        value.put("resourceType", resource.resourceType());
+        value.put("resourceVersionId", resource.resourceVersionId());
+        value.put("resourceVersion", resource.resourceVersion());
+        value.put("boundAgents", safe(resource.boundAgents()));
+        value.put("configuration", storageConfiguration(resource.configuration()));
+        return value;
+    }
+
+    private Object storageConfiguration(ResourceVersionConfigurationDto configuration) {
+        if (configuration == null) {
+            return null;
+        }
+        LinkedHashMap<String, Object> value = new LinkedHashMap<>();
+        value.put("type", configuration.type());
+        value.put("tool", storageToolConfig(configuration.tool()));
+        value.put("llmModel", configuration.llmModel());
+        value.put("skill", configuration.skill());
+        return value;
+    }
+
+    private Object storageToolConfig(ToolConfigDto tool) {
+        if (tool == null) {
+            return null;
+        }
+        LinkedHashMap<String, Object> value = new LinkedHashMap<>();
+        value.put("operations", safe(tool.operations()));
+        value.put("connector", storageToolConnector(tool.connector()));
+        return value;
+    }
+
+    private Object storageToolConnector(ToolConnectorConfigDto connector) {
+        if (connector == null) {
+            return null;
+        }
+        LinkedHashMap<String, Object> value = new LinkedHashMap<>();
+        value.put("connectorType", connector.connectorType());
+        value.put("accountId", connector.accountId());
+        value.put("accountSnapshot", storageToolConnectorAccountSnapshot(connector.accountSnapshot()));
+        value.put("timeoutSeconds", connector.timeoutSeconds());
+        value.put("retryPolicy", connector.retryPolicy());
+        value.put("config", connector.config());
+        value.put("operationMappings", connector.operationMappings());
+        return value;
+    }
+
+    private Object storageToolConnectorAccountSnapshot(ToolConnectorAccountSnapshotDto accountSnapshot) {
+        if (accountSnapshot == null) {
+            return null;
+        }
+        LinkedHashMap<String, Object> value = new LinkedHashMap<>();
+        value.put("accountId", accountSnapshot.accountId());
+        value.put("hasExternalSecretRef", accountSnapshot.hasExternalSecretRef());
+        value.put("runtimeSecretRef", accountSnapshot.runtimeSecretRef());
+        return value;
     }
 
     private List<String> readStringList(JSONB value) {

@@ -46,7 +46,7 @@ class SessionRuntimeServiceTest {
         CatalogDtos.AssistantDto assistant = assistant("ast-1");
         SessionRuntimeDtos.SessionRuntimeSessionDto existing = session("session-existing", "ACTIVE", null);
 
-        when(catalogService.getAssistant("ast-1")).thenReturn(assistant);
+        when(catalogService.getAssistantRuntimeSnapshot("ast-1")).thenReturn(assistant);
         when(repository.findActiveSession("customer-1", "ast-1")).thenReturn(java.util.Optional.of(existing));
         when(repository.findSession("session-existing")).thenReturn(java.util.Optional.of(existing));
         when(gateway.isWorkflowOpen("session-existing")).thenReturn(true);
@@ -76,7 +76,7 @@ class SessionRuntimeServiceTest {
         CatalogDtos.AssistantDto assistant = assistant("ast-1");
         SessionRuntimeDtos.SessionRuntimeSessionDto existing = session("session-existing", "ACTIVE", null);
 
-        when(catalogService.getAssistant("ast-1")).thenReturn(assistant);
+        when(catalogService.getAssistantRuntimeSnapshot("ast-1")).thenReturn(assistant);
         when(repository.findActiveSession("customer-1", "ast-1")).thenReturn(java.util.Optional.of(existing));
         when(repository.findSession("session-existing")).thenReturn(java.util.Optional.of(existing));
         when(gateway.isWorkflowOpen("session-existing")).thenReturn(true);
@@ -107,7 +107,7 @@ class SessionRuntimeServiceTest {
         CatalogDtos.AssistantDto assistant = assistant("ast-1");
         SessionRuntimeDtos.SessionRuntimeSessionDto existing = session("session-closed", "IDLE", null);
 
-        when(catalogService.getAssistant("ast-1")).thenReturn(assistant);
+        when(catalogService.getAssistantRuntimeSnapshot("ast-1")).thenReturn(assistant);
         when(repository.findActiveSession("customer-1", "ast-1")).thenReturn(java.util.Optional.of(existing));
         when(repository.findSession(any())).thenReturn(java.util.Optional.empty());
         when(gateway.isWorkflowOpen("session-closed")).thenReturn(false);
@@ -134,7 +134,7 @@ class SessionRuntimeServiceTest {
         );
         CatalogDtos.AssistantDto assistant = assistant("ast-1");
 
-        when(catalogService.getAssistant("ast-1")).thenReturn(assistant);
+        when(catalogService.getAssistantRuntimeSnapshot("ast-1")).thenReturn(assistant);
         when(repository.findActiveSession("customer-1", "ast-1")).thenReturn(java.util.Optional.empty());
         when(repository.findSession(any())).thenReturn(java.util.Optional.empty());
         when(gateway.isWorkflowOpen(any())).thenReturn(true);
@@ -170,7 +170,7 @@ class SessionRuntimeServiceTest {
         CatalogDtos.AssistantDto assistant = assistant("ast-1");
         SessionRuntimeDtos.SessionRuntimeSessionDto existing = session("session-closed", "IDLE", null);
 
-        when(catalogService.getAssistant("ast-1")).thenReturn(assistant);
+        when(catalogService.getAssistantRuntimeSnapshot("ast-1")).thenReturn(assistant);
         when(repository.findSession("session-closed")).thenReturn(java.util.Optional.of(existing));
         when(repository.findActiveSession("customer-1", "ast-1")).thenReturn(java.util.Optional.empty());
         when(repository.findSession(argThat(id -> !"session-closed".equals(id)))).thenReturn(java.util.Optional.empty());
@@ -204,7 +204,7 @@ class SessionRuntimeServiceTest {
         CatalogDtos.AssistantDto assistant = assistant("ast-1");
         SessionRuntimeDtos.SessionRuntimeSessionDto ended = session("session-ended", "ENDED", null);
 
-        when(catalogService.getAssistant("ast-1")).thenReturn(assistant);
+        when(catalogService.getAssistantRuntimeSnapshot("ast-1")).thenReturn(assistant);
         when(repository.findSession("session-ended")).thenReturn(java.util.Optional.of(ended));
         when(repository.findActiveSession("customer-1", "ast-1")).thenReturn(java.util.Optional.empty());
         when(repository.findSession(argThat(id -> !"session-ended".equals(id)))).thenReturn(java.util.Optional.empty());
@@ -236,7 +236,7 @@ class SessionRuntimeServiceTest {
         );
         CatalogDtos.AssistantDto assistant = assistantWithFrozenReleaseDescriptors("ast-1");
 
-        when(catalogService.getAssistant("ast-1")).thenReturn(assistant);
+        when(catalogService.getAssistantRuntimeSnapshot("ast-1")).thenReturn(assistant);
         when(repository.findActiveSession("customer-1", "ast-1")).thenReturn(java.util.Optional.empty());
         when(repository.findSession(any())).thenReturn(java.util.Optional.empty());
         SessionRuntimeDtos.SessionRuntimeSessionDto result = service.createSession(
@@ -285,7 +285,7 @@ class SessionRuntimeServiceTest {
         );
         CatalogDtos.AssistantDto assistant = assistantWithFrozenReleaseDescriptors("ast-1", "LINEAR");
 
-        when(catalogService.getAssistant("ast-1")).thenReturn(assistant);
+        when(catalogService.getAssistantRuntimeSnapshot("ast-1")).thenReturn(assistant);
         when(repository.findActiveSession("customer-1", "ast-1")).thenReturn(java.util.Optional.empty());
         when(repository.findSession(any())).thenReturn(java.util.Optional.empty());
 

@@ -497,7 +497,7 @@ public class SessionRuntimeService {
         if (accountSnapshot == null) {
             return null;
         }
-        return new ToolConnectorAccountSnapshot(accountSnapshot.accountId(), accountSnapshot.externalSecretRef());
+        return new ToolConnectorAccountSnapshot(accountSnapshot.accountId(), accountSnapshot.runtimeSecretRef());
     }
 
     private PlaybookConfig toPlaybookConfig(com.lynxus.platform.catalog.CatalogDtos.PlaybookDto playbook) {
@@ -545,7 +545,7 @@ public class SessionRuntimeService {
     }
 
     private SessionRuntimeSessionDto createOrReuseSession(CreateSessionRequest request) {
-        AssistantDto assistant = catalogService.getAssistant(request.assistantId());
+        AssistantDto assistant = catalogService.getAssistantRuntimeSnapshot(request.assistantId());
         AssistantReleaseDto release = resolveAssistantRelease(assistant);
         SessionMessageInput openingMessage = request.openingMessage();
         Optional<SessionRuntimeSessionDto> activeSession = findReusableActiveSession(request.customerId(), assistant.id());

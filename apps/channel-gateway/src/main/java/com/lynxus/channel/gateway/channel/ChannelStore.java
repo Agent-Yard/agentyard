@@ -11,6 +11,7 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEventStatus;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDeliveryStatus;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -80,6 +81,17 @@ final class ChannelStore {
             .set(CHANNEL_PROFILE.REVISION, profile.revision())
             .set(CHANNEL_PROFILE.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(profile.updatedAt()))
             .where(CHANNEL_PROFILE.ID.eq(profile.id()))
+            .and(CHANNEL_PROFILE.REVISION.eq(expectedRevision))
+            .execute();
+        return rows == 1;
+    }
+
+    boolean disableProfile(String channelProfileId, long expectedRevision, long nextRevision, Instant updatedAt) {
+        int rows = dsl.update(CHANNEL_PROFILE)
+            .set(CHANNEL_PROFILE.STATUS, ChannelProfileStatus.INACTIVE.name())
+            .set(CHANNEL_PROFILE.REVISION, nextRevision)
+            .set(CHANNEL_PROFILE.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(updatedAt))
+            .where(CHANNEL_PROFILE.ID.eq(channelProfileId))
             .and(CHANNEL_PROFILE.REVISION.eq(expectedRevision))
             .execute();
         return rows == 1;

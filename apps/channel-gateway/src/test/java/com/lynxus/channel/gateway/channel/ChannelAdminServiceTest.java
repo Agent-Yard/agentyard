@@ -127,6 +127,70 @@ class ChannelAdminServiceTest {
     }
 
     @Test
+    void shouldDisableProfileWithoutDroppingRuntimeSnapshot() {
+        ChannelGatewayProfile created = service.createProfile(new CreateChannelProfileInternalRequest(
+            "feishu",
+            "飞书客服机器人",
+            ChannelProfileStatus.ACTIVE,
+            true,
+            Map.of("appId", "cli_xxx"),
+            new ChannelAssistantBinding("assistant-1", "scenario-1"),
+            new ChannelProfileAccountSnapshot("integration-account-1", "vault://opaque-ref")
+        ));
+
+        ChannelGatewayProfile disabled = service.deleteProfile(created.id(), 1L);
+
+        assertEquals(ChannelProfileStatus.INACTIVE, disabled.status());
+        assertEquals(2, disabled.revision());
+        assertEquals(created.providerType(), disabled.providerType());
+        assertEquals(created.displayName(), disabled.displayName());
+        assertEquals(created.inboundEnabled(), disabled.inboundEnabled());
+        assertEquals(created.config(), disabled.config());
+        assertEquals(created.assistantBinding(), disabled.assistantBinding());
+        assertEquals(created.accountId(), disabled.accountId());
+        assertEquals(created.hasExternalSecretRef(), disabled.hasExternalSecretRef());
+
+        ChannelGatewayProfile persisted = service.getProfile(created.id());
+        assertEquals(ChannelProfileStatus.INACTIVE, persisted.status());
+        assertEquals(2, persisted.revision());
+        assertEquals(created.config(), persisted.config());
+    }
+
+    @Test
+    void shouldRequireExpectedRevisionWhenDisablingProfile() {
+        ChannelGatewayProfile created = service.createProfile(new CreateChannelProfileInternalRequest(
+            "feishu",
+            "飞书客服机器人",
+            null,
+            true,
+            Map.of("appId", "cli_xxx"),
+            null,
+            null
+        ));
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> service.deleteProfile(created.id(), null));
+
+        assertEquals("channelProfile.expectedRevision is required", error.getMessage());
+    }
+
+    @Test
+    void shouldRejectStaleRevisionWhenDisablingProfile() {
+        ChannelGatewayProfile created = service.createProfile(new CreateChannelProfileInternalRequest(
+            "feishu",
+            "飞书客服机器人",
+            null,
+            true,
+            Map.of("appId", "cli_xxx"),
+            null,
+            null
+        ));
+
+        service.deleteProfile(created.id(), 1L);
+
+        assertThrows(ConflictException.class, () -> service.deleteProfile(created.id(), 1L));
+    }
+
+    @Test
     void shouldRejectUnknownProviderType() {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> service.createProfile(
             new CreateChannelProfileInternalRequest(

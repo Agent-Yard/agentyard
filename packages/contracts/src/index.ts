@@ -656,7 +656,7 @@ export interface ToolConnectorDescriptor {
 
 export interface ToolConnectorAccountSnapshot {
   accountId: string;
-  externalSecretRef: string | null;
+  hasExternalSecretRef: boolean;
 }
 
 export interface ToolDescriptor {

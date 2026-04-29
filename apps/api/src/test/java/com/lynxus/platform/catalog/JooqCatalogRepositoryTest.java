@@ -1,6 +1,8 @@
 package com.lynxus.platform.catalog;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lynxus.contracts.runtime.WorkflowContracts.ResourceType;
@@ -11,6 +13,7 @@ import com.lynxus.platform.catalog.CatalogDtos.*;
 import com.lynxus.platform.testing.EmbeddedPostgresTestDatabase;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -100,6 +103,38 @@ class JooqCatalogRepositoryTest {
             null,
             List.of()
         );
+        ResourceDto toolResource = new ResourceDto(
+            "res-tool-1",
+            "dom-1",
+            "CRM Tool",
+            ResourceType.TOOL,
+            ShareScope.DOMAIN_SHARED,
+            "DOMAIN",
+            "dom-1",
+            "summary",
+            "ops",
+            List.of("tool"),
+            null,
+            null,
+            List.of()
+        );
+        ResourceVersionConfigurationDto toolConfiguration = new ResourceVersionConfigurationDto(
+            ResourceType.TOOL,
+            new ToolConfigDto(
+                List.of(),
+                new ToolConnectorConfigDto(
+                    "enterprise.acme.crm",
+                    null,
+                    new ToolConnectorAccountSnapshotDto("integration-account-1", "vault://tool-secret"),
+                    30,
+                    "NONE",
+                    Map.of("tenantId", "acme"),
+                    Map.of()
+                )
+            ),
+            null,
+            null
+        );
         AssistantReleaseDto release = new AssistantReleaseDto(
             "rel-1",
             "ast-1",
@@ -111,7 +146,10 @@ class JooqCatalogRepositoryTest {
             new DefaultModelBindingDto("res-llm-1", "LLM", "rv-1", "1.0.0", "OPENAI_COMPATIBLE", "gpt-test"),
             null,
             true,
-            List.of(new AssistantReleaseResourceDto("res-llm-1", "LLM", ResourceType.LLM_MODEL, "rv-1", "1.0.0", List.of(), null)),
+            List.of(
+                new AssistantReleaseResourceDto("res-llm-1", "LLM", ResourceType.LLM_MODEL, "rv-1", "1.0.0", List.of(), null),
+                new AssistantReleaseResourceDto("res-tool-1", "CRM Tool", ResourceType.TOOL, "rv-tool-1", "1.0.0", List.of("agt-1"), toolConfiguration)
+            ),
             List.of(new AssistantReleaseAgentDto(
                 "agt-1",
                 "Test Agent",
@@ -145,6 +183,7 @@ class JooqCatalogRepositoryTest {
             repository.upsertAssistant(assistant);
             repository.upsertAgent(agent);
             repository.upsertResource(resource);
+            repository.upsertResource(toolResource);
             repository.replaceResourceVersions("res-llm-1", List.of(new StoredResourceVersion(
                 "rv-1",
                 "res-llm-1",
@@ -156,6 +195,17 @@ class JooqCatalogRepositoryTest {
                 Instant.parse("2026-04-21T00:10:00Z"),
                 new ResourceVersionConfigurationDto(ResourceType.LLM_MODEL, null, new LlmModelConfigDto("OPENAI_COMPATIBLE", "gpt-test", null, null, 0.2, 2048), null)
             )));
+            repository.replaceResourceVersions("res-tool-1", List.of(new StoredResourceVersion(
+                "rv-tool-1",
+                "res-tool-1",
+                "1.0.0",
+                VersionStatus.PUBLISHED,
+                "summary",
+                "digest",
+                Instant.parse("2026-04-21T00:00:00Z"),
+                Instant.parse("2026-04-21T00:10:00Z"),
+                toolConfiguration
+            )));
             repository.replaceAssistantReleases("ast-1", List.of(release));
             return null;
         });
@@ -163,9 +213,35 @@ class JooqCatalogRepositoryTest {
         assertEquals(1, repository.listDomains().size());
         assertEquals(1, repository.listAssistants().size());
         assertEquals(1, repository.listResourceVersions("res-llm-1").size());
+        assertEquals(1, repository.listResourceVersions("res-tool-1").size());
         assertEquals(1, repository.listAssistantReleases("ast-1").size());
         assertEquals(1, repository.findResourceBindings("res-llm-1").size());
         assertEquals(1, repository.findReleaseKnowledgeRefs("kb-1").size());
+        ToolConnectorAccountSnapshotDto resourceSnapshot = repository.listResourceVersions("res-tool-1")
+            .getFirst()
+            .configuration()
+            .tool()
+            .connector()
+            .accountSnapshot();
+        assertNotNull(resourceSnapshot);
+        assertTrue(resourceSnapshot.hasExternalSecretRef());
+        assertEquals("vault://tool-secret", resourceSnapshot.runtimeSecretRef());
+        ToolConnectorAccountSnapshotDto releaseSnapshot = repository.listAssistantReleases("ast-1")
+            .getFirst()
+            .resources()
+            .stream()
+            .filter(item -> "res-tool-1".equals(item.resourceId()))
+            .findFirst()
+            .orElseThrow()
+            .configuration()
+            .tool()
+            .connector()
+            .accountSnapshot();
+        assertEquals("vault://tool-secret", releaseSnapshot.runtimeSecretRef());
+        String publicJson = new ObjectMapper().writeValueAsString(releaseSnapshot);
+        assertTrue(publicJson.contains("hasExternalSecretRef"));
+        assertFalse(publicJson.contains("runtimeSecretRef"));
+        assertFalse(publicJson.contains("vault://tool-secret"));
         assertEquals(0, ((Number) database.dsl()
             .fetchOne("select count(*) from information_schema.columns where table_name = 'catalog_assistant' and column_name = 'payload'")
             .get(0)).intValue());
