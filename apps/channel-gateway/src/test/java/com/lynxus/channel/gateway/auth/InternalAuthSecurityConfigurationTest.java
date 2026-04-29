@@ -12,6 +12,8 @@ import com.lynxus.channel.gateway.channel.ChannelAdminService;
 import com.lynxus.channel.gateway.channel.InternalChannelAdminController;
 import com.lynxus.channel.gateway.connector.feishu.FeishuWebhookController;
 import com.lynxus.channel.gateway.connector.feishu.FeishuWebhookService;
+import com.lynxus.channel.gateway.extension.ChannelGatewayDescriptorProvider;
+import com.lynxus.channel.gateway.extension.ExtensionManifestController;
 import com.lynxus.channel.gateway.shared.ApiExceptionHandler;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -74,6 +76,37 @@ class InternalAuthSecurityConfigurationTest {
         }
     }
 
+    @Test
+    void shouldRejectManifestWithoutBearerToken() throws Exception {
+        try (AnnotationConfigApplicationContext context = createAuthorizedContext()) {
+            MockMvc mockMvc = mockMvc(context);
+
+            mockMvc.perform(get("/extension/manifest"))
+                .andExpect(status().isUnauthorized());
+        }
+    }
+
+    @Test
+    void shouldRejectManifestWithInvalidBearerToken() throws Exception {
+        try (AnnotationConfigApplicationContext context = createAuthorizedContext()) {
+            MockMvc mockMvc = mockMvc(context);
+
+            mockMvc.perform(get("/extension/manifest").header("Authorization", "Bearer wrong-token"))
+                .andExpect(status().isUnauthorized());
+        }
+    }
+
+    @Test
+    void shouldAllowManifestWithValidBearerToken() throws Exception {
+        try (AnnotationConfigApplicationContext context = createAuthorizedContext()) {
+            MockMvc mockMvc = mockMvc(context);
+
+            mockMvc.perform(get("/extension/manifest").header("Authorization", "Bearer test-internal-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.descriptors.channelProviders[0].providerType").value("feishu"));
+        }
+    }
+
     private AnnotationConfigApplicationContext createAuthorizedContext() {
         AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
         context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("test", java.util.Map.of(
@@ -88,7 +121,8 @@ class InternalAuthSecurityConfigurationTest {
         FilterChainProxy securityFilter = new FilterChainProxy(context.getBeansOfType(SecurityFilterChain.class).values().stream().toList());
         return MockMvcBuilders.standaloneSetup(
                 context.getBean(InternalChannelAdminController.class),
-                context.getBean(FeishuWebhookController.class)
+                context.getBean(FeishuWebhookController.class),
+                context.getBean(ExtensionManifestController.class)
             )
             .setControllerAdvice(context.getBean(ApiExceptionHandler.class))
             .addFilters(securityFilter)
@@ -106,6 +140,16 @@ class InternalAuthSecurityConfigurationTest {
         @Bean
         FeishuWebhookController feishuWebhookController(FeishuWebhookService feishuWebhookService) {
             return new FeishuWebhookController(feishuWebhookService);
+        }
+
+        @Bean
+        ExtensionManifestController extensionManifestController(ChannelGatewayDescriptorProvider descriptorProvider) {
+            return new ExtensionManifestController(descriptorProvider);
+        }
+
+        @Bean
+        ChannelGatewayDescriptorProvider channelGatewayDescriptorProvider() {
+            return new ChannelGatewayDescriptorProvider();
         }
 
         @Bean

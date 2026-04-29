@@ -343,7 +343,7 @@ Definition endpoint 可以继续返回完整 descriptor、UI schema 和默认值
 4. UI schema 内部的 `defaultValue`
 5. JSON Schema 内部的 `title` / `description` / `default`
 
-进入 digest 的 JSON Schema 字段必须先递归剥离上述 JSON Schema annotation keyword，再作为 JSON value 进入 canonical object。`default` keyword 不触发字段注入，也不参与 digest。canonicalizer 仍只负责确定性 JSON 序列化，不负责识别或剥离这些业务字段。
+进入 digest 的 JSON Schema 字段必须先递归剥离上述 JSON Schema annotation keyword，再作为 JSON value 进入 canonical object。该剥离只作用于 JSON Schema annotation keyword 位置；`properties`、`$defs`、`definitions`、`patternProperties`、`dependentSchemas` 下名为 `title` / `description` / `default` 的 property-map entry name 不应被剥离。`default` keyword 不触发字段注入，也不参与 digest。canonicalizer 仍只负责确定性 JSON 序列化，不负责识别或剥离这些业务字段。
 
 ### 5.1 Channel Provider Definition Digest
 

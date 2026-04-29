@@ -13,7 +13,7 @@
 ## Current Position
 
 - Current slice: Slice 4 - Runtime manifest endpoints + internal DescriptorProvider.
-- Current subtask: Slice 4B agent-runtime DescriptorProvider, `/extension/manifest`, and tool connector registry validation endpoint.
+- Current subtask: Slice 4 complete; paused before Slice 5 per user request.
 - Main-agent role: orchestration, integration decisions, ledger maintenance, review of worker/checker output.
 - Implementation flow: worker implements each bounded subtask, independent checker reviews read-only, then main agent decides follow-up.
 
@@ -44,6 +44,7 @@
 - API, `agent-runtime`, and `channel-gateway` must eventually share registration loader behavior and digest input.
 - Runtime owner manifest/validation must not copy descriptor definition digest field selection in each service; add SDK helpers first, then have runtime owners call them.
 - `agent-runtime` manifest endpoint must use SDK canonical JSON / manifest validation; descriptor definition digests must come from SDK helpers.
+- `channel-gateway` manifest endpoint must use JVM SDK canonical JSON / manifest validation; channel provider definition digests must come from JVM SDK helpers.
 
 ## Decisions / Questions
 
@@ -52,6 +53,7 @@
 - Question to revisit: exact package manager integration for protocol self-check after inspecting current Node/Python workspace conventions.
 - Decision: Checker blocking findings are source-of-truth issues and must be fixed before Slice 2. Do not rely on self-check custom code if OpenAPI / JSON Schema facts remain permissive.
 - Decision: Slice 4 will be split into shared SDK digest helpers, then `agent-runtime` DescriptorProvider/manifest/validation, then `channel-gateway` DescriptorProvider/manifest/validation. This keeps descriptor digest normalization in SDKs rather than duplicating it in runtime owners.
+- Decision: validation-only schema view strips JSON Schema annotation keywords (`title` / `description` / `default`) when they are schema object keywords, but preserves identical names when they are keys inside schema maps such as `properties`, `$defs`, `definitions`, `patternProperties`, or `dependentSchemas`. Those map entries are validation-bearing business field names, not annotation keywords; stripping them would change the digest's validation semantics.
 
 ## Worker / Checker Notes
 
@@ -418,6 +420,52 @@
     - `uv run pytest apps/agent-runtime/tests -q` passed (`56 passed`).
     - `uv run pytest packages/extension-sdk-python/tests -q` passed (`58 passed`).
     - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+- Local commit created after Slice 4B pass:
+  - `9c57c4b Add agent runtime extension manifest registry`
+- Worker `Meitner` (`019dd87a-68dc-77d1-ab2d-0ac4c854dce6`) completed Slice 4C channel-gateway DescriptorProvider / manifest / channel provider validation endpoint.
+  - Added internal Feishu `feishu` `ChannelGatewayDescriptorProvider` service manifest using JVM SDK protocol constant, canonical JSON, manifest validator, and definition digest helper.
+  - Added authenticated `GET /extension/manifest` returning provider canonical bytes.
+  - Added channel-provider runtime-owner validation with core self-load, remote manifest fetch via JVM SDK URL/header helpers, whitelist comparison, definition digests, structured errors, and HTTP 200/503 controller mapping.
+  - Updated channel-gateway security so `/extension/manifest` is authenticated, not anonymous.
+  - Added focused channel-gateway extension tests and extended internal auth security tests.
+  - Did not touch API/Web/DB/deploy, `agent-runtime`, or Slice 11 artifacts.
+  - Reported verification:
+    - `./gradlew :apps:channel-gateway:test --tests '*Extension*'` passed.
+    - `./gradlew :apps:channel-gateway:test --tests '*InternalAuthSecurityConfigurationTest'` passed.
+    - `./gradlew :apps:channel-gateway:test` passed.
+    - `./gradlew :packages:extension-sdk-jvm:test` passed.
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+- Checker `Avicenna` (`019dd882-3b4b-7662-bea9-c06410f965d1`) verdict for Slice 4C channel-gateway: fail.
+  - Blocking: manifest failure `details` do not match §6.3; `MANIFEST_FETCH_FAILED` uses `failure` instead of `httpStatus` / `failureReason`, and `MANIFEST_SCHEMA_INVALID` uses `path` instead of `schemaPath`.
+  - Confirmed OK: `/extension/manifest` is internal-auth protected and does not require trace/request/descriptor/idempotency headers; core self-load uses `ChannelGatewayDescriptorProvider`; descriptor id is `feishu`; validation filters to channel provider registrations; JVM SDK helpers are used for manifest validation, canonical bytes, headers/URLs, and definition digests.
+  - Checker verification:
+    - `./gradlew :apps:channel-gateway:test --tests '*Extension*'` passed.
+    - `./gradlew :apps:channel-gateway:test --tests '*InternalAuthSecurityConfigurationTest'` passed.
+    - `./gradlew :apps:channel-gateway:test` passed.
+    - `./gradlew :packages:extension-sdk-jvm:test` passed.
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+- Worker `Parfit` (`019dd887-4c9f-72e0-aa0c-50f7a4396a19`) completed Slice 4C repair.
+  - Normalized channel-gateway `MANIFEST_FETCH_FAILED.details` to `phase`, `httpStatus`, and `failureReason`; no `failure` key and no exception message/body/token leakage.
+  - Normalized `MANIFEST_SCHEMA_INVALID.details` to `phase`, `schemaPath`, and `violation`; no `path` key.
+  - Added regression tests for schema invalid and fetch failure details.
+  - Clarified `static-registration.md` validation-only schema wording: `title` / `description` / `default` are stripped only at JSON Schema annotation keyword positions, not as property-map entry names under `properties`, `$defs`, `definitions`, `patternProperties`, or `dependentSchemas`.
+  - Reported verification:
+    - `./gradlew :apps:channel-gateway:test --tests '*ChannelProviderRegistryValidationServiceTest'` passed.
+    - `./gradlew :apps:channel-gateway:test --tests '*Extension*'` passed.
+- Checker `Anscombe` (`019dd88a-ace7-77e0-ac01-feeed3a84954`) verdict for Slice 4C repair: pass; no blockers.
+  - Confirmed `MANIFEST_FETCH_FAILED.details` is limited to `phase`, `httpStatus`, and `failureReason`, with no exception message, URL, header, token, raw body, or `failure` key leakage.
+  - Confirmed `MANIFEST_SCHEMA_INVALID.details` uses `phase`, `schemaPath`, and `violation`; no `path`, and SDK validator code remains in `violation`.
+  - Confirmed tests cover schema invalid and fetch failure details, including internal token/header non-leak assertions.
+  - Confirmed `static-registration.md` clarification is consistent with definition digest rules.
+  - Checker verification:
+    - `./gradlew :apps:channel-gateway:test --tests '*ChannelProviderRegistryValidationServiceTest'` passed.
+    - `./gradlew :apps:channel-gateway:test --tests '*Extension*'` passed.
+- Main Slice 4 checkpoint passed after Slice 4C checker approval:
+  - `uv run pytest apps/agent-runtime/tests -q` passed (`56 passed`).
+  - `./gradlew :apps:channel-gateway:test` passed.
+  - `./gradlew :packages:extension-sdk-jvm:test` passed.
+  - `uv run pytest packages/extension-sdk-python/tests -q` passed (`58 passed`).
+  - `pnpm --filter @lynxus/extension-protocol self-check` passed with `jsonAssets=77`, `jsonSchemas=9`, `examples=4`, `manifestFixtures=12`, `requestFixtures=24`, `canonicalFixtures=16`, `registrationLoaderFixtures=11`.
 
 ## Local Commit Policy
 
@@ -499,7 +547,13 @@
   - `./gradlew :packages:extension-sdk-jvm:test` passed.
   - `uv run pytest packages/extension-sdk-python/tests` passed (`52 passed`).
   - `pnpm --filter @lynxus/extension-protocol self-check` passed with `jsonAssets=71`, `jsonSchemas=9`, `examples=4`, `manifestFixtures=12`, `requestFixtures=24`, `canonicalFixtures=15`, `registrationLoaderFixtures=6`.
+- Main Slice 4 checkpoint:
+  - `uv run pytest apps/agent-runtime/tests -q` passed (`56 passed`).
+  - `./gradlew :apps:channel-gateway:test` passed.
+  - `./gradlew :packages:extension-sdk-jvm:test` passed.
+  - `uv run pytest packages/extension-sdk-python/tests -q` passed (`58 passed`).
+  - `pnpm --filter @lynxus/extension-protocol self-check` passed.
 
 ## Blockers / Rework
 
-- None currently.
+- None currently. Slice 4C was committed locally as `0942439 Add channel gateway extension manifest registry`; pause before Slice 5 per user request.

@@ -39,6 +39,7 @@ public class InternalAuthSecurityConfiguration {
             .authorizeHttpRequests(authorize -> authorize
                 .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
                 .requestMatchers("/connectors/**").permitAll()
+                .requestMatchers("/extension/manifest").authenticated()
                 .requestMatchers("/internal/**").authenticated()
                 .anyRequest().denyAll()
             )
