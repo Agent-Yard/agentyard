@@ -10,6 +10,9 @@ import com.lynxus.platform.extension.ExtensionDefinitionService.InternalCredenti
 import com.lynxus.platform.integration.IntegrationCredentialCrypto.EncryptedCredential;
 import com.lynxus.platform.integration.IntegrationDtos.CreateIntegrationAccountCredentialRequest;
 import com.lynxus.platform.integration.IntegrationDtos.CreateIntegrationAccountRequest;
+import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountAvailabilityBlock;
+import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountAvailabilityDecision;
+import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountAvailabilityRisk;
 import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountCredentialStatus;
 import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountDto;
 import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountStatus;
@@ -80,6 +83,40 @@ public class IntegrationAccountService {
     @Transactional(readOnly = true)
     public IntegrationAccountDto getAccount(String accountId) {
         return toDto(requireAccount(accountId));
+    }
+
+    @Transactional(readOnly = true)
+    public IntegrationAccountAvailabilityDecision evaluateAccountAvailability(
+        String accountId,
+        IntegrationAccountSubjectType expectedSubjectType,
+        String expectedSubjectId
+    ) {
+        if (expectedSubjectType == null) {
+            throw new IllegalArgumentException("integrationAccount.expectedSubjectType is required");
+        }
+        String normalizedExpectedSubjectId = requireText(
+            expectedSubjectId,
+            "integrationAccount.expectedSubjectId",
+            128
+        );
+        return availabilityDecision(requireAccount(accountId), expectedSubjectType, normalizedExpectedSubjectId);
+    }
+
+    @Transactional(readOnly = true)
+    public IntegrationAccountAvailabilityDecision requireAccountAvailability(
+        String accountId,
+        IntegrationAccountSubjectType expectedSubjectType,
+        String expectedSubjectId
+    ) {
+        IntegrationAccountAvailabilityDecision decision = evaluateAccountAvailability(
+            accountId,
+            expectedSubjectType,
+            expectedSubjectId
+        );
+        if (!decision.available()) {
+            throw accountAvailabilityBlocked(decision);
+        }
+        return decision;
     }
 
     @Transactional(noRollbackFor = ApiProblemException.class)
@@ -482,6 +519,42 @@ public class IntegrationAccountService {
         );
     }
 
+    private IntegrationAccountAvailabilityDecision availabilityDecision(
+        StoredIntegrationAccount account,
+        IntegrationAccountSubjectType expectedSubjectType,
+        String expectedSubjectId
+    ) {
+        IntegrationAccountAvailabilityBlock hardBlock = null;
+        if (account.subjectType() != expectedSubjectType || !account.subjectId().equals(expectedSubjectId)) {
+            hardBlock = IntegrationAccountAvailabilityBlock.SUBJECT_MISMATCH;
+        } else if (account.status() != IntegrationAccountStatus.ENABLED) {
+            hardBlock = IntegrationAccountAvailabilityBlock.ACCOUNT_STATUS_NOT_ENABLED;
+        } else if (account.credentialStatus() == IntegrationAccountCredentialStatus.REVOKE_FAILED) {
+            hardBlock = IntegrationAccountAvailabilityBlock.CREDENTIAL_REVOKE_FAILED;
+        } else if (account.credentialStatus() == IntegrationAccountCredentialStatus.REVOKED) {
+            hardBlock = IntegrationAccountAvailabilityBlock.CREDENTIAL_REVOKED;
+        }
+
+        return new IntegrationAccountAvailabilityDecision(
+            account.id(),
+            account.subjectType(),
+            account.subjectId(),
+            account.status(),
+            account.credentialStatus(),
+            hardBlock,
+            availabilityRisks(account.credentialStatus())
+        );
+    }
+
+    private static List<IntegrationAccountAvailabilityRisk> availabilityRisks(IntegrationAccountCredentialStatus credentialStatus) {
+        return switch (credentialStatus) {
+            case NOT_CONFIGURED -> List.of(IntegrationAccountAvailabilityRisk.CREDENTIAL_NOT_CONFIGURED);
+            case VALIDATION_FAILED -> List.of(IntegrationAccountAvailabilityRisk.CREDENTIAL_VALIDATION_FAILED);
+            case ROTATION_REQUIRED -> List.of(IntegrationAccountAvailabilityRisk.CREDENTIAL_ROTATION_REQUIRED);
+            case ACTIVE, REVOKE_FAILED, REVOKED -> List.of();
+        };
+    }
+
     private IntegrationAccountDto saveStatus(String accountId, IntegrationAccountStatus status) {
         StoredIntegrationAccount existing = requireAccount(accountId);
         StoredIntegrationAccount updated = new StoredIntegrationAccount(
@@ -644,6 +717,15 @@ public class IntegrationAccountService {
             HttpStatus.BAD_GATEWAY,
             "INTEGRATION_ACCOUNT_CREDENTIAL_REMOTE_FAILED",
             "INTEGRATION_ACCOUNT_CREDENTIAL_REMOTE_FAILED: credential lifecycle call failed"
+        );
+    }
+
+    private static ApiProblemException accountAvailabilityBlocked(IntegrationAccountAvailabilityDecision decision) {
+        return new ApiProblemException(
+            HttpStatus.UNPROCESSABLE_ENTITY,
+            "INTEGRATION_ACCOUNT_AVAILABILITY_BLOCKED",
+            "INTEGRATION_ACCOUNT_AVAILABILITY_BLOCKED: integration account cannot be used for runtime snapshot: "
+                + decision.accountId() + " " + decision.hardBlock()
         );
     }
 

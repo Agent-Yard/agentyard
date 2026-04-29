@@ -12,8 +12,8 @@
 
 ## Current Position
 
-- Current slice: Slice 6 - Integration Account target model + optional credential lifecycle.
-- Current subtask: Slice 6B credential lifecycle checker passed; preparing local commit before Slice 6C account availability helper.
+- Current slice: Slice 6 - Integration Account target model + optional credential lifecycle completed and checker-confirmed.
+- Current subtask: stopping after Slice 6 completion and local commit, per user instruction; do not enter Slice 7 until resumed.
 - Main-agent role: orchestration, integration decisions, ledger maintenance, review of worker/checker output.
 - Implementation flow: worker implements each bounded subtask, independent checker reviews read-only, then main agent decides follow-up.
 
@@ -75,9 +75,26 @@
   - `CORE_ENCRYPTED_REFERENCE`: core preset descriptors with `credentialSchema` and no credential endpoints use API local encryption in `credential_ciphertext` / `credential_fingerprint` and keep `external_secret_ref = null`.
   - descriptors without supported credential capability allow config-only accounts but reject credential lifecycle actions.
   No background retry, token refresh, status sync, provider job refresh, or logical idempotency state will be added.
+- Decision: Slice 6C account availability is an API-side Integration Account domain helper only. It evaluates `subjectType` / `subjectId`, account status, and credential status for later Tool publish and Channel Profile writes; it does not materialize Tool release snapshots or channel runtime profiles.
 
 ## Worker / Checker Notes
 
+- Worker Slice 6C completed account availability helper.
+  - Added `IntegrationAccountAvailabilityDecision` plus hard-block and risk enums under the integration DTO domain. The decision exposes account id, subject, account status, credential status, hard block, and risk list only; it does not expose `externalSecretRef`, ciphertext, fingerprint, config, metadata, or credential material.
+  - Added `IntegrationAccountService.evaluateAccountAvailability(...)` and `requireAccountAvailability(...)`. `requireAccountAvailability` throws `INTEGRATION_ACCOUNT_AVAILABILITY_BLOCKED` for subject mismatch, non-`ENABLED` account status, `REVOKE_FAILED`, and `REVOKED`; `NOT_CONFIGURED`, `VALIDATION_FAILED`, and `ROTATION_REQUIRED` return risk warnings and do not throw.
+  - Added focused `IntegrationAccountServiceTest` coverage for subject mismatch, disabled status, revoked credential states, and risk-only credential states.
+  - Verification:
+    - `./gradlew :apps:api:test --tests '*IntegrationAccount*'` passed.
+    - `git diff --check` passed.
+- Checker Slice 6C / Slice 6 overall verdict: pass.
+  - Confirmed helper inputs and hard-block / risk-only matrix match Slice 6 docs.
+  - Confirmed decision DTO does not expose `externalSecretRef`, ciphertext, fingerprint, config, metadata, or credential material.
+  - Spot-checked Slice 6 overall: public Integration Account contract uses `subjectType` / `subjectId`, target DB shape is in `V13__integration_account.sql`, and no Tool release snapshot, Channel runtime profile, Slice 7/8, schema-driven Web page, or Slice 11 overreach was found.
+  - Checker commands passed:
+    - `git diff --check`
+    - `./gradlew :apps:api:test --tests '*IntegrationAccount*'`
+    - `pnpm --filter @lynxus/web lint`
+    - `pnpm --filter @lynxus/web test`
 - Worker `Peirce` (`019dd76f-6cec-7623-9d42-8f2e59f1ef71`) completed Slice 1 protocol assets + self-check.
   - Changed only `packages/extension-protocol/**`.
   - Reported verification:
@@ -757,4 +774,4 @@
 
 ## Blockers / Rework
 
-- No active blockers. Next action: commit Slice 6B, then start Slice 6C account availability helper.
+- No active blockers. Slice 6 is complete and checker-confirmed; next action after user resumes is Slice 7 planning.

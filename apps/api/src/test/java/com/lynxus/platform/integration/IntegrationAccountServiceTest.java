@@ -21,6 +21,8 @@ import com.lynxus.platform.extension.ExtensionDefinitionService;
 import com.lynxus.platform.extension.ExtensionDefinitionService.ExtensionDefinitionRegistry;
 import com.lynxus.platform.integration.IntegrationDtos.CreateIntegrationAccountCredentialRequest;
 import com.lynxus.platform.integration.IntegrationDtos.CreateIntegrationAccountRequest;
+import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountAvailabilityBlock;
+import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountAvailabilityRisk;
 import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountCredentialStatus;
 import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountStatus;
 import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountSubjectType;
@@ -650,6 +652,178 @@ class IntegrationAccountServiceTest {
     }
 
     @Test
+    void accountAvailabilityHardBlocksSubjectMismatch() {
+        StoredIntegrationAccount account = storedAccount(
+            "integration-account-availability",
+            IntegrationAccountSubjectType.TOOL_CONNECTOR,
+            "simple-http",
+            "Vendor Account",
+            IntegrationAccountStatus.ENABLED,
+            Map.of(),
+            "vault://must-not-leak",
+            null,
+            null,
+            IntegrationAccountCredentialStatus.ACTIVE
+        );
+        IntegrationAccountService service = serviceWithAccount(account);
+
+        var decision = service.evaluateAccountAvailability(
+            account.id(),
+            IntegrationAccountSubjectType.CHANNEL_PROVIDER,
+            "feishu"
+        );
+        assertFalse(decision.available());
+        assertEquals(IntegrationAccountAvailabilityBlock.SUBJECT_MISMATCH, decision.hardBlock());
+        assertEquals(List.of(), decision.risks());
+
+        ApiProblemException error = assertThrows(ApiProblemException.class, () -> service.requireAccountAvailability(
+            account.id(),
+            IntegrationAccountSubjectType.CHANNEL_PROVIDER,
+            "feishu"
+        ));
+        assertEquals("INTEGRATION_ACCOUNT_AVAILABILITY_BLOCKED", error.code());
+        assertFalse(error.getMessage().contains("vault://must-not-leak"));
+    }
+
+    @Test
+    void accountAvailabilityHardBlocksNonEnabledAccountStatus() {
+        for (IntegrationAccountStatus status : List.of(
+            IntegrationAccountStatus.DISABLED,
+            IntegrationAccountStatus.ARCHIVED
+        )) {
+            StoredIntegrationAccount account = storedAccount(
+                "integration-account-" + status.name().toLowerCase(java.util.Locale.ROOT),
+                IntegrationAccountSubjectType.TOOL_CONNECTOR,
+                "simple-http",
+                "Vendor Account",
+                status,
+                Map.of(),
+                null,
+                null,
+                null,
+                IntegrationAccountCredentialStatus.ACTIVE
+            );
+            IntegrationAccountService service = serviceWithAccount(account);
+
+            var decision = service.evaluateAccountAvailability(
+                account.id(),
+                IntegrationAccountSubjectType.TOOL_CONNECTOR,
+                "simple-http"
+            );
+
+            assertFalse(decision.available());
+            assertEquals(IntegrationAccountAvailabilityBlock.ACCOUNT_STATUS_NOT_ENABLED, decision.hardBlock());
+            assertThrows(ApiProblemException.class, () -> service.requireAccountAvailability(
+                account.id(),
+                IntegrationAccountSubjectType.TOOL_CONNECTOR,
+                "simple-http"
+            ));
+        }
+    }
+
+    @Test
+    void accountAvailabilityHardBlocksRevokedCredentialStates() {
+        for (IntegrationAccountCredentialStatus credentialStatus : List.of(
+            IntegrationAccountCredentialStatus.REVOKE_FAILED,
+            IntegrationAccountCredentialStatus.REVOKED
+        )) {
+            StoredIntegrationAccount account = storedAccount(
+                "integration-account-" + credentialStatus.name().toLowerCase(java.util.Locale.ROOT).replace('_', '-'),
+                IntegrationAccountSubjectType.TOOL_CONNECTOR,
+                "simple-http",
+                "Vendor Account",
+                IntegrationAccountStatus.ENABLED,
+                Map.of(),
+                "vault://must-not-leak",
+                null,
+                null,
+                credentialStatus
+            );
+            IntegrationAccountService service = serviceWithAccount(account);
+
+            var decision = service.evaluateAccountAvailability(
+                account.id(),
+                IntegrationAccountSubjectType.TOOL_CONNECTOR,
+                "simple-http"
+            );
+
+            assertFalse(decision.available());
+            assertEquals(
+                credentialStatus == IntegrationAccountCredentialStatus.REVOKE_FAILED
+                    ? IntegrationAccountAvailabilityBlock.CREDENTIAL_REVOKE_FAILED
+                    : IntegrationAccountAvailabilityBlock.CREDENTIAL_REVOKED,
+                decision.hardBlock()
+            );
+            assertEquals(List.of(), decision.risks());
+            ApiProblemException error = assertThrows(ApiProblemException.class, () -> service.requireAccountAvailability(
+                account.id(),
+                IntegrationAccountSubjectType.TOOL_CONNECTOR,
+                "simple-http"
+            ));
+            assertEquals("INTEGRATION_ACCOUNT_AVAILABILITY_BLOCKED", error.code());
+            assertFalse(error.getMessage().contains("vault://must-not-leak"));
+        }
+    }
+
+    @Test
+    void accountAvailabilityTreatsCredentialRiskStatesAsWarningsOnly() {
+        StoredIntegrationAccount activeAccount = storedAccount(
+            "integration-account-active",
+            IntegrationAccountSubjectType.TOOL_CONNECTOR,
+            "simple-http",
+            "Vendor Account",
+            IntegrationAccountStatus.ENABLED,
+            Map.of(),
+            null,
+            null,
+            null,
+            IntegrationAccountCredentialStatus.ACTIVE
+        );
+        var activeDecision = serviceWithAccount(activeAccount).requireAccountAvailability(
+            activeAccount.id(),
+            IntegrationAccountSubjectType.TOOL_CONNECTOR,
+            "simple-http"
+        );
+        assertTrue(activeDecision.available());
+        assertEquals(List.of(), activeDecision.risks());
+
+        Map<IntegrationAccountCredentialStatus, IntegrationAccountAvailabilityRisk> expectedRisks = Map.of(
+            IntegrationAccountCredentialStatus.NOT_CONFIGURED,
+            IntegrationAccountAvailabilityRisk.CREDENTIAL_NOT_CONFIGURED,
+            IntegrationAccountCredentialStatus.VALIDATION_FAILED,
+            IntegrationAccountAvailabilityRisk.CREDENTIAL_VALIDATION_FAILED,
+            IntegrationAccountCredentialStatus.ROTATION_REQUIRED,
+            IntegrationAccountAvailabilityRisk.CREDENTIAL_ROTATION_REQUIRED
+        );
+
+        for (Map.Entry<IntegrationAccountCredentialStatus, IntegrationAccountAvailabilityRisk> entry : expectedRisks.entrySet()) {
+            StoredIntegrationAccount account = storedAccount(
+                "integration-account-" + entry.getKey().name().toLowerCase(java.util.Locale.ROOT).replace('_', '-'),
+                IntegrationAccountSubjectType.TOOL_CONNECTOR,
+                "simple-http",
+                "Vendor Account",
+                IntegrationAccountStatus.ENABLED,
+                Map.of(),
+                null,
+                null,
+                null,
+                entry.getKey()
+            );
+            IntegrationAccountService service = serviceWithAccount(account);
+
+            var decision = service.requireAccountAvailability(
+                account.id(),
+                IntegrationAccountSubjectType.TOOL_CONNECTOR,
+                "simple-http"
+            );
+
+            assertTrue(decision.available());
+            assertNull(decision.hardBlock());
+            assertEquals(List.of(entry.getValue()), decision.risks());
+        }
+    }
+
+    @Test
     void createAndUpdateValidateSubjectAndAccountConfigSchema() {
         IntegrationAccountRepository repository = mock(IntegrationAccountRepository.class);
         AtomicReference<StoredIntegrationAccount> saved = new AtomicReference<>();
@@ -830,6 +1004,16 @@ class IntegrationAccountServiceTest {
                 throw new IOException("registry unavailable");
             },
             "internal-token"
+        );
+    }
+
+    private static IntegrationAccountService serviceWithAccount(StoredIntegrationAccount account) {
+        IntegrationAccountRepository repository = mock(IntegrationAccountRepository.class);
+        when(repository.findAccount(account.id())).thenReturn(Optional.of(account));
+        return new IntegrationAccountService(
+            repository,
+            new IntegrationCredentialCrypto(new ObjectMapper(), "test-encryption-key"),
+            emptySchemaDefinitionService()
         );
     }
 

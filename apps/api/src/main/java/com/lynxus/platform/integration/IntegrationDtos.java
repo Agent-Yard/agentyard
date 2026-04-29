@@ -3,6 +3,7 @@ package com.lynxus.platform.integration;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 public final class IntegrationDtos {
@@ -34,6 +35,37 @@ public final class IntegrationDtos {
         ROTATION_REQUIRED,
         REVOKE_FAILED,
         REVOKED
+    }
+
+    public enum IntegrationAccountAvailabilityBlock {
+        SUBJECT_MISMATCH,
+        ACCOUNT_STATUS_NOT_ENABLED,
+        CREDENTIAL_REVOKE_FAILED,
+        CREDENTIAL_REVOKED
+    }
+
+    public enum IntegrationAccountAvailabilityRisk {
+        CREDENTIAL_NOT_CONFIGURED,
+        CREDENTIAL_VALIDATION_FAILED,
+        CREDENTIAL_ROTATION_REQUIRED
+    }
+
+    public record IntegrationAccountAvailabilityDecision(
+        String accountId,
+        IntegrationAccountSubjectType subjectType,
+        String subjectId,
+        IntegrationAccountStatus status,
+        IntegrationAccountCredentialStatus credentialStatus,
+        IntegrationAccountAvailabilityBlock hardBlock,
+        List<IntegrationAccountAvailabilityRisk> risks
+    ) {
+        public IntegrationAccountAvailabilityDecision {
+            risks = risks == null || risks.isEmpty() ? List.of() : List.copyOf(risks);
+        }
+
+        public boolean available() {
+            return hardBlock == null;
+        }
     }
 
     public record IntegrationAccountDto(
