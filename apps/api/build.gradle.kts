@@ -14,6 +14,7 @@ java {
 
 dependencies {
     implementation(project(":packages:contracts-jvm"))
+    implementation(project(":packages:extension-sdk-jvm"))
     implementation(project(":packages:persistence-jvm"))
     implementation(project(":packages:shared-redis-jvm"))
 

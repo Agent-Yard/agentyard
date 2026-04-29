@@ -37,5 +37,9 @@ server:
   port: ${LYNXUS_CHANNEL_GATEWAY_PORT:8082}
 
 lynxus:
+  extensions:
+    registration-file: ${LYNXUS_EXTENSION_REGISTRATION_FILE:}
+    channel-gateway-url: ${LYNXUS_CHANNEL_GATEWAY_URL:http://127.0.0.1:8082}
+    agent-runtime-url: ${LYNXUS_AGENT_RUNTIME_URL:http://127.0.0.1:8090}
   internal-auth:
     token: ${LYNXUS_INTERNAL_AUTH_TOKEN}

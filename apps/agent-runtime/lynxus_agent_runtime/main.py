@@ -18,6 +18,7 @@ from lynxus_common import (
 )
 
 from .decisioning import execute_agent_turn
+from .extension_registration import load_extension_registration
 from .http_clients import reset_shared_http_client_registry
 from .models import AgentTurnExecutionOutcome, AgentTurnRequest, PlaybookToolTaskRequest, PlaybookToolTaskResult
 from .redis_support import RedisSettings, create_redis_client
@@ -42,6 +43,16 @@ def require_internal_bearer(authorization: str | None = Header(default=None, ali
 async def lifespan(app: FastAPI):
     global LOGGER
     LOGGER = configure_structured_logging("agent-runtime", "LYNXUS_AGENT_RUNTIME_LOG_LEVEL", "lynxus-agent-runtime")
+    extension_registration = load_extension_registration()
+    app.state.extension_registration = extension_registration
+    LOGGER.info(
+        "extension registration loaded",
+        extra={
+            "instanceId": INSTANCE_ID,
+            "registrationConfigDigest": extension_registration.registration_config_digest,
+            "registrationCount": len(extension_registration.services),
+        },
+    )
     redis_settings = RedisSettings.from_env()
     redis_client = create_redis_client(redis_settings)
     await redis_client.ping()

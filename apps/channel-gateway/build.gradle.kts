@@ -30,6 +30,7 @@ val codegenImplementation by configurations.getting {
 
 dependencies {
     implementation(project(":packages:contracts-jvm"))
+    implementation(project(":packages:extension-sdk-jvm"))
 
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-security")

@@ -44,6 +44,12 @@ uv run --directory apps/agent-runtime --package lynxus-agent-runtime pytest test
 
 运行时会通过脚本自动加载根目录 `.env` / `.env.local`，以及 `apps/agent-runtime/.env` / `.env.local`。
 
+Extension registration 使用和 API / `channel-gateway` 相同的输入：
+
+- `LYNXUS_EXTENSION_REGISTRATION_FILE`
+- `LYNXUS_CHANNEL_GATEWAY_URL`
+- `LYNXUS_AGENT_RUNTIME_URL`
+
 模型资源常用的密钥变量包括：
 
 - `OPENAI_API_KEY`

@@ -13,7 +13,7 @@
 ## Current Position
 
 - Current slice: Slice 3 - Static registration loader + core preset merge.
-- Current subtask: Slice 3 registration loader foundation.
+- Current subtask: Slice 3 service entry wiring for shared registration loader.
 - Main-agent role: orchestration, integration decisions, ledger maintenance, review of worker/checker output.
 - Implementation flow: worker implements each bounded subtask, independent checker reviews read-only, then main agent decides follow-up.
 
@@ -272,6 +272,41 @@
     - `./gradlew :packages:extension-sdk-jvm:test` passed.
     - `uv run pytest packages/extension-sdk-python/tests` passed (`56 passed`).
     - `uv lock --check` passed.
+- Local commit created after Slice 3 foundation pass:
+  - `9d5266d Implement extension plane protocol and loader foundation`
+- Worker `Halley` (`019dd841-a7ee-77e3-967e-09da8e663468`) assigned Slice 3 service entry wiring.
+  - Scope: API, `agent-runtime`, and `channel-gateway` use shared SDK registration loader/digest from a common operator yaml source plus core preset env/defaults.
+  - Explicitly out of scope: manifest fetch, registry startup validation, `DescriptorProvider`, definition endpoints, Web, remote adapter, and Slice 11 artifacts.
+- Worker `Halley` completed Slice 3 service entry wiring.
+  - API and `channel-gateway` now depend on `:packages:extension-sdk-jvm` and expose `ExtensionRegistrationService` beans that call shared `ExtensionRegistrationLoader` for the merged registration set and `registrationConfigDigest`.
+  - `agent-runtime` now has a thin `lynxus_agent_runtime.extension_registration` adapter around `lynxus_extension_sdk.registration` and loads registration state into `app.state.extension_registration` during startup lifespan.
+  - All three services use `LYNXUS_EXTENSION_REGISTRATION_FILE`, `LYNXUS_CHANNEL_GATEWAY_URL`, and `LYNXUS_AGENT_RUNTIME_URL`; local defaults are `http://127.0.0.1:8082` and `http://127.0.0.1:8090`.
+  - Worker added an empty-operator shared fixture so preset-only startup is covered.
+  - Reported verification:
+    - `./gradlew :apps:api:test --tests '*ExtensionRegistrationServiceTest'` passed.
+    - `./gradlew :apps:channel-gateway:test --tests '*ExtensionRegistrationServiceTest'` passed.
+    - `./gradlew :packages:extension-sdk-jvm:test` passed.
+    - `uv run pytest apps/agent-runtime/tests/test_extension_registration_loader.py -q` passed (`4 passed`).
+    - `uv run pytest apps/agent-runtime/tests/test_extension_protocol_sdk_reuse.py -q` passed (`4 passed`).
+    - `uv run pytest apps/agent-runtime/tests -q` passed (`46 passed`).
+    - `uv run pytest packages/extension-sdk-python/tests -q` passed (`57 passed`).
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed with `registrationLoaderFixtures=11`.
+    - `git diff --check` passed.
+  - Next: independent checker must verify shared-loader reuse, digest consistency, config naming/defaults, test coverage, doc impact, and absence of Slice 4/5/7/Web/Slice 11 overreach.
+- Checker `Franklin` (`019dd84e-6779-79f3-a542-669c809720d0`) verdict for Slice 3 service entry wiring: pass; no blockers.
+  - Confirmed API and `channel-gateway` delegate load/digest behavior to `packages/extension-sdk-jvm` `ExtensionRegistrationLoader`.
+  - Confirmed `agent-runtime` reuses `lynxus_extension_sdk.registration` and only adapts env/default entry wiring.
+  - Confirmed all three services use `LYNXUS_EXTENSION_REGISTRATION_FILE`, `LYNXUS_CHANNEL_GATEWAY_URL`, and `LYNXUS_AGENT_RUNTIME_URL` with matching local defaults.
+  - Confirmed core preset injection and operator `core-` rejection remain in shared SDK loaders.
+  - Confirmed no Slice 4/5/7/Web/Slice 11 overreach; no required `docs/todo/extension_plane` doc updates.
+  - Checker verification:
+    - `./gradlew :apps:api:test --tests '*ExtensionRegistrationServiceTest'` passed.
+    - `./gradlew :apps:channel-gateway:test --tests '*ExtensionRegistrationServiceTest'` passed.
+    - `./gradlew :packages:extension-sdk-jvm:test` passed.
+    - `uv run pytest apps/agent-runtime/tests/test_extension_registration_loader.py -q` passed (`4 passed`).
+    - `uv run pytest apps/agent-runtime/tests/test_extension_protocol_sdk_reuse.py -q` passed (`4 passed`).
+    - `uv run pytest packages/extension-sdk-python/tests -q` passed (`57 passed`).
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed.
 
 ## Local Commit Policy
 

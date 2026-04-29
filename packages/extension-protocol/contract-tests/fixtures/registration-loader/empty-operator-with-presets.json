@@ -1,0 +1,53 @@
+{
+  "name": "empty operator yaml loads only core presets",
+  "operatorYaml": "",
+  "variantOperatorYaml": "lynxus:\n  extensions:\n    services: []\n",
+  "environment": {
+    "LYNXUS_AGENT_RUNTIME_URL": "https://Agent-Runtime.Example.COM:443/runtime/",
+    "LYNXUS_CHANNEL_GATEWAY_URL": "HTTP://Channel-Gateway.Example.COM:80/core/",
+    "LYNXUS_INTERNAL_TOKEN": "token-one"
+  },
+  "alternateEnvironment": {
+    "LYNXUS_AGENT_RUNTIME_URL": "https://agent-runtime.example.com/runtime",
+    "LYNXUS_CHANNEL_GATEWAY_URL": "http://channel-gateway.example.com/core",
+    "LYNXUS_INTERNAL_TOKEN": "token-two"
+  },
+  "expected": {
+    "registrationConfigDigest": "sha256:b2a2679a07549f61a5c0baa9c4b2f3986f6b7527ddf204dee94e206b92cf1e77",
+    "canonicalInput": {
+      "services": [
+        {
+          "registrationId": "core-agent-runtime",
+          "source": "CORE_PRESET",
+          "baseUrl": "https://agent-runtime.example.com/runtime",
+          "exposes": {
+            "channelProviderTypes": [],
+            "toolConnectorTypes": [
+              "business-code-secret-http",
+              "mcp",
+              "simple-http"
+            ]
+          },
+          "auth": {
+            "type": "INTERNAL_TOKEN"
+          }
+        },
+        {
+          "registrationId": "core-channel-gateway",
+          "source": "CORE_PRESET",
+          "baseUrl": "http://channel-gateway.example.com/core",
+          "exposes": {
+            "channelProviderTypes": [
+              "feishu"
+            ],
+            "toolConnectorTypes": []
+          },
+          "auth": {
+            "type": "INTERNAL_TOKEN"
+          }
+        }
+      ]
+    }
+  },
+  "expectedErrorCode": null
+}

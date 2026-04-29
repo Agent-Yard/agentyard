@@ -138,7 +138,7 @@ public final class ExtensionRegistrationLoader {
 
     private static List<ExtensionRegistration> operatorRegistrations(String yaml, Function<String, String> environmentResolver) {
         JsonNode root = parseYaml(yaml);
-        if (root.isNull()) {
+        if (root.isMissingNode() || root.isNull()) {
             return List.of();
         }
         requireObject(root, "root");
