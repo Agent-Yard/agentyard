@@ -1,6 +1,5 @@
 package com.lynxus.platform.integration;
 
-import com.lynxus.contracts.runtime.WorkflowContracts.ToolConnectorType;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -17,18 +16,36 @@ public final class IntegrationDtos {
         return Collections.unmodifiableMap(new LinkedHashMap<>(source));
     }
 
+    public enum IntegrationAccountSubjectType {
+        TOOL_CONNECTOR,
+        CHANNEL_PROVIDER
+    }
+
     public enum IntegrationAccountStatus {
+        ENABLED,
+        DISABLED,
+        ARCHIVED
+    }
+
+    public enum IntegrationAccountCredentialStatus {
+        NOT_CONFIGURED,
         ACTIVE,
-        INACTIVE
+        VALIDATION_FAILED,
+        ROTATION_REQUIRED,
+        REVOKE_FAILED,
+        REVOKED
     }
 
     public record IntegrationAccountDto(
         String id,
-        ToolConnectorType connectorType,
+        IntegrationAccountSubjectType subjectType,
+        String subjectId,
         String name,
         IntegrationAccountStatus status,
         Map<String, Object> config,
+        boolean hasExternalSecretRef,
         boolean credentialConfigured,
+        IntegrationAccountCredentialStatus credentialStatus,
         Instant createdAt,
         Instant updatedAt
     ) {
@@ -39,48 +56,54 @@ public final class IntegrationDtos {
 
     public record StoredIntegrationAccount(
         String id,
-        ToolConnectorType connectorType,
+        IntegrationAccountSubjectType subjectType,
+        String subjectId,
         String name,
         IntegrationAccountStatus status,
         Map<String, Object> config,
+        String externalSecretRef,
         String credentialCiphertext,
         String credentialFingerprint,
+        IntegrationAccountCredentialStatus credentialStatus,
+        Map<String, Object> metadata,
         Instant createdAt,
         Instant updatedAt
     ) {
         public StoredIntegrationAccount {
             config = immutableObjectMap(config);
+            metadata = immutableObjectMap(metadata);
         }
     }
 
     public record CreateIntegrationAccountRequest(
-        ToolConnectorType connectorType,
+        IntegrationAccountSubjectType subjectType,
+        String subjectId,
         String name,
         IntegrationAccountStatus status,
-        Map<String, Object> config,
-        Map<String, Object> credential
+        Map<String, Object> config
     ) {
         public CreateIntegrationAccountRequest {
             config = immutableObjectMap(config);
-            credential = immutableObjectMap(credential);
         }
     }
 
     public record UpdateIntegrationAccountRequest(
         String name,
         IntegrationAccountStatus status,
-        Map<String, Object> config,
-        Map<String, Object> credential
+        Map<String, Object> config
     ) {
         public UpdateIntegrationAccountRequest {
             config = config == null ? null : immutableObjectMap(config);
-            credential = credential == null ? null : immutableObjectMap(credential);
         }
+    }
+
+    public record UpdateIntegrationAccountStatusRequest(IntegrationAccountStatus status) {
     }
 
     public record RuntimeIntegrationCredentialDto(
         String accountId,
-        ToolConnectorType connectorType,
+        IntegrationAccountSubjectType subjectType,
+        String subjectId,
         IntegrationAccountStatus status,
         Map<String, Object> config,
         Map<String, Object> credential

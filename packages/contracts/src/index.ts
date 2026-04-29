@@ -23,7 +23,15 @@ export type KnowledgeIndexSnapshotStatus = 'QUEUED' | 'RUNNING' | 'READY' | 'FAI
 export type KnowledgeImportJobStage = 'QUEUED' | 'FETCHING_SOURCE' | 'PARSING' | 'CHUNKING' | 'PERSISTING' | 'SUCCEEDED' | 'FAILED';
 export type KnowledgeIndexSnapshotStage = 'QUEUED' | 'COLLECTING_DOCUMENTS' | 'INDEXING' | 'READY' | 'FAILED';
 export type ToolKind = 'RESOURCE' | 'BUILTIN';
-export type IntegrationAccountStatus = 'ACTIVE' | 'INACTIVE';
+export type IntegrationAccountSubjectType = 'TOOL_CONNECTOR' | 'CHANNEL_PROVIDER';
+export type IntegrationAccountStatus = 'ENABLED' | 'DISABLED' | 'ARCHIVED';
+export type IntegrationAccountCredentialStatus =
+  | 'NOT_CONFIGURED'
+  | 'ACTIVE'
+  | 'VALIDATION_FAILED'
+  | 'ROTATION_REQUIRED'
+  | 'REVOKE_FAILED'
+  | 'REVOKED';
 export type ChannelProviderType = 'FEISHU';
 export type ChannelAccountStatus = 'ACTIVE' | 'INACTIVE';
 export type ChannelConversationBindingStatus = 'ACTIVE' | 'ARCHIVED';
@@ -91,28 +99,34 @@ export interface ToolOutcomeSummary {
 
 export interface IntegrationAccount {
   id: string;
-  connectorType: ToolConnectorType;
+  subjectType: IntegrationAccountSubjectType;
+  subjectId: string;
   name: string;
   status: IntegrationAccountStatus;
   config: Record<string, unknown>;
+  hasExternalSecretRef: boolean;
   credentialConfigured: boolean;
+  credentialStatus: IntegrationAccountCredentialStatus;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface CreateIntegrationAccountPayload {
-  connectorType: ToolConnectorType;
+  subjectType: IntegrationAccountSubjectType;
+  subjectId: string;
   name: string;
   status?: IntegrationAccountStatus | null;
   config?: Record<string, unknown> | null;
-  credential?: Record<string, unknown> | null;
 }
 
 export interface UpdateIntegrationAccountPayload {
   name?: string | null;
   status?: IntegrationAccountStatus | null;
   config?: Record<string, unknown> | null;
-  credential?: Record<string, unknown> | null;
+}
+
+export interface UpdateIntegrationAccountStatusPayload {
+  status: IntegrationAccountStatus;
 }
 
 export interface KnowledgeBindingSnapshot {

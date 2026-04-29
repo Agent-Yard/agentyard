@@ -36,73 +36,101 @@ public class IntegrationAccountRecord extends UpdatableRecordImpl<IntegrationAcc
     }
 
     /**
-     * Setter for <code>public.integration_account.connector_type</code>.
+     * Setter for <code>public.integration_account.subject_type</code>.
      */
-    public void setConnectorType(String value) {
+    public void setSubjectType(String value) {
         set(1, value);
     }
 
     /**
-     * Getter for <code>public.integration_account.connector_type</code>.
+     * Getter for <code>public.integration_account.subject_type</code>.
      */
-    public String getConnectorType() {
+    public String getSubjectType() {
         return (String) get(1);
+    }
+
+    /**
+     * Setter for <code>public.integration_account.subject_id</code>.
+     */
+    public void setSubjectId(String value) {
+        set(2, value);
+    }
+
+    /**
+     * Getter for <code>public.integration_account.subject_id</code>.
+     */
+    public String getSubjectId() {
+        return (String) get(2);
     }
 
     /**
      * Setter for <code>public.integration_account.name</code>.
      */
     public void setName(String value) {
-        set(2, value);
+        set(3, value);
     }
 
     /**
      * Getter for <code>public.integration_account.name</code>.
      */
     public String getName() {
-        return (String) get(2);
+        return (String) get(3);
     }
 
     /**
      * Setter for <code>public.integration_account.status</code>.
      */
     public void setStatus(String value) {
-        set(3, value);
+        set(4, value);
     }
 
     /**
      * Getter for <code>public.integration_account.status</code>.
      */
     public String getStatus() {
-        return (String) get(3);
+        return (String) get(4);
     }
 
     /**
      * Setter for <code>public.integration_account.config</code>.
      */
     public void setConfig(JSONB value) {
-        set(4, value);
+        set(5, value);
     }
 
     /**
      * Getter for <code>public.integration_account.config</code>.
      */
     public JSONB getConfig() {
-        return (JSONB) get(4);
+        return (JSONB) get(5);
+    }
+
+    /**
+     * Setter for <code>public.integration_account.external_secret_ref</code>.
+     */
+    public void setExternalSecretRef(String value) {
+        set(6, value);
+    }
+
+    /**
+     * Getter for <code>public.integration_account.external_secret_ref</code>.
+     */
+    public String getExternalSecretRef() {
+        return (String) get(6);
     }
 
     /**
      * Setter for <code>public.integration_account.credential_ciphertext</code>.
      */
     public void setCredentialCiphertext(String value) {
-        set(5, value);
+        set(7, value);
     }
 
     /**
      * Getter for <code>public.integration_account.credential_ciphertext</code>.
      */
     public String getCredentialCiphertext() {
-        return (String) get(5);
+        return (String) get(7);
     }
 
     /**
@@ -110,7 +138,7 @@ public class IntegrationAccountRecord extends UpdatableRecordImpl<IntegrationAcc
      * <code>public.integration_account.credential_fingerprint</code>.
      */
     public void setCredentialFingerprint(String value) {
-        set(6, value);
+        set(8, value);
     }
 
     /**
@@ -118,35 +146,63 @@ public class IntegrationAccountRecord extends UpdatableRecordImpl<IntegrationAcc
      * <code>public.integration_account.credential_fingerprint</code>.
      */
     public String getCredentialFingerprint() {
-        return (String) get(6);
+        return (String) get(8);
+    }
+
+    /**
+     * Setter for <code>public.integration_account.credential_status</code>.
+     */
+    public void setCredentialStatus(String value) {
+        set(9, value);
+    }
+
+    /**
+     * Getter for <code>public.integration_account.credential_status</code>.
+     */
+    public String getCredentialStatus() {
+        return (String) get(9);
+    }
+
+    /**
+     * Setter for <code>public.integration_account.metadata</code>.
+     */
+    public void setMetadata(JSONB value) {
+        set(10, value);
+    }
+
+    /**
+     * Getter for <code>public.integration_account.metadata</code>.
+     */
+    public JSONB getMetadata() {
+        return (JSONB) get(10);
     }
 
     /**
      * Setter for <code>public.integration_account.created_at</code>.
      */
     public void setCreatedAt(OffsetDateTime value) {
-        set(7, value);
+        set(11, value);
     }
 
     /**
      * Getter for <code>public.integration_account.created_at</code>.
      */
     public OffsetDateTime getCreatedAt() {
-        return (OffsetDateTime) get(7);
+        return (OffsetDateTime) get(11);
     }
 
     /**
      * Setter for <code>public.integration_account.updated_at</code>.
      */
     public void setUpdatedAt(OffsetDateTime value) {
-        set(8, value);
+        set(12, value);
     }
 
     /**
      * Getter for <code>public.integration_account.updated_at</code>.
      */
     public OffsetDateTime getUpdatedAt() {
-        return (OffsetDateTime) get(8);
+        return (OffsetDateTime) get(12);
     }
 
     // -------------------------------------------------------------------------
@@ -172,16 +228,20 @@ public class IntegrationAccountRecord extends UpdatableRecordImpl<IntegrationAcc
     /**
      * Create a detached, initialised IntegrationAccountRecord
      */
-    public IntegrationAccountRecord(String id, String connectorType, String name, String status, JSONB config, String credentialCiphertext, String credentialFingerprint, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+    public IntegrationAccountRecord(String id, String subjectType, String subjectId, String name, String status, JSONB config, String externalSecretRef, String credentialCiphertext, String credentialFingerprint, String credentialStatus, JSONB metadata, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
         super(IntegrationAccount.INTEGRATION_ACCOUNT);
 
         setId(id);
-        setConnectorType(connectorType);
+        setSubjectType(subjectType);
+        setSubjectId(subjectId);
         setName(name);
         setStatus(status);
         setConfig(config);
+        setExternalSecretRef(externalSecretRef);
         setCredentialCiphertext(credentialCiphertext);
         setCredentialFingerprint(credentialFingerprint);
+        setCredentialStatus(credentialStatus);
+        setMetadata(metadata);
         setCreatedAt(createdAt);
         setUpdatedAt(updatedAt);
         resetChangedOnNotNull();

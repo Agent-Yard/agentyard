@@ -108,8 +108,23 @@ export const toolConnectorOptions = TOOL_CONNECTOR_DEFINITIONS.map((definition) 
   value: definition.connectorType,
 }));
 
+export const TOOL_CONNECTOR_DESCRIPTOR_IDS: Record<ToolConnectorType, string> = {
+  SIMPLE_HTTP: 'simple-http',
+  BUSINESS_CODE_SECRET_HTTP: 'business-code-secret-http',
+  MCP: 'mcp',
+};
+
 export function toolConnectorDefinition(connectorType: ToolConnectorType): ToolConnectorDefinition {
   return TOOL_CONNECTOR_DEFINITIONS.find((definition) => definition.connectorType === connectorType) ?? TOOL_CONNECTOR_DEFINITIONS[0];
+}
+
+export function toolConnectorDescriptorId(connectorType: ToolConnectorType): string {
+  return TOOL_CONNECTOR_DESCRIPTOR_IDS[connectorType];
+}
+
+export function toolConnectorTypeForDescriptorId(descriptorId: string): ToolConnectorType {
+  return TOOL_CONNECTOR_DEFINITIONS.find((definition) => TOOL_CONNECTOR_DESCRIPTOR_IDS[definition.connectorType] === descriptorId)?.connectorType
+    ?? DEFAULT_TOOL_CONNECTOR_TYPE;
 }
 
 export function defaultConnectorConfig(connectorType: ToolConnectorType): Record<string, unknown> {

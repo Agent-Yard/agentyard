@@ -28,6 +28,13 @@ public class ApiExceptionHandler {
             .body(problem(error.statusCode(), error.getMessage()));
     }
 
+    @ExceptionHandler(ApiProblemException.class)
+    public ResponseEntity<ProblemDetail> handleApiProblem(ApiProblemException error) {
+        ProblemDetail problem = problem(error.statusCode(), error.getMessage());
+        problem.setProperty("code", error.code());
+        return ResponseEntity.status(error.statusCode()).body(problem);
+    }
+
     @ExceptionHandler({IllegalArgumentException.class, IllegalStateException.class})
     public ResponseEntity<ProblemDetail> handleBadRequest(RuntimeException error) {
         return ResponseEntity.badRequest()

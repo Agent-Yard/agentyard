@@ -26,7 +26,7 @@ const accountLabel = computed(() => {
   if (!accountId) {
     return '未绑定';
   }
-  return boundAccount.value ? `${boundAccount.value.name} (${boundAccount.value.id})` : accountId;
+  return boundAccount.value ? `${boundAccount.value.name} (${boundAccount.value.subjectId})` : accountId;
 });
 const accountStatusLabel = computed(() => {
   const accountId = toolConnector.value?.accountId;
@@ -36,7 +36,7 @@ const accountStatusLabel = computed(() => {
   if (!boundAccount.value) {
     return '未找到';
   }
-  return `${boundAccount.value.status} / ${boundAccount.value.credentialConfigured ? '凭证已配置' : '凭证未配置'}`;
+  return `${boundAccount.value.status} / ${boundAccount.value.credentialStatus}`;
 });
 
 onMounted(async () => {

@@ -3,6 +3,7 @@ package com.lynxus.platform.integration;
 import com.lynxus.platform.auth.RequireGovernanceAccess;
 import com.lynxus.platform.auth.RequireGovernanceWrite;
 import com.lynxus.platform.integration.IntegrationDtos.CreateIntegrationAccountRequest;
+import com.lynxus.platform.integration.IntegrationDtos.UpdateIntegrationAccountStatusRequest;
 import com.lynxus.platform.integration.IntegrationDtos.UpdateIntegrationAccountRequest;
 import com.lynxus.platform.shared.ApiResponse;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -43,5 +44,20 @@ public class IntegrationAccountGovernanceController {
     @RequireGovernanceWrite
     public ApiResponse<?> updateAccount(@PathVariable String accountId, @RequestBody UpdateIntegrationAccountRequest request) {
         return ApiResponse.ok(service.updateAccount(accountId, request));
+    }
+
+    @PutMapping("/{accountId}/status")
+    @RequireGovernanceWrite
+    public ApiResponse<?> updateAccountStatus(
+        @PathVariable String accountId,
+        @RequestBody UpdateIntegrationAccountStatusRequest request
+    ) {
+        return ApiResponse.ok(service.updateAccountStatus(accountId, request));
+    }
+
+    @PostMapping("/{accountId}/archive")
+    @RequireGovernanceWrite
+    public ApiResponse<?> archiveAccount(@PathVariable String accountId) {
+        return ApiResponse.ok(service.archiveAccount(accountId));
     }
 }

@@ -69,9 +69,14 @@ paths:
       responses:
         '200':
           description: Integration accounts with credential state redacted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseIntegrationAccountList'
     post:
       summary: Create integration account
       requestBody:
+        required: true
         content:
           application/json:
             schema:
@@ -79,6 +84,14 @@ paths:
       responses:
         '200':
           description: Created integration account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseIntegrationAccount'
+        '422':
+          description: Integration account subject or config is invalid
+        '503':
+          description: Extension definition registry is not ready
   /integration/accounts/{accountId}:
     get:
       summary: Get integration account
@@ -91,6 +104,10 @@ paths:
       responses:
         '200':
           description: Integration account with credential state redacted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseIntegrationAccount'
     put:
       summary: Update integration account
       parameters:
@@ -100,6 +117,7 @@ paths:
           schema:
             type: string
       requestBody:
+        required: true
         content:
           application/json:
             schema:
@@ -107,6 +125,52 @@ paths:
       responses:
         '200':
           description: Updated integration account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseIntegrationAccount'
+        '422':
+          description: Integration account config is invalid
+        '503':
+          description: Extension definition registry is not ready
+  /integration/accounts/{accountId}/status:
+    put:
+      summary: Update integration account status
+      parameters:
+        - in: path
+          name: accountId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateIntegrationAccountStatusPayload'
+      responses:
+        '200':
+          description: Updated integration account status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseIntegrationAccount'
+  /integration/accounts/{accountId}/archive:
+    post:
+      summary: Archive integration account
+      parameters:
+        - in: path
+          name: accountId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Archived integration account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseIntegrationAccount'
   /internal/integration/accounts/{accountId}/credential:
     get:
       summary: Internal runtime credential lookup
@@ -1351,46 +1415,98 @@ components:
     ToolKind:
       type: string
       enum: [RESOURCE, BUILTIN]
+    IntegrationAccountSubjectType:
+      type: string
+      enum: [TOOL_CONNECTOR, CHANNEL_PROVIDER]
     IntegrationAccountStatus:
       type: string
-      enum: [ACTIVE, INACTIVE]
+      enum: [ENABLED, DISABLED, ARCHIVED]
+    IntegrationAccountCredentialStatus:
+      type: string
+      enum: [NOT_CONFIGURED, ACTIVE, VALIDATION_FAILED, ROTATION_REQUIRED, REVOKE_FAILED, REVOKED]
     IntegrationAccount:
       type: object
+      required:
+        - id
+        - subjectType
+        - subjectId
+        - name
+        - status
+        - config
+        - hasExternalSecretRef
+        - credentialConfigured
+        - credentialStatus
+        - createdAt
+        - updatedAt
       properties:
         id:
           type: string
-        connectorType:
-          $ref: '#/components/schemas/ToolConnectorType'
+        subjectType:
+          $ref: '#/components/schemas/IntegrationAccountSubjectType'
+        subjectId:
+          type: string
+          maxLength: 128
         name:
           type: string
+          maxLength: 128
         status:
           $ref: '#/components/schemas/IntegrationAccountStatus'
         config:
           type: object
           additionalProperties: true
+        hasExternalSecretRef:
+          type: boolean
         credentialConfigured:
           type: boolean
+        credentialStatus:
+          $ref: '#/components/schemas/IntegrationAccountCredentialStatus'
         createdAt:
           type: string
           format: date-time
         updatedAt:
           type: string
           format: date-time
-    CreateIntegrationAccountPayload:
+    ApiResponseIntegrationAccount:
       type: object
       properties:
-        connectorType:
-          $ref: '#/components/schemas/ToolConnectorType'
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/IntegrationAccount'
+        timestamp:
+          type: string
+          format: date-time
+    ApiResponseIntegrationAccountList:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/IntegrationAccount'
+        timestamp:
+          type: string
+          format: date-time
+    CreateIntegrationAccountPayload:
+      type: object
+      required:
+        - subjectType
+        - subjectId
+        - name
+      properties:
+        subjectType:
+          $ref: '#/components/schemas/IntegrationAccountSubjectType'
+        subjectId:
+          type: string
+          maxLength: 128
         name:
           type: string
+          maxLength: 128
         status:
           $ref: '#/components/schemas/IntegrationAccountStatus'
           nullable: true
         config:
-          type: object
-          additionalProperties: true
-          nullable: true
-        credential:
           type: object
           additionalProperties: true
           nullable: true
@@ -1399,6 +1515,7 @@ components:
       properties:
         name:
           type: string
+          maxLength: 128
           nullable: true
         status:
           $ref: '#/components/schemas/IntegrationAccountStatus'
@@ -1407,10 +1524,13 @@ components:
           type: object
           additionalProperties: true
           nullable: true
-        credential:
-          type: object
-          additionalProperties: true
-          nullable: true
+    UpdateIntegrationAccountStatusPayload:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          $ref: '#/components/schemas/IntegrationAccountStatus'
     ToolOperation:
       type: object
       properties:

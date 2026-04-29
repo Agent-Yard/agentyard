@@ -12,8 +12,8 @@
 
 ## Current Position
 
-- Current slice: Slice 5 - API registry aggregation + definition endpoints.
-- Current subtask: Slice 5A API local manifest aggregation and definition endpoints; aggregate runtime-owner validation will follow as Slice 5B.
+- Current slice: Slice 6 - Integration Account target model + optional credential lifecycle.
+- Current subtask: Slice 6A API-owned Integration Account target model, subject/config validation, and non-credential account lifecycle foundation. Remote credential lifecycle and local encrypted reference credential actions will follow in later Slice 6 subtasks.
 - Main-agent role: orchestration, integration decisions, ledger maintenance, review of worker/checker output.
 - Implementation flow: worker implements each bounded subtask, independent checker reviews read-only, then main agent decides follow-up.
 
@@ -52,6 +52,9 @@
 - `channel-gateway` manifest endpoint must use JVM SDK canonical JSON / manifest validation; channel provider definition digests must come from JVM SDK helpers.
 - Slice 5 API definition endpoints must be projections, not raw manifests: expose schemas/UI schemas/title/description/defaults/credential capability and definition digest, but not registration/baseUrl/endpoint path/internal token/runtime-only state.
 - Slice 5 aggregate validation must be the only place comparing API, `agent-runtime`, and `channel-gateway` `registrationConfigDigest`.
+- Slice 6 must refactor Integration Account directly to `subjectType` / `subjectId`; no `connectorType` compatibility DTO, old enum use, or old table column alias is allowed for Integration Account.
+- Slice 6 must not write Tool release snapshot or Channel runtime profile. It only provides the account data model, credential lifecycle, and account availability decision API for later slices.
+- `externalSecretRef` must never be returned in Web/API read DTOs, logs, validation errors, audit diffs, runtime events, or export shapes; Web-facing account DTOs may expose only boolean presence and credential status.
 
 ## Decisions / Questions
 
@@ -63,6 +66,8 @@
 - Decision: validation-only schema view strips JSON Schema annotation keywords (`title` / `description` / `default`) when they are schema object keywords, but preserves identical names when they are keys inside schema maps such as `properties`, `$defs`, `definitions`, `patternProperties`, or `dependentSchemas`. Those map entries are validation-bearing business field names, not annotation keywords; stripping them would change the digest's validation semantics.
 - Decision: Slice 5 will be split into 5A API local manifest aggregation + definition endpoints, then 5B aggregate validation against runtime owner validation endpoints. 5A must not claim runtime registry readiness; 5B will enforce cross-service digest/id consistency.
 - Decision: Slice 5A default projection safety should not reject credential schemas themselves, because `credentialSchema` is intentionally exposed for credential forms. The sensitive default guard applies to normal config defaults that Web may auto-fill (`defaultConfig` and provider job `defaultSchedule.jobConfig`), rejecting `externalSecretRef`, `secret: true`, and common secret-like keys such as `password`, `apiKey`, `accessToken`, `refreshToken`, `privateKey`, and `webhookSigningSecret`.
+- Decision: Slice 6 will be split into small subtasks. 6A establishes the target Integration Account model and API-owned `accountConfigSchema` validation without remote credential lifecycle. 6B adds create/rotate/revoke/validate credential actions for remote lifecycle and Core-owned encrypted reference secrets. 6C adds account availability contract helpers for Slice 7/8 materialization. This avoids changing runtime snapshots before the model is stable.
+- Decision: first-version Integration Account persists `metadata jsonb default '{}'` for the target model but does not expose credential metadata in Web-facing DTOs and does not save metadata returned by credential lifecycle responses.
 
 ## Worker / Checker Notes
 
@@ -548,6 +553,16 @@
   - `./gradlew :packages:extension-sdk-jvm:test` passed.
   - `uv run pytest packages/extension-sdk-python/tests -q` passed (`58 passed`).
   - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+- Main committed Slice 5B / Slice 5 checkpoint as `3e28a6a Add API extension registry aggregate validation`; worktree was clean before starting Slice 6.
+- Main read Slice 6 docs and existing Integration Account implementation:
+  - `docs/todo/extension_plane/implementation-roadmap.md` Slice 6.
+  - `docs/todo/extension_plane/credentials-and-persistence.md` §§2-3, §§6-10.
+  - `docs/todo/extension_plane/web-configuration.md` §9.
+  - Existing API `integration` package, `V13__integration_account.sql`, control-plane OpenAPI, and TS contracts.
+- Slice 6 starting state:
+  - Current Integration Account API and DB are still old connector-scoped (`connector_type`, `connectorType`, `ACTIVE` / `INACTIVE`, `ToolConnectorType` enum).
+  - Existing create/update accepts credential directly and encrypts locally for every connector; this must be replaced by descriptor-driven mode selection.
+  - Web still has static connector definitions and will be addressed in Slice 10, not Slice 6A.
 
 ## Local Commit Policy
 
@@ -580,6 +595,29 @@
   - Added Python SDK equivalent helpers with the same fixture coverage and digest input.
   - Digest input is limited to `registrationId`, `source`, normalized `baseUrl`, sorted `exposes`, and `auth.type`; token values are not read or included.
   - Explicitly did not connect API, `channel-gateway`, or `agent-runtime` startup loading; manifest fetch, `DescriptorProvider`, definition aggregation, remote adapter, Web, and Slice 11 remain out of scope.
+- Worker Slice 6A completed Integration Account target-model foundation.
+  - Refactored API-owned `integration_account` from connector-scoped fields to `subject_type` / `subject_id`, target account status, credential status, redacted Web/API read DTOs, and non-credential create/update/list/get/status/archive lifecycle.
+  - Added API-owned subject lookup through the current extension definition registry and JSON Schema validation for descriptor `accountConfigSchema`.
+  - Kept credential lifecycle out of scope: create/update payloads no longer accept credential material, remote credential actions were not added, and the internal runtime resolver only returns local ciphertext-decrypted credential data when present.
+  - Updated control-plane Integration Account contracts/types and regenerated `packages/persistence-jvm` JOOQ sources from V13 so generated schema no longer exposes `connector_type`.
+  - Did not modify Web pages, Tool release snapshot materialization, Channel runtime profile materialization, agent-runtime/channel-gateway invocation, docs/develop_record, or Slice 11 artifacts.
+- Checker `Kuhn` failed initial Slice 6A because the contract change left existing Web code uncompilable against `subjectType` / `subjectId` and `ENABLED` / `DISABLED` / `ARCHIVED`.
+  - Decision: fix the current Web compile break with a minimal target-model alignment, not a schema-driven Slice 10 implementation.
+- Worker `Noether` completed Slice 6A checker repair.
+  - Updated existing static Web Integration Account page to create config-only Tool Connector accounts using `subjectType=TOOL_CONNECTOR`, descriptor-id `subjectId`, and target statuses.
+  - Updated existing Tool Resource account selector/summary to filter accounts by `subjectType`, descriptor id, and `status=ENABLED`.
+  - Added a small temporary bridge from legacy Web `ToolConnectorType` enum values to target descriptor ids; this is not a compatibility API and should be replaced by definition-driven connector UI in Slice 7/10.
+  - Removed credential JSON submission from the current Integration Account page because credential payloads are intentionally deferred to Slice 6B.
+- Checker `Planck` rerun verdict for Slice 6A: pass; no blockers.
+  - Confirmed prior Web compile blocker is fixed.
+  - Confirmed Web repair is minimal and does not implement Slice 10 schema-driven pages.
+  - Confirmed API, contracts, DB, and generated jOOQ use the target Integration Account model without old `connector_type` / Integration Account `connectorType` compatibility.
+  - Non-blocking follow-up: `toolConnectors.ts` still has unused credential template/placeholder remnants; clean up or replace during Slice 6B/10.
+- Worker Slice 6A checker repair updated the Web Integration Account surfaces to the target account model.
+  - `IntegrationAccountPage` now creates Tool Connector accounts with `subjectType: TOOL_CONNECTOR`, descriptor-id `subjectId`, `ENABLED` status, and config only; update submits only name/status/config and no credential payload.
+  - Static Tool Connector config now has the temporary Slice 6A descriptor-id bridge: `SIMPLE_HTTP -> simple-http`, `BUSINESS_CODE_SECRET_HTTP -> business-code-secret-http`, `MCP -> mcp`.
+  - Resource version account selection now filters Tool Connector accounts by `subjectType`, descriptor `subjectId`, and `ENABLED`; credential fields are only labels/status text.
+  - Credential JSON editing remains disabled/removed until Slice 6B credential lifecycle work.
 
 ## Verification Log
 
@@ -647,7 +685,25 @@
   - `./gradlew :packages:extension-sdk-jvm:test` passed.
   - `uv run pytest packages/extension-sdk-python/tests -q` passed (`58 passed`).
   - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+- Worker Slice 6A verification:
+  - `./gradlew :apps:api:test --tests '*IntegrationAccount*'` passed.
+  - `./gradlew :apps:api:test --tests '*ExtensionDefinition*'` passed.
+  - `./gradlew :packages:persistence-jvm:generateJooq` passed.
+  - `./gradlew :packages:persistence-jvm:verifyJooqGenerated` passed.
+  - `pnpm --filter @lynxus/web lint` failed because existing Web pages still reference old Integration Account `connectorType` / `ACTIVE` / `INACTIVE`; Web page migration is explicitly out of Slice 6A scope and no `packages/contracts/package.json` exists for a narrower contract-only pnpm check.
+- Worker Slice 6A checker repair verification:
+  - `pnpm --filter @lynxus/web lint` passed.
+  - `pnpm --filter @lynxus/web test` passed (`7` files, `32` tests).
+- Main Slice 6A verification:
+  - `pnpm --filter @lynxus/web lint` passed.
+  - `pnpm --filter @lynxus/web test` passed (`7` files, `32` tests).
+  - `./gradlew :apps:api:test --tests '*IntegrationAccount*'` passed.
+- Checker Slice 6A rerun verification:
+  - `pnpm --filter @lynxus/web lint` passed.
+  - `pnpm --filter @lynxus/web test` passed (`7` files, `32` tests).
+  - `./gradlew :apps:api:test --tests '*IntegrationAccount*'` passed.
+  - `./gradlew :apps:api:test --tests '*IntegrationAccount*' --rerun-tasks` passed.
 
 ## Blockers / Rework
 
-- Pending local commit for Slice 5B.
+- No active blockers. Next action: commit Slice 6A, then start Slice 6B credential lifecycle.

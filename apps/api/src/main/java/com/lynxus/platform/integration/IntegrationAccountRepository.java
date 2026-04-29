@@ -4,12 +4,12 @@ import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.name;
 import static org.jooq.impl.DSL.table;
 
-import com.lynxus.contracts.runtime.WorkflowContracts.ToolConnectorType;
 import com.lynxus.persistence.jooqsupport.JooqJsonbSupport;
 import com.lynxus.persistence.jooqsupport.JooqTimeSupport;
+import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountCredentialStatus;
 import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountStatus;
+import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountSubjectType;
 import com.lynxus.platform.integration.IntegrationDtos.StoredIntegrationAccount;
-import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -50,21 +50,29 @@ public class IntegrationAccountRepository {
     public void saveAccount(StoredIntegrationAccount account) {
         dsl.insertInto(INTEGRATION_ACCOUNT)
             .set(field(name("id"), String.class), account.id())
-            .set(field(name("connector_type"), String.class), account.connectorType().name())
+            .set(field(name("subject_type"), String.class), account.subjectType().name())
+            .set(field(name("subject_id"), String.class), account.subjectId())
             .set(field(name("name"), String.class), account.name())
             .set(field(name("status"), String.class), account.status().name())
             .set(field(name("config"), JSONB.class), jsonbSupport.toJsonb(account.config()))
+            .set(field(name("external_secret_ref"), String.class), account.externalSecretRef())
             .set(field(name("credential_ciphertext"), String.class), account.credentialCiphertext())
             .set(field(name("credential_fingerprint"), String.class), account.credentialFingerprint())
+            .set(field(name("credential_status"), String.class), account.credentialStatus().name())
+            .set(field(name("metadata"), JSONB.class), jsonbSupport.toJsonb(account.metadata()))
             .set(field(name("created_at"), java.time.OffsetDateTime.class), JooqTimeSupport.toOffsetDateTime(account.createdAt()))
             .set(field(name("updated_at"), java.time.OffsetDateTime.class), JooqTimeSupport.toOffsetDateTime(account.updatedAt()))
             .onDuplicateKeyUpdate()
-            .set(field(name("connector_type"), String.class), account.connectorType().name())
+            .set(field(name("subject_type"), String.class), account.subjectType().name())
+            .set(field(name("subject_id"), String.class), account.subjectId())
             .set(field(name("name"), String.class), account.name())
             .set(field(name("status"), String.class), account.status().name())
             .set(field(name("config"), JSONB.class), jsonbSupport.toJsonb(account.config()))
+            .set(field(name("external_secret_ref"), String.class), account.externalSecretRef())
             .set(field(name("credential_ciphertext"), String.class), account.credentialCiphertext())
             .set(field(name("credential_fingerprint"), String.class), account.credentialFingerprint())
+            .set(field(name("credential_status"), String.class), account.credentialStatus().name())
+            .set(field(name("metadata"), JSONB.class), jsonbSupport.toJsonb(account.metadata()))
             .set(field(name("updated_at"), java.time.OffsetDateTime.class), JooqTimeSupport.toOffsetDateTime(account.updatedAt()))
             .execute();
     }
@@ -72,12 +80,16 @@ public class IntegrationAccountRepository {
     private StoredIntegrationAccount mapAccount(Record record) {
         return new StoredIntegrationAccount(
             record.get(field(name("id"), String.class)),
-            ToolConnectorType.valueOf(record.get(field(name("connector_type"), String.class))),
+            IntegrationAccountSubjectType.valueOf(record.get(field(name("subject_type"), String.class))),
+            record.get(field(name("subject_id"), String.class)),
             record.get(field(name("name"), String.class)),
             IntegrationAccountStatus.valueOf(record.get(field(name("status"), String.class))),
             jsonbSupport.read(record.get(field(name("config"), JSONB.class)), OBJECT_MAP),
+            record.get(field(name("external_secret_ref"), String.class)),
             record.get(field(name("credential_ciphertext"), String.class)),
             record.get(field(name("credential_fingerprint"), String.class)),
+            IntegrationAccountCredentialStatus.valueOf(record.get(field(name("credential_status"), String.class))),
+            jsonbSupport.read(record.get(field(name("metadata"), JSONB.class)), OBJECT_MAP),
             JooqTimeSupport.toInstant(record.get(field(name("created_at"), java.time.OffsetDateTime.class))),
             JooqTimeSupport.toInstant(record.get(field(name("updated_at"), java.time.OffsetDateTime.class)))
         );

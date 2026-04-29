@@ -1,9 +1,20 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import PageHeaderCard from '../components/PageHeaderCard.vue';
-import { credentialPlaceholder, toolConnectorDefinition, toolConnectorOptions } from '../config/toolConnectors';
+import {
+  toolConnectorDescriptorId,
+  toolConnectorOptions,
+  toolConnectorTypeForDescriptorId,
+} from '../config/toolConnectors';
 import { api } from '../services/api';
-import type { CreateIntegrationAccountPayload, IntegrationAccount, ToolConnectorType, UpdateIntegrationAccountPayload } from '../types';
+import type {
+  CreateIntegrationAccountPayload,
+  IntegrationAccount,
+  ToolConnectorType,
+  UpdateIntegrationAccountPayload,
+} from '../types';
+
+type IntegrationAccountFormStatus = IntegrationAccount['status'];
 
 const accounts = ref<IntegrationAccount[]>([]);
 const loading = ref(false);
@@ -12,18 +23,17 @@ const editingAccountId = ref<string | null>(null);
 const form = reactive({
   connectorType: 'BUSINESS_CODE_SECRET_HTTP' as ToolConnectorType,
   name: '',
-  status: 'ACTIVE' as 'ACTIVE' | 'INACTIVE',
+  status: 'ENABLED' as IntegrationAccountFormStatus,
   configJson: '{}',
-  credentialJson: '',
 });
 
 const isEditing = computed(() => Boolean(editingAccountId.value));
-const credentialJsonPlaceholder = computed(() => credentialPlaceholder(form.connectorType, isEditing.value));
+const toolConnectorAccounts = computed(() => accounts.value.filter((account) => account.subjectType === 'TOOL_CONNECTOR'));
 const tableColumns = [
   { title: '名称', dataIndex: 'name', key: 'name' },
-  { title: 'Connector', dataIndex: 'connectorType', key: 'connectorType' },
+  { title: 'Connector', dataIndex: 'subjectId', key: 'subjectId' },
   { title: '状态', dataIndex: 'status', key: 'status' },
-  { title: '凭证', dataIndex: 'credentialConfigured', key: 'credentialConfigured' },
+  { title: '凭证', dataIndex: 'credentialStatus', key: 'credentialStatus' },
   { title: '更新时间', dataIndex: 'updatedAt', key: 'updatedAt' },
   { title: '操作', key: 'actions' },
 ];
@@ -43,28 +53,22 @@ function openCreateDrawer() {
   editingAccountId.value = null;
   form.connectorType = 'BUSINESS_CODE_SECRET_HTTP';
   form.name = '';
-  form.status = 'ACTIVE';
+  form.status = 'ENABLED';
   form.configJson = '{}';
-  form.credentialJson = toolConnectorDefinition(form.connectorType).credentialTemplate;
   drawerOpen.value = true;
 }
 
 function openEditDrawer(account: IntegrationAccount) {
   editingAccountId.value = account.id;
-  form.connectorType = account.connectorType;
+  form.connectorType = toolConnectorTypeForDescriptorId(account.subjectId);
   form.name = account.name;
   form.status = account.status;
   form.configJson = JSON.stringify(account.config ?? {}, null, 2);
-  form.credentialJson = '';
   drawerOpen.value = true;
 }
 
 function onConnectorTypeChange(value: ToolConnectorType) {
   form.connectorType = value;
-  if (isEditing.value) {
-    return;
-  }
-  form.credentialJson = toolConnectorDefinition(value).credentialTemplate;
 }
 
 function parseJsonObject(rawValue: string, fieldName: string) {
@@ -81,22 +85,20 @@ function parseJsonObject(rawValue: string, fieldName: string) {
 
 async function submitAccount() {
   const config = parseJsonObject(form.configJson, '配置') ?? {};
-  const credential = parseJsonObject(form.credentialJson, '凭证');
   if (editingAccountId.value) {
     const payload: UpdateIntegrationAccountPayload = {
       name: form.name,
       status: form.status,
       config,
-      credential,
     };
     await api.updateIntegrationAccount(editingAccountId.value, payload);
   } else {
     const payload: CreateIntegrationAccountPayload = {
-      connectorType: form.connectorType,
+      subjectType: 'TOOL_CONNECTOR',
+      subjectId: toolConnectorDescriptorId(form.connectorType),
       name: form.name,
       status: form.status,
       config,
-      credential,
     };
     await api.createIntegrationAccount(payload);
   }
@@ -109,7 +111,7 @@ async function submitAccount() {
   <section class="page-section">
     <PageHeaderCard
       title="Integration Account"
-      subtitle="维护 Tool Connector 执行时使用的账号、配置和凭证。"
+      subtitle="维护 Tool Connector 执行时使用的账号配置和状态。"
     />
     <div style="margin: 12px 0">
       <a-button type="primary" @click="openCreateDrawer">新增账号</a-button>
@@ -118,15 +120,15 @@ async function submitAccount() {
     <a-table
       row-key="id"
       :columns="tableColumns"
-      :data-source="accounts"
+      :data-source="toolConnectorAccounts"
       :loading="loading"
       size="small"
       :pagination="false"
     >
       <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'credentialConfigured'">
+        <template v-if="column.key === 'credentialStatus'">
           <a-tag :color="record.credentialConfigured ? 'green' : 'orange'">
-            {{ record.credentialConfigured ? '已配置' : '未配置' }}
+            {{ record.credentialStatus }}
           </a-tag>
         </template>
         <template v-else-if="column.key === 'updatedAt'">
@@ -160,20 +162,14 @@ async function submitAccount() {
           <a-select
             v-model:value="form.status"
             :options="[
-              { label: 'ACTIVE', value: 'ACTIVE' },
-              { label: 'INACTIVE', value: 'INACTIVE' },
+              { label: 'ENABLED', value: 'ENABLED' },
+              { label: 'DISABLED', value: 'DISABLED' },
+              { label: 'ARCHIVED', value: 'ARCHIVED' },
             ]"
           />
         </a-form-item>
         <a-form-item label="配置 JSON">
           <a-textarea v-model:value="form.configJson" :rows="6" />
-        </a-form-item>
-        <a-form-item label="凭证 JSON">
-          <a-textarea
-            v-model:value="form.credentialJson"
-            :rows="6"
-            :placeholder="credentialJsonPlaceholder"
-          />
         </a-form-item>
       </a-form>
       <template #footer>

@@ -61,14 +61,19 @@ public class IntegrationAccount extends TableImpl<IntegrationAccountRecord> {
     public final TableField<IntegrationAccountRecord, String> ID = createField(DSL.name("id"), SQLDataType.VARCHAR(64).nullable(false), this, "");
 
     /**
-     * The column <code>public.integration_account.connector_type</code>.
+     * The column <code>public.integration_account.subject_type</code>.
      */
-    public final TableField<IntegrationAccountRecord, String> CONNECTOR_TYPE = createField(DSL.name("connector_type"), SQLDataType.VARCHAR(64).nullable(false), this, "");
+    public final TableField<IntegrationAccountRecord, String> SUBJECT_TYPE = createField(DSL.name("subject_type"), SQLDataType.VARCHAR(32).nullable(false), this, "");
+
+    /**
+     * The column <code>public.integration_account.subject_id</code>.
+     */
+    public final TableField<IntegrationAccountRecord, String> SUBJECT_ID = createField(DSL.name("subject_id"), SQLDataType.VARCHAR(128).nullable(false), this, "");
 
     /**
      * The column <code>public.integration_account.name</code>.
      */
-    public final TableField<IntegrationAccountRecord, String> NAME = createField(DSL.name("name"), SQLDataType.VARCHAR(255).nullable(false), this, "");
+    public final TableField<IntegrationAccountRecord, String> NAME = createField(DSL.name("name"), SQLDataType.VARCHAR(128).nullable(false), this, "");
 
     /**
      * The column <code>public.integration_account.status</code>.
@@ -78,7 +83,12 @@ public class IntegrationAccount extends TableImpl<IntegrationAccountRecord> {
     /**
      * The column <code>public.integration_account.config</code>.
      */
-    public final TableField<IntegrationAccountRecord, JSONB> CONFIG = createField(DSL.name("config"), SQLDataType.JSONB.nullable(false), this, "");
+    public final TableField<IntegrationAccountRecord, JSONB> CONFIG = createField(DSL.name("config"), SQLDataType.JSONB.nullable(false).defaultValue(DSL.field(DSL.raw("'{}'::jsonb"), SQLDataType.JSONB)), this, "");
+
+    /**
+     * The column <code>public.integration_account.external_secret_ref</code>.
+     */
+    public final TableField<IntegrationAccountRecord, String> EXTERNAL_SECRET_REF = createField(DSL.name("external_secret_ref"), SQLDataType.VARCHAR(512), this, "");
 
     /**
      * The column <code>public.integration_account.credential_ciphertext</code>.
@@ -90,6 +100,16 @@ public class IntegrationAccount extends TableImpl<IntegrationAccountRecord> {
      * <code>public.integration_account.credential_fingerprint</code>.
      */
     public final TableField<IntegrationAccountRecord, String> CREDENTIAL_FINGERPRINT = createField(DSL.name("credential_fingerprint"), SQLDataType.VARCHAR(128), this, "");
+
+    /**
+     * The column <code>public.integration_account.credential_status</code>.
+     */
+    public final TableField<IntegrationAccountRecord, String> CREDENTIAL_STATUS = createField(DSL.name("credential_status"), SQLDataType.VARCHAR(32).nullable(false), this, "");
+
+    /**
+     * The column <code>public.integration_account.metadata</code>.
+     */
+    public final TableField<IntegrationAccountRecord, JSONB> METADATA = createField(DSL.name("metadata"), SQLDataType.JSONB.nullable(false).defaultValue(DSL.field(DSL.raw("'{}'::jsonb"), SQLDataType.JSONB)), this, "");
 
     /**
      * The column <code>public.integration_account.created_at</code>.
@@ -137,7 +157,7 @@ public class IntegrationAccount extends TableImpl<IntegrationAccountRecord> {
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_INTEGRATION_ACCOUNT_CONNECTOR_UPDATED);
+        return Arrays.asList(Indexes.IDX_INTEGRATION_ACCOUNT_SUBJECT_UPDATED);
     }
 
     @Override

@@ -5,6 +5,7 @@ import {
   DEFAULT_TOOL_CONNECTOR_TYPE,
   defaultOperationMapping,
   toolConnectorDefinition,
+  toolConnectorDescriptorId,
   toolConnectorOptions,
 } from '../config/toolConnectors';
 import { api } from '../services/api';
@@ -29,9 +30,13 @@ const isOpenAiCompatible = computed(() => llmModel.value?.providerType === 'OPEN
 const integrationAccounts = ref<IntegrationAccount[]>([]);
 const accountOptions = computed(() =>
   integrationAccounts.value
-    .filter((account) => account.connectorType === connector.value?.connectorType && account.status === 'ACTIVE')
+    .filter((account) => (
+      account.subjectType === 'TOOL_CONNECTOR'
+      && account.subjectId === toolConnectorDescriptorId(connector.value?.connectorType ?? DEFAULT_TOOL_CONNECTOR_TYPE)
+      && account.status === 'ENABLED'
+    ))
     .map((account) => ({
-      label: account.credentialConfigured ? account.name : `${account.name}（未配置凭证）`,
+      label: account.credentialConfigured ? account.name : `${account.name}（${account.credentialStatus}）`,
       value: account.id,
     })),
 );
