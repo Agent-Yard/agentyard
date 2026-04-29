@@ -1,22 +1,26 @@
 package com.lynxus.channel.gateway.extension;
 
+import com.lynxus.channel.gateway.connector.feishu.FeishuGatewayNativeChannelProviderAdapter;
 import com.lynxus.extension.sdk.common.LynxusCanonicalJson;
 import com.lynxus.extension.sdk.protocol.LynxusExtensionProtocol;
 import com.lynxus.extension.sdk.validation.ManifestValidationResult;
 import com.lynxus.extension.sdk.validation.ManifestValidator;
-import java.util.LinkedHashMap;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Component;
 
 @Component
 public final class ChannelGatewayDescriptorProvider {
-    public static final String FEISHU_PROVIDER_TYPE = "feishu";
     private final Map<String, Object> manifest;
     private final byte[] canonicalManifestBytes;
 
     public ChannelGatewayDescriptorProvider() {
-        this.manifest = serviceManifest();
+        this(new GatewayNativeChannelProviderAdapters(List.of(new FeishuGatewayNativeChannelProviderAdapter())));
+    }
+
+    public ChannelGatewayDescriptorProvider(GatewayNativeChannelProviderAdapters gatewayNativeAdapters) {
+        this.manifest = serviceManifest(gatewayNativeAdapters.adapters());
         ManifestValidationResult validation = ManifestValidator.validate(manifest);
         if (!validation.valid()) {
             throw new IllegalStateException("channel-gateway extension manifest is invalid: " + validation.errors());
@@ -38,34 +42,21 @@ public final class ChannelGatewayDescriptorProvider {
         return (List<Map<String, Object>>) descriptors.get("channelProviders");
     }
 
-    private static Map<String, Object> serviceManifest() {
-        Map<String, Object> descriptors = new LinkedHashMap<>();
-        descriptors.put("channelProviders", List.of(feishuDescriptor()));
+    private static Map<String, Object> serviceManifest(List<GatewayNativeChannelProviderAdapter> adapters) {
+        List<Map<String, Object>> channelProviders = adapters.stream()
+            .sorted(Comparator.comparing(GatewayNativeChannelProviderAdapter::providerType))
+            .map(GatewayNativeChannelProviderAdapter::descriptor)
+            .toList();
+
+        java.util.LinkedHashMap<String, Object> descriptors = new java.util.LinkedHashMap<>();
+        descriptors.put("channelProviders", channelProviders);
         descriptors.put("toolConnectors", List.of());
 
-        Map<String, Object> manifest = new LinkedHashMap<>();
+        java.util.LinkedHashMap<String, Object> manifest = new java.util.LinkedHashMap<>();
         manifest.put("extensionApiVersion", LynxusExtensionProtocol.EXTENSION_API_VERSION);
         manifest.put("coreMinVersion", "0.8.0");
         manifest.put("coreMaxVersion", "0.9.x");
         manifest.put("descriptors", descriptors);
         return Map.copyOf(manifest);
-    }
-
-    private static Map<String, Object> feishuDescriptor() {
-        Map<String, Object> endpoints = new LinkedHashMap<>();
-        endpoints.put(LynxusExtensionProtocol.CHANNEL_PROVIDER_SEND_OUTBOUND_ENDPOINT, "/connectors/feishu/send-outbound");
-
-        Map<String, Object> descriptor = new LinkedHashMap<>();
-        descriptor.put("providerType", FEISHU_PROVIDER_TYPE);
-        descriptor.put("title", "Feishu");
-        descriptor.put("description", "Gateway-native Feishu channel provider.");
-        descriptor.put("accountConfigSchema", Map.of());
-        descriptor.put("accountConfigUiSchema", List.of());
-        descriptor.put("configSchema", Map.of());
-        descriptor.put("configUiSchema", List.of());
-        descriptor.put("defaultConfig", Map.of());
-        descriptor.put("jobDefinitions", List.of());
-        descriptor.put("endpoints", endpoints);
-        return Map.copyOf(descriptor);
     }
 }

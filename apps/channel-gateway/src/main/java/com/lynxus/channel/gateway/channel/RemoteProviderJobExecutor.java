@@ -6,7 +6,6 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelRunJobPayload;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelRunJobRequest;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelRunJobResponse;
 import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelInboundEvent;
-import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelTraceContext;
 import com.lynxus.extension.sdk.protocol.DescriptorType;
 import com.lynxus.extension.sdk.protocol.LynxusExtensionHttp;
 import java.net.URI;
@@ -64,7 +63,7 @@ public class RemoteProviderJobExecutor implements ProviderJobExecutor {
             claim.profileConfig(),
             blankToNull(claim.externalSecretRef()),
             claim.idempotencyKey(),
-            new NormalizedChannelTraceContext(traceIds.traceparent(), null),
+            traceIds.traceContext(),
             new ChannelRunJobPayload(
                 claim.jobType(),
                 claim.scheduleConfig().jobConfig(),
@@ -116,17 +115,5 @@ public class RemoteProviderJobExecutor implements ProviderJobExecutor {
 
     private static String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value;
-    }
-
-    private record TraceIds(String traceId, String traceparent, String requestId) {
-        static TraceIds create() {
-            String traceId = java.util.UUID.randomUUID().toString().replace("-", "");
-            String spanId = java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 16);
-            return new TraceIds(traceId, "00-" + traceId + "-" + spanId + "-01", nextRequestId());
-        }
-
-        static String nextRequestId() {
-            return "request-" + java.util.UUID.randomUUID();
-        }
     }
 }

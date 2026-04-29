@@ -2052,7 +2052,7 @@ components:
       enum: [RECEIVED, REJECTED]
     ChannelOutboundDeliveryStatus:
       type: string
-      enum: [PENDING, SENT, FAILED]
+      enum: [PENDING, SENDING, SENT, FAILED]
     ChannelProviderJobScheduleType:
       type: string
       enum: [INTERVAL, CRON, MANUAL]
@@ -2436,6 +2436,7 @@ components:
         - deliveryId
         - channelProfileId
         - providerType
+        - idempotencyKey
         - payload
         - status
         - attemptCount
@@ -2457,6 +2458,11 @@ components:
         externalConversationId:
           type: string
           nullable: true
+        idempotencyKey:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: '^[A-Za-z0-9._:-]+$'
         payload:
           type: object
           additionalProperties: true

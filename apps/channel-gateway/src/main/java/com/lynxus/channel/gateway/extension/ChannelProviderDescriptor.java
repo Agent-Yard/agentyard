@@ -11,7 +11,9 @@ public record ChannelProviderDescriptor(
     String providerType,
     String registrationId,
     String baseUrl,
+    String sendOutboundPath,
     String runJobPath,
+    boolean gatewayNative,
     Map<String, Object> descriptor,
     String definitionDigest,
     Map<String, Object> configSchema,
@@ -25,6 +27,7 @@ public record ChannelProviderDescriptor(
         providerType = providerType.trim();
         registrationId = normalizeOptional(registrationId);
         baseUrl = normalizeOptional(baseUrl);
+        sendOutboundPath = normalizeOptional(sendOutboundPath);
         runJobPath = normalizeOptional(runJobPath);
         descriptor = immutableObject(descriptor);
         configSchema = immutableObject(configSchema);

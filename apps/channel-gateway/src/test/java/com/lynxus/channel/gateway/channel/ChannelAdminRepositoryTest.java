@@ -97,6 +97,7 @@ class ChannelAdminRepositoryTest {
             "session-1",
             "message-1",
             "chat-1",
+            "channel-outbound-delivery-1",
             Map.of("text", "hello"),
             ChannelOutboundDeliveryStatus.PENDING,
             1,

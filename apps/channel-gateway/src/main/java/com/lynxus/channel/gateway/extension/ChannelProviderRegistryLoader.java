@@ -124,7 +124,9 @@ public final class ChannelProviderRegistryLoader {
                         providerType,
                         registration.registrationId(),
                         registration.baseUrl(),
+                        sendOutboundPath(descriptor),
                         runJobPath(descriptor),
+                        ExtensionRegistrationLoader.CORE_CHANNEL_GATEWAY_REGISTRATION_ID.equals(registration.registrationId()),
                         descriptor,
                         definitionDigest,
                         configSchema,
@@ -175,6 +177,16 @@ public final class ChannelProviderRegistryLoader {
             Collections.unmodifiableMap(new TreeMap<>(descriptorDefinitionDigests)),
             Collections.unmodifiableMap(new TreeMap<>(descriptorsByProviderType))
         );
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String sendOutboundPath(Map<String, Object> descriptor) {
+        Object endpoints = descriptor.get("endpoints");
+        if (!(endpoints instanceof Map<?, ?> rawEndpoints)) {
+            return null;
+        }
+        Object value = rawEndpoints.get("sendOutbound");
+        return value instanceof String path && !path.isBlank() ? path.trim() : null;
     }
 
     @SuppressWarnings("unchecked")

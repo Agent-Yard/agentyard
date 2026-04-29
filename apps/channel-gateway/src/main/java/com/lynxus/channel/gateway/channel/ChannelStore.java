@@ -56,6 +56,19 @@ final class ChannelStore {
             .fetchOptional(this::mapProfile);
     }
 
+    Optional<ChannelOutboundProfileSnapshot> findOutboundProfileSnapshot(String channelProfileId) {
+        return dsl.selectFrom(CHANNEL_PROFILE)
+            .where(CHANNEL_PROFILE.ID.eq(channelProfileId))
+            .fetchOptional(record -> new ChannelOutboundProfileSnapshot(
+                record.get(CHANNEL_PROFILE.ID),
+                record.get(CHANNEL_PROFILE.PROVIDER_TYPE),
+                ChannelProfileStatus.valueOf(record.get(CHANNEL_PROFILE.STATUS)),
+                jsonbSupport.readObjectMap(record.get(CHANNEL_PROFILE.CONFIG)),
+                readAssistantBinding(record),
+                record.get(CHANNEL_PROFILE.EXTERNAL_SECRET_REF)
+            ));
+    }
+
     List<ChannelGatewayProfile> listProfilesByProvider(String providerType) {
         return dsl.selectFrom(CHANNEL_PROFILE)
             .where(CHANNEL_PROFILE.PROVIDER_TYPE.eq(providerType))
@@ -259,6 +272,7 @@ final class ChannelStore {
             .set(CHANNEL_OUTBOUND_DELIVERY.SESSION_ID, delivery.sessionId())
             .set(CHANNEL_OUTBOUND_DELIVERY.SESSION_MESSAGE_ID, delivery.sessionMessageId())
             .set(CHANNEL_OUTBOUND_DELIVERY.EXTERNAL_CONVERSATION_ID, delivery.externalConversationId())
+            .set(CHANNEL_OUTBOUND_DELIVERY.IDEMPOTENCY_KEY, delivery.idempotencyKey())
             .set(CHANNEL_OUTBOUND_DELIVERY.PAYLOAD, jsonbSupport.toJsonb(delivery.payload() == null ? Map.of() : delivery.payload()))
             .set(CHANNEL_OUTBOUND_DELIVERY.STATUS, delivery.status().name())
             .set(CHANNEL_OUTBOUND_DELIVERY.ATTEMPT_COUNT, delivery.attemptCount())
@@ -272,6 +286,7 @@ final class ChannelStore {
             .set(CHANNEL_OUTBOUND_DELIVERY.SESSION_ID, delivery.sessionId())
             .set(CHANNEL_OUTBOUND_DELIVERY.SESSION_MESSAGE_ID, delivery.sessionMessageId())
             .set(CHANNEL_OUTBOUND_DELIVERY.EXTERNAL_CONVERSATION_ID, delivery.externalConversationId())
+            .set(CHANNEL_OUTBOUND_DELIVERY.IDEMPOTENCY_KEY, delivery.idempotencyKey())
             .set(CHANNEL_OUTBOUND_DELIVERY.PAYLOAD, jsonbSupport.toJsonb(delivery.payload() == null ? Map.of() : delivery.payload()))
             .set(CHANNEL_OUTBOUND_DELIVERY.STATUS, delivery.status().name())
             .set(CHANNEL_OUTBOUND_DELIVERY.ATTEMPT_COUNT, delivery.attemptCount())
@@ -680,6 +695,7 @@ final class ChannelStore {
             record.get(CHANNEL_OUTBOUND_DELIVERY.SESSION_ID),
             record.get(CHANNEL_OUTBOUND_DELIVERY.SESSION_MESSAGE_ID),
             record.get(CHANNEL_OUTBOUND_DELIVERY.EXTERNAL_CONVERSATION_ID),
+            record.get(CHANNEL_OUTBOUND_DELIVERY.IDEMPOTENCY_KEY),
             jsonbSupport.readObjectMap(record.get(CHANNEL_OUTBOUND_DELIVERY.PAYLOAD)),
             ChannelOutboundDeliveryStatus.valueOf(record.get(CHANNEL_OUTBOUND_DELIVERY.STATUS)),
             record.get(CHANNEL_OUTBOUND_DELIVERY.ATTEMPT_COUNT),

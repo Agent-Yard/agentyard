@@ -48,6 +48,7 @@ public final class ChannelContracts {
 
     public enum ChannelOutboundDeliveryStatus {
         PENDING,
+        SENDING,
         SENT,
         FAILED
     }
@@ -278,6 +279,7 @@ public final class ChannelContracts {
         String sessionId,
         String sessionMessageId,
         String externalConversationId,
+        String idempotencyKey,
         Map<String, Object> payload,
         ChannelOutboundDeliveryStatus status,
         int attemptCount,
@@ -287,6 +289,69 @@ public final class ChannelContracts {
     ) {
         public ChannelOutboundDelivery {
             payload = immutableObjectMap(payload);
+        }
+    }
+
+    public record ChannelOutboundDeliveryRequest(
+        String channelProfileId,
+        String assistantId,
+        String externalConversationId,
+        String sessionId,
+        String sessionMessageId,
+        Map<String, Object> messageBlock,
+        NormalizedChannelTraceContext traceContext
+    ) {
+        public ChannelOutboundDeliveryRequest {
+            messageBlock = requiredImmutableObjectMap(messageBlock, "messageBlock");
+        }
+    }
+
+    public record ChannelOutboundResolvedTemplate(
+        String messageType,
+        String messageSubtype,
+        String messageVersion,
+        String externalTemplateId,
+        String externalTemplateVersion
+    ) {
+    }
+
+    public record ChannelOutboundPayload(
+        String externalConversationId,
+        Map<String, Object> messageBlock,
+        ChannelOutboundResolvedTemplate resolvedTemplate
+    ) {
+        public ChannelOutboundPayload {
+            messageBlock = requiredImmutableObjectMap(messageBlock, "payload.messageBlock");
+        }
+    }
+
+    public record ChannelOutboundRequest(
+        String providerType,
+        String channelProfileId,
+        Map<String, Object> config,
+        String externalSecretRef,
+        String idempotencyKey,
+        NormalizedChannelTraceContext traceContext,
+        ChannelOutboundPayload payload
+    ) {
+        public ChannelOutboundRequest {
+            config = requiredImmutableObjectMap(config, "config");
+        }
+    }
+
+    public enum ChannelOutboundResponseStatus {
+        SENT,
+        ACCEPTED
+    }
+
+    public record ChannelOutboundResponse(
+        ChannelOutboundResponseStatus status,
+        String externalMessageId,
+        boolean retryable,
+        Map<String, Object> metadata
+    ) {
+        public ChannelOutboundResponse {
+            metadata = requiredImmutableObjectMap(metadata, "metadata");
         }
     }
 

@@ -42,6 +42,10 @@ public class ChannelAdminRepository {
         return store.findProfile(channelProfileId);
     }
 
+    Optional<ChannelOutboundProfileSnapshot> findOutboundProfileSnapshot(String channelProfileId) {
+        return store.findOutboundProfileSnapshot(channelProfileId);
+    }
+
     public List<ChannelGatewayProfile> listProfilesByProvider(String providerType) {
         return store.listProfilesByProvider(providerType);
     }

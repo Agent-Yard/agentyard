@@ -34,6 +34,28 @@ paths:
           description: Internal auth is missing or invalid
         '404':
           description: Channel profile not found
+  /internal/channel-outbound/deliveries:
+    post:
+      summary: Execute a channel outbound delivery
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChannelOutboundDeliveryRequest'
+      responses:
+        '200':
+          description: Created delivery with final single-attempt status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseChannelOutboundDelivery'
+        '400':
+          description: Outbound delivery payload is invalid
+        '401':
+          description: Internal auth is missing or invalid
+        '404':
+          description: Channel profile not found
   /internal/channel-admin/profiles:
     get:
       summary: List channel profiles
@@ -485,7 +507,7 @@ components:
       enum: [RECEIVED, REJECTED]
     ChannelOutboundDeliveryStatus:
       type: string
-      enum: [PENDING, SENT, FAILED]
+      enum: [PENDING, SENDING, SENT, FAILED]
     ChannelProviderJobScheduleType:
       type: string
       enum: [INTERVAL, CRON, MANUAL]
@@ -1028,6 +1050,7 @@ components:
         - deliveryId
         - channelProfileId
         - providerType
+        - idempotencyKey
         - payload
         - status
         - attemptCount
@@ -1049,6 +1072,11 @@ components:
         externalConversationId:
           type: string
           nullable: true
+        idempotencyKey:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: '^[A-Za-z0-9._:-]+$'
         payload:
           type: object
           additionalProperties: true
@@ -1066,6 +1094,116 @@ components:
         updatedAt:
           type: string
           format: date-time
+    ChannelOutboundDeliveryRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - channelProfileId
+        - assistantId
+        - externalConversationId
+        - messageBlock
+      properties:
+        channelProfileId:
+          type: string
+        assistantId:
+          type: string
+        externalConversationId:
+          type: string
+        sessionId:
+          type: string
+          nullable: true
+        sessionMessageId:
+          type: string
+          nullable: true
+        messageBlock:
+          type: object
+          additionalProperties: true
+        traceContext:
+          $ref: '#/components/schemas/NormalizedChannelTraceContext'
+          nullable: true
+    ChannelOutboundResolvedTemplate:
+      type: object
+      required:
+        - messageType
+        - messageVersion
+        - externalTemplateId
+      properties:
+        messageType:
+          type: string
+        messageSubtype:
+          type: string
+          nullable: true
+        messageVersion:
+          type: string
+        externalTemplateId:
+          type: string
+        externalTemplateVersion:
+          type: string
+          nullable: true
+    ChannelOutboundPayload:
+      type: object
+      required:
+        - externalConversationId
+        - messageBlock
+      properties:
+        externalConversationId:
+          type: string
+        messageBlock:
+          type: object
+          additionalProperties: true
+        resolvedTemplate:
+          $ref: '#/components/schemas/ChannelOutboundResolvedTemplate'
+          nullable: true
+    ChannelOutboundRequest:
+      type: object
+      required:
+        - providerType
+        - channelProfileId
+        - config
+        - idempotencyKey
+        - traceContext
+        - payload
+      properties:
+        providerType:
+          type: string
+        channelProfileId:
+          type: string
+        config:
+          type: object
+          additionalProperties: true
+        externalSecretRef:
+          type: string
+          nullable: true
+          maxLength: 512
+        idempotencyKey:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: '^[A-Za-z0-9._:-]+$'
+        traceContext:
+          $ref: '#/components/schemas/NormalizedChannelTraceContext'
+        payload:
+          $ref: '#/components/schemas/ChannelOutboundPayload'
+    ChannelOutboundResponseStatus:
+      type: string
+      enum: [SENT, ACCEPTED]
+    ChannelOutboundResponse:
+      type: object
+      required:
+        - status
+        - retryable
+        - metadata
+      properties:
+        status:
+          $ref: '#/components/schemas/ChannelOutboundResponseStatus'
+        externalMessageId:
+          type: string
+          nullable: true
+        retryable:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties: true
     ChannelProviderJobScheduleConfig:
       type: object
       required:
@@ -1280,6 +1418,16 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ChannelOutboundDelivery'
+        timestamp:
+          type: string
+          format: date-time
+    ApiResponseChannelOutboundDelivery:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/ChannelOutboundDelivery'
         timestamp:
           type: string
           format: date-time

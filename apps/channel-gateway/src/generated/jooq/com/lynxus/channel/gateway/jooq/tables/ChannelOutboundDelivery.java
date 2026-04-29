@@ -118,6 +118,11 @@ public class ChannelOutboundDelivery extends TableImpl<ChannelOutboundDeliveryRe
      */
     public final TableField<ChannelOutboundDeliveryRecord, OffsetDateTime> UPDATED_AT = createField(DSL.name("updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false), this, "");
 
+    /**
+     * The column <code>public.channel_outbound_delivery.idempotency_key</code>.
+     */
+    public final TableField<ChannelOutboundDeliveryRecord, String> IDEMPOTENCY_KEY = createField(DSL.name("idempotency_key"), SQLDataType.VARCHAR(128).nullable(false), this, "");
+
     private ChannelOutboundDelivery(Name alias, Table<ChannelOutboundDeliveryRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -156,7 +161,7 @@ public class ChannelOutboundDelivery extends TableImpl<ChannelOutboundDeliveryRe
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_CHANNEL_OUTBOUND_PROFILE_CREATED);
+        return Arrays.asList(Indexes.IDX_CHANNEL_OUTBOUND_PROFILE_CREATED, Indexes.UK_CHANNEL_OUTBOUND_DELIVERY_IDEMPOTENCY_KEY);
     }
 
     @Override

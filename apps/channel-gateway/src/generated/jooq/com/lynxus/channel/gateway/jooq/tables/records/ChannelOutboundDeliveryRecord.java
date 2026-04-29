@@ -195,6 +195,20 @@ public class ChannelOutboundDeliveryRecord extends UpdatableRecordImpl<ChannelOu
         return (OffsetDateTime) get(11);
     }
 
+    /**
+     * Setter for <code>public.channel_outbound_delivery.idempotency_key</code>.
+     */
+    public void setIdempotencyKey(String value) {
+        set(12, value);
+    }
+
+    /**
+     * Getter for <code>public.channel_outbound_delivery.idempotency_key</code>.
+     */
+    public String getIdempotencyKey() {
+        return (String) get(12);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -218,7 +232,7 @@ public class ChannelOutboundDeliveryRecord extends UpdatableRecordImpl<ChannelOu
     /**
      * Create a detached, initialised ChannelOutboundDeliveryRecord
      */
-    public ChannelOutboundDeliveryRecord(String deliveryId, String channelProfileId, String providerType, String sessionId, String sessionMessageId, String externalConversationId, JSONB payload, String status, Integer attemptCount, String lastError, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+    public ChannelOutboundDeliveryRecord(String deliveryId, String channelProfileId, String providerType, String sessionId, String sessionMessageId, String externalConversationId, JSONB payload, String status, Integer attemptCount, String lastError, OffsetDateTime createdAt, OffsetDateTime updatedAt, String idempotencyKey) {
         super(ChannelOutboundDelivery.CHANNEL_OUTBOUND_DELIVERY);
 
         setDeliveryId(deliveryId);
@@ -233,6 +247,7 @@ public class ChannelOutboundDeliveryRecord extends UpdatableRecordImpl<ChannelOu
         setLastError(lastError);
         setCreatedAt(createdAt);
         setUpdatedAt(updatedAt);
+        setIdempotencyKey(idempotencyKey);
         resetChangedOnNotNull();
     }
 }

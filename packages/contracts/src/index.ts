@@ -34,10 +34,11 @@ export type IntegrationAccountCredentialStatus =
 export type ChannelProfileStatus = 'ACTIVE' | 'INACTIVE';
 export type ChannelConversationBindingStatus = 'ACTIVE' | 'ARCHIVED';
 export type ChannelInboundEventStatus = 'RECEIVED' | 'REJECTED';
-export type ChannelOutboundDeliveryStatus = 'PENDING' | 'SENT' | 'FAILED';
+export type ChannelOutboundDeliveryStatus = 'PENDING' | 'SENDING' | 'SENT' | 'FAILED';
 export type ChannelProviderJobScheduleType = 'INTERVAL' | 'CRON' | 'MANUAL';
 export type ChannelProviderJobStatus = 'ACTIVE' | 'RUNNING' | 'PAUSED' | 'DISABLED';
 export type ChannelProviderJobRunStatus = 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'TIMED_OUT';
+export type ChannelOutboundResponseStatus = 'SENT' | 'ACCEPTED';
 export type ChannelRunJobResponseStatus = 'SUCCEEDED' | 'NOOP';
 export type NormalizedChannelEventType =
   | 'MESSAGE_RECEIVED'
@@ -463,12 +464,54 @@ export interface ChannelOutboundDelivery {
   sessionId: string | null;
   sessionMessageId: string | null;
   externalConversationId: string | null;
+  idempotencyKey: string;
   payload: Record<string, unknown>;
   status: ChannelOutboundDeliveryStatus;
   attemptCount: number;
   lastError: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ChannelOutboundDeliveryRequest {
+  channelProfileId: string;
+  assistantId: string;
+  externalConversationId: string;
+  sessionId?: string | null;
+  sessionMessageId?: string | null;
+  messageBlock: Record<string, unknown>;
+  traceContext?: NormalizedChannelTraceContext | null;
+}
+
+export interface ChannelOutboundResolvedTemplate {
+  messageType: string;
+  messageSubtype?: string | null;
+  messageVersion: string;
+  externalTemplateId: string;
+  externalTemplateVersion?: string | null;
+}
+
+export interface ChannelOutboundPayload {
+  externalConversationId: string;
+  messageBlock: Record<string, unknown>;
+  resolvedTemplate?: ChannelOutboundResolvedTemplate | null;
+}
+
+export interface ChannelOutboundRequest {
+  providerType: string;
+  channelProfileId: string;
+  config: Record<string, unknown>;
+  externalSecretRef?: string | null;
+  idempotencyKey: string;
+  traceContext: NormalizedChannelTraceContext;
+  payload: ChannelOutboundPayload;
+}
+
+export interface ChannelOutboundResponse {
+  status: ChannelOutboundResponseStatus;
+  externalMessageId?: string | null;
+  retryable: boolean;
+  metadata: Record<string, unknown>;
 }
 
 export interface ChannelTemplateBindingKey {

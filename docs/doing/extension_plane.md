@@ -13,7 +13,7 @@
 ## Current Position
 
 - Current slice: Slice 9 - Normalized event + provider job + outbound/template binding.
-- Current subtask: Slice 9D1 external template binding CRUD + resolver foundation. Outbound delivery execution/failure foundation and schema-driven Web pages remain later subtasks.
+- Current subtask: Slice 9D2 outbound delivery execution/failure foundation. Schema-driven Web pages remain a later Slice 10 subtask.
 - Main-agent role: orchestration, integration decisions, ledger maintenance, review of worker/checker output.
 - Implementation flow: worker implements each bounded subtask, independent checker reviews read-only, then main agent decides follow-up.
 
@@ -90,9 +90,60 @@
 - Decision: Slice 9C will implement provider job execution foundation: due-job scanner, manual run endpoint, Redis per-job lock, DB claim/status state machine, run row creation/completion/failure/timeout recovery, remote `runJob` invocation with descriptor headers and generated idempotency key, and ingestion of normalized events returned by the provider. It will not implement outbound delivery conversion, template binding CRUD/resolution, schema-driven Web pages, credential refresh/rotate/status sync jobs, scheduled outbound retry, Core -> provider mapping/status API, or Slice 11 artifacts.
 - Decision: Slice 9D will implement channel runtime external template binding CRUD/resolution and outbound delivery execution/failure foundation. It will keep outbound delivery single-attempt/no scheduled retry, snapshot canonical message block plus resolved external template reference, and route remote providers through manifest `sendOutbound`. It will not add schema-driven Web pages, provider-native template body parsing, scheduled outbound retry, provider job credential refresh/status sync, Core -> provider mapping/status API, or Slice 11 artifacts.
 - Decision: Split Slice 9D into 9D1 template binding CRUD/resolver and 9D2 outbound execution/failure state. 9D1 will add `channel_profile_template_binding`, Web-facing/internal CRUD contracts, thin Web service methods, secret-safe variable schema validation, and a resolver for assistant/profile/message type tuple. It will not execute outbound deliveries or call provider `sendOutbound`; that remains 9D2.
+- Decision: Slice 9D2 will add outbound delivery execution/failure foundation. It should create a single-attempt delivery from a canonical session message block, resolve and snapshot the external template binding, validate message block variables against the binding `variableSchema`, call remote provider `sendOutbound` with descriptor-level headers and delivery idempotency key, and persist `PENDING` / `SENDING` / `SENT` / `FAILED` state plus attempt count and sanitized error. It must not add scheduled retry, provider job coupling, provider-native template body parsing, Core -> provider mapping/status API, schema-driven Web pages, credential refresh/status sync, or Slice 11 artifacts.
+- Decision: Slice 9D2 outbound execution entry point is `POST /internal/channel-outbound/deliveries`. It is channel-gateway internal, not Web-facing channel-admin, because session/runtime callers need an execution boundary while Web-facing channel-admin remains read/list only for outbound deliveries in this slice.
 
 ## Worker / Checker Notes
 
+- Worker 9D2 implemented outbound delivery execution/failure foundation.
+  - Added channel-gateway-owned internal execution path `POST /internal/channel-outbound/deliveries` with request shape `channelProfileId`, `assistantId`, `externalConversationId`, optional `sessionId` / `sessionMessageId`, canonical `messageBlock`, and optional trace context. No Web-facing create/send endpoint was added.
+  - Added `channel_outbound_delivery.idempotency_key`, `SENDING` status, regenerated channel-gateway jOOQ, and aligned JVM/TS/OpenAPI read/runtime DTOs. Existing Web-facing channel-admin outbound delivery remains list/read only and exposes no secret material.
+  - Implemented single-attempt delivery execution: create `PENDING`, resolve CARD template binding, validate CARD `data` against binding `variableSchema`, update to `SENDING` with `attempt_count = 1` immediately before provider invocation, then persist `SENT` on `SENT` / `ACCEPTED` provider response or `FAILED` with sanitized error.
+  - Remote provider `sendOutbound` uses registry descriptor `registrationId`, `baseUrl`, and manifest `endpoints.sendOutbound`, descriptor-level headers from `LynxusExtensionHttp.descriptorLevelHeaders(...)`, `DescriptorType.CHANNEL_PROVIDER`, internal bearer auth, generated request id, delivery idempotency key in header/body, profile config, optional runtime profile `externalSecretRef`, and canonical payload `{externalConversationId, messageBlock, resolvedTemplate?}`.
+  - Added gateway-native adapter boundary and moved Feishu descriptor ownership to a gateway-native adapter. Feishu outbound does not fake success; it returns a clear unsupported failure because no Feishu outbound API client is configured.
+  - Added outbound request/body rejection for provider-native template fields and credential-reference fields before payload persistence, and sanitized persisted errors so provider raw bodies, authorization tokens, external secret refs, and credential material are not saved.
+  - Explicitly did not add scheduled outbound retry, Redis lock usage, provider job coupling, credential refresh/rotate/status sync jobs, Core -> provider mapping/status API, inbound verification status, schema-driven Web pages, Docker/compose/Helm/sample repo/smoke scripts/runbooks, or Slice 11 artifacts.
+  - Verification:
+    - `./gradlew :apps:channel-gateway:generateJooq` passed.
+    - `./gradlew :apps:channel-gateway:test --tests '*Outbound*' --tests '*TemplateBinding*' --tests '*ChannelAdmin*' --tests '*InternalAuth*'` passed.
+    - `./gradlew :apps:api:test --tests '*ChannelGatewayClient*' --tests '*ChannelAdmin*' --tests '*ApiAuthorization*'` passed.
+    - `pnpm --filter @lynxus/web test -- api` passed (`18` tests).
+    - `ruby -e 'require "yaml"; Dir["packages/contracts/openapi/*.yaml"].each { |path| YAML.load_file(path) }; puts "openapi yaml ok"'` passed.
+    - Old channel account naming guardrail scan shows only intentional negative authorization tests for removed `/channel-admin/accounts` paths.
+    - `externalSecretRef` guardrail scan shows only internal runtime profile/account snapshot boundaries, runtime invocation envelopes for `sendOutbound` / `runJob`, credential lifecycle internals, and explicit sanitization/rejection tests; control-plane OpenAPI and Web-facing code still do not expose raw secret refs.
+    - Scope guardrail scan found only ledger statements for excluded schema-driven/Slice 11 work and the new outbound no-retry/no-Redis structural test; no scheduled outbound retry, outbound Redis lock, provider job coupling, credential refresh/status sync job, Core -> provider mapping/status API, inbound verification status, schema-driven Web page, or Slice 11 artifact was added.
+    - `git diff --check` passed.
+  - Residual risks:
+    - Gateway-native Feishu outbound remains intentionally unsupported until a real Feishu outbound API/client and credential resolver path are designed.
+- Checker 9D2 verdict: fail.
+  - Blocking: internal outbound delivery request schema and controller boundary accepted extra top-level fields, so callers could include forbidden fields such as `externalSecretRef`, `templateKey`, or provider-native payload keys even though the DTO ignored them.
+  - Blocking: non-`CARD` `messageBlock.type` values were forwarded as canonical payload without validating the type against platform session block types or checking minimal block shape.
+  - Checker confirmed as OK: internal-only endpoint decision, `idempotency_key` migration and generated jOOQ, single-attempt state machine, CARD binding resolution, remote descriptor send path, and no session-runtime/API credential coupling. Checker treated missing session-runtime wiring as acceptable for 9D2 foundation but a follow-up before a full outbound product loop.
+  - Checker verification:
+    - `./gradlew :apps:channel-gateway:test --tests '*Outbound*' --tests '*TemplateBinding*' --tests '*ChannelAdmin*' --tests '*InternalAuth*' --rerun-tasks` passed.
+    - `./gradlew :apps:channel-gateway:verifyJooqGenerated` passed.
+    - `./gradlew :apps:api:test --tests '*ChannelGatewayClient*' --tests '*ChannelAdmin*' --tests '*ApiAuthorization*' --rerun-tasks` passed.
+    - `pnpm --filter @lynxus/web test -- api` passed.
+    - OpenAPI YAML parse and `git diff --check` passed.
+- Main 9D2 repair:
+  - Changed `InternalChannelOutboundController` to bind raw JSON, reject every top-level field outside the internal request whitelist, require `messageBlock` to be an object, then convert to `ChannelOutboundDeliveryRequest`.
+  - Marked internal OpenAPI `ChannelOutboundDeliveryRequest` as `additionalProperties: false`.
+  - Added canonical non-`CARD` block validation for `TEXT`, `IMAGE`, and `RICH_TEXT`, rejecting unknown block types or malformed canonical blocks before provider invocation.
+  - Added controller/service regressions for top-level forbidden fields, non-object messageBlock, unknown block type, and malformed TEXT block.
+  - Verification:
+    - Initial focused channel-gateway test run exposed a compile error in the CARD switch return, fixed immediately.
+    - `./gradlew :apps:channel-gateway:test --tests '*Outbound*' --tests '*TemplateBinding*' --tests '*ChannelAdmin*' --tests '*InternalAuth*'` passed after the fix.
+- Checker 9D2 repair verdict: pass.
+  - Confirmed internal outbound request contract is closed with `additionalProperties: false`, controller raw-body whitelist rejection, and controller regressions for top-level `externalSecretRef`, `templateKey`, and non-object `messageBlock` before service invocation.
+  - Confirmed non-`CARD` block validation now gates provider invocation for `TEXT`, `IMAGE`, and `RICH_TEXT`; unknown type and malformed `TEXT` fail locally with `attemptCount = 0` and no sender call.
+  - Confirmed Web/control-plane remains list/read only for outbound deliveries and remote `sendOutbound` still uses descriptor headers plus delivery idempotency.
+  - Checker verification:
+    - `./gradlew :apps:channel-gateway:test --tests '*Outbound*' --tests '*TemplateBinding*' --tests '*ChannelAdmin*' --tests '*InternalAuth*' --rerun-tasks` passed.
+    - OpenAPI YAML parse passed.
+    - `git diff --check` passed.
+  - Residual risks:
+    - Session-runtime wiring to `POST /internal/channel-outbound/deliveries` remains a product-loop follow-up.
+    - Explicit malformed `IMAGE` / `RICH_TEXT` regressions can be added when wiring the full outbound product loop; current implementation validates them but focused regression only covers malformed `TEXT`.
 - Worker 9D1 completed external template binding CRUD + resolver foundation.
   - Added channel-gateway-owned `channel_profile_template_binding` with natural key `channel_profile_id + assistant_id + message_type + message_subtype + message_version`, soft-disable via `enabled = false`, revision increments, timestamps, external template id/version, variable schema, display name, and external edit URL. It stores no provider-native template body, card JSON, or provider-native payload.
   - Regenerated committed channel-gateway jOOQ sources for the new table.
