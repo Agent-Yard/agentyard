@@ -1,7 +1,7 @@
 package com.lynxus.channel.gateway.connector.feishu;
 
 import com.lynxus.channel.gateway.channel.ChannelAdminService;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelProfile;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEventStatus;
 import java.nio.charset.StandardCharsets;
@@ -32,7 +32,7 @@ public class FeishuWebhookService {
             readNestedString(body, "header", "app_id"),
             readNestedString(body, "event", "app_id")
         );
-        ChannelProfile profile = channelAdminService.findProfileByProviderAppId(PROVIDER, appId);
+        ChannelGatewayProfile profile = channelAdminService.findProfileByProviderAppId(PROVIDER, appId);
         validateVerificationToken(profile, body);
 
         if ("url_verification".equals(readString(body.get("type")))) {
@@ -78,7 +78,7 @@ public class FeishuWebhookService {
         );
     }
 
-    private void validateVerificationToken(ChannelProfile profile, Map<String, Object> payload) {
+    private void validateVerificationToken(ChannelGatewayProfile profile, Map<String, Object> payload) {
         Object configuredToken = profile.config().get("verificationToken");
         String expectedToken = configuredToken == null ? null : String.valueOf(configuredToken).trim();
         String actualToken = readString(payload.get("token"));

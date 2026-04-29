@@ -292,11 +292,63 @@ export interface PlatformEventPage {
 export interface ChannelProfile {
   id: string;
   providerType: string;
-  name: string;
+  displayName: string;
   status: ChannelProfileStatus;
+  inboundEnabled: boolean;
   config: Record<string, unknown>;
+  assistantBinding: ChannelAssistantBinding | null;
+  accountId: string | null;
+  hasExternalSecretRef: boolean;
+  revision: number;
+  integrationAccount: ChannelProfileIntegrationAccountSummary | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ChannelGatewayProfile {
+  id: string;
+  providerType: string;
+  displayName: string;
+  status: ChannelProfileStatus;
+  inboundEnabled: boolean;
+  config: Record<string, unknown>;
+  assistantBinding: ChannelAssistantBinding | null;
+  accountId: string | null;
+  hasExternalSecretRef: boolean;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChannelAssistantBinding {
+  assistantId: string | null;
+  scenarioId: string | null;
+}
+
+export type IntegrationAccountAvailabilityBlock =
+  | 'SUBJECT_MISMATCH'
+  | 'ACCOUNT_STATUS_NOT_ENABLED'
+  | 'CREDENTIAL_REVOKE_FAILED'
+  | 'CREDENTIAL_REVOKED';
+
+export type IntegrationAccountAvailabilityRisk =
+  | 'CREDENTIAL_NOT_CONFIGURED'
+  | 'CREDENTIAL_VALIDATION_FAILED'
+  | 'CREDENTIAL_ROTATION_REQUIRED';
+
+export interface ChannelProfileIntegrationAccountSummary {
+  id: string;
+  name: string;
+  status: IntegrationAccountStatus;
+  credentialStatus: IntegrationAccountCredentialStatus;
+  credentialConfigured: boolean;
+  availabilityHardBlock: IntegrationAccountAvailabilityBlock | null;
+  risks: IntegrationAccountAvailabilityRisk[];
+}
+
+export interface ChannelProfileAccountSnapshot {
+  accountId?: string | null;
+  externalSecretRef?: string | null;
 }
 
 export interface ChannelConversationBinding {
@@ -346,15 +398,44 @@ export interface ChannelOutboundDelivery {
 
 export interface CreateChannelProfilePayload {
   providerType: string;
-  name: string;
+  displayName: string;
   status?: ChannelProfileStatus | null;
+  inboundEnabled?: boolean | null;
   config: Record<string, unknown>;
+  assistantBinding?: ChannelAssistantBinding | null;
+  integrationAccountId?: string | null;
 }
 
 export interface UpdateChannelProfilePayload {
-  name: string;
+  providerType: string;
+  displayName: string;
   status?: ChannelProfileStatus | null;
+  inboundEnabled?: boolean | null;
   config: Record<string, unknown>;
+  assistantBinding?: ChannelAssistantBinding | null;
+  integrationAccountId?: string | null;
+  expectedRevision: number;
+}
+
+export interface CreateChannelProfileInternalPayload {
+  providerType: string;
+  displayName: string;
+  status?: ChannelProfileStatus | null;
+  inboundEnabled?: boolean | null;
+  config: Record<string, unknown>;
+  assistantBinding?: ChannelAssistantBinding | null;
+  accountSnapshot?: ChannelProfileAccountSnapshot | null;
+}
+
+export interface UpdateChannelProfileInternalPayload {
+  providerType: string;
+  displayName: string;
+  status?: ChannelProfileStatus | null;
+  inboundEnabled?: boolean | null;
+  config: Record<string, unknown>;
+  assistantBinding?: ChannelAssistantBinding | null;
+  accountSnapshot?: ChannelProfileAccountSnapshot | null;
+  expectedRevision: number;
 }
 
 export interface SessionRuntimeStreamEvent<Detail = unknown> {

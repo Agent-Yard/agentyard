@@ -1,8 +1,8 @@
 package com.lynxus.channel.gateway.channel;
 
 import com.lynxus.channel.gateway.shared.ApiResponse;
-import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileRequest;
-import com.lynxus.contracts.channel.ChannelContracts.UpdateChannelProfileRequest;
+import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileInternalRequest;
+import com.lynxus.contracts.channel.ChannelContracts.UpdateChannelProfileInternalRequest;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -26,7 +26,7 @@ public class InternalChannelAdminController {
     }
 
     @PostMapping
-    public ApiResponse<?> createProfile(@RequestBody CreateChannelProfileRequest request) {
+    public ApiResponse<?> createProfile(@RequestBody CreateChannelProfileInternalRequest request) {
         return ApiResponse.ok(channelAdminService.createProfile(request));
     }
 
@@ -36,7 +36,7 @@ public class InternalChannelAdminController {
     }
 
     @PutMapping("/{channelProfileId}")
-    public ApiResponse<?> updateProfile(@PathVariable String channelProfileId, @RequestBody UpdateChannelProfileRequest request) {
+    public ApiResponse<?> updateProfile(@PathVariable String channelProfileId, @RequestBody UpdateChannelProfileInternalRequest request) {
         return ApiResponse.ok(channelAdminService.updateProfile(channelProfileId, request));
     }
 

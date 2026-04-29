@@ -1,12 +1,14 @@
 package com.lynxus.channel.gateway.channel;
 
-import com.lynxus.contracts.channel.ChannelContracts.ChannelProfile;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileAccountSnapshot;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileStatus;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
-import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileRequest;
-import com.lynxus.contracts.channel.ChannelContracts.UpdateChannelProfileRequest;
+import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileInternalRequest;
+import com.lynxus.contracts.channel.ChannelContracts.UpdateChannelProfileInternalRequest;
+import com.lynxus.channel.gateway.shared.ConflictException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -22,42 +24,62 @@ public class ChannelAdminService {
         this.repository = repository;
     }
 
-    public List<ChannelProfile> listProfiles() {
+    public List<ChannelGatewayProfile> listProfiles() {
         return repository.listProfiles();
     }
 
-    public ChannelProfile createProfile(CreateChannelProfileRequest request) {
+    public ChannelGatewayProfile createProfile(CreateChannelProfileInternalRequest request) {
         Instant now = Instant.now();
-        ChannelProfile profile = new ChannelProfile(
+        ChannelProfileAccountSnapshot accountSnapshot = request.accountSnapshot();
+        ChannelGatewayProfile profile = new ChannelGatewayProfile(
             nextId("channel-profile"),
             requireProviderType(request.providerType()),
-            requireText(request.name(), "channelProfile.name"),
+            requireText(request.displayName(), "channelProfile.displayName"),
             request.status() == null ? ChannelProfileStatus.ACTIVE : request.status(),
+            request.inboundEnabled() == null || request.inboundEnabled(),
             request.config() == null ? Map.of() : request.config(),
+            request.assistantBinding(),
+            accountSnapshot == null ? null : normalizeOptionalText(accountSnapshot.accountId()),
+            accountSnapshot != null && hasText(accountSnapshot.externalSecretRef()),
+            1,
             now,
             now
         );
-        repository.saveProfile(profile);
+        repository.createProfile(profile, accountSnapshot == null ? null : normalizeOptionalText(accountSnapshot.externalSecretRef()));
         return profile;
     }
 
-    public ChannelProfile getProfile(String channelProfileId) {
+    public ChannelGatewayProfile getProfile(String channelProfileId) {
         return repository.findProfile(channelProfileId)
             .orElseThrow(() -> new NoSuchElementException("channel profile not found: " + channelProfileId));
     }
 
-    public ChannelProfile updateProfile(String channelProfileId, UpdateChannelProfileRequest request) {
-        ChannelProfile existing = getProfile(channelProfileId);
-        ChannelProfile updated = new ChannelProfile(
+    public ChannelGatewayProfile updateProfile(String channelProfileId, UpdateChannelProfileInternalRequest request) {
+        ChannelGatewayProfile existing = getProfile(channelProfileId);
+        long expectedRevision = requireExpectedRevision(request.expectedRevision());
+        ChannelProfileAccountSnapshot accountSnapshot = request.accountSnapshot();
+        ChannelGatewayProfile updated = new ChannelGatewayProfile(
             existing.id(),
-            existing.providerType(),
-            requireText(request.name(), "channelProfile.name"),
+            requireProviderType(request.providerType()),
+            requireText(request.displayName(), "channelProfile.displayName"),
             request.status() == null ? existing.status() : request.status(),
+            request.inboundEnabled() == null ? existing.inboundEnabled() : request.inboundEnabled(),
             request.config() == null ? existing.config() : request.config(),
+            request.assistantBinding() == null ? existing.assistantBinding() : request.assistantBinding(),
+            accountSnapshot == null ? null : normalizeOptionalText(accountSnapshot.accountId()),
+            accountSnapshot != null && hasText(accountSnapshot.externalSecretRef()),
+            existing.revision() + 1,
             existing.createdAt(),
             Instant.now()
         );
-        repository.saveProfile(updated);
+        boolean updatedRow = repository.updateProfile(
+            updated,
+            expectedRevision,
+            accountSnapshot == null ? null : normalizeOptionalText(accountSnapshot.externalSecretRef())
+        );
+        if (!updatedRow) {
+            throw new ConflictException("channel profile revision conflict: " + channelProfileId);
+        }
         return updated;
     }
 
@@ -76,7 +98,7 @@ public class ChannelAdminService {
         return repository.listOutboundDeliveries(channelProfileId);
     }
 
-    public ChannelProfile findProfileByProviderAppId(String providerType, String appId) {
+    public ChannelGatewayProfile findProfileByProviderAppId(String providerType, String appId) {
         String normalizedAppId = requireText(appId, "channelProfile.config.appId");
         return repository.listProfilesByProvider(providerType).stream()
             .filter(profile -> normalizedAppId.equals(String.valueOf(profile.config().get("appId"))))
@@ -108,5 +130,20 @@ public class ChannelAdminService {
             throw new IllegalArgumentException(field + " is required");
         }
         return value.trim();
+    }
+
+    private static long requireExpectedRevision(Long expectedRevision) {
+        if (expectedRevision == null || expectedRevision < 1) {
+            throw new IllegalArgumentException("channelProfile.expectedRevision is required");
+        }
+        return expectedRevision;
+    }
+
+    private static String normalizeOptionalText(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

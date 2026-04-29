@@ -3,9 +3,11 @@ package com.lynxus.channel.gateway.channel;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lynxus.channel.gateway.testing.EmbeddedPostgresTestDatabase;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelProfile;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelAssistantBinding;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileStatus;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBindingStatus;
@@ -46,12 +48,17 @@ class ChannelAdminRepositoryTest {
     @Test
     void shouldPersistProfilesBindingsInboundEventsAndOutboundDeliveries() {
         Instant now = Instant.parse("2026-04-23T00:00:00Z");
-        ChannelProfile profile = new ChannelProfile(
+        ChannelGatewayProfile profile = new ChannelGatewayProfile(
             "channel-profile-1",
             "feishu",
             "飞书客服机器人",
             ChannelProfileStatus.ACTIVE,
+            true,
             Map.of("appId", "cli_xxx"),
+            new ChannelAssistantBinding("assistant-1", null),
+            "integration-account-1",
+            true,
+            1,
             now,
             now
         );
@@ -98,13 +105,17 @@ class ChannelAdminRepositoryTest {
             now
         );
 
-        repository.saveProfile(profile);
+        repository.createProfile(profile, "vault://opaque-ref");
         repository.saveBinding(binding);
         repository.saveInboundEvent(inboundEvent);
         repository.saveOutboundDelivery(outboundDelivery);
 
         assertEquals(1, repository.listProfiles().size());
-        assertEquals("飞书客服机器人", repository.findProfile(profile.id()).orElseThrow().name());
+        ChannelGatewayProfile persisted = repository.findProfile(profile.id()).orElseThrow();
+        assertEquals("飞书客服机器人", persisted.displayName());
+        assertEquals("integration-account-1", persisted.accountId());
+        assertTrue(persisted.hasExternalSecretRef());
+        assertEquals(1, persisted.revision());
         assertEquals(1, repository.listBindings(profile.id()).size());
         assertEquals(1, repository.listInboundEvents(profile.id()).size());
         assertEquals(1, repository.listOutboundDeliveries(profile.id()).size());
@@ -114,15 +125,20 @@ class ChannelAdminRepositoryTest {
     @Test
     void shouldEnforceInboundEventDedupKeyUniqueness() {
         Instant now = Instant.parse("2026-04-23T00:00:00Z");
-        repository.saveProfile(new ChannelProfile(
+        repository.createProfile(new ChannelGatewayProfile(
             "channel-profile-1",
             "feishu",
             "飞书客服机器人",
             ChannelProfileStatus.ACTIVE,
+            true,
             Map.of("appId", "cli_xxx"),
+            null,
+            null,
+            false,
+            1,
             now,
             now
-        ));
+        ), null);
         repository.saveInboundEvent(new ChannelInboundEvent(
             "channel-inbound-event-1",
             "channel-profile-1",

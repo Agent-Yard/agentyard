@@ -179,7 +179,13 @@ class ApiAuthorizationTest {
                 "feishu",
                 "飞书客服机器人",
                 ChannelContracts.ChannelProfileStatus.ACTIVE,
+                true,
                 java.util.Map.of("appId", "cli_xxx"),
+                null,
+                null,
+                false,
+                1,
+                null,
                 Instant.parse("2026-04-01T00:00:00Z"),
                 Instant.parse("2026-04-01T00:00:00Z")
             ));
@@ -192,8 +198,9 @@ class ApiAuthorizationTest {
                     .content("""
                         {
                           "providerType": "feishu",
-                          "name": "飞书客服机器人",
+                          "displayName": "飞书客服机器人",
                           "status": "ACTIVE",
+                          "inboundEnabled": true,
                           "config": {
                             "appId": "cli_xxx"
                           }

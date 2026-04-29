@@ -1,11 +1,11 @@
 package com.lynxus.platform.channel;
 
-import com.lynxus.contracts.channel.ChannelContracts.ChannelProfile;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
-import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileRequest;
-import com.lynxus.contracts.channel.ChannelContracts.UpdateChannelProfileRequest;
+import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileInternalRequest;
+import com.lynxus.contracts.channel.ChannelContracts.UpdateChannelProfileInternalRequest;
 import com.lynxus.platform.shared.ConflictException;
 import com.lynxus.platform.shared.DownstreamServiceException;
 import com.lynxus.platform.shared.logging.PlatformLogContext;
@@ -24,7 +24,7 @@ import tools.jackson.databind.ObjectMapper;
 
 @Component
 public class ChannelGatewayClient {
-    private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelProfile>>> CHANNEL_PROFILE_LIST = new ParameterizedTypeReference<>() {
+    private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelGatewayProfile>>> CHANNEL_PROFILE_LIST = new ParameterizedTypeReference<>() {
     };
     private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelConversationBinding>>> CHANNEL_BINDING_LIST = new ParameterizedTypeReference<>() {
     };
@@ -54,36 +54,36 @@ public class ChannelGatewayClient {
             .build();
     }
 
-    public List<ChannelProfile> listProfiles() {
+    public List<ChannelGatewayProfile> listProfiles() {
         return invoke(() -> body(restClient.get()
             .uri("/internal/channel-admin/profiles")
             .retrieve()
             .body(CHANNEL_PROFILE_LIST)));
     }
 
-    public ChannelProfile createProfile(CreateChannelProfileRequest request) {
+    public ChannelGatewayProfile createProfile(CreateChannelProfileInternalRequest request) {
         return invoke(() -> body(restClient.post()
             .uri("/internal/channel-admin/profiles")
             .body(request)
             .retrieve()
-            .body(new ParameterizedTypeReference<ApiEnvelope<ChannelProfile>>() {
+            .body(new ParameterizedTypeReference<ApiEnvelope<ChannelGatewayProfile>>() {
             })));
     }
 
-    public ChannelProfile getProfile(String channelProfileId) {
+    public ChannelGatewayProfile getProfile(String channelProfileId) {
         return invoke(() -> body(restClient.get()
             .uri("/internal/channel-admin/profiles/{channelProfileId}", channelProfileId)
             .retrieve()
-            .body(new ParameterizedTypeReference<ApiEnvelope<ChannelProfile>>() {
+            .body(new ParameterizedTypeReference<ApiEnvelope<ChannelGatewayProfile>>() {
             })));
     }
 
-    public ChannelProfile updateProfile(String channelProfileId, UpdateChannelProfileRequest request) {
+    public ChannelGatewayProfile updateProfile(String channelProfileId, UpdateChannelProfileInternalRequest request) {
         return invoke(() -> body(restClient.put()
             .uri("/internal/channel-admin/profiles/{channelProfileId}", channelProfileId)
             .body(request)
             .retrieve()
-            .body(new ParameterizedTypeReference<ApiEnvelope<ChannelProfile>>() {
+            .body(new ParameterizedTypeReference<ApiEnvelope<ChannelGatewayProfile>>() {
             })));
     }
 

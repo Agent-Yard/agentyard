@@ -1,9 +1,14 @@
 create table channel_profile (
     id varchar(64) primary key,
     provider_type varchar(64) not null,
-    name varchar(255) not null,
+    display_name varchar(255) not null,
     status varchar(32) not null,
+    inbound_enabled boolean not null,
     config jsonb not null,
+    assistant_binding jsonb not null,
+    integration_account_id varchar(128),
+    external_secret_ref varchar(512),
+    revision bigint not null,
     created_at timestamp with time zone not null,
     updated_at timestamp with time zone not null
 );

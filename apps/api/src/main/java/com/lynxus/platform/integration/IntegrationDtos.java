@@ -68,6 +68,20 @@ public final class IntegrationDtos {
         }
     }
 
+    public record IntegrationAccountRuntimeSnapshot(
+        String accountId,
+        String externalSecretRef,
+        String name,
+        IntegrationAccountStatus status,
+        IntegrationAccountCredentialStatus credentialStatus,
+        boolean credentialConfigured,
+        List<IntegrationAccountAvailabilityRisk> risks
+    ) {
+        public IntegrationAccountRuntimeSnapshot {
+            risks = risks == null || risks.isEmpty() ? List.of() : List.copyOf(risks);
+        }
+    }
+
     public record IntegrationAccountDto(
         String id,
         IntegrationAccountSubjectType subjectType,

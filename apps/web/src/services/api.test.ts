@@ -206,9 +206,15 @@ describe('api client', () => {
         data: {
           id: 'channel-profile-1',
           providerType: 'feishu',
-          name: '飞书客服机器人',
+          displayName: '飞书客服机器人',
           status: 'ACTIVE',
+          inboundEnabled: true,
           config: { appId: 'cli_xxx' },
+          assistantBinding: null,
+          accountId: 'integration-account-1',
+          hasExternalSecretRef: true,
+          revision: 1,
+          integrationAccount: null,
           createdAt: '2026-04-01T00:00:00Z',
           updatedAt: '2026-04-01T00:00:00Z',
         },
@@ -221,9 +227,12 @@ describe('api client', () => {
 
     await api.createChannelProfile({
       providerType: 'feishu',
-      name: '飞书客服机器人',
+      displayName: '飞书客服机器人',
       status: 'ACTIVE',
+      inboundEnabled: true,
       config: { appId: 'cli_xxx' },
+      assistantBinding: null,
+      integrationAccountId: 'integration-account-1',
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -234,9 +243,12 @@ describe('api client', () => {
         headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           providerType: 'feishu',
-          name: '飞书客服机器人',
+          displayName: '飞书客服机器人',
           status: 'ACTIVE',
+          inboundEnabled: true,
           config: { appId: 'cli_xxx' },
+          assistantBinding: null,
+          integrationAccountId: 'integration-account-1',
         }),
       }),
     );

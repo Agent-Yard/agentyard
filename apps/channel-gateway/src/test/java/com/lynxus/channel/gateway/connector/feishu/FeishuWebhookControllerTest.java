@@ -9,7 +9,7 @@ import com.lynxus.channel.gateway.channel.ChannelAdminRepository;
 import com.lynxus.channel.gateway.channel.ChannelAdminService;
 import com.lynxus.channel.gateway.shared.ApiExceptionHandler;
 import com.lynxus.channel.gateway.testing.EmbeddedPostgresTestDatabase;
-import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileRequest;
+import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileInternalRequest;
 import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -47,11 +47,14 @@ class FeishuWebhookControllerTest {
             .setControllerAdvice(new ApiExceptionHandler())
             .build();
 
-        channelAdminService.createProfile(new CreateChannelProfileRequest(
+        channelAdminService.createProfile(new CreateChannelProfileInternalRequest(
             "feishu",
             "飞书客服机器人",
             null,
-            Map.of("appId", "cli_xxx", "verificationToken", "verify-token")
+            true,
+            Map.of("appId", "cli_xxx", "verificationToken", "verify-token"),
+            null,
+            null
         ));
     }
 

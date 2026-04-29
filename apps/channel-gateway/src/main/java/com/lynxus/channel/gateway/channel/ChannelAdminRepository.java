@@ -1,7 +1,7 @@
 package com.lynxus.channel.gateway.channel;
 
 import com.lynxus.channel.gateway.jooqsupport.JooqJsonbSupport;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelProfile;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
@@ -19,20 +19,24 @@ public class ChannelAdminRepository {
         this.store = new ChannelStore(dsl, new JooqJsonbSupport(objectMapper));
     }
 
-    public List<ChannelProfile> listProfiles() {
+    public List<ChannelGatewayProfile> listProfiles() {
         return store.listProfiles();
     }
 
-    public Optional<ChannelProfile> findProfile(String channelProfileId) {
+    public Optional<ChannelGatewayProfile> findProfile(String channelProfileId) {
         return store.findProfile(channelProfileId);
     }
 
-    public List<ChannelProfile> listProfilesByProvider(String providerType) {
+    public List<ChannelGatewayProfile> listProfilesByProvider(String providerType) {
         return store.listProfilesByProvider(providerType);
     }
 
-    public void saveProfile(ChannelProfile profile) {
-        store.saveProfile(profile);
+    public void createProfile(ChannelGatewayProfile profile, String externalSecretRef) {
+        store.createProfile(profile, externalSecretRef);
+    }
+
+    public boolean updateProfile(ChannelGatewayProfile profile, long expectedRevision, String externalSecretRef) {
+        return store.updateProfile(profile, expectedRevision, externalSecretRef);
     }
 
     public List<ChannelConversationBinding> listBindings(String channelProfileId) {

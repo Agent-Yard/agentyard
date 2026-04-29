@@ -1,14 +1,20 @@
 package com.lynxus.platform.channel;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileAccountSnapshot;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileStatus;
+import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileInternalRequest;
 import com.lynxus.platform.shared.ConflictException;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
@@ -39,6 +45,59 @@ class ChannelGatewayClientTest {
             ChannelGatewayClient client = new ChannelGatewayClient(serverUrl(server), "internal-token", new ObjectMapper());
             client.listProfiles();
             assertEquals("Bearer internal-token", authorization.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void shouldSendInternalProfileAccountSnapshotOnCreate() throws Exception {
+        AtomicReference<String> requestBody = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/internal/channel-admin/profiles", exchange -> {
+            requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            writeJson(
+                exchange,
+                200,
+                """
+                    {
+                      "success": true,
+                      "data": {
+                        "id": "channel-profile-1",
+                        "providerType": "feishu",
+                        "displayName": "飞书客服机器人",
+                        "status": "ACTIVE",
+                        "inboundEnabled": true,
+                        "config": {"appId": "cli_xxx"},
+                        "assistantBinding": null,
+                        "accountId": "integration-account-1",
+                        "hasExternalSecretRef": true,
+                        "revision": 1,
+                        "createdAt": "2026-04-23T00:00:00Z",
+                        "updatedAt": "2026-04-23T00:00:00Z"
+                      },
+                      "timestamp": "2026-04-23T00:00:00Z"
+                    }
+                    """
+            );
+        });
+        server.start();
+
+        try {
+            ChannelGatewayClient client = new ChannelGatewayClient(serverUrl(server), "internal-token", new ObjectMapper());
+            client.createProfile(new CreateChannelProfileInternalRequest(
+                "feishu",
+                "飞书客服机器人",
+                ChannelProfileStatus.ACTIVE,
+                true,
+                Map.of("appId", "cli_xxx"),
+                null,
+                new ChannelProfileAccountSnapshot("integration-account-1", "vault://opaque-ref")
+            ));
+
+            assertTrue(requestBody.get().contains("\"accountSnapshot\""));
+            assertTrue(requestBody.get().contains("\"externalSecretRef\":\"vault://opaque-ref\""));
+            assertFalse(requestBody.get().contains("integrationAccountId"));
         } finally {
             server.stop(0);
         }

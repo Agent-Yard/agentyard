@@ -13,7 +13,7 @@
 ## Current Position
 
 - Current slice: Slice 8 - Channel provider registry + profile rename + gateway internal admin.
-- Current subtask: Slice 8A foundation checker passed; main integration checkpoint in progress before moving to next Slice 8 subtask. Provider job, template binding, outbound delivery semantics, accountSnapshot materialization, internal OpenAPI coverage, and schema-driven Web pages remain later Slice 8/9/10 subtasks.
+- Current subtask: Slice 8B materialized Channel Profile account snapshot and internal DTO boundary. Provider job, template binding, outbound delivery semantics, internal OpenAPI coverage, and schema-driven Web pages remain later Slice 8/9/10 subtasks.
 - Main-agent role: orchestration, integration decisions, ledger maintenance, review of worker/checker output.
 - Implementation flow: worker implements each bounded subtask, independent checker reviews read-only, then main agent decides follow-up.
 
@@ -80,9 +80,36 @@
 - Decision: Slice 6C account availability is an API-side Integration Account domain helper only. It evaluates `subjectType` / `subjectId`, account status, and credential status for later Tool publish and Channel Profile writes; it does not materialize Tool release snapshots or channel runtime profiles.
 - Decision: Slice 8 is too large for one worker. 8A will be a strict foundation rename and path move only. Channel Profile accountSnapshot materialization, registry-backed provider validation, internal OpenAPI coverage, template binding, provider job, and manual run APIs will be separate subtasks after the old naming is removed from the active code path.
 - Decision: `packages/contracts/openapi/channel-gateway-internal.yaml` does not exist yet in the repo; create it in a later Slice 8 subtask after the concrete internal DTO shape stabilizes. This is implementation ordering, not a change to the target architecture.
+- Decision: Slice 8B will split Web-facing profile requests from gateway internal write requests. API will accept optional `integrationAccountId`, call Slice 6 account availability for `CHANNEL_PROVIDER + providerType`, and send only an internal `accountSnapshot` to `channel-gateway`. `channel-gateway` may persist `external_secret_ref`, but read DTOs must expose only `accountId` and `hasExternalSecretRef`.
 
 ## Worker / Checker Notes
 
+- Worker 8B completed Slice 8B materialized Channel Profile account snapshot and internal DTO boundary.
+  - Split Web-facing profile write DTOs (`integrationAccountId`) from API -> channel-gateway internal write DTOs (`accountSnapshot.accountId` / optional `accountSnapshot.externalSecretRef`).
+  - API now materializes channel profile account snapshots through Slice 6 Integration Account availability for `CHANNEL_PROVIDER + providerType`; hard-block states stop writes before calling `channel-gateway`, while risk-only credential states remain allowed. Web-facing profile reads expose `accountId`, `hasExternalSecretRef`, and optional Integration Account display / availability summary only.
+  - `channel-gateway` now persists `display_name`, `inbound_enabled`, `assistant_binding`, `integration_account_id`, `external_secret_ref`, and `revision`; create starts at revision 1, update requires `expectedRevision`, and stale updates return 409 via the gateway exception handler.
+  - Regenerated `apps/channel-gateway/src/generated/jooq/**` after the migration change.
+  - Verification:
+    - `./gradlew :apps:channel-gateway:generateJooq` passed.
+    - `./gradlew :apps:channel-gateway:test --tests '*ChannelAdmin*' --tests '*Feishu*' --tests '*InternalAuth*'` passed.
+    - `./gradlew :apps:api:test --tests '*ChannelGatewayClient*' --tests '*ChannelAdmin*' --tests '*IntegrationAccount*'` passed.
+    - `pnpm --filter @lynxus/web test -- api` passed.
+    - `rg "externalSecretRef" ...` showed only internal account snapshot/materialization/persistence usage plus existing Tool connector snapshot type.
+    - `rg "ChannelAccount|channel_account|channel_account_id|/channel-admin/accounts|ChannelProviderType" ...` showed only the intentional old `/accounts` negative test.
+    - `git diff --check` passed.
+  - Follow-ups left for later Slice 8 subtasks: provider registry-backed config schema validation, assistant/scenario existence validation if a cheap API is available, provider job, template binding, outbound delivery changes, internal OpenAPI file, and schema-driven Web page.
+- Checker 8B verdict: pass.
+  - Confirmed DTO separation, API materialization, gateway persistence/revision behavior, secret redaction, and scope discipline match Slice 8B.
+  - Non-blocking drift found: `channel_profile.external_secret_ref` was `varchar(1024)` while API-owned `integration_account.external_secret_ref` and credential spec cap at 512.
+  - Main follow-up completed: changed `channel_profile.external_secret_ref` to `varchar(512)` and regenerated channel-gateway jOOQ.
+  - Main verification after the fix:
+    - `./gradlew :apps:channel-gateway:generateJooq` passed.
+    - `./gradlew :apps:channel-gateway:test --tests '*ChannelAdmin*' --tests '*Feishu*' --tests '*InternalAuth*'` passed.
+    - `./gradlew :apps:api:test --tests '*ChannelGatewayClient*' --tests '*ChannelAdmin*' --tests '*IntegrationAccount*'` passed.
+    - `pnpm --filter @lynxus/web test -- api` passed (`1` file, `12` tests).
+    - `rg "externalSecretRef" ...` remains limited to internal account snapshot/materialization/persistence, docs, and existing Tool connector snapshot type.
+    - `rg "ChannelAccount|channel_account|channel_account_id|/channel-admin/accounts|ChannelProviderType" ...` remains limited to the intentional old `/accounts` negative test.
+    - `git diff --check` passed.
 - Worker Slice 6C completed account availability helper.
   - Added `IntegrationAccountAvailabilityDecision` plus hard-block and risk enums under the integration DTO domain. The decision exposes account id, subject, account status, credential status, hard block, and risk list only; it does not expose `externalSecretRef`, ciphertext, fingerprint, config, metadata, or credential material.
   - Added `IntegrationAccountService.evaluateAccountAvailability(...)` and `requireAccountAvailability(...)`. `requireAccountAvailability` throws `INTEGRATION_ACCOUNT_AVAILABILITY_BLOCKED` for subject mismatch, non-`ENABLED` account status, `REVOKE_FAILED`, and `REVOKED`; `NOT_CONFIGURED`, `VALIDATION_FAILED`, and `ROTATION_REQUIRED` return risk warnings and do not throw.

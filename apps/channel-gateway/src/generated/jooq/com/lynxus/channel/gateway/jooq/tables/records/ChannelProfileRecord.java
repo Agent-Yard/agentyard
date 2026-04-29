@@ -50,16 +50,16 @@ public class ChannelProfileRecord extends UpdatableRecordImpl<ChannelProfileReco
     }
 
     /**
-     * Setter for <code>public.channel_profile.name</code>.
+     * Setter for <code>public.channel_profile.display_name</code>.
      */
-    public void setName(String value) {
+    public void setDisplayName(String value) {
         set(2, value);
     }
 
     /**
-     * Getter for <code>public.channel_profile.name</code>.
+     * Getter for <code>public.channel_profile.display_name</code>.
      */
-    public String getName() {
+    public String getDisplayName() {
         return (String) get(2);
     }
 
@@ -78,45 +78,115 @@ public class ChannelProfileRecord extends UpdatableRecordImpl<ChannelProfileReco
     }
 
     /**
+     * Setter for <code>public.channel_profile.inbound_enabled</code>.
+     */
+    public void setInboundEnabled(Boolean value) {
+        set(4, value);
+    }
+
+    /**
+     * Getter for <code>public.channel_profile.inbound_enabled</code>.
+     */
+    public Boolean getInboundEnabled() {
+        return (Boolean) get(4);
+    }
+
+    /**
      * Setter for <code>public.channel_profile.config</code>.
      */
     public void setConfig(JSONB value) {
-        set(4, value);
+        set(5, value);
     }
 
     /**
      * Getter for <code>public.channel_profile.config</code>.
      */
     public JSONB getConfig() {
-        return (JSONB) get(4);
+        return (JSONB) get(5);
+    }
+
+    /**
+     * Setter for <code>public.channel_profile.assistant_binding</code>.
+     */
+    public void setAssistantBinding(JSONB value) {
+        set(6, value);
+    }
+
+    /**
+     * Getter for <code>public.channel_profile.assistant_binding</code>.
+     */
+    public JSONB getAssistantBinding() {
+        return (JSONB) get(6);
+    }
+
+    /**
+     * Setter for <code>public.channel_profile.integration_account_id</code>.
+     */
+    public void setIntegrationAccountId(String value) {
+        set(7, value);
+    }
+
+    /**
+     * Getter for <code>public.channel_profile.integration_account_id</code>.
+     */
+    public String getIntegrationAccountId() {
+        return (String) get(7);
+    }
+
+    /**
+     * Setter for <code>public.channel_profile.external_secret_ref</code>.
+     */
+    public void setExternalSecretRef(String value) {
+        set(8, value);
+    }
+
+    /**
+     * Getter for <code>public.channel_profile.external_secret_ref</code>.
+     */
+    public String getExternalSecretRef() {
+        return (String) get(8);
+    }
+
+    /**
+     * Setter for <code>public.channel_profile.revision</code>.
+     */
+    public void setRevision(Long value) {
+        set(9, value);
+    }
+
+    /**
+     * Getter for <code>public.channel_profile.revision</code>.
+     */
+    public Long getRevision() {
+        return (Long) get(9);
     }
 
     /**
      * Setter for <code>public.channel_profile.created_at</code>.
      */
     public void setCreatedAt(OffsetDateTime value) {
-        set(5, value);
+        set(10, value);
     }
 
     /**
      * Getter for <code>public.channel_profile.created_at</code>.
      */
     public OffsetDateTime getCreatedAt() {
-        return (OffsetDateTime) get(5);
+        return (OffsetDateTime) get(10);
     }
 
     /**
      * Setter for <code>public.channel_profile.updated_at</code>.
      */
     public void setUpdatedAt(OffsetDateTime value) {
-        set(6, value);
+        set(11, value);
     }
 
     /**
      * Getter for <code>public.channel_profile.updated_at</code>.
      */
     public OffsetDateTime getUpdatedAt() {
-        return (OffsetDateTime) get(6);
+        return (OffsetDateTime) get(11);
     }
 
     // -------------------------------------------------------------------------
@@ -142,14 +212,19 @@ public class ChannelProfileRecord extends UpdatableRecordImpl<ChannelProfileReco
     /**
      * Create a detached, initialised ChannelProfileRecord
      */
-    public ChannelProfileRecord(String id, String providerType, String name, String status, JSONB config, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+    public ChannelProfileRecord(String id, String providerType, String displayName, String status, Boolean inboundEnabled, JSONB config, JSONB assistantBinding, String integrationAccountId, String externalSecretRef, Long revision, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
         super(ChannelProfile.CHANNEL_PROFILE);
 
         setId(id);
         setProviderType(providerType);
-        setName(name);
+        setDisplayName(displayName);
         setStatus(status);
+        setInboundEnabled(inboundEnabled);
         setConfig(config);
+        setAssistantBinding(assistantBinding);
+        setIntegrationAccountId(integrationAccountId);
+        setExternalSecretRef(externalSecretRef);
+        setRevision(revision);
         setCreatedAt(createdAt);
         setUpdatedAt(updatedAt);
         resetChangedOnNotNull();

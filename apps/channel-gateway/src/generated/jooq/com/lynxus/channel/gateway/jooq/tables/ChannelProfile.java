@@ -66,9 +66,9 @@ public class ChannelProfile extends TableImpl<ChannelProfileRecord> {
     public final TableField<ChannelProfileRecord, String> PROVIDER_TYPE = createField(DSL.name("provider_type"), SQLDataType.VARCHAR(64).nullable(false), this, "");
 
     /**
-     * The column <code>public.channel_profile.name</code>.
+     * The column <code>public.channel_profile.display_name</code>.
      */
-    public final TableField<ChannelProfileRecord, String> NAME = createField(DSL.name("name"), SQLDataType.VARCHAR(255).nullable(false), this, "");
+    public final TableField<ChannelProfileRecord, String> DISPLAY_NAME = createField(DSL.name("display_name"), SQLDataType.VARCHAR(255).nullable(false), this, "");
 
     /**
      * The column <code>public.channel_profile.status</code>.
@@ -76,9 +76,34 @@ public class ChannelProfile extends TableImpl<ChannelProfileRecord> {
     public final TableField<ChannelProfileRecord, String> STATUS = createField(DSL.name("status"), SQLDataType.VARCHAR(32).nullable(false), this, "");
 
     /**
+     * The column <code>public.channel_profile.inbound_enabled</code>.
+     */
+    public final TableField<ChannelProfileRecord, Boolean> INBOUND_ENABLED = createField(DSL.name("inbound_enabled"), SQLDataType.BOOLEAN.nullable(false), this, "");
+
+    /**
      * The column <code>public.channel_profile.config</code>.
      */
     public final TableField<ChannelProfileRecord, JSONB> CONFIG = createField(DSL.name("config"), SQLDataType.JSONB.nullable(false), this, "");
+
+    /**
+     * The column <code>public.channel_profile.assistant_binding</code>.
+     */
+    public final TableField<ChannelProfileRecord, JSONB> ASSISTANT_BINDING = createField(DSL.name("assistant_binding"), SQLDataType.JSONB.nullable(false), this, "");
+
+    /**
+     * The column <code>public.channel_profile.integration_account_id</code>.
+     */
+    public final TableField<ChannelProfileRecord, String> INTEGRATION_ACCOUNT_ID = createField(DSL.name("integration_account_id"), SQLDataType.VARCHAR(128), this, "");
+
+    /**
+     * The column <code>public.channel_profile.external_secret_ref</code>.
+     */
+    public final TableField<ChannelProfileRecord, String> EXTERNAL_SECRET_REF = createField(DSL.name("external_secret_ref"), SQLDataType.VARCHAR(512), this, "");
+
+    /**
+     * The column <code>public.channel_profile.revision</code>.
+     */
+    public final TableField<ChannelProfileRecord, Long> REVISION = createField(DSL.name("revision"), SQLDataType.BIGINT.nullable(false), this, "");
 
     /**
      * The column <code>public.channel_profile.created_at</code>.

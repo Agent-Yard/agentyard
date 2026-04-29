@@ -3,6 +3,7 @@ package com.lynxus.contracts.channel;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 public final class ChannelContracts {
@@ -40,15 +41,63 @@ public final class ChannelContracts {
     public record ChannelProfile(
         String id,
         String providerType,
-        String name,
+        String displayName,
         ChannelProfileStatus status,
+        boolean inboundEnabled,
         Map<String, Object> config,
+        ChannelAssistantBinding assistantBinding,
+        String accountId,
+        boolean hasExternalSecretRef,
+        long revision,
+        ChannelProfileIntegrationAccountSummary integrationAccount,
         Instant createdAt,
         Instant updatedAt
     ) {
         public ChannelProfile {
             config = immutableObjectMap(config);
         }
+    }
+
+    public record ChannelGatewayProfile(
+        String id,
+        String providerType,
+        String displayName,
+        ChannelProfileStatus status,
+        boolean inboundEnabled,
+        Map<String, Object> config,
+        ChannelAssistantBinding assistantBinding,
+        String accountId,
+        boolean hasExternalSecretRef,
+        long revision,
+        Instant createdAt,
+        Instant updatedAt
+    ) {
+        public ChannelGatewayProfile {
+            config = immutableObjectMap(config);
+        }
+    }
+
+    public record ChannelAssistantBinding(String assistantId, String scenarioId) {
+    }
+
+    public record ChannelProfileIntegrationAccountSummary(
+        String id,
+        String name,
+        String status,
+        String credentialStatus,
+        boolean credentialConfigured,
+        String availabilityHardBlock,
+        List<String> risks
+    ) {
+        public ChannelProfileIntegrationAccountSummary {
+            risks = risks == null || risks.isEmpty() ? List.of() : List.copyOf(risks);
+        }
+    }
+
+    public record ChannelProfileAccountSnapshot(
+        String accountId,
+        String externalSecretRef
+    ) {
     }
 
     public record ChannelConversationBinding(
@@ -111,9 +160,12 @@ public final class ChannelContracts {
 
     public record CreateChannelProfileRequest(
         String providerType,
-        String name,
+        String displayName,
         ChannelProfileStatus status,
-        Map<String, Object> config
+        Boolean inboundEnabled,
+        Map<String, Object> config,
+        ChannelAssistantBinding assistantBinding,
+        String integrationAccountId
     ) {
         public CreateChannelProfileRequest {
             config = immutableObjectMap(config);
@@ -121,11 +173,45 @@ public final class ChannelContracts {
     }
 
     public record UpdateChannelProfileRequest(
-        String name,
+        String providerType,
+        String displayName,
         ChannelProfileStatus status,
-        Map<String, Object> config
+        Boolean inboundEnabled,
+        Map<String, Object> config,
+        ChannelAssistantBinding assistantBinding,
+        String integrationAccountId,
+        Long expectedRevision
     ) {
         public UpdateChannelProfileRequest {
+            config = immutableObjectMap(config);
+        }
+    }
+
+    public record CreateChannelProfileInternalRequest(
+        String providerType,
+        String displayName,
+        ChannelProfileStatus status,
+        Boolean inboundEnabled,
+        Map<String, Object> config,
+        ChannelAssistantBinding assistantBinding,
+        ChannelProfileAccountSnapshot accountSnapshot
+    ) {
+        public CreateChannelProfileInternalRequest {
+            config = immutableObjectMap(config);
+        }
+    }
+
+    public record UpdateChannelProfileInternalRequest(
+        String providerType,
+        String displayName,
+        ChannelProfileStatus status,
+        Boolean inboundEnabled,
+        Map<String, Object> config,
+        ChannelAssistantBinding assistantBinding,
+        ChannelProfileAccountSnapshot accountSnapshot,
+        Long expectedRevision
+    ) {
+        public UpdateChannelProfileInternalRequest {
             config = immutableObjectMap(config);
         }
     }

@@ -13,6 +13,7 @@ import com.lynxus.platform.integration.IntegrationDtos.CreateIntegrationAccountR
 import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountAvailabilityBlock;
 import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountAvailabilityDecision;
 import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountAvailabilityRisk;
+import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountRuntimeSnapshot;
 import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountCredentialStatus;
 import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountDto;
 import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountStatus;
@@ -117,6 +118,40 @@ public class IntegrationAccountService {
             throw accountAvailabilityBlocked(decision);
         }
         return decision;
+    }
+
+    @Transactional(readOnly = true)
+    public IntegrationAccountRuntimeSnapshot requireRuntimeAccountSnapshot(
+        String accountId,
+        IntegrationAccountSubjectType expectedSubjectType,
+        String expectedSubjectId
+    ) {
+        if (expectedSubjectType == null) {
+            throw new IllegalArgumentException("integrationAccount.expectedSubjectType is required");
+        }
+        String normalizedExpectedSubjectId = requireText(
+            expectedSubjectId,
+            "integrationAccount.expectedSubjectId",
+            128
+        );
+        StoredIntegrationAccount account = requireAccount(accountId);
+        IntegrationAccountAvailabilityDecision decision = availabilityDecision(
+            account,
+            expectedSubjectType,
+            normalizedExpectedSubjectId
+        );
+        if (!decision.available()) {
+            throw accountAvailabilityBlocked(decision);
+        }
+        return new IntegrationAccountRuntimeSnapshot(
+            account.id(),
+            hasText(account.externalSecretRef()) ? account.externalSecretRef() : null,
+            account.name(),
+            account.status(),
+            account.credentialStatus(),
+            hasText(account.externalSecretRef()) || hasText(account.credentialCiphertext()),
+            decision.risks()
+        );
     }
 
     @Transactional(noRollbackFor = ApiProblemException.class)

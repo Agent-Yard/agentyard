@@ -2,7 +2,8 @@ package com.lynxus.channel.gateway.channel;
 
 import com.lynxus.channel.gateway.jooqsupport.JooqJsonbSupport;
 import com.lynxus.channel.gateway.jooqsupport.JooqTimeSupport;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelProfile;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelAssistantBinding;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileStatus;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBindingStatus;
@@ -30,43 +31,58 @@ final class ChannelStore {
         this.jsonbSupport = jsonbSupport;
     }
 
-    List<ChannelProfile> listProfiles() {
+    List<ChannelGatewayProfile> listProfiles() {
         return dsl.selectFrom(CHANNEL_PROFILE)
             .orderBy(CHANNEL_PROFILE.UPDATED_AT.desc(), CHANNEL_PROFILE.ID.asc())
             .fetch(this::mapProfile);
     }
 
-    Optional<ChannelProfile> findProfile(String channelProfileId) {
+    Optional<ChannelGatewayProfile> findProfile(String channelProfileId) {
         return dsl.selectFrom(CHANNEL_PROFILE)
             .where(CHANNEL_PROFILE.ID.eq(channelProfileId))
             .fetchOptional(this::mapProfile);
     }
 
-    List<ChannelProfile> listProfilesByProvider(String providerType) {
+    List<ChannelGatewayProfile> listProfilesByProvider(String providerType) {
         return dsl.selectFrom(CHANNEL_PROFILE)
             .where(CHANNEL_PROFILE.PROVIDER_TYPE.eq(providerType))
             .orderBy(CHANNEL_PROFILE.UPDATED_AT.desc(), CHANNEL_PROFILE.ID.asc())
             .fetch(this::mapProfile);
     }
 
-    void saveProfile(ChannelProfile profile) {
+    void createProfile(ChannelGatewayProfile profile, String externalSecretRef) {
         dsl.insertInto(CHANNEL_PROFILE)
             .set(CHANNEL_PROFILE.ID, profile.id())
             .set(CHANNEL_PROFILE.PROVIDER_TYPE, profile.providerType())
-            .set(CHANNEL_PROFILE.NAME, profile.name())
+            .set(CHANNEL_PROFILE.DISPLAY_NAME, profile.displayName())
             .set(CHANNEL_PROFILE.STATUS, profile.status().name())
+            .set(CHANNEL_PROFILE.INBOUND_ENABLED, profile.inboundEnabled())
             .set(CHANNEL_PROFILE.CONFIG, jsonbSupport.toJsonb(profile.config() == null ? Map.of() : profile.config()))
-            .set(CHANNEL_PROFILE.CREATED_AT, JooqTimeSupport.toOffsetDateTime(profile.createdAt()))
-            .set(CHANNEL_PROFILE.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(profile.updatedAt()))
-            .onConflict(CHANNEL_PROFILE.ID)
-            .doUpdate()
-            .set(CHANNEL_PROFILE.PROVIDER_TYPE, profile.providerType())
-            .set(CHANNEL_PROFILE.NAME, profile.name())
-            .set(CHANNEL_PROFILE.STATUS, profile.status().name())
-            .set(CHANNEL_PROFILE.CONFIG, jsonbSupport.toJsonb(profile.config() == null ? Map.of() : profile.config()))
+            .set(CHANNEL_PROFILE.ASSISTANT_BINDING, jsonbSupport.toJsonb(profile.assistantBinding() == null ? Map.of() : profile.assistantBinding()))
+            .set(CHANNEL_PROFILE.INTEGRATION_ACCOUNT_ID, profile.accountId())
+            .set(CHANNEL_PROFILE.EXTERNAL_SECRET_REF, externalSecretRef)
+            .set(CHANNEL_PROFILE.REVISION, profile.revision())
             .set(CHANNEL_PROFILE.CREATED_AT, JooqTimeSupport.toOffsetDateTime(profile.createdAt()))
             .set(CHANNEL_PROFILE.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(profile.updatedAt()))
             .execute();
+    }
+
+    boolean updateProfile(ChannelGatewayProfile profile, long expectedRevision, String externalSecretRef) {
+        int rows = dsl.update(CHANNEL_PROFILE)
+            .set(CHANNEL_PROFILE.PROVIDER_TYPE, profile.providerType())
+            .set(CHANNEL_PROFILE.DISPLAY_NAME, profile.displayName())
+            .set(CHANNEL_PROFILE.STATUS, profile.status().name())
+            .set(CHANNEL_PROFILE.INBOUND_ENABLED, profile.inboundEnabled())
+            .set(CHANNEL_PROFILE.CONFIG, jsonbSupport.toJsonb(profile.config() == null ? Map.of() : profile.config()))
+            .set(CHANNEL_PROFILE.ASSISTANT_BINDING, jsonbSupport.toJsonb(profile.assistantBinding() == null ? Map.of() : profile.assistantBinding()))
+            .set(CHANNEL_PROFILE.INTEGRATION_ACCOUNT_ID, profile.accountId())
+            .set(CHANNEL_PROFILE.EXTERNAL_SECRET_REF, externalSecretRef)
+            .set(CHANNEL_PROFILE.REVISION, profile.revision())
+            .set(CHANNEL_PROFILE.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(profile.updatedAt()))
+            .where(CHANNEL_PROFILE.ID.eq(profile.id()))
+            .and(CHANNEL_PROFILE.REVISION.eq(expectedRevision))
+            .execute();
+        return rows == 1;
     }
 
     List<ChannelConversationBinding> listBindings(String channelProfileId) {
@@ -186,15 +202,32 @@ final class ChannelStore {
             .execute();
     }
 
-    private ChannelProfile mapProfile(Record record) {
-        return new ChannelProfile(
+    private ChannelGatewayProfile mapProfile(Record record) {
+        String externalSecretRef = record.get(CHANNEL_PROFILE.EXTERNAL_SECRET_REF);
+        return new ChannelGatewayProfile(
             record.get(CHANNEL_PROFILE.ID),
             record.get(CHANNEL_PROFILE.PROVIDER_TYPE),
-            record.get(CHANNEL_PROFILE.NAME),
+            record.get(CHANNEL_PROFILE.DISPLAY_NAME),
             ChannelProfileStatus.valueOf(record.get(CHANNEL_PROFILE.STATUS)),
+            record.get(CHANNEL_PROFILE.INBOUND_ENABLED),
             jsonbSupport.readObjectMap(record.get(CHANNEL_PROFILE.CONFIG)),
+            readAssistantBinding(record),
+            record.get(CHANNEL_PROFILE.INTEGRATION_ACCOUNT_ID),
+            externalSecretRef != null && !externalSecretRef.isBlank(),
+            record.get(CHANNEL_PROFILE.REVISION),
             JooqTimeSupport.toInstant(record.get(CHANNEL_PROFILE.CREATED_AT)),
             JooqTimeSupport.toInstant(record.get(CHANNEL_PROFILE.UPDATED_AT))
+        );
+    }
+
+    private ChannelAssistantBinding readAssistantBinding(Record record) {
+        Map<String, Object> raw = jsonbSupport.readObjectMap(record.get(CHANNEL_PROFILE.ASSISTANT_BINDING));
+        if (raw.isEmpty()) {
+            return null;
+        }
+        return new ChannelAssistantBinding(
+            raw.get("assistantId") instanceof String assistantId ? assistantId : null,
+            raw.get("scenarioId") instanceof String scenarioId ? scenarioId : null
         );
     }
 
