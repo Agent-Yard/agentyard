@@ -54,6 +54,23 @@ class AgentRuntimeInternalAuthTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 422)
 
+    def test_should_protect_extension_registry_validation_endpoint(self) -> None:
+        with agent_runtime_client() as client:
+            missing = client.get("/internal/extension-registry/tool-connectors/validation")
+            invalid = client.get(
+                "/internal/extension-registry/tool-connectors/validation",
+                headers={"Authorization": "Bearer wrong-token"},
+            )
+            valid = client.get(
+                "/internal/extension-registry/tool-connectors/validation",
+                headers={"Authorization": "Bearer test-internal-token"},
+            )
+
+        self.assertEqual(missing.status_code, 401)
+        self.assertEqual(invalid.status_code, 401)
+        self.assertEqual(valid.status_code, 200)
+        self.assertEqual(valid.json()["status"], "READY")
+
     def test_should_return_traceparent_header_for_valid_internal_request(self) -> None:
         with agent_runtime_client() as client:
             response = client.post(

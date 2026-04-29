@@ -5,7 +5,7 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from lynxus_common import (
     ReadinessCheck,
@@ -18,7 +18,9 @@ from lynxus_common import (
 )
 
 from .decisioning import execute_agent_turn
+from .descriptor_provider import default_descriptor_provider
 from .extension_registration import load_extension_registration
+from .extension_registry import validate_tool_connector_registry
 from .http_clients import reset_shared_http_client_registry
 from .models import AgentTurnExecutionOutcome, AgentTurnRequest, PlaybookToolTaskRequest, PlaybookToolTaskResult
 from .redis_support import RedisSettings, create_redis_client
@@ -45,6 +47,7 @@ async def lifespan(app: FastAPI):
     LOGGER = configure_structured_logging("agent-runtime", "LYNXUS_AGENT_RUNTIME_LOG_LEVEL", "lynxus-agent-runtime")
     extension_registration = load_extension_registration()
     app.state.extension_registration = extension_registration
+    app.state.extension_descriptor_provider = default_descriptor_provider()
     LOGGER.info(
         "extension registration loaded",
         extra={
@@ -112,6 +115,27 @@ async def healthz() -> JSONResponse:
         ],
     )
     return JSONResponse(status_code=report.status_code, content=report.body)
+
+
+@app.get("/extension/manifest")
+async def extension_manifest(
+    request: Request,
+    _: None = Depends(require_internal_bearer),
+) -> Response:
+    provider = getattr(request.app.state, "extension_descriptor_provider", None) or default_descriptor_provider()
+    return Response(content=provider.canonical_manifest_bytes(), media_type="application/json")
+
+
+@app.get("/internal/extension-registry/tool-connectors/validation")
+async def tool_connector_registry_validation(
+    request: Request,
+    _: None = Depends(require_internal_bearer),
+) -> JSONResponse:
+    registration_set = getattr(request.app.state, "extension_registration", None)
+    provider = getattr(request.app.state, "extension_descriptor_provider", None) or default_descriptor_provider()
+    result = validate_tool_connector_registry(registration_set, descriptor_provider=provider)
+    status_code = 200 if result.get("status") == "READY" else 503
+    return JSONResponse(status_code=status_code, content=result)
 
 
 @app.post("/agent-turns/execute", response_model=AgentTurnExecutionOutcome)

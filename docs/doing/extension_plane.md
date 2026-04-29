@@ -13,7 +13,7 @@
 ## Current Position
 
 - Current slice: Slice 4 - Runtime manifest endpoints + internal DescriptorProvider.
-- Current subtask: Slice 4A shared descriptor definition digest helpers for SDK/runtime reuse.
+- Current subtask: Slice 4B agent-runtime DescriptorProvider, `/extension/manifest`, and tool connector registry validation endpoint.
 - Main-agent role: orchestration, integration decisions, ledger maintenance, review of worker/checker output.
 - Implementation flow: worker implements each bounded subtask, independent checker reviews read-only, then main agent decides follow-up.
 
@@ -43,6 +43,7 @@
 - `agent-runtime` must eventually reuse `packages/extension-sdk-python`; it must not grow a second canonical JSON / manifest / `ExtensionError` implementation.
 - API, `agent-runtime`, and `channel-gateway` must eventually share registration loader behavior and digest input.
 - Runtime owner manifest/validation must not copy descriptor definition digest field selection in each service; add SDK helpers first, then have runtime owners call them.
+- `agent-runtime` manifest endpoint must use SDK canonical JSON / manifest validation; descriptor definition digests must come from SDK helpers.
 
 ## Decisions / Questions
 
@@ -353,6 +354,70 @@
     - `./gradlew :packages:extension-sdk-jvm:test` passed.
     - `uv run pytest packages/extension-sdk-python/tests -q` passed (`58 passed`).
   - Residual non-blocking risk: fixture explicitly covers `$defs`, `properties`, `patternProperties`, and `dependentSchemas`; `definitions` support is verified by code inspection but not separately fixture-locked.
+- Local commit created after Slice 4A pass:
+  - `7040952 Add descriptor definition digest helpers`
+- Worker `Chandrasekhar` (`019dd863-6f9c-7501-802c-37d0a0846537`) completed Slice 4B agent-runtime DescriptorProvider / manifest / tool connector validation endpoint.
+  - Added internal `DescriptorProvider` for `business-code-secret-http`, `mcp`, and `simple-http`; provider uses SDK manifest validation, SDK canonical bytes, and SDK definition digest helpers.
+  - Added tool connector runtime-owner validation with core self-load path, remote manifest fetch through SDK URL/header helpers, descriptor whitelist comparison, and secret-safe error payloads.
+  - Added authenticated `GET /extension/manifest` and `GET /internal/extension-registry/tool-connectors/validation` in FastAPI.
+  - Added tests for provider manifest validity, HTTP/internal byte identity, manifest endpoint auth, core preset validation without self HTTP, non-core filtering/digest/header behavior, and validation endpoint auth.
+  - Did not implement channel-gateway DescriptorProvider, API aggregation/definition endpoints, remote invocation adapter, Integration Account changes, Web pages, DB changes, or Slice 11 artifacts.
+  - Reported verification:
+    - `uv run pytest apps/agent-runtime/tests/test_extension_descriptor_provider.py -q` passed (`6 passed`).
+    - `uv run pytest apps/agent-runtime/tests/test_internal_auth.py -q` passed (`5 passed`).
+    - `uv run pytest apps/agent-runtime/tests -q` passed (`53 passed`).
+    - `uv run pytest packages/extension-sdk-python/tests -q` passed (`58 passed`).
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+- Checker `Harvey` (`019dd86c-a00e-7b61-89fd-9da0e6d84917`) verdict for Slice 4B agent-runtime: fail.
+  - Blocking: runtime validation endpoint returns HTTP 200 for `NOT_READY`; docs require validation failed / `NOT_READY` to return 503.
+  - Blocking: validation response lacks shared top-level `summary` / `errors` shape and does not emit structured error items for missing, unexpected, and duplicate descriptors.
+  - Confirmed OK: core self-load uses in-process `DescriptorProvider`; manifest endpoint requires internal `Authorization` only; provider uses SDK canonical JSON, manifest validation, and SDK definition digests; built-in descriptor ids are lowercase strings; validation filters to tool registrations and ignores channel-only registrations; manifest fetch errors are secret-safe.
+  - Checker verification:
+    - `uv run pytest apps/agent-runtime/tests/test_extension_descriptor_provider.py -q` passed (`6 passed`).
+    - `uv run pytest apps/agent-runtime/tests/test_internal_auth.py -q` passed (`5 passed`).
+    - `uv run pytest apps/agent-runtime/tests -q` passed (`53 passed`).
+    - `uv run pytest packages/extension-sdk-python/tests -q` passed (`58 passed`).
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+- Worker `Boole` (`019dd86e-e13a-7110-98d4-50910a54013c`) completed Slice 4B repair.
+  - Added top-level `summary` / `errors` to agent-runtime tool connector validation results.
+  - Added structured `MISSING_DESCRIPTOR`, `UNEXPECTED_DESCRIPTOR`, and `DUPLICATE_DESCRIPTOR` errors, and included manifest errors in the shared `errors` list.
+  - Changed validation endpoint status to HTTP 200 for `READY` and 503 for `NOT_READY`.
+  - Added tests for structured errors and `NOT_READY` endpoint status.
+  - Reported verification:
+    - `uv run pytest apps/agent-runtime/tests/test_extension_descriptor_provider.py -q` passed.
+    - `uv run pytest apps/agent-runtime/tests/test_internal_auth.py -q` passed.
+    - `uv run pytest apps/agent-runtime/tests -q` passed.
+    - `uv run pytest packages/extension-sdk-python/tests -q` passed.
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+- Checker `Gibbs` (`019dd871-320e-7023-a328-b629c9fb9949`) verdict for Slice 4B repair: fail.
+  - Blocking: registry validation forwards SDK manifest validator codes such as `MANIFEST_EMPTY` into the shared registry error schema; §6.3 only allows `MANIFEST_SCHEMA_INVALID` for schema failures.
+  - Confirmed OK: endpoint status mapping 200/503, top-level `summary` / `errors`, structured missing/unexpected/duplicate descriptor errors, manifest endpoint auth and byte identity, core self-load, SDK canonical/digest helper usage, lowercase built-in ids, and tool-registration filtering.
+  - Checker verification:
+    - `uv run pytest apps/agent-runtime/tests/test_extension_descriptor_provider.py -q` passed (`8 passed`).
+    - `uv run pytest apps/agent-runtime/tests/test_internal_auth.py -q` passed (`5 passed`).
+    - `uv run pytest apps/agent-runtime/tests -q` passed (`55 passed`).
+    - `uv run pytest packages/extension-sdk-python/tests -q` passed (`58 passed`).
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+- Worker `Lovelace` (`019dd873-f5ad-75f0-8d0e-fa381e200642`) completed Slice 4B manifest validation error code repair.
+  - Normalized SDK manifest validation failures to registry error code `MANIFEST_SCHEMA_INVALID`.
+  - Preserved SDK-specific error codes such as `MANIFEST_EMPTY` in `details.violation`, with `phase` and `schemaPath`.
+  - Added regression coverage for empty descriptors producing SDK `MANIFEST_EMPTY` while registry `errors[*].code` remains `MANIFEST_SCHEMA_INVALID`.
+  - Reported verification:
+    - `uv run pytest apps/agent-runtime/tests/test_extension_descriptor_provider.py -q` passed (`9 passed`).
+    - `uv run pytest apps/agent-runtime/tests -q` passed (`56 passed`).
+    - `uv run pytest packages/extension-sdk-python/tests -q` passed (`58 passed`).
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+- Checker `Feynman` (`019dd875-7145-7f92-8b55-7edcee6c1331`) verdict for Slice 4B final repair: pass; no blockers.
+  - Confirmed SDK manifest validation failures are normalized to top-level `MANIFEST_SCHEMA_INVALID`, while SDK-specific code remains in `details.violation`.
+  - Confirmed registry errors do not copy auth headers, token values, `externalSecretRef`, raw manifest body, or credential values.
+  - Confirmed prior Slice 4B behaviors remain covered: canonical manifest bytes, internal auth, core self-load without HTTP, tool-only filtering, structured registry errors, 503 mapping, SDK URL/header helpers, and lowercase built-in descriptor ids.
+  - Confirmed no API/Web/DB/deploy/channel-gateway/Slice 11 implementation artifacts were introduced.
+  - Checker verification:
+    - `uv run pytest apps/agent-runtime/tests/test_extension_descriptor_provider.py -q` passed (`9 passed`).
+    - `uv run pytest apps/agent-runtime/tests/test_internal_auth.py -q` passed (`5 passed`).
+    - `uv run pytest apps/agent-runtime/tests -q` passed (`56 passed`).
+    - `uv run pytest packages/extension-sdk-python/tests -q` passed (`58 passed`).
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed.
 
 ## Local Commit Policy
 
