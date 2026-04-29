@@ -12,8 +12,8 @@
 
 ## Current Position
 
-- Current slice: Slice 9 - Normalized event + provider job + outbound/template binding.
-- Current subtask: Slice 9D2 outbound delivery execution/failure foundation. Schema-driven Web pages remain a later Slice 10 subtask.
+- Current slice: Slice 10 - Web schema-driven pages.
+- Current subtask: Slice 10A schema-driven form renderer foundation is complete. Next subtask: Slice 10B definition-endpoint Web client and Integration Account schema-driven management page.
 - Main-agent role: orchestration, integration decisions, ledger maintenance, review of worker/checker output.
 - Implementation flow: worker implements each bounded subtask, independent checker reviews read-only, then main agent decides follow-up.
 
@@ -42,6 +42,7 @@
 - Slice 7 completed after 7A / 7B / 7C worker-checker cycles and checkpoint; no blocking findings remain.
 - Read Slice 8 roadmap, channel provider rename/profile materialization sections, credentials persistence profile boundary, and §6 Impact Checklist before starting Slice 8A.
 - Read Slice 9 roadmap, `channel-provider.md` normalized inbound / provider job / outbound sections, `web-configuration.md` channel template binding and schema-driven page boundaries, and §6 Impact Checklist before starting Slice 9A.
+- Read Slice 10 roadmap and `web-configuration.md` renderer / credential interaction sections before starting Slice 10A.
 
 ## Cross-Module Impact Under Watch
 
@@ -92,9 +93,33 @@
 - Decision: Split Slice 9D into 9D1 template binding CRUD/resolver and 9D2 outbound execution/failure state. 9D1 will add `channel_profile_template_binding`, Web-facing/internal CRUD contracts, thin Web service methods, secret-safe variable schema validation, and a resolver for assistant/profile/message type tuple. It will not execute outbound deliveries or call provider `sendOutbound`; that remains 9D2.
 - Decision: Slice 9D2 will add outbound delivery execution/failure foundation. It should create a single-attempt delivery from a canonical session message block, resolve and snapshot the external template binding, validate message block variables against the binding `variableSchema`, call remote provider `sendOutbound` with descriptor-level headers and delivery idempotency key, and persist `PENDING` / `SENDING` / `SENT` / `FAILED` state plus attempt count and sanitized error. It must not add scheduled retry, provider job coupling, provider-native template body parsing, Core -> provider mapping/status API, schema-driven Web pages, credential refresh/status sync, or Slice 11 artifacts.
 - Decision: Slice 9D2 outbound execution entry point is `POST /internal/channel-outbound/deliveries`. It is channel-gateway internal, not Web-facing channel-admin, because session/runtime callers need an execution boundary while Web-facing channel-admin remains read/list only for outbound deliveries in this slice.
+- Decision: Slice 10 will be split into small Web subtasks. 10A creates the thin `SchemaDrivenForm` + Ajv 2020 validation foundation and renderer tests. Later subtasks will replace static Tool Connector / Channel Provider definitions in Integration Account, Tool connector config / operation mapping, Channel Profile, provider job, credential, and template binding pages with definition-endpoint driven flows.
+- Decision: 10A may add `ajv` to `apps/web` dependencies, but must not introduce a heavy form generator. It must not remove existing static connector config until a follow-up subtask can rewire the corresponding pages end-to-end.
 
 ## Worker / Checker Notes
 
+- Worker 10A completed schema-driven Web form renderer foundation.
+  - Added `ajv` to `@lynxus/web` and updated the lockfile.
+  - Added `SchemaDrivenForm.vue` plus reusable `schemaDrivenForm.ts` helpers for RFC 6901 JSON Pointer get/set, UI field ordering/options, visibility conditions, Ajv 2020 validation, Ajv/API field-error mapping, and secret-boundary checks.
+  - Renderer supports the first-version component set from `web-configuration.md`: `text`, `textarea`, `password`, `number`, `boolean`, `select`, `multiSelect`, `radio`, `checkboxGroup`, `json`, `cron`, `duration`, `url`, `email`, `dateTime`, with JSON textarea fallback for unknown/complex controls.
+  - Config mode omits secret fields, password controls, secret-like keys, and `externalSecretRef`; credential mode renders secret fields as password controls and strips initial secret-like values so stored secrets are not echoed or backfilled.
+  - Business pages were intentionally not rewired in 10A; existing static Tool Connector forms remain until later Slice 10 subtasks can replace them end-to-end through definition endpoints.
+  - Verification:
+    - `pnpm --filter @lynxus/web test -- SchemaDrivenForm` passed.
+    - `pnpm --filter @lynxus/web lint` passed.
+    - Guardrail grep for Slice 11/sample/static definition-list terms in the 10A files returned no matches.
+    - `git diff --check` passed.
+  - Residual risks:
+    - 10A tests are helper-level; page-level and DOM interaction coverage should be added when actual business pages consume `SchemaDrivenForm`.
+- Checker 10A verdict: pass.
+  - Confirmed the change is scoped to the thin renderer/Ajv dependency, does not rewire business pages, and adds no Slice 11 artifacts or static provider/connector definition lists.
+  - Confirmed tests cover JSON Pointer mapping/escaping, visibility conditions, Ajv validation, API validation error mapping, and credential secret no-echo behavior.
+  - Checker verification:
+    - `pnpm --filter @lynxus/web test -- SchemaDrivenForm` passed.
+    - `pnpm --filter @lynxus/web lint` passed.
+    - `git diff --check` passed.
+    - Targeted guardrail scans passed.
+  - Main follow-up: strengthened `validateSchemaDrivenForm(..., { mode, uiSchema })` so secret boundary violations make validation invalid, not only visible in the component alert. Focused test and lint reruns passed.
 - Worker 9D2 implemented outbound delivery execution/failure foundation.
   - Added channel-gateway-owned internal execution path `POST /internal/channel-outbound/deliveries` with request shape `channelProfileId`, `assistantId`, `externalConversationId`, optional `sessionId` / `sessionMessageId`, canonical `messageBlock`, and optional trace context. No Web-facing create/send endpoint was added.
   - Added `channel_outbound_delivery.idempotency_key`, `SENDING` status, regenerated channel-gateway jOOQ, and aligned JVM/TS/OpenAPI read/runtime DTOs. Existing Web-facing channel-admin outbound delivery remains list/read only and exposes no secret material.

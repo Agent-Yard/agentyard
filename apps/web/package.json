@@ -11,6 +11,7 @@
     "lint": "vue-tsc --noEmit"
   },
   "dependencies": {
+    "ajv": "^8.20.0",
     "ant-design-vue": "^4.2.6",
     "dompurify": "^3.4.1",
     "marked": "^18.0.2",
