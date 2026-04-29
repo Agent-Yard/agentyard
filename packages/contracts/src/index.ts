@@ -29,6 +29,53 @@ export type ChannelAccountStatus = 'ACTIVE' | 'INACTIVE';
 export type ChannelConversationBindingStatus = 'ACTIVE' | 'ARCHIVED';
 export type ChannelInboundEventStatus = 'RECEIVED' | 'REJECTED';
 export type ChannelOutboundDeliveryStatus = 'PENDING' | 'SENT' | 'FAILED';
+export type CredentialCapabilityMode = 'REMOTE_LIFECYCLE' | 'CORE_ENCRYPTED_REFERENCE';
+
+export interface CredentialCapability {
+  supported: boolean;
+  mode: CredentialCapabilityMode | null;
+  credentialSchema: Record<string, unknown> | null;
+  credentialUiSchema: Record<string, unknown>[];
+}
+
+export interface ChannelProviderJobDefinition {
+  jobType: string;
+  title: string;
+  description: string | null;
+  jobConfigSchema: Record<string, unknown>;
+  jobConfigUiSchema: Record<string, unknown>[];
+  defaultSchedule: Record<string, unknown> | null;
+  defaultEnabled: boolean | null;
+  defaultJobTimeoutSeconds: number | null;
+}
+
+export interface ChannelProviderDefinition {
+  providerType: string;
+  title: string;
+  description: string | null;
+  definitionDigest: string;
+  accountConfigSchema: Record<string, unknown>;
+  accountConfigUiSchema: Record<string, unknown>[];
+  credentialCapability: CredentialCapability;
+  configSchema: Record<string, unknown>;
+  configUiSchema: Record<string, unknown>[];
+  defaultConfig: Record<string, unknown>;
+  jobDefinitions: ChannelProviderJobDefinition[];
+}
+
+export interface ToolConnectorDefinition {
+  connectorType: string;
+  title: string;
+  description: string | null;
+  definitionDigest: string;
+  accountConfigSchema: Record<string, unknown>;
+  accountConfigUiSchema: Record<string, unknown>[];
+  credentialCapability: CredentialCapability;
+  configSchema: Record<string, unknown>;
+  configUiSchema: Record<string, unknown>[];
+  operationMappingSchema: Record<string, unknown>;
+  operationMappingUiSchema: Record<string, unknown>[];
+}
 
 export interface ToolOutcomeSummary {
   callId: string;

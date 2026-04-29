@@ -39,6 +39,30 @@ paths:
       responses:
         '200':
           description: Aggregate catalog state with assistants, agents, resources, and knowledge bases
+  /extensions/channel-providers:
+    get:
+      summary: List registered channel provider definitions
+      responses:
+        '200':
+          description: Registered channel provider definitions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseChannelProviderDefinitionList'
+        '503':
+          description: Extension definition registry is not ready
+  /extensions/tool-connectors:
+    get:
+      summary: List registered tool connector definitions
+      responses:
+        '200':
+          description: Registered tool connector definitions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseToolConnectorDefinitionList'
+        '503':
+          description: Extension definition registry is not ready
   /integration/accounts:
     get:
       summary: List integration accounts
@@ -980,6 +1004,191 @@ components:
         timestamp:
           type: string
           format: date-time
+    ApiResponseChannelProviderDefinitionList:
+      type: object
+      required: [success, data, timestamp]
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChannelProviderDefinition'
+        timestamp:
+          type: string
+          format: date-time
+    ApiResponseToolConnectorDefinitionList:
+      type: object
+      required: [success, data, timestamp]
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolConnectorDefinition'
+        timestamp:
+          type: string
+          format: date-time
+    JsonObject:
+      type: object
+      additionalProperties: true
+    UiField:
+      type: object
+      additionalProperties: true
+    CredentialCapabilityMode:
+      type: string
+      enum: [REMOTE_LIFECYCLE, CORE_ENCRYPTED_REFERENCE]
+    CredentialCapability:
+      type: object
+      required: [supported, credentialUiSchema]
+      properties:
+        supported:
+          type: boolean
+        mode:
+          anyOf:
+            - $ref: '#/components/schemas/CredentialCapabilityMode'
+            - type: 'null'
+        credentialSchema:
+          anyOf:
+            - $ref: '#/components/schemas/JsonObject'
+            - type: 'null'
+        credentialUiSchema:
+          type: array
+          items:
+            $ref: '#/components/schemas/UiField'
+    ChannelProviderJobDefaultSchedule:
+      type: object
+      additionalProperties: true
+      properties:
+        scheduleType:
+          type: string
+        intervalSeconds:
+          type: integer
+          nullable: true
+        cronExpression:
+          type: string
+          nullable: true
+        timezone:
+          type: string
+          nullable: true
+        jobConfig:
+          $ref: '#/components/schemas/JsonObject'
+    ChannelProviderJobDefinition:
+      type: object
+      required: [jobType, title, jobConfigSchema, jobConfigUiSchema]
+      properties:
+        jobType:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        jobConfigSchema:
+          $ref: '#/components/schemas/JsonObject'
+        jobConfigUiSchema:
+          type: array
+          items:
+            $ref: '#/components/schemas/UiField'
+        defaultSchedule:
+          anyOf:
+            - $ref: '#/components/schemas/ChannelProviderJobDefaultSchedule'
+            - type: 'null'
+        defaultEnabled:
+          type: boolean
+          nullable: true
+        defaultJobTimeoutSeconds:
+          type: integer
+          nullable: true
+    ChannelProviderDefinition:
+      type: object
+      required:
+        - providerType
+        - title
+        - definitionDigest
+        - accountConfigSchema
+        - accountConfigUiSchema
+        - credentialCapability
+        - configSchema
+        - configUiSchema
+        - defaultConfig
+        - jobDefinitions
+      properties:
+        providerType:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        definitionDigest:
+          type: string
+          pattern: '^sha256:[0-9a-f]{64}$'
+        accountConfigSchema:
+          $ref: '#/components/schemas/JsonObject'
+        accountConfigUiSchema:
+          type: array
+          items:
+            $ref: '#/components/schemas/UiField'
+        credentialCapability:
+          $ref: '#/components/schemas/CredentialCapability'
+        configSchema:
+          $ref: '#/components/schemas/JsonObject'
+        configUiSchema:
+          type: array
+          items:
+            $ref: '#/components/schemas/UiField'
+        defaultConfig:
+          $ref: '#/components/schemas/JsonObject'
+        jobDefinitions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChannelProviderJobDefinition'
+    ToolConnectorDefinition:
+      type: object
+      required:
+        - connectorType
+        - title
+        - definitionDigest
+        - accountConfigSchema
+        - accountConfigUiSchema
+        - credentialCapability
+        - configSchema
+        - configUiSchema
+        - operationMappingSchema
+        - operationMappingUiSchema
+      properties:
+        connectorType:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        definitionDigest:
+          type: string
+          pattern: '^sha256:[0-9a-f]{64}$'
+        accountConfigSchema:
+          $ref: '#/components/schemas/JsonObject'
+        accountConfigUiSchema:
+          type: array
+          items:
+            $ref: '#/components/schemas/UiField'
+        credentialCapability:
+          $ref: '#/components/schemas/CredentialCapability'
+        configSchema:
+          $ref: '#/components/schemas/JsonObject'
+        configUiSchema:
+          type: array
+          items:
+            $ref: '#/components/schemas/UiField'
+        operationMappingSchema:
+          $ref: '#/components/schemas/JsonObject'
+        operationMappingUiSchema:
+          type: array
+          items:
+            $ref: '#/components/schemas/UiField'
     VersionStatus:
       type: string
       enum: [DRAFT, PUBLISHED]

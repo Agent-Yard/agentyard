@@ -12,8 +12,8 @@
 
 ## Current Position
 
-- Current slice: Slice 4 - Runtime manifest endpoints + internal DescriptorProvider.
-- Current subtask: Slice 4 complete; paused before Slice 5 per user request.
+- Current slice: Slice 5 - API registry aggregation + definition endpoints.
+- Current subtask: Slice 5A API local manifest aggregation and definition endpoints; aggregate runtime-owner validation will follow as Slice 5B.
 - Main-agent role: orchestration, integration decisions, ledger maintenance, review of worker/checker output.
 - Implementation flow: worker implements each bounded subtask, independent checker reviews read-only, then main agent decides follow-up.
 
@@ -31,6 +31,11 @@
   - `extension-protocol.md` extension implementation contract test requirement for HTTP path and internal `DescriptorProvider` path.
   - `channel-provider.md` gateway-native `DescriptorProvider` responsibilities.
   - `tool-connector.md` built-in reference connector `DescriptorProvider` responsibilities.
+- Read Slice 5 relevant docs / sections:
+  - `implementation-roadmap.md` Slice 5 deliverables and acceptance criteria.
+  - `static-registration.md` §6.2-§6.4 API aggregate validation, registry validation error schema, and deployment order.
+  - `web-configuration.md` definition endpoint contract and `ChannelProviderDefinition` / `ToolConnectorDefinition` projection shape.
+  - `deployment-and-governance.md` internal auth header rules for API -> runtime / extension service manifest fetches.
 - Slice 1 worker completed initial protocol package under `packages/extension-protocol`.
 - Slice 1 completed after checker repair and rerun; no blocking findings remain.
 - Slice 2 completed after checker repair and Slice 1-2 checkpoint; no blocking findings remain.
@@ -45,6 +50,8 @@
 - Runtime owner manifest/validation must not copy descriptor definition digest field selection in each service; add SDK helpers first, then have runtime owners call them.
 - `agent-runtime` manifest endpoint must use SDK canonical JSON / manifest validation; descriptor definition digests must come from SDK helpers.
 - `channel-gateway` manifest endpoint must use JVM SDK canonical JSON / manifest validation; channel provider definition digests must come from JVM SDK helpers.
+- Slice 5 API definition endpoints must be projections, not raw manifests: expose schemas/UI schemas/title/description/defaults/credential capability and definition digest, but not registration/baseUrl/endpoint path/internal token/runtime-only state.
+- Slice 5 aggregate validation must be the only place comparing API, `agent-runtime`, and `channel-gateway` `registrationConfigDigest`.
 
 ## Decisions / Questions
 
@@ -54,6 +61,8 @@
 - Decision: Checker blocking findings are source-of-truth issues and must be fixed before Slice 2. Do not rely on self-check custom code if OpenAPI / JSON Schema facts remain permissive.
 - Decision: Slice 4 will be split into shared SDK digest helpers, then `agent-runtime` DescriptorProvider/manifest/validation, then `channel-gateway` DescriptorProvider/manifest/validation. This keeps descriptor digest normalization in SDKs rather than duplicating it in runtime owners.
 - Decision: validation-only schema view strips JSON Schema annotation keywords (`title` / `description` / `default`) when they are schema object keywords, but preserves identical names when they are keys inside schema maps such as `properties`, `$defs`, `definitions`, `patternProperties`, or `dependentSchemas`. Those map entries are validation-bearing business field names, not annotation keywords; stripping them would change the digest's validation semantics.
+- Decision: Slice 5 will be split into 5A API local manifest aggregation + definition endpoints, then 5B aggregate validation against runtime owner validation endpoints. 5A must not claim runtime registry readiness; 5B will enforce cross-service digest/id consistency.
+- Decision: Slice 5A default projection safety should not reject credential schemas themselves, because `credentialSchema` is intentionally exposed for credential forms. The sensitive default guard applies to normal config defaults that Web may auto-fill (`defaultConfig` and provider job `defaultSchedule.jobConfig`), rejecting `externalSecretRef`, `secret: true`, and common secret-like keys such as `password`, `apiKey`, `accessToken`, `refreshToken`, `privateKey`, and `webhookSigningSecret`.
 
 ## Worker / Checker Notes
 
@@ -466,6 +475,49 @@
   - `./gradlew :packages:extension-sdk-jvm:test` passed.
   - `uv run pytest packages/extension-sdk-python/tests -q` passed (`58 passed`).
   - `pnpm --filter @lynxus/extension-protocol self-check` passed with `jsonAssets=77`, `jsonSchemas=9`, `examples=4`, `manifestFixtures=12`, `requestFixtures=24`, `canonicalFixtures=16`, `registrationLoaderFixtures=11`.
+- Worker `Einstein` (`019dd8da-3add-7450-bd3d-b4d7a76f57bc`) completed Slice 5A API-local manifest aggregation and Web-facing definition endpoints.
+  - Added `GET /api/extensions/channel-providers` and `GET /api/extensions/tool-connectors`.
+  - Added API request-time manifest aggregation using JVM SDK `LynxusExtensionHttp.manifestUrl`, service-level headers, `ManifestValidator`, and `DescriptorDefinitionDigests`.
+  - Added definition projection DTOs that omit registration/baseUrl/endpoint paths/auth/runtime state/`externalSecretRef`.
+  - Added API-local registry readiness checks for missing, unexpected, duplicate, schema, and fetch failures; endpoints return 503 rather than partial definitions when local aggregation is not ready.
+  - Updated `packages/contracts/openapi/control-plane.yaml` and `packages/contracts/src/index.ts` with definition endpoint contracts and TypeScript types.
+  - Explicitly did not implement runtime-owner aggregate validation; that remains Slice 5B.
+  - Reported verification:
+    - `./gradlew :apps:api:test --tests '*Extension*'` passed.
+    - `./gradlew :apps:api:test --tests '*ExtensionDefinition*'` passed.
+    - `./gradlew :packages:extension-sdk-jvm:test` passed.
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+- Checker `Darwin` (`019dd8e4-65d9-78c0-972e-68be730fe988`) verdict for Slice 5A: fail.
+  - Blocking: API definition projection returns manifest `defaultConfig` and provider job `defaultSchedule` directly, while the recursive safety guard only rejects `externalSecretRef`; secret-like plaintext defaults could be served to Web.
+  - Confirmed OK: endpoints and contract shapes exist, manifest fetch uses service-level headers and 5s timeout, no `accountRequirement`, no Slice 5B aggregate validation endpoint, OpenAPI/TS definition DTOs do not expose endpoint/baseUrl/auth/`externalSecretRef`, and focused tests passed.
+  - Checker verification:
+    - `./gradlew :apps:api:test --tests '*Extension*'` passed.
+    - `./gradlew :apps:api:test --tests '*ExtensionDefinition*'` passed.
+    - `./gradlew :packages:extension-sdk-jvm:test` passed.
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+- Worker `Euler` (`019dd8e8-26d2-73e3-8739-b99a1d4c83b9`) completed Slice 5A sensitive default projection repair.
+  - Added recursive sensitive-default guard for channel provider `defaultConfig` and provider job `defaultSchedule.jobConfig`.
+  - Guard rejects `externalSecretRef`, `secret: true`, and common secret-like keys (`password`, `apiKey`, `accessToken`, `refreshToken`, `privateKey`, `webhookSigningSecret`) as local `MANIFEST_SCHEMA_INVALID` without including raw values.
+  - Narrowed the guard so credential schemas can still expose credential field names such as `apiKey` through `credentialCapability`.
+  - Added regression tests for `defaultConfig.apiKey`, `defaultSchedule.jobConfig.webhookSigningSecret`, and allowed remote credential schema `apiKey`.
+  - Reported verification:
+    - `./gradlew :apps:api:test --tests '*ExtensionDefinitionServiceTest'` passed.
+    - `./gradlew :apps:api:test --tests '*Extension*'` passed.
+- Checker `Wegener` (`019dd8eb-3ed3-7641-a24a-b1aa5f3bf5d3`) verdict for Slice 5A repair: pass; no blockers.
+  - Confirmed sensitive default guard is scoped to channel provider `defaultConfig` and provider job `defaultSchedule.jobConfig`.
+  - Confirmed defaults reject `externalSecretRef`, secret-like keys, and `secret: true` as local `MANIFEST_SCHEMA_INVALID` / `NOT_READY` without leaking secret values or raw manifest/auth/token details.
+  - Confirmed credential schema fields such as `apiKey` are still projected through `credentialCapability` when credential endpoints are declared.
+  - Confirmed definition endpoints/contracts still avoid endpoint/baseUrl/auth/registrationId/runtime state/`externalSecretRef`/`accountRequirement`, and no Slice 5B aggregate validation was introduced.
+  - Checker verification:
+    - `./gradlew :apps:api:test --tests '*ExtensionDefinitionServiceTest'` passed.
+    - `./gradlew :apps:api:test --tests '*Extension*'` passed.
+    - `./gradlew :packages:extension-sdk-jvm:test` passed.
+    - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+- Main Slice 5A checkpoint passed after checker approval:
+  - `./gradlew :apps:api:test --tests '*Extension*'` passed.
+  - `./gradlew :apps:api:test --tests '*ExtensionDefinition*'` passed.
+  - `./gradlew :packages:extension-sdk-jvm:test` passed.
+  - `pnpm --filter @lynxus/extension-protocol self-check` passed.
 
 ## Local Commit Policy
 
@@ -553,7 +605,12 @@
   - `./gradlew :packages:extension-sdk-jvm:test` passed.
   - `uv run pytest packages/extension-sdk-python/tests -q` passed (`58 passed`).
   - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+- Main Slice 5A checkpoint:
+  - `./gradlew :apps:api:test --tests '*Extension*'` passed.
+  - `./gradlew :apps:api:test --tests '*ExtensionDefinition*'` passed.
+  - `./gradlew :packages:extension-sdk-jvm:test` passed.
+  - `pnpm --filter @lynxus/extension-protocol self-check` passed.
 
 ## Blockers / Rework
 
-- None currently. Slice 4C was committed locally as `0942439 Add channel gateway extension manifest registry`; pause before Slice 5 per user request.
+- Pending local commit for Slice 5A.
