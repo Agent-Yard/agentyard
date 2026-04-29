@@ -84,7 +84,7 @@ def execute_playbook_tool_task(request: PlaybookToolTaskRequest) -> PlaybookTool
     arguments = _build_playbook_tool_arguments(request)
     input_schema = _parse_json_schema(operation.inputSchema)
     validate_json_schema_value(arguments, input_schema)
-    output = _call_connector_tool(descriptor, operation, arguments)
+    output = _call_connector_tool(descriptor, operation, arguments, retry_enabled=True)
     output_schema = _parse_json_schema(operation.outputSchema)
     validate_json_schema_value(output, output_schema)
     route_key = _first_non_blank(
@@ -639,6 +639,8 @@ def _call_connector_tool(
     descriptor: ToolDescriptor,
     operation: ToolOperationDescriptor,
     arguments: dict[str, Any],
+    *,
+    retry_enabled: bool = False,
 ) -> dict[str, Any]:
     return call_connector_tool(
         descriptor,
@@ -647,6 +649,7 @@ def _call_connector_tool(
         ConnectorRuntime(
             load_integration_account=_load_runtime_integration_account,
             internal_auth_headers=_internal_auth_headers,
+            retry_enabled=retry_enabled,
         ),
     )
 

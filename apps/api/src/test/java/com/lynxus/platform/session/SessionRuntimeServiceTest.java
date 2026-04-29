@@ -260,8 +260,42 @@ class SessionRuntimeServiceTest {
                 && startRequest.agents().getFirst().tools().getFirst().connector().accountSnapshot() != null
                 && "integration-account-1".equals(startRequest.agents().getFirst().tools().getFirst().connector().accountSnapshot().accountId())
                 && "vault://tool-secret".equals(startRequest.agents().getFirst().tools().getFirst().connector().accountSnapshot().externalSecretRef())
+                && startRequest.agents().getFirst().tools().getFirst().connector().retryPolicy().mode()
+                    == com.lynxus.contracts.session.SessionContracts.ToolConnectorRetryMode.EXPONENTIAL
+                && startRequest.agents().getFirst().tools().getFirst().connector().retryPolicy().maxAttempts() == 3
+                && startRequest.agents().getFirst().tools().getFirst().connector().retryPolicy().initialDelayMs() == 100
+                && startRequest.agents().getFirst().tools().getFirst().connector().retryPolicy().maxDelayMs() == 1000
+                && startRequest.agents().getFirst().tools().getFirst().connector().retryPolicy().backoffMultiplier() == 2.0
+                && startRequest.agents().getFirst().tools().getFirst().connector().retryPolicy().retryableCategories()
+                    .equals(List.of("REMOTE_TIMEOUT", "REMOTE_UNAVAILABLE", "REMOTE_RATE_LIMITED", "UNKNOWN"))
                 && "rv-tool-1".equals(startRequest.agents().getFirst().tools().getFirst().resourceVersionId())
         ));
+    }
+
+    @Test
+    void createSession_shouldRejectUnknownToolConnectorRetryPolicyPresetDuringReleaseMapping() {
+        SessionWorkflowGateway gateway = mock(SessionWorkflowGateway.class);
+        CatalogService catalogService = mock(CatalogService.class);
+        SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
+        SessionRuntimeService service = new SessionRuntimeService(
+            gateway,
+            catalogService,
+            repository,
+            new SessionDispatchLockService()
+        );
+        CatalogDtos.AssistantDto assistant = assistantWithFrozenReleaseDescriptors("ast-1", "LINEAR");
+
+        when(catalogService.getAssistant("ast-1")).thenReturn(assistant);
+        when(repository.findActiveSession("customer-1", "ast-1")).thenReturn(java.util.Optional.empty());
+        when(repository.findSession(any())).thenReturn(java.util.Optional.empty());
+
+        IllegalArgumentException error = assertThrows(
+            IllegalArgumentException.class,
+            () -> service.createSession(new CreateSessionRequest("ast-1", "customer-1", textMessageInput("")))
+        );
+
+        assertEquals("unsupported tool connector retryPolicy preset: LINEAR", error.getMessage());
+        verify(gateway, never()).start(any());
     }
 
     @Test
@@ -563,6 +597,10 @@ class SessionRuntimeServiceTest {
     }
 
     private static CatalogDtos.AssistantDto assistantWithFrozenReleaseDescriptors(String assistantId) {
+        return assistantWithFrozenReleaseDescriptors(assistantId, "EXPONENTIAL_BACKOFF");
+    }
+
+    private static CatalogDtos.AssistantDto assistantWithFrozenReleaseDescriptors(String assistantId, String retryPolicy) {
         Instant now = Instant.now();
         CatalogDtos.AssistantReleaseDto release = new CatalogDtos.AssistantReleaseDto(
             "rel-1",
@@ -618,7 +656,7 @@ class SessionRuntimeServiceTest {
                                 null,
                                 new CatalogDtos.ToolConnectorAccountSnapshotDto("integration-account-1", "vault://tool-secret"),
                                 15,
-                                "NONE",
+                                retryPolicy,
                                 Map.of("baseUrl", "https://tool.example"),
                                 Map.of("create_ticket", Map.of("method", "POST", "path", "/invoke", "requestPlacement", "JSON_BODY"))
                             )

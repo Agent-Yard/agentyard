@@ -87,7 +87,7 @@ def _request_payload() -> dict:
                         "connectorType": "simple-http",
                         "accountSnapshot": None,
                         "timeoutSeconds": 15,
-                        "retryPolicy": "NONE",
+                        "retryPolicy": _retry_policy(),
                         "config": {"baseUrl": "https://tool.example"},
                         "operationMappings": {
                             "create_ticket": {"method": "POST", "path": "/create", "requestPlacement": "JSON_BODY"}
@@ -134,7 +134,7 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
             "connectorType": "business-code-secret-http",
             "accountSnapshot": {"accountId": "integration-account-1"},
             "timeoutSeconds": 15,
-            "retryPolicy": "NONE",
+            "retryPolicy": _retry_policy(),
             "config": {
                 "baseUrl": "https://vendor.example",
                 "businessCodeField": "businessCode",
@@ -171,7 +171,7 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
             "connectorType": "business-code-secret-http",
             "accountSnapshot": {"accountId": "integration-account-1"},
             "timeoutSeconds": 15,
-            "retryPolicy": "NONE",
+            "retryPolicy": _retry_policy(),
             "config": {"baseUrl": "https://vendor.example"},
             "operationMappings": {
                 "create_ticket": {"method": "POST", "path": "/tickets", "requestPlacement": "JSON_BODY"}
@@ -200,7 +200,7 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
             "connectorType": "simple-http",
             "accountSnapshot": {"accountId": "integration-account-simple"},
             "timeoutSeconds": 15,
-            "retryPolicy": "NONE",
+            "retryPolicy": _retry_policy(),
             "config": {"baseUrl": "https://tool.example"},
             "operationMappings": {
                 "create_ticket": {"method": "POST", "path": "/create", "requestPlacement": "JSON_BODY"}
@@ -233,7 +233,7 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
             "connectorType": "simple-http",
             "accountSnapshot": {"accountId": "integration-account-business"},
             "timeoutSeconds": 15,
-            "retryPolicy": "NONE",
+            "retryPolicy": _retry_policy(),
             "config": {"baseUrl": "https://tool.example"},
             "operationMappings": {
                 "create_ticket": {"method": "POST", "path": "/create", "requestPlacement": "JSON_BODY"}
@@ -262,7 +262,7 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
             "connectorType": "simple-http",
             "accountSnapshot": {"accountId": "integration-account-disabled"},
             "timeoutSeconds": 15,
-            "retryPolicy": "NONE",
+            "retryPolicy": _retry_policy(),
             "config": {"baseUrl": "https://tool.example"},
             "operationMappings": {
                 "create_ticket": {"method": "POST", "path": "/create", "requestPlacement": "JSON_BODY"}
@@ -291,7 +291,7 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
             "connectorType": "mcp",
             "accountSnapshot": None,
             "timeoutSeconds": 15,
-            "retryPolicy": "NONE",
+            "retryPolicy": _retry_policy(),
             "config": {
                 "serverName": "mcp-server",
                 "transport": "STREAMABLE_HTTP",
@@ -317,7 +317,7 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
             "connectorType": "mcp",
             "accountSnapshot": None,
             "timeoutSeconds": 15,
-            "retryPolicy": "NONE",
+            "retryPolicy": _retry_policy(),
             "config": {
                 "serverName": "mcp-server",
                 "transport": "STREAMABLE_HTTP",
@@ -335,3 +335,15 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
 
         self.assertEqual(result.routeKey, "success")
         self.assertEqual(request_log[0]["headers"], {"Authorization": "Bearer test-internal-token"})
+
+
+def _retry_policy() -> dict:
+    return {
+        "mode": "NONE",
+        "maxAttempts": 1,
+        "initialDelayMs": 0,
+        "maxDelayMs": 0,
+        "backoffMultiplier": 1.0,
+        "retryableCategories": [],
+        "retryableErrorCodes": [],
+    }

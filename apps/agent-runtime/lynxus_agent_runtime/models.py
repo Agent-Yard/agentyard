@@ -73,13 +73,45 @@ class ToolConnectorAccountSnapshot(BaseModel):
     externalSecretRef: str | None = None
 
 
+RetryPolicyMode = Literal["NONE", "FIXED", "EXPONENTIAL"]
+RetryableErrorCategory = Literal[
+    "AUTH",
+    "BAD_REQUEST",
+    "REMOTE_TIMEOUT",
+    "REMOTE_UNAVAILABLE",
+    "REMOTE_RATE_LIMITED",
+    "REMOTE_BUSINESS_REJECTED",
+    "PROTOCOL_ERROR",
+    "CIRCUIT_OPEN",
+    "UNKNOWN",
+]
+
+
+class ToolConnectorRuntimeRetryPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: RetryPolicyMode
+    maxAttempts: int = Field(ge=1)
+    initialDelayMs: int = Field(ge=0)
+    maxDelayMs: int = Field(ge=0)
+    backoffMultiplier: float = Field(ge=1.0)
+    retryableCategories: list[RetryableErrorCategory] = Field(default_factory=list)
+    retryableErrorCodes: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_none_policy(self) -> "ToolConnectorRuntimeRetryPolicy":
+        if self.mode == "NONE" and self.maxAttempts != 1:
+            raise ValueError("retryPolicy.mode NONE requires maxAttempts=1")
+        return self
+
+
 class ToolConnectorDescriptor(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     connectorType: str
     accountSnapshot: ToolConnectorAccountSnapshot | None = None
     timeoutSeconds: int = 15
-    retryPolicy: str = "NONE"
+    retryPolicy: ToolConnectorRuntimeRetryPolicy
     config: dict[str, Any] = Field(default_factory=dict)
     operationMappings: dict[str, dict[str, Any]] = Field(default_factory=dict)
 

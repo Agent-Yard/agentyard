@@ -553,11 +553,23 @@ export interface ToolOperationDescriptor {
   outputSchema: string;
 }
 
+export type ToolConnectorRetryMode = 'NONE' | 'FIXED' | 'EXPONENTIAL';
+
+export interface ToolConnectorRuntimeRetryPolicy {
+  mode: ToolConnectorRetryMode;
+  maxAttempts: number;
+  initialDelayMs: number;
+  maxDelayMs: number;
+  backoffMultiplier: number;
+  retryableCategories: string[];
+  retryableErrorCodes: string[];
+}
+
 export interface ToolConnectorDescriptor {
   connectorType: string;
   accountSnapshot: ToolConnectorAccountSnapshot | null;
   timeoutSeconds: number;
-  retryPolicy: string;
+  retryPolicy: ToolConnectorRuntimeRetryPolicy;
   config: Record<string, unknown>;
   operationMappings: Record<string, Record<string, unknown>>;
 }

@@ -13,7 +13,7 @@
 ## Current Position
 
 - Current slice: Slice 7 - Tool connector manifest migration + remote invocation adapter.
-- Current subtask: Slice 7A API/catalog tool connector config and assistant release materialization alignment.
+- Current subtask: Slice 7C retry/circuit acceptance for remote Tool Connector invocation.
 - Main-agent role: orchestration, integration decisions, ledger maintenance, review of worker/checker output.
 - Implementation flow: worker implements each bounded subtask, independent checker reviews read-only, then main agent decides follow-up.
 
@@ -681,6 +681,51 @@
     - `uv run pytest apps/agent-runtime/tests -q`
     - `git diff --check`
   - Non-blocking follow-up: revisit default idempotency key source before structured retry behavior lands so retries can use an explicit logical invocation id rather than only a content-derived key.
+- Worker 7C completed structured runtime retry policy + remote retry/circuit work.
+  - Runtime session contract now carries a structured retry policy object instead of plain retry policy string.
+  - API `SessionRuntimeService` maps saved catalog retry preset strings to structured runtime policy.
+  - Agent-runtime model accepts structured retry policy and rejects legacy string form.
+  - Remote adapter retries only when runtime retry is enabled, the structured policy allows it, the `ExtensionError` / transport failure is retryable, attempts remain, and the failure is not protocol/output validation.
+  - Playbook tool tasks enable connector retry; agent resource tool calls keep connector retry disabled by default.
+  - Retry attempts reuse the same idempotency key.
+  - Added minimal per-process in-memory circuit breaker for remote connectors; circuit-open prevents another remote request.
+  - Verification reported passed:
+    - `./gradlew :apps:api:test --tests '*SessionRuntimeService*'`
+    - `uv run pytest apps/agent-runtime/tests/test_remote_tool_connector.py -q`
+    - `uv run pytest apps/agent-runtime/tests/test_playbook_tool_task.py -q`
+    - `uv run pytest apps/agent-runtime/tests/test_models.py -q`
+    - `uv run pytest apps/agent-runtime/tests -q`
+    - `git diff --check`
+  - Residual risk: circuit state is intentionally in-memory and per-process only; no cross-process coordination.
+- Checker 7C verdict: pass.
+  - Confirmed structured runtime retry policy object replaces runtime string retry policy.
+  - Confirmed API maps saved retry presets into bounded structured runtime policies and rejects unknown presets.
+  - Confirmed retry is enabled for playbook tool tasks but disabled for agent resource tool calls by default.
+  - Confirmed retry conditions match docs, idempotency key is reused across attempts, protocol/output failures are not retried, and minimal remote-only circuit breaker blocks subsequent calls while open.
+  - Verification passed:
+    - `./gradlew :apps:api:test --tests '*SessionRuntimeService*'`
+    - `uv run pytest apps/agent-runtime/tests/test_remote_tool_connector.py -q`
+    - `uv run pytest apps/agent-runtime/tests/test_playbook_tool_task.py -q`
+    - `uv run pytest apps/agent-runtime/tests/test_models.py -q`
+    - `uv run pytest apps/agent-runtime/tests -q`
+    - `git diff --check`
+  - Non-blocking follow-up: add optional explicit coverage for `httpx.RequestError` connection failure and retry category mismatch if tests are expanded later.
+- Worker 7C completed structured retry policy and remote retry/circuit acceptance.
+  - Assistant release/session runtime contracts now carry structured Tool Connector retry policy (`mode`, attempts, delay/backoff, retryable categories, retryable error codes) instead of the saved catalog preset string.
+  - API session runtime mapping converts saved `retryPolicy` presets only for `NONE`, `FIXED`, `EXPONENTIAL`, and `EXPONENTIAL_BACKOFF`; unknown presets fail clearly during release mapping.
+  - Agent-runtime Pydantic models require the structured retry policy object and reject the legacy string shape.
+  - Remote adapter retries only when runtime retry is enabled. Playbook Tool tasks enable connector retry; Agent resource tool calls keep it disabled by default.
+  - Retry decisions require `ExtensionError.retryable = true`, remaining attempts, policy category/error-code match, and exclude protocol/envelope/output validation failures. Retries reuse the same idempotency key and per-attempt timeout.
+  - Transport timeout/connection failures and 5xx responses without valid `ExtensionError` map to structured retryable remote timeout/unavailable failures without logging URL, token, or `externalSecretRef`.
+  - Added a minimal in-memory per-connector circuit breaker for remote connectors only; it opens after consecutive retryable exhausted failures and returns structured `CIRCUIT_OPEN` without sending another remote request.
+  - Verification:
+    - `./gradlew :apps:api:test --tests '*SessionRuntimeService*'` passed.
+    - `uv run pytest apps/agent-runtime/tests/test_remote_tool_connector.py -q` passed (`20 passed`).
+    - `uv run pytest apps/agent-runtime/tests/test_playbook_tool_task.py -q` passed (`8 passed`).
+    - `uv run pytest apps/agent-runtime/tests/test_models.py -q` passed (`8 passed`).
+    - `uv run pytest apps/agent-runtime/tests -q` passed (`83 passed`).
+    - `git diff --check` passed.
+  - Scope held: no Web pages/static connector UI, Channel Profile/Slice 8, Slice 9/10/11, deployment/sample artifacts, or commits.
 - Worker 7A-DefaultRepair completed checker blocker repair.
   - Removed `CatalogService` static `simple-http` default connector choice and the default connector config helper.
   - Tool Resource normalization now rejects missing/null `connector` with a clear error; saved Tool resources must submit explicit `connectorType`, `config`, and `operationMappings`.

@@ -70,7 +70,7 @@ class AgentDecisionModelTest(unittest.TestCase):
                         "externalSecretRef": "vault://tool-secret",
                     },
                     "timeoutSeconds": 15,
-                    "retryPolicy": "NONE",
+                    "retryPolicy": _retry_policy(),
                     "config": {},
                     "operationMappings": {},
                 },
@@ -79,6 +79,7 @@ class AgentDecisionModelTest(unittest.TestCase):
 
         self.assertEqual(tool.connector.accountSnapshot.accountId, "integration-account-1")
         self.assertEqual(tool.connector.accountSnapshot.externalSecretRef, "vault://tool-secret")
+        self.assertEqual(tool.connector.retryPolicy.mode, "NONE")
         self.assertFalse(hasattr(tool.connector, "accountId"))
 
     def test_tool_connector_release_shape_does_not_require_account_snapshot(self) -> None:
@@ -92,7 +93,7 @@ class AgentDecisionModelTest(unittest.TestCase):
                 "connector": {
                     "connectorType": "simple-http",
                     "timeoutSeconds": 15,
-                    "retryPolicy": "NONE",
+                    "retryPolicy": _retry_policy(),
                     "config": {},
                     "operationMappings": {},
                 },
@@ -114,9 +115,40 @@ class AgentDecisionModelTest(unittest.TestCase):
                         "connectorType": "simple-http",
                         "accountId": "integration-account-legacy",
                         "timeoutSeconds": 15,
+                        "retryPolicy": _retry_policy(),
+                        "config": {},
+                        "operationMappings": {},
+                    },
+                }
+            )
+
+    def test_tool_connector_release_shape_rejects_legacy_retry_policy_string(self) -> None:
+        with self.assertRaises(ValidationError):
+            ToolDescriptor.model_validate(
+                {
+                    "resourceId": "tool-1",
+                    "resourceName": "Ticket Tool",
+                    "resourceVersionId": "tool-ver-1",
+                    "resourceVersion": "1.0.0",
+                    "operations": [],
+                    "connector": {
+                        "connectorType": "simple-http",
+                        "timeoutSeconds": 15,
                         "retryPolicy": "NONE",
                         "config": {},
                         "operationMappings": {},
                     },
                 }
             )
+
+
+def _retry_policy() -> dict:
+    return {
+        "mode": "NONE",
+        "maxAttempts": 1,
+        "initialDelayMs": 0,
+        "maxDelayMs": 0,
+        "backoffMultiplier": 1.0,
+        "retryableCategories": [],
+        "retryableErrorCodes": [],
+    }

@@ -22,6 +22,8 @@ import com.lynxus.contracts.session.SessionContracts.SkillDescriptor;
 import com.lynxus.contracts.session.SessionContracts.ToolDescriptor;
 import com.lynxus.contracts.session.SessionContracts.ToolConnectorAccountSnapshot;
 import com.lynxus.contracts.session.SessionContracts.ToolConnectorDescriptor;
+import com.lynxus.contracts.session.SessionContracts.ToolConnectorRetryMode;
+import com.lynxus.contracts.session.SessionContracts.ToolConnectorRuntimeRetryPolicy;
 import com.lynxus.contracts.session.SessionContracts.ToolOperationDescriptor;
 import com.lynxus.contracts.session.SessionContracts.UserMessage;
 import com.lynxus.contracts.session.SessionContracts.AssistantSessionConfig;
@@ -59,6 +61,13 @@ import static com.lynxus.platform.session.SessionRuntimeDtos.*;
 
 @Service
 public class SessionRuntimeService {
+    private static final List<String> DEFAULT_RETRYABLE_REMOTE_CATEGORIES = List.of(
+        "REMOTE_TIMEOUT",
+        "REMOTE_UNAVAILABLE",
+        "REMOTE_RATE_LIMITED",
+        "UNKNOWN"
+    );
+
     private final SessionWorkflowGateway sessionWorkflowGateway;
     private final CatalogService catalogService;
     private final SessionRuntimeRepository repository;
@@ -440,10 +449,48 @@ public class SessionRuntimeService {
             connector.connectorType(),
             toToolConnectorAccountSnapshot(connector.accountSnapshot()),
             connector.timeoutSeconds(),
-            connector.retryPolicy(),
+            toToolConnectorRuntimeRetryPolicy(connector.retryPolicy()),
             connector.config(),
             connector.operationMappings()
         );
+    }
+
+    private ToolConnectorRuntimeRetryPolicy toToolConnectorRuntimeRetryPolicy(String retryPolicyPreset) {
+        String preset = retryPolicyPreset == null ? "" : retryPolicyPreset.trim();
+        if (preset.isEmpty() || "NONE".equals(preset)) {
+            return new ToolConnectorRuntimeRetryPolicy(
+                ToolConnectorRetryMode.NONE,
+                1,
+                0,
+                0,
+                1.0,
+                List.of(),
+                List.of()
+            );
+        }
+        if ("FIXED".equals(preset)) {
+            return new ToolConnectorRuntimeRetryPolicy(
+                ToolConnectorRetryMode.FIXED,
+                3,
+                100,
+                100,
+                1.0,
+                DEFAULT_RETRYABLE_REMOTE_CATEGORIES,
+                List.of()
+            );
+        }
+        if ("EXPONENTIAL".equals(preset) || "EXPONENTIAL_BACKOFF".equals(preset)) {
+            return new ToolConnectorRuntimeRetryPolicy(
+                ToolConnectorRetryMode.EXPONENTIAL,
+                3,
+                100,
+                1000,
+                2.0,
+                DEFAULT_RETRYABLE_REMOTE_CATEGORIES,
+                List.of()
+            );
+        }
+        throw new IllegalArgumentException("unsupported tool connector retryPolicy preset: " + retryPolicyPreset);
     }
 
     private ToolConnectorAccountSnapshot toToolConnectorAccountSnapshot(com.lynxus.platform.catalog.CatalogDtos.ToolConnectorAccountSnapshotDto accountSnapshot) {

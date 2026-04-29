@@ -3,15 +3,18 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import time
 from dataclasses import dataclass
 from threading import Lock
 from typing import Any, Callable, Protocol
 from urllib.parse import urljoin, urlsplit
 
+import httpx
 from lynxus_common import current_traceparent
 from lynxus_extension_sdk.protocol import (
     DescriptorType,
     ExtensionError,
+    ExtensionErrorCategory,
     ExtensionErrorParseError,
     build_descriptor_level_headers,
     parse_non_2xx_extension_error,
@@ -24,6 +27,16 @@ from .models import ToolConnectorDescriptor, ToolDescriptor, ToolOperationDescri
 
 _DEFAULT_REGISTRY_LOCK = Lock()
 _DEFAULT_TOOL_CONNECTOR_REGISTRY: ToolConnectorRegistry | None = None
+_REMOTE_CIRCUIT_LOCK = Lock()
+_REMOTE_CIRCUIT_STATES: dict[str, "_RemoteCircuitState"] = {}
+_REMOTE_CIRCUIT_FAILURE_THRESHOLD = 2
+_REMOTE_CIRCUIT_OPEN_SECONDS = 30.0
+_NEVER_RETRY_CATEGORIES = {"PROTOCOL_ERROR", "CIRCUIT_OPEN"}
+_NEVER_RETRY_ERROR_CODES = {
+    "EXTENSION_PROTOCOL_ERROR",
+    "TOOL_OUTPUT_INVALID",
+    "TOOL_OUTPUT_SCHEMA_VIOLATION",
+}
 
 
 def default_tool_connector_registry() -> ToolConnectorRegistry:
@@ -44,6 +57,11 @@ def reset_default_tool_connector_registry() -> None:
     global _DEFAULT_TOOL_CONNECTOR_REGISTRY
     with _DEFAULT_REGISTRY_LOCK:
         _DEFAULT_TOOL_CONNECTOR_REGISTRY = None
+
+
+def reset_remote_tool_connector_circuits() -> None:
+    with _REMOTE_CIRCUIT_LOCK:
+        _REMOTE_CIRCUIT_STATES.clear()
 
 
 def default_idempotency_key(
@@ -68,6 +86,9 @@ class ConnectorRuntime:
     tool_connector_registry: Callable[[], ToolConnectorRegistry] = default_tool_connector_registry
     traceparent: Callable[[], str] = current_traceparent
     idempotency_key: Callable[[ToolDescriptor, ToolOperationDescriptor, dict[str, Any]], str] = default_idempotency_key
+    retry_enabled: bool = False
+    sleep: Callable[[float], None] = time.sleep
+    monotonic: Callable[[], float] = time.monotonic
 
 
 @dataclass(frozen=True)
@@ -93,6 +114,7 @@ class ToolConnectorProtocolError(ValueError):
 class ToolConnectorRemoteError(RuntimeError):
     def __init__(self, *, http_status: int, extension_error: ExtensionError) -> None:
         self.http_status = http_status
+        self.extension_error = extension_error
         self.error_code = extension_error.error_code
         self.category = extension_error.category.value
         self.retryable = extension_error.retryable
@@ -100,6 +122,12 @@ class ToolConnectorRemoteError(RuntimeError):
         super().__init__(
             f"remote tool connector failed: status={http_status} category={self.category} errorCode={self.error_code}"
         )
+
+
+@dataclass
+class _RemoteCircuitState:
+    consecutive_failures: int = 0
+    open_until: float = 0.0
 
 
 class SimpleHttpConnector:
@@ -201,6 +229,9 @@ class RemoteToolConnectorAdapter:
         self._registry_entry = registry_entry
 
     def call(self, request: ConnectorCall) -> dict[str, Any]:
+        circuit_error = _open_circuit_error(request.connector.connectorType, request.runtime.monotonic())
+        if circuit_error is not None:
+            raise circuit_error
         body = self._request_body(request)
         idempotency_key = body["execution"]["idempotencyKey"]
         traceparent = body["execution"]["traceContext"]["traceparent"]
@@ -215,8 +246,50 @@ class RemoteToolConnectorAdapter:
         )
         url = descriptor_endpoint_url(self._registry_entry.base_url, self._registry_entry.invoke_path)
         client = shared_http_client_for_url(url)
-        response = client.post(url, headers=headers, json=body, timeout=max(1, request.connector.timeoutSeconds))
-        return self._parse_response(response)
+        timeout_seconds = max(1, request.connector.timeoutSeconds)
+        max_attempts = _max_attempts(request)
+        attempt = 1
+        while True:
+            try:
+                response = client.post(url, headers=headers, json=body, timeout=timeout_seconds)
+                output = self._parse_response(response)
+            except ToolConnectorRemoteError as error:
+                if _should_retry(request, error, attempt, max_attempts):
+                    _sleep_before_retry(request, attempt)
+                    attempt += 1
+                    continue
+                _record_retryable_exhausted_failure(request, error, attempt, max_attempts)
+                raise
+            except httpx.TimeoutException as error:
+                remote_error = _synthetic_remote_error(
+                    http_status=504,
+                    error_code="REMOTE_TRANSPORT_TIMEOUT",
+                    message="remote tool connector transport timed out",
+                    category=ExtensionErrorCategory.REMOTE_TIMEOUT,
+                    retryable=True,
+                )
+                if _should_retry(request, remote_error, attempt, max_attempts):
+                    _sleep_before_retry(request, attempt)
+                    attempt += 1
+                    continue
+                _record_retryable_exhausted_failure(request, remote_error, attempt, max_attempts)
+                raise remote_error from error
+            except httpx.RequestError as error:
+                remote_error = _synthetic_remote_error(
+                    http_status=503,
+                    error_code="REMOTE_TRANSPORT_UNAVAILABLE",
+                    message="remote tool connector transport unavailable",
+                    category=ExtensionErrorCategory.REMOTE_UNAVAILABLE,
+                    retryable=True,
+                )
+                if _should_retry(request, remote_error, attempt, max_attempts):
+                    _sleep_before_retry(request, attempt)
+                    attempt += 1
+                    continue
+                _record_retryable_exhausted_failure(request, remote_error, attempt, max_attempts)
+                raise remote_error from error
+            _record_remote_success(request.connector.connectorType)
+            return output
 
     def _request_body(self, request: ConnectorCall) -> dict[str, Any]:
         traceparent = request.runtime.traceparent()
@@ -259,9 +332,27 @@ class RemoteToolConnectorAdapter:
             try:
                 extension_error = parse_non_2xx_extension_error(status_code, raw_body)
             except ExtensionErrorParseError as error:
+                if status_code >= 500:
+                    raise _synthetic_remote_error(
+                        http_status=status_code,
+                        error_code=f"REMOTE_HTTP_{status_code}",
+                        message="remote tool connector returned 5xx without a valid ExtensionError",
+                        category=ExtensionErrorCategory.REMOTE_TIMEOUT
+                        if status_code == 504
+                        else ExtensionErrorCategory.REMOTE_UNAVAILABLE,
+                        retryable=True,
+                    ) from error
                 raise ToolConnectorProtocolError(
                     "remote tool connector returned non-2xx without a valid ExtensionError"
                 ) from error
+            if extension_error.category == ExtensionErrorCategory.CIRCUIT_OPEN:
+                extension_error = ExtensionError(
+                    error_code="EXTENSION_RETURNED_CIRCUIT_OPEN",
+                    message="remote tool connector returned reserved CIRCUIT_OPEN category",
+                    category=ExtensionErrorCategory.PROTOCOL_ERROR,
+                    retryable=False,
+                    details={},
+                )
             raise ToolConnectorRemoteError(http_status=status_code, extension_error=extension_error)
 
         try:
@@ -304,6 +395,114 @@ def call_connector_tool(
     if implementation is not None:
         return implementation.call(call)
     return RemoteToolConnectorAdapter(registry_entry).call(call)
+
+
+def _max_attempts(request: ConnectorCall) -> int:
+    policy = request.connector.retryPolicy
+    if not request.runtime.retry_enabled or policy.mode == "NONE":
+        return 1
+    return max(1, policy.maxAttempts)
+
+
+def _should_retry(request: ConnectorCall, error: ToolConnectorRemoteError, attempt: int, max_attempts: int) -> bool:
+    policy = request.connector.retryPolicy
+    if not request.runtime.retry_enabled or policy.mode == "NONE":
+        return False
+    if attempt >= max_attempts:
+        return False
+    if not error.retryable:
+        return False
+    if error.category in _NEVER_RETRY_CATEGORIES or error.error_code in _NEVER_RETRY_ERROR_CODES:
+        return False
+    return _matches_retry_policy(policy, error)
+
+
+def _matches_retry_policy(policy: Any, error: ToolConnectorRemoteError) -> bool:
+    categories = set(policy.retryableCategories)
+    error_codes = set(policy.retryableErrorCodes)
+    if error_codes and error.error_code in error_codes:
+        return True
+    return error.category in categories
+
+
+def _sleep_before_retry(request: ConnectorCall, attempt: int) -> None:
+    delay_seconds = _retry_delay_seconds(request.connector.retryPolicy, attempt)
+    if delay_seconds > 0:
+        request.runtime.sleep(delay_seconds)
+
+
+def _retry_delay_seconds(policy: Any, attempt: int) -> float:
+    if policy.mode == "FIXED":
+        delay_ms = policy.initialDelayMs
+    elif policy.mode == "EXPONENTIAL":
+        delay_ms = int(policy.initialDelayMs * (policy.backoffMultiplier ** max(0, attempt - 1)))
+    else:
+        return 0.0
+    if policy.maxDelayMs > 0:
+        delay_ms = min(delay_ms, policy.maxDelayMs)
+    return max(0, delay_ms) / 1000.0
+
+
+def _record_retryable_exhausted_failure(
+    request: ConnectorCall,
+    error: ToolConnectorRemoteError,
+    attempt: int,
+    max_attempts: int,
+) -> None:
+    policy = request.connector.retryPolicy
+    if not request.runtime.retry_enabled or policy.mode == "NONE" or attempt < max_attempts:
+        return
+    if not error.retryable or error.category in _NEVER_RETRY_CATEGORIES or error.error_code in _NEVER_RETRY_ERROR_CODES:
+        return
+    if not _matches_retry_policy(policy, error):
+        return
+    with _REMOTE_CIRCUIT_LOCK:
+        state = _REMOTE_CIRCUIT_STATES.setdefault(request.connector.connectorType, _RemoteCircuitState())
+        state.consecutive_failures += 1
+        if state.consecutive_failures >= _REMOTE_CIRCUIT_FAILURE_THRESHOLD:
+            state.open_until = request.runtime.monotonic() + _REMOTE_CIRCUIT_OPEN_SECONDS
+
+
+def _record_remote_success(connector_type: str) -> None:
+    with _REMOTE_CIRCUIT_LOCK:
+        _REMOTE_CIRCUIT_STATES.pop(connector_type, None)
+
+
+def _open_circuit_error(connector_type: str, now: float) -> ToolConnectorRemoteError | None:
+    with _REMOTE_CIRCUIT_LOCK:
+        state = _REMOTE_CIRCUIT_STATES.get(connector_type)
+        if state is None or state.open_until <= 0:
+            return None
+        if state.open_until <= now:
+            _REMOTE_CIRCUIT_STATES.pop(connector_type, None)
+            return None
+    return _synthetic_remote_error(
+        http_status=503,
+        error_code="CIRCUIT_OPEN",
+        message="remote tool connector circuit is open",
+        category=ExtensionErrorCategory.CIRCUIT_OPEN,
+        retryable=True,
+    )
+
+
+def _synthetic_remote_error(
+    *,
+    http_status: int,
+    error_code: str,
+    message: str,
+    category: ExtensionErrorCategory,
+    retryable: bool,
+) -> ToolConnectorRemoteError:
+    return ToolConnectorRemoteError(
+        http_status=http_status,
+        extension_error=ExtensionError(
+            error_code=error_code,
+            message=message,
+            category=category,
+            retryable=retryable,
+            details={},
+        ),
+    )
 
 
 def require_tool_connector(descriptor: ToolDescriptor) -> ToolConnectorDescriptor:

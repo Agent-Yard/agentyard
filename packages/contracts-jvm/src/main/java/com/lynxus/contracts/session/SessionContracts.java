@@ -221,11 +221,32 @@ public final class SessionContracts {
     ) {
     }
 
+    public enum ToolConnectorRetryMode {
+        NONE,
+        FIXED,
+        EXPONENTIAL
+    }
+
+    public record ToolConnectorRuntimeRetryPolicy(
+        ToolConnectorRetryMode mode,
+        int maxAttempts,
+        int initialDelayMs,
+        int maxDelayMs,
+        double backoffMultiplier,
+        List<String> retryableCategories,
+        List<String> retryableErrorCodes
+    ) {
+        public ToolConnectorRuntimeRetryPolicy {
+            retryableCategories = retryableCategories == null ? List.of() : List.copyOf(retryableCategories);
+            retryableErrorCodes = retryableErrorCodes == null ? List.of() : List.copyOf(retryableErrorCodes);
+        }
+    }
+
     public record ToolConnectorDescriptor(
         String connectorType,
         ToolConnectorAccountSnapshot accountSnapshot,
         int timeoutSeconds,
-        String retryPolicy,
+        ToolConnectorRuntimeRetryPolicy retryPolicy,
         Map<String, Object> config,
         Map<String, Map<String, Object>> operationMappings
     ) {

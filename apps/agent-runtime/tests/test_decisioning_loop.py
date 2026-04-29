@@ -178,7 +178,7 @@ def _request_payload() -> dict:
                         "connectorType": "simple-http",
                         "accountSnapshot": None,
                         "timeoutSeconds": 15,
-                        "retryPolicy": "NONE",
+                        "retryPolicy": _retry_policy(),
                         "config": {"baseUrl": "https://tool.example"},
                         "operationMappings": {
                             "create_ticket": {"method": "POST", "path": "/invoke", "requestPlacement": "JSON_BODY"}
@@ -256,6 +256,18 @@ def _request_payload() -> dict:
             }
         ],
         "recentEvents": [],
+    }
+
+
+def _retry_policy() -> dict:
+    return {
+        "mode": "NONE",
+        "maxAttempts": 1,
+        "initialDelayMs": 0,
+        "maxDelayMs": 0,
+        "backoffMultiplier": 1.0,
+        "retryableCategories": [],
+        "retryableErrorCodes": [],
     }
 
 
