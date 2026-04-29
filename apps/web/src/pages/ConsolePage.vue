@@ -149,6 +149,13 @@ const currentView = computed(() => {
       props: {},
       handlers: {},
     },
+    'channel-admin': {
+      props: {
+        assistants: state.catalog.value!.assistants,
+        scenarios: state.catalog.value!.scenarios,
+      },
+      handlers: {},
+    },
     runtime: {
       props: {
         scenarios: state.catalog.value!.scenarios,

@@ -14,6 +14,7 @@ const consolePageComponents: Record<PageKey, () => Promise<unknown>> = {
   'knowledge-library': () => import('../pages/KnowledgeLibraryPage.vue'),
   'resource-library': () => import('../pages/ResourceLibraryPage.vue'),
   'integration-account': () => import('../pages/IntegrationAccountPage.vue'),
+  'channel-admin': () => import('../pages/ChannelAdminPage.vue'),
   runtime: () => import('../pages/RuntimeConversationPage.vue'),
 };
 

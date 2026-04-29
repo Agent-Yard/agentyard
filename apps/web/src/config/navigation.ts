@@ -8,6 +8,7 @@ export type PageKey =
   | 'knowledge-library'
   | 'resource-library'
   | 'integration-account'
+  | 'channel-admin'
   | 'runtime';
 
 export type SectionKey = 'design' | 'build' | 'knowledge' | 'resource' | 'runtime-observe';
@@ -102,6 +103,13 @@ export const pageMeta: Record<PageKey, { label: string; title: string; subtitle:
     section: 'resource',
     path: `${consoleBasePath}/integration-accounts`,
   },
+  'channel-admin': {
+    label: 'Channel Admin',
+    title: 'Channel Admin',
+    subtitle: '维护 Channel Profile、Provider Job、外部模板绑定和运行态记录。',
+    section: 'resource',
+    path: `${consoleBasePath}/channel-admin`,
+  },
   runtime: {
     label: '会话运行',
     title: '运行时对话页',
@@ -148,6 +156,7 @@ export const menuItems = [
     children: [
       { key: 'resource-library', label: pageMeta['resource-library'].label },
       { key: 'integration-account', label: pageMeta['integration-account'].label },
+      { key: 'channel-admin', label: pageMeta['channel-admin'].label },
     ],
   },
   {

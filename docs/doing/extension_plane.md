@@ -13,7 +13,7 @@
 ## Current Position
 
 - Current slice: Slice 10 - Web schema-driven pages.
-- Current subtask: Slice 10C Tool Resource connector config / operation mapping definition-driven forms is complete. Next subtask: Slice 10D Channel Profile / Provider Job / Template Binding schema-driven Web pages.
+- Current subtask: Slice 10D Channel Profile / Provider Job / Template Binding schema-driven Web pages is complete. Next step: Slice 10 / Slice 1-10 final residual checks.
 - Main-agent role: orchestration, integration decisions, ledger maintenance, review of worker/checker output.
 - Implementation flow: worker implements each bounded subtask, independent checker reviews read-only, then main agent decides follow-up.
 
@@ -97,6 +97,7 @@
 - Decision: 10A may add `ajv` to `apps/web` dependencies, but must not introduce a heavy form generator. It must not remove existing static connector config until a follow-up subtask can rewire the corresponding pages end-to-end.
 - Decision: 10B will wire Web to `/api/extensions/tool-connectors` and `/api/extensions/channel-providers`, then refactor the Integration Account management page to choose descriptor ids from those definition endpoints and render account config / supported credential forms with `SchemaDrivenForm`. It will not yet rewrite Tool Resource connector config / operation mapping, Channel Profile, provider job, or template binding pages.
 - Decision: 10C will remove the Web static Tool Connector definition dependency from Tool Resource editing. `ResourceVersionConfigEditor` should load connector definitions from `/api/extensions/tool-connectors`, store descriptor id strings directly in `connector.connectorType`, render connector config / operation mapping with `SchemaDrivenForm`, and delete `apps/web/src/config/toolConnectors.ts` if it becomes unused. Channel Profile, provider job, and template binding pages remain later subtasks.
+- Decision: 10D will add a Channel Admin console page driven by `/api/extensions/channel-providers` and existing `/api/channel-admin/*` endpoints. First version should cover profile create/update/delete, provider-specific profile config via `SchemaDrivenForm`, channel-provider Integration Account selection/status gating, provider job config/manual run views driven by `jobDefinitions`, external template binding CRUD using JSON editor/schema validation, and read-only inbound/outbound/bindings tables. It should not add provider-native template body editing, inbound verification state, Core -> provider mapping API, scheduled outbound retry, credential lifecycle actions, or Slice 11 artifacts.
 
 ## Worker / Checker Notes
 
@@ -169,6 +170,34 @@
     - Targeted guardrail scans passed for static connector definitions, old `ToolConnectorType`, raw `externalSecretRef`, credential lifecycle `Idempotency-Key`, and Slice 11 artifact terms.
   - Residual risks:
     - Tests remain helper-focused rather than mounted editor interaction tests. Typecheck and checker review covered the Vue wiring; browser-level exercise should happen with the later full Web page checkpoint.
+- Worker 10D completed Channel Admin schema-driven Web page.
+  - Added `/console/channel-admin` route/navigation and a new `ChannelAdminPage.vue`.
+  - Page loads channel provider definitions, channel profiles, Integration Accounts, and selected-profile channel-admin resources through Web-facing API methods only.
+  - Profile create/update/delete uses provider descriptor ids, sanitized `defaultConfig`, `SchemaDrivenForm` profile config validation, `expectedRevision` for update/delete, and Channel Provider Integration Account filtering/status gating.
+  - Provider job UI is driven by provider `jobDefinitions`, renders `jobConfig` with `SchemaDrivenForm` and fallback UI schema, builds `ChannelProviderJobConfigWritePayload`, supports disable and manual run for saved `ACTIVE` jobs, and shows recent runs.
+  - External template binding UI supports create/update/delete with JSON object validation for `variableSchema`; it does not edit provider-native template body or card JSON.
+  - Added read-only selected-profile tables for conversation bindings, inbound events, and outbound deliveries.
+  - Explicitly did not add channel-gateway internal calls, manifest reads, inbound verification status, Core -> provider mapping API, scheduled outbound retry, credential lifecycle/provider refresh/status sync jobs, provider-native template body editing, or Slice 11 artifacts.
+  - Initial checker verdict: fail.
+    - Blocking: selected-profile resource loads could overwrite the detail state after the user switched profiles.
+    - Main repair: selected-profile detail and job-run loads now capture profile id and guard before writing state.
+  - First repair checker verdict: fail.
+    - Blocking: manual provider job run refresh could overwrite `providerJobs` / job forms after profile switch.
+    - Main repair: manual run path now captures profile id and guards before assigning refreshed jobs or syncing forms.
+  - Second repair checker verdict: fail.
+    - Blocking: template binding save/delete refresh could overwrite `templateBindings` after profile switch.
+    - Main repair: template binding save/delete paths now capture profile id and guard before assigning refreshed bindings.
+  - Final checker verdict: pass.
+    - Confirmed all reviewed profile-scoped post-`await` state writes are guarded.
+    - Confirmed original 10D scope and guardrails still hold.
+  - Verification:
+    - `pnpm --filter @lynxus/web test -- ChannelAdmin` passed.
+    - `pnpm --filter @lynxus/web test -- api` passed.
+    - `pnpm --filter @lynxus/web lint` passed.
+    - `git diff --check` passed.
+    - Targeted guardrail scans passed for raw `externalSecretRef`, static provider definitions, internal gateway calls, Slice 11/deploy terms, scheduled outbound retry, provider-native mapping/template body editing, and credential refresh/status sync terms.
+  - Residual risks:
+    - 10D is not browser-smoke-tested against a live control-plane; page-level interaction coverage is via typecheck/review plus helper tests.
 - Worker 9D2 implemented outbound delivery execution/failure foundation.
   - Added channel-gateway-owned internal execution path `POST /internal/channel-outbound/deliveries` with request shape `channelProfileId`, `assistantId`, `externalConversationId`, optional `sessionId` / `sessionMessageId`, canonical `messageBlock`, and optional trace context. No Web-facing create/send endpoint was added.
   - Added `channel_outbound_delivery.idempotency_key`, `SENDING` status, regenerated channel-gateway jOOQ, and aligned JVM/TS/OpenAPI read/runtime DTOs. Existing Web-facing channel-admin outbound delivery remains list/read only and exposes no secret material.
