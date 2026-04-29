@@ -32,7 +32,7 @@ export interface ChannelProviderOption {
   description: string | null;
 }
 
-export interface ChannelAccountOption {
+export interface ChannelProviderAccountOption {
   label: string;
   value: string;
   credentialStatus: IntegrationAccount['credentialStatus'];
@@ -143,7 +143,7 @@ export function profileFormFromProfile(profile: ChannelProfile): ChannelProfileF
 export function accountOptionsForChannelProvider(
   accounts: IntegrationAccount[],
   providerType: string | null | undefined,
-): ChannelAccountOption[] {
+): ChannelProviderAccountOption[] {
   if (!providerType) {
     return [];
   }
