@@ -83,6 +83,7 @@ public final class ExtensionDefinitionService {
         List<RegistryValidationError> manifestErrors = new ArrayList<>();
         Map<String, ChannelProviderDefinition> channelProviders = new TreeMap<>();
         Map<String, ToolConnectorDefinition> toolConnectors = new TreeMap<>();
+        Map<String, InternalCredentialRoutingFacts> credentialRoutingFacts = new TreeMap<>();
         Map<String, Integer> channelProviderCounts = new TreeMap<>();
         Map<String, Integer> toolConnectorCounts = new TreeMap<>();
 
@@ -117,6 +118,10 @@ public final class ExtensionDefinitionService {
                     continue;
                 }
                 channelProviders.putIfAbsent(providerType, channelProviderDefinition(descriptor, registration));
+                credentialRoutingFacts.putIfAbsent(
+                    credentialRoutingKey(CHANNEL_PROVIDER, providerType),
+                    credentialRoutingFacts(CHANNEL_PROVIDER, providerType, descriptor, registration)
+                );
             }
             for (String expected : expectedChannelProviders) {
                 if (!loadedChannelProviders.contains(expected)) {
@@ -148,6 +153,10 @@ public final class ExtensionDefinitionService {
                     continue;
                 }
                 toolConnectors.putIfAbsent(connectorType, toolConnectorDefinition(descriptor, registration));
+                credentialRoutingFacts.putIfAbsent(
+                    credentialRoutingKey(TOOL_CONNECTOR, connectorType),
+                    credentialRoutingFacts(TOOL_CONNECTOR, connectorType, descriptor, registration)
+                );
             }
             for (String expected : expectedToolConnectors) {
                 if (!loadedToolConnectors.contains(expected)) {
@@ -170,9 +179,22 @@ public final class ExtensionDefinitionService {
             ready,
             List.copyOf(channelProviders.values()),
             List.copyOf(toolConnectors.values()),
+            Collections.unmodifiableMap(new LinkedHashMap<>(credentialRoutingFacts)),
             List.copyOf(errors),
             List.copyOf(manifestErrors)
         );
+    }
+
+    public InternalCredentialRoutingFacts requireCredentialRoutingFacts(String descriptorType, String descriptorId) {
+        ExtensionDefinitionRegistry registry = loadRegistry();
+        if (!registry.ready()) {
+            throw new ExtensionDefinitionRegistryNotReadyException();
+        }
+        InternalCredentialRoutingFacts facts = registry.credentialRoutingFacts().get(credentialRoutingKey(descriptorType, descriptorId));
+        if (facts == null) {
+            throw new IllegalArgumentException("extension descriptor does not exist: " + descriptorType + "/" + descriptorId);
+        }
+        return facts;
     }
 
     private LoadedManifest loadManifest(
@@ -291,6 +313,32 @@ public final class ExtensionDefinitionService {
             );
         }
         return new CredentialCapability(false, null, null, List.of());
+    }
+
+    private static InternalCredentialRoutingFacts credentialRoutingFacts(
+        String descriptorType,
+        String descriptorId,
+        Map<String, Object> descriptor,
+        ExtensionRegistration registration
+    ) {
+        CredentialCapability capability = credentialCapability(descriptor, registration);
+        Map<String, Object> endpoints = objectValue(descriptor, "endpoints");
+        return new InternalCredentialRoutingFacts(
+            descriptorType,
+            descriptorId,
+            capability.mode(),
+            capability.credentialSchema(),
+            registration.baseUrl(),
+            stringEndpoint(endpoints, LynxusExtensionProtocol.CREATE_CREDENTIAL_ENDPOINT),
+            stringEndpoint(endpoints, LynxusExtensionProtocol.ROTATE_CREDENTIAL_ENDPOINT),
+            stringEndpoint(endpoints, LynxusExtensionProtocol.VALIDATE_CREDENTIAL_ENDPOINT),
+            stringEndpoint(endpoints, LynxusExtensionProtocol.REVOKE_CREDENTIAL_ENDPOINT)
+        );
+    }
+
+    private static String stringEndpoint(Map<String, Object> endpoints, String endpointName) {
+        Object value = endpoints.get(endpointName);
+        return value instanceof String path && !path.isBlank() ? path : null;
     }
 
     @SuppressWarnings("unchecked")
@@ -415,6 +463,10 @@ public final class ExtensionDefinitionService {
         return internalAuthToken.trim();
     }
 
+    private static String credentialRoutingKey(String descriptorType, String descriptorId) {
+        return descriptorType + "/" + descriptorId;
+    }
+
     private static String stringValue(Map<String, Object> source, String field) {
         Object value = source.get(field);
         return value instanceof String stringValue ? stringValue : null;
@@ -533,8 +585,21 @@ public final class ExtensionDefinitionService {
         boolean ready,
         List<ChannelProviderDefinition> channelProviders,
         List<ToolConnectorDefinition> toolConnectors,
+        Map<String, InternalCredentialRoutingFacts> credentialRoutingFacts,
         List<RegistryValidationError> errors,
         List<RegistryValidationError> manifestErrors
+    ) {}
+
+    public record InternalCredentialRoutingFacts(
+        String descriptorType,
+        String descriptorId,
+        CredentialCapabilityMode credentialMode,
+        Map<String, Object> credentialSchema,
+        String baseUrl,
+        String createCredentialPath,
+        String rotateCredentialPath,
+        String validateCredentialPath,
+        String revokeCredentialPath
     ) {}
 
     private record LoadedManifest(Object manifest) {}

@@ -80,8 +80,19 @@ public final class IntegrationDtos {
         String subjectId,
         String name,
         IntegrationAccountStatus status,
-        Map<String, Object> config
+        Map<String, Object> config,
+        Object credential
     ) {
+        public CreateIntegrationAccountRequest(
+            IntegrationAccountSubjectType subjectType,
+            String subjectId,
+            String name,
+            IntegrationAccountStatus status,
+            Map<String, Object> config
+        ) {
+            this(subjectType, subjectId, name, status, config, null);
+        }
+
         public CreateIntegrationAccountRequest {
             config = immutableObjectMap(config);
         }
@@ -98,6 +109,43 @@ public final class IntegrationDtos {
     }
 
     public record UpdateIntegrationAccountStatusRequest(IntegrationAccountStatus status) {
+    }
+
+    public record CreateIntegrationAccountCredentialRequest(Object credential) {
+    }
+
+    public record RotateIntegrationAccountCredentialRequest(Object credential) {
+    }
+
+    public record RemoteCredentialLifecycleRequest(
+        Map<String, Object> descriptor,
+        Map<String, Object> account,
+        Map<String, Object> credential,
+        Map<String, Object> traceContext
+    ) {
+        public RemoteCredentialLifecycleRequest {
+            descriptor = immutableObjectMap(descriptor);
+            account = immutableObjectMap(account);
+            credential = credential == null ? null : immutableObjectMap(credential);
+            traceContext = immutableObjectMap(traceContext);
+        }
+
+        public Map<String, Object> toWireBody() {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("descriptor", descriptor);
+            body.put("account", account);
+            if (credential != null) {
+                body.put("credential", credential);
+            }
+            body.put("traceContext", traceContext);
+            return Collections.unmodifiableMap(body);
+        }
+    }
+
+    public record RemoteCredentialLifecycleResponse(
+        String externalSecretRef,
+        IntegrationAccountCredentialStatus credentialStatus
+    ) {
     }
 
     public record RuntimeIntegrationCredentialDto(

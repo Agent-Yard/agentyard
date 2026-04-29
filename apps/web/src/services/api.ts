@@ -10,6 +10,7 @@ import type {
   CreateAssistantPayload,
   CreateChannelAccountPayload,
   CreateAgentPayload,
+  CreateIntegrationAccountCredentialPayload,
   CreateSessionPayload,
   CreateDomainPayload,
   CreateKnowledgeBasePayload,
@@ -47,6 +48,7 @@ import type {
   SessionRuntimeDetail,
   SessionRuntimeStreamEvent,
   PrivacyMappingSummary,
+  RotateIntegrationAccountCredentialPayload,
   SessionRuntimeSession,
   HumanOperatorReplyPayload,
   UpdateAssistantPayload,
@@ -200,6 +202,14 @@ export const api = {
     request<IntegrationAccount>('/integration/accounts', jsonOptions('POST', payload)),
   updateIntegrationAccount: (accountId: string, payload: UpdateIntegrationAccountPayload) =>
     request<IntegrationAccount>(`/integration/accounts/${accountId}`, jsonOptions('PUT', payload)),
+  createIntegrationAccountCredential: (accountId: string, payload: CreateIntegrationAccountCredentialPayload) =>
+    request<IntegrationAccount>(`/integration/accounts/${accountId}/credentials`, jsonOptions('POST', payload)),
+  rotateIntegrationAccountCredential: (accountId: string, payload: RotateIntegrationAccountCredentialPayload) =>
+    request<IntegrationAccount>(`/integration/accounts/${accountId}/credentials/rotate`, jsonOptions('POST', payload)),
+  validateIntegrationAccountCredential: (accountId: string) =>
+    request<IntegrationAccount>(`/integration/accounts/${accountId}/credentials/validate`, jsonOptions('POST')),
+  revokeIntegrationAccountCredential: (accountId: string) =>
+    request<IntegrationAccount>(`/integration/accounts/${accountId}/credentials/revoke`, jsonOptions('POST')),
   getObjectReferenceAnalysis: (objectType: ReferenceObjectType, objectId: string) =>
     request<ObjectReferenceAnalysis>(`/catalog/references/${objectType}/${objectId}`),
   getDeletionImpactPreview: (objectType: ReferenceObjectType, objectId: string) =>

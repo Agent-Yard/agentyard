@@ -10,6 +10,8 @@ import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountCredent
 import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountStatus;
 import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountSubjectType;
 import com.lynxus.platform.integration.IntegrationDtos.StoredIntegrationAccount;
+import com.lynxus.platform.shared.ConflictException;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -17,6 +19,7 @@ import org.jooq.DSLContext;
 import org.jooq.JSONB;
 import org.jooq.Record;
 import org.jooq.Table;
+import org.jooq.exception.DataAccessException;
 import org.springframework.stereotype.Repository;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
@@ -45,6 +48,22 @@ public class IntegrationAccountRepository {
         return dsl.selectFrom(INTEGRATION_ACCOUNT)
             .where(field(name("id"), String.class).eq(accountId))
             .fetchOptional(this::mapAccount);
+    }
+
+    public void acquireCredentialLifecycleLock(String accountId) {
+        try {
+            dsl.select(field(name("id"), String.class))
+                .from(INTEGRATION_ACCOUNT)
+                .where(field(name("id"), String.class).eq(accountId))
+                .forUpdate()
+                .noWait()
+                .fetchOptional();
+        } catch (DataAccessException error) {
+            if (isLockUnavailable(error)) {
+                throw new ConflictException("integration account credential lifecycle operation is already running");
+            }
+            throw error;
+        }
     }
 
     public void saveAccount(StoredIntegrationAccount account) {
@@ -93,5 +112,16 @@ public class IntegrationAccountRepository {
             JooqTimeSupport.toInstant(record.get(field(name("created_at"), java.time.OffsetDateTime.class))),
             JooqTimeSupport.toInstant(record.get(field(name("updated_at"), java.time.OffsetDateTime.class)))
         );
+    }
+
+    private static boolean isLockUnavailable(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof SQLException sqlException && "55P03".equals(sqlException.getSQLState())) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 }

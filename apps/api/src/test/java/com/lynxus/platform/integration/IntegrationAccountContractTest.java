@@ -43,12 +43,14 @@ final class IntegrationAccountContractTest {
 
         assertTrue(createProperties.containsKey("subjectType"));
         assertFalse(createProperties.containsKey("connectorType"));
-        assertFalse(createProperties.containsKey("credential"));
+        assertTrue(createProperties.containsKey("credential"));
         assertFalse(updateProperties.containsKey("credential"));
 
         assertTrue(contractTypes.contains("IntegrationAccountSubjectType"));
         assertFalse(contractTypes.contains("connectorType: ToolConnectorType;"));
-        assertFalse(contractTypes.contains("credential?: Record<string, unknown> | null;"));
+        assertTrue(contractTypes.contains("credential?: Record<string, unknown> | null;"));
+        assertTrue(contractTypes.contains("CreateIntegrationAccountCredentialPayload"));
+        assertTrue(contractTypes.contains("RotateIntegrationAccountCredentialPayload"));
     }
 
     @SuppressWarnings("unchecked")

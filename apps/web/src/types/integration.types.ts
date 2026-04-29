@@ -1,9 +1,13 @@
 import type {
+  CreateIntegrationAccountCredentialPayload as ContractsCreateIntegrationAccountCredentialPayload,
   CreateIntegrationAccountPayload as ContractsCreateIntegrationAccountPayload,
   IntegrationAccount as ContractsIntegrationAccount,
+  RotateIntegrationAccountCredentialPayload as ContractsRotateIntegrationAccountCredentialPayload,
   UpdateIntegrationAccountPayload as ContractsUpdateIntegrationAccountPayload,
 } from '../../../../packages/contracts/src';
 
 export type IntegrationAccount = ContractsIntegrationAccount;
 export type CreateIntegrationAccountPayload = ContractsCreateIntegrationAccountPayload;
+export type CreateIntegrationAccountCredentialPayload = ContractsCreateIntegrationAccountCredentialPayload;
+export type RotateIntegrationAccountCredentialPayload = ContractsRotateIntegrationAccountCredentialPayload;
 export type UpdateIntegrationAccountPayload = ContractsUpdateIntegrationAccountPayload;

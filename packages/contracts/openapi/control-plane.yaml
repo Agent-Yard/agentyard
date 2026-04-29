@@ -171,6 +171,98 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiResponseIntegrationAccount'
+  /integration/accounts/{accountId}/credentials:
+    post:
+      summary: Create integration account credential
+      parameters:
+        - in: path
+          name: accountId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateIntegrationAccountCredentialPayload'
+      responses:
+        '200':
+          description: Credential state after create, with secret material redacted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseIntegrationAccount'
+        '409':
+          description: Credential lifecycle operation is already running for this account
+        '422':
+          description: Credential lifecycle action is unsupported, invalid, or not allowed in current state
+  /integration/accounts/{accountId}/credentials/rotate:
+    post:
+      summary: Rotate integration account credential
+      parameters:
+        - in: path
+          name: accountId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RotateIntegrationAccountCredentialPayload'
+      responses:
+        '200':
+          description: Credential state after rotate, with secret material redacted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseIntegrationAccount'
+        '409':
+          description: Credential lifecycle operation is already running for this account
+        '422':
+          description: Credential lifecycle action is unsupported, invalid, or not allowed in current state
+  /integration/accounts/{accountId}/credentials/validate:
+    post:
+      summary: Validate integration account credential
+      parameters:
+        - in: path
+          name: accountId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Credential state after validate, with secret material redacted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseIntegrationAccount'
+        '409':
+          description: Credential lifecycle operation is already running for this account
+        '422':
+          description: Credential lifecycle action is unsupported or not allowed in current state
+  /integration/accounts/{accountId}/credentials/revoke:
+    post:
+      summary: Revoke integration account credential
+      parameters:
+        - in: path
+          name: accountId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Credential state after revoke, with secret material redacted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseIntegrationAccount'
+        '409':
+          description: Credential lifecycle operation is already running for this account
+        '422':
+          description: Credential lifecycle action is unsupported or not allowed in current state
   /internal/integration/accounts/{accountId}/credential:
     get:
       summary: Internal runtime credential lookup
@@ -1510,6 +1602,10 @@ components:
           type: object
           additionalProperties: true
           nullable: true
+        credential:
+          type: object
+          additionalProperties: true
+          nullable: true
     UpdateIntegrationAccountPayload:
       type: object
       properties:
@@ -1531,6 +1627,22 @@ components:
       properties:
         status:
           $ref: '#/components/schemas/IntegrationAccountStatus'
+    CreateIntegrationAccountCredentialPayload:
+      type: object
+      required:
+        - credential
+      properties:
+        credential:
+          type: object
+          additionalProperties: true
+    RotateIntegrationAccountCredentialPayload:
+      type: object
+      required:
+        - credential
+      properties:
+        credential:
+          type: object
+          additionalProperties: true
     ToolOperation:
       type: object
       properties:

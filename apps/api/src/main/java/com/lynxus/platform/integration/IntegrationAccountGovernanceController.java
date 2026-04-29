@@ -2,7 +2,9 @@ package com.lynxus.platform.integration;
 
 import com.lynxus.platform.auth.RequireGovernanceAccess;
 import com.lynxus.platform.auth.RequireGovernanceWrite;
+import com.lynxus.platform.integration.IntegrationDtos.CreateIntegrationAccountCredentialRequest;
 import com.lynxus.platform.integration.IntegrationDtos.CreateIntegrationAccountRequest;
+import com.lynxus.platform.integration.IntegrationDtos.RotateIntegrationAccountCredentialRequest;
 import com.lynxus.platform.integration.IntegrationDtos.UpdateIntegrationAccountStatusRequest;
 import com.lynxus.platform.integration.IntegrationDtos.UpdateIntegrationAccountRequest;
 import com.lynxus.platform.shared.ApiResponse;
@@ -59,5 +61,35 @@ public class IntegrationAccountGovernanceController {
     @RequireGovernanceWrite
     public ApiResponse<?> archiveAccount(@PathVariable String accountId) {
         return ApiResponse.ok(service.archiveAccount(accountId));
+    }
+
+    @PostMapping("/{accountId}/credentials")
+    @RequireGovernanceWrite
+    public ApiResponse<?> createCredential(
+        @PathVariable String accountId,
+        @RequestBody CreateIntegrationAccountCredentialRequest request
+    ) {
+        return ApiResponse.ok(service.createCredential(accountId, request));
+    }
+
+    @PostMapping("/{accountId}/credentials/rotate")
+    @RequireGovernanceWrite
+    public ApiResponse<?> rotateCredential(
+        @PathVariable String accountId,
+        @RequestBody RotateIntegrationAccountCredentialRequest request
+    ) {
+        return ApiResponse.ok(service.rotateCredential(accountId, request));
+    }
+
+    @PostMapping("/{accountId}/credentials/validate")
+    @RequireGovernanceWrite
+    public ApiResponse<?> validateCredential(@PathVariable String accountId) {
+        return ApiResponse.ok(service.validateCredential(accountId));
+    }
+
+    @PostMapping("/{accountId}/credentials/revoke")
+    @RequireGovernanceWrite
+    public ApiResponse<?> revokeCredential(@PathVariable String accountId) {
+        return ApiResponse.ok(service.revokeCredential(accountId));
     }
 }

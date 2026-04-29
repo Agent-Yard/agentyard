@@ -13,7 +13,7 @@
 ## Current Position
 
 - Current slice: Slice 6 - Integration Account target model + optional credential lifecycle.
-- Current subtask: Slice 6A API-owned Integration Account target model, subject/config validation, and non-credential account lifecycle foundation. Remote credential lifecycle and local encrypted reference credential actions will follow in later Slice 6 subtasks.
+- Current subtask: Slice 6B credential lifecycle checker passed; preparing local commit before Slice 6C account availability helper.
 - Main-agent role: orchestration, integration decisions, ledger maintenance, review of worker/checker output.
 - Implementation flow: worker implements each bounded subtask, independent checker reviews read-only, then main agent decides follow-up.
 
@@ -55,6 +55,8 @@
 - Slice 6 must refactor Integration Account directly to `subjectType` / `subjectId`; no `connectorType` compatibility DTO, old enum use, or old table column alias is allowed for Integration Account.
 - Slice 6 must not write Tool release snapshot or Channel runtime profile. It only provides the account data model, credential lifecycle, and account availability decision API for later slices.
 - `externalSecretRef` must never be returned in Web/API read DTOs, logs, validation errors, audit diffs, runtime events, or export shapes; Web-facing account DTOs may expose only boolean presence and credential status.
+- Credential lifecycle calls are API-owned only. `agent-runtime` and `channel-gateway` must not initiate credential create / rotate / revoke / validate.
+- Remote credential lifecycle requests must use manifest-declared endpoint paths, `Authorization`, `X-Lynxus-Trace-Id`, and `X-Lynxus-Request-Id`; they must not send `Idempotency-Key` or `X-Lynxus-Extension-*` headers. Descriptor identity lives in the request body only.
 
 ## Decisions / Questions
 
@@ -68,6 +70,11 @@
 - Decision: Slice 5A default projection safety should not reject credential schemas themselves, because `credentialSchema` is intentionally exposed for credential forms. The sensitive default guard applies to normal config defaults that Web may auto-fill (`defaultConfig` and provider job `defaultSchedule.jobConfig`), rejecting `externalSecretRef`, `secret: true`, and common secret-like keys such as `password`, `apiKey`, `accessToken`, `refreshToken`, `privateKey`, and `webhookSigningSecret`.
 - Decision: Slice 6 will be split into small subtasks. 6A establishes the target Integration Account model and API-owned `accountConfigSchema` validation without remote credential lifecycle. 6B adds create/rotate/revoke/validate credential actions for remote lifecycle and Core-owned encrypted reference secrets. 6C adds account availability contract helpers for Slice 7/8 materialization. This avoids changing runtime snapshots before the model is stable.
 - Decision: first-version Integration Account persists `metadata jsonb default '{}'` for the target model but does not expose credential metadata in Web-facing DTOs and does not save metadata returned by credential lifecycle responses.
+- Decision: Slice 6B should implement both descriptor modes in the API layer:
+  - `REMOTE_LIFECYCLE`: descriptors with all credential endpoints call the extension service and persist only `external_secret_ref` plus `credential_status`.
+  - `CORE_ENCRYPTED_REFERENCE`: core preset descriptors with `credentialSchema` and no credential endpoints use API local encryption in `credential_ciphertext` / `credential_fingerprint` and keep `external_secret_ref = null`.
+  - descriptors without supported credential capability allow config-only accounts but reject credential lifecycle actions.
+  No background retry, token refresh, status sync, provider job refresh, or logical idempotency state will be added.
 
 ## Worker / Checker Notes
 
@@ -613,6 +620,23 @@
   - Confirmed Web repair is minimal and does not implement Slice 10 schema-driven pages.
   - Confirmed API, contracts, DB, and generated jOOQ use the target Integration Account model without old `connector_type` / Integration Account `connectorType` compatibility.
   - Non-blocking follow-up: `toolConnectors.ts` still has unused credential template/placeholder remnants; clean up or replace during Slice 6B/10.
+- Main committed Slice 6A as `b8e0629 Add integration account target model foundation`; worktree was clean after commit.
+- Main read Slice 6B protocol / governance sections:
+  - `extension-protocol.md` §2.0 trace/idempotency/externalSecretRef boundaries and §2.2 credential endpoints.
+  - `credentials-and-persistence.md` §§6-10 credential lifecycle, status transitions, no metadata, retry/revoke failure.
+  - `deployment-and-governance.md` credential lifecycle headers and 30s timeout.
+  - `web-configuration.md` §9 Integration Account page rules.
+- Worker Slice 6B implemented API-owned Integration Account credential lifecycle.
+  - Added internal registry routing facts for descriptor credential mode, manifest base URL, declared lifecycle paths, and credential schema without exposing them in Web definition DTOs.
+  - Added Web-facing account create optional `credential`, plus create / rotate / validate / revoke account credential endpoints returning only redacted Integration Account DTOs.
+  - Implemented `REMOTE_LIFECYCLE` with manifest-declared paths, 30s JDK client timeout, credential lifecycle headers only, request-body descriptor identity, sanitized downstream failures, rotate ref equality, and failure status persistence.
+  - Implemented `CORE_ENCRYPTED_REFERENCE` with local encryption / fingerprint, local decrypt+schema validate, local revoke clearing ciphertext/fingerprint, and internal runtime resolver returning plaintext only for local ciphertext.
+  - Added account-level credential lifecycle exclusivity; later checker required replacing the initial in-process lock with DB row locking, recorded below.
+  - Updated control-plane OpenAPI / TypeScript contracts and minimal Web API client/types; no schema-driven credential UX was added.
+- Worker Slice 6B checker blocker repair:
+  - Remote credential lifecycle client now serializes a protocol wire body that includes `credential` only for create / rotate and omits the field entirely for validate / revoke.
+  - Standalone remote create credential failure now persists the existing account as `VALIDATION_FAILED` with no `external_secret_ref`, ciphertext, or fingerprint, matching one-step create failure behavior.
+  - Added focused regression tests for serialized validate body omission and standalone create failure state persistence.
 - Worker Slice 6A checker repair updated the Web Integration Account surfaces to the target account model.
   - `IntegrationAccountPage` now creates Tool Connector accounts with `subjectType: TOOL_CONNECTOR`, descriptor-id `subjectId`, `ENABLED` status, and config only; update submits only name/status/config and no credential payload.
   - Static Tool Connector config now has the temporary Slice 6A descriptor-id bridge: `SIMPLE_HTTP -> simple-http`, `BUSINESS_CODE_SECRET_HTTP -> business-code-secret-http`, `MCP -> mcp`.
@@ -703,7 +727,34 @@
   - `pnpm --filter @lynxus/web test` passed (`7` files, `32` tests).
   - `./gradlew :apps:api:test --tests '*IntegrationAccount*'` passed.
   - `./gradlew :apps:api:test --tests '*IntegrationAccount*' --rerun-tasks` passed.
+- Worker Slice 6B verification:
+  - `./gradlew :apps:api:test --tests '*IntegrationAccount*'` passed.
+  - `./gradlew :apps:api:test --tests '*ExtensionDefinition*'` passed.
+  - `pnpm --filter @lynxus/web lint` passed.
+  - `pnpm --filter @lynxus/web test` passed (`7` files, `32` tests).
+  - `git diff --check` passed.
+- Worker Slice 6B checker blocker repair verification:
+  - `./gradlew :apps:api:test --tests '*IntegrationAccount*'` passed.
+  - `git diff --check` passed.
+- Worker Slice 6B DB-backed credential lifecycle exclusivity repair:
+  - Replaced API-process-local `ConcurrentHashMap` / `ReentrantLock` credential lifecycle exclusivity with `integration_account` row locking via jOOQ `SELECT ... FOR UPDATE NOWAIT`.
+  - Lock contention maps to existing 409 conflict semantics: `integration account credential lifecycle operation is already running`.
+  - Lifecycle methods normalize account id before lock acquisition, then run create / rotate / validate / revoke inside the existing synchronous transaction scope.
+  - Added service coverage proving repository lock conflict prevents account load and remote lifecycle invocation.
+  - Added embedded PostgreSQL repository coverage proving a held account row lock causes `acquireCredentialLifecycleLock` to fail immediately with `ConflictException`; fixture row is inserted directly because the dynamic-table `saveAccount` upsert path renders `on conflict [unknown primary key]` in this lightweight repository test setup.
+  - Verification:
+    - `./gradlew :apps:api:test --tests '*IntegrationAccount*'` passed.
+    - `git diff --check` passed.
+  - Residual risk: repository lock conflict mapping is PostgreSQL SQLSTATE `55P03` specific, matching the project database target.
+- Checker Slice 6B rerun verdict: pass.
+  - Confirmed validate / revoke omit `credential` from the wire body when absent.
+  - Confirmed standalone remote create failure persists `VALIDATION_FAILED` without saving `externalSecretRef`, ciphertext, or fingerprint.
+  - Confirmed cross-instance lifecycle exclusivity now uses DB `FOR UPDATE NOWAIT` row locking and has repository coverage.
+  - Confirmed remote lifecycle headers and public DTO redaction are within Slice 6B scope.
+  - Checker commands passed:
+    - `./gradlew :apps:api:test --tests com.lynxus.platform.integration.IntegrationAccountServiceTest --tests com.lynxus.platform.integration.IntegrationAccountRepositoryTest --tests com.lynxus.platform.integration.IntegrationAccountContractTest`
+    - `pnpm --dir apps/web test -- --run api.test.ts`
 
 ## Blockers / Rework
 
-- No active blockers. Next action: commit Slice 6A, then start Slice 6B credential lifecycle.
+- No active blockers. Next action: commit Slice 6B, then start Slice 6C account availability helper.

@@ -117,6 +117,7 @@ export interface CreateIntegrationAccountPayload {
   name: string;
   status?: IntegrationAccountStatus | null;
   config?: Record<string, unknown> | null;
+  credential?: Record<string, unknown> | null;
 }
 
 export interface UpdateIntegrationAccountPayload {
@@ -127,6 +128,14 @@ export interface UpdateIntegrationAccountPayload {
 
 export interface UpdateIntegrationAccountStatusPayload {
   status: IntegrationAccountStatus;
+}
+
+export interface CreateIntegrationAccountCredentialPayload {
+  credential: Record<string, unknown>;
+}
+
+export interface RotateIntegrationAccountCredentialPayload {
+  credential: Record<string, unknown>;
 }
 
 export interface KnowledgeBindingSnapshot {
