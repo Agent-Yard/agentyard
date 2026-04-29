@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { api } from '../services/api';
-import type { IntegrationAccount, ResourceType, ResourceVersionConfiguration } from '../types';
+import type { IntegrationAccount, ResourceType, ResourceVersionConfiguration, ToolConnectorDefinition } from '../types';
 
 const props = defineProps<{
   resourceType: ResourceType;
@@ -14,6 +14,17 @@ const toolOperationNames = computed(() =>
 
 const toolConnector = computed(() => props.configuration.tool?.connector);
 const integrationAccounts = ref<IntegrationAccount[]>([]);
+const toolConnectorDefinitions = ref<ToolConnectorDefinition[]>([]);
+const connectorDefinition = computed(() => (
+  toolConnectorDefinitions.value.find((definition) => definition.connectorType === toolConnector.value?.connectorType) ?? null
+));
+const connectorLabel = computed(() => {
+  const connectorType = toolConnector.value?.connectorType;
+  if (!connectorType) {
+    return '-';
+  }
+  return connectorDefinition.value ? `${connectorDefinition.value.title} (${connectorType})` : connectorType;
+});
 const boundAccount = computed(() => {
   const accountId = toolConnector.value?.accountId;
   if (!accountId) {
@@ -36,7 +47,10 @@ const accountStatusLabel = computed(() => {
   if (!boundAccount.value) {
     return '未找到';
   }
-  return `${boundAccount.value.status} / ${boundAccount.value.credentialStatus}`;
+  const riskSuffix = ['NOT_CONFIGURED', 'VALIDATION_FAILED', 'ROTATION_REQUIRED'].includes(boundAccount.value.credentialStatus)
+    ? ' / 风险'
+    : '';
+  return `${boundAccount.value.status} / ${boundAccount.value.credentialStatus}${riskSuffix}`;
 });
 
 onMounted(async () => {
@@ -44,8 +58,14 @@ onMounted(async () => {
     return;
   }
   try {
-    integrationAccounts.value = await api.listIntegrationAccounts();
+    const [definitions, accounts] = await Promise.all([
+      api.listToolConnectorDefinitions(),
+      api.listIntegrationAccounts(),
+    ]);
+    toolConnectorDefinitions.value = definitions;
+    integrationAccounts.value = accounts;
   } catch {
+    toolConnectorDefinitions.value = [];
     integrationAccounts.value = [];
   }
 });
@@ -53,15 +73,12 @@ onMounted(async () => {
 
 <template>
   <a-descriptions v-if="resourceType === 'TOOL' && configuration.tool" :column="2" size="small">
-    <a-descriptions-item label="Connector">{{ toolConnector?.connectorType ?? '-' }}</a-descriptions-item>
+    <a-descriptions-item label="Connector">{{ connectorLabel }}</a-descriptions-item>
     <a-descriptions-item label="Account">{{ accountLabel }}</a-descriptions-item>
     <a-descriptions-item label="Account Status">{{ accountStatusLabel }}</a-descriptions-item>
     <a-descriptions-item label="超时秒数">{{ toolConnector?.timeoutSeconds ?? '-' }}</a-descriptions-item>
     <a-descriptions-item label="重试策略">{{ toolConnector?.retryPolicy ?? '-' }}</a-descriptions-item>
     <a-descriptions-item label="操作定义" :span="2">{{ toolOperationNames }}</a-descriptions-item>
-    <a-descriptions-item v-if="toolConnector?.config.baseUrl" label="Base URL">{{ toolConnector.config.baseUrl }}</a-descriptions-item>
-    <a-descriptions-item v-if="toolConnector?.config.connectionUri" label="连接地址">{{ toolConnector.config.connectionUri }}</a-descriptions-item>
-    <a-descriptions-item v-if="toolConnector?.config.namespace" label="命名空间">{{ toolConnector.config.namespace }}</a-descriptions-item>
   </a-descriptions>
 
   <a-descriptions v-else-if="resourceType === 'LLM_MODEL' && configuration.llmModel" :column="2" size="small">

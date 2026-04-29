@@ -1,6 +1,5 @@
 export type Role = 'PLATFORM_ADMIN' | 'DOMAIN_ADMIN' | 'DEVELOPER' | 'BUSINESS_USER';
 export type ResourceType = 'TOOL' | 'LLM_MODEL' | 'SKILL';
-export type ToolConnectorType = 'SIMPLE_HTTP' | 'BUSINESS_CODE_SECRET_HTTP' | 'MCP';
 export type ShareScope = 'PRIVATE' | 'DOMAIN_SHARED';
 export type ResourceOwnerType = 'DOMAIN' | 'ASSISTANT';
 export type VersionStatus = 'DRAFT' | 'PUBLISHED';
@@ -306,7 +305,7 @@ export interface ToolOperation {
 }
 
 export interface ToolConnectorConfig {
-  connectorType: ToolConnectorType;
+  connectorType: string;
   accountId?: string | null;
   timeoutSeconds: number;
   retryPolicy: string;

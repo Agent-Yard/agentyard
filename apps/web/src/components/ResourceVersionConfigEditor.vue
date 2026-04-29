@@ -1,16 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import {
-  createDefaultToolConnector,
-  DEFAULT_TOOL_CONNECTOR_TYPE,
-  defaultOperationMapping,
-  toolConnectorDefinition,
-  toolConnectorDescriptorId,
-  toolConnectorOptions,
-} from '../config/toolConnectors';
+  accountOptionsForConnector,
+  createEmptyToolConnector,
+  resetConnectorForDefinition,
+  schemaDrivenUiSchemaWithFallback,
+  syncOperationMappings,
+  toolConnectorDefinitionOptions,
+} from './toolConnectorDefinitionForms';
+import SchemaDrivenForm from './SchemaDrivenForm.vue';
 import { api } from '../services/api';
-import type { ConnectorFieldDefinition } from '../config/toolConnectors';
-import type { IntegrationAccount, ResourceType, ResourceVersionConfiguration, ToolConnectorType } from '../types';
+import type { IntegrationAccount, ResourceType, ResourceVersionConfiguration, ToolConnectorDefinition } from '../types';
+import type { JsonObject } from './schemaDrivenForm';
 
 const props = defineProps<{
   resourceType: ResourceType;
@@ -21,46 +22,42 @@ const props = defineProps<{
 const tool = computed(() => props.configuration.tool!);
 const toolOperations = computed(() => tool.value.operations);
 const connector = computed(() => tool.value.connector);
-const connectorDefinition = computed(() => toolConnectorDefinition(connector.value?.connectorType ?? DEFAULT_TOOL_CONNECTOR_TYPE));
-const connectorConfigFields = computed(() => connectorDefinition.value.configFields);
-const operationMappingFields = computed(() => connectorDefinition.value.operationMappingFields);
+const toolConnectorDefinitions = ref<ToolConnectorDefinition[]>([]);
+const connectorDefinition = computed(() => (
+  toolConnectorDefinitions.value.find((definition) => definition.connectorType === connector.value?.connectorType) ?? null
+));
+const connectorOptions = computed(() => toolConnectorDefinitionOptions(toolConnectorDefinitions.value));
+const connectorConfigSchema = computed(() => connectorDefinition.value?.configSchema ?? {});
+const connectorConfigUiSchema = computed(() => schemaDrivenUiSchemaWithFallback(
+  connectorDefinition.value?.configSchema,
+  connectorDefinition.value?.configUiSchema,
+  'Connector 配置 JSON',
+));
+const operationMappingSchema = computed(() => connectorDefinition.value?.operationMappingSchema ?? {});
+const operationMappingUiSchema = computed(() => schemaDrivenUiSchemaWithFallback(
+  connectorDefinition.value?.operationMappingSchema,
+  connectorDefinition.value?.operationMappingUiSchema,
+  '操作映射 JSON',
+));
 const llmModel = computed(() => props.configuration.llmModel!);
 const skill = computed(() => props.configuration.skill!);
 const isOpenAiCompatible = computed(() => llmModel.value?.providerType === 'OPENAI_COMPATIBLE');
 const integrationAccounts = ref<IntegrationAccount[]>([]);
-const accountOptions = computed(() =>
-  integrationAccounts.value
-    .filter((account) => (
-      account.subjectType === 'TOOL_CONNECTOR'
-      && account.subjectId === toolConnectorDescriptorId(connector.value?.connectorType ?? DEFAULT_TOOL_CONNECTOR_TYPE)
-      && account.status === 'ENABLED'
-    ))
-    .map((account) => ({
-      label: account.credentialConfigured ? account.name : `${account.name}（${account.credentialStatus}）`,
-      value: account.id,
-    })),
-);
+const definitionsLoading = ref(true);
+const definitionLoadFailed = ref(false);
+const accountOptions = computed(() => accountOptionsForConnector(integrationAccounts.value, connector.value?.connectorType));
 
 function ensureConfigurationState(configuration: ResourceVersionConfiguration, resourceType: ResourceType) {
   if (resourceType === 'TOOL') {
     configuration.tool ??= {
       operations: [],
-      connector: createDefaultToolConnector(),
+      connector: createEmptyToolConnector(),
     };
     configuration.tool.operations ??= [];
-    configuration.tool.connector ??= createDefaultToolConnector();
+    configuration.tool.connector ??= createEmptyToolConnector();
     configuration.tool.connector.config ??= {};
     configuration.tool.connector.operationMappings ??= {};
-    const definition = toolConnectorDefinition(configuration.tool.connector.connectorType);
-    for (const field of definition.configFields) {
-      configuration.tool.connector.config[field.key] ??= field.defaultValue;
-    }
-    for (const operation of configuration.tool.operations) {
-      const operationName = operation.name?.trim();
-      if (operationName && !configuration.tool.connector.operationMappings[operationName]) {
-        configuration.tool.connector.operationMappings[operationName] = defaultOperationMapping(configuration.tool.connector.connectorType, operationName);
-      }
-    }
+    syncOperationMappings(configuration.tool.connector, configuration.tool.operations.map((operation) => operation.name));
     return;
   }
 
@@ -91,10 +88,23 @@ watch(
 );
 
 onMounted(async () => {
+  definitionsLoading.value = true;
   try {
-    integrationAccounts.value = await api.listIntegrationAccounts();
+    const [definitions, accounts] = await Promise.all([
+      api.listToolConnectorDefinitions(),
+      api.listIntegrationAccounts(),
+    ]);
+    toolConnectorDefinitions.value = definitions;
+    integrationAccounts.value = accounts;
+    if (props.resourceType === 'TOOL' && connector.value && !connector.value.connectorType && definitions[0]) {
+      resetConnectorForDefinition(connector.value, definitions[0].connectorType, toolOperations.value.map((operation) => operation.name ?? ''));
+    }
   } catch {
+    definitionLoadFailed.value = true;
+    toolConnectorDefinitions.value = [];
     integrationAccounts.value = [];
+  } finally {
+    definitionsLoading.value = false;
   }
 });
 
@@ -108,56 +118,35 @@ function addToolOperation() {
 }
 
 function removeToolOperation(index: number) {
-  toolOperations.value.splice(index, 1);
+  const [removed] = toolOperations.value.splice(index, 1);
+  const removedName = removed?.name?.trim();
+  if (removedName && connector.value?.operationMappings) {
+    delete connector.value.operationMappings[removedName];
+  }
 }
 
-function onConnectorTypeChange(value: ToolConnectorType) {
+function onConnectorTypeChange(value: string) {
   if (!connector.value) {
     return;
   }
-  connector.value.connectorType = value;
-  const definition = toolConnectorDefinition(value);
-  connector.value.accountId = definition.accountMode === 'NONE' ? null : connector.value.accountId;
-  connector.value.config = Object.fromEntries(definition.configFields.map((field) => [field.key, field.defaultValue]));
-  connector.value.operationMappings = Object.fromEntries(
-    toolOperations.value
-      .map((operation) => operation.name?.trim())
-      .filter(Boolean)
-      .map((operationName) => [operationName, defaultOperationMapping(value, operationName!)]),
-  );
+  resetConnectorForDefinition(connector.value, value, toolOperations.value.map((operation) => operation.name ?? ''));
 }
 
-function operationMapping(operationName: string) {
+function operationMapping(operationName: string): JsonObject {
   const normalizedName = operationName?.trim();
   if (!connector.value || !normalizedName) {
     return {};
   }
-  connector.value.operationMappings[normalizedName] ??= defaultOperationMapping(connector.value.connectorType, normalizedName);
-  return connector.value.operationMappings[normalizedName];
+  connector.value.operationMappings[normalizedName] ??= {};
+  return connector.value.operationMappings[normalizedName] as JsonObject;
 }
 
-function setOperationMappingField(operationName: string, key: string, value: unknown) {
+function setOperationMapping(operationName: string, value: JsonObject) {
   const normalizedName = operationName?.trim();
   if (!connector.value || !normalizedName) {
     return;
   }
-  const mapping = operationMapping(normalizedName);
-  mapping[key] = value;
-}
-
-function setConnectorConfigField(key: string, value: unknown) {
-  if (!connector.value) {
-    return;
-  }
-  connector.value.config[key] = value;
-}
-
-function connectorFieldValue(field: ConnectorFieldDefinition): unknown {
-  return connector.value?.config[field.key] ?? field.defaultValue;
-}
-
-function mappingFieldValue(operationName: string, field: ConnectorFieldDefinition): unknown {
-  return operationMapping(operationName)[field.key] ?? (field.key === 'tool' ? operationName : field.defaultValue);
+  connector.value.operationMappings[normalizedName] = value;
 }
 </script>
 
@@ -175,7 +164,8 @@ function mappingFieldValue(operationName: string, field: ConnectorFieldDefinitio
         <a-form-item label="Connector 类型">
           <a-select
             :value="connector.connectorType"
-            :options="toolConnectorOptions"
+            :options="connectorOptions"
+            :loading="definitionsLoading"
             @update:value="onConnectorTypeChange"
           />
         </a-form-item>
@@ -185,9 +175,8 @@ function mappingFieldValue(operationName: string, field: ConnectorFieldDefinitio
           <a-select
             v-model:value="connector.accountId"
             allow-clear
-            :disabled="connectorDefinition.accountMode === 'NONE'"
             :options="accountOptions"
-            :placeholder="connectorDefinition.accountPlaceholder"
+            placeholder="选择已启用且匹配当前 Connector 的账号"
           />
         </a-form-item>
       </a-col>
@@ -245,71 +234,53 @@ function mappingFieldValue(operationName: string, field: ConnectorFieldDefinitio
 
     <a-divider>Connector 配置</a-divider>
 
-    <a-row :gutter="[16, 16]">
-      <a-col v-for="field in connectorConfigFields" :key="field.key" :span="field.span">
-        <a-form-item :label="field.label">
-          <a-select
-            v-if="field.kind === 'select'"
-            :value="String(connectorFieldValue(field))"
-            :options="field.options"
-            @update:value="(value: string) => setConnectorConfigField(field.key, value)"
-          />
-          <a-switch
-            v-else-if="field.kind === 'switch'"
-            :checked="Boolean(connectorFieldValue(field))"
-            @update:checked="(value: boolean) => setConnectorConfigField(field.key, value)"
-          />
-          <a-input-number
-            v-else-if="field.kind === 'number'"
-            :value="Number(connectorFieldValue(field))"
-            :min="1"
-            style="width: 100%"
-            @update:value="(value: number) => setConnectorConfigField(field.key, value)"
-          />
-          <a-input
-            v-else
-            :value="String(connectorFieldValue(field))"
-            @update:value="(value: string) => setConnectorConfigField(field.key, value)"
-          />
-        </a-form-item>
-      </a-col>
-    </a-row>
+    <a-alert
+      v-if="definitionLoadFailed"
+      type="error"
+      show-icon
+      message="Connector definitions 加载失败"
+      style="margin-bottom: 16px"
+    />
+    <a-alert
+      v-else-if="!connectorDefinition"
+      type="warning"
+      show-icon
+      message="请选择当前 registry 中的 Connector"
+      description="已保存的 Connector 类型不在当前 definition endpoint 返回列表中。"
+      style="margin-bottom: 16px"
+    />
+    <SchemaDrivenForm
+      v-else
+      v-model="connector.config"
+      :schema="connectorConfigSchema"
+      :ui-schema="connectorConfigUiSchema"
+      mode="config"
+    />
 
     <a-card size="small" title="操作映射">
       <a-empty v-if="!toolOperations.length" description="新增操作后配置 Connector 映射。" />
       <a-space v-else direction="vertical" style="width: 100%" size="middle">
-        <a-row v-for="operation in toolOperations" :key="operation.name || 'blank-operation'" :gutter="[16, 16]">
-          <a-col :span="6">
+        <a-row v-for="(operation, index) in toolOperations" :key="index" :gutter="[16, 16]">
+          <a-col :span="24">
             <a-form-item label="操作">
               <a-input :value="operation.name" disabled />
             </a-form-item>
           </a-col>
-          <a-col v-for="field in operationMappingFields" :key="field.key" :span="field.span">
-            <a-form-item :label="field.label">
-              <a-select
-                v-if="field.kind === 'select'"
-                :value="String(mappingFieldValue(operation.name, field))"
-                :options="field.options"
-                @update:value="(value: string) => setOperationMappingField(operation.name, field.key, value)"
-              />
-              <a-input-number
-                v-else-if="field.kind === 'number'"
-                :value="Number(mappingFieldValue(operation.name, field))"
-                :min="1"
-                style="width: 100%"
-                @update:value="(value: number) => setOperationMappingField(operation.name, field.key, value)"
-              />
-              <a-switch
-                v-else-if="field.kind === 'switch'"
-                :checked="Boolean(mappingFieldValue(operation.name, field))"
-                @update:checked="(value: boolean) => setOperationMappingField(operation.name, field.key, value)"
-              />
-              <a-input
-                v-else
-                :value="String(mappingFieldValue(operation.name, field))"
-                @update:value="(value: string) => setOperationMappingField(operation.name, field.key, value)"
-              />
-            </a-form-item>
+          <a-col :span="24">
+            <a-alert
+              v-if="!operation.name?.trim()"
+              type="warning"
+              show-icon
+              message="请先填写操作名，再配置映射。"
+            />
+            <SchemaDrivenForm
+              v-else-if="connectorDefinition"
+              :model-value="operationMapping(operation.name)"
+              :schema="operationMappingSchema"
+              :ui-schema="operationMappingUiSchema"
+              mode="config"
+              @update:model-value="(value) => setOperationMapping(operation.name, value)"
+            />
           </a-col>
         </a-row>
       </a-space>

@@ -13,7 +13,7 @@
 ## Current Position
 
 - Current slice: Slice 10 - Web schema-driven pages.
-- Current subtask: Slice 10B definition-endpoint Web client and Integration Account schema-driven management page is complete. Next subtask: Slice 10C Tool Resource connector config / operation mapping definition-driven forms.
+- Current subtask: Slice 10C Tool Resource connector config / operation mapping definition-driven forms is complete. Next subtask: Slice 10D Channel Profile / Provider Job / Template Binding schema-driven Web pages.
 - Main-agent role: orchestration, integration decisions, ledger maintenance, review of worker/checker output.
 - Implementation flow: worker implements each bounded subtask, independent checker reviews read-only, then main agent decides follow-up.
 
@@ -96,6 +96,7 @@
 - Decision: Slice 10 will be split into small Web subtasks. 10A creates the thin `SchemaDrivenForm` + Ajv 2020 validation foundation and renderer tests. Later subtasks will replace static Tool Connector / Channel Provider definitions in Integration Account, Tool connector config / operation mapping, Channel Profile, provider job, credential, and template binding pages with definition-endpoint driven flows.
 - Decision: 10A may add `ajv` to `apps/web` dependencies, but must not introduce a heavy form generator. It must not remove existing static connector config until a follow-up subtask can rewire the corresponding pages end-to-end.
 - Decision: 10B will wire Web to `/api/extensions/tool-connectors` and `/api/extensions/channel-providers`, then refactor the Integration Account management page to choose descriptor ids from those definition endpoints and render account config / supported credential forms with `SchemaDrivenForm`. It will not yet rewrite Tool Resource connector config / operation mapping, Channel Profile, provider job, or template binding pages.
+- Decision: 10C will remove the Web static Tool Connector definition dependency from Tool Resource editing. `ResourceVersionConfigEditor` should load connector definitions from `/api/extensions/tool-connectors`, store descriptor id strings directly in `connector.connectorType`, render connector config / operation mapping with `SchemaDrivenForm`, and delete `apps/web/src/config/toolConnectors.ts` if it becomes unused. Channel Profile, provider job, and template binding pages remain later subtasks.
 
 ## Worker / Checker Notes
 
@@ -145,6 +146,29 @@
     - `pnpm --filter @lynxus/web lint` passed.
     - `git diff --check` passed.
     - Targeted guardrail scans passed.
+- Worker 10C completed Tool Resource connector config / operation mapping definition-driven forms.
+  - Refactored `ResourceVersionConfigEditor.vue` to load `api.listToolConnectorDefinitions()`, use descriptor id strings from `ToolConnectorDefinition.connectorType`, and render connector config plus per-operation mappings with `SchemaDrivenForm`.
+  - Updated account selector to filter enabled `TOOL_CONNECTOR` accounts matching the selected descriptor id, exclude `REVOKE_FAILED` / `REVOKED`, and label risk credential statuses.
+  - Added `toolConnectorDefinitionForms.ts` helper coverage for descriptor options, account filtering, connector reset, JSON Schema property UI fallback when UI schema is empty, operation mapping synchronization, duplicate blank operation row key behavior, and idempotent mapping sync.
+  - Updated `ToolConnectorConfig.connectorType` to `string` in Web types and removed the old `apps/web/src/config/toolConnectors.ts` static definition file.
+  - Explicitly did not rewrite Channel Profile, provider job, or template binding pages in this subtask.
+  - Initial checker verdict: fail.
+    - Blocking: operation mapping rows keyed by operation name caused duplicate Vue keys for blank or duplicate operation names.
+    - Main repair: mapping rows now key by index; focused regression added.
+  - Repair checker verdict: fail.
+    - Blocking: `syncOperationMappings` always replaced the watched `operationMappings` object from a deep watcher, risking recursive updates.
+    - Main repair: `syncOperationMappings` is now idempotent and preserves the existing object when the normalized key set and retained mapping references already match; regression added.
+  - Final repair checker verdict: pass.
+    - Confirmed duplicate key and recursive watcher issues fixed.
+    - Confirmed no static connector symbols / legacy uppercase connector ids remain in active Web source; only intentional tests and unrelated uppercase domain/status/model constants remain.
+  - Verification:
+    - `pnpm --filter @lynxus/web test -- ResourceVersionConfig` passed.
+    - `pnpm --filter @lynxus/web test -- api` passed.
+    - `pnpm --filter @lynxus/web lint` passed.
+    - `git diff --check` passed.
+    - Targeted guardrail scans passed for static connector definitions, old `ToolConnectorType`, raw `externalSecretRef`, credential lifecycle `Idempotency-Key`, and Slice 11 artifact terms.
+  - Residual risks:
+    - Tests remain helper-focused rather than mounted editor interaction tests. Typecheck and checker review covered the Vue wiring; browser-level exercise should happen with the later full Web page checkpoint.
 - Worker 9D2 implemented outbound delivery execution/failure foundation.
   - Added channel-gateway-owned internal execution path `POST /internal/channel-outbound/deliveries` with request shape `channelProfileId`, `assistantId`, `externalConversationId`, optional `sessionId` / `sessionMessageId`, canonical `messageBlock`, and optional trace context. No Web-facing create/send endpoint was added.
   - Added `channel_outbound_delivery.idempotency_key`, `SENDING` status, regenerated channel-gateway jOOQ, and aligned JVM/TS/OpenAPI read/runtime DTOs. Existing Web-facing channel-admin outbound delivery remains list/read only and exposes no secret material.
