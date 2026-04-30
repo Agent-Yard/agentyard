@@ -5,7 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.lynxus.channel.gateway.connector.feishu.FeishuAppCredential;
+import com.lynxus.channel.gateway.connector.feishu.FeishuCredentialProvider;
 import com.lynxus.channel.gateway.connector.feishu.FeishuGatewayNativeChannelProviderAdapter;
+import com.lynxus.channel.gateway.connector.feishu.FeishuMessageSender;
 import com.lynxus.channel.gateway.extension.ChannelProviderDescriptor;
 import com.lynxus.channel.gateway.extension.ChannelProviderRegistry;
 import com.lynxus.channel.gateway.extension.ChannelProviderRegistryLoadResult;
@@ -374,13 +377,20 @@ class OutboundDeliveryExecutionServiceTest {
     }
 
     @Test
-    void gatewayNativeUnsupportedProviderFailsClearlyWithoutFakeSuccess() {
+    void gatewayNativeFeishuTextOutboundUsesIntegrationAccountCredentials() {
         ChannelProviderRegistry registry = registry(nativeDescriptor());
         ChannelGatewayProfile profile = createProfile(adminService(registry), FeishuGatewayNativeChannelProviderAdapter.PROVIDER_TYPE, Map.of(), null);
+        CapturingFeishuCredentialProvider credentialProvider = new CapturingFeishuCredentialProvider();
+        CapturingFeishuMessageSender feishuSender = new CapturingFeishuMessageSender();
 
         ChannelOutboundDelivery delivery = outboundService(
             registry,
-            new DefaultChannelProviderOutboundSender(nativeAdapters(), objectMapper, "internal-token", java.net.http.HttpClient.newHttpClient())
+            new DefaultChannelProviderOutboundSender(
+                nativeAdapters(credentialProvider, feishuSender),
+                objectMapper,
+                "internal-token",
+                java.net.http.HttpClient.newHttpClient()
+            )
         ).deliver(new ChannelOutboundDeliveryRequest(
             profile.id(),
             "assistant-1",
@@ -391,9 +401,12 @@ class OutboundDeliveryExecutionServiceTest {
             null
         ));
 
-        assertEquals(ChannelOutboundDeliveryStatus.FAILED, delivery.status());
+        assertEquals(ChannelOutboundDeliveryStatus.SENT, delivery.status());
         assertEquals(1, delivery.attemptCount());
-        assertTrue(delivery.lastError().contains("gateway-native feishu sendOutbound is not implemented"));
+        assertEquals("integration-account-1", credentialProvider.accountId.get());
+        assertEquals("chat-1", feishuSender.command.get().receiveId());
+        assertEquals("chat_id", feishuSender.command.get().receiveIdType());
+        assertEquals("hello", feishuSender.command.get().text());
     }
 
     private ChannelAdminService adminService(ChannelProviderRegistry registry) {
@@ -427,6 +440,17 @@ class OutboundDeliveryExecutionServiceTest {
             new ChannelAssistantBinding("assistant-1", null),
             new ChannelProfileAccountSnapshot("integration-account-1", externalSecretRef)
         ));
+    }
+
+    private GatewayNativeChannelProviderAdapters nativeAdapters(
+        FeishuCredentialProvider credentialProvider,
+        FeishuMessageSender feishuSender
+    ) {
+        return new GatewayNativeChannelProviderAdapters(List.of(new FeishuGatewayNativeChannelProviderAdapter(
+            repository,
+            credentialProvider,
+            feishuSender
+        )));
     }
 
     private static GatewayNativeChannelProviderAdapters nativeAdapters() {
@@ -521,6 +545,26 @@ class OutboundDeliveryExecutionServiceTest {
 
         int calls() {
             return calls;
+        }
+    }
+
+    private static final class CapturingFeishuCredentialProvider implements FeishuCredentialProvider {
+        private final AtomicReference<String> accountId = new AtomicReference<>();
+
+        @Override
+        public FeishuAppCredential resolve(String accountId, Map<String, Object> profileConfig) {
+            this.accountId.set(accountId);
+            return new FeishuAppCredential(accountId, "cli_test", "secret_test");
+        }
+    }
+
+    private static final class CapturingFeishuMessageSender implements FeishuMessageSender {
+        private final AtomicReference<FeishuSendTextCommand> command = new AtomicReference<>();
+
+        @Override
+        public FeishuSendTextResult sendText(FeishuSendTextCommand command) {
+            this.command.set(command);
+            return new FeishuSendTextResult("om_sent", Map.of("requestId", "req_1"));
         }
     }
 

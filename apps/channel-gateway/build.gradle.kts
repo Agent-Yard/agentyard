@@ -47,6 +47,7 @@ dependencies {
     implementation("com.networknt:json-schema-validator:2.0.1") {
         exclude(group = "com.fasterxml.jackson.dataformat", module = "jackson-dataformat-yaml")
     }
+    implementation("com.larksuite.oapi:oapi-sdk:2.6.1")
 
     codegenImplementation("org.flywaydb:flyway-core")
     codegenImplementation("org.flywaydb:flyway-database-postgresql")

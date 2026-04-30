@@ -38,7 +38,7 @@ final class ChannelProviderRegistryTest {
                 .put("lynxus.agent-runtime.base-url", "http://agent-runtime.example.com");
             context.registerBean(ExtensionRegistrationProperties.class, () -> new ExtensionRegistrationProperties(null));
             context.registerBean(ExtensionRegistrationService.class);
-            context.registerBean(FeishuGatewayNativeChannelProviderAdapter.class);
+            context.registerBean(FeishuGatewayNativeChannelProviderAdapter.class, FeishuGatewayNativeChannelProviderAdapter::new);
             context.registerBean(GatewayNativeChannelProviderAdapters.class);
             context.registerBean(ChannelGatewayDescriptorProvider.class);
             context.registerBean(ExtensionManifestFetcher.class, CapturingFetcher::new);

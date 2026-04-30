@@ -37,6 +37,8 @@ server:
   port: ${LYNXUS_CHANNEL_GATEWAY_PORT:8082}
 
 lynxus:
+  api:
+    base-url: ${LYNXUS_API_BASE_URL:http://127.0.0.1:8080}
   channel-gateway:
     base-url: ${LYNXUS_CHANNEL_GATEWAY_BASE_URL:http://127.0.0.1:8082}
   agent-runtime:
