@@ -2,6 +2,7 @@ package com.lynxus.channel.gateway.connector.feishu;
 
 import com.lark.oapi.event.EventDispatcher;
 import com.lark.oapi.service.im.ImService;
+import com.lark.oapi.service.im.v1.model.EventMessage;
 import com.lark.oapi.service.im.v1.model.P2MessageReceiveV1;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,6 +41,7 @@ final class FeishuSdkLongConnectionClientFactory implements FeishuLongConnection
                         );
                         return;
                     }
+                    logReceivedMessage(credential, profile, event);
                     try {
                         FeishuSdkEventMapper.toTextMessage(
                             profile.channelProfileId(),
@@ -58,5 +60,27 @@ final class FeishuSdkLongConnectionClientFactory implements FeishuLongConnection
             credential.appSecret()
         ).eventHandler(eventHandler).build();
         return client::start;
+    }
+
+    private static void logReceivedMessage(
+        FeishuAppCredential credential,
+        FeishuLongConnectionProfile profile,
+        P2MessageReceiveV1 event
+    ) {
+        if (!log.isDebugEnabled()) {
+            return;
+        }
+        EventMessage message = event == null || event.getEvent() == null ? null : event.getEvent().getMessage();
+        log.debug(
+            "received feishu long connection message: accountId={}, channelProfileId={}, requestId={}, tenantKey={}, messageId={}, chatId={}, chatType={}, messageType={}",
+            credential.accountId(),
+            profile.channelProfileId(),
+            event == null ? null : event.getRequestId(),
+            event == null ? null : event.getTenantKey(),
+            message == null ? null : message.getMessageId(),
+            message == null ? null : message.getChatId(),
+            message == null ? null : message.getChatType(),
+            message == null ? null : message.getMessageType()
+        );
     }
 }
