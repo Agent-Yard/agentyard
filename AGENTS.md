@@ -8,19 +8,25 @@
 ## Monorepo Current Layout
 
 ```text
+.github/
+  workflows/   CI workflows
 apps/
-  api/         Spring Boot control plane API
-  worker/      Temporal workflow worker
-  web/         Vue + Ant Design Vue console
-  agent-runtime/ Python execution runtime
+  api/               Spring Boot control plane API
+  channel-gateway/   Spring Boot channel gateway and channel provider runtime boundary
+  worker/            Temporal workflow worker
+  web/               Vue + Ant Design Vue console
+  agent-runtime/     Python execution runtime
   knowledge-service/ Python knowledge service
-demo/         Just for user demo data, no need to read this unless required
+demo/                Just for user demo data, no need to read this unless required
 packages/
-  contracts/   OpenAPI spec and shared TypeScript contracts
-  contracts-jvm/ Shared JVM workflow/runtime contracts
-  persistence-jvm/ Shared JVM PostgreSQL persistence layer
-  python-common/ Shared Python utilities
-  shared-redis-jvm/ Shared JVM Redis keyspace / lock / pubsub layer
+  contracts/             OpenAPI spec and shared TypeScript contracts
+  contracts-jvm/         Shared JVM workflow/runtime contracts
+  extension-protocol/    Extension protocol schemas, OpenAPI, examples, and contract fixtures
+  extension-sdk-jvm/     JVM SDK for extension protocol helpers
+  extension-sdk-python/  Python SDK and generated protocol model tooling
+  persistence-jvm/       Shared JVM PostgreSQL persistence layer
+  python-common/         Shared Python utilities
+  shared-redis-jvm/      Shared JVM Redis keyspace / lock / pubsub layer
 deploy/
   common/      Shared secret-free runtime materials for environment compose files
   local/       Docker Compose for local development dependencies
@@ -34,9 +40,13 @@ docs/
   architecture/      current architecture and startup notes
   briefing/          project briefing files, no need to read this unless required
   doing/             execution ledger for active tasks only; record during execution, then clear after self-check on completion
-  project_todos.md   general todo document of this project
   todo/              current detailed todo docs
   develop_record/    archived working notes and completed refactor records, no need to read this unless required
+  project_structure.md current project structure notes
+  technical_route.md  technical route notes
+  project_todos.md   general todo document of this project
+gradle/
+  wrapper/     Gradle wrapper files
 ```
 
 ## Test Commands
