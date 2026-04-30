@@ -10,30 +10,10 @@ from .validator import PLACEHOLDER_PATTERN
 EMAIL_PATTERN = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 PHONE_PATTERN = re.compile(r"(?<!\d)(?:\+?\d[\d\-\s]{7,}\d)(?!\d)")
 UUID_PATTERN = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b", re.IGNORECASE)
-ORDER_PATTERN = re.compile(r"\b(?:ORD|ORDER|TICKET|CASE)[-_]?[A-Z0-9]{4,}\b", re.IGNORECASE)
-ACCOUNT_PATTERN = re.compile(r"\b(?:ACC|ACCOUNT|USER|CUSTOMER|CLIENT)[-_]?[A-Z0-9]{4,}\b", re.IGNORECASE)
 NAME_LABEL_PATTERN = re.compile(
     r"(?P<label>(?:customer|user|contact|name|姓名|客户|用户|联系人))\s*[:：]\s*(?P<value>[A-Za-z\u4e00-\u9fff][A-Za-z\u4e00-\u9fff .'-]{1,40})",
     re.IGNORECASE,
 )
-
-KEY_HINTS = {
-    "name": "PERSON",
-    "customername": "PERSON",
-    "username": "PERSON",
-    "contactname": "PERSON",
-    "email": "ACCOUNT",
-    "phone": "PHONE",
-    "mobile": "PHONE",
-    "accountid": "ACCOUNT",
-    "account": "ACCOUNT",
-    "customerid": "ACCOUNT",
-    "userid": "ACCOUNT",
-    "orderid": "ORDER",
-    "orderno": "ORDER",
-    "ticketid": "ORDER",
-    "caseid": "ORDER",
-}
 
 
 @dataclass(frozen=True)
@@ -86,16 +66,10 @@ def _sanitize_text(text: str, store: SessionPrivacyMapStore, key_hint: str | Non
         return SanitizationResult(text, {}, 0)
     replacements: list[tuple[int, int, MappingEntry]] = []
 
-    hint_type = _normalize_hint(key_hint)
-    if hint_type and text.strip():
-        replacements.append((0, len(text), store.ensure_mapping(hint_type, text)))
-
     for pattern, entity_type in (
         (EMAIL_PATTERN, "ACCOUNT"),
         (PHONE_PATTERN, "PHONE"),
         (UUID_PATTERN, "ACCOUNT"),
-        (ORDER_PATTERN, "ORDER"),
-        (ACCOUNT_PATTERN, "ACCOUNT"),
     ):
         for match in pattern.finditer(text):
             replacements.append((match.start(), match.end(), store.ensure_mapping(entity_type, match.group(0))))
@@ -128,13 +102,6 @@ def _restore_text(text: str, store: SessionPrivacyMapStore) -> str:
         return raw_value
 
     return PLACEHOLDER_PATTERN.sub(replace, text)
-
-
-def _normalize_hint(key_hint: str | None) -> str | None:
-    if not key_hint:
-        return None
-    normalized = re.sub(r"[^a-zA-Z]+", "", key_hint).lower()
-    return KEY_HINTS.get(normalized)
 
 
 def _dedupe_replacements(items: list[tuple[int, int, MappingEntry]]) -> list[tuple[int, int, MappingEntry]]:

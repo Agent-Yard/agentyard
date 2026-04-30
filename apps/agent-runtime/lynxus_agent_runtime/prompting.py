@@ -60,7 +60,11 @@ def build_prompt_bundle(request: AgentTurnRequest) -> PromptBundle:
             {
                 "agentId": agent.agentId,
                 "name": agent.name,
+                "role": agent.role,
+                "responsibility": agent.responsibility,
                 "canOwnSession": agent.canOwnSession,
+                "canSwitchTo": agent.agentId in set(request.currentOwner.switchableOwnerAgentIds),
+                "allowedActions": agent.allowedActions,
             }
             for agent in request.availableAgents
         ],
@@ -78,7 +82,7 @@ def build_prompt_bundle(request: AgentTurnRequest) -> PromptBundle:
         "decision": {
             "action": "REPLY | NO_REPLY | SWITCH_OWNER | RUN_PLAYBOOK | SESSION_HUMAN_HANDOFF",
             "replyMessage": "required when action=REPLY; must match schemaDefinitions.SessionMessageInput",
-            "targetAgentId": "required when action=SWITCH_OWNER",
+            "targetAgentId": "required when action=SWITCH_OWNER; must be an availableAgents.agentId with canSwitchTo=true; choose using that agent's role and responsibility",
             "playbookId": "required when action=RUN_PLAYBOOK",
             "playbookInput": "structured object when action=RUN_PLAYBOOK",
             "accompanyingMessage": "optional only for SWITCH_OWNER/RUN_PLAYBOOK/SESSION_HUMAN_HANDOFF; must match schemaDefinitions.SessionMessageInput",
@@ -97,7 +101,7 @@ def build_prompt_bundle(request: AgentTurnRequest) -> PromptBundle:
     instruction = "\n".join(
         [
             "You are the current session owner agent.",
-            f"Owner identity: {request.currentOwner.name} ({request.currentOwner.agentId})",
+            f"Owner identity: {request.currentOwner.name}",
             f"Role: {request.currentOwner.role}",
             f"Responsibility: {request.currentOwner.responsibility}",
             "Follow the allowedActions whitelist strictly.",
@@ -114,6 +118,7 @@ def build_prompt_bundle(request: AgentTurnRequest) -> PromptBundle:
             "Final output must be JSON only with keys decision, sharedState, and securityAssessment.",
             "Never invent unsupported fields. Keep sharedState as a full snapshot object.",
             "If a playbook is active, do not switch owner or start a second playbook.",
+            "If you choose SWITCH_OWNER, choose targetAgentId only from availableAgents entries where canSwitchTo=true, using their role and responsibility as the handoff basis.",
             "If you choose REPLY, put the user-visible structured message in decision.replyMessage.",
             "If you choose NO_REPLY, do not include replyMessage or accompanyingMessage.",
             f"System prompt:\n{request.currentOwner.systemPrompt.strip() or '(empty)'}",
@@ -128,8 +133,7 @@ def build_prompt_bundle(request: AgentTurnRequest) -> PromptBundle:
             content="Session trigger:\n" + json.dumps(
                 {
                     "triggerType": request.trigger.triggerType,
-                    "eventId": request.trigger.eventId,
-                    "payload": request.trigger.payload,
+                    "payload": _prompt_visible_value(request.trigger.payload),
                 },
                 ensure_ascii=False,
             ),
@@ -145,7 +149,7 @@ def build_prompt_bundle(request: AgentTurnRequest) -> PromptBundle:
             SemanticMessage(
                 kind="system_event",
                 content="Active playbook summary:\n"
-                + json.dumps(request.activePlaybook.model_dump(mode="json"), ensure_ascii=False),
+                + json.dumps(_prompt_visible_value(request.activePlaybook.model_dump(mode="json")), ensure_ascii=False),
             )
         )
     runtime_messages.extend(_recent_message_messages(request, event_window))
@@ -165,7 +169,7 @@ def build_prompt_bundle(request: AgentTurnRequest) -> PromptBundle:
             SemanticMessage(
                 kind="system_event",
                 content="System event result:\n"
-                + json.dumps(request.trigger.payload, ensure_ascii=False),
+                + json.dumps(_prompt_visible_value(request.trigger.payload), ensure_ascii=False),
             )
         )
     return PromptBundle(
@@ -210,10 +214,7 @@ def _event_to_runtime_message(event: Any) -> SemanticMessage:
         + json.dumps(
             {
                 "actorType": event.actorType,
-                "actorId": event.actorId,
-                "payload": event.payload,
-                "relatedPlaybookRunId": event.relatedPlaybookRunId,
-                "relatedOwnerAgentId": event.relatedOwnerAgentId,
+                "payload": _prompt_visible_value(event.payload),
             },
             ensure_ascii=False,
         ),
@@ -243,7 +244,7 @@ def _message_to_semantic_text(message: Any) -> str:
         return "Human operator reply:\n" + text if text else "Human operator reply"
     if message.role == "SYSTEM":
         return "System-generated reply:\n" + text if text else "System-generated reply"
-    return text or json.dumps(message.model_dump(mode="json"), ensure_ascii=False)
+    return text or json.dumps(_prompt_visible_value(message.model_dump(mode="json")), ensure_ascii=False)
 
 
 def _block_to_text(block: Any) -> str:
@@ -262,8 +263,8 @@ def _block_to_text(block: Any) -> str:
         card = {
             "cardType": block.cardType,
             "version": block.version,
-            "data": block.data,
-            "actions": [action.model_dump(mode="json") for action in block.actions],
+            "data": _prompt_visible_value(block.data),
+            "actions": _prompt_visible_value([action.model_dump(mode="json") for action in block.actions]),
         }
         return "Card:\n" + json.dumps(card, ensure_ascii=False)
     return ""
@@ -277,22 +278,40 @@ def _event_window_size(request: AgentTurnRequest) -> int:
 
 
 def _shared_state_view(shared_state: dict[str, Any], byte_budget: int, key_window: int) -> dict[str, Any]:
-    if not shared_state:
+    visible_shared_state = _prompt_visible_value(shared_state)
+    if not isinstance(visible_shared_state, dict) or not visible_shared_state:
         return {"sharedState": {}, "truncated": False}
     visible: dict[str, Any] = {}
     used_bytes = 0
     key_limit = max(key_window or DEFAULT_SHARED_STATE_KEY_WINDOW, 1)
-    for key in sorted(shared_state.keys()):
-        candidate = {key: shared_state[key]}
+    for key in sorted(visible_shared_state.keys()):
+        candidate = {key: visible_shared_state[key]}
         candidate_bytes = len(json.dumps(candidate, ensure_ascii=False))
         if visible and (len(visible) >= key_limit or used_bytes + candidate_bytes > byte_budget):
             break
-        visible[key] = shared_state[key]
+        visible[key] = visible_shared_state[key]
         used_bytes += candidate_bytes
-    truncated = len(visible) < len(shared_state)
+    truncated = len(visible) < len(visible_shared_state)
     return {
         "sharedState": visible,
         "truncated": truncated,
         "visibleKeys": list(visible.keys()),
-        "omittedKeyCount": max(0, len(shared_state) - len(visible)),
+        "omittedKeyCount": max(0, len(visible_shared_state) - len(visible)),
     }
+
+
+def _prompt_visible_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            str(key): _prompt_visible_value(item)
+            for key, item in value.items()
+            if not _is_prompt_id_key(str(key))
+        }
+    if isinstance(value, list):
+        return [_prompt_visible_value(item) for item in value]
+    return value
+
+
+def _is_prompt_id_key(key: str) -> bool:
+    normalized = key.replace("_", "").replace("-", "").lower()
+    return normalized == "id" or normalized.endswith("id") or normalized.endswith("ids")

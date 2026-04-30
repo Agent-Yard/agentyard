@@ -8,8 +8,6 @@ PLACEHOLDER_PATTERN = re.compile(r"\[([A-Z]+)_(\d{3})\]")
 EMAIL_PATTERN = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 PHONE_PATTERN = re.compile(r"(?<!\d)(?:\+?\d[\d\-\s]{7,}\d)(?!\d)")
 UUID_PATTERN = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b", re.IGNORECASE)
-ORDER_PATTERN = re.compile(r"\b(?:ORD|ORDER|TICKET|CASE)[-_]?[A-Z0-9]{4,}\b", re.IGNORECASE)
-ACCOUNT_PATTERN = re.compile(r"\b(?:ACC|ACCOUNT|USER|CUSTOMER|CLIENT)[-_]?[A-Z0-9]{4,}\b", re.IGNORECASE)
 NAME_LABEL_PATTERN = re.compile(
     r"(?P<label>(?:customer|user|contact|name|姓名|客户|用户|联系人))\s*[:：]\s*(?P<value>[A-Za-z\u4e00-\u9fff][A-Za-z\u4e00-\u9fff .'-]{1,40})",
     re.IGNORECASE,
@@ -17,24 +15,6 @@ NAME_LABEL_PATTERN = re.compile(
 NAME_CONTEXT_PATTERN = re.compile(
     r"(?P<label>(?:customer|user|contact|name|姓名|客户|用户|联系人))[ \t]+(?P<value>(?:[A-Z][a-z]+(?: [A-Z][a-z]+){1,2}|[\u4e00-\u9fff]{2,4}))"
 )
-
-KEY_HINTS = {
-    "name": "PERSON",
-    "customername": "PERSON",
-    "username": "PERSON",
-    "contactname": "PERSON",
-    "email": "ACCOUNT",
-    "phone": "PHONE",
-    "mobile": "PHONE",
-    "accountid": "ACCOUNT",
-    "account": "ACCOUNT",
-    "customerid": "ACCOUNT",
-    "userid": "ACCOUNT",
-    "orderid": "ORDER",
-    "orderno": "ORDER",
-    "ticketid": "ORDER",
-    "caseid": "ORDER",
-}
 
 
 class PrivacyMappingBlockedError(RuntimeError):
@@ -103,16 +83,10 @@ def _collect_sensitive_text(text: str, key_hint: str | None) -> list[SensitiveEn
         return []
 
     entities: list[SensitiveEntity] = []
-    normalized_hint = _normalize_hint(key_hint)
-    if normalized_hint and text.strip():
-        entities.append(SensitiveEntity(normalized_hint, text.strip()))
-
     for pattern, entity_type in (
         (EMAIL_PATTERN, "ACCOUNT"),
         (PHONE_PATTERN, "PHONE"),
         (UUID_PATTERN, "ACCOUNT"),
-        (ORDER_PATTERN, "ORDER"),
-        (ACCOUNT_PATTERN, "ACCOUNT"),
     ):
         for match in pattern.finditer(text):
             entities.append(SensitiveEntity(entity_type, match.group(0).strip()))
@@ -123,13 +97,6 @@ def _collect_sensitive_text(text: str, key_hint: str | None) -> list[SensitiveEn
         entities.append(SensitiveEntity("PERSON", match.group("value").strip()))
 
     return _dedupe_entities(entities)
-
-
-def _normalize_hint(key_hint: str | None) -> str | None:
-    if not key_hint:
-        return None
-    normalized = re.sub(r"[^a-zA-Z]+", "", key_hint).lower()
-    return KEY_HINTS.get(normalized)
 
 
 def _contains_raw_value(value: Any, raw_value: str) -> bool:
