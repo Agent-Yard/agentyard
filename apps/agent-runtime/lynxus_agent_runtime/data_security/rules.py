@@ -4,16 +4,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from .detectors import PLACEHOLDER_PATTERN, detect_sensitive_text
 from .store import MappingEntry, SessionPrivacyMapStore
-from .validator import PLACEHOLDER_PATTERN
-
-EMAIL_PATTERN = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
-PHONE_PATTERN = re.compile(r"(?<!\d)(?:\+?\d[\d\-\s]{7,}\d)(?!\d)")
-UUID_PATTERN = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b", re.IGNORECASE)
-NAME_LABEL_PATTERN = re.compile(
-    r"(?P<label>(?:customer|user|contact|name|姓名|客户|用户|联系人))\s*[:：]\s*(?P<value>[A-Za-z\u4e00-\u9fff][A-Za-z\u4e00-\u9fff .'-]{1,40})",
-    re.IGNORECASE,
-)
 
 
 @dataclass(frozen=True)
@@ -21,6 +13,7 @@ class SanitizationResult:
     value: Any
     entity_type_breakdown: dict[str, int]
     new_placeholder_count: int
+    total_replacement_count: int = 0
 
 
 def sanitize_value(value: Any, store: SessionPrivacyMapStore, key_hint: str | None = None) -> SanitizationResult:
@@ -30,24 +23,28 @@ def sanitize_value(value: Any, store: SessionPrivacyMapStore, key_hint: str | No
         result: dict[str, Any] = {}
         totals: dict[str, int] = {}
         created = 0
+        replacements = 0
         for key, item in value.items():
             nested = sanitize_value(item, store, str(key))
             result[str(key)] = nested.value
             created += nested.new_placeholder_count
+            replacements += nested.total_replacement_count
             for entity_type, count in nested.entity_type_breakdown.items():
                 totals[entity_type] = totals.get(entity_type, 0) + count
-        return SanitizationResult(result, totals, created)
+        return SanitizationResult(result, totals, created, replacements)
     if isinstance(value, list):
         items: list[Any] = []
         totals: dict[str, int] = {}
         created = 0
+        replacements = 0
         for item in value:
             nested = sanitize_value(item, store, key_hint)
             items.append(nested.value)
             created += nested.new_placeholder_count
+            replacements += nested.total_replacement_count
             for entity_type, count in nested.entity_type_breakdown.items():
                 totals[entity_type] = totals.get(entity_type, 0) + count
-        return SanitizationResult(items, totals, created)
+        return SanitizationResult(items, totals, created, replacements)
     return SanitizationResult(value, {}, 0)
 
 
@@ -62,21 +59,12 @@ def restore_value(value: Any, store: SessionPrivacyMapStore) -> Any:
 
 
 def _sanitize_text(text: str, store: SessionPrivacyMapStore, key_hint: str | None) -> SanitizationResult:
-    if not text or PLACEHOLDER_PATTERN.search(text):
+    if not text:
         return SanitizationResult(text, {}, 0)
     replacements: list[tuple[int, int, MappingEntry]] = []
 
-    for pattern, entity_type in (
-        (EMAIL_PATTERN, "ACCOUNT"),
-        (PHONE_PATTERN, "PHONE"),
-        (UUID_PATTERN, "ACCOUNT"),
-    ):
-        for match in pattern.finditer(text):
-            replacements.append((match.start(), match.end(), store.ensure_mapping(entity_type, match.group(0))))
-
-    for match in NAME_LABEL_PATTERN.finditer(text):
-        raw_value = match.group("value").strip()
-        replacements.append((match.start("value"), match.end("value"), store.ensure_mapping("PERSON", raw_value)))
+    for entity in detect_sensitive_text(text):
+        replacements.append((entity.start, entity.end, store.ensure_mapping(entity.entity_type, entity.raw_value)))
 
     replacements = _dedupe_replacements(replacements)
     if not replacements:
@@ -90,7 +78,7 @@ def _sanitize_text(text: str, store: SessionPrivacyMapStore, key_hint: str | Non
         if entry.created:
             new_placeholders += 1
         rendered = rendered[:start] + entry.placeholder_id + rendered[end:]
-    return SanitizationResult(rendered, entity_counts, new_placeholders)
+    return SanitizationResult(rendered, entity_counts, new_placeholders, len(replacements))
 
 
 def _restore_text(text: str, store: SessionPrivacyMapStore) -> str:

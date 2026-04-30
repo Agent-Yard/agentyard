@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 
 from ..models import AgentTurnRequest, LlmModelDescriptor
+
+PRIVACY_FRAGMENT_CACHE_VERSION = "agent-runtime-privacy-v2"
 
 PRIVACY_CHANNELS = (
     "PROMPT_INSTRUCTION",
@@ -12,6 +15,12 @@ PRIVACY_CHANNELS = (
     "TOOL_RESULT",
     "MODEL_FINAL_RESPONSE",
 )
+
+
+class PrivacyStrategy(StrEnum):
+    SKIP = "SKIP"
+    RULES_ONLY = "RULES_ONLY"
+    RULES_THEN_PRIVATE_LLM = "RULES_THEN_PRIVATE_LLM"
 
 
 @dataclass(frozen=True)

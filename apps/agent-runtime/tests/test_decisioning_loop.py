@@ -6,7 +6,10 @@ from unittest.mock import patch
 os.environ.setdefault("LYNXUS_INTERNAL_AUTH_TOKEN", "test-internal-token")
 
 from lynxus_agent_runtime.decisioning import execute_agent_turn
+from lynxus_agent_runtime.data_security.pipeline import PrivacyPipeline
+from lynxus_agent_runtime.data_security.policy import PrivacyPolicy, PrivacyStrategy
 from lynxus_agent_runtime.data_security.rewriter import PrivateLlmRewriter
+from lynxus_agent_runtime.data_security.rewriter import RewriteResult
 from lynxus_agent_runtime.data_security.rules import SanitizationResult
 from lynxus_agent_runtime.http_clients import reset_shared_http_client_registry
 from lynxus_agent_runtime.models import AgentTurnRequest, PrivacyMappingTelemetry
@@ -73,6 +76,9 @@ class _FakeClient:
 
 
 class _FakePrivacyStore:
+    fragment_cache: dict[str, object] = {}
+    fragment_metadata: dict[str, dict[str, object]] = {}
+
     def __init__(self, policy) -> None:
         self._summary = PrivacyMappingTelemetry(
             enabled=policy.enabled,
@@ -86,6 +92,11 @@ class _FakePrivacyStore:
             blockedEventCount=0,
             lastProcessedAt=None,
         )
+
+    @classmethod
+    def reset_fragment_cache(cls) -> None:
+        cls.fragment_cache = {}
+        cls.fragment_metadata = {}
 
     def ensure_mapping(self, entity_type: str, raw_value: str):  # noqa: ANN001
         self._summary.placeholderCount += 1
@@ -103,6 +114,16 @@ class _FakePrivacyStore:
 
     def restore_placeholder(self, placeholder_id: str) -> str | None:
         return None
+
+    def read_sanitized_fragment(self, cache_key: str):
+        return self.fragment_cache.get(cache_key)
+
+    def write_sanitized_fragment(self, cache_key: str, value, metadata: dict[str, object]) -> None:  # noqa: ANN001
+        self.fragment_cache[cache_key] = value
+        self.fragment_metadata[cache_key] = metadata
+
+    def fingerprint_fragment_content(self, payload: bytes) -> str:
+        return "fake-hmac:" + str(abs(hash(payload)))
 
     def record_sanitize(self, channel: str, new_placeholder_count: int, entity_type_breakdown: dict[str, int]) -> None:
         self._summary.sanitizeCountByChannel[channel] = self._summary.sanitizeCountByChannel.get(channel, 0) + 1
@@ -299,6 +320,7 @@ def _enable_privacy_mapping(payload: dict) -> dict:
 class AgentRuntimeDecisionLoopTest(unittest.TestCase):
     def setUp(self) -> None:
         reset_shared_http_client_registry()
+        _FakePrivacyStore.reset_fragment_cache()
 
     def tearDown(self) -> None:
         reset_shared_http_client_registry()
@@ -685,14 +707,36 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         self.assertTrue(outcome.failureReason)
         self.assertFalse(any(entry["url"] == "https://runtime.example/chat/completions" for entry in request_log))
 
-    def test_should_fail_closed_when_private_rewriter_api_key_is_missing(self) -> None:
+    def test_should_not_require_private_rewriter_for_context_name_detected_by_rules(self) -> None:
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
         os.environ.pop("TEST_PRIVATE_API_KEY", None)
         request_log: list[dict] = []
         payload = _enable_privacy_mapping(_request_payload())
         payload["trigger"]["payload"]["text"] = "user Alice Johnson"
         request = AgentTurnRequest.model_validate(payload)
-        transport = _FakeTransport([], request_log)
+        transport = _FakeTransport(
+            [
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "decision": {
+                                            "action": "REPLY",
+                                            "replyMessage": _text_message_input("已处理"),
+                                        },
+                                        "sharedState": {"knownPreference": "email"},
+                                    },
+                                    ensure_ascii=False,
+                                )
+                            }
+                        }
+                    ]
+                }
+            ],
+            request_log,
+        )
         factory = lambda *args, **kwargs: _FakeClient(transport)
 
         with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=factory), patch(
@@ -701,16 +745,292 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         ):
             outcome, _ = execute_agent_turn(request)
 
-        self.assertFalse(outcome.success)
-        self.assertTrue(outcome.failureReason)
-        self.assertFalse(any(entry["url"] == "https://runtime.example/chat/completions" for entry in request_log))
+        self.assertTrue(outcome.success)
+        self.assertFalse(any(entry["url"] == "https://privacy.example/chat/completions" for entry in request_log))
+        prompt_payload = json.dumps(request_log[0]["json"]["messages"], ensure_ascii=False)
+        self.assertIn("[PERSON_001]", prompt_payload)
+        self.assertNotIn("Alice Johnson", prompt_payload)
+
+    def test_should_not_send_static_prompt_or_response_contract_to_private_rewriter(self) -> None:
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        os.environ["TEST_PRIVATE_API_KEY"] = "private-secret"
+        self.addCleanup(lambda: os.environ.pop("TEST_PRIVATE_API_KEY", None))
+        request_log: list[dict] = []
+        payload = _enable_privacy_mapping(_request_payload())
+        payload["trigger"]["payload"]["text"] = "hello"
+        payload["recentMessages"][0]["blocks"] = [{"type": "TEXT", "text": "hello"}]
+        request = AgentTurnRequest.model_validate(payload)
+        transport = _FakeTransport(
+            [
+                {"choices": [{"message": {"content": json.dumps({"entities": []})}}]},
+                {"choices": [{"message": {"content": json.dumps({"entities": []})}}]},
+                {"choices": [{"message": {"content": json.dumps({"entities": []})}}]},
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "decision": {
+                                            "action": "REPLY",
+                                            "replyMessage": _text_message_input("ok"),
+                                        },
+                                        "sharedState": {"knownPreference": "email"},
+                                    },
+                                    ensure_ascii=False,
+                                )
+                            }
+                        }
+                    ]
+                },
+            ],
+            request_log,
+        )
+        factory = lambda *args, **kwargs: _FakeClient(transport)
+
+        with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=factory), patch(
+            "lynxus_agent_runtime.data_security.pipeline.SessionPrivacyMapStore",
+            _FakePrivacyStore,
+        ):
+            outcome, _ = execute_agent_turn(request)
+
+        self.assertTrue(outcome.success)
+        private_requests = [entry for entry in request_log if entry["url"] == "https://privacy.example/chat/completions"]
+        self.assertGreaterEqual(len(private_requests), 1)
+        private_payload = json.dumps([entry["json"]["messages"] for entry in private_requests], ensure_ascii=False)
+        self.assertNotIn("Owner identity:", private_payload)
+        self.assertNotIn("Final output must be JSON only", private_payload)
+        self.assertNotIn("Response contract", private_payload)
+        self.assertNotIn("SessionMessageInput", private_payload)
+
+    def test_should_reuse_cached_runtime_fragment_on_later_sanitize_call(self) -> None:
+        os.environ["TEST_PRIVATE_API_KEY"] = "private-secret"
+        self.addCleanup(lambda: os.environ.pop("TEST_PRIVATE_API_KEY", None))
+        request = AgentTurnRequest.model_validate(_enable_privacy_mapping(_request_payload()))
+        policy = PrivacyPolicy.from_request(request)
+
+        with patch("lynxus_agent_runtime.data_security.pipeline.SessionPrivacyMapStore", _FakePrivacyStore), patch(
+            "lynxus_agent_runtime.data_security.mapper.PrivateLlmRewriter.rewrite",
+            return_value=RewriteResult("Please help [PERSON_001]", {"PERSON": 1}, 1, 1),
+        ) as rewrite:
+            first_pipeline = PrivacyPipeline(policy)
+            first = first_pipeline.sanitize_fragment(
+                "PROMPT_RUNTIME_MESSAGE",
+                "Please help Jane Doe",
+                PrivacyStrategy.RULES_THEN_PRIVATE_LLM,
+                source="recent_message:msg-99:99",
+            )
+            first_pipeline.close()
+
+            second_pipeline = PrivacyPipeline(policy)
+            second = second_pipeline.sanitize_fragment(
+                "PROMPT_RUNTIME_MESSAGE",
+                "Please help Jane Doe",
+                PrivacyStrategy.RULES_THEN_PRIVATE_LLM,
+                source="recent_message:msg-99:99",
+            )
+            second_pipeline.close()
+
+        self.assertEqual("Please help [PERSON_001]", first)
+        self.assertEqual("Please help [PERSON_001]", second)
+        self.assertEqual(1, rewrite.call_count)
+
+    def test_should_sanitize_nested_tool_results_with_private_rewriter_and_reuse_fragment_cache(self) -> None:
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        os.environ["TEST_PRIVATE_API_KEY"] = "private-secret"
+        self.addCleanup(lambda: os.environ.pop("TEST_PRIVATE_API_KEY", None))
+        payload = _enable_privacy_mapping(_request_payload())
+        payload["currentOwner"]["tools"][0]["operations"][0]["outputSchema"] = json.dumps(
+            {
+                "type": "object",
+                "properties": {
+                    "ticketId": {"type": "string"},
+                    "status": {"type": "string"},
+                    "detail": {
+                        "type": "object",
+                        "properties": {"note": {"type": "string"}},
+                        "required": ["note"],
+                        "additionalProperties": False,
+                    },
+                },
+                "required": ["ticketId", "status", "detail"],
+                "additionalProperties": False,
+            },
+            ensure_ascii=False,
+        )
+        request = AgentTurnRequest.model_validate(payload)
+        operation = request.currentOwner.tools[0].operations[0]
+        function_name = resource_tool_function_name(request.currentOwner.tools[0], operation)
+        request_log: list[dict] = []
+        tool_call_response = {
+            "choices": [
+                {
+                    "message": {
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "call-1",
+                                "type": "function",
+                                "function": {
+                                    "name": function_name,
+                                    "arguments": json.dumps({"subject": "退款申请"}, ensure_ascii=False),
+                                },
+                            }
+                        ],
+                    }
+                }
+            ]
+        }
+        final_response = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "decision": {
+                                    "action": "REPLY",
+                                    "replyMessage": _text_message_input("ok"),
+                                },
+                                "sharedState": {"knownPreference": "email"},
+                            },
+                            ensure_ascii=False,
+                        )
+                    }
+                }
+            ]
+        }
+        transport = _FakeTransport(
+            [tool_call_response, final_response, tool_call_response, final_response],
+            request_log,
+            payloads_by_url={
+                "https://tool.example/invoke": {
+                    "ticketId": "ticket-1",
+                    "status": "RECORDED",
+                    "detail": {"note": "Please help Jane Doe"},
+                }
+            },
+        )
+
+        def rewrite(text: str, store) -> RewriteResult:  # noqa: ANN001
+            if "Jane Doe" not in text:
+                return RewriteResult(text, {}, 0, 0)
+            entry = store.ensure_mapping("PERSON", "Jane Doe")
+            return RewriteResult(text.replace("Jane Doe", entry.placeholder_id), {"PERSON": 1}, 1 if entry.created else 0, 1)
+
+        factory = lambda *args, **kwargs: _FakeClient(transport)
+        with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=factory), patch(
+            "lynxus_agent_runtime.data_security.pipeline.SessionPrivacyMapStore",
+            _FakePrivacyStore,
+        ), patch(
+            "lynxus_agent_runtime.data_security.mapper.PrivateLlmRewriter.rewrite",
+            side_effect=rewrite,
+        ) as rewrite_mock:
+            first_outcome, _ = execute_agent_turn(request)
+            second_outcome, _ = execute_agent_turn(request)
+
+        self.assertTrue(first_outcome.success, first_outcome.failureReason)
+        self.assertTrue(second_outcome.success, second_outcome.failureReason)
+        owner_tool_prompts = [
+            json.dumps(entry["json"]["messages"], ensure_ascii=False)
+            for entry in request_log
+            if entry["url"] == "https://runtime.example/chat/completions"
+            and any(message.get("role") == "tool" for message in entry["json"]["messages"])
+        ]
+        self.assertGreaterEqual(len(owner_tool_prompts), 2)
+        self.assertTrue(all("[PERSON_" in prompt for prompt in owner_tool_prompts))
+        self.assertTrue(all("Jane Doe" not in prompt for prompt in owner_tool_prompts))
+        self.assertEqual(1, len([call for call in rewrite_mock.call_args_list if "Jane Doe" in call.args[0]]))
+        self.assertTrue(any(metadata["source"] == f"tool_result:{function_name}" for metadata in _FakePrivacyStore.fragment_metadata.values()))
+
+    def test_should_allow_private_rewriter_for_runtime_user_content_not_covered_by_rules(self) -> None:
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        os.environ["TEST_PRIVATE_API_KEY"] = "private-secret"
+        self.addCleanup(lambda: os.environ.pop("TEST_PRIVATE_API_KEY", None))
+        request_log: list[dict] = []
+        payload = _enable_privacy_mapping(_request_payload())
+        payload["trigger"]["payload"]["text"] = "Please help Jane Doe"
+        payload["recentMessages"][0]["blocks"] = [{"type": "TEXT", "text": "Please help Jane Doe"}]
+        request = AgentTurnRequest.model_validate(payload)
+        transport = _FakeTransport(
+            [
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {"entities": [{"rawValue": "Jane Doe", "entityType": "PERSON"}]},
+                                    ensure_ascii=False,
+                                )
+                            }
+                        }
+                    ]
+                },
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {"entities": [{"rawValue": "Jane Doe", "entityType": "PERSON"}]},
+                                    ensure_ascii=False,
+                                )
+                            }
+                        }
+                    ]
+                },
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {"entities": [{"rawValue": "Jane Doe", "entityType": "PERSON"}]},
+                                    ensure_ascii=False,
+                                )
+                            }
+                        }
+                    ]
+                },
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "decision": {
+                                            "action": "REPLY",
+                                            "replyMessage": _text_message_input("ok"),
+                                        },
+                                        "sharedState": {"knownPreference": "email"},
+                                    },
+                                    ensure_ascii=False,
+                                )
+                            }
+                        }
+                    ]
+                },
+            ],
+            request_log,
+        )
+        factory = lambda *args, **kwargs: _FakeClient(transport)
+
+        with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=factory), patch(
+            "lynxus_agent_runtime.data_security.pipeline.SessionPrivacyMapStore",
+            _FakePrivacyStore,
+        ):
+            outcome, _ = execute_agent_turn(request)
+
+        self.assertTrue(outcome.success)
+        self.assertTrue(any(entry["url"] == "https://privacy.example/chat/completions" for entry in request_log))
+        owner_request = next(entry for entry in request_log if entry["url"] == "https://runtime.example/chat/completions")
+        owner_prompt = json.dumps(owner_request["json"]["messages"], ensure_ascii=False)
+        self.assertIn("[PERSON_", owner_prompt)
+        self.assertNotIn("Jane Doe", owner_prompt)
 
     def test_should_fail_closed_when_rewriter_returns_raw_sensitive_text(self) -> None:
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
         os.environ["TEST_PRIVATE_API_KEY"] = "private-secret"
         request_log: list[dict] = []
         payload = _enable_privacy_mapping(_request_payload())
-        payload["trigger"]["payload"]["text"] = "user Alice Johnson"
+        payload["trigger"]["payload"]["text"] = "email alice@example.com"
         request = AgentTurnRequest.model_validate(payload)
         transport = _FakeTransport([], request_log)
         factory = lambda *args, **kwargs: _FakeClient(transport)
@@ -719,17 +1039,25 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
             "lynxus_agent_runtime.data_security.pipeline.SessionPrivacyMapStore",
             _FakePrivacyStore,
         ), patch(
+            "lynxus_agent_runtime.data_security.mapper.sanitize_value",
+            return_value=SanitizationResult("email alice@example.com", {}, 0, 0),
+        ), patch(
             "lynxus_agent_runtime.data_security.mapper.PrivateLlmRewriter.rewrite",
             return_value=type(
                 "RewriteResult",
                 (),
-                {"value": "customer Alice Johnson", "entity_type_breakdown": {}, "new_placeholder_count": 0},
+                {
+                    "value": "email alice@example.com",
+                    "entity_type_breakdown": {},
+                    "new_placeholder_count": 0,
+                    "total_replacement_count": 1,
+                },
             )(),
         ):
             outcome, _ = execute_agent_turn(request)
 
         self.assertFalse(outcome.success)
-        self.assertIn("Alice Johnson", outcome.failureReason)
+        self.assertIn("alice@example.com", outcome.failureReason)
         self.assertFalse(any(entry["url"] == "https://runtime.example/chat/completions" for entry in request_log))
 
     def test_should_collect_usage_for_private_rewriter_and_owner_model(self) -> None:
@@ -804,6 +1132,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
             )
 
         self.assertEqual("user [PERSON_001]", rewritten.value)
+        self.assertEqual(1, rewritten.total_replacement_count)
         self.assertEqual(1, len(usage_tracker.entries()))
         self.assertEqual("SESSION_PRIVACY_MODEL", usage_tracker.entries()[0].sourceType)
         self.assertEqual("privacy-model-1", usage_tracker.entries()[0].modelResourceId)

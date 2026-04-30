@@ -139,6 +139,10 @@ return {placeholderId, reversePayload, created}
         return f"{self._session_prefix}:reverse"
 
     @property
+    def fragments_key(self) -> str:
+        return f"{self._session_prefix}:fragments"
+
+    @property
     def summary_key(self) -> str:
         return f"{self._session_prefix}:summary"
 
@@ -182,6 +186,26 @@ return {placeholderId, reversePayload, created}
         entry = json.loads(payload)
         self._touch_reverse(placeholder_id, entry)
         return self._decrypt(entry["ciphertext"])
+
+    def read_sanitized_fragment(self, cache_key: str) -> Any | None:
+        payload = self._redis.hget(self.fragments_key, cache_key)
+        if payload is None:
+            return None
+        entry = json.loads(payload)
+        return json.loads(self._decrypt(entry["ciphertext"]))
+
+    def write_sanitized_fragment(self, cache_key: str, value: Any, metadata: dict[str, Any]) -> None:
+        entry = {
+            "ciphertext": self._encrypt(json.dumps(value, ensure_ascii=False)),
+            "metadata": {
+                **metadata,
+                "cachedAt": self._now(),
+            },
+        }
+        self._redis.hset(self.fragments_key, cache_key, json.dumps(entry, ensure_ascii=False))
+
+    def fingerprint_fragment_content(self, payload: bytes) -> str:
+        return hmac.new(self._fingerprint_secret, b"fragment:" + payload, hashlib.sha256).hexdigest()
 
     def record_sanitize(self, channel: str, new_placeholder_count: int, entity_type_breakdown: dict[str, int]) -> None:
         def mutate(summary: dict[str, Any]) -> None:

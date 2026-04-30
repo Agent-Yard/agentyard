@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from .data_security.policy import PrivacyStrategy
 from .models import AgentTurnRequest, SessionMessageInput
 from .openai_adapter import render_openai_messages as render_openai_messages_via_adapter
 from .semantic import SemanticMessage
@@ -21,6 +22,9 @@ class PromptBundle:
     runtime_messages: list[SemanticMessage]
     capabilities: dict[str, Any]
     response_contract: dict[str, Any]
+    instruction_privacy_strategy: PrivacyStrategy = PrivacyStrategy.RULES_ONLY
+    capabilities_privacy_strategy: PrivacyStrategy = PrivacyStrategy.SKIP
+    response_contract_privacy_strategy: PrivacyStrategy = PrivacyStrategy.SKIP
 
 
 def build_prompt_bundle(request: AgentTurnRequest) -> PromptBundle:
@@ -137,11 +141,13 @@ def build_prompt_bundle(request: AgentTurnRequest) -> PromptBundle:
                 },
                 ensure_ascii=False,
             ),
+            privacy_source=f"trigger:{request.trigger.eventId or request.trigger.triggerType}",
         ),
         SemanticMessage(
             kind="system_event",
             content="Visible sharedState slice (use get_shared_state tool if you need more keys):\n"
             + json.dumps(shared_state_view, ensure_ascii=False),
+            privacy_source="shared_state_slice",
         ),
     ]
     if request.activePlaybook is not None:
@@ -150,6 +156,7 @@ def build_prompt_bundle(request: AgentTurnRequest) -> PromptBundle:
                 kind="system_event",
                 content="Active playbook summary:\n"
                 + json.dumps(_prompt_visible_value(request.activePlaybook.model_dump(mode="json")), ensure_ascii=False),
+                privacy_source=f"active_playbook:{request.activePlaybook.runId}",
             )
         )
     runtime_messages.extend(_recent_message_messages(request, event_window))
@@ -158,11 +165,16 @@ def build_prompt_bundle(request: AgentTurnRequest) -> PromptBundle:
         trigger_message = _find_trigger_message(request)
         if trigger_message is not None:
             runtime_messages.append(
-                SemanticMessage(kind="user_turn", content=_message_to_semantic_text(trigger_message))
+                _message_to_runtime_message(trigger_message)
             )
         else:
             runtime_messages.append(
-                SemanticMessage(kind="system_event", content="Session trigger references a missing message")
+                SemanticMessage(
+                    kind="system_event",
+                    content="Session trigger references a missing message",
+                    privacy_strategy=PrivacyStrategy.RULES_ONLY,
+                    privacy_source=f"missing_trigger_message:{request.trigger.triggerMessageId or 'unknown'}",
+                )
             )
     else:
         runtime_messages.append(
@@ -170,6 +182,7 @@ def build_prompt_bundle(request: AgentTurnRequest) -> PromptBundle:
                 kind="system_event",
                 content="System event result:\n"
                 + json.dumps(_prompt_visible_value(request.trigger.payload), ensure_ascii=False),
+                privacy_source=f"system_event_result:{request.trigger.eventId or request.trigger.triggerType}",
             )
         )
     return PromptBundle(
@@ -193,6 +206,8 @@ def loaded_skill_runtime_message(loaded_skills: list[dict[str, str]]) -> Semanti
     return SemanticMessage(
         kind="system_event",
         content="Loaded skill details:\n" + json.dumps(loaded_skills, ensure_ascii=False),
+        privacy_strategy=PrivacyStrategy.RULES_ONLY,
+        privacy_source="loaded_skills",
     )
 
 
@@ -218,13 +233,20 @@ def _event_to_runtime_message(event: Any) -> SemanticMessage:
             },
             ensure_ascii=False,
         ),
+        privacy_source=f"event:{event.eventId}:{event.sequence}",
     )
 
 
 def _message_to_runtime_message(message: Any) -> SemanticMessage:
     if message.role == "USER":
-        return SemanticMessage(kind="user_turn", content=_message_to_semantic_text(message))
-    return SemanticMessage(kind="assistant_turn", content=_message_to_semantic_text(message))
+        kind = "user_turn"
+    else:
+        kind = "assistant_turn"
+    return SemanticMessage(
+        kind=kind,
+        content=_message_to_semantic_text(message),
+        privacy_source=f"message:{message.messageId}:{message.sequence}",
+    )
 
 
 def _find_trigger_message(request: AgentTurnRequest) -> Any | None:

@@ -1,8 +1,11 @@
+import hashlib
 import json
 import os
 import unittest
 
+from lynxus_agent_runtime.data_security.pipeline import PrivacyPipeline
 from lynxus_agent_runtime.data_security.policy import PrivacyPolicy
+from lynxus_agent_runtime.data_security.policy import PrivacyStrategy
 from lynxus_agent_runtime.data_security.store import SessionPrivacyMapStore
 
 
@@ -115,3 +118,43 @@ class SessionPrivacyMapStoreTest(unittest.TestCase):
         self.assertEqual(third.placeholder_id, "[ACCOUNT_001]")
         self.assertEqual(summary["placeholderCount"], 3)
         self.assertEqual(summary["entityTypeBreakdown"], {"PERSON": 2, "ACCOUNT": 1})
+
+    def test_should_store_sanitized_fragments_in_session_hash(self) -> None:
+        redis_client = _FakeRedis()
+        store = SessionPrivacyMapStore(self.policy, redis_client=redis_client)
+
+        store.write_sanitized_fragment(
+            "fragment:key-1",
+            "hello [PERSON_001]",
+            {
+                "policyVersion": "agent-runtime-privacy-v2",
+                "strategy": "RULES_THEN_PRIVATE_LLM",
+                "source": "recent_message:msg-1:1",
+                "contentHash": "hash-1",
+            },
+        )
+
+        self.assertEqual("hello [PERSON_001]", store.read_sanitized_fragment("fragment:key-1"))
+        self.assertIsNone(store.read_sanitized_fragment("fragment:missing"))
+        raw_entry = redis_client._hashes[store.fragments_key]["fragment:key-1"]
+        self.assertNotIn("hello [PERSON_001]", raw_entry)
+        self.assertNotIn("value", json.loads(raw_entry))
+        self.assertIn("ciphertext", json.loads(raw_entry))
+        self.assertEqual("recent_message:msg-1:1", json.loads(raw_entry)["metadata"]["source"])
+
+    def test_fragment_cache_metadata_should_use_keyed_content_fingerprint(self) -> None:
+        store = SessionPrivacyMapStore(self.policy, redis_client=_FakeRedis())
+        pipeline = PrivacyPipeline.__new__(PrivacyPipeline)
+        pipeline._policy = self.policy
+        pipeline._store = store
+
+        metadata = pipeline._fragment_cache_metadata(
+            PrivacyStrategy.RULES_THEN_PRIVATE_LLM,
+            "tool_result:resource_tool__tool_ver_1__create_ticket",
+            {"note": "hi"},
+        )
+
+        self.assertNotIn("contentHash", metadata)
+        self.assertIn("contentFingerprint", metadata)
+        raw_sha = hashlib.sha256(json.dumps({"note": "hi"}, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+        self.assertNotEqual(raw_sha, metadata["contentFingerprint"])

@@ -1,20 +1,9 @@
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import Any
 
-PLACEHOLDER_PATTERN = re.compile(r"\[([A-Z]+)_(\d{3})\]")
-EMAIL_PATTERN = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
-PHONE_PATTERN = re.compile(r"(?<!\d)(?:\+?\d[\d\-\s]{7,}\d)(?!\d)")
-UUID_PATTERN = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b", re.IGNORECASE)
-NAME_LABEL_PATTERN = re.compile(
-    r"(?P<label>(?:customer|user|contact|name|姓名|客户|用户|联系人))\s*[:：]\s*(?P<value>[A-Za-z\u4e00-\u9fff][A-Za-z\u4e00-\u9fff .'-]{1,40})",
-    re.IGNORECASE,
-)
-NAME_CONTEXT_PATTERN = re.compile(
-    r"(?P<label>(?:customer|user|contact|name|姓名|客户|用户|联系人))[ \t]+(?P<value>(?:[A-Z][a-z]+(?: [A-Z][a-z]+){1,2}|[\u4e00-\u9fff]{2,4}))"
-)
+from .detectors import PLACEHOLDER_PATTERN, detect_sensitive_text
 
 
 class PrivacyMappingBlockedError(RuntimeError):
@@ -79,24 +68,12 @@ def validate_sanitized_output(original: Any, sanitized: Any) -> None:
 
 
 def _collect_sensitive_text(text: str, key_hint: str | None) -> list[SensitiveEntity]:
-    if not text or PLACEHOLDER_PATTERN.search(text):
-        return []
-
-    entities: list[SensitiveEntity] = []
-    for pattern, entity_type in (
-        (EMAIL_PATTERN, "ACCOUNT"),
-        (PHONE_PATTERN, "PHONE"),
-        (UUID_PATTERN, "ACCOUNT"),
-    ):
-        for match in pattern.finditer(text):
-            entities.append(SensitiveEntity(entity_type, match.group(0).strip()))
-
-    for match in NAME_LABEL_PATTERN.finditer(text):
-        entities.append(SensitiveEntity("PERSON", match.group("value").strip()))
-    for match in NAME_CONTEXT_PATTERN.finditer(text):
-        entities.append(SensitiveEntity("PERSON", match.group("value").strip()))
-
-    return _dedupe_entities(entities)
+    return _dedupe_entities(
+        [
+            SensitiveEntity(entity.entity_type, entity.raw_value)
+            for entity in detect_sensitive_text(text)
+        ]
+    )
 
 
 def _contains_raw_value(value: Any, raw_value: str) -> bool:

@@ -1,6 +1,9 @@
 import os
 import unittest
 import json
+import subprocess
+import sys
+from pathlib import Path
 
 os.environ.setdefault("LYNXUS_INTERNAL_AUTH_TOKEN", "test-internal-token")
 
@@ -35,6 +38,27 @@ def _text_message(message_id: str, sequence: int, role: str, text: str) -> dict:
 
 
 class AgentRuntimePromptingTest(unittest.TestCase):
+    def test_should_directly_import_prompting_and_semantic_modules(self) -> None:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import lynxus_agent_runtime.prompting; "
+                    "import lynxus_agent_runtime.semantic; "
+                    "from lynxus_agent_runtime.data_security import PrivacyPipeline, build_privacy_pipeline; "
+                    "print('ok')"
+                ),
+            ],
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual("ok", result.stdout.strip(), result.stderr)
+        self.assertEqual(0, result.returncode, result.stderr)
+
     def test_should_build_prompt_bundle_with_runtime_context(self) -> None:
         request = AgentTurnRequest.model_validate(
             {

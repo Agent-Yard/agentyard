@@ -137,6 +137,14 @@ Java core 数据访问当前以 `Flyway + jOOQ + packages/persistence-jvm` 为�
 - 前端运行态页面围绕 `session event / owner / playbook / handoff` 组织，并优先通过 session SSE 接收更新
 - 当前系统层不做跨 assistant 自动切换；一次 session 只绑定一个 assistant
 
+`agent-runtime` 的隐私映射当前按片段分层处理：
+
+- 规则脱敏与安全校验共用同一套 deterministic detector，避免 sanitize / validate 口径漂移
+- prompt 片段显式标注隐私策略：`SKIP`、`RULES_ONLY`、`RULES_THEN_PRIVATE_LLM`
+- 静态指令、能力清单和响应契约默认不在运行时调用 private privacy LLM，避免配置型 prompt 产生额外私有模型开销
+- 用户消息、tool result、session event、shared state 等运行态片段使用稳定 `privacy_source` 进入 session fragment cache
+- Redis fragment cache 只保存加密后的脱敏结果和策略、来源、keyed content fingerprint / HMAC fingerprint 等 metadata，不落明文片段
+
 ## 当前边界
 
 - 认证已经进入 OIDC-first 模式，但开发态仍保留 bootstrap 登录旁路

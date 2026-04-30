@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from .data_security.policy import PrivacyStrategy
+
 
 SemanticMessageKind = Literal["user_turn", "assistant_turn", "system_event", "tool_result"]
 
@@ -34,3 +36,5 @@ class SemanticMessage:
     content: str
     tool_calls: tuple[SemanticToolCall, ...] = ()
     tool_call_id: str | None = None
+    privacy_strategy: PrivacyStrategy = PrivacyStrategy.RULES_THEN_PRIVATE_LLM
+    privacy_source: str | None = None

@@ -6,6 +6,7 @@ import os
 from typing import Any
 
 from .data_security import build_privacy_pipeline
+from .data_security.policy import PrivacyStrategy
 from .openai_compatible import LlmUsageTracker, OpenAiCompatibleSettings, chat_completion
 from .openai_adapter import (
     assistant_tool_call_message,
@@ -41,20 +42,7 @@ def _execute_via_openai_compatible(
     privacy_pipeline = build_privacy_pipeline(request, usage_tracker)
 
     try:
-        sanitized_bundle = PromptBundle(
-            instruction=privacy_pipeline.sanitize_outbound("PROMPT_INSTRUCTION", prompt_bundle.instruction),
-            runtime_messages=[
-                SemanticMessage(
-                    kind=message.kind,
-                    content=privacy_pipeline.sanitize_outbound("PROMPT_RUNTIME_MESSAGE", message.content),
-                    tool_calls=message.tool_calls,
-                    tool_call_id=message.tool_call_id,
-                )
-                for message in prompt_bundle.runtime_messages
-            ],
-            capabilities=prompt_bundle.capabilities,
-            response_contract=prompt_bundle.response_contract,
-        )
+        sanitized_bundle = privacy_pipeline.sanitize_prompt_bundle(prompt_bundle)
         messages = render_openai_messages(sanitized_bundle)
         tools = render_openai_tool_definitions(semantic_tool_definitions(request))
         loaded_skill_ids: set[str] = set()
@@ -96,7 +84,12 @@ def _execute_via_openai_compatible(
                     tool_result = (
                         raw_tool_result
                         if tool_call.tool_name in {"knowledge_search", "knowledge_read"}
-                        else privacy_pipeline.sanitize_outbound("TOOL_RESULT", raw_tool_result)
+                        else privacy_pipeline.sanitize_fragment(
+                            "TOOL_RESULT",
+                            raw_tool_result,
+                            PrivacyStrategy.RULES_THEN_PRIVATE_LLM,
+                            source=_tool_result_privacy_source(tool_call.tool_name),
+                        )
                     )
                     messages.append(render_openai_runtime_message(tool_result_message(SemanticToolResult(tool_call.call_id, tool_result))))
                 continue
@@ -232,6 +225,10 @@ def _resolve_provider_settings(request: AgentTurnRequest) -> OpenAiCompatibleSet
 
 def _execute_model_tool_call(request: AgentTurnRequest, tool_call: SemanticToolCall) -> dict[str, Any]:
     return execute_tool_call(request, tool_call.tool_name, tool_call.arguments)
+
+
+def _tool_result_privacy_source(tool_name: str) -> str:
+    return f"tool_result:{tool_name}"
 
 
 def _blocked_security_result(
