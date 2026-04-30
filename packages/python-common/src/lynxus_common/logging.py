@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 import secrets
@@ -50,7 +51,7 @@ def configure_structured_logging(service_name: str, level_env_var: str, logger_n
     renderer: Any = (
         structlog.dev.ConsoleRenderer(colors=False)
         if log_format == "console"
-        else structlog.processors.JSONRenderer()
+        else structlog.processors.JSONRenderer(serializer=lambda value, **kwargs: json.dumps(value, ensure_ascii=False, **kwargs))
     )
     timestamper = structlog.processors.TimeStamper(fmt="iso", utc=True, key="timestamp")
 
@@ -64,6 +65,7 @@ def configure_structured_logging(service_name: str, level_env_var: str, logger_n
 
     shared_processors = [
         structlog.contextvars.merge_contextvars,
+        structlog.stdlib.ExtraAdder(),
         structlog.stdlib.add_log_level,
         timestamper,
         structlog.processors.StackInfoRenderer(),
