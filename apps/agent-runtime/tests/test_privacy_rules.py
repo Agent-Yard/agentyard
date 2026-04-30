@@ -1,10 +1,8 @@
 import unittest
 import os
 from unittest.mock import patch
-from types import SimpleNamespace
 
 from lynxus_agent_runtime.data_security.mapper import PrivacyMapper
-from lynxus_agent_runtime.data_security.policy import PrivacyPolicy
 from lynxus_agent_runtime.data_security.rewriter import PrivateLlmRewriter
 from lynxus_agent_runtime.data_security.rewriter import RewriteResult
 from lynxus_agent_runtime.data_security.rules import sanitize_value
@@ -12,6 +10,20 @@ from lynxus_agent_runtime.data_security.rules import SanitizationResult
 from lynxus_agent_runtime.data_security.validator import collect_sensitive_entities
 from lynxus_agent_runtime.data_security.validator import PrivacyMappingBlockedError
 from lynxus_agent_runtime.data_security.validator import validate_sanitized_output
+from lynxus_agent_runtime.privacy_contracts import PrivacyModelBinding, PrivacyPolicy
+
+
+def _privacy_model_binding(api_key_env_var: str = "LYNXUS_TEST_PRIVATE_REWRITER_API_KEY") -> PrivacyModelBinding:
+    return PrivacyModelBinding(
+        resource_id="privacy-resource",
+        resource_name="Privacy Model",
+        resource_version_id="privacy-resource-version",
+        provider_type="OPENAI_COMPATIBLE",
+        model_id="privacy-model",
+        base_url="https://privacy.example",
+        api_key_env_var=api_key_env_var,
+        private_deployment=True,
+    )
 
 
 class _FakeMappingEntry:
@@ -53,16 +65,7 @@ class _FakeTrace:
 
 class PrivacyRulesTest(unittest.TestCase):
     def test_private_rewriter_prompt_requires_empty_entities_object(self) -> None:
-        binding = SimpleNamespace(
-            privateDeployment=True,
-            apiKeyEnvVar="LYNXUS_TEST_PRIVATE_REWRITER_API_KEY",
-            modelId="privacy-model",
-            baseUrl="https://privacy.example",
-            providerType="OPENAI_COMPATIBLE",
-            resourceId="privacy-resource",
-            resourceVersionId="privacy-resource-version",
-        )
-        rewriter = PrivateLlmRewriter(binding)
+        rewriter = PrivateLlmRewriter(_privacy_model_binding())
 
         with patch(
             "lynxus_agent_runtime.data_security.rewriter.chat_completion",
@@ -76,16 +79,7 @@ class PrivacyRulesTest(unittest.TestCase):
         self.assertIn("Never return a bare array or an empty object.", system_prompt)
 
     def test_private_rewriter_tolerates_empty_array_or_object_response(self) -> None:
-        binding = SimpleNamespace(
-            privateDeployment=True,
-            apiKeyEnvVar="LYNXUS_TEST_PRIVATE_REWRITER_API_KEY",
-            modelId="privacy-model",
-            baseUrl="https://privacy.example",
-            providerType="OPENAI_COMPATIBLE",
-            resourceId="privacy-resource",
-            resourceVersionId="privacy-resource-version",
-        )
-        rewriter = PrivateLlmRewriter(binding)
+        rewriter = PrivateLlmRewriter(_privacy_model_binding())
 
         with patch(
             "lynxus_agent_runtime.data_security.rewriter.chat_completion",
@@ -101,11 +95,7 @@ class PrivacyRulesTest(unittest.TestCase):
 
     def test_private_rewriter_replaces_all_occurrences_for_returned_raw_value(self) -> None:
         store = _FakePrivacyStore()
-        binding = SimpleNamespace(
-            privateDeployment=True,
-            apiKeyEnvVar="LYNXUS_TEST_PRIVATE_REWRITER_API_KEY",
-        )
-        rewriter = PrivateLlmRewriter(binding)
+        rewriter = PrivateLlmRewriter(_privacy_model_binding())
 
         with patch.dict(os.environ, {"LYNXUS_TEST_PRIVATE_REWRITER_API_KEY": "test-key"}), patch.object(
             rewriter,
@@ -224,7 +214,7 @@ class PrivacyRulesTest(unittest.TestCase):
                 assistant_id="assistant-1",
                 agent_id="agent-1",
                 enabled=True,
-                model_binding=SimpleNamespace(privateDeployment=True, apiKeyEnvVar="TEST_PRIVATE_API_KEY"),
+                model_binding=_privacy_model_binding("TEST_PRIVATE_API_KEY"),
             ),
             store,
             trace,
@@ -263,7 +253,7 @@ class PrivacyRulesTest(unittest.TestCase):
                 assistant_id="assistant-1",
                 agent_id="agent-1",
                 enabled=True,
-                model_binding=SimpleNamespace(privateDeployment=True, apiKeyEnvVar="TEST_PRIVATE_API_KEY"),
+                model_binding=_privacy_model_binding("TEST_PRIVATE_API_KEY"),
             ),
             store,
             trace,

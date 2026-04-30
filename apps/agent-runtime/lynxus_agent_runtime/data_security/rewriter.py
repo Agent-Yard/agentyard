@@ -5,7 +5,8 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
-from ..openai_compatible import LlmUsageTracker, OpenAiCompatibleSettings, chat_completion
+from ..openai_compatible import OpenAiCompatibleSettings, chat_completion
+from ..privacy_contracts import PrivacyModelBinding
 from .store import SessionPrivacyMapStore
 from .validator import PrivacyMappingBlockedError
 
@@ -19,22 +20,24 @@ class RewriteResult:
 
 
 class PrivateLlmRewriter:
-    def __init__(self, model_binding: Any | None, usage_tracker: LlmUsageTracker | None = None) -> None:
+    def __init__(self, model_binding: PrivacyModelBinding | None, usage_tracker: object | None = None) -> None:
         self._binding = model_binding
         self._usage_tracker = usage_tracker
 
     @property
     def enabled(self) -> bool:
-        return self._binding is not None and bool(getattr(self._binding, "privateDeployment", False))
+        return self._binding is not None and self._binding.private_deployment
 
     @property
     def configured(self) -> bool:
-        return self.enabled and bool((os.getenv(self._binding.apiKeyEnvVar) or "").strip())
+        return self.enabled and self._binding is not None and bool((os.getenv(self._binding.api_key_env_var) or "").strip())
 
     def rewrite(self, text: str, store: SessionPrivacyMapStore) -> RewriteResult:
         if not self.enabled or not text.strip():
             return RewriteResult(text, {}, 0, 0)
-        api_key = (os.getenv(self._binding.apiKeyEnvVar) or "").strip()
+        if self._binding is None:
+            return RewriteResult(text, {}, 0, 0)
+        api_key = (os.getenv(self._binding.api_key_env_var) or "").strip()
         if not api_key:
             raise PrivacyMappingBlockedError("private privacy model api key is not configured")
         try:
@@ -83,6 +86,8 @@ class PrivateLlmRewriter:
         return RewriteResult(rendered, entity_counts, new_placeholder_count, len(replacements))
 
     def _extract_entities(self, text: str, api_key: str) -> list[dict[str, Any]]:
+        if self._binding is None:
+            return []
         response_format = {
             "type": "json_schema",
             "json_schema": {
@@ -109,7 +114,7 @@ class PrivateLlmRewriter:
             },
         }
         payload = {
-            "model": self._binding.modelId,
+            "model": self._binding.model_id,
             "temperature": 0,
             "messages": [
                 {
@@ -132,18 +137,18 @@ class PrivateLlmRewriter:
         }
         response_json = chat_completion(
             OpenAiCompatibleSettings(
-                base_url=self._binding.baseUrl.rstrip("/"),
-                model_id=self._binding.modelId,
+                base_url=self._binding.base_url.rstrip("/"),
+                model_id=self._binding.model_id,
                 api_key=api_key,
-                provider_type=str(getattr(self._binding, "providerType", "OPENAI_COMPATIBLE")).upper(),
-                model_resource_id=getattr(self._binding, "resourceId", None),
-                model_resource_version_id=getattr(self._binding, "resourceVersionId", None),
+                provider_type=self._binding.provider_type.upper(),
+                model_resource_id=self._binding.resource_id,
+                model_resource_version_id=self._binding.resource_version_id,
             ),
             payload,
             timeout_seconds=10.0,
             usage_tracker=self._usage_tracker,
             source_type="SESSION_PRIVACY_MODEL",
-            tool_loop_step=None if self._usage_tracker is None else self._usage_tracker.current_tool_loop_step(),
+            tool_loop_step=_current_tool_loop_step(self._usage_tracker),
         )
         content = response_json["choices"][0]["message"]["content"]
         parsed = json.loads(content)
@@ -153,3 +158,12 @@ class PrivateLlmRewriter:
             return []
         entities = parsed.get("entities", [])
         return [item for item in entities if isinstance(item, dict)] if isinstance(entities, list) else []
+
+
+def _current_tool_loop_step(usage_tracker: object | None) -> int | None:
+    if usage_tracker is None:
+        return None
+    current_step = getattr(usage_tracker, "current_tool_loop_step", None)
+    if current_step is None:
+        return None
+    return current_step()

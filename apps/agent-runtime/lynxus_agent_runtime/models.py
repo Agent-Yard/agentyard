@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .privacy_contracts import PrivacyMappingTelemetry
+
 
 class AgentConfig(BaseModel):
     agentId: str
@@ -210,19 +212,6 @@ class SessionTrigger(BaseModel):
     eventId: str
     triggerMessageId: str | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
-
-
-class PrivacyMappingTelemetry(BaseModel):
-    enabled: bool = False
-    privacyModelResourceId: str | None = None
-    privacyModelResourceName: str | None = None
-    sanitizeCountByChannel: dict[str, int] = Field(default_factory=dict)
-    restoreCountByChannel: dict[str, int] = Field(default_factory=dict)
-    entityTypeBreakdown: dict[str, int] = Field(default_factory=dict)
-    placeholderCount: int = 0
-    unresolvedPlaceholderCount: int = 0
-    blockedEventCount: int = 0
-    lastProcessedAt: str | None = None
 
 
 class LlmUsageEntry(BaseModel):

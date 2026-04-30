@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from typing import Any
 
-from .data_security.policy import PrivacyStrategy
 from .models import AgentTurnRequest, SessionMessageInput
 from .openai_adapter import render_openai_messages as render_openai_messages_via_adapter
+from .privacy_contracts import PrivacyStrategy
+from .prompt_bundle import PromptBundle
 from .semantic import SemanticMessage
 from .tooling import resolve_knowledge_binding, skill_catalog
 
@@ -14,17 +14,6 @@ DEFAULT_EVENT_WINDOW = 8
 MAX_EVENT_WINDOW = 20
 DEFAULT_SHARED_STATE_KEY_WINDOW = 8
 DEFAULT_RUNTIME_BYTE_BUDGET = 6000
-
-
-@dataclass(frozen=True)
-class PromptBundle:
-    instruction: str
-    runtime_messages: list[SemanticMessage]
-    capabilities: dict[str, Any]
-    response_contract: dict[str, Any]
-    instruction_privacy_strategy: PrivacyStrategy = PrivacyStrategy.RULES_ONLY
-    capabilities_privacy_strategy: PrivacyStrategy = PrivacyStrategy.SKIP
-    response_contract_privacy_strategy: PrivacyStrategy = PrivacyStrategy.SKIP
 
 
 def build_prompt_bundle(request: AgentTurnRequest) -> PromptBundle:

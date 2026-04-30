@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..openai_compatible import LlmUsageTracker
-from .policy import PrivacyPolicy, PrivacyStrategy
+from ..privacy_contracts import PrivacyPolicy, PrivacyStrategy
 from .rewriter import PrivateLlmRewriter
 from .rules import SanitizationResult, restore_value, sanitize_value
 from .store import SessionPrivacyMapStore
@@ -22,7 +21,7 @@ class PrivacyMapper:
         policy: PrivacyPolicy,
         store: SessionPrivacyMapStore,
         trace: MappingTrace,
-        usage_tracker: LlmUsageTracker | None = None,
+        usage_tracker: object | None = None,
     ) -> None:
         self._policy = policy
         self._store = store

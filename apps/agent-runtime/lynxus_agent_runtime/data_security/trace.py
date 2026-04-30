@@ -3,8 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from ..models import PrivacyMappingTelemetry
-from .policy import PRIVACY_CHANNELS, PrivacyPolicy
+from ..privacy_contracts import PRIVACY_CHANNELS, PrivacyMappingTelemetry, PrivacyPolicy
 
 
 def _blank_counts() -> dict[str, int]:
@@ -41,8 +40,8 @@ class MappingTrace:
     def telemetry(self) -> PrivacyMappingTelemetry:
         return PrivacyMappingTelemetry(
             enabled=self.policy.enabled,
-            privacyModelResourceId=None if self.policy.model_binding is None else self.policy.model_binding.resourceId,
-            privacyModelResourceName=None if self.policy.model_binding is None else self.policy.model_binding.resourceName,
+            privacyModelResourceId=None if self.policy.model_binding is None else self.policy.model_binding.resource_id,
+            privacyModelResourceName=None if self.policy.model_binding is None else self.policy.model_binding.resource_name,
             sanitizeCountByChannel=dict(self.sanitize_count_by_channel),
             restoreCountByChannel=dict(self.restore_count_by_channel),
             entityTypeBreakdown=dict(self.entity_type_breakdown),

@@ -6,19 +6,19 @@ from unittest.mock import patch
 os.environ.setdefault("LYNXUS_INTERNAL_AUTH_TOKEN", "test-internal-token")
 
 from lynxus_agent_runtime.decisioning import execute_agent_turn
-from lynxus_agent_runtime.data_security.pipeline import PrivacyPipeline
-from lynxus_agent_runtime.data_security.policy import PrivacyPolicy, PrivacyStrategy
 from lynxus_agent_runtime.data_security.rewriter import PrivateLlmRewriter
 from lynxus_agent_runtime.data_security.rewriter import RewriteResult
 from lynxus_agent_runtime.data_security.rules import SanitizationResult
 from lynxus_agent_runtime.http_clients import reset_shared_http_client_registry
-from lynxus_agent_runtime.models import AgentTurnRequest, PrivacyMappingTelemetry
+from lynxus_agent_runtime.models import AgentTurnRequest
 from lynxus_agent_runtime.openai_compatible import (
     LlmUsageTracker,
     OpenAiCompatibleSettings,
     chat_completion,
 )
 from lynxus_agent_runtime.openai_adapter import render_openai_tool_definitions
+from lynxus_agent_runtime.privacy_contracts import PrivacyMappingTelemetry, PrivacyStrategy
+from lynxus_agent_runtime.privacy_pipeline import PrivacyPipeline, build_privacy_policy
 from lynxus_agent_runtime.tooling import execute_tool_call, resource_tool_function_name, semantic_tool_definitions
 
 
@@ -82,8 +82,8 @@ class _FakePrivacyStore:
     def __init__(self, policy) -> None:
         self._summary = PrivacyMappingTelemetry(
             enabled=policy.enabled,
-            privacyModelResourceId=None if policy.model_binding is None else policy.model_binding.resourceId,
-            privacyModelResourceName=None if policy.model_binding is None else policy.model_binding.resourceName,
+            privacyModelResourceId=None if policy.model_binding is None else policy.model_binding.resource_id,
+            privacyModelResourceName=None if policy.model_binding is None else policy.model_binding.resource_name,
             sanitizeCountByChannel={},
             restoreCountByChannel={},
             entityTypeBreakdown={},
@@ -698,7 +698,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
             return original_sanitize_value(value, store)
 
         with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=factory), patch(
-            "lynxus_agent_runtime.data_security.pipeline.SessionPrivacyMapStore",
+            "lynxus_agent_runtime.privacy_pipeline.SessionPrivacyMapStore",
             _FakePrivacyStore,
         ), patch("lynxus_agent_runtime.data_security.mapper.sanitize_value", side_effect=leaking_sanitize):
             outcome, _ = execute_agent_turn(request)
@@ -740,7 +740,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         factory = lambda *args, **kwargs: _FakeClient(transport)
 
         with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=factory), patch(
-            "lynxus_agent_runtime.data_security.pipeline.SessionPrivacyMapStore",
+            "lynxus_agent_runtime.privacy_pipeline.SessionPrivacyMapStore",
             _FakePrivacyStore,
         ):
             outcome, _ = execute_agent_turn(request)
@@ -789,7 +789,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         factory = lambda *args, **kwargs: _FakeClient(transport)
 
         with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=factory), patch(
-            "lynxus_agent_runtime.data_security.pipeline.SessionPrivacyMapStore",
+            "lynxus_agent_runtime.privacy_pipeline.SessionPrivacyMapStore",
             _FakePrivacyStore,
         ):
             outcome, _ = execute_agent_turn(request)
@@ -807,9 +807,9 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         os.environ["TEST_PRIVATE_API_KEY"] = "private-secret"
         self.addCleanup(lambda: os.environ.pop("TEST_PRIVATE_API_KEY", None))
         request = AgentTurnRequest.model_validate(_enable_privacy_mapping(_request_payload()))
-        policy = PrivacyPolicy.from_request(request)
+        policy = build_privacy_policy(request)
 
-        with patch("lynxus_agent_runtime.data_security.pipeline.SessionPrivacyMapStore", _FakePrivacyStore), patch(
+        with patch("lynxus_agent_runtime.privacy_pipeline.SessionPrivacyMapStore", _FakePrivacyStore), patch(
             "lynxus_agent_runtime.data_security.mapper.PrivateLlmRewriter.rewrite",
             return_value=RewriteResult("Please help [PERSON_001]", {"PERSON": 1}, 1, 1),
         ) as rewrite:
@@ -919,7 +919,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
 
         factory = lambda *args, **kwargs: _FakeClient(transport)
         with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=factory), patch(
-            "lynxus_agent_runtime.data_security.pipeline.SessionPrivacyMapStore",
+            "lynxus_agent_runtime.privacy_pipeline.SessionPrivacyMapStore",
             _FakePrivacyStore,
         ), patch(
             "lynxus_agent_runtime.data_security.mapper.PrivateLlmRewriter.rewrite",
@@ -1013,7 +1013,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         factory = lambda *args, **kwargs: _FakeClient(transport)
 
         with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=factory), patch(
-            "lynxus_agent_runtime.data_security.pipeline.SessionPrivacyMapStore",
+            "lynxus_agent_runtime.privacy_pipeline.SessionPrivacyMapStore",
             _FakePrivacyStore,
         ):
             outcome, _ = execute_agent_turn(request)
@@ -1036,7 +1036,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         factory = lambda *args, **kwargs: _FakeClient(transport)
 
         with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=factory), patch(
-            "lynxus_agent_runtime.data_security.pipeline.SessionPrivacyMapStore",
+            "lynxus_agent_runtime.privacy_pipeline.SessionPrivacyMapStore",
             _FakePrivacyStore,
         ), patch(
             "lynxus_agent_runtime.data_security.mapper.sanitize_value",
@@ -1126,7 +1126,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
                 )()
 
         with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=factory):
-            rewritten = PrivateLlmRewriter(request.effectivePrivacyModelBinding, usage_tracker).rewrite(
+            rewritten = PrivateLlmRewriter(build_privacy_policy(request).model_binding, usage_tracker).rewrite(
                 "user Alice Johnson",
                 _Store(),
             )

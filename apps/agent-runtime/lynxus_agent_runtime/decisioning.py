@@ -5,8 +5,6 @@ import logging
 import os
 from typing import Any
 
-from .data_security import build_privacy_pipeline
-from .data_security.policy import PrivacyStrategy
 from .openai_compatible import LlmUsageTracker, OpenAiCompatibleSettings, chat_completion
 from .openai_adapter import (
     assistant_tool_call_message,
@@ -16,7 +14,10 @@ from .openai_adapter import (
     tool_result_message,
 )
 from .models import AgentDecision, AgentTurnExecutionOutcome, AgentTurnRequest, AgentTurnResult, SecurityAssessment
-from .prompting import PromptBundle, build_prompt_bundle, loaded_skill_runtime_message, render_openai_messages
+from .privacy_contracts import PrivacyStrategy
+from .privacy_pipeline import build_privacy_pipeline
+from .prompt_bundle import PromptBundle
+from .prompting import build_prompt_bundle, loaded_skill_runtime_message, render_openai_messages
 from .semantic import SemanticMessage, SemanticToolCall, SemanticToolResult
 from .tooling import execute_tool_call, load_skills, semantic_tool_definitions
 

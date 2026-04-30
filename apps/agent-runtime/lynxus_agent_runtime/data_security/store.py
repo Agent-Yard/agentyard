@@ -12,16 +12,15 @@ from typing import Any
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from redis import Redis
 
-from ..models import PrivacyMappingTelemetry
+from ..privacy_contracts import PRIVACY_CHANNELS, PrivacyMappingTelemetry, PrivacyPolicy
 from ..redis_support import RedisSettings, privacy_session_prefix
-from .policy import PRIVACY_CHANNELS, PrivacyPolicy
 
 
 def _summary_template(policy: PrivacyPolicy) -> dict[str, Any]:
     return {
         "enabled": policy.enabled,
-        "privacyModelResourceId": None if policy.model_binding is None else policy.model_binding.resourceId,
-        "privacyModelName": None if policy.model_binding is None else policy.model_binding.resourceName,
+        "privacyModelResourceId": None if policy.model_binding is None else policy.model_binding.resource_id,
+        "privacyModelName": None if policy.model_binding is None else policy.model_binding.resource_name,
         "sanitizeCountByChannel": {channel: 0 for channel in PRIVACY_CHANNELS},
         "restoreCountByChannel": {channel: 0 for channel in PRIVACY_CHANNELS},
         "entityTypeBreakdown": {},
@@ -167,8 +166,8 @@ return {placeholderId, reversePayload, created}
                 json.dumps(reverse_entry, ensure_ascii=False),
                 timestamp,
                 "1" if self._policy.enabled else "0",
-                "" if self._policy.model_binding is None else self._policy.model_binding.resourceId,
-                "" if self._policy.model_binding is None else self._policy.model_binding.resourceName,
+                "" if self._policy.model_binding is None else self._policy.model_binding.resource_id,
+                "" if self._policy.model_binding is None else self._policy.model_binding.resource_name,
             ],
         )
         entry = json.loads(str(reverse_payload))

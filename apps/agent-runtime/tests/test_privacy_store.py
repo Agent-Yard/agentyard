@@ -3,10 +3,9 @@ import json
 import os
 import unittest
 
-from lynxus_agent_runtime.data_security.pipeline import PrivacyPipeline
-from lynxus_agent_runtime.data_security.policy import PrivacyPolicy
-from lynxus_agent_runtime.data_security.policy import PrivacyStrategy
 from lynxus_agent_runtime.data_security.store import SessionPrivacyMapStore
+from lynxus_agent_runtime.privacy_contracts import PrivacyPolicy, PrivacyStrategy
+from lynxus_agent_runtime.privacy_pipeline import PrivacyPipeline
 
 
 class _FakeRedis:

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from .data_security.policy import PrivacyStrategy
+from .privacy_contracts import PrivacyStrategy
 
 
 SemanticMessageKind = Literal["user_turn", "assistant_turn", "system_event", "tool_result"]

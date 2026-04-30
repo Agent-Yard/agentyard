@@ -46,7 +46,7 @@ class AgentRuntimePromptingTest(unittest.TestCase):
                 (
                     "import lynxus_agent_runtime.prompting; "
                     "import lynxus_agent_runtime.semantic; "
-                    "from lynxus_agent_runtime.data_security import PrivacyPipeline, build_privacy_pipeline; "
+                    "from lynxus_agent_runtime.privacy_pipeline import PrivacyPipeline, build_privacy_pipeline; "
                     "print('ok')"
                 ),
             ],

@@ -4,14 +4,20 @@ import hashlib
 import json
 from typing import Any
 
-from ..models import AgentTurnRequest, PrivacyMappingTelemetry
-from ..openai_compatible import LlmUsageTracker
-from ..prompting import PromptBundle
-from ..semantic import SemanticMessage
-from .mapper import PrivacyMapper
-from .policy import PRIVACY_FRAGMENT_CACHE_VERSION, PrivacyPolicy, PrivacyStrategy
-from .store import SessionPrivacyMapStore
-from .trace import MappingTrace
+from .data_security.mapper import PrivacyMapper
+from .data_security.store import SessionPrivacyMapStore
+from .data_security.trace import MappingTrace
+from .models import AgentTurnRequest, LlmModelDescriptor
+from .openai_compatible import LlmUsageTracker
+from .privacy_contracts import (
+    PRIVACY_FRAGMENT_CACHE_VERSION,
+    PrivacyMappingTelemetry,
+    PrivacyModelBinding,
+    PrivacyPolicy,
+    PrivacyStrategy,
+)
+from .prompt_bundle import PromptBundle
+from .semantic import SemanticMessage
 
 
 class PrivacyPipeline:
@@ -121,7 +127,7 @@ class PrivacyPipeline:
         binding = self._policy.model_binding
         return {
             "policyVersion": PRIVACY_FRAGMENT_CACHE_VERSION,
-            "privacyModelResourceVersionId": None if binding is None else binding.resourceVersionId,
+            "privacyModelResourceVersionId": None if binding is None else binding.resource_version_id,
             "strategy": strategy.value,
             "source": source,
             "contentFingerprint": self._fragment_content_fingerprint(payload),
@@ -134,12 +140,37 @@ class PrivacyPipeline:
         return hashlib.sha256(payload_bytes).hexdigest()
 
 
-def _cache_payload_bytes(payload: Any) -> bytes:
-    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
-
-
 def build_privacy_pipeline(
     request: AgentTurnRequest,
     usage_tracker: LlmUsageTracker | None = None,
 ) -> PrivacyPipeline:
-    return PrivacyPipeline(PrivacyPolicy.from_request(request), usage_tracker)
+    return PrivacyPipeline(build_privacy_policy(request), usage_tracker)
+
+
+def build_privacy_policy(request: AgentTurnRequest) -> PrivacyPolicy:
+    binding = request.effectivePrivacyModelBinding or request.currentOwner.effectivePrivacyModelBinding
+    enabled = bool(request.effectivePrivacyMappingEnabled or request.currentOwner.effectivePrivacyMappingEnabled)
+    return PrivacyPolicy(
+        session_id=request.sessionId,
+        assistant_id=request.assistantId,
+        agent_id=request.currentOwner.agentId,
+        enabled=enabled and binding is not None,
+        model_binding=_privacy_model_binding(binding) if binding is not None else None,
+    )
+
+
+def _privacy_model_binding(binding: LlmModelDescriptor) -> PrivacyModelBinding:
+    return PrivacyModelBinding(
+        resource_id=binding.resourceId,
+        resource_name=binding.resourceName,
+        resource_version_id=binding.resourceVersionId,
+        provider_type=binding.providerType,
+        model_id=binding.modelId,
+        base_url=binding.baseUrl,
+        api_key_env_var=binding.apiKeyEnvVar,
+        private_deployment=binding.privateDeployment,
+    )
+
+
+def _cache_payload_bytes(payload: Any) -> bytes:
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
