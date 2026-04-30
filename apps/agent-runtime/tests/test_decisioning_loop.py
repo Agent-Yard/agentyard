@@ -482,7 +482,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
             message.get("content", "") for message in request_log[5]["json"]["messages"] if message.get("role") == "tool"
         ]
         self.assertTrue(any("ticket-1" in content for content in final_chat_tool_messages))
-        self.assertFalse(any("customer-secret-1" in content for content in final_chat_tool_messages))
+        self.assertTrue(any("customer-secret-1" in content for content in final_chat_tool_messages))
         self.assertIn("tools", request_log[0]["json"])
         self.assertEqual(4, len(outcome.llmUsage))
         self.assertEqual([1, 2, 3, 4], [entry.callSequence for entry in outcome.llmUsage])

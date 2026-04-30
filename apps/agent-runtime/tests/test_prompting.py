@@ -221,10 +221,10 @@ class AgentRuntimePromptingTest(unittest.TestCase):
             "evt-1",
             "evt-2",
             "msg-1",
-            "customer-1",
             "run-1",
         ):
             self.assertNotIn(runtime_id, rendered_prompt)
+        self.assertIn("customer-1", rendered_prompt)
         for action_handle in (
             "agent-b",
             "pb-1",
@@ -235,7 +235,7 @@ class AgentRuntimePromptingTest(unittest.TestCase):
         ):
             self.assertIn(action_handle, rendered_prompt)
         self.assertNotIn('"eventId"', rendered_prompt)
-        self.assertNotIn('"customerId"', rendered_prompt)
+        self.assertIn('"customerId"', rendered_prompt)
         self.assertIn('"agentId"', rendered_prompt)
         self.assertIn('"playbookId"', rendered_prompt)
         self.assertIn('"resourceVersionId"', rendered_prompt)
@@ -297,9 +297,9 @@ class AgentRuntimePromptingTest(unittest.TestCase):
 
         self.assertIn('"playbookId": "pb-active"', active_playbook_message.content)
         self.assertIn('"summary": "ticket is open"', active_playbook_message.content)
+        self.assertIn('"customerId": "customer-secret-1"', active_playbook_message.content)
+        self.assertIn('"ticketId": "ticket-secret-1"', active_playbook_message.content)
         self.assertNotIn("run-secret-1", active_playbook_message.content)
-        self.assertNotIn("customer-secret-1", active_playbook_message.content)
-        self.assertNotIn("ticket-secret-1", active_playbook_message.content)
 
     def test_should_fail_when_provider_not_configured(self) -> None:
         os.environ.pop("LYNXUS_OPENAI_COMPATIBLE_BASE_URL", None)

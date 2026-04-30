@@ -35,19 +35,10 @@ class PromptPathRule:
 _PROMPT_PATH_RULES: tuple[PromptPathRule, ...] = (
     PromptPathRule("active_playbook", ("playbookId",), PromptPathStrategy.KEEP_SYSTEM_REFERENCE),
     PromptPathRule("active_playbook", ("runId",), PromptPathStrategy.OMIT),
+    PromptPathRule("trigger_payload", ("playbookRunId",), PromptPathStrategy.OMIT),
+    PromptPathRule("event_payload", ("runId",), PromptPathStrategy.OMIT),
     PromptPathRule("tool_result", ("ticketId",), PromptPathStrategy.KEEP_SYSTEM_REFERENCE),
 )
-
-_IDENTIFIER_OMIT_CONTEXTS = {
-    "trigger_payload",
-    "event_payload",
-    "shared_state",
-    "active_playbook",
-    "message_card_data",
-    "message_card_actions",
-    "session_message",
-    "tool_result",
-}
 
 
 def build_prompt_bundle(request: AgentTurnRequest) -> PromptBundle:
@@ -385,7 +376,7 @@ def _prompt_visible_value(value: Any, *, context: str, path: tuple[str, ...] = (
         for key, item in value.items():
             key_text = str(key)
             next_path = path + (key_text,)
-            if _prompt_path_strategy(context, next_path, key_text) == PromptPathStrategy.OMIT:
+            if _prompt_path_strategy(context, next_path) == PromptPathStrategy.OMIT:
                 continue
             result[key_text] = _prompt_visible_value(item, context=context, path=next_path)
         return result
@@ -394,15 +385,8 @@ def _prompt_visible_value(value: Any, *, context: str, path: tuple[str, ...] = (
     return value
 
 
-def _prompt_path_strategy(context: str, path: tuple[str, ...], key: str) -> PromptPathStrategy:
+def _prompt_path_strategy(context: str, path: tuple[str, ...]) -> PromptPathStrategy:
     for rule in _PROMPT_PATH_RULES:
         if rule.context == context and rule.path == path:
             return rule.strategy
-    if context in _IDENTIFIER_OMIT_CONTEXTS and _is_prompt_identifier_key(key):
-        return PromptPathStrategy.OMIT
     return PromptPathStrategy.SANITIZE_TEXT
-
-
-def _is_prompt_identifier_key(key: str) -> bool:
-    normalized = key.replace("_", "").replace("-", "").lower()
-    return normalized == "id" or normalized.endswith("id") or normalized.endswith("ids")
