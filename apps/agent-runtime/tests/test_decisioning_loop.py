@@ -858,6 +858,68 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
             [entry["url"] for entry in request_log],
         )
 
+    def test_should_log_raw_llm_request_and_response_at_debug_level(self) -> None:
+        request_log: list[dict] = []
+
+        def factory(*args, **kwargs):  # noqa: ANN002, ANN003
+            return _FakeClient(
+                _FakeTransport(
+                    [
+                        {
+                            "choices": [
+                                {
+                                    "message": {
+                                        "content": json.dumps({"decision": {"action": "NO_REPLY"}}),
+                                    }
+                                }
+                            ],
+                            "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
+                        }
+                    ],
+                    request_log,
+                )
+            )
+
+        payload = {"model": "gpt-test", "messages": [{"role": "user", "content": "raw input"}]}
+        with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=factory):
+            with self.assertLogs("lynxus-agent-runtime", level="DEBUG") as logs:
+                chat_completion(
+                    OpenAiCompatibleSettings(
+                        base_url="https://runtime.example/v1",
+                        model_id="gpt-test",
+                        api_key="secret",
+                        provider_type="OPENAI_COMPATIBLE",
+                        model_resource_id="model-1",
+                        model_resource_version_id="model-ver-1",
+                    ),
+                    payload,
+                    timeout_seconds=5.0,
+                    source_type="SESSION_OWNER_MODEL",
+                    tool_loop_step=7,
+                )
+
+        request_record = next(record for record in logs.records if record.getMessage() == "openai-compatible llm request")
+        response_record = next(record for record in logs.records if record.getMessage() == "openai-compatible llm response")
+        self.assertEqual(
+            {
+                "url": "https://runtime.example/v1/chat/completions",
+                "headers": {
+                    "Authorization": "Bearer [REDACTED]",
+                    "Content-Type": "application/json",
+                },
+                "payload": payload,
+                "timeoutSeconds": 5.0,
+            },
+            request_record.llmRequest,
+        )
+        self.assertEqual("SESSION_OWNER_MODEL", request_record.sourceType)
+        self.assertEqual(7, request_record.toolLoopStep)
+        self.assertEqual("gpt-test", request_record.modelId)
+        self.assertEqual("https://runtime.example/v1/chat/completions", response_record.llmResponse["url"])
+        self.assertEqual(200, response_record.llmResponse["statusCode"])
+        self.assertIn('"total_tokens": 3', response_record.llmResponse["body"])
+        self.assertNotIn("secret", str(request_record.llmRequest["headers"]))
+
     def test_should_reuse_shared_client_for_knowledge_calls_on_same_origin(self) -> None:
         os.environ["LYNXUS_KNOWLEDGE_SERVICE_BASE_URL"] = "https://knowledge.example/api"
         request = AgentTurnRequest.model_validate(_request_payload())

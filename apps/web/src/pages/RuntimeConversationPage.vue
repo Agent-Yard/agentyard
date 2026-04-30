@@ -147,6 +147,15 @@ function closeCreateModal() {
   createForm.openingMessage = '';
 }
 
+function generateDebugCustomerId() {
+  const baseId = (props.currentCustomerId || 'debug-customer').replace(/[^a-zA-Z0-9_-]/g, '-');
+  const timestamp = new Date()
+    .toISOString()
+    .replace(/[-:TZ.]/g, '')
+    .slice(0, 14);
+  createForm.customerId = `${baseId}-debug-${timestamp}`;
+}
+
 function submitMessage() {
   if (!currentSession.value || !messageDraft.value.trim() || isCurrentSessionSending.value) {
     return;
@@ -437,7 +446,16 @@ function formatSharedState(value: Record<string, unknown> | null | undefined) {
             />
           </a-form-item>
           <a-form-item label="客户 ID">
-            <a-input v-model:value="createForm.customerId" disabled />
+            <div class="customer-id-row">
+              <a-input
+                v-model:value="createForm.customerId"
+                :disabled="creatingSession"
+                allow-clear
+              />
+              <a-button :disabled="creatingSession" @click="generateDebugCustomerId">
+                生成
+              </a-button>
+            </div>
           </a-form-item>
           <a-form-item label="开场消息">
             <a-textarea
@@ -550,5 +568,43 @@ function formatSharedState(value: Record<string, unknown> | null | undefined) {
 
 .runtime-message-card {
   width: 100%;
+}
+
+.customer-id-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.customer-id-row :deep(.ant-input-affix-wrapper),
+.customer-id-row :deep(.ant-btn) {
+  height: 40px;
+}
+
+.customer-id-row :deep(.ant-input-affix-wrapper) {
+  align-items: center;
+}
+
+.customer-id-row :deep(.ant-input-affix-wrapper .ant-input),
+.customer-id-row :deep(.ant-input-affix-wrapper .ant-input:hover),
+.customer-id-row :deep(.ant-input-affix-wrapper .ant-input:focus) {
+  min-height: 0 !important;
+  height: 22px !important;
+  line-height: 22px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+.customer-id-row :deep(.ant-input-clear-icon) {
+  display: inline-flex;
+  align-items: center;
+}
+
+.customer-id-row :deep(.ant-btn) {
+  padding-inline: 18px;
 }
 </style>

@@ -44,6 +44,8 @@ uv run --directory apps/agent-runtime --package lynxus-agent-runtime pytest test
 
 运行时会通过脚本自动加载根目录 `.env` / `.env.local`，以及 `apps/agent-runtime/.env` / `.env.local`。
 
+本地排查模型调用时，把 `LYNXUS_AGENT_RUNTIME_LOG_LEVEL=DEBUG` 写入 `.env.local`；runtime 会输出每次 OpenAI-compatible LLM 调用的请求 URL、headers（密钥脱敏）、原始 payload、响应状态和原始响应 body。
+
 Extension registration 使用和 API / `channel-gateway` 相同的输入：
 
 - `LYNXUS_EXTENSION_REGISTRATION_FILE`

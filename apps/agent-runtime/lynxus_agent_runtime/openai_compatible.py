@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
 from .http_clients import shared_http_client_for_url
 from .models import LlmUsageEntry
+
+LOGGER = logging.getLogger("lynxus-agent-runtime")
 
 
 @dataclass(frozen=True)
@@ -86,11 +89,45 @@ def chat_completion(
     if settings.project:
         headers["OpenAI-Project"] = settings.project
     client = shared_http_client_for_url(settings.base_url)
+    url = settings.base_url.rstrip("/") + "/chat/completions"
+    LOGGER.debug(
+        "openai-compatible llm request",
+        extra={
+            "providerType": settings.provider_type,
+            "modelResourceId": settings.model_resource_id,
+            "modelResourceVersionId": settings.model_resource_version_id,
+            "modelId": settings.model_id,
+            "sourceType": source_type,
+            "toolLoopStep": tool_loop_step,
+            "llmRequest": {
+                "url": url,
+                "headers": _redact_sensitive_headers(headers),
+                "payload": payload,
+                "timeoutSeconds": timeout_seconds,
+            },
+        },
+    )
     response = client.post(
-        settings.base_url.rstrip("/") + "/chat/completions",
+        url,
         headers=headers,
         json=payload,
         timeout=timeout_seconds,
+    )
+    LOGGER.debug(
+        "openai-compatible llm response",
+        extra={
+            "providerType": settings.provider_type,
+            "modelResourceId": settings.model_resource_id,
+            "modelResourceVersionId": settings.model_resource_version_id,
+            "modelId": settings.model_id,
+            "sourceType": source_type,
+            "toolLoopStep": tool_loop_step,
+            "llmResponse": {
+                "url": url,
+                "statusCode": response.status_code,
+                "body": getattr(response, "text", ""),
+            },
+        },
     )
     response.raise_for_status()
     parsed = response.json()
@@ -111,3 +148,10 @@ def _optional_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _redact_sensitive_headers(headers: dict[str, str]) -> dict[str, str]:
+    redacted = dict(headers)
+    if "Authorization" in redacted:
+        redacted["Authorization"] = "Bearer [REDACTED]"
+    return redacted
