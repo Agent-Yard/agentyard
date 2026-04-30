@@ -29,7 +29,7 @@ class FeishuLongConnectionManagerTest {
     private ChannelAdminRepository repository;
     private FeishuLongConnectionManager manager;
     private CapturingCredentialProvider credentialProvider;
-    private BlockingClientFactory clientFactory;
+    private CapturingClientFactory clientFactory;
 
     @BeforeAll
     static void startDatabase() throws Exception {
@@ -46,8 +46,12 @@ class FeishuLongConnectionManagerTest {
         database.reset();
         repository = new ChannelAdminRepository(database.dsl(), new ObjectMapper());
         credentialProvider = new CapturingCredentialProvider();
-        clientFactory = new BlockingClientFactory();
-        manager = new FeishuLongConnectionManager(
+        clientFactory = new CapturingClientFactory(true);
+        manager = manager(clientFactory);
+    }
+
+    private FeishuLongConnectionManager manager(CapturingClientFactory clientFactory) {
+        return new FeishuLongConnectionManager(
             repository,
             credentialProvider,
             clientFactory,
@@ -88,6 +92,38 @@ class FeishuLongConnectionManagerTest {
         assertEquals(1, clientFactory.startCalls.get());
     }
 
+    @Test
+    void keepsNonBlockingSdkClientStartedAcrossReconcileCycles() throws Exception {
+        clientFactory.release();
+        clientFactory = new CapturingClientFactory(false);
+        manager.shutdown();
+        manager = manager(clientFactory);
+        createProfile("eligible", FeishuGatewayNativeChannelProviderAdapter.PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, "assistant-1", "account-1");
+
+        manager.reconcile();
+        assertTrue(clientFactory.started.await(3, TimeUnit.SECONDS));
+        manager.reconcile();
+
+        assertTrue(manager.isStarted("eligible"));
+        assertEquals(1, clientFactory.startCalls.get());
+    }
+
+    @Test
+    void startsOneLongConnectionClientPerIntegrationAccount() throws Exception {
+        clientFactory.release();
+        clientFactory = new CapturingClientFactory(false);
+        manager.shutdown();
+        manager = manager(clientFactory);
+        createProfile("eligible-a", FeishuGatewayNativeChannelProviderAdapter.PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, "assistant-1", "account-1");
+        createProfile("eligible-b", FeishuGatewayNativeChannelProviderAdapter.PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, "assistant-2", "account-1");
+
+        manager.reconcile();
+        assertTrue(clientFactory.started.await(3, TimeUnit.SECONDS));
+        manager.reconcile();
+
+        assertEquals(1, clientFactory.startCalls.get());
+    }
+
     private void createProfile(
         String profileId,
         String providerType,
@@ -123,18 +159,27 @@ class FeishuLongConnectionManagerTest {
         }
     }
 
-    private static final class BlockingClientFactory implements FeishuLongConnectionClientFactory {
+    private static final class CapturingClientFactory implements FeishuLongConnectionClientFactory {
+        private final boolean blockOnStart;
         private final CountDownLatch started = new CountDownLatch(1);
         private final CountDownLatch release = new CountDownLatch(1);
         private final AtomicInteger startCalls = new AtomicInteger();
         private final AtomicReference<String> profileId = new AtomicReference<>();
 
+        private CapturingClientFactory(boolean blockOnStart) {
+            this.blockOnStart = blockOnStart;
+        }
+
         @Override
-        public FeishuLongConnectionClient create(FeishuLongConnectionProfile profile, FeishuAppCredential credential) {
+        public FeishuLongConnectionClient create(FeishuLongConnectionProfileResolver profileResolver, FeishuAppCredential credential) {
+            FeishuLongConnectionProfile profile = profileResolver.resolve();
             profileId.set(profile.channelProfileId());
             return () -> {
                 startCalls.incrementAndGet();
                 started.countDown();
+                if (!blockOnStart) {
+                    return;
+                }
                 try {
                     release.await();
                 } catch (InterruptedException error) {

@@ -24,11 +24,22 @@ final class FeishuSdkLongConnectionClientFactory implements FeishuLongConnection
     }
 
     @Override
-    public FeishuLongConnectionClient create(FeishuLongConnectionProfile profile, FeishuAppCredential credential) {
+    public FeishuLongConnectionClient create(
+        FeishuLongConnectionProfileResolver profileResolver,
+        FeishuAppCredential credential
+    ) {
         EventDispatcher eventHandler = EventDispatcher.newBuilder("", "")
             .onP2MessageReceiveV1(new ImService.P2MessageReceiveV1Handler() {
                 @Override
                 public void handle(P2MessageReceiveV1 event) {
+                    FeishuLongConnectionProfile profile = profileResolver.resolve();
+                    if (profile == null) {
+                        log.warn(
+                            "skip feishu long connection message because no eligible profile is selected: accountId={}",
+                            credential.accountId()
+                        );
+                        return;
+                    }
                     try {
                         FeishuSdkEventMapper.toTextMessage(
                             profile.channelProfileId(),

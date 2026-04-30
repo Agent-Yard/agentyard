@@ -5,7 +5,9 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelAssistantBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileStatus;
 import jakarta.annotation.PreDestroy;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -27,7 +29,9 @@ final class FeishuLongConnectionManager {
     private final FeishuCredentialProvider credentialProvider;
     private final FeishuLongConnectionClientFactory clientFactory;
     private final ExecutorService executor;
-    private final Map<String, Boolean> startedProfileIds = new ConcurrentHashMap<>();
+    private final Map<String, FeishuLongConnectionClient> startedClientsByAccountId = new ConcurrentHashMap<>();
+    private final Map<String, FeishuLongConnectionProfile> selectedProfilesByAccountId = new ConcurrentHashMap<>();
+    private final Set<String> duplicateProfileWarnings = ConcurrentHashMap.newKeySet();
 
     @Autowired
     FeishuLongConnectionManager(
@@ -56,44 +60,71 @@ final class FeishuLongConnectionManager {
     }
 
     @Scheduled(fixedDelayString = "${lynxus.channel-gateway.feishu.long-connection.reconcile-fixed-delay-ms:30000}")
-    void reconcile() {
-        for (ChannelGatewayProfile profile : repository.listProfilesByProvider(FeishuGatewayNativeChannelProviderAdapter.PROVIDER_TYPE)) {
-            if (!eligible(profile) || startedProfileIds.containsKey(profile.id())) {
-                continue;
+    synchronized void reconcile() {
+        Map<String, ChannelGatewayProfile> selectedProfiles = selectedProfilesByAccount();
+        selectedProfilesByAccountId.keySet().removeIf(accountId -> !selectedProfiles.containsKey(accountId));
+        for (Map.Entry<String, ChannelGatewayProfile> entry : selectedProfiles.entrySet()) {
+            String accountId = entry.getKey();
+            ChannelGatewayProfile profile = entry.getValue();
+            selectedProfilesByAccountId.put(accountId, profile(profile));
+            if (!startedClientsByAccountId.containsKey(accountId)) {
+                start(accountId, profile);
             }
-            start(profile);
         }
     }
 
     boolean isStarted(String channelProfileId) {
-        return startedProfileIds.containsKey(channelProfileId);
+        return selectedProfilesByAccountId.values().stream()
+            .anyMatch(profile -> profile.channelProfileId().equals(channelProfileId)
+                && startedClientsByAccountId.containsKey(profile.accountId()));
     }
 
-    private void start(ChannelGatewayProfile profile) {
-        if (startedProfileIds.putIfAbsent(profile.id(), Boolean.TRUE) != null) {
+    private Map<String, ChannelGatewayProfile> selectedProfilesByAccount() {
+        Map<String, ChannelGatewayProfile> selectedProfiles = new LinkedHashMap<>();
+        for (ChannelGatewayProfile profile : repository.listProfilesByProvider(FeishuGatewayNativeChannelProviderAdapter.PROVIDER_TYPE)) {
+            if (!eligible(profile)) {
+                continue;
+            }
+            ChannelGatewayProfile selected = selectedProfiles.putIfAbsent(profile.accountId(), profile);
+            if (selected != null && duplicateProfileWarnings.add(profile.accountId() + ":" + profile.id())) {
+                log.warn(
+                    "multiple eligible feishu profiles share the same integration account; selectedProfileId={}, skippedProfileId={}, accountId={}",
+                    selected.id(),
+                    profile.id(),
+                    profile.accountId()
+                );
+            }
+        }
+        return selectedProfiles;
+    }
+
+    private void start(String accountId, ChannelGatewayProfile profile) {
+        if (startedClientsByAccountId.containsKey(accountId)) {
             return;
         }
         try {
-            FeishuAppCredential credential = credentialProvider.resolve(profile.accountId(), profile.config());
+            FeishuAppCredential credential = credentialProvider.resolve(accountId, profile.config());
             FeishuLongConnectionClient client = clientFactory.create(
-                new FeishuLongConnectionProfile(profile.id(), profile.displayName()),
+                () -> selectedProfilesByAccountId.get(accountId),
                 credential
             );
-            executor.execute(() -> runClient(profile.id(), credential.appId(), client));
-            log.info("started feishu long connection client: channelProfileId={}, accountId={}", profile.id(), profile.accountId());
+            if (startedClientsByAccountId.putIfAbsent(accountId, client) != null) {
+                return;
+            }
+            executor.execute(() -> runClient(accountId, credential.appId(), client));
+            log.info("started feishu long connection client: channelProfileId={}, accountId={}", profile.id(), accountId);
         } catch (RuntimeException error) {
-            startedProfileIds.remove(profile.id());
+            startedClientsByAccountId.remove(accountId);
             log.warn("failed to start feishu long connection client: channelProfileId={}", profile.id(), error);
         }
     }
 
-    private void runClient(String channelProfileId, String appId, FeishuLongConnectionClient client) {
+    private void runClient(String accountId, String appId, FeishuLongConnectionClient client) {
         try {
             client.start();
         } catch (RuntimeException error) {
-            log.warn("feishu long connection client stopped with error: channelProfileId={}, appId={}", channelProfileId, appId, error);
-        } finally {
-            startedProfileIds.remove(channelProfileId);
+            startedClientsByAccountId.remove(accountId, client);
+            log.warn("feishu long connection client stopped with error: accountId={}, appId={}", accountId, appId, error);
         }
     }
 
@@ -113,6 +144,10 @@ final class FeishuLongConnectionManager {
             && hasText(profile.accountId())
             && binding != null
             && hasText(binding.assistantId());
+    }
+
+    private static FeishuLongConnectionProfile profile(ChannelGatewayProfile profile) {
+        return new FeishuLongConnectionProfile(profile.accountId(), profile.id(), profile.displayName());
     }
 
     private static boolean hasText(String value) {
