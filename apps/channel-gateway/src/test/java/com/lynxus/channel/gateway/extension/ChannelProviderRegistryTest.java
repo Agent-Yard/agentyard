@@ -32,11 +32,11 @@ final class ChannelProviderRegistryTest {
     @Test
     void springContextCreatesRegistryFromLoaderConstructor() {
         try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
-            context.registerBean(ExtensionRegistrationProperties.class, () -> new ExtensionRegistrationProperties(
-                null,
-                "http://channel-gateway.example.com",
-                "http://agent-runtime.example.com"
-            ));
+            context.getEnvironment().getSystemProperties()
+                .put("lynxus.channel-gateway.base-url", "http://channel-gateway.example.com");
+            context.getEnvironment().getSystemProperties()
+                .put("lynxus.agent-runtime.base-url", "http://agent-runtime.example.com");
+            context.registerBean(ExtensionRegistrationProperties.class, () -> new ExtensionRegistrationProperties(null));
             context.registerBean(ExtensionRegistrationService.class);
             context.registerBean(FeishuGatewayNativeChannelProviderAdapter.class);
             context.registerBean(GatewayNativeChannelProviderAdapters.class);
@@ -191,7 +191,9 @@ final class ChannelProviderRegistryTest {
     private static RuntimeChannelProviderRegistry registry(String operatorYaml, CapturingFetcher fetcher) {
         ExtensionRegistrationService registrationService = operatorYaml.isBlank()
             ? new ExtensionRegistrationService(
-                new ExtensionRegistrationProperties(null, "http://channel-gateway.example.com", "http://agent-runtime.example.com")
+                new ExtensionRegistrationProperties(null),
+                "http://channel-gateway.example.com",
+                "http://agent-runtime.example.com"
             )
             : registrationServiceFromYaml(operatorYaml);
         return new RuntimeChannelProviderRegistry(new ChannelProviderRegistryLoader(
@@ -206,11 +208,11 @@ final class ChannelProviderRegistryTest {
         try {
             Path tempFile = Files.createTempFile("lynxus-extension-registration", ".yaml");
             Files.writeString(tempFile, operatorYaml);
-            return new ExtensionRegistrationService(new ExtensionRegistrationProperties(
-                tempFile.toString(),
+            return new ExtensionRegistrationService(
+                new ExtensionRegistrationProperties(tempFile.toString()),
                 "http://channel-gateway.example.com",
                 "http://agent-runtime.example.com"
-            ));
+            );
         } catch (IOException exception) {
             throw new AssertionError(exception);
         }

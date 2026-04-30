@@ -27,8 +27,8 @@ import java.util.regex.Pattern;
 public final class ExtensionRegistrationLoader {
     public static final String CORE_CHANNEL_GATEWAY_REGISTRATION_ID = "core-channel-gateway";
     public static final String CORE_AGENT_RUNTIME_REGISTRATION_ID = "core-agent-runtime";
-    public static final String CHANNEL_GATEWAY_URL_ENV = "LYNXUS_CHANNEL_GATEWAY_URL";
-    public static final String AGENT_RUNTIME_URL_ENV = "LYNXUS_AGENT_RUNTIME_URL";
+    public static final String CHANNEL_GATEWAY_BASE_URL_ENV = "LYNXUS_CHANNEL_GATEWAY_BASE_URL";
+    public static final String AGENT_RUNTIME_BASE_URL_ENV = "LYNXUS_AGENT_RUNTIME_BASE_URL";
 
     private static final ObjectMapper YAML_MAPPER = new ObjectMapper(new YAMLFactory().enable(
         JsonParser.Feature.STRICT_DUPLICATE_DETECTION
@@ -197,7 +197,7 @@ public final class ExtensionRegistrationLoader {
         return new ExtensionRegistration(
             CORE_CHANNEL_GATEWAY_REGISTRATION_ID,
             RegistrationSource.CORE_PRESET,
-            normalizeBaseUrl("${" + CHANNEL_GATEWAY_URL_ENV + "}", environmentResolver),
+            normalizeBaseUrl("${" + CHANNEL_GATEWAY_BASE_URL_ENV + "}", environmentResolver),
             new RegistrationExposes(List.of("feishu"), List.of()),
             new RegistrationAuth(RegistrationAuthType.INTERNAL_TOKEN)
         );
@@ -207,7 +207,7 @@ public final class ExtensionRegistrationLoader {
         return new ExtensionRegistration(
             CORE_AGENT_RUNTIME_REGISTRATION_ID,
             RegistrationSource.CORE_PRESET,
-            normalizeBaseUrl("${" + AGENT_RUNTIME_URL_ENV + "}", environmentResolver),
+            normalizeBaseUrl("${" + AGENT_RUNTIME_BASE_URL_ENV + "}", environmentResolver),
             new RegistrationExposes(List.of(), List.of("business-code-secret-http", "mcp", "simple-http")),
             new RegistrationAuth(RegistrationAuthType.INTERNAL_TOKEN)
         );

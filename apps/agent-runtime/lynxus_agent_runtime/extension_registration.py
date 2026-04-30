@@ -5,8 +5,8 @@ import os
 from pathlib import Path
 
 from lynxus_extension_sdk.registration import (
-    AGENT_RUNTIME_URL_ENV,
-    CHANNEL_GATEWAY_URL_ENV,
+    AGENT_RUNTIME_BASE_URL_ENV,
+    CHANNEL_GATEWAY_BASE_URL_ENV,
     CORE_AGENT_RUNTIME_REGISTRATION_ID,
     CORE_CHANNEL_GATEWAY_REGISTRATION_ID,
     ExtensionRegistration,
@@ -38,9 +38,9 @@ def _registration_environment(environment: Environment) -> Callable[[str], str |
         value = _read_environment(environment, key)
         if value is not None:
             return value
-        if key == CHANNEL_GATEWAY_URL_ENV:
+        if key == CHANNEL_GATEWAY_BASE_URL_ENV:
             return DEFAULT_CHANNEL_GATEWAY_URL
-        if key == AGENT_RUNTIME_URL_ENV:
+        if key == AGENT_RUNTIME_BASE_URL_ENV:
             return DEFAULT_AGENT_RUNTIME_URL
         return None
 
@@ -56,8 +56,8 @@ def _read_environment(environment: Environment, key: str) -> str | None:
 
 
 __all__ = [
-    "AGENT_RUNTIME_URL_ENV",
-    "CHANNEL_GATEWAY_URL_ENV",
+    "AGENT_RUNTIME_BASE_URL_ENV",
+    "CHANNEL_GATEWAY_BASE_URL_ENV",
     "CORE_AGENT_RUNTIME_REGISTRATION_ID",
     "CORE_CHANNEL_GATEWAY_REGISTRATION_ID",
     "DEFAULT_AGENT_RUNTIME_URL",

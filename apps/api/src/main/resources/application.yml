@@ -68,10 +68,10 @@ lynxus:
     base-url: ${LYNXUS_KNOWLEDGE_SERVICE_BASE_URL:http://127.0.0.1:8091}
   channel-gateway:
     base-url: ${LYNXUS_CHANNEL_GATEWAY_BASE_URL:http://127.0.0.1:8082}
+  agent-runtime:
+    base-url: ${LYNXUS_AGENT_RUNTIME_BASE_URL:http://127.0.0.1:8090}
   extensions:
     registration-file: ${LYNXUS_EXTENSION_REGISTRATION_FILE:}
-    channel-gateway-url: ${LYNXUS_CHANNEL_GATEWAY_URL:http://127.0.0.1:8082}
-    agent-runtime-url: ${LYNXUS_AGENT_RUNTIME_URL:http://127.0.0.1:8090}
   integration:
     credentials:
       encryption-key: ${LYNXUS_INTEGRATION_CREDENTIAL_ENCRYPTION_KEY:}

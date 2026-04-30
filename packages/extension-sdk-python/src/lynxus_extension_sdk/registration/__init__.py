@@ -17,8 +17,8 @@ from lynxus_extension_sdk.common.canonical_json import sha256_digest
 
 CORE_CHANNEL_GATEWAY_REGISTRATION_ID = "core-channel-gateway"
 CORE_AGENT_RUNTIME_REGISTRATION_ID = "core-agent-runtime"
-CHANNEL_GATEWAY_URL_ENV = "LYNXUS_CHANNEL_GATEWAY_URL"
-AGENT_RUNTIME_URL_ENV = "LYNXUS_AGENT_RUNTIME_URL"
+CHANNEL_GATEWAY_BASE_URL_ENV = "LYNXUS_CHANNEL_GATEWAY_BASE_URL"
+AGENT_RUNTIME_BASE_URL_ENV = "LYNXUS_AGENT_RUNTIME_BASE_URL"
 
 _ENV_PLACEHOLDER = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*)}$")
 _URL_PATH = re.compile(r"^(?:[A-Za-z0-9._~!$&'()*+,;=:@/-]|%[0-9A-Fa-f]{2})*$")
@@ -218,7 +218,7 @@ def _core_channel_gateway_preset(environment: EnvironmentResolver) -> ExtensionR
     return ExtensionRegistration(
         registration_id=CORE_CHANNEL_GATEWAY_REGISTRATION_ID,
         source=RegistrationSource.CORE_PRESET,
-        base_url=normalize_base_url(f"${{{CHANNEL_GATEWAY_URL_ENV}}}", environment),
+        base_url=normalize_base_url(f"${{{CHANNEL_GATEWAY_BASE_URL_ENV}}}", environment),
         exposes=RegistrationExposes(channel_provider_types=("feishu",)),
         auth=RegistrationAuth(RegistrationAuthType.INTERNAL_TOKEN),
     )
@@ -228,7 +228,7 @@ def _core_agent_runtime_preset(environment: EnvironmentResolver) -> ExtensionReg
     return ExtensionRegistration(
         registration_id=CORE_AGENT_RUNTIME_REGISTRATION_ID,
         source=RegistrationSource.CORE_PRESET,
-        base_url=normalize_base_url(f"${{{AGENT_RUNTIME_URL_ENV}}}", environment),
+        base_url=normalize_base_url(f"${{{AGENT_RUNTIME_BASE_URL_ENV}}}", environment),
         exposes=RegistrationExposes(tool_connector_types=("business-code-secret-http", "mcp", "simple-http")),
         auth=RegistrationAuth(RegistrationAuthType.INTERNAL_TOKEN),
     )
@@ -342,8 +342,8 @@ def _invalid(message: str) -> RegistrationConfigError:
 
 
 __all__ = [
-    "AGENT_RUNTIME_URL_ENV",
-    "CHANNEL_GATEWAY_URL_ENV",
+    "AGENT_RUNTIME_BASE_URL_ENV",
+    "CHANNEL_GATEWAY_BASE_URL_ENV",
     "CORE_AGENT_RUNTIME_REGISTRATION_ID",
     "CORE_CHANNEL_GATEWAY_REGISTRATION_ID",
     "ExtensionRegistration",

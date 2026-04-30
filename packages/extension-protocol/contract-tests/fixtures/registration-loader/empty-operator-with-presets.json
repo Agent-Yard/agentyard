@@ -3,13 +3,13 @@
   "operatorYaml": "",
   "variantOperatorYaml": "lynxus:\n  extensions:\n    services: []\n",
   "environment": {
-    "LYNXUS_AGENT_RUNTIME_URL": "https://Agent-Runtime.Example.COM:443/runtime/",
-    "LYNXUS_CHANNEL_GATEWAY_URL": "HTTP://Channel-Gateway.Example.COM:80/core/",
+    "LYNXUS_AGENT_RUNTIME_BASE_URL": "https://Agent-Runtime.Example.COM:443/runtime/",
+    "LYNXUS_CHANNEL_GATEWAY_BASE_URL": "HTTP://Channel-Gateway.Example.COM:80/core/",
     "LYNXUS_INTERNAL_TOKEN": "token-one"
   },
   "alternateEnvironment": {
-    "LYNXUS_AGENT_RUNTIME_URL": "https://agent-runtime.example.com/runtime",
-    "LYNXUS_CHANNEL_GATEWAY_URL": "http://channel-gateway.example.com/core",
+    "LYNXUS_AGENT_RUNTIME_BASE_URL": "https://agent-runtime.example.com/runtime",
+    "LYNXUS_CHANNEL_GATEWAY_BASE_URL": "http://channel-gateway.example.com/core",
     "LYNXUS_INTERNAL_TOKEN": "token-two"
   },
   "expected": {

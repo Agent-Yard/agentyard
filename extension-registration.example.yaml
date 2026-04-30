@@ -1,7 +1,7 @@
 # Complete operator extension registration example for LYNXUS_EXTENSION_REGISTRATION_FILE.
 #
-# Core registrations are added automatically from LYNXUS_CHANNEL_GATEWAY_URL and
-# LYNXUS_AGENT_RUNTIME_URL. Do not declare registrationId values that start with
+# Core registrations are added automatically from LYNXUS_CHANNEL_GATEWAY_BASE_URL and
+# LYNXUS_AGENT_RUNTIME_BASE_URL. Do not declare registrationId values that start with
 # core- in this file.
 #
 # baseUrl must be http(s), without userinfo, query, or fragment. It may also be a

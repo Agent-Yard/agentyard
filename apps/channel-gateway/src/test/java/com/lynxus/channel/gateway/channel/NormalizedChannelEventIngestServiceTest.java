@@ -471,11 +471,11 @@ class NormalizedChannelEventIngestServiceTest {
                         auth:
                           type: INTERNAL_TOKEN
                 """);
-            return new ExtensionRegistrationService(new ExtensionRegistrationProperties(
-                tempFile.toString(),
+            return new ExtensionRegistrationService(
+                new ExtensionRegistrationProperties(tempFile.toString()),
                 "http://channel-gateway.example.com",
                 "http://agent-runtime.example.com"
-            ));
+            );
         } catch (IOException exception) {
             throw new AssertionError(exception);
         }

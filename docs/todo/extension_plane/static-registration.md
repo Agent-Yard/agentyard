@@ -65,7 +65,7 @@ core 自动注入两条 preset registration，operator yaml 不需要也不允�
 
 ```yaml
 - registrationId: core-channel-gateway
-  baseUrl: ${LYNXUS_CHANNEL_GATEWAY_URL}
+  baseUrl: ${LYNXUS_CHANNEL_GATEWAY_BASE_URL}
   source: CORE_PRESET
   exposes:
     channelProviderTypes:
@@ -74,7 +74,7 @@ core 自动注入两条 preset registration，operator yaml 不需要也不允�
     type: INTERNAL_TOKEN
 
 - registrationId: core-agent-runtime
-  baseUrl: ${LYNXUS_AGENT_RUNTIME_URL}
+  baseUrl: ${LYNXUS_AGENT_RUNTIME_BASE_URL}
   source: CORE_PRESET
   exposes:
     toolConnectorTypes:

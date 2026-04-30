@@ -9,8 +9,8 @@ x-internal-auth-env: &internal-auth-env
 x-core-extension-env: &core-extension-env
   <<: *internal-auth-env
   LYNXUS_EXTENSION_REGISTRATION_FILE: /etc/lynxus/extensions.yaml
-  LYNXUS_CHANNEL_GATEWAY_URL: http://channel-gateway:8080
-  LYNXUS_AGENT_RUNTIME_URL: http://agent-runtime:8080
+  LYNXUS_CHANNEL_GATEWAY_BASE_URL: http://channel-gateway:8080
+  LYNXUS_AGENT_RUNTIME_BASE_URL: http://agent-runtime:8080
 
 x-extension-volumes: &extension-volumes
   - ./extensions.yaml:/etc/lynxus/extensions.yaml:ro
@@ -41,7 +41,7 @@ services:
     image: acme/lynxus-channel-provider
     environment:
       <<: *internal-auth-env
-      LYNXUS_CHANNEL_GATEWAY_URL: http://channel-gateway:8080
+      LYNXUS_CHANNEL_GATEWAY_BASE_URL: http://channel-gateway:8080
     secrets:
       - lynxus_internal_token
 
@@ -83,7 +83,7 @@ lynxus:
           type: INTERNAL_TOKEN
 ```
 
-每个服务启动时合并 `extensions.yaml` 与 core preset，得到统一 registration 集合。preset 由 `LYNXUS_CHANNEL_GATEWAY_URL` / `LYNXUS_AGENT_RUNTIME_URL` 决定 `baseUrl`，由 core 版本决定 `exposes`，operator 不在 yaml 中声明也不允许重写。当前阶段 core preset 暴露的 reference descriptor 是 core build 契约，operator 不在 compose / Helm 中启停单个 reference descriptor。
+每个服务启动时合并 `extensions.yaml` 与 core preset，得到统一 registration 集合。preset 由 `LYNXUS_CHANNEL_GATEWAY_BASE_URL` / `LYNXUS_AGENT_RUNTIME_BASE_URL` 决定 `baseUrl`，由 core 版本决定 `exposes`，operator 不在 yaml 中声明也不允许重写。当前阶段 core preset 暴露的 reference descriptor 是 core build 契约，operator 不在 compose / Helm 中启停单个 reference descriptor。
 
 API、`agent-runtime` 和 `channel-gateway` 必须读取同一份 yaml。`registrationId` 用于部署观测，manifest 内的 `providerType` / `connectorType` 才是业务 descriptor。
 
@@ -94,9 +94,9 @@ API、`agent-runtime` 和 `channel-gateway` 必须读取同一份 yaml。`regist
 3. 不允许为不同服务分别配置 extension URL 列表
 4. 不允许 API 使用一份 definition 配置、runtime 使用另一份 invocation 配置
 5. 每个服务都基于该配置加载 registration，但消费范围不同：API 通过 HTTP 拉取全部 registration 并执行 full descriptor 白名单校验，`agent-runtime` 只拉取 / 校验 `exposes.toolConnectorTypes` 非空的 registration，`channel-gateway` 只拉取 / 校验 `exposes.channelProviderTypes` 非空的 registration；runtime owner 对自身 core preset 走内部 `DescriptorProvider`，对自身相关 enterprise registration 走 HTTP `/extension/manifest`
-6. `LYNXUS_CHANNEL_GATEWAY_URL` / `LYNXUS_AGENT_RUNTIME_URL` 必须在三服务 env 中指向同一服务地址；`baseUrl` 允许 path prefix，三服务按 `static-registration.md §5` 的 URL 规范化规则统一处理 host 大小写、默认端口和 trailing slash 后再计算 `registrationConfigDigest` 并发起调用；`channel-gateway` 自身和 `agent-runtime` 自身的 env 也必须设成各自可达的同一份 URL，避免 self-loaded preset 与其他服务对同一 preset 计算出不同 normalized `baseUrl`
+6. `LYNXUS_CHANNEL_GATEWAY_BASE_URL` / `LYNXUS_AGENT_RUNTIME_BASE_URL` 必须在三服务 env 中指向同一服务地址；`baseUrl` 允许 path prefix，三服务按 `static-registration.md §5` 的 URL 规范化规则统一处理 host 大小写、默认端口和 trailing slash 后再计算 `registrationConfigDigest` 并发起调用；`channel-gateway` 自身和 `agent-runtime` 自身的 env 也必须设成各自可达的同一份 URL，避免 self-loaded preset 与其他服务对同一 preset 计算出不同 normalized `baseUrl`
 7. internal token 必须通过 secret / Vault / secret file 注入所有 core service 与 enterprise extension service；compose 示例统一使用 `LYNXUS_INTERNAL_TOKEN_FILE`，Kubernetes 示例必须把同一个 Secret 投影到相关 Deployment
-8. enterprise extension 不读取 `extensions.yaml`，只读取 internal token；remote channel provider 如果需要推送 normalized event，还必须读取 `LYNXUS_CHANNEL_GATEWAY_URL`
+8. enterprise extension 不读取 `extensions.yaml`，只读取 internal token；remote channel provider 如果需要推送 normalized event，还必须读取 `LYNXUS_CHANNEL_GATEWAY_BASE_URL`
 9. Helm values 在多个 Deployment 中重复展开不等同于同一份配置；必须保证最终 pod 看到的是同一个配置对象版本或同一个配置中心 key / version
 10. 当前阶段不支持 registration hot reload；修改 `extensions.yaml` 或 core preset env 后必须滚动重启 API、`agent-runtime` 和 `channel-gateway`
 11. registration config 变更的部署顺序固定为：enterprise extension service → `channel-gateway` / `agent-runtime` → API；API 必须最后更新并最后执行 aggregate validation
@@ -137,7 +137,7 @@ services:
     image: acme/lynxus-channel-provider
     environment:
       LYNXUS_INTERNAL_TOKEN_FILE: /run/secrets/lynxus_internal_token
-      LYNXUS_CHANNEL_GATEWAY_URL: http://channel-gateway:8080
+      LYNXUS_CHANNEL_GATEWAY_BASE_URL: http://channel-gateway:8080
       ACME_VAULT_ADDR: http://vault:8200
       ACME_PROVIDER_DB_URL: jdbc:postgresql://acme-provider-db:5432/provider
     secrets:
@@ -292,7 +292,7 @@ Credential lifecycle create / rotate / revoke / validate 不使用 `Idempotency-
 Token 来源：
 
 1. 整个 Lynxus 部署共享一个 internal token，通过 secret / Vault / secret file 注入到所有 core service 与 enterprise extension service；推荐统一使用 `LYNXUS_INTERNAL_TOKEN_FILE`
-2. Core service 访问 `LYNXUS_CHANNEL_GATEWAY_URL` / `LYNXUS_AGENT_RUNTIME_URL` 对应的 `/extension/manifest`，以及访问 enterprise `/extension/manifest`，都校验同一个 token
+2. Core service 访问 `LYNXUS_CHANNEL_GATEWAY_BASE_URL` / `LYNXUS_AGENT_RUNTIME_BASE_URL` 对应的 `/extension/manifest`，以及访问 enterprise `/extension/manifest`，都校验同一个 token
 3. remote provider service 调 `channel-gateway` `POST /internal/channel-events/normalized` 校验同一个 token
 4. token 不在 yaml 文件中明文出现；`extensions.yaml` 只标注 `auth.type: INTERNAL_TOKEN`，token 值来自 env 或 secret 文件
 5. `LYNXUS_INTERNAL_TOKEN_FILE` 是部署约定，不是 registration schema 字段；SDK 可以提供读取 helper，但 extension service 只需要按该约定把文件内容作为 bearer token 校验 / 发送
@@ -503,17 +503,17 @@ manifest.fetch
 
 ```text
 1. agent-runtime runtime owner validation
-   GET {agentRuntimeUrl}/internal/extension-registry/tool-connectors/validation
+   GET {agentRuntimeBaseUrl}/internal/extension-registry/tool-connectors/validation
 
 2. channel-gateway runtime owner validation
-   GET {channelGatewayUrl}/internal/extension-registry/channel-providers/validation
+   GET {channelGatewayBaseUrl}/internal/extension-registry/channel-providers/validation
 
 3. API aggregate validation
    GET {apiUrl}/internal/extension-registry/validation
 
 4. Core preset service readiness
-   GET {agentRuntimeUrl}/health/ready
-   GET {channelGatewayUrl}/health/ready
+   GET {agentRuntimeBaseUrl}/health/ready
+   GET {channelGatewayBaseUrl}/health/ready
 
 5. 如有 enterprise extension，检查 extension health
    遍历已发布 registration config 中 source = OPERATOR_YAML 的 enterprise registration

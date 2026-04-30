@@ -69,7 +69,9 @@ class FeishuWebhookControllerTest {
             throw new AssertionError("core channel gateway registry must not fetch self HTTP");
         };
         ExtensionRegistrationService registrationService = new ExtensionRegistrationService(
-            new ExtensionRegistrationProperties(null, "http://channel-gateway.example.com", "http://agent-runtime.example.com")
+            new ExtensionRegistrationProperties(null),
+            "http://channel-gateway.example.com",
+            "http://agent-runtime.example.com"
         );
         return new RuntimeChannelProviderRegistry(new ChannelProviderRegistryLoader(
             registrationService,

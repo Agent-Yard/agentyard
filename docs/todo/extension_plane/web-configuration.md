@@ -414,7 +414,7 @@ jobConfig
 Web
   -> POST /api/channel-admin/profiles/{channelProfileId}/jobs/{jobType}/runs
   -> API authorization + audit
-  -> POST {channelGatewayUrl}/internal/channel-admin/profiles/{channelProfileId}/jobs/{jobType}/runs
+  -> POST {channelGatewayBaseUrl}/internal/channel-admin/profiles/{channelProfileId}/jobs/{jobType}/runs
   -> channel-gateway acquires Redis lock and claims job as RUNNING
   -> channel-gateway creates channel_profile_job_run
   -> provider runJob

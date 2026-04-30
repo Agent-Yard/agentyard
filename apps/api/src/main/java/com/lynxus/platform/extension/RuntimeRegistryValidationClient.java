@@ -35,15 +35,16 @@ final class JdkRuntimeRegistryValidationClient implements RuntimeRegistryValidat
 
     @Autowired
     JdkRuntimeRegistryValidationClient(
-        ExtensionRegistrationProperties properties,
+        @Value("${lynxus.agent-runtime.base-url}") String agentRuntimeBaseUrl,
+        @Value("${lynxus.channel-gateway.base-url}") String channelGatewayBaseUrl,
         @Value("${lynxus.internal-auth.token}") String internalAuthToken,
         ObjectMapper objectMapper
     ) {
         this(
             HttpClient.newBuilder().connectTimeout(VALIDATION_TIMEOUT).build(),
             objectMapper,
-            properties.agentRuntimeUrl(),
-            properties.channelGatewayUrl(),
+            agentRuntimeBaseUrl,
+            channelGatewayBaseUrl,
             internalAuthToken
         );
     }

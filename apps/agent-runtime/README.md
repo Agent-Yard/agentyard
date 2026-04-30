@@ -47,8 +47,8 @@ uv run --directory apps/agent-runtime --package lynxus-agent-runtime pytest test
 Extension registration 使用和 API / `channel-gateway` 相同的输入：
 
 - `LYNXUS_EXTENSION_REGISTRATION_FILE`
-- `LYNXUS_CHANNEL_GATEWAY_URL`
-- `LYNXUS_AGENT_RUNTIME_URL`
+- `LYNXUS_CHANNEL_GATEWAY_BASE_URL`
+- `LYNXUS_AGENT_RUNTIME_BASE_URL`
 
 模型资源常用的密钥变量包括：
 

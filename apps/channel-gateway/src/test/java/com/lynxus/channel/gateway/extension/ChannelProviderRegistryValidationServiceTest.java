@@ -204,7 +204,9 @@ final class ChannelProviderRegistryValidationServiceTest {
     private static ChannelProviderRegistryValidationService service(String operatorYaml, CapturingFetcher fetcher) {
         ExtensionRegistrationService registrationService = operatorYaml.isBlank()
             ? new ExtensionRegistrationService(
-                new ExtensionRegistrationProperties(null, "http://channel-gateway.example.com", "http://agent-runtime.example.com"),
+                new ExtensionRegistrationProperties(null),
+                "http://channel-gateway.example.com",
+                "http://agent-runtime.example.com",
                 key -> null
             )
             : registrationServiceFromYaml(operatorYaml);
@@ -224,11 +226,9 @@ final class ChannelProviderRegistryValidationServiceTest {
             Path tempFile = Files.createTempFile("lynxus-extension-registration", ".yaml");
             Files.writeString(tempFile, operatorYaml);
             return new ExtensionRegistrationService(
-                new ExtensionRegistrationProperties(
-                    tempFile.toString(),
-                    "http://channel-gateway.example.com",
-                    "http://agent-runtime.example.com"
-                ),
+                new ExtensionRegistrationProperties(tempFile.toString()),
+                "http://channel-gateway.example.com",
+                "http://agent-runtime.example.com",
                 key -> null
             );
         } catch (IOException exception) {

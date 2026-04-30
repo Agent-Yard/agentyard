@@ -420,7 +420,9 @@ final class ExtensionRegistryAggregateValidationServiceTest {
     private static ExtensionRegistrationService registrationService(String operatorYaml) {
         if (operatorYaml.isBlank()) {
             return new ExtensionRegistrationService(
-                new ExtensionRegistrationProperties(null, "http://channel-gateway.example.com", "http://agent-runtime.example.com"),
+                new ExtensionRegistrationProperties(null),
+                "http://channel-gateway.example.com",
+                "http://agent-runtime.example.com",
                 key -> null
             );
         }
@@ -428,11 +430,9 @@ final class ExtensionRegistryAggregateValidationServiceTest {
             Path tempFile = Files.createTempFile("lynxus-api-extension-registration", ".yaml");
             Files.writeString(tempFile, operatorYaml);
             return new ExtensionRegistrationService(
-                new ExtensionRegistrationProperties(
-                    tempFile.toString(),
-                    "http://channel-gateway.example.com",
-                    "http://agent-runtime.example.com"
-                ),
+                new ExtensionRegistrationProperties(tempFile.toString()),
+                "http://channel-gateway.example.com",
+                "http://agent-runtime.example.com",
                 key -> null
             );
         } catch (IOException exception) {

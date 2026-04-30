@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.context.ConfigurationPropertiesAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -28,9 +29,9 @@ final class ExtensionRegistrationServiceTest {
         "packages/extension-protocol/contract-tests/fixtures/registration-loader/valid-operator-with-presets.json"
     );
     private static final Map<String, String> CORE_PRESET_ENVIRONMENT = Map.of(
-        ExtensionRegistrationLoader.CHANNEL_GATEWAY_URL_ENV,
+        ExtensionRegistrationLoader.CHANNEL_GATEWAY_BASE_URL_ENV,
         "HTTP://Channel-Gateway.Example.COM:80/core/",
-        ExtensionRegistrationLoader.AGENT_RUNTIME_URL_ENV,
+        ExtensionRegistrationLoader.AGENT_RUNTIME_BASE_URL_ENV,
         "https://Agent-Runtime.Example.COM:443/runtime/"
     );
     private static final ApplicationContextRunner CONTEXT_RUNNER = new ApplicationContextRunner()
@@ -41,10 +42,10 @@ final class ExtensionRegistrationServiceTest {
     void bindsConfigurationAndCreatesRegistrationBean() {
         CONTEXT_RUNNER
             .withPropertyValues(
-                "lynxus.extensions.channel-gateway-url=" +
-                CORE_PRESET_ENVIRONMENT.get(ExtensionRegistrationLoader.CHANNEL_GATEWAY_URL_ENV),
-                "lynxus.extensions.agent-runtime-url=" +
-                CORE_PRESET_ENVIRONMENT.get(ExtensionRegistrationLoader.AGENT_RUNTIME_URL_ENV)
+                "lynxus.channel-gateway.base-url=" +
+                CORE_PRESET_ENVIRONMENT.get(ExtensionRegistrationLoader.CHANNEL_GATEWAY_BASE_URL_ENV),
+                "lynxus.agent-runtime.base-url=" +
+                CORE_PRESET_ENVIRONMENT.get(ExtensionRegistrationLoader.AGENT_RUNTIME_BASE_URL_ENV)
             )
             .run(context -> {
                 assertTrue(context.containsBean("extensionRegistrationService"));
@@ -64,12 +65,13 @@ final class ExtensionRegistrationServiceTest {
         Path registrationFile = tempDir.resolve("extensions.yaml");
         Files.writeString(registrationFile, (String) fixture.get("operatorYaml"));
 
-        ExtensionRegistrationProperties properties = new ExtensionRegistrationProperties(
-            registrationFile.toString(),
-            environment.get(ExtensionRegistrationLoader.CHANNEL_GATEWAY_URL_ENV),
-            environment.get(ExtensionRegistrationLoader.AGENT_RUNTIME_URL_ENV)
+        ExtensionRegistrationProperties properties = new ExtensionRegistrationProperties(registrationFile.toString());
+        ExtensionRegistrationService service = new ExtensionRegistrationService(
+            properties,
+            environment.get(ExtensionRegistrationLoader.CHANNEL_GATEWAY_BASE_URL_ENV),
+            environment.get(ExtensionRegistrationLoader.AGENT_RUNTIME_BASE_URL_ENV),
+            environment::get
         );
-        ExtensionRegistrationService service = new ExtensionRegistrationService(properties, environment::get);
         ExtensionRegistrationSet sdkLoaded = ExtensionRegistrationLoader.load(registrationFile, environment);
         Map<String, Object> expected = (Map<String, Object>) fixture.get("expected");
 
@@ -80,12 +82,13 @@ final class ExtensionRegistrationServiceTest {
 
     @Test
     void usesCorePresetsWhenOperatorFileIsUnset() {
-        ExtensionRegistrationProperties properties = new ExtensionRegistrationProperties(
-            null,
-            CORE_PRESET_ENVIRONMENT.get(ExtensionRegistrationLoader.CHANNEL_GATEWAY_URL_ENV),
-            CORE_PRESET_ENVIRONMENT.get(ExtensionRegistrationLoader.AGENT_RUNTIME_URL_ENV)
+        ExtensionRegistrationProperties properties = new ExtensionRegistrationProperties(null);
+        ExtensionRegistrationService service = new ExtensionRegistrationService(
+            properties,
+            CORE_PRESET_ENVIRONMENT.get(ExtensionRegistrationLoader.CHANNEL_GATEWAY_BASE_URL_ENV),
+            CORE_PRESET_ENVIRONMENT.get(ExtensionRegistrationLoader.AGENT_RUNTIME_BASE_URL_ENV),
+            key -> null
         );
-        ExtensionRegistrationService service = new ExtensionRegistrationService(properties, key -> null);
         ExtensionRegistrationSet sdkLoaded = ExtensionRegistrationLoader.loadYaml("", CORE_PRESET_ENVIRONMENT);
 
         assertEquals(sdkLoaded.registrationConfigDigest(), service.registrationConfigDigest());
@@ -119,8 +122,17 @@ final class ExtensionRegistrationServiceTest {
     @EnableConfigurationProperties(ExtensionRegistrationProperties.class)
     static class RegistrationBeanTestConfiguration {
         @Bean
-        ExtensionRegistrationService extensionRegistrationService(ExtensionRegistrationProperties properties) {
-            return new ExtensionRegistrationService(properties, key -> null);
+        ExtensionRegistrationService extensionRegistrationService(
+            ExtensionRegistrationProperties properties,
+            @Value("${lynxus.channel-gateway.base-url}") String channelGatewayBaseUrl,
+            @Value("${lynxus.agent-runtime.base-url}") String agentRuntimeBaseUrl
+        ) {
+            return new ExtensionRegistrationService(
+                properties,
+                channelGatewayBaseUrl,
+                agentRuntimeBaseUrl,
+                key -> null
+            );
         }
     }
 }

@@ -4,8 +4,8 @@ from pathlib import Path
 
 from lynxus_agent_runtime import extension_registration as runtime_registration
 from lynxus_extension_sdk.registration import (
-    AGENT_RUNTIME_URL_ENV,
-    CHANNEL_GATEWAY_URL_ENV,
+    AGENT_RUNTIME_BASE_URL_ENV,
+    CHANNEL_GATEWAY_BASE_URL_ENV,
     CORE_AGENT_RUNTIME_REGISTRATION_ID,
     CORE_CHANNEL_GATEWAY_REGISTRATION_ID,
     load_registration_file as sdk_load_registration_file,
@@ -45,8 +45,8 @@ def test_runtime_loads_configured_operator_file_with_shared_sdk_digest(tmp_path:
 
 def test_runtime_uses_core_presets_when_operator_file_is_unset() -> None:
     environment = {
-        CHANNEL_GATEWAY_URL_ENV: "HTTP://Channel-Gateway.Example.COM:80/core/",
-        AGENT_RUNTIME_URL_ENV: "https://Agent-Runtime.Example.COM:443/runtime/",
+        CHANNEL_GATEWAY_BASE_URL_ENV: "HTTP://Channel-Gateway.Example.COM:80/core/",
+        AGENT_RUNTIME_BASE_URL_ENV: "https://Agent-Runtime.Example.COM:443/runtime/",
     }
 
     loaded = runtime_registration.load_extension_registration(environment)

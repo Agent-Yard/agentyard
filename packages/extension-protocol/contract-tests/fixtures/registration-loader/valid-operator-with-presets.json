@@ -4,14 +4,14 @@
   "variantOperatorYaml": "lynxus:\n  extensions:\n    services:\n      - registrationId: acme-channel-provider\n        baseUrl: http://channel.example.com/lynxus\n        exposes:\n          channelProviderTypes:\n            - enterprise.acme.internal-im\n            - enterprise.acme.ticket\n        auth:\n          type: INTERNAL_TOKEN\n      - registrationId: acme-business-connectors\n        baseUrl: https://tools.example.com/extensions\n        exposes:\n          toolConnectorTypes:\n            - enterprise.acme.crm\n            - enterprise.acme.erp\n        auth:\n          type: INTERNAL_TOKEN\n",
   "environment": {
     "ACME_CONNECTOR_URL": "https://TOOLS.Example.com:443/extensions/",
-    "LYNXUS_AGENT_RUNTIME_URL": "https://Agent-Runtime.Example.COM:443/runtime/",
-    "LYNXUS_CHANNEL_GATEWAY_URL": "HTTP://Channel-Gateway.Example.COM:80/core/",
+    "LYNXUS_AGENT_RUNTIME_BASE_URL": "https://Agent-Runtime.Example.COM:443/runtime/",
+    "LYNXUS_CHANNEL_GATEWAY_BASE_URL": "HTTP://Channel-Gateway.Example.COM:80/core/",
     "LYNXUS_INTERNAL_TOKEN": "token-one"
   },
   "alternateEnvironment": {
     "ACME_CONNECTOR_URL": "https://tools.example.com/extensions",
-    "LYNXUS_AGENT_RUNTIME_URL": "https://agent-runtime.example.com/runtime",
-    "LYNXUS_CHANNEL_GATEWAY_URL": "http://channel-gateway.example.com/core",
+    "LYNXUS_AGENT_RUNTIME_BASE_URL": "https://agent-runtime.example.com/runtime",
+    "LYNXUS_CHANNEL_GATEWAY_BASE_URL": "http://channel-gateway.example.com/core",
     "LYNXUS_INTERNAL_TOKEN": "token-two"
   },
   "expected": {

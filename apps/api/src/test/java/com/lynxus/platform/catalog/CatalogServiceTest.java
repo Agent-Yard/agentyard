@@ -1728,11 +1728,9 @@ class CatalogServiceTest {
                         services: []
                     """);
             return new ExtensionRegistrationService(
-                new ExtensionRegistrationProperties(
-                    tempFile.toString(),
-                    "http://channel-gateway.example.com",
-                    "http://agent-runtime.example.com"
-                )
+                new ExtensionRegistrationProperties(tempFile.toString()),
+                "http://channel-gateway.example.com",
+                "http://agent-runtime.example.com"
             );
         } catch (IOException error) {
             throw new AssertionError(error);

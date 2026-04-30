@@ -1018,11 +1018,11 @@ class IntegrationAccountServiceTest {
     }
 
     private static ExtensionRegistrationService registrationService() {
-        return new ExtensionRegistrationService(new ExtensionRegistrationProperties(
-            null,
+        return new ExtensionRegistrationService(
+            new ExtensionRegistrationProperties(null),
             "http://channel-gateway.example.com",
             "http://agent-runtime.example.com"
-        ));
+        );
     }
 
     private static ExtensionRegistrationService registrationServiceFromYaml(String operatorYaml) {
@@ -1030,11 +1030,9 @@ class IntegrationAccountServiceTest {
             Path tempFile = Files.createTempFile("lynxus-api-integration-registration", ".yaml");
             Files.writeString(tempFile, operatorYaml);
             return new ExtensionRegistrationService(
-                new ExtensionRegistrationProperties(
-                    tempFile.toString(),
-                    "http://channel-gateway.example.com",
-                    "http://agent-runtime.example.com"
-                )
+                new ExtensionRegistrationProperties(tempFile.toString()),
+                "http://channel-gateway.example.com",
+                "http://agent-runtime.example.com"
             );
         } catch (IOException exception) {
             throw new AssertionError(exception);
