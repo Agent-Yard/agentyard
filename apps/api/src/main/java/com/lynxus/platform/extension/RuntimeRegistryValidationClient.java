@@ -10,6 +10,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
@@ -32,6 +33,7 @@ final class JdkRuntimeRegistryValidationClient implements RuntimeRegistryValidat
     private final String channelGatewayBaseUrl;
     private final String authorization;
 
+    @Autowired
     JdkRuntimeRegistryValidationClient(
         ExtensionRegistrationProperties properties,
         @Value("${lynxus.internal-auth.token}") String internalAuthToken,

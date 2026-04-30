@@ -26,6 +26,7 @@ import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountRuntime
 import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountSubjectType;
 import java.util.List;
 import java.util.NoSuchElementException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -34,6 +35,7 @@ public class ChannelAdminService {
     private final IntegrationAccountService integrationAccountService;
     private final ExtensionDefinitionService extensionDefinitionService;
 
+    @Autowired
     public ChannelAdminService(
         ChannelGatewayClient channelGatewayClient,
         IntegrationAccountService integrationAccountService,

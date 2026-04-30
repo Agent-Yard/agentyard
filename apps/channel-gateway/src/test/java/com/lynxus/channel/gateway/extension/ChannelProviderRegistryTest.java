@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.lynxus.channel.gateway.connector.feishu.FeishuGatewayNativeChannelProviderAdapter;
 import com.lynxus.extension.sdk.common.LynxusCanonicalJson;
 import com.lynxus.extension.sdk.protocol.LynxusExtensionHeaders;
 import java.io.IOException;
@@ -15,6 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 
 final class ChannelProviderRegistryTest {
     @Test
@@ -25,6 +27,30 @@ final class ChannelProviderRegistryTest {
         assertTrue(registry.snapshot().ready());
         assertEquals("feishu", registry.requireProvider("feishu").providerType());
         assertTrue(fetcher.calls.isEmpty());
+    }
+
+    @Test
+    void springContextCreatesRegistryFromLoaderConstructor() {
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+            context.registerBean(ExtensionRegistrationProperties.class, () -> new ExtensionRegistrationProperties(
+                null,
+                "http://channel-gateway.example.com",
+                "http://agent-runtime.example.com"
+            ));
+            context.registerBean(ExtensionRegistrationService.class);
+            context.registerBean(FeishuGatewayNativeChannelProviderAdapter.class);
+            context.registerBean(GatewayNativeChannelProviderAdapters.class);
+            context.registerBean(ChannelGatewayDescriptorProvider.class);
+            context.registerBean(ExtensionManifestFetcher.class, CapturingFetcher::new);
+            context.registerBean("internalAuthToken", String.class, () -> "internal-token");
+            context.registerBean(ChannelProviderRegistryLoader.class);
+            context.registerBean(RuntimeChannelProviderRegistry.class);
+            context.refresh();
+
+            RuntimeChannelProviderRegistry registry = context.getBean(RuntimeChannelProviderRegistry.class);
+            assertTrue(registry.snapshot().ready());
+            assertEquals("feishu", registry.requireProvider("feishu").providerType());
+        }
     }
 
     @Test

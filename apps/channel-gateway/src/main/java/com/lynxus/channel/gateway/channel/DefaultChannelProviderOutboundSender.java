@@ -14,6 +14,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
@@ -27,6 +28,7 @@ final class DefaultChannelProviderOutboundSender implements ChannelProviderOutbo
     private final String internalAuthToken;
     private final HttpClient httpClient;
 
+    @Autowired
     DefaultChannelProviderOutboundSender(
         GatewayNativeChannelProviderAdapters gatewayNativeAdapters,
         ObjectMapper objectMapper,

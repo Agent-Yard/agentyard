@@ -10,11 +10,7 @@ public final class RuntimeChannelProviderRegistry implements ChannelProviderRegi
     private final ChannelProviderRegistryLoadResult snapshot;
 
     public RuntimeChannelProviderRegistry(ChannelProviderRegistryLoader loader) {
-        this(loader.load());
-    }
-
-    RuntimeChannelProviderRegistry(ChannelProviderRegistryLoadResult snapshot) {
-        this.snapshot = snapshot;
+        this.snapshot = loader.load();
     }
 
     @Override

@@ -8,6 +8,7 @@ import com.lynxus.extension.sdk.validation.ManifestValidator;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -19,6 +20,7 @@ public final class ChannelGatewayDescriptorProvider {
         this(new GatewayNativeChannelProviderAdapters(List.of(new FeishuGatewayNativeChannelProviderAdapter())));
     }
 
+    @Autowired
     public ChannelGatewayDescriptorProvider(GatewayNativeChannelProviderAdapters gatewayNativeAdapters) {
         this.manifest = serviceManifest(gatewayNativeAdapters.adapters());
         ManifestValidationResult validation = ManifestValidator.validate(manifest);

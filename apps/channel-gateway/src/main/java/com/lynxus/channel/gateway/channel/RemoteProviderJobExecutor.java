@@ -14,6 +14,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Map;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
@@ -26,6 +27,7 @@ public class RemoteProviderJobExecutor implements ProviderJobExecutor {
     private final String internalAuthToken;
     private final HttpClient httpClient;
 
+    @Autowired
     public RemoteProviderJobExecutor(
         ChannelProviderRegistry registry,
         NormalizedChannelEventIngestService ingestService,

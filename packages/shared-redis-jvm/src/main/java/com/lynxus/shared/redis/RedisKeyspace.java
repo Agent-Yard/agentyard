@@ -1,6 +1,7 @@
 package com.lynxus.shared.redis;
 
 import com.lynxus.contracts.runtime.SharedStateKeyspace;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -14,6 +15,7 @@ public class RedisKeyspace {
         this(DEFAULT_ROOT_PREFIX);
     }
 
+    @Autowired
     public RedisKeyspace(@Value("${lynxus.redis.key-prefix:lynxus}") String rootPrefix) {
         this.rootPrefix = normalizeRootPrefix(rootPrefix);
     }

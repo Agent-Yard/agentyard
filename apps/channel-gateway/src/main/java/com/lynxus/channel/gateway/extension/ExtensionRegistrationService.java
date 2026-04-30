@@ -7,12 +7,14 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
 public final class ExtensionRegistrationService {
     private final ExtensionRegistrationSet registrationSet;
 
+    @Autowired
     public ExtensionRegistrationService(ExtensionRegistrationProperties properties) {
         this(properties, System::getenv);
     }

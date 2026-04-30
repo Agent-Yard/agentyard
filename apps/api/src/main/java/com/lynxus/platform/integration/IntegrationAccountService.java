@@ -38,6 +38,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.UUID;
 import java.util.function.Function;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,6 +55,7 @@ public class IntegrationAccountService {
     private final ExtensionDefinitionService definitionService;
     private final IntegrationCredentialLifecycleClient credentialLifecycleClient;
 
+    @Autowired
     public IntegrationAccountService(
         IntegrationAccountRepository repository,
         IntegrationCredentialCrypto credentialCrypto,
