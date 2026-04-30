@@ -4,15 +4,10 @@ import com.lynxus.channel.gateway.channel.ChannelAdminRepository;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelAssistantBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileStatus;
-import jakarta.annotation.PreDestroy;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,8 +23,7 @@ final class FeishuLongConnectionManager {
     private final ChannelAdminRepository repository;
     private final FeishuCredentialProvider credentialProvider;
     private final FeishuLongConnectionClientFactory clientFactory;
-    private final ExecutorService executor;
-    private final Map<String, FeishuLongConnectionClient> startedClientsByAccountId = new ConcurrentHashMap<>();
+    private final Set<String> startedAccountIds = ConcurrentHashMap.newKeySet();
     private final Map<String, FeishuLongConnectionProfile> selectedProfilesByAccountId = new ConcurrentHashMap<>();
     private final Set<String> duplicateProfileWarnings = ConcurrentHashMap.newKeySet();
 
@@ -39,19 +33,9 @@ final class FeishuLongConnectionManager {
         FeishuCredentialProvider credentialProvider,
         FeishuLongConnectionClientFactory clientFactory
     ) {
-        this(repository, credentialProvider, clientFactory, Executors.newCachedThreadPool(daemonThreadFactory()));
-    }
-
-    FeishuLongConnectionManager(
-        ChannelAdminRepository repository,
-        FeishuCredentialProvider credentialProvider,
-        FeishuLongConnectionClientFactory clientFactory,
-        ExecutorService executor
-    ) {
         this.repository = repository;
         this.credentialProvider = credentialProvider;
         this.clientFactory = clientFactory;
-        this.executor = executor;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -67,7 +51,7 @@ final class FeishuLongConnectionManager {
             String accountId = entry.getKey();
             ChannelGatewayProfile profile = entry.getValue();
             selectedProfilesByAccountId.put(accountId, profile(profile));
-            if (!startedClientsByAccountId.containsKey(accountId)) {
+            if (!startedAccountIds.contains(accountId)) {
                 start(accountId, profile);
             }
         }
@@ -76,7 +60,7 @@ final class FeishuLongConnectionManager {
     boolean isStarted(String channelProfileId) {
         return selectedProfilesByAccountId.values().stream()
             .anyMatch(profile -> profile.channelProfileId().equals(channelProfileId)
-                && startedClientsByAccountId.containsKey(profile.accountId()));
+                && startedAccountIds.contains(profile.accountId()));
     }
 
     private Map<String, ChannelGatewayProfile> selectedProfilesByAccount() {
@@ -99,38 +83,19 @@ final class FeishuLongConnectionManager {
     }
 
     private void start(String accountId, ChannelGatewayProfile profile) {
-        if (startedClientsByAccountId.containsKey(accountId)) {
+        if (!startedAccountIds.add(accountId)) {
             return;
         }
         try {
             FeishuAppCredential credential = credentialProvider.resolve(accountId, profile.config());
-            FeishuLongConnectionClient client = clientFactory.create(
-                () -> selectedProfilesByAccountId.get(accountId),
-                credential
-            );
-            if (startedClientsByAccountId.putIfAbsent(accountId, client) != null) {
-                return;
-            }
-            executor.execute(() -> runClient(accountId, credential.appId(), client));
+            // The Feishu SDK starts its own non-blocking websocket lifecycle; keep this inline so we do not
+            // introduce a separate executor that competes with the SDK's connection management.
+            clientFactory.start(() -> selectedProfilesByAccountId.get(accountId), credential);
             log.info("started feishu long connection client: channelProfileId={}, accountId={}", profile.id(), accountId);
         } catch (RuntimeException error) {
-            startedClientsByAccountId.remove(accountId);
+            startedAccountIds.remove(accountId);
             log.warn("failed to start feishu long connection client: channelProfileId={}", profile.id(), error);
         }
-    }
-
-    private void runClient(String accountId, String appId, FeishuLongConnectionClient client) {
-        try {
-            client.start();
-        } catch (RuntimeException error) {
-            startedClientsByAccountId.remove(accountId, client);
-            log.warn("feishu long connection client stopped with error: accountId={}, appId={}", accountId, appId, error);
-        }
-    }
-
-    @PreDestroy
-    void shutdown() {
-        executor.shutdownNow();
     }
 
     private static boolean eligible(ChannelGatewayProfile profile) {
@@ -147,19 +112,10 @@ final class FeishuLongConnectionManager {
     }
 
     private static FeishuLongConnectionProfile profile(ChannelGatewayProfile profile) {
-        return new FeishuLongConnectionProfile(profile.accountId(), profile.id(), profile.displayName());
+        return new FeishuLongConnectionProfile(profile.accountId(), profile.id());
     }
 
     private static boolean hasText(String value) {
         return value != null && !value.isBlank();
-    }
-
-    private static ThreadFactory daemonThreadFactory() {
-        AtomicInteger counter = new AtomicInteger();
-        return runnable -> {
-            Thread thread = new Thread(runnable, "feishu-long-connection-" + counter.incrementAndGet());
-            thread.setDaemon(true);
-            return thread;
-        };
     }
 }

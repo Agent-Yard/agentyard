@@ -1,5 +1,6 @@
 package com.lynxus.channel.gateway.connector.feishu;
 
+import com.lynxus.channel.gateway.channel.ChannelInboundSessionDispatcher;
 import com.lynxus.channel.gateway.channel.NormalizedChannelEventHeaders;
 import com.lynxus.channel.gateway.channel.NormalizedChannelEventIngestService;
 import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelConversation;
@@ -23,9 +24,14 @@ import org.springframework.stereotype.Service;
 @Service
 final class FeishuInboundEventService {
     private final NormalizedChannelEventIngestService ingestService;
+    private final ChannelInboundSessionDispatcher sessionDispatcher;
 
-    FeishuInboundEventService(NormalizedChannelEventIngestService ingestService) {
+    FeishuInboundEventService(
+        NormalizedChannelEventIngestService ingestService,
+        ChannelInboundSessionDispatcher sessionDispatcher
+    ) {
         this.ingestService = ingestService;
+        this.sessionDispatcher = sessionDispatcher;
     }
 
     void ingestTextMessage(FeishuInboundTextMessage message) {
@@ -56,7 +62,7 @@ final class FeishuInboundEventService {
             new NormalizedChannelTraceContext("00-" + traceId + "-" + spanId + "-01", null),
             Map.of("source", "feishu-long-connection")
         );
-        ingestService.ingest(event, new NormalizedChannelEventHeaders(
+        var result = ingestService.ingest(event, new NormalizedChannelEventHeaders(
             ExtensionRegistrationLoader.CORE_CHANNEL_GATEWAY_REGISTRATION_ID,
             DescriptorType.CHANNEL_PROVIDER.wireValue(),
             FeishuGatewayNativeChannelProviderAdapter.PROVIDER_TYPE,
@@ -64,6 +70,7 @@ final class FeishuInboundEventService {
             firstNonBlank(message.requestId(), UUID.randomUUID().toString()),
             dedupKey
         ));
+        sessionDispatcher.dispatchAsync(event, result);
     }
 
     private static Map<String, Object> normalizedPayload(FeishuInboundTextMessage message) {

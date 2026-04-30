@@ -4,6 +4,7 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDeliveryRequest;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfig;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfigWriteRequest;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobRun;
@@ -36,6 +37,10 @@ public class ChannelGatewayClient {
     private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelInboundEvent>>> CHANNEL_INBOUND_EVENT_LIST = new ParameterizedTypeReference<>() {
     };
     private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelOutboundDelivery>>> CHANNEL_OUTBOUND_DELIVERY_LIST = new ParameterizedTypeReference<>() {
+    };
+    private static final ParameterizedTypeReference<ApiEnvelope<ChannelConversationBinding>> CHANNEL_BINDING = new ParameterizedTypeReference<>() {
+    };
+    private static final ParameterizedTypeReference<ApiEnvelope<ChannelOutboundDelivery>> CHANNEL_OUTBOUND_DELIVERY = new ParameterizedTypeReference<>() {
     };
     private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelTemplateBinding>>> CHANNEL_TEMPLATE_BINDING_LIST = new ParameterizedTypeReference<>() {
     };
@@ -116,6 +121,13 @@ public class ChannelGatewayClient {
             .body(CHANNEL_BINDING_LIST)));
     }
 
+    public ChannelConversationBinding getBindingBySession(String sessionId) {
+        return invoke(() -> body(restClient.get()
+            .uri("/internal/channel-admin/profiles/bindings/by-session/{sessionId}", sessionId)
+            .retrieve()
+            .body(CHANNEL_BINDING)));
+    }
+
     public List<ChannelInboundEvent> listInboundEvents(String channelProfileId) {
         return invoke(() -> body(restClient.get()
             .uri("/internal/channel-admin/profiles/{channelProfileId}/inbound-events", channelProfileId)
@@ -128,6 +140,14 @@ public class ChannelGatewayClient {
             .uri("/internal/channel-admin/profiles/{channelProfileId}/outbound-deliveries", channelProfileId)
             .retrieve()
             .body(CHANNEL_OUTBOUND_DELIVERY_LIST)));
+    }
+
+    public ChannelOutboundDelivery deliverOutbound(ChannelOutboundDeliveryRequest request) {
+        return invoke(() -> body(restClient.post()
+            .uri("/internal/channel-outbound/deliveries")
+            .body(request)
+            .retrieve()
+            .body(CHANNEL_OUTBOUND_DELIVERY)));
     }
 
     public List<ChannelTemplateBinding> listTemplateBindings(String channelProfileId) {

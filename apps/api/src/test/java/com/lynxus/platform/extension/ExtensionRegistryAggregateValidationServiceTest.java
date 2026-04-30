@@ -167,7 +167,8 @@ final class ExtensionRegistryAggregateValidationServiceTest {
         ExtensionAggregateRegistryValidationService service = new ExtensionAggregateRegistryValidationService(
             definitionService,
             registrationService,
-            runtimeClient
+            runtimeClient,
+            Runnable::run
         );
 
         ExtensionRegistryValidation validation = service.validate();
@@ -348,7 +349,8 @@ final class ExtensionRegistryAggregateValidationServiceTest {
         ExtensionAggregateRegistryValidationService aggregateService = new ExtensionAggregateRegistryValidationService(
             definitionService,
             registrationService,
-            runtimeClient
+            runtimeClient,
+            Runnable::run
         );
         return new ScenarioContext(registrationService, localRegistry, runtimeClient, aggregateService);
     }

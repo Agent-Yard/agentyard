@@ -147,6 +147,12 @@ public class ChannelAdminService {
         return repository.listBindings(channelProfileId);
     }
 
+    public ChannelConversationBinding getBindingBySession(String sessionId) {
+        String normalizedSessionId = requireText(sessionId, "channelBinding.sessionId");
+        return repository.findBindingBySessionId(normalizedSessionId)
+            .orElseThrow(() -> new NoSuchElementException("channel conversation binding not found for session: " + normalizedSessionId));
+    }
+
     public List<ChannelInboundEvent> listInboundEvents(String channelProfileId) {
         getProfile(channelProfileId);
         return repository.listInboundEvents(channelProfileId);

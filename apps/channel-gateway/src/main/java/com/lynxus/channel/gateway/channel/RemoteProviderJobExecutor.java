@@ -23,6 +23,7 @@ import tools.jackson.databind.ObjectMapper;
 public class RemoteProviderJobExecutor implements ProviderJobExecutor {
     private final ChannelProviderRegistry registry;
     private final NormalizedChannelEventIngestService ingestService;
+    private final ChannelInboundSessionDispatcher sessionDispatcher;
     private final ObjectMapper objectMapper;
     private final String internalAuthToken;
     private final HttpClient httpClient;
@@ -31,21 +32,24 @@ public class RemoteProviderJobExecutor implements ProviderJobExecutor {
     public RemoteProviderJobExecutor(
         ChannelProviderRegistry registry,
         NormalizedChannelEventIngestService ingestService,
+        ChannelInboundSessionDispatcher sessionDispatcher,
         ObjectMapper objectMapper,
         @Qualifier("internalAuthToken") String internalAuthToken
     ) {
-        this(registry, ingestService, objectMapper, internalAuthToken, HttpClient.newHttpClient());
+        this(registry, ingestService, sessionDispatcher, objectMapper, internalAuthToken, HttpClient.newHttpClient());
     }
 
     RemoteProviderJobExecutor(
         ChannelProviderRegistry registry,
         NormalizedChannelEventIngestService ingestService,
+        ChannelInboundSessionDispatcher sessionDispatcher,
         ObjectMapper objectMapper,
         String internalAuthToken,
         HttpClient httpClient
     ) {
         this.registry = registry;
         this.ingestService = ingestService;
+        this.sessionDispatcher = sessionDispatcher;
         this.objectMapper = objectMapper;
         this.internalAuthToken = internalAuthToken;
         this.httpClient = httpClient;
@@ -102,6 +106,7 @@ public class RemoteProviderJobExecutor implements ProviderJobExecutor {
                 TraceIds.nextRequestId(),
                 event.dedupKey()
             ));
+            sessionDispatcher.dispatchAsync(event, ingestResult);
             if (!ingestResult.duplicate()) {
                 ingested++;
             }

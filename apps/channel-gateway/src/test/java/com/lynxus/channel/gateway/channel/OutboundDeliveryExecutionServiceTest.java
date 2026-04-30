@@ -171,6 +171,32 @@ class OutboundDeliveryExecutionServiceTest {
     }
 
     @Test
+    void returnsExistingDeliveryForRepeatedSessionMessage() {
+        CapturingSender sender = new CapturingSender();
+        ChannelProviderRegistry registry = registry(remoteDescriptor("http://provider.example.com"));
+        ChannelAdminService adminService = adminService(registry);
+        ChannelGatewayProfile profile = createProfile(adminService, PROVIDER_TYPE, Map.of(), null);
+        OutboundDeliveryExecutionService service = outboundService(registry, sender);
+        ChannelOutboundDeliveryRequest request = new ChannelOutboundDeliveryRequest(
+            profile.id(),
+            "assistant-1",
+            "chat-1",
+            "session-1",
+            "message-1",
+            textBlock("hello"),
+            new NormalizedChannelTraceContext("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01", null)
+        );
+
+        ChannelOutboundDelivery first = service.deliver(request);
+        ChannelOutboundDelivery second = service.deliver(request);
+
+        assertEquals(first.deliveryId(), second.deliveryId());
+        assertEquals(first.idempotencyKey(), second.idempotencyKey());
+        assertEquals(1, sender.calls());
+        assertEquals(1, repository.listOutboundDeliveries(profile.id()).size());
+    }
+
+    @Test
     void missingOrDisabledCardTemplateBindingFailsWithoutProviderCall() {
         CapturingSender sender = new CapturingSender();
         ChannelProviderRegistry registry = registry(remoteDescriptor("http://provider.example.com"));

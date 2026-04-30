@@ -55,6 +55,7 @@ class RemoteProviderJobExecutorTest {
             RemoteProviderJobExecutor executor = new RemoteProviderJobExecutor(
                 registry,
                 mock(NormalizedChannelEventIngestService.class),
+                mock(ChannelInboundSessionDispatcher.class),
                 new ObjectMapper(),
                 "internal-token",
                 java.net.http.HttpClient.newHttpClient()

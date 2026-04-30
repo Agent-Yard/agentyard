@@ -15,13 +15,16 @@ import tools.jackson.databind.ObjectMapper;
 @RequestMapping("/internal/channel-events")
 public class InternalNormalizedChannelEventController {
     private final NormalizedChannelEventIngestService ingestService;
+    private final ChannelInboundSessionDispatcher sessionDispatcher;
     private final ObjectMapper objectMapper;
 
     public InternalNormalizedChannelEventController(
         NormalizedChannelEventIngestService ingestService,
+        ChannelInboundSessionDispatcher sessionDispatcher,
         ObjectMapper objectMapper
     ) {
         this.ingestService = ingestService;
+        this.sessionDispatcher = sessionDispatcher;
         this.objectMapper = objectMapper;
     }
 
@@ -41,7 +44,9 @@ public class InternalNormalizedChannelEventController {
             request.getHeader(LynxusExtensionHeaders.REQUEST_ID),
             request.getHeader(LynxusExtensionHeaders.IDEMPOTENCY_KEY)
         );
-        return ApiResponse.ok(ingestService.ingest(event, headers));
+        var result = ingestService.ingest(event, headers);
+        sessionDispatcher.dispatchAsync(event, result);
+        return ApiResponse.ok(result);
     }
 
     private NormalizedChannelInboundEvent toEvent(Map<String, Object> body) {

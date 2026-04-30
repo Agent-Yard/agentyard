@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.lynxus.channel.gateway.channel.ChannelAdminService;
+import com.lynxus.channel.gateway.channel.ChannelInboundSessionDispatcher;
 import com.lynxus.channel.gateway.channel.InternalNormalizedChannelEventController;
 import com.lynxus.channel.gateway.channel.InternalChannelAdminController;
 import com.lynxus.channel.gateway.channel.NormalizedChannelEventIngestService;
@@ -166,9 +167,10 @@ class InternalAuthSecurityConfigurationTest {
         @Bean
         InternalNormalizedChannelEventController internalNormalizedChannelEventController(
             NormalizedChannelEventIngestService ingestService,
+            ChannelInboundSessionDispatcher dispatcher,
             ObjectMapper objectMapper
         ) {
-            return new InternalNormalizedChannelEventController(ingestService, objectMapper);
+            return new InternalNormalizedChannelEventController(ingestService, dispatcher, objectMapper);
         }
 
         @Bean
@@ -194,6 +196,11 @@ class InternalAuthSecurityConfigurationTest {
         @Bean
         NormalizedChannelEventIngestService normalizedChannelEventIngestService() {
             return mock(NormalizedChannelEventIngestService.class);
+        }
+
+        @Bean
+        ChannelInboundSessionDispatcher channelInboundSessionDispatcher() {
+            return mock(ChannelInboundSessionDispatcher.class);
         }
 
         @Bean

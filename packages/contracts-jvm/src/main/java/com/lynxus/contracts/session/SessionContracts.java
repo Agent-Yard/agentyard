@@ -666,6 +666,25 @@ public final class SessionContracts {
     ) {
     }
 
+    public record ChannelInboundSessionMessageRequest(
+        String channelProfileId,
+        String externalConversationId,
+        String externalMessageId,
+        String inboundEventId,
+        String dedupKey,
+        String assistantId,
+        String customerId,
+        String sessionId,
+        SessionMessageInput message
+    ) {
+    }
+
+    public record ChannelInboundSessionMessageResponse(
+        String sessionId,
+        String status
+    ) {
+    }
+
     public record SessionUserMessageUpdateResult(
         SessionMessageDeliveryStatus status,
         String sessionId,

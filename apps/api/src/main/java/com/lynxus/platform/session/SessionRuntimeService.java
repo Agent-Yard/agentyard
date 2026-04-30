@@ -10,6 +10,8 @@ import com.lynxus.contracts.session.SessionContracts.ExternalCallbackSignal;
 import com.lynxus.contracts.session.SessionContracts.EndHumanHandoffSignal;
 import com.lynxus.contracts.session.SessionContracts.HumanResumeSignal;
 import com.lynxus.contracts.session.SessionContracts.HumanOperatorReplySignal;
+import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionMessageRequest;
+import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionMessageResponse;
 import com.lynxus.contracts.session.SessionContracts.KnowledgeBindingDescriptor;
 import com.lynxus.contracts.session.SessionContracts.LlmModelDescriptor;
 import com.lynxus.contracts.session.SessionContracts.SessionMessageDeliveryStatus;
@@ -49,6 +51,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -207,6 +210,26 @@ public class SessionRuntimeService {
         }
     }
 
+    public ChannelInboundSessionMessageResponse channelInboundMessage(
+        ChannelInboundSessionMessageRequest request,
+        String idempotencyKey
+    ) {
+        if (hasText(idempotencyKey) && request != null && hasText(request.dedupKey())
+            && !idempotencyKey.trim().equals(request.dedupKey().trim())) {
+            throw new IllegalArgumentException("Idempotency-Key must equal channelInbound.dedupKey");
+        }
+        String effectiveIdempotencyKey = firstNonBlank(idempotencyKey, request == null ? null : request.dedupKey());
+        String redisKey = redisKeyspace.idempotency(
+            "session-channel-inbound",
+            requireText(effectiveIdempotencyKey, "channelInbound.dedupKey")
+        );
+        return idempotencyService.execute(
+            redisKey,
+            ChannelInboundSessionMessageResponse.class,
+            () -> channelInboundMessageInternal(request)
+        );
+    }
+
     public SessionRuntimeSessionDto humanResume(String sessionId, HumanResumeRequest request) {
         SessionRuntimeSessionDto existing = repository.findSession(sessionId).orElseThrow();
         requirePlaybookRunInSession(sessionId, request.playbookRunId());
@@ -246,6 +269,42 @@ public class SessionRuntimeService {
             new HumanOperatorReplySignal(sessionId, operatorId, request.message(), request.payload())
         );
         return awaitPersistedSession(sessionId, existing);
+    }
+
+    private ChannelInboundSessionMessageResponse channelInboundMessageInternal(ChannelInboundSessionMessageRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("channelInbound request is required");
+        }
+        String assistantId = requireText(request.assistantId(), "channelInbound.assistantId");
+        String customerId = requireText(request.customerId(), "channelInbound.customerId");
+        SessionMessageInput message = withChannelInboundMetadata(request);
+
+        SessionRuntimeSessionDto session;
+        if (hasText(request.sessionId())) {
+            try {
+                session = sendMessage(request.sessionId(), new SendSessionMessageRequest(customerId, message));
+            } catch (NoSuchElementException ignored) {
+                session = createSession(new CreateSessionRequest(assistantId, customerId, message));
+            }
+        } else {
+            session = createSession(new CreateSessionRequest(assistantId, customerId, message));
+        }
+        return new ChannelInboundSessionMessageResponse(session.id(), session.status());
+    }
+
+    private static SessionMessageInput withChannelInboundMetadata(ChannelInboundSessionMessageRequest request) {
+        SessionMessageInput source = request.message();
+        if (source == null) {
+            source = new SessionMessageInput(List.of(), Map.of());
+        }
+        Map<String, Object> metadata = new LinkedHashMap<>(source.metadata());
+        metadata.put("source", "channel-inbound");
+        metadata.put("channelProfileId", requireText(request.channelProfileId(), "channelInbound.channelProfileId"));
+        metadata.put("externalConversationId", requireText(request.externalConversationId(), "channelInbound.externalConversationId"));
+        metadata.put("dedupKey", requireText(request.dedupKey(), "channelInbound.dedupKey"));
+        putIfPresent(metadata, "externalMessageId", request.externalMessageId());
+        putIfPresent(metadata, "inboundEventId", request.inboundEventId());
+        return new SessionMessageInput(source.blocks(), metadata);
     }
 
     private SessionStartRequest buildStartRequest(
@@ -775,6 +834,32 @@ public class SessionRuntimeService {
             throw new IllegalStateException("assistant release primaryAgentId is required");
         }
         return release.primaryAgentId();
+    }
+
+    private static String requireText(String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(field + " is required");
+        }
+        return value.trim();
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private static String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return null;
+    }
+
+    private static void putIfPresent(Map<String, Object> map, String key, String value) {
+        if (value != null && !value.isBlank()) {
+            map.put(key, value.trim());
+        }
     }
 
     private static Duration parseDuration(String rawValue, Duration fallback) {

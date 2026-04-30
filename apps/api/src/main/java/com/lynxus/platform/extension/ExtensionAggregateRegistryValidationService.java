@@ -13,7 +13,9 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.function.Supplier;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -27,19 +29,23 @@ public final class ExtensionAggregateRegistryValidationService {
     private static final String TOOL_CONNECTOR = "TOOL_CONNECTOR";
     private static final String CHANNEL_PROVIDER = "CHANNEL_PROVIDER";
     private static final String AGGREGATE_VALIDATION = "AGGREGATE_VALIDATION";
+    private static final String APPLICATION_TASK_EXECUTOR = "applicationTaskExecutor";
 
     private final ExtensionDefinitionService definitionService;
     private final ExtensionRegistrationService registrationService;
     private final RuntimeRegistryValidationClient runtimeClient;
+    private final Executor validationExecutor;
 
     public ExtensionAggregateRegistryValidationService(
         ExtensionDefinitionService definitionService,
         ExtensionRegistrationService registrationService,
-        RuntimeRegistryValidationClient runtimeClient
+        RuntimeRegistryValidationClient runtimeClient,
+        @Qualifier(APPLICATION_TASK_EXECUTOR) Executor validationExecutor
     ) {
         this.definitionService = definitionService;
         this.registrationService = registrationService;
         this.runtimeClient = runtimeClient;
+        this.validationExecutor = validationExecutor;
     }
 
     public ExtensionRegistryValidation validate() {
@@ -55,9 +61,15 @@ public final class ExtensionAggregateRegistryValidationService {
         }
 
         CompletableFuture<RuntimeRegistryValidationResult> agentRuntimeFuture =
-            CompletableFuture.supplyAsync(() -> runtimeValidation("agent-runtime", runtimeClient::agentRuntimeValidation));
+            CompletableFuture.supplyAsync(
+                () -> runtimeValidation("agent-runtime", runtimeClient::agentRuntimeValidation),
+                validationExecutor
+            );
         CompletableFuture<RuntimeRegistryValidationResult> channelGatewayFuture =
-            CompletableFuture.supplyAsync(() -> runtimeValidation("channel-gateway", runtimeClient::channelGatewayValidation));
+            CompletableFuture.supplyAsync(
+                () -> runtimeValidation("channel-gateway", runtimeClient::channelGatewayValidation),
+                validationExecutor
+            );
 
         RuntimeRegistryValidationResult agentRuntime = agentRuntimeFuture.join();
         RuntimeRegistryValidationResult channelGateway = channelGatewayFuture.join();

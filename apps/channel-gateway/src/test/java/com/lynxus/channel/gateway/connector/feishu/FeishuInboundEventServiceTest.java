@@ -1,8 +1,10 @@
 package com.lynxus.channel.gateway.connector.feishu;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.mock;
 
 import com.lynxus.channel.gateway.channel.ChannelAdminRepository;
+import com.lynxus.channel.gateway.channel.ChannelInboundSessionDispatcher;
 import com.lynxus.channel.gateway.channel.NormalizedChannelEventIngestService;
 import com.lynxus.channel.gateway.extension.ExtensionRegistrationProperties;
 import com.lynxus.channel.gateway.extension.ExtensionRegistrationService;
@@ -38,7 +40,10 @@ class FeishuInboundEventServiceTest {
     void setUp() {
         database.reset();
         repository = new ChannelAdminRepository(database.dsl(), new ObjectMapper());
-        service = new FeishuInboundEventService(new NormalizedChannelEventIngestService(repository, registrationService()));
+        service = new FeishuInboundEventService(
+            new NormalizedChannelEventIngestService(repository, registrationService()),
+            mock(ChannelInboundSessionDispatcher.class)
+        );
         createProfile("channel-profile-feishu");
     }
 

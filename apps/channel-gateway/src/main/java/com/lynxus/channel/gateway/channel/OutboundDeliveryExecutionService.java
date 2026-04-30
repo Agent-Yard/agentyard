@@ -9,14 +9,18 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundPayload;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundResolvedTemplate;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileStatus;
 import com.lynxus.contracts.channel.ChannelContracts.ResolvedChannelTemplate;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.Collections;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.UUID;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -47,8 +51,15 @@ public class OutboundDeliveryExecutionService {
         String channelProfileId = requireText(request.channelProfileId(), "outboundDelivery.channelProfileId");
         ChannelOutboundProfileSnapshot profile = repository.findOutboundProfileSnapshot(channelProfileId)
             .orElseThrow(() -> new NoSuchElementException("channel profile not found: " + channelProfileId));
+        String stableIdempotencyKey = stableOutboundIdempotencyKey(channelProfileId, request.sessionId(), request.sessionMessageId());
+        if (stableIdempotencyKey != null) {
+            ChannelOutboundDelivery existing = repository.findOutboundDeliveryByIdempotencyKey(stableIdempotencyKey).orElse(null);
+            if (existing != null) {
+                return existing;
+            }
+        }
         String deliveryId = nextId("channel-outbound-delivery");
-        String idempotencyKey = deliveryId;
+        String idempotencyKey = stableIdempotencyKey == null ? deliveryId : stableIdempotencyKey;
         Instant now = Instant.now();
         ChannelOutboundDelivery delivery = null;
         Map<String, Object> payload = Map.of();
@@ -69,7 +80,17 @@ public class OutboundDeliveryExecutionService {
                 now,
                 now
             );
-            repository.saveOutboundDelivery(delivery);
+            try {
+                repository.saveOutboundDelivery(delivery);
+            } catch (DataAccessException error) {
+                if (stableIdempotencyKey != null) {
+                    ChannelOutboundDelivery existing = repository.findOutboundDeliveryByIdempotencyKey(stableIdempotencyKey).orElse(null);
+                    if (existing != null) {
+                        return existing;
+                    }
+                }
+                throw error;
+            }
 
             PreparedOutbound prepared = prepare(profile, request, externalConversationId, messageBlock);
             payload = payloadMap(prepared.payload());
@@ -384,6 +405,22 @@ public class OutboundDeliveryExecutionService {
 
     private static String normalizeOptionalText(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private static String stableOutboundIdempotencyKey(String channelProfileId, String sessionId, String sessionMessageId) {
+        if (sessionMessageId == null || sessionMessageId.isBlank()) {
+            return null;
+        }
+        return "session-message:" + shortHash(channelProfileId + "|" + normalizeOptionalText(sessionId) + "|" + sessionMessageId.trim());
+    }
+
+    private static String shortHash(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8))).substring(0, 32);
+        } catch (Exception error) {
+            throw new IllegalStateException("failed to hash outbound idempotency key", error);
+        }
     }
 
     private static String stringValue(Object value) {

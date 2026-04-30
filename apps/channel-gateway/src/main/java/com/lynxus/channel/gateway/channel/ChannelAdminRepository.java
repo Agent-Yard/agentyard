@@ -73,6 +73,10 @@ public class ChannelAdminRepository {
         return store.findBindingByProfileAndExternalConversation(channelProfileId, externalConversationId);
     }
 
+    public Optional<ChannelConversationBinding> findBindingBySessionId(String sessionId) {
+        return store.findBindingBySessionId(sessionId);
+    }
+
     public void saveBinding(ChannelConversationBinding binding) {
         store.saveBinding(binding);
     }
@@ -99,6 +103,10 @@ public class ChannelAdminRepository {
 
     public List<ChannelOutboundDelivery> listOutboundDeliveries(String channelProfileId) {
         return store.listOutboundDeliveries(channelProfileId);
+    }
+
+    public Optional<ChannelOutboundDelivery> findOutboundDeliveryByIdempotencyKey(String idempotencyKey) {
+        return store.findOutboundDeliveryByIdempotencyKey(idempotencyKey);
     }
 
     public void saveOutboundDelivery(ChannelOutboundDelivery delivery) {

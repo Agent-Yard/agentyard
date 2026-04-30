@@ -4,6 +4,7 @@ import com.lark.oapi.event.EventDispatcher;
 import com.lark.oapi.service.im.ImService;
 import com.lark.oapi.service.im.v1.model.EventMessage;
 import com.lark.oapi.service.im.v1.model.P2MessageReceiveV1;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -25,15 +26,15 @@ final class FeishuSdkLongConnectionClientFactory implements FeishuLongConnection
     }
 
     @Override
-    public FeishuLongConnectionClient create(
-        FeishuLongConnectionProfileResolver profileResolver,
+    public void start(
+        Supplier<FeishuLongConnectionProfile> profileResolver,
         FeishuAppCredential credential
     ) {
         EventDispatcher eventHandler = EventDispatcher.newBuilder("", "")
             .onP2MessageReceiveV1(new ImService.P2MessageReceiveV1Handler() {
                 @Override
                 public void handle(P2MessageReceiveV1 event) {
-                    FeishuLongConnectionProfile profile = profileResolver.resolve();
+                    FeishuLongConnectionProfile profile = profileResolver.get();
                     if (profile == null) {
                         log.warn(
                             "skip feishu long connection message because no eligible profile is selected: accountId={}",
@@ -59,7 +60,7 @@ final class FeishuSdkLongConnectionClientFactory implements FeishuLongConnection
             credential.appId(),
             credential.appSecret()
         ).eventHandler(eventHandler).build();
-        return client::start;
+        client.start();
     }
 
     private static void logReceivedMessage(

@@ -11,13 +11,10 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileStatus;
 import java.time.Instant;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -46,7 +43,7 @@ class FeishuLongConnectionManagerTest {
         database.reset();
         repository = new ChannelAdminRepository(database.dsl(), new ObjectMapper());
         credentialProvider = new CapturingCredentialProvider();
-        clientFactory = new CapturingClientFactory(true);
+        clientFactory = new CapturingClientFactory();
         manager = manager(clientFactory);
     }
 
@@ -54,23 +51,12 @@ class FeishuLongConnectionManagerTest {
         return new FeishuLongConnectionManager(
             repository,
             credentialProvider,
-            clientFactory,
-            Executors.newSingleThreadExecutor(runnable -> {
-                Thread thread = new Thread(runnable, "feishu-long-connection-test");
-                thread.setDaemon(true);
-                return thread;
-            })
+            clientFactory
         );
     }
 
-    @AfterEach
-    void tearDown() {
-        clientFactory.release();
-        manager.shutdown();
-    }
-
     @Test
-    void startsOnlyActiveInboundFeishuProfilesWithAssistantBindingAndAccount() throws Exception {
+    void startsOnlyActiveInboundFeishuProfilesWithAssistantBindingAndAccount() {
         createProfile("eligible", FeishuGatewayNativeChannelProviderAdapter.PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, "assistant-1", "account-1");
         createProfile("no-account", FeishuGatewayNativeChannelProviderAdapter.PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, "assistant-1", null);
         createProfile("no-assistant", FeishuGatewayNativeChannelProviderAdapter.PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, null, "account-2");
@@ -80,7 +66,6 @@ class FeishuLongConnectionManagerTest {
 
         manager.reconcile();
 
-        assertTrue(clientFactory.started.await(3, TimeUnit.SECONDS));
         assertTrue(manager.isStarted("eligible"));
         assertFalse(manager.isStarted("no-account"));
         assertFalse(manager.isStarted("no-assistant"));
@@ -93,15 +78,12 @@ class FeishuLongConnectionManagerTest {
     }
 
     @Test
-    void keepsNonBlockingSdkClientStartedAcrossReconcileCycles() throws Exception {
-        clientFactory.release();
-        clientFactory = new CapturingClientFactory(false);
-        manager.shutdown();
+    void keepsNonBlockingSdkClientStartedAcrossReconcileCycles() {
+        clientFactory = new CapturingClientFactory();
         manager = manager(clientFactory);
         createProfile("eligible", FeishuGatewayNativeChannelProviderAdapter.PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, "assistant-1", "account-1");
 
         manager.reconcile();
-        assertTrue(clientFactory.started.await(3, TimeUnit.SECONDS));
         manager.reconcile();
 
         assertTrue(manager.isStarted("eligible"));
@@ -109,19 +91,32 @@ class FeishuLongConnectionManagerTest {
     }
 
     @Test
-    void startsOneLongConnectionClientPerIntegrationAccount() throws Exception {
-        clientFactory.release();
-        clientFactory = new CapturingClientFactory(false);
-        manager.shutdown();
+    void startsOneLongConnectionClientPerIntegrationAccount() {
+        clientFactory = new CapturingClientFactory();
         manager = manager(clientFactory);
         createProfile("eligible-a", FeishuGatewayNativeChannelProviderAdapter.PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, "assistant-1", "account-1");
         createProfile("eligible-b", FeishuGatewayNativeChannelProviderAdapter.PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, "assistant-2", "account-1");
 
         manager.reconcile();
-        assertTrue(clientFactory.started.await(3, TimeUnit.SECONDS));
         manager.reconcile();
 
         assertEquals(1, clientFactory.startCalls.get());
+    }
+
+    @Test
+    void retriesAccountWhenSdkStartFails() {
+        clientFactory = new CapturingClientFactory();
+        clientFactory.failNextStart = true;
+        manager = manager(clientFactory);
+        createProfile("eligible", FeishuGatewayNativeChannelProviderAdapter.PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, "assistant-1", "account-1");
+
+        manager.reconcile();
+        assertFalse(manager.isStarted("eligible"));
+
+        manager.reconcile();
+
+        assertTrue(manager.isStarted("eligible"));
+        assertEquals(2, clientFactory.startCalls.get());
     }
 
     private void createProfile(
@@ -160,36 +155,19 @@ class FeishuLongConnectionManagerTest {
     }
 
     private static final class CapturingClientFactory implements FeishuLongConnectionClientFactory {
-        private final boolean blockOnStart;
-        private final CountDownLatch started = new CountDownLatch(1);
-        private final CountDownLatch release = new CountDownLatch(1);
         private final AtomicInteger startCalls = new AtomicInteger();
         private final AtomicReference<String> profileId = new AtomicReference<>();
-
-        private CapturingClientFactory(boolean blockOnStart) {
-            this.blockOnStart = blockOnStart;
-        }
+        private boolean failNextStart;
 
         @Override
-        public FeishuLongConnectionClient create(FeishuLongConnectionProfileResolver profileResolver, FeishuAppCredential credential) {
-            FeishuLongConnectionProfile profile = profileResolver.resolve();
+        public void start(Supplier<FeishuLongConnectionProfile> profileResolver, FeishuAppCredential credential) {
+            startCalls.incrementAndGet();
+            if (failNextStart) {
+                failNextStart = false;
+                throw new IllegalStateException("start failed");
+            }
+            FeishuLongConnectionProfile profile = profileResolver.get();
             profileId.set(profile.channelProfileId());
-            return () -> {
-                startCalls.incrementAndGet();
-                started.countDown();
-                if (!blockOnStart) {
-                    return;
-                }
-                try {
-                    release.await();
-                } catch (InterruptedException error) {
-                    Thread.currentThread().interrupt();
-                }
-            };
-        }
-
-        void release() {
-            release.countDown();
         }
     }
 }

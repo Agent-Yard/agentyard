@@ -139,6 +139,14 @@ final class ChannelStore {
             .fetchOptional(this::mapBinding);
     }
 
+    Optional<ChannelConversationBinding> findBindingBySessionId(String sessionId) {
+        return dsl.selectFrom(CHANNEL_CONVERSATION_BINDING)
+            .where(CHANNEL_CONVERSATION_BINDING.SESSION_ID.eq(sessionId))
+            .orderBy(CHANNEL_CONVERSATION_BINDING.UPDATED_AT.desc(), CHANNEL_CONVERSATION_BINDING.ID.asc())
+            .limit(1)
+            .fetchOptional(this::mapBinding);
+    }
+
     void saveBinding(ChannelConversationBinding binding) {
         dsl.insertInto(CHANNEL_CONVERSATION_BINDING)
             .set(CHANNEL_CONVERSATION_BINDING.ID, binding.id())
@@ -262,6 +270,12 @@ final class ChannelStore {
             .where(CHANNEL_OUTBOUND_DELIVERY.CHANNEL_PROFILE_ID.eq(channelProfileId))
             .orderBy(CHANNEL_OUTBOUND_DELIVERY.CREATED_AT.desc(), CHANNEL_OUTBOUND_DELIVERY.DELIVERY_ID.asc())
             .fetch(this::mapOutboundDelivery);
+    }
+
+    Optional<ChannelOutboundDelivery> findOutboundDeliveryByIdempotencyKey(String idempotencyKey) {
+        return dsl.selectFrom(CHANNEL_OUTBOUND_DELIVERY)
+            .where(CHANNEL_OUTBOUND_DELIVERY.IDEMPOTENCY_KEY.eq(idempotencyKey))
+            .fetchOptional(this::mapOutboundDelivery);
     }
 
     void saveOutboundDelivery(ChannelOutboundDelivery delivery) {

@@ -1,5 +1,7 @@
 package com.lynxus.channel.gateway.connector.feishu;
 
+import java.util.function.Supplier;
+
 interface FeishuLongConnectionClientFactory {
-    FeishuLongConnectionClient create(FeishuLongConnectionProfileResolver profileResolver, FeishuAppCredential credential);
+    void start(Supplier<FeishuLongConnectionProfile> profileResolver, FeishuAppCredential credential);
 }

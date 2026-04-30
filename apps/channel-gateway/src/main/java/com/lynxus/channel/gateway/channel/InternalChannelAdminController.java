@@ -65,6 +65,11 @@ public class InternalChannelAdminController {
         return ApiResponse.ok(channelAdminService.listBindings(channelProfileId));
     }
 
+    @GetMapping("/bindings/by-session/{sessionId}")
+    public ApiResponse<?> bindingBySession(@PathVariable String sessionId) {
+        return ApiResponse.ok(channelAdminService.getBindingBySession(sessionId));
+    }
+
     @GetMapping("/{channelProfileId}/inbound-events")
     public ApiResponse<?> inboundEvents(@PathVariable String channelProfileId) {
         return ApiResponse.ok(channelAdminService.listInboundEvents(channelProfileId));
