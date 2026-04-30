@@ -99,7 +99,7 @@ export const pageMeta: Record<PageKey, { label: string; title: string; subtitle:
   'integration-account': {
     label: '接入账号',
     title: 'Integration Account',
-    subtitle: '维护 Tool Connector 执行时使用的账号、配置和凭证状态。',
+    subtitle: '统一管理 Tool Connector 与 Channel Provider 的接入账号、非敏感配置和凭证生命周期。',
     section: 'resource',
     path: `${consoleBasePath}/integration-accounts`,
   },

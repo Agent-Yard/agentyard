@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { message } from 'ant-design-vue';
-import PageHeaderCard from '../components/PageHeaderCard.vue';
+import PageHeadActions from '../components/PageHeadActions.vue';
 import SchemaDrivenForm from '../components/SchemaDrivenForm.vue';
 import { api } from '../services/api';
 import {
@@ -356,14 +356,14 @@ async function runCredentialAction(account: IntegrationAccount, action: 'validat
 </script>
 
 <template>
-  <section class="page-section">
-    <PageHeaderCard
-      title="Integration Account"
-      subtitle="维护 Tool Connector 和 Channel Provider 使用的非敏感账号配置与凭证生命周期。"
-    />
-    <div style="margin: 12px 0">
-      <a-button type="primary" :loading="definitionsLoading" @click="openCreateDrawer">新增账号</a-button>
-    </div>
+  <PageHeadActions>
+    <a-button type="primary" :loading="definitionsLoading" @click="openCreateDrawer">新建接入账号</a-button>
+  </PageHeadActions>
+
+  <a-card title="接入账号列表">
+    <template #extra>
+      <a-tag class="console-accent-tag">{{ accounts.length }} 个账号</a-tag>
+    </template>
 
     <a-table
       row-key="id"
@@ -434,124 +434,124 @@ async function runCredentialAction(account: IntegrationAccount, action: 'validat
         </template>
       </template>
     </a-table>
+  </a-card>
 
-    <a-drawer
-      v-model:open="drawerOpen"
-      :title="isEditing ? '编辑 Integration Account' : '新增 Integration Account'"
-      width="720"
-      destroy-on-close
-    >
-      <a-alert
-        v-if="isEditing && selectedDefinition && !supportsCredentialManagement(selectedDefinition)"
-        type="info"
-        show-icon
-        style="margin-bottom: 16px"
-        message="当前 descriptor 未声明 Core/Web 可管理的 credential"
-        description="此账号只维护非敏感 config；credential 由 extension 私有配置或私有管理面维护。"
-      />
-      <a-alert
-        v-if="!selectedDefinition"
-        type="error"
-        show-icon
-        style="margin-bottom: 16px"
-        message="未找到匹配的 extension definition"
-        description="请刷新 definition registry 后再创建或编辑账号。"
-      />
+  <a-drawer
+    v-model:open="drawerOpen"
+    :title="isEditing ? '编辑 Integration Account' : '新增 Integration Account'"
+    width="720"
+    destroy-on-close
+  >
+    <a-alert
+      v-if="isEditing && selectedDefinition && !supportsCredentialManagement(selectedDefinition)"
+      type="info"
+      show-icon
+      style="margin-bottom: 16px"
+      message="当前 descriptor 未声明 Core/Web 可管理的 credential"
+      description="此账号只维护非敏感 config；credential 由 extension 私有配置或私有管理面维护。"
+    />
+    <a-alert
+      v-if="!selectedDefinition"
+      type="error"
+      show-icon
+      style="margin-bottom: 16px"
+      message="未找到匹配的 extension definition"
+      description="请刷新 definition registry 后再创建或编辑账号。"
+    />
 
-      <a-form layout="vertical">
-        <a-form-item label="对象类型">
-          <a-select
-            v-model:value="form.subjectType"
-            :disabled="isEditing"
-            :options="subjectTypeOptions"
-          />
-        </a-form-item>
-        <a-form-item :label="form.subjectType === 'TOOL_CONNECTOR' ? 'Connector' : 'Provider'">
-          <a-select
-            v-model:value="form.subjectId"
-            :disabled="isEditing"
-            :loading="definitionsLoading"
-            :options="descriptorSelectOptions"
-            option-filter-prop="label"
-            show-search
-          />
-        </a-form-item>
-        <a-form-item label="名称" required>
-          <a-input v-model:value="form.name" />
-        </a-form-item>
-        <a-form-item label="状态">
-          <a-select v-model:value="form.status" :options="accountStatusOptions" />
-        </a-form-item>
-      </a-form>
-
-      <a-divider orientation="left">账号配置</a-divider>
-      <SchemaDrivenForm
-        v-if="selectedDefinition"
-        ref="configFormRef"
-        v-model="form.config"
-        :schema="schema(selectedDefinition.accountConfigSchema)"
-        :ui-schema="uiSchema(selectedDefinition.accountConfigUiSchema)"
-        mode="config"
-      />
-
-      <template v-if="!isEditing && createCredentialSupported">
-        <a-divider orientation="left">初始凭证</a-divider>
-        <a-checkbox v-model:checked="form.includeInitialCredential">
-          创建账号时同步提交初始 credential
-        </a-checkbox>
-        <SchemaDrivenForm
-          v-if="shouldRenderInitialCredential && selectedDefinition?.credentialCapability.credentialSchema"
-          ref="initialCredentialFormRef"
-          v-model="form.initialCredential"
-          :schema="schema(selectedDefinition.credentialCapability.credentialSchema)"
-          :ui-schema="uiSchema(selectedDefinition.credentialCapability.credentialUiSchema)"
-          mode="credential"
-          style="margin-top: 16px"
+    <a-form layout="vertical">
+      <a-form-item label="对象类型">
+        <a-select
+          v-model:value="form.subjectType"
+          :disabled="isEditing"
+          :options="subjectTypeOptions"
         />
-      </template>
+      </a-form-item>
+      <a-form-item :label="form.subjectType === 'TOOL_CONNECTOR' ? 'Connector' : 'Provider'">
+        <a-select
+          v-model:value="form.subjectId"
+          :disabled="isEditing"
+          :loading="definitionsLoading"
+          :options="descriptorSelectOptions"
+          option-filter-prop="label"
+          show-search
+        />
+      </a-form-item>
+      <a-form-item label="名称" required>
+        <a-input v-model:value="form.name" />
+      </a-form-item>
+      <a-form-item label="状态">
+        <a-select v-model:value="form.status" :options="accountStatusOptions" />
+      </a-form-item>
+    </a-form>
 
-      <template #footer>
-        <a-space>
-          <a-button @click="drawerOpen = false">取消</a-button>
-          <a-button type="primary" :loading="saving" @click="submitAccount">保存</a-button>
-        </a-space>
-      </template>
-    </a-drawer>
+    <a-divider orientation="left">账号配置</a-divider>
+    <SchemaDrivenForm
+      v-if="selectedDefinition"
+      ref="configFormRef"
+      v-model="form.config"
+      :schema="schema(selectedDefinition.accountConfigSchema)"
+      :ui-schema="uiSchema(selectedDefinition.accountConfigUiSchema)"
+      mode="config"
+    />
 
-    <a-drawer
-      v-model:open="credentialDrawerOpen"
-      :title="credentialAction === 'create' ? '创建 Credential' : '轮换 Credential'"
-      width="640"
-      destroy-on-close
-    >
-      <a-alert
-        v-if="selectedCredentialDefinition"
-        type="info"
-        show-icon
-        style="margin-bottom: 16px"
-        :message="selectedCredentialDefinition.title"
-        :description="selectedCredentialDefinition.credentialCapability.mode ?? 'Credential lifecycle'"
-      />
+    <template v-if="!isEditing && createCredentialSupported">
+      <a-divider orientation="left">初始凭证</a-divider>
+      <a-checkbox v-model:checked="form.includeInitialCredential">
+        创建账号时同步提交初始 credential
+      </a-checkbox>
       <SchemaDrivenForm
-        v-if="selectedCredentialDefinition?.credentialCapability.credentialSchema"
-        ref="lifecycleCredentialFormRef"
-        v-model="credentialForm.credential"
-        :schema="schema(selectedCredentialDefinition.credentialCapability.credentialSchema)"
-        :ui-schema="uiSchema(selectedCredentialDefinition.credentialCapability.credentialUiSchema)"
+        v-if="shouldRenderInitialCredential && selectedDefinition?.credentialCapability.credentialSchema"
+        ref="initialCredentialFormRef"
+        v-model="form.initialCredential"
+        :schema="schema(selectedDefinition.credentialCapability.credentialSchema)"
+        :ui-schema="uiSchema(selectedDefinition.credentialCapability.credentialUiSchema)"
         mode="credential"
+        style="margin-top: 16px"
       />
-      <template #footer>
-        <a-space>
-          <a-button @click="credentialDrawerOpen = false">取消</a-button>
-          <a-button
-            type="primary"
-            :loading="credentialActionLoading === credentialAction"
-            @click="submitCredentialAction"
-          >
-            提交
-          </a-button>
-        </a-space>
-      </template>
-    </a-drawer>
-  </section>
+    </template>
+
+    <template #footer>
+      <a-space>
+        <a-button @click="drawerOpen = false">取消</a-button>
+        <a-button type="primary" :loading="saving" @click="submitAccount">保存</a-button>
+      </a-space>
+    </template>
+  </a-drawer>
+
+  <a-drawer
+    v-model:open="credentialDrawerOpen"
+    :title="credentialAction === 'create' ? '创建 Credential' : '轮换 Credential'"
+    width="640"
+    destroy-on-close
+  >
+    <a-alert
+      v-if="selectedCredentialDefinition"
+      type="info"
+      show-icon
+      style="margin-bottom: 16px"
+      :message="selectedCredentialDefinition.title"
+      :description="selectedCredentialDefinition.credentialCapability.mode ?? 'Credential lifecycle'"
+    />
+    <SchemaDrivenForm
+      v-if="selectedCredentialDefinition?.credentialCapability.credentialSchema"
+      ref="lifecycleCredentialFormRef"
+      v-model="credentialForm.credential"
+      :schema="schema(selectedCredentialDefinition.credentialCapability.credentialSchema)"
+      :ui-schema="uiSchema(selectedCredentialDefinition.credentialCapability.credentialUiSchema)"
+      mode="credential"
+    />
+    <template #footer>
+      <a-space>
+        <a-button @click="credentialDrawerOpen = false">取消</a-button>
+        <a-button
+          type="primary"
+          :loading="credentialActionLoading === credentialAction"
+          @click="submitCredentialAction"
+        >
+          提交
+        </a-button>
+      </a-space>
+    </template>
+  </a-drawer>
 </template>

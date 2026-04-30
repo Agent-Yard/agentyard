@@ -890,6 +890,54 @@ pre,
   text-transform: uppercase;
 }
 
+.console-page-body .ant-table-wrapper {
+  color: inherit;
+}
+
+.console-page-body .ant-table {
+  border: 1px solid var(--line-faint);
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.54);
+  color: var(--ink);
+  overflow: hidden;
+}
+
+.console-page-body .ant-table-container,
+.console-page-body .ant-table-content {
+  border-radius: var(--r-sm);
+}
+
+.console-page-body .ant-table-thead > tr > th {
+  border-bottom: 1px solid var(--line);
+  background: rgba(238, 235, 229, 0.72) !important;
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.console-page-body .ant-table-tbody > tr > td {
+  border-bottom: 1px solid var(--line-faint);
+  background: transparent;
+  color: var(--ink);
+}
+
+.console-page-body .ant-table-tbody > tr:last-child > td {
+  border-bottom: 0;
+}
+
+.console-page-body .ant-table-tbody > tr.ant-table-row:hover > td,
+.console-page-body .ant-table-tbody > tr > td.ant-table-cell-row-hover {
+  background: rgba(182, 109, 42, 0.06) !important;
+}
+
+.console-page-body .ant-table-placeholder .ant-table-cell {
+  background: transparent !important;
+  color: var(--ink-faint);
+}
+
 .clickable-item {
   cursor: pointer;
   transition:

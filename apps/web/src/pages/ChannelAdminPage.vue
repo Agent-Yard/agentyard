@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { message } from 'ant-design-vue';
-import PageHeaderCard from '../components/PageHeaderCard.vue';
+import PageHeadActions from '../components/PageHeadActions.vue';
 import SchemaDrivenForm from '../components/SchemaDrivenForm.vue';
 import { schemaDrivenUiSchemaWithFallback } from '../components/toolConnectorDefinitionForms';
 import { validateSchemaDrivenForm } from '../components/schemaDrivenForm';
@@ -639,77 +639,69 @@ async function deleteTemplateBinding(binding: ChannelTemplateBinding) {
 </script>
 
 <template>
-  <section class="page-section">
-    <PageHeaderCard
-      title="Channel Admin"
-      subtitle="管理 Channel Profile、Provider Job、外部模板绑定和运行态记录。"
-    />
+  <PageHeadActions>
+    <a-button type="primary" :loading="loading" @click="openCreateProfileDrawer">新建 Channel Profile</a-button>
+    <a-button :loading="loading || detailLoading" @click="refreshAll">刷新</a-button>
+  </PageHeadActions>
 
-    <div style="margin: 12px 0">
-      <a-space>
-        <a-button type="primary" :loading="loading" @click="openCreateProfileDrawer">新增 Channel Profile</a-button>
-        <a-button :loading="loading || detailLoading" @click="refreshAll">刷新</a-button>
-      </a-space>
-    </div>
-
-    <a-row :gutter="[16, 16]">
-      <a-col :span="8">
-        <a-card title="Channel Profiles">
-          <a-table
-            row-key="id"
-            :columns="profileColumns"
-            :data-source="profiles"
-            :loading="loading"
-            size="small"
-            :pagination="false"
-            :custom-row="(record: ChannelProfile) => ({
-              onClick: () => { selectedProfileId = record.id; },
-              class: selectedProfileId === record.id ? 'channel-admin-row-active' : '',
-            })"
-          >
-            <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'providerType'">
-                {{ profileProviderLabel(record) }}
-              </template>
-              <template v-else-if="column.key === 'status'">
-                <a-tag :color="record.status === 'ACTIVE' ? 'green' : 'default'">{{ record.status }}</a-tag>
-              </template>
-              <template v-else-if="column.key === 'inboundEnabled'">
-                <a-tag :color="record.inboundEnabled ? 'blue' : 'default'">
-                  {{ record.inboundEnabled ? 'ON' : 'OFF' }}
-                </a-tag>
-              </template>
+  <a-row :gutter="[16, 16]">
+    <a-col :span="8">
+      <a-card title="Channel Profiles">
+        <a-table
+          row-key="id"
+          :columns="profileColumns"
+          :data-source="profiles"
+          :loading="loading"
+          size="small"
+          :pagination="false"
+          :custom-row="(record: ChannelProfile) => ({
+            onClick: () => { selectedProfileId = record.id; },
+            class: selectedProfileId === record.id ? 'channel-admin-row-active' : '',
+          })"
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'providerType'">
+              {{ profileProviderLabel(record) }}
             </template>
-          </a-table>
-        </a-card>
-      </a-col>
-
-      <a-col :span="16">
-        <template v-if="selectedProfile">
-          <a-card :title="selectedProfile.displayName" :loading="detailLoading">
-            <template #extra>
-              <a-space>
-                <a-button size="small" @click="openEditProfileDrawer(selectedProfile)">编辑</a-button>
-                <a-popconfirm title="确认删除当前 Channel Profile？" @confirm="deleteSelectedProfile">
-                  <a-button size="small" danger :loading="deletingProfile">删除</a-button>
-                </a-popconfirm>
-              </a-space>
+            <template v-else-if="column.key === 'status'">
+              <a-tag :color="record.status === 'ACTIVE' ? 'green' : 'default'">{{ record.status }}</a-tag>
             </template>
+            <template v-else-if="column.key === 'inboundEnabled'">
+              <a-tag :color="record.inboundEnabled ? 'blue' : 'default'">
+                {{ record.inboundEnabled ? 'ON' : 'OFF' }}
+              </a-tag>
+            </template>
+          </template>
+        </a-table>
+      </a-card>
+    </a-col>
 
-            <a-alert
-              v-if="selectedProfile.integrationAccount?.availabilityHardBlock"
-              type="error"
-              show-icon
-              style="margin-bottom: 12px"
-              :message="`Integration Account 阻断：${selectedProfile.integrationAccount.availabilityHardBlock}`"
-            />
-            <a-alert
-              v-else-if="accountRiskSummary.length > 0"
-              type="warning"
-              show-icon
-              style="margin-bottom: 12px"
-              :message="`Integration Account 风险：${accountRiskSummary.join(', ')}`"
-            />
+    <a-col :span="16">
+      <template v-if="selectedProfile">
+        <a-card :title="selectedProfile.displayName" :loading="detailLoading">
+          <template #extra>
+            <a-space>
+              <a-button size="small" @click="openEditProfileDrawer(selectedProfile)">编辑</a-button>
+              <a-popconfirm title="确认删除当前 Channel Profile？" @confirm="deleteSelectedProfile">
+                <a-button size="small" danger :loading="deletingProfile">删除</a-button>
+              </a-popconfirm>
+            </a-space>
+          </template>
+
+          <a-alert
+            v-if="selectedProfile.integrationAccount?.availabilityHardBlock"
+            type="error"
+            show-icon
+            style="margin-bottom: 12px"
+            :message="`Integration Account 阻断：${selectedProfile.integrationAccount.availabilityHardBlock}`"
+          />
+          <a-alert
+            v-else-if="accountRiskSummary.length > 0"
+            type="warning"
+            show-icon
+            style="margin-bottom: 12px"
+            :message="`Integration Account 风险：${accountRiskSummary.join(', ')}`"
+          />
 
             <a-tabs v-model:activeKey="activeTab">
               <a-tab-pane key="profile" tab="Profile">
@@ -1113,7 +1105,6 @@ async function deleteTemplateBinding(binding: ChannelTemplateBinding) {
         </a-space>
       </template>
     </a-drawer>
-  </section>
 </template>
 
 <style scoped>
