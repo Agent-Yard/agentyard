@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any
 
 from .models import AgentTurnRequest, SessionMessageInput
@@ -15,6 +17,37 @@ MAX_EVENT_WINDOW = 20
 DEFAULT_SHARED_STATE_KEY_WINDOW = 8
 DEFAULT_RUNTIME_BYTE_BUDGET = 6000
 ASSISTANT_HISTORY_PRIVACY_SOURCE = "assistant_history_message:v1"
+
+
+class PromptPathStrategy(StrEnum):
+    KEEP_SYSTEM_REFERENCE = "KEEP_SYSTEM_REFERENCE"
+    OMIT = "OMIT"
+    SANITIZE_TEXT = "SANITIZE_TEXT"
+
+
+@dataclass(frozen=True)
+class PromptPathRule:
+    context: str
+    path: tuple[str, ...]
+    strategy: PromptPathStrategy
+
+
+_PROMPT_PATH_RULES: tuple[PromptPathRule, ...] = (
+    PromptPathRule("active_playbook", ("playbookId",), PromptPathStrategy.KEEP_SYSTEM_REFERENCE),
+    PromptPathRule("active_playbook", ("runId",), PromptPathStrategy.OMIT),
+    PromptPathRule("tool_result", ("ticketId",), PromptPathStrategy.KEEP_SYSTEM_REFERENCE),
+)
+
+_IDENTIFIER_OMIT_CONTEXTS = {
+    "trigger_payload",
+    "event_payload",
+    "shared_state",
+    "active_playbook",
+    "message_card_data",
+    "message_card_actions",
+    "session_message",
+    "tool_result",
+}
 
 
 def build_prompt_bundle(request: AgentTurnRequest) -> PromptBundle:
@@ -127,7 +160,7 @@ def build_prompt_bundle(request: AgentTurnRequest) -> PromptBundle:
             content="Session trigger:\n" + json.dumps(
                 {
                     "triggerType": request.trigger.triggerType,
-                    "payload": _prompt_visible_value(request.trigger.payload),
+                    "payload": _prompt_visible_value(request.trigger.payload, context="trigger_payload"),
                 },
                 ensure_ascii=False,
             ),
@@ -145,7 +178,10 @@ def build_prompt_bundle(request: AgentTurnRequest) -> PromptBundle:
             SemanticMessage(
                 kind="system_event",
                 content="Active playbook summary:\n"
-                + json.dumps(_prompt_visible_value(request.activePlaybook.model_dump(mode="json")), ensure_ascii=False),
+                + json.dumps(
+                    _prompt_visible_value(request.activePlaybook.model_dump(mode="json"), context="active_playbook"),
+                    ensure_ascii=False,
+                ),
                 privacy_source=f"active_playbook:{request.activePlaybook.runId}",
             )
         )
@@ -171,7 +207,10 @@ def build_prompt_bundle(request: AgentTurnRequest) -> PromptBundle:
             SemanticMessage(
                 kind="system_event",
                 content="System event result:\n"
-                + json.dumps(_prompt_visible_value(request.trigger.payload), ensure_ascii=False),
+                + json.dumps(
+                    _prompt_visible_value(request.trigger.payload, context="trigger_payload"),
+                    ensure_ascii=False,
+                ),
                 privacy_source=f"system_event_result:{request.trigger.eventId or request.trigger.triggerType}",
             )
         )
@@ -190,6 +229,10 @@ def render_openai_messages(bundle: PromptBundle) -> list[dict[str, Any]]:
         bundle.response_contract,
         bundle.runtime_messages,
     )
+
+
+def apply_prompt_path_policy(value: Any, context: str) -> Any:
+    return _prompt_visible_value(value, context=context)
 
 
 def loaded_skill_runtime_message(loaded_skills: list[dict[str, str]]) -> SemanticMessage:
@@ -219,7 +262,7 @@ def _event_to_runtime_message(event: Any) -> SemanticMessage:
         + json.dumps(
             {
                 "actorType": event.actorType,
-                "payload": _prompt_visible_value(event.payload),
+                "payload": _prompt_visible_value(event.payload, context="event_payload"),
             },
             ensure_ascii=False,
         ),
@@ -260,7 +303,7 @@ def _message_to_semantic_text(message: Any) -> str:
         return "Human operator reply:\n" + text if text else "Human operator reply"
     if message.role == "SYSTEM":
         return "System-generated reply:\n" + text if text else "System-generated reply"
-    return text or json.dumps(_prompt_visible_value(message.model_dump(mode="json")), ensure_ascii=False)
+    return text or json.dumps(_prompt_visible_value(message.model_dump(mode="json"), context="session_message"), ensure_ascii=False)
 
 
 def render_message_blocks_for_prompt(blocks: Any) -> str:
@@ -288,8 +331,8 @@ def _block_to_text(block: Any) -> str:
         card = {
             "cardType": _block_field(block, "cardType"),
             "version": _block_field(block, "version"),
-            "data": _prompt_visible_value(_block_field(block, "data") or {}),
-            "actions": _prompt_visible_value(_block_actions(block)),
+            "data": _prompt_visible_value(_block_field(block, "data") or {}, context="message_card_data"),
+            "actions": _prompt_visible_value(_block_actions(block), context="message_card_actions"),
         }
         return "Card:\n" + json.dumps(card, ensure_ascii=False)
     return ""
@@ -314,7 +357,7 @@ def _event_window_size(request: AgentTurnRequest) -> int:
 
 
 def _shared_state_view(shared_state: dict[str, Any], byte_budget: int, key_window: int) -> dict[str, Any]:
-    visible_shared_state = _prompt_visible_value(shared_state)
+    visible_shared_state = _prompt_visible_value(shared_state, context="shared_state")
     if not isinstance(visible_shared_state, dict) or not visible_shared_state:
         return {"sharedState": {}, "truncated": False}
     visible: dict[str, Any] = {}
@@ -336,18 +379,30 @@ def _shared_state_view(shared_state: dict[str, Any], byte_budget: int, key_windo
     }
 
 
-def _prompt_visible_value(value: Any) -> Any:
+def _prompt_visible_value(value: Any, *, context: str, path: tuple[str, ...] = ()) -> Any:
     if isinstance(value, dict):
-        return {
-            str(key): _prompt_visible_value(item)
-            for key, item in value.items()
-            if not _is_prompt_id_key(str(key))
-        }
+        result: dict[str, Any] = {}
+        for key, item in value.items():
+            key_text = str(key)
+            next_path = path + (key_text,)
+            if _prompt_path_strategy(context, next_path, key_text) == PromptPathStrategy.OMIT:
+                continue
+            result[key_text] = _prompt_visible_value(item, context=context, path=next_path)
+        return result
     if isinstance(value, list):
-        return [_prompt_visible_value(item) for item in value]
+        return [_prompt_visible_value(item, context=context, path=path + ("*",)) for item in value]
     return value
 
 
-def _is_prompt_id_key(key: str) -> bool:
+def _prompt_path_strategy(context: str, path: tuple[str, ...], key: str) -> PromptPathStrategy:
+    for rule in _PROMPT_PATH_RULES:
+        if rule.context == context and rule.path == path:
+            return rule.strategy
+    if context in _IDENTIFIER_OMIT_CONTEXTS and _is_prompt_identifier_key(key):
+        return PromptPathStrategy.OMIT
+    return PromptPathStrategy.SANITIZE_TEXT
+
+
+def _is_prompt_identifier_key(key: str) -> bool:
     normalized = key.replace("_", "").replace("-", "").lower()
     return normalized == "id" or normalized.endswith("id") or normalized.endswith("ids")

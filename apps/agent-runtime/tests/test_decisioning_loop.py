@@ -349,7 +349,21 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
     def test_should_complete_skill_read_and_tool_loop_before_returning_final_decision(self) -> None:
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
         os.environ["LYNXUS_KNOWLEDGE_SERVICE_BASE_URL"] = "https://knowledge.example"
-        request = AgentTurnRequest.model_validate(_request_payload())
+        payload = _request_payload()
+        payload["currentOwner"]["tools"][0]["operations"][0]["outputSchema"] = json.dumps(
+            {
+                "type": "object",
+                "properties": {
+                    "ticketId": {"type": "string"},
+                    "customerId": {"type": "string"},
+                    "status": {"type": "string"},
+                },
+                "required": ["ticketId", "customerId", "status"],
+                "additionalProperties": False,
+            },
+            ensure_ascii=False,
+        )
+        request = AgentTurnRequest.model_validate(payload)
         operation = request.currentOwner.tools[0].operations[0]
         function_name = resource_tool_function_name(request.currentOwner.tools[0], operation)
         request_log: list[dict] = []
@@ -439,7 +453,11 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
                         }
                     ]
                 },
-                "https://tool.example/invoke": {"ticketId": "ticket-1", "status": "RECORDED"},
+                "https://tool.example/invoke": {
+                    "ticketId": "ticket-1",
+                    "customerId": "customer-secret-1",
+                    "status": "RECORDED",
+                },
             },
         )
 
@@ -460,6 +478,11 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         self.assertTrue(any("Loaded skill details" in str(message.get("content", "")) for message in third_chat_messages))
         self.assertEqual(request_log[4]["url"], "https://tool.example/invoke")
         self.assertEqual(request_log[4]["json"], {"subject": "退款申请"})
+        final_chat_tool_messages = [
+            message.get("content", "") for message in request_log[5]["json"]["messages"] if message.get("role") == "tool"
+        ]
+        self.assertTrue(any("ticket-1" in content for content in final_chat_tool_messages))
+        self.assertFalse(any("customer-secret-1" in content for content in final_chat_tool_messages))
         self.assertIn("tools", request_log[0]["json"])
         self.assertEqual(4, len(outcome.llmUsage))
         self.assertEqual([1, 2, 3, 4], [entry.callSequence for entry in outcome.llmUsage])

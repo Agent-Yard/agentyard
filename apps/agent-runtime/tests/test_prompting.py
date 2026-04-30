@@ -246,6 +246,61 @@ class AgentRuntimePromptingTest(unittest.TestCase):
         self.assertIn("Refund Playbook", rendered_prompt)
         self.assertIn("knownPreference", rendered_prompt)
 
+    def test_should_apply_path_policy_to_active_playbook_summary_ids(self) -> None:
+        request = AgentTurnRequest.model_validate(
+            {
+                "sessionId": "session-1",
+                "assistantId": "assistant-1",
+                "assistantReleaseVersion": "2026.04.19",
+                "currentOwner": {
+                    "agentId": "agent-a",
+                    "name": "Agent A",
+                    "role": "support",
+                    "responsibility": "help the customer",
+                    "allowedActions": ["REPLY"],
+                    "playbookIds": ["pb-active"],
+                },
+                "availableAgents": [],
+                "availablePlaybooks": [
+                    {
+                        "playbookId": "pb-active",
+                        "name": "Active Refund Flow",
+                    }
+                ],
+                "activePlaybook": {
+                    "runId": "run-secret-1",
+                    "playbookId": "pb-active",
+                    "playbookName": "Active Refund Flow",
+                    "status": "RUNNING",
+                    "latestResult": {
+                        "customerId": "customer-secret-1",
+                        "ticketId": "ticket-secret-1",
+                        "summary": "ticket is open",
+                    },
+                },
+                "sharedState": {},
+                "trigger": {
+                    "triggerType": "USER_MESSAGE",
+                    "eventId": "evt-1",
+                    "triggerMessageId": "msg-1",
+                    "payload": {"text": "hello"},
+                },
+                "recentMessages": [_text_message("msg-1", 1, "USER", "hello")],
+                "recentEvents": [],
+            }
+        )
+
+        bundle = build_prompt_bundle(request)
+        active_playbook_message = next(
+            message for message in bundle.runtime_messages if message.content.startswith("Active playbook summary:")
+        )
+
+        self.assertIn('"playbookId": "pb-active"', active_playbook_message.content)
+        self.assertIn('"summary": "ticket is open"', active_playbook_message.content)
+        self.assertNotIn("run-secret-1", active_playbook_message.content)
+        self.assertNotIn("customer-secret-1", active_playbook_message.content)
+        self.assertNotIn("ticket-secret-1", active_playbook_message.content)
+
     def test_should_fail_when_provider_not_configured(self) -> None:
         os.environ.pop("LYNXUS_OPENAI_COMPATIBLE_BASE_URL", None)
         os.environ.pop("LYNXUS_OPENAI_COMPATIBLE_MODEL_ID", None)
