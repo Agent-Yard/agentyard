@@ -14,6 +14,7 @@ DEFAULT_EVENT_WINDOW = 8
 MAX_EVENT_WINDOW = 20
 DEFAULT_SHARED_STATE_KEY_WINDOW = 8
 DEFAULT_RUNTIME_BYTE_BUDGET = 6000
+ASSISTANT_HISTORY_PRIVACY_SOURCE = "assistant_history_message:v1"
 
 
 def build_prompt_bundle(request: AgentTurnRequest) -> PromptBundle:
@@ -229,12 +230,18 @@ def _event_to_runtime_message(event: Any) -> SemanticMessage:
 def _message_to_runtime_message(message: Any) -> SemanticMessage:
     if message.role == "USER":
         kind = "user_turn"
+        privacy_source = f"message:{message.messageId}:{message.sequence}"
     else:
         kind = "assistant_turn"
+        privacy_source = (
+            ASSISTANT_HISTORY_PRIVACY_SOURCE
+            if message.role == "ASSISTANT"
+            else f"message:{message.messageId}:{message.sequence}"
+        )
     return SemanticMessage(
         kind=kind,
         content=_message_to_semantic_text(message),
-        privacy_source=f"message:{message.messageId}:{message.sequence}",
+        privacy_source=privacy_source,
     )
 
 
@@ -248,9 +255,7 @@ def _find_trigger_message(request: AgentTurnRequest) -> Any | None:
 
 
 def _message_to_semantic_text(message: Any) -> str:
-    rendered_blocks = [_block_to_text(block) for block in message.blocks]
-    parts = [part for part in rendered_blocks if part]
-    text = "\n".join(parts).strip()
+    text = render_message_blocks_for_prompt(message.blocks)
     if message.role == "HUMAN_OPERATOR":
         return "Human operator reply:\n" + text if text else "Human operator reply"
     if message.role == "SYSTEM":
@@ -258,27 +263,47 @@ def _message_to_semantic_text(message: Any) -> str:
     return text or json.dumps(_prompt_visible_value(message.model_dump(mode="json")), ensure_ascii=False)
 
 
+def render_message_blocks_for_prompt(blocks: Any) -> str:
+    rendered_blocks = [_block_to_text(block) for block in blocks or []]
+    parts = [part for part in rendered_blocks if part]
+    return "\n".join(parts).strip()
+
+
 def _block_to_text(block: Any) -> str:
-    if block.type == "TEXT":
-        return block.text.strip()
-    if block.type == "RICH_TEXT":
-        return block.content.strip()
-    if block.type == "IMAGE":
-        details = [f"url={block.url}"]
-        if block.alt:
-            details.append(f"alt={block.alt}")
-        if block.mimeType:
-            details.append(f"mimeType={block.mimeType}")
+    block_type = _block_field(block, "type")
+    if block_type == "TEXT":
+        return str(_block_field(block, "text") or "").strip()
+    if block_type == "RICH_TEXT":
+        return str(_block_field(block, "content") or "").strip()
+    if block_type == "IMAGE":
+        details = [f"url={_block_field(block, 'url')}"]
+        alt = _block_field(block, "alt")
+        mime_type = _block_field(block, "mimeType")
+        if alt:
+            details.append(f"alt={alt}")
+        if mime_type:
+            details.append(f"mimeType={mime_type}")
         return "Image: " + ", ".join(details)
-    if block.type == "CARD":
+    if block_type == "CARD":
         card = {
-            "cardType": block.cardType,
-            "version": block.version,
-            "data": _prompt_visible_value(block.data),
-            "actions": _prompt_visible_value([action.model_dump(mode="json") for action in block.actions]),
+            "cardType": _block_field(block, "cardType"),
+            "version": _block_field(block, "version"),
+            "data": _prompt_visible_value(_block_field(block, "data") or {}),
+            "actions": _prompt_visible_value(_block_actions(block)),
         }
         return "Card:\n" + json.dumps(card, ensure_ascii=False)
     return ""
+
+
+def _block_field(block: Any, field_name: str) -> Any:
+    if isinstance(block, dict):
+        return block.get(field_name)
+    return getattr(block, field_name, None)
+
+
+def _block_actions(block: Any) -> list[Any]:
+    actions = _block_field(block, "actions") or []
+    return [action.model_dump(mode="json") if hasattr(action, "model_dump") else action for action in actions]
 
 
 def _event_window_size(request: AgentTurnRequest) -> int:

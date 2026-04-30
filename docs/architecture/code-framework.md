@@ -143,6 +143,7 @@ Java core 数据访问当前以 `Flyway + jOOQ + packages/persistence-jvm` 为�
 - prompt 片段显式标注隐私策略：`SKIP`、`RULES_ONLY`、`RULES_THEN_PRIVATE_LLM`
 - 静态指令、能力清单和响应契约默认不在运行时调用 private privacy LLM，避免配置型 prompt 产生额外私有模型开销
 - 用户消息、tool result、session event、shared state 等运行态片段使用稳定 `privacy_source` 进入 session fragment cache
+- 模型 final response 在 restore 前会把“明文历史渲染文本 -> placeholder 渲染文本”写入 fragment cache；后续 assistant 历史消息使用固定 source 复用该缓存，不把 assistant 历史简单标记为 `SKIP`
 - Redis fragment cache 只保存加密后的脱敏结果和策略、来源、keyed content fingerprint / HMAC fingerprint 等 metadata，不落明文片段
 
 ## 当前边界

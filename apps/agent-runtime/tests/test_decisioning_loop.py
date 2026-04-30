@@ -78,6 +78,8 @@ class _FakeClient:
 class _FakePrivacyStore:
     fragment_cache: dict[str, object] = {}
     fragment_metadata: dict[str, dict[str, object]] = {}
+    forward_mapping: dict[tuple[str, str], str] = {}
+    reverse_mapping: dict[str, str] = {}
 
     def __init__(self, policy) -> None:
         self._summary = PrivacyMappingTelemetry(
@@ -97,15 +99,34 @@ class _FakePrivacyStore:
     def reset_fragment_cache(cls) -> None:
         cls.fragment_cache = {}
         cls.fragment_metadata = {}
+        cls.forward_mapping = {}
+        cls.reverse_mapping = {}
 
     def ensure_mapping(self, entity_type: str, raw_value: str):  # noqa: ANN001
+        key = (entity_type, raw_value)
+        existing_placeholder = self.forward_mapping.get(key)
+        if existing_placeholder is not None:
+            return type(
+                "MappingEntry",
+                (),
+                {
+                    "placeholder_id": existing_placeholder,
+                    "raw_value": raw_value,
+                    "entity_type": entity_type,
+                    "created": False,
+                },
+            )()
+
+        placeholder_id = f"[{entity_type}_{len(self.forward_mapping) + 1:03d}]"
+        self.forward_mapping[key] = placeholder_id
+        self.reverse_mapping[placeholder_id] = raw_value
         self._summary.placeholderCount += 1
         self._summary.entityTypeBreakdown[entity_type] = self._summary.entityTypeBreakdown.get(entity_type, 0) + 1
         return type(
             "MappingEntry",
             (),
             {
-                "placeholder_id": f"[{entity_type}_{self._summary.placeholderCount:03d}]",
+                "placeholder_id": placeholder_id,
                 "raw_value": raw_value,
                 "entity_type": entity_type,
                 "created": True,
@@ -113,7 +134,7 @@ class _FakePrivacyStore:
         )()
 
     def restore_placeholder(self, placeholder_id: str) -> str | None:
-        return None
+        return self.reverse_mapping.get(placeholder_id)
 
     def read_sanitized_fragment(self, cache_key: str):
         return self.fragment_cache.get(cache_key)
@@ -1024,6 +1045,122 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         owner_prompt = json.dumps(owner_request["json"]["messages"], ensure_ascii=False)
         self.assertIn("[PERSON_", owner_prompt)
         self.assertNotIn("Jane Doe", owner_prompt)
+
+    def test_should_reuse_final_response_cache_for_restored_assistant_history(self) -> None:
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        previous_private_key = os.environ.pop("TEST_PRIVATE_API_KEY", None)
+        self.addCleanup(
+            lambda: os.environ.__setitem__("TEST_PRIVATE_API_KEY", previous_private_key)
+            if previous_private_key is not None
+            else os.environ.pop("TEST_PRIVATE_API_KEY", None)
+        )
+        request_log: list[dict] = []
+        first_payload = _enable_privacy_mapping(_request_payload())
+        first_payload["trigger"]["payload"]["text"] = "user Jane Doe"
+        first_payload["recentMessages"][0]["blocks"] = [{"type": "TEXT", "text": "user Jane Doe"}]
+        first_request = AgentTurnRequest.model_validate(first_payload)
+
+        second_payload = _enable_privacy_mapping(_request_payload())
+        second_payload["trigger"] = {
+            "triggerType": "USER_MESSAGE",
+            "eventId": "evt-2",
+            "triggerMessageId": "msg-3",
+            "payload": {"text": "谢谢"},
+        }
+        second_payload["recentMessages"] = [
+            {
+                **first_payload["recentMessages"][0],
+                "blocks": [{"type": "TEXT", "text": "user Jane Doe"}],
+            },
+            {
+                "messageId": "msg-2",
+                "sessionId": "session-1",
+                "sequence": 2,
+                "role": "ASSISTANT",
+                "sender": {
+                    "senderType": "AGENT",
+                    "senderId": "agent-a",
+                    "senderName": "Agent A",
+                },
+                "status": "DELIVERED",
+                "blocks": [{"type": "TEXT", "text": "已为 Jane Doe 创建工单"}],
+                "metadata": {},
+                "createdAt": "2026-04-19T00:00:02Z",
+                "updatedAt": "2026-04-19T00:00:02Z",
+            },
+            {
+                **first_payload["recentMessages"][0],
+                "messageId": "msg-3",
+                "sequence": 3,
+                "blocks": [{"type": "TEXT", "text": "谢谢"}],
+                "createdAt": "2026-04-19T00:00:03Z",
+                "updatedAt": "2026-04-19T00:00:03Z",
+            },
+        ]
+        second_request = AgentTurnRequest.model_validate(second_payload)
+        transport = _FakeTransport(
+            [
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "decision": {
+                                            "action": "REPLY",
+                                            "replyMessage": _text_message_input("已为 [PERSON_001] 创建工单"),
+                                        },
+                                        "sharedState": {"knownPreference": "email"},
+                                    },
+                                    ensure_ascii=False,
+                                )
+                            }
+                        }
+                    ]
+                },
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "decision": {
+                                            "action": "REPLY",
+                                            "replyMessage": _text_message_input("不用谢"),
+                                        },
+                                        "sharedState": {"knownPreference": "email"},
+                                    },
+                                    ensure_ascii=False,
+                                )
+                            }
+                        }
+                    ]
+                },
+            ],
+            request_log,
+        )
+        factory = lambda *args, **kwargs: _FakeClient(transport)
+
+        with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=factory), patch(
+            "lynxus_agent_runtime.privacy_pipeline.SessionPrivacyMapStore",
+            _FakePrivacyStore,
+        ):
+            first_outcome, _ = execute_agent_turn(first_request)
+            second_outcome, _ = execute_agent_turn(second_request)
+
+        self.assertTrue(first_outcome.success, first_outcome.failureReason)
+        self.assertEqual(
+            "已为 Jane Doe 创建工单",
+            first_outcome.result.decision.replyMessage.blocks[0].text,
+        )
+        self.assertTrue(second_outcome.success, second_outcome.failureReason)
+        runtime_requests = [entry for entry in request_log if entry["url"] == "https://runtime.example/chat/completions"]
+        self.assertEqual(2, len(runtime_requests))
+        assistant_history_messages = [
+            message for message in runtime_requests[1]["json"]["messages"] if message.get("role") == "assistant"
+        ]
+        self.assertEqual(["已为 [PERSON_001] 创建工单"], [message["content"] for message in assistant_history_messages])
+        self.assertNotIn("Jane Doe", json.dumps(runtime_requests[1]["json"]["messages"], ensure_ascii=False))
 
     def test_should_fail_closed_when_rewriter_returns_raw_sensitive_text(self) -> None:
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"

@@ -103,6 +103,25 @@ class PrivacyPipeline:
             )
         return sanitized
 
+    def write_sanitized_fragment_cache(
+        self,
+        payload: Any,
+        sanitized: Any,
+        strategy: PrivacyStrategy,
+        *,
+        source: str,
+    ) -> None:
+        if self._mapper is None or self._store is None or strategy == PrivacyStrategy.SKIP or not source:
+            return
+        cache_key = self._fragment_cache_key(strategy, source, payload)
+        if cache_key is None:
+            return
+        self._store.write_sanitized_fragment(
+            cache_key,
+            sanitized,
+            self._fragment_cache_metadata(strategy, source, payload),
+        )
+
     def restore_inbound(self, channel: str, payload: Any) -> Any:
         if self._mapper is None:
             return payload

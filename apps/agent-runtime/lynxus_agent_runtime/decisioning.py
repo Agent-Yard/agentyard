@@ -13,11 +13,18 @@ from .openai_adapter import (
     render_openai_runtime_message,
     tool_result_message,
 )
+from .data_security.validator import collect_placeholders
 from .models import AgentDecision, AgentTurnExecutionOutcome, AgentTurnRequest, AgentTurnResult, SecurityAssessment
 from .privacy_contracts import PrivacyStrategy
 from .privacy_pipeline import build_privacy_pipeline
 from .prompt_bundle import PromptBundle
-from .prompting import build_prompt_bundle, loaded_skill_runtime_message, render_openai_messages
+from .prompting import (
+    ASSISTANT_HISTORY_PRIVACY_SOURCE,
+    build_prompt_bundle,
+    loaded_skill_runtime_message,
+    render_message_blocks_for_prompt,
+    render_openai_messages,
+)
 from .semantic import SemanticMessage, SemanticToolCall, SemanticToolResult
 from .tooling import execute_tool_call, load_skills, semantic_tool_definitions
 
@@ -113,6 +120,7 @@ def _execute_via_openai_compatible(
                 loaded_skills = privacy_pipeline.sanitize_outbound("SKILL_PAYLOAD", load_skills(request, requested_ids))
                 messages.append(render_openai_runtime_message(loaded_skill_runtime_message(loaded_skills)))
                 continue
+            pre_restore_parsed = parsed
             parsed = privacy_pipeline.restore_inbound("MODEL_FINAL_RESPONSE", parsed)
             blocked_result = _blocked_security_result(parsed, request, privacy_pipeline)
             if blocked_result is not None:
@@ -138,8 +146,10 @@ def _execute_via_openai_compatible(
             decision_payload = parsed.get("decision")
             shared_state = parsed.get("sharedState")
             security_assessment = parsed.get("securityAssessment")
+            decision = AgentDecision.model_validate(decision_payload or {})
+            _seed_final_response_privacy_cache(privacy_pipeline, pre_restore_parsed, decision)
             result = AgentTurnResult(
-                decision=AgentDecision.model_validate(decision_payload or {}),
+                decision=decision,
                 sharedState=shared_state if isinstance(shared_state, dict) else dict(request.sharedState),
                 mappingTelemetry=privacy_pipeline.telemetry(),
                 securityAssessment=security_assessment if isinstance(security_assessment, dict) else None,
@@ -226,6 +236,46 @@ def _resolve_provider_settings(request: AgentTurnRequest) -> OpenAiCompatibleSet
 
 def _execute_model_tool_call(request: AgentTurnRequest, tool_call: SemanticToolCall) -> dict[str, Any]:
     return execute_tool_call(request, tool_call.tool_name, tool_call.arguments)
+
+
+def _seed_final_response_privacy_cache(
+    privacy_pipeline: Any,
+    pre_restore_parsed: dict[str, Any],
+    restored_decision: AgentDecision,
+) -> None:
+    pre_restore_decision_payload = pre_restore_parsed.get("decision") if isinstance(pre_restore_parsed, dict) else None
+    if not isinstance(pre_restore_decision_payload, dict):
+        return
+    try:
+        pre_restore_decision = AgentDecision.model_validate(pre_restore_decision_payload)
+    except ValueError:
+        return
+    for pre_restore_message, restored_message in (
+        (pre_restore_decision.replyMessage, restored_decision.replyMessage),
+        (pre_restore_decision.accompanyingMessage, restored_decision.accompanyingMessage),
+    ):
+        _seed_final_response_message_privacy_cache(privacy_pipeline, pre_restore_message, restored_message)
+
+
+def _seed_final_response_message_privacy_cache(
+    privacy_pipeline: Any,
+    pre_restore_message: Any,
+    restored_message: Any,
+) -> None:
+    if pre_restore_message is None or restored_message is None:
+        return
+    pre_restore_text = render_message_blocks_for_prompt(pre_restore_message.blocks)
+    restored_text = render_message_blocks_for_prompt(restored_message.blocks)
+    if not pre_restore_text or not restored_text or pre_restore_text == restored_text:
+        return
+    if not collect_placeholders(pre_restore_text):
+        return
+    privacy_pipeline.write_sanitized_fragment_cache(
+        restored_text,
+        pre_restore_text,
+        PrivacyStrategy.RULES_THEN_PRIVATE_LLM,
+        source=ASSISTANT_HISTORY_PRIVACY_SOURCE,
+    )
 
 
 def _tool_result_privacy_source(tool_name: str) -> str:
