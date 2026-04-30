@@ -120,7 +120,7 @@ class AgentRuntimePromptingTest(unittest.TestCase):
         self.assertIn("Do not mark ordinary anger, insults, complaints, emotional venting", bundle.instruction)
         self.assertIn("When securityAssessment.action is BLOCK, do not call tools", bundle.instruction)
 
-    def test_should_keep_action_handles_but_omit_runtime_tracking_ids_from_rendered_prompt_context(self) -> None:
+    def test_should_keep_action_handles_and_structured_runtime_context_in_rendered_prompt(self) -> None:
         request = AgentTurnRequest.model_validate(
             {
                 "sessionId": "session-1",
@@ -221,10 +221,10 @@ class AgentRuntimePromptingTest(unittest.TestCase):
             "evt-1",
             "evt-2",
             "msg-1",
-            "run-1",
         ):
             self.assertNotIn(runtime_id, rendered_prompt)
         self.assertIn("customer-1", rendered_prompt)
+        self.assertIn("run-1", rendered_prompt)
         for action_handle in (
             "agent-b",
             "pb-1",
@@ -246,7 +246,7 @@ class AgentRuntimePromptingTest(unittest.TestCase):
         self.assertIn("Refund Playbook", rendered_prompt)
         self.assertIn("knownPreference", rendered_prompt)
 
-    def test_should_apply_path_policy_to_active_playbook_summary_ids(self) -> None:
+    def test_should_render_active_playbook_summary_without_path_filtering(self) -> None:
         request = AgentTurnRequest.model_validate(
             {
                 "sessionId": "session-1",
@@ -299,7 +299,7 @@ class AgentRuntimePromptingTest(unittest.TestCase):
         self.assertIn('"summary": "ticket is open"', active_playbook_message.content)
         self.assertIn('"customerId": "customer-secret-1"', active_playbook_message.content)
         self.assertIn('"ticketId": "ticket-secret-1"', active_playbook_message.content)
-        self.assertNotIn("run-secret-1", active_playbook_message.content)
+        self.assertIn('"runId": "run-secret-1"', active_playbook_message.content)
 
     def test_should_fail_when_provider_not_configured(self) -> None:
         os.environ.pop("LYNXUS_OPENAI_COMPATIBLE_BASE_URL", None)

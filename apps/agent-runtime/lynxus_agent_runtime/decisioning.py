@@ -20,7 +20,6 @@ from .privacy_pipeline import build_privacy_pipeline
 from .prompt_bundle import PromptBundle
 from .prompting import (
     ASSISTANT_HISTORY_PRIVACY_SOURCE,
-    apply_prompt_path_policy,
     build_prompt_bundle,
     loaded_skill_runtime_message,
     render_message_blocks_for_prompt,
@@ -90,13 +89,12 @@ def _execute_via_openai_compatible(
                         arguments=restored_arguments,
                     )
                     raw_tool_result = _execute_model_tool_call(request, restored_tool_call)
-                    visible_tool_result = apply_prompt_path_policy(raw_tool_result, "tool_result")
                     tool_result = (
-                        visible_tool_result
+                        raw_tool_result
                         if tool_call.tool_name in {"knowledge_search", "knowledge_read"}
                         else privacy_pipeline.sanitize_fragment(
                             "TOOL_RESULT",
-                            visible_tool_result,
+                            raw_tool_result,
                             PrivacyStrategy.RULES_THEN_PRIVATE_LLM,
                             source=_tool_result_privacy_source(tool_call.tool_name),
                         )
