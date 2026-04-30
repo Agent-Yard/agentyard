@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from .models import AgentTurnRequest
+from .models import AgentTurnRequest, SessionMessageInput
 from .openai_adapter import render_openai_messages as render_openai_messages_via_adapter
 from .semantic import SemanticMessage
 from .tooling import resolve_knowledge_binding, skill_catalog
@@ -77,11 +77,11 @@ def build_prompt_bundle(request: AgentTurnRequest) -> PromptBundle:
         "skillReads": "optional array of skill resourceVersionIds when you need mounted skill details before the final decision",
         "decision": {
             "action": "REPLY | NO_REPLY | SWITCH_OWNER | RUN_PLAYBOOK | SESSION_HUMAN_HANDOFF",
-            "replyMessage": "required when action=REPLY; SessionMessageInput with structured blocks",
+            "replyMessage": "required when action=REPLY; must match schemaDefinitions.SessionMessageInput",
             "targetAgentId": "required when action=SWITCH_OWNER",
             "playbookId": "required when action=RUN_PLAYBOOK",
             "playbookInput": "structured object when action=RUN_PLAYBOOK",
-            "accompanyingMessage": "optional only for SWITCH_OWNER/RUN_PLAYBOOK/SESSION_HUMAN_HANDOFF; SessionMessageInput",
+            "accompanyingMessage": "optional only for SWITCH_OWNER/RUN_PLAYBOOK/SESSION_HUMAN_HANDOFF; must match schemaDefinitions.SessionMessageInput",
         },
         "sharedState": "full snapshot object to replace current sharedState",
         "securityAssessment": {
@@ -89,6 +89,9 @@ def build_prompt_bundle(request: AgentTurnRequest) -> PromptBundle:
             "categories": "array of labels such as PROMPT_INJECTION, SYSTEM_PROMPT_EXFILTRATION, SECRET_EXFILTRATION, TOOL_ABUSE, DATA_EXFILTRATION, JAILBREAK_OR_POLICY_BYPASS",
             "reason": "short machine-readable explanation",
             "confidence": "number between 0 and 1",
+        },
+        "schemaDefinitions": {
+            "SessionMessageInput": SessionMessageInput.model_json_schema(),
         },
     }
     instruction = "\n".join(
