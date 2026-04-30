@@ -158,6 +158,7 @@ PostgreSQL 可以使用已有/托管服务，也可以作为独立模块发布�
 ## PostgreSQL 要求
 
 使用 PostgreSQL 16+，推荐 PostgreSQL 17。
+运行态数据源 URL 按服务域配置：`api` 和 `worker` 使用 `LYNXUS_CORE_DATASOURCE_URL`，`channel-gateway` 使用 `LYNXUS_CHANNEL_GATEWAY_DATASOURCE_URL`。不要在部署 env 文件中设置共享的 `SPRING_DATASOURCE_URL`，否则它会覆盖所有 Spring Boot 服务的数据源。
 
 Knowledge database 必须具备：
 

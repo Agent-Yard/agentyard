@@ -142,3 +142,4 @@ compose 文件有意保持相互独立，因为不同模块可能运行在不同
 ## PostgreSQL 要求
 
 使用 PostgreSQL 16+ 版本，推荐使用 PostgreSQL 17。知识库必须包含支持 HNSW 的 `pgvector` 扩展，并且提供 `pg_trgm` 扩展。
+运行态数据源 URL 按服务域配置：`api` 和 `worker` 使用 `LYNXUS_CORE_DATASOURCE_URL`，`channel-gateway` 使用 `LYNXUS_CHANNEL_GATEWAY_DATASOURCE_URL`。不要在部署 env 文件中设置共享的 `SPRING_DATASOURCE_URL`，它会覆盖所有 Spring Boot 服务的数据源。

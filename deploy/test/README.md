@@ -142,3 +142,4 @@ When PostgreSQL is managed outside this package, the deployer must create `lynxu
 ## PostgreSQL Requirement
 
 Use PostgreSQL 16+; PostgreSQL 17 is recommended. The knowledge database must have `pgvector` with HNSW support and `pg_trgm` available.
+Runtime datasource URLs are service-scoped: `api` and `worker` use `LYNXUS_CORE_DATASOURCE_URL`, while `channel-gateway` uses `LYNXUS_CHANNEL_GATEWAY_DATASOURCE_URL`. Do not set a shared `SPRING_DATASOURCE_URL` in deployment env files because it overrides every Spring Boot service datasource.

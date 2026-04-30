@@ -42,6 +42,10 @@ load_lynxus_env() {
     fi
   done
   set +a
+
+  # Data source URLs are service-scoped in Lynxus; the generic Spring name can
+  # override every JVM service and point channel-gateway at the core database.
+  unset SPRING_DATASOURCE_URL
 }
 
 default_spring_profile() {

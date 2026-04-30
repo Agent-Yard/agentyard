@@ -22,4 +22,4 @@ COPY --from=builder /workspace/apps/channel-gateway/build/libs/*.jar /app/app.ja
 
 EXPOSE 8082
 
-ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+ENTRYPOINT ["sh", "-c", "unset SPRING_DATASOURCE_URL; exec java -jar /app/app.jar"]
