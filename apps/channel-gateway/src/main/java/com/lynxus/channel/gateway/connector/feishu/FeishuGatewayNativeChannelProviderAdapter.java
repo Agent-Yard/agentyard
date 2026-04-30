@@ -185,8 +185,10 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
     private static List<Map<String, Object>> configUiSchema() {
         return List.of(Map.of(
             "key", "/receiveIdType",
-            "label", "Receive ID type",
+            "label", "Receive ID类型",
             "component", "select",
+            "description", "飞书如何解读出站请求中的 receive_id。保留 Chat ID 以用于正常对话回复。"
+                + "仅当外部会话 ID 存储了该标识符类型时，再选择用户标识符。",
             "options", List.of(
                 Map.of("label", "Chat ID", "value", "chat_id"),
                 Map.of("label", "Open ID", "value", "open_id"),
