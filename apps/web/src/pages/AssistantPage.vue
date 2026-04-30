@@ -4,6 +4,7 @@ import CatalogFormDrawer from '../components/CatalogFormDrawer.vue';
 import ObjectHistoryPanel from '../components/ObjectHistoryPanel.vue';
 import ObjectReferencePanel from '../components/ObjectReferencePanel.vue';
 import PageHeadActions from '../components/PageHeadActions.vue';
+import { assistantPublishBlockers, primaryAgentOptions } from './assistantPage';
 import type {
   Assistant,
   CreateAssistantPayload,
@@ -109,6 +110,7 @@ const currentScenario = computed(() =>
 const currentPrimaryAgent = computed(() =>
   current.value?.agents.find((item) => item.id === current.value?.primaryAgentId) ?? null,
 );
+const editPrimaryAgentOptions = computed(() => primaryAgentOptions(current.value?.agents ?? []));
 const modelResources = computed(() => props.resources.filter((item) => item.type === 'LLM_MODEL'));
 const privateModelResources = computed(() =>
   modelResources.value.filter(
@@ -141,6 +143,20 @@ const editModelHint = computed(() => {
   }
   return null;
 });
+const editPublishBlockers = computed(() =>
+  assistantPublishBlockers({
+    modelPolicy: editForm.modelPolicy,
+    primaryAgentId: editForm.primaryAgentId,
+  }),
+);
+const editStatusOptions = computed(() => [
+  { label: '草稿', value: 'DRAFT' },
+  {
+    label: editPublishBlockers.value.length ? '已发布（配置未完成）' : '已发布',
+    value: 'PUBLISHED',
+    disabled: editPublishBlockers.value.length > 0,
+  },
+]);
 
 function resourceVersionLabel(resource: Resource | null | undefined) {
   if (!resource) {
@@ -262,6 +278,16 @@ watch(
 );
 
 watch(
+  editPrimaryAgentOptions,
+  (options) => {
+    if (editForm.primaryAgentId && !options.some((item) => item.value === editForm.primaryAgentId)) {
+      editForm.primaryAgentId = null;
+    }
+  },
+  { immediate: true },
+);
+
+watch(
   () => createForm.privacyMappingEnabled,
   (enabled) => {
     if (enabled && !createForm.privacyModelResourceId) {
@@ -348,6 +374,9 @@ function openEditDrawer(assistantId: string) {
 
 function submitUpdate() {
   if (!current.value) {
+    return;
+  }
+  if (editForm.status === 'PUBLISHED' && editPublishBlockers.value.length) {
     return;
   }
   emit('updateAssistant', {
@@ -573,10 +602,7 @@ function submitUpdate() {
           <a-form-item label="版本状态" name="status">
             <a-select
               v-model:value="editForm.status"
-              :options="[
-                { label: '草稿', value: 'DRAFT' },
-                { label: '已发布', value: 'PUBLISHED' },
-              ]"
+              :options="editStatusOptions"
             />
           </a-form-item>
         </a-col>
@@ -589,6 +615,16 @@ function submitUpdate() {
           </a-form-item>
         </a-col>
       </a-row>
+
+      <a-form-item label="主智能体">
+        <a-select
+          v-model:value="editForm.primaryAgentId"
+          allow-clear
+          :disabled="!editPrimaryAgentOptions.length"
+          :options="editPrimaryAgentOptions"
+          placeholder="选择可接管会话的智能体"
+        />
+      </a-form-item>
 
       <a-form-item label="草稿默认模型">
         <a-select
@@ -624,6 +660,14 @@ function submitUpdate() {
         :message="editModelHint.message"
         style="margin-bottom: 16px"
       />
+      <a-alert
+        v-if="editForm.status === 'PUBLISHED' && editPublishBlockers.length"
+        type="warning"
+        show-icon
+        message="当前助手尚不可发布"
+        :description="editPublishBlockers.join(' ')"
+        style="margin-bottom: 16px"
+      />
 
       <a-row :gutter="[16, 16]">
         <a-col :span="12">
@@ -650,7 +694,13 @@ function submitUpdate() {
 
       <div class="create-drawer__actions">
         <a-button @click="editDrawerOpen = false">取消</a-button>
-        <a-button type="primary" html-type="submit">保存助手</a-button>
+        <a-button
+          type="primary"
+          html-type="submit"
+          :disabled="editForm.status === 'PUBLISHED' && editPublishBlockers.length > 0"
+        >
+          保存助手
+        </a-button>
       </div>
     </a-form>
   </CatalogFormDrawer>
