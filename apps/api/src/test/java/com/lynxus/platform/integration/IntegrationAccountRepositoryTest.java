@@ -46,6 +46,48 @@ class IntegrationAccountRepositoryTest {
     }
 
     @Test
+    void saveAccountUpsertsChannelProviderAccountById() {
+        StoredIntegrationAccount account = new StoredIntegrationAccount(
+            "integration-account-feishu",
+            IntegrationAccountSubjectType.CHANNEL_PROVIDER,
+            "feishu",
+            "Feishu Channel",
+            IntegrationAccountStatus.ENABLED,
+            Map.of("appId", "cli_test"),
+            null,
+            "ciphertext-v1",
+            "fingerprint-v1",
+            IntegrationAccountCredentialStatus.ACTIVE,
+            Map.of(),
+            Instant.parse("2026-04-30T00:00:00Z"),
+            Instant.parse("2026-04-30T00:00:00Z")
+        );
+
+        repository.saveAccount(account);
+        repository.saveAccount(new StoredIntegrationAccount(
+            account.id(),
+            account.subjectType(),
+            account.subjectId(),
+            "Feishu Channel Updated",
+            account.status(),
+            Map.of("appId", "cli_updated"),
+            account.externalSecretRef(),
+            "ciphertext-v2",
+            "fingerprint-v2",
+            account.credentialStatus(),
+            account.metadata(),
+            account.createdAt(),
+            Instant.parse("2026-04-30T00:01:00Z")
+        ));
+
+        StoredIntegrationAccount saved = repository.findAccount(account.id()).orElseThrow();
+        assertEquals("Feishu Channel Updated", saved.name());
+        assertEquals(Map.of("appId", "cli_updated"), saved.config());
+        assertEquals("ciphertext-v2", saved.credentialCiphertext());
+        assertEquals("fingerprint-v2", saved.credentialFingerprint());
+    }
+
+    @Test
     void acquireCredentialLifecycleLockUsesNowaitRowLock() {
         StoredIntegrationAccount account = storedAccount("integration-account-lock");
         insertAccount(account);
