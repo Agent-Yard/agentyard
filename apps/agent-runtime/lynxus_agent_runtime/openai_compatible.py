@@ -21,6 +21,8 @@ class OpenAiCompatibleSettings:
     model_resource_version_id: str | None = None
     temperature: float = 0
     max_tokens: int = 0
+    enable_thinking: bool | None = None
+    reasoning_effort: str | None = None
     organization: str = ""
     project: str = ""
 
@@ -139,6 +141,21 @@ def chat_completion(
             tool_loop_step=tool_loop_step,
         )
     return parsed
+
+
+def apply_reasoning_settings(payload: dict[str, Any], settings: OpenAiCompatibleSettings) -> None:
+    model = payload.get("model", "") or ""
+    if model.startswith("glm") or model.startswith("kimi") or model.startswith("qwen"):
+        if settings.enable_thinking is not None:
+            payload["enable_thinking"] = settings.enable_thinking
+    elif model.startswith("deepseek"):
+        if settings.enable_thinking is not None:
+            payload["thinking"] = {"type": "enabled" if settings.enable_thinking else "disabled"}
+        if settings.reasoning_effort:
+            payload["reasoning_effort"] = settings.reasoning_effort
+    elif model.startswith("gpt"):
+        if settings.reasoning_effort:
+            payload["reasoning_effort"] = settings.reasoning_effort
 
 
 def _optional_int(value: Any) -> int | None:

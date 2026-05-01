@@ -42,7 +42,7 @@ describe('AssistantPage helpers', () => {
 
   it('reports every missing publication prerequisite', () => {
     expect(assistantPublishBlockers({
-      modelPolicy: { defaultModelResourceId: null },
+      modelPolicy: { defaultModelResourceId: null, enableThinking: null, reasoningEffort: null },
       primaryAgentId: null,
     })).toEqual([
       '发布前需要配置草稿默认模型。',
@@ -52,7 +52,7 @@ describe('AssistantPage helpers', () => {
 
   it('allows publishing when default model and primary agent are configured', () => {
     expect(assistantPublishBlockers({
-      modelPolicy: { defaultModelResourceId: 'resource-model-1' },
+      modelPolicy: { defaultModelResourceId: 'resource-model-1', enableThinking: null, reasoningEffort: null },
       primaryAgentId: 'agent-1',
     })).toEqual([]);
   });

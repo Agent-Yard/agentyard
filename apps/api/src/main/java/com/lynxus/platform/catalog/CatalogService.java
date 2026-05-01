@@ -48,6 +48,7 @@ public class CatalogService {
     private static final String TOOL_CONNECTOR_CONFIG_SCHEMA_ID = "https://lynxus.local/schemas/tool-connector-config.schema.json";
     private static final int DEFAULT_TOOL_CONNECTOR_TIMEOUT_SECONDS = 15;
     private static final String DEFAULT_TOOL_CONNECTOR_RETRY_POLICY = "NONE";
+    private static final Set<String> REASONING_EFFORT_VALUES = Set.of("low", "medium", "high", "xhigh");
     private static final Set<String> SENSITIVE_CONFIG_KEYS = Set.of(
         "externalsecretref",
         "password",
@@ -2310,7 +2311,12 @@ public class CatalogService {
         }
         return switch (type) {
             case TOOL -> new ResourceVersionConfigurationDto(type, normalizeRequiredToolConfig(configuration.tool()), null, null);
-            case LLM_MODEL -> new ResourceVersionConfigurationDto(type, null, configuration.llmModel() == null ? defaultConfiguration(type).llmModel() : configuration.llmModel(), null);
+            case LLM_MODEL -> new ResourceVersionConfigurationDto(
+                type,
+                null,
+                normalizeLlmModelConfig(configuration.llmModel() == null ? defaultConfiguration(type).llmModel() : configuration.llmModel()),
+                null
+            );
             case SKILL -> new ResourceVersionConfigurationDto(type, null, null, configuration.skill() == null ? defaultConfiguration(type).skill() : normalizeSkillConfig(configuration.skill()));
         };
     }
@@ -2333,7 +2339,9 @@ public class CatalogService {
                     envOrDefault("LYNXUS_OPENAI_COMPATIBLE_API_KEY_ENV_VAR", "OPENAI_COMPATIBLE_API_KEY"),
                     0.2,
                     1200,
-                    false
+                    false,
+                    null,
+                    null
                 ),
                 null
             );
@@ -2565,13 +2573,43 @@ public class CatalogService {
 
     private AssistantModelPolicyDto normalizeAssistantModelPolicy(AssistantModelPolicyDto policy) {
         if (policy == null) {
-            return new AssistantModelPolicyDto(null);
+            return new AssistantModelPolicyDto(null, null, null);
         }
         String defaultModelResourceId = policy.defaultModelResourceId();
-        if (defaultModelResourceId == null || defaultModelResourceId.isBlank()) {
-            return new AssistantModelPolicyDto(null);
+        return new AssistantModelPolicyDto(
+            defaultModelResourceId == null || defaultModelResourceId.isBlank() ? null : defaultModelResourceId.trim(),
+            policy.enableThinking(),
+            normalizeReasoningEffort(policy.reasoningEffort(), "assistant reasoningEffort")
+        );
+    }
+
+    private LlmModelConfigDto normalizeLlmModelConfig(LlmModelConfigDto config) {
+        if (config == null) {
+            return defaultConfiguration(ResourceType.LLM_MODEL).llmModel();
         }
-        return new AssistantModelPolicyDto(defaultModelResourceId.trim());
+        return new LlmModelConfigDto(
+            normalizeOptionalText(config.providerType()),
+            normalizeOptionalText(config.modelId()),
+            normalizeOptionalText(config.baseUrl()),
+            normalizeOptionalText(config.apiKeyEnvVar()),
+            config.temperature(),
+            config.maxTokens(),
+            config.privateDeployment(),
+            config.enableThinking(),
+            normalizeReasoningEffort(config.reasoningEffort(), "llmModel.reasoningEffort")
+        );
+    }
+
+    private String normalizeReasoningEffort(String value, String fieldName) {
+        String normalized = normalizeOptionalText(value);
+        if (normalized.isBlank()) {
+            return null;
+        }
+        String lowered = normalized.toLowerCase(Locale.ROOT);
+        if (!REASONING_EFFORT_VALUES.contains(lowered)) {
+            throw new IllegalArgumentException(fieldName + " must be one of " + REASONING_EFFORT_VALUES);
+        }
+        return lowered;
     }
 
     private String normalizePrimaryAgentId(String primaryAgentId) {

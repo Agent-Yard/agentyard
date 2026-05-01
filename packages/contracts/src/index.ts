@@ -848,6 +848,8 @@ export interface LlmModelDescriptor {
   temperature: number;
   maxTokens: number;
   privateDeployment: boolean;
+  enableThinking: boolean | null;
+  reasoningEffort: string | null;
 }
 
 export interface KnowledgeBindingDescriptor {

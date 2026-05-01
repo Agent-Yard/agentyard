@@ -184,6 +184,8 @@ def _request_payload() -> dict:
                 "apiKeyEnvVar": "TEST_OPENAI_COMPATIBLE_API_KEY",
                 "temperature": 0,
                 "maxTokens": 512,
+                "enableThinking": True,
+                "reasoningEffort": "high",
             },
             "knowledgeEnabled": True,
             "knowledgeBaseId": "kb-1",
@@ -1408,6 +1410,95 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         self.assertEqual(200, response_record.llmResponse["statusCode"])
         self.assertIn('"total_tokens": 3', response_record.llmResponse["body"])
         self.assertNotIn("secret", str(request_record.llmRequest["headers"]))
+
+    def test_should_pass_reasoning_settings_to_openai_compatible_payload(self) -> None:
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        request_log: list[dict] = []
+        request = AgentTurnRequest.model_validate(_request_payload())
+
+        def factory(*args, **kwargs):  # noqa: ANN002, ANN003
+            return _FakeClient(
+                _FakeTransport(
+                    [
+                        {
+                            "choices": [
+                                {
+                                    "message": {
+                                        "content": json.dumps(
+                                            {
+                                                "decision": {
+                                                    "action": "REPLY",
+                                                    "replyMessage": {"blocks": [{"type": "TEXT", "text": "ok"}]},
+                                                },
+                                                "sharedState": {},
+                                            }
+                                        )
+                                    }
+                                }
+                            ],
+                            "usage": {"total_tokens": 3},
+                        }
+                    ],
+                    request_log,
+                )
+            )
+
+        with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=factory):
+            outcome, _ = execute_agent_turn(request)
+
+        self.assertTrue(outcome.success)
+        payload = request_log[0]["json"]
+        self.assertIs(True, payload["enable_thinking"])
+        self.assertEqual("high", payload["reasoning_effort"])
+
+    def test_should_not_use_reasoning_env_fallback_for_openai_compatible_payload(self) -> None:
+        request_log: list[dict] = []
+        payload = _request_payload()
+        payload["currentOwner"]["model"] = None
+        request = AgentTurnRequest.model_validate(payload)
+
+        def factory(*args, **kwargs):  # noqa: ANN002, ANN003
+            return _FakeClient(
+                _FakeTransport(
+                    [
+                        {
+                            "choices": [
+                                {
+                                    "message": {
+                                        "content": json.dumps(
+                                            {
+                                                "decision": {
+                                                    "action": "REPLY",
+                                                    "replyMessage": {"blocks": [{"type": "TEXT", "text": "ok"}]},
+                                                },
+                                                "sharedState": {},
+                                            }
+                                        )
+                                    }
+                                }
+                            ],
+                            "usage": {"total_tokens": 3},
+                        }
+                    ],
+                    request_log,
+                )
+            )
+
+        env = {
+            "LYNXUS_OPENAI_COMPATIBLE_BASE_URL": "https://runtime.example",
+            "LYNXUS_OPENAI_COMPATIBLE_MODEL_ID": "gpt-fallback",
+            "LYNXUS_OPENAI_COMPATIBLE_API_KEY_ENV_VAR": "TEST_FALLBACK_OPENAI_COMPATIBLE_API_KEY",
+            "TEST_FALLBACK_OPENAI_COMPATIBLE_API_KEY": "secret",
+            "LYNXUS_OPENAI_COMPATIBLE_ENABLE_THINKING": "true",
+            "LYNXUS_OPENAI_COMPATIBLE_REASONING_EFFORT": "high",
+        }
+        with patch.dict(os.environ, env):
+            with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=factory):
+                outcome, _ = execute_agent_turn(request)
+
+        self.assertTrue(outcome.success)
+        self.assertNotIn("enable_thinking", request_log[0]["json"])
+        self.assertNotIn("reasoning_effort", request_log[0]["json"])
 
     def test_should_reuse_shared_client_for_knowledge_calls_on_same_origin(self) -> None:
         os.environ["LYNXUS_KNOWLEDGE_SERVICE_BASE_URL"] = "https://knowledge.example/api"

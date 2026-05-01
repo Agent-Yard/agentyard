@@ -603,8 +603,22 @@ public final class CatalogDtos {
         String apiKeyEnvVar,
         double temperature,
         int maxTokens,
-        boolean privateDeployment
+        boolean privateDeployment,
+        Boolean enableThinking,
+        String reasoningEffort
     ) {
+        public LlmModelConfigDto(
+            String providerType,
+            String modelId,
+            String baseUrl,
+            String apiKeyEnvVar,
+            double temperature,
+            int maxTokens,
+            boolean privateDeployment
+        ) {
+            this(providerType, modelId, baseUrl, apiKeyEnvVar, temperature, maxTokens, privateDeployment, null, null);
+        }
+
         public LlmModelConfigDto(
             String providerType,
             String modelId,
@@ -613,7 +627,7 @@ public final class CatalogDtos {
             double temperature,
             int maxTokens
         ) {
-            this(providerType, modelId, baseUrl, apiKeyEnvVar, temperature, maxTokens, false);
+            this(providerType, modelId, baseUrl, apiKeyEnvVar, temperature, maxTokens, false, null, null);
         }
     }
 
@@ -625,8 +639,13 @@ public final class CatalogDtos {
     }
 
     public record AssistantModelPolicyDto(
-        String defaultModelResourceId
+        String defaultModelResourceId,
+        Boolean enableThinking,
+        String reasoningEffort
     ) {
+        public AssistantModelPolicyDto(String defaultModelResourceId) {
+            this(defaultModelResourceId, null, null);
+        }
     }
 
     public record AssistantOwnerPolicyDto(

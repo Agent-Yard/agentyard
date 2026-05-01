@@ -186,7 +186,9 @@ public final class SessionContracts {
         String apiKeyEnvVar,
         double temperature,
         int maxTokens,
-        boolean privateDeployment
+        boolean privateDeployment,
+        Boolean enableThinking,
+        String reasoningEffort
     ) {
     }
 

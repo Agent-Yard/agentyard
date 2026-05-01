@@ -5,7 +5,7 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
-from ..openai_compatible import OpenAiCompatibleSettings, chat_completion
+from ..openai_compatible import OpenAiCompatibleSettings, apply_reasoning_settings, chat_completion
 from ..privacy_contracts import PrivacyModelBinding
 from .store import SessionPrivacyMapStore
 from .validator import PrivacyMappingBlockedError
@@ -89,29 +89,7 @@ class PrivateLlmRewriter:
         if self._binding is None:
             return []
         response_format = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "privacy_mapping_entities",
-                "schema": {
-                    "type": "object",
-                    "properties": {
-                        "entities": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "rawValue": {"type": "string"},
-                                    "entityType": {"type": "string"},
-                                },
-                                "required": ["rawValue", "entityType"],
-                                "additionalProperties": False,
-                            },
-                        }
-                    },
-                    "required": ["entities"],
-                    "additionalProperties": False,
-                },
-            },
+            "type": "json_object"
         }
         payload = {
             "model": self._binding.model_id,
@@ -120,12 +98,11 @@ class PrivateLlmRewriter:
                 {
                     "role": "system",
                     "content": (
-                        "Extract sensitive entities from the provided text. "
-                        "Return one JSON object only, exactly matching this shape: "
-                        '{"entities":[{"rawValue":"...","entityType":"PERSON"}]}. '
-                        'If no sensitive entities are present, return {"entities":[]}. '
-                        "Never return a bare array or an empty object. "
-                        "Allowed entityType values: PERSON, ACCOUNT, ORDER, PHONE."
+                        "请从所给的文本中提取可能涉及隐私信息的实体。"
+                        "只返回一个如下所示的JSON对象: \n"
+                        '{"entities":[{"rawValue":"...","entityType":"PERSON"}]}\n\n'
+                        '如果没有隐私信息实体则返回 {"entities":[]}\n'
+                        "可能的隐私实体类型: PERSON, ACCOUNT, ORDER, PHONE"
                     ),
                 },
                 {
@@ -135,15 +112,19 @@ class PrivateLlmRewriter:
             ],
             "response_format": response_format,
         }
+        settings = OpenAiCompatibleSettings(
+            base_url=self._binding.base_url.rstrip("/"),
+            model_id=self._binding.model_id,
+            api_key=api_key,
+            provider_type=self._binding.provider_type.upper(),
+            model_resource_id=self._binding.resource_id,
+            model_resource_version_id=self._binding.resource_version_id,
+            enable_thinking=self._binding.enable_thinking,
+            reasoning_effort=(self._binding.reasoning_effort or "").strip(),
+        )
+        apply_reasoning_settings(payload, settings)
         response_json = chat_completion(
-            OpenAiCompatibleSettings(
-                base_url=self._binding.base_url.rstrip("/"),
-                model_id=self._binding.model_id,
-                api_key=api_key,
-                provider_type=self._binding.provider_type.upper(),
-                model_resource_id=self._binding.resource_id,
-                model_resource_version_id=self._binding.resource_version_id,
-            ),
+            settings,
             payload,
             timeout_seconds=10.0,
             usage_tracker=self._usage_tracker,

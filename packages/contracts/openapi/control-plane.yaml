@@ -1755,6 +1755,13 @@ components:
         defaultModelResourceId:
           type: string
           nullable: true
+        enableThinking:
+          type: boolean
+          nullable: true
+        reasoningEffort:
+          type: string
+          nullable: true
+          enum: [low, medium, high, xhigh]
     KnowledgeAccessPolicy:
       type: object
       properties:
@@ -2812,6 +2819,13 @@ components:
           type: integer
         privateDeployment:
           type: boolean
+        enableThinking:
+          type: boolean
+          nullable: true
+        reasoningEffort:
+          type: string
+          nullable: true
+          enum: [low, medium, high, xhigh]
     SkillConfig:
       type: object
       properties:

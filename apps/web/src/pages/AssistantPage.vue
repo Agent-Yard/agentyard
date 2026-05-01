@@ -54,6 +54,8 @@ const createForm = reactive<CreateAssistantPayload>({
   },
   modelPolicy: {
     defaultModelResourceId: null,
+    enableThinking: null,
+    reasoningEffort: null,
   },
   privacyModelResourceId: null,
   privacyMappingEnabled: false,
@@ -88,6 +90,8 @@ const editForm = reactive<UpdateAssistantPayload>({
   },
   modelPolicy: {
     defaultModelResourceId: null,
+    enableThinking: null,
+    reasoningEffort: null,
   },
   privacyModelResourceId: null,
   privacyMappingEnabled: false,
@@ -120,6 +124,18 @@ const privateModelResources = computed(() =>
   ),
 );
 const knowledgeBaseOptions = computed(() => props.knowledgeBases.map((item) => ({ label: item.name, value: item.id })));
+const assistantThinkingModeOptions = [
+  { label: '继承模型', value: null },
+  { label: '开启', value: true },
+  { label: '关闭', value: false },
+];
+const assistantReasoningEffortOptions = [
+  { label: '继承模型', value: null },
+  { label: 'low', value: 'low' },
+  { label: 'medium', value: 'medium' },
+  { label: 'high', value: 'high' },
+  { label: 'xhigh', value: 'xhigh' },
+];
 
 const currentDraftModelResource = computed(() =>
   props.resources.find((item) => item.id === current.value?.modelPolicy.defaultModelResourceId) ?? null,
@@ -173,6 +189,13 @@ const draftModelDescription = computed(() => {
   return resourceVersionLabel(currentDraftModelResource.value);
 });
 
+const draftReasoningDescription = computed(() => {
+  if (!current.value) {
+    return '继承模型';
+  }
+  return `${assistantThinkingModeLabel(current.value.modelPolicy.enableThinking)} / ${current.value.modelPolicy.reasoningEffort ?? '继承模型'}`;
+});
+
 const releaseModelDescription = computed(() => {
   const binding = current.value?.currentRelease?.defaultModelBinding;
   if (!binding) {
@@ -214,6 +237,13 @@ function syncEditForm(assistant: Assistant) {
   editForm.privacyMappingEnabled = assistant.privacyMappingEnabled;
   editForm.knowledgeAccessPolicy = { ...assistant.knowledgeAccessPolicy };
   editForm.memoryPolicy = { ...assistant.memoryPolicy };
+}
+
+function assistantThinkingModeLabel(value: boolean | null | undefined) {
+  if (value === null || value === undefined) {
+    return '继承模型';
+  }
+  return value ? '开启' : '关闭';
 }
 
 watch(
@@ -449,6 +479,7 @@ function submitUpdate() {
         <a-card size="small" title="模型语义">
           <a-descriptions :column="1" size="small">
             <a-descriptions-item label="草稿默认模型">{{ draftModelDescription }}</a-descriptions-item>
+            <a-descriptions-item label="草稿思考配置">{{ draftReasoningDescription }}</a-descriptions-item>
             <a-descriptions-item label="当前发布冻结模型">{{ releaseModelDescription }}</a-descriptions-item>
             <a-descriptions-item label="当前发布隐私映射">{{ releasePrivacyDescription }}</a-descriptions-item>
           </a-descriptions>
@@ -529,6 +560,24 @@ function submitUpdate() {
           placeholder="选择默认模型资源"
         />
       </a-form-item>
+      <a-row :gutter="[16, 16]">
+        <a-col :span="12">
+          <a-form-item label="思考模式覆盖">
+            <a-select
+              v-model:value="createForm.modelPolicy.enableThinking"
+              :options="assistantThinkingModeOptions"
+            />
+          </a-form-item>
+        </a-col>
+        <a-col :span="12">
+          <a-form-item label="Reasoning Effort 覆盖">
+            <a-select
+              v-model:value="createForm.modelPolicy.reasoningEffort"
+              :options="assistantReasoningEffortOptions"
+            />
+          </a-form-item>
+        </a-col>
+      </a-row>
       <a-row :gutter="[16, 16]">
         <a-col :span="12">
           <a-form-item label="启用隐私映射">
@@ -635,6 +684,24 @@ function submitUpdate() {
           placeholder="选择默认模型资源"
         />
       </a-form-item>
+      <a-row :gutter="[16, 16]">
+        <a-col :span="12">
+          <a-form-item label="思考模式覆盖">
+            <a-select
+              v-model:value="editForm.modelPolicy.enableThinking"
+              :options="assistantThinkingModeOptions"
+            />
+          </a-form-item>
+        </a-col>
+        <a-col :span="12">
+          <a-form-item label="Reasoning Effort 覆盖">
+            <a-select
+              v-model:value="editForm.modelPolicy.reasoningEffort"
+              :options="assistantReasoningEffortOptions"
+            />
+          </a-form-item>
+        </a-col>
+      </a-row>
       <a-row :gutter="[16, 16]">
         <a-col :span="12">
           <a-form-item label="启用隐私映射">

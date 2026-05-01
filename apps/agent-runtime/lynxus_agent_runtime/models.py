@@ -40,6 +40,8 @@ class LlmModelDescriptor(BaseModel):
     temperature: float = 0
     maxTokens: int = 0
     privateDeployment: bool = False
+    enableThinking: bool | None = None
+    reasoningEffort: str | None = None
 
 
 class SkillDescriptor(BaseModel):

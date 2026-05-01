@@ -236,6 +236,8 @@ class SessionRuntimeServiceTest {
                 && "release prompt".equals(startRequest.agents().getFirst().systemPrompt())
                 && startRequest.agents().getFirst().model() != null
                 && "rv-model-1".equals(startRequest.agents().getFirst().model().resourceVersionId())
+                && Boolean.TRUE.equals(startRequest.agents().getFirst().model().enableThinking())
+                && "high".equals(startRequest.agents().getFirst().model().reasoningEffort())
                 && startRequest.agents().getFirst().knowledgeBinding() != null
                 && "snapshot-kb-1".equals(startRequest.agents().getFirst().knowledgeBinding().snapshotId())
                 && startRequest.agents().getFirst().skills().size() == 1
@@ -254,6 +256,36 @@ class SessionRuntimeServiceTest {
                 && startRequest.agents().getFirst().tools().getFirst().connector().retryPolicy().retryableCategories()
                     .equals(List.of("REMOTE_TIMEOUT", "REMOTE_UNAVAILABLE", "REMOTE_RATE_LIMITED", "UNKNOWN"))
                 && "rv-tool-1".equals(startRequest.agents().getFirst().tools().getFirst().resourceVersionId())
+        ));
+    }
+
+    @Test
+    void createSession_shouldUseLlmReasoningSettingsWhenAssistantPolicyDoesNotOverride() {
+        SessionWorkflowGateway gateway = mock(SessionWorkflowGateway.class);
+        CatalogService catalogService = mock(CatalogService.class);
+        SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
+        SessionRuntimeService service = new SessionRuntimeService(
+            gateway,
+            catalogService,
+            repository,
+            new SessionDispatchLockService()
+        );
+        CatalogDtos.AssistantDto assistant = assistantWithFrozenReleaseDescriptors(
+            "ast-1",
+            "EXPONENTIAL_BACKOFF",
+            new CatalogDtos.AssistantModelPolicyDto("model-1")
+        );
+
+        when(catalogService.getAssistantRuntimeSnapshot("ast-1")).thenReturn(assistant);
+        when(repository.findActiveSession("customer-1", "ast-1")).thenReturn(java.util.Optional.empty());
+        when(repository.findSession(any())).thenReturn(java.util.Optional.empty());
+
+        service.createSession(new CreateSessionRequest("ast-1", "customer-1", textMessageInput("")));
+
+        verify(gateway).start(argThat(startRequest ->
+            startRequest.agents().getFirst().model() != null
+                && Boolean.FALSE.equals(startRequest.agents().getFirst().model().enableThinking())
+                && "low".equals(startRequest.agents().getFirst().model().reasoningEffort())
         ));
     }
 
@@ -611,6 +643,18 @@ class SessionRuntimeServiceTest {
     }
 
     private static CatalogDtos.AssistantDto assistantWithFrozenReleaseDescriptors(String assistantId, String retryPolicy) {
+        return assistantWithFrozenReleaseDescriptors(
+            assistantId,
+            retryPolicy,
+            new CatalogDtos.AssistantModelPolicyDto("model-1", true, "high")
+        );
+    }
+
+    private static CatalogDtos.AssistantDto assistantWithFrozenReleaseDescriptors(
+        String assistantId,
+        String retryPolicy,
+        CatalogDtos.AssistantModelPolicyDto modelPolicy
+    ) {
         Instant now = Instant.now();
         CatalogDtos.AssistantReleaseDto release = new CatalogDtos.AssistantReleaseDto(
             "rel-1",
@@ -632,7 +676,17 @@ class SessionRuntimeServiceTest {
                     new CatalogDtos.ResourceVersionConfigurationDto(
                         com.lynxus.contracts.runtime.WorkflowContracts.ResourceType.LLM_MODEL,
                         null,
-                        new CatalogDtos.LlmModelConfigDto("OPENAI_COMPATIBLE", "gpt-test", "https://runtime.example", "TEST_OPENAI_COMPATIBLE_API_KEY", 0, 512),
+                        new CatalogDtos.LlmModelConfigDto(
+                            "OPENAI_COMPATIBLE",
+                            "gpt-test",
+                            "https://runtime.example",
+                            "TEST_OPENAI_COMPATIBLE_API_KEY",
+                            0,
+                            512,
+                            false,
+                            false,
+                            "low"
+                        ),
                         null
                     )
                 ),
@@ -698,7 +752,7 @@ class SessionRuntimeServiceTest {
             new CatalogDtos.AssistantSessionPolicyDto("PT30M", "P7D", 20_000),
             new CatalogDtos.AssistantReplyPolicyDto(true),
             new CatalogDtos.AssistantPlaybookPolicyDto(null, null),
-            new CatalogDtos.AssistantModelPolicyDto("model-1"),
+            modelPolicy,
             new CatalogDtos.KnowledgeAccessPolicyDto(false, null),
             new CatalogDtos.MemoryPolicyDto(true, 8)
         );

@@ -416,7 +416,9 @@ public class SessionRuntimeService {
             config.apiKeyEnvVar(),
             config.temperature(),
             config.maxTokens(),
-            config.privateDeployment()
+            config.privateDeployment(),
+            effectiveEnableThinking(release, config),
+            effectiveReasoningEffort(release, config)
         );
     }
 
@@ -444,8 +446,24 @@ public class SessionRuntimeService {
             config.apiKeyEnvVar(),
             config.temperature(),
             config.maxTokens(),
-            config.privateDeployment()
+            config.privateDeployment(),
+            config.enableThinking(),
+            config.reasoningEffort()
         );
+    }
+
+    private Boolean effectiveEnableThinking(AssistantReleaseDto release, LlmModelConfigDto config) {
+        if (release.modelPolicy() != null && release.modelPolicy().enableThinking() != null) {
+            return release.modelPolicy().enableThinking();
+        }
+        return config.enableThinking();
+    }
+
+    private String effectiveReasoningEffort(AssistantReleaseDto release, LlmModelConfigDto config) {
+        if (release.modelPolicy() != null && release.modelPolicy().reasoningEffort() != null && !release.modelPolicy().reasoningEffort().isBlank()) {
+            return release.modelPolicy().reasoningEffort();
+        }
+        return config.reasoningEffort();
     }
 
     private SkillDescriptor toSkillDescriptor(AssistantReleaseResourceDto resource) {

@@ -326,6 +326,8 @@ export interface LlmModelConfig {
   temperature: number;
   maxTokens: number;
   privateDeployment: boolean;
+  enableThinking: boolean | null;
+  reasoningEffort: string | null;
 }
 
 export interface SkillConfig {
@@ -362,6 +364,8 @@ export interface ResourceBlueprint {
 
 export interface AssistantModelPolicy {
   defaultModelResourceId: string | null;
+  enableThinking: boolean | null;
+  reasoningEffort: string | null;
 }
 
 export interface AssistantOwnerPolicy {

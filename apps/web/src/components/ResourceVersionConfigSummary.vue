@@ -89,6 +89,12 @@ onMounted(async () => {
     <a-descriptions-item label="Temperature / Max Tokens">
       {{ configuration.llmModel.temperature }} / {{ configuration.llmModel.maxTokens }}
     </a-descriptions-item>
+    <a-descriptions-item label="思考模式">
+      {{ configuration.llmModel.enableThinking == null ? '不传' : configuration.llmModel.enableThinking ? '开启' : '关闭' }}
+    </a-descriptions-item>
+    <a-descriptions-item label="Reasoning Effort">
+      {{ configuration.llmModel.reasoningEffort ?? '不传' }}
+    </a-descriptions-item>
     <a-descriptions-item label="Private Deployment">
       {{ configuration.llmModel.privateDeployment ? '是' : '否' }}
     </a-descriptions-item>

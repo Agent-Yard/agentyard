@@ -710,6 +710,51 @@ class CatalogServiceTest {
     }
 
     @Test
+    void shouldRejectUnsupportedReasoningEffortValues() {
+        CatalogService catalogService = new CatalogService(new InMemoryCatalogRepository(), readySnapshotKnowledgeClient(), noopKnowledgeWorkflowGateway());
+        CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("模型参数域", "验证推理强度枚举"));
+
+        IllegalArgumentException error = assertThrows(
+            IllegalArgumentException.class,
+            () -> catalogService.createResource(
+                new CatalogDtos.CreateResourceRequest(
+                    domain.id(),
+                    "Minimal 推理模型",
+                    ResourceType.LLM_MODEL,
+                    ShareScope.DOMAIN_SHARED,
+                    "DOMAIN",
+                    domain.id(),
+                    "不支持 minimal reasoning effort",
+                    "平台模型团队",
+                    List.of("LLM"),
+                    new CatalogDtos.CreateResourceVersionRequest(
+                        "初始版本",
+                        VersionStatus.DRAFT,
+                        new CatalogDtos.ResourceVersionConfigurationDto(
+                            ResourceType.LLM_MODEL,
+                            null,
+                            new CatalogDtos.LlmModelConfigDto(
+                                "OPENAI_COMPATIBLE",
+                                "gpt-test",
+                                "https://runtime.example",
+                                "TEST_OPENAI_COMPATIBLE_API_KEY",
+                                0,
+                                512,
+                                false,
+                                null,
+                                "minimal"
+                            ),
+                            null
+                        )
+                    )
+                )
+            )
+        );
+
+        assertTrue(error.getMessage().contains("llmModel.reasoningEffort must be one of"));
+    }
+
+    @Test
     void shouldRejectPublishingAssistantWithoutDefaultModel() {
         CatalogService catalogService = new CatalogService(new InMemoryCatalogRepository(), readySnapshotKnowledgeClient(), noopKnowledgeWorkflowGateway());
         CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("发布域", "验证发布前默认模型校验"));

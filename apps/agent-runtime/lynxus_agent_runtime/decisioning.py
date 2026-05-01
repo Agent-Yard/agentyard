@@ -5,7 +5,7 @@ import logging
 import os
 from typing import Any
 
-from .openai_compatible import LlmUsageTracker, OpenAiCompatibleSettings, chat_completion
+from .openai_compatible import LlmUsageTracker, OpenAiCompatibleSettings, apply_reasoning_settings, chat_completion
 from .openai_adapter import (
     assistant_tool_call_message,
     parse_openai_tool_calls,
@@ -67,6 +67,7 @@ def _execute_via_openai_compatible(
             }
             if settings.max_tokens > 0:
                 payload["max_tokens"] = settings.max_tokens
+            apply_reasoning_settings(payload, settings)
             response_json = chat_completion(
                 settings,
                 payload,
@@ -211,6 +212,8 @@ def _resolve_provider_settings(request: AgentTurnRequest) -> OpenAiCompatibleSet
                 model_resource_version_id=model.resourceVersionId,
                 temperature=model.temperature,
                 max_tokens=model.maxTokens,
+                enable_thinking=model.enableThinking,
+                reasoning_effort=(model.reasoningEffort or "").strip(),
                 organization=(os.getenv("LYNXUS_OPENAI_COMPATIBLE_ORGANIZATION") or "").strip(),
                 project=(os.getenv("LYNXUS_OPENAI_COMPATIBLE_PROJECT") or "").strip(),
             )

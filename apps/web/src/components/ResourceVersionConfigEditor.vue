@@ -46,6 +46,18 @@ const integrationAccounts = ref<IntegrationAccount[]>([]);
 const definitionsLoading = ref(true);
 const definitionLoadFailed = ref(false);
 const accountOptions = computed(() => accountOptionsForConnector(integrationAccounts.value, connector.value?.connectorType));
+const thinkingModeOptions = [
+  { label: '不传', value: null },
+  { label: '开启', value: true },
+  { label: '关闭', value: false },
+];
+const reasoningEffortOptions = [
+  { label: '不传', value: null },
+  { label: 'low', value: 'low' },
+  { label: 'medium', value: 'medium' },
+  { label: 'high', value: 'high' },
+  { label: 'xhigh', value: 'xhigh' },
+];
 
 function ensureConfigurationState(configuration: ResourceVersionConfiguration, resourceType: ResourceType) {
   if (resourceType === 'TOOL') {
@@ -70,6 +82,8 @@ function ensureConfigurationState(configuration: ResourceVersionConfiguration, r
       temperature: 0.2,
       maxTokens: 1200,
       privateDeployment: false,
+      enableThinking: null,
+      reasoningEffort: null,
     };
     return;
   }
@@ -332,6 +346,22 @@ function setOperationMapping(operationName: string, value: JsonObject) {
       <a-col :span="12">
         <a-form-item label="Max Tokens">
           <a-input-number v-model:value="llmModel.maxTokens" :min="1" style="width: 100%" />
+        </a-form-item>
+      </a-col>
+      <a-col :span="12">
+        <a-form-item label="思考模式">
+          <a-select
+            v-model:value="llmModel.enableThinking"
+            :options="thinkingModeOptions"
+          />
+        </a-form-item>
+      </a-col>
+      <a-col :span="12">
+        <a-form-item label="Reasoning Effort">
+          <a-select
+            v-model:value="llmModel.reasoningEffort"
+            :options="reasoningEffortOptions"
+          />
         </a-form-item>
       </a-col>
       <a-col :span="12">

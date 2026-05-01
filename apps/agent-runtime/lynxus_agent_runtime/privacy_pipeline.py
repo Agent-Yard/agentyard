@@ -188,6 +188,8 @@ def _privacy_model_binding(binding: LlmModelDescriptor) -> PrivacyModelBinding:
         base_url=binding.baseUrl,
         api_key_env_var=binding.apiKeyEnvVar,
         private_deployment=binding.privateDeployment,
+        enable_thinking=binding.enableThinking,
+        reasoning_effort=binding.reasoningEffort,
     )
 
 

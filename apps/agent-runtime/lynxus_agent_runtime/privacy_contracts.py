@@ -33,6 +33,8 @@ class PrivacyModelBinding:
     base_url: str
     api_key_env_var: str
     private_deployment: bool
+    enable_thinking: bool | None = None
+    reasoning_effort: str | None = None
 
 
 @dataclass(frozen=True)
