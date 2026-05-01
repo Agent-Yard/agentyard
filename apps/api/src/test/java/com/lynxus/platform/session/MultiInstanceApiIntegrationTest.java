@@ -1160,7 +1160,7 @@ class MultiInstanceApiIntegrationTest {
         }
 
         @Override
-        public SessionUserMessageUpdateResult submitUserMessage(String workflowId, UserMessage message) {
+        public void submitUserMessage(String workflowId, UserMessage message) {
             SharedGatewayState.recordSubmitMessage(workflowId);
             SharedGatewayState.enterSubmitCriticalSection();
             try {
@@ -1208,7 +1208,6 @@ class MultiInstanceApiIntegrationTest {
                     current.latestEventSequence()
                 ));
                 changeNoticePublisher.publishSessionChanged(workflowId);
-                return new SessionUserMessageUpdateResult(SessionMessageDeliveryStatus.ACCEPTED, workflowId, null);
             } finally {
                 SharedGatewayState.leaveSubmitCriticalSection();
             }

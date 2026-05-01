@@ -157,7 +157,9 @@ public class SessionChannelOutboundRelay {
     }
 
     private static boolean isOutboundRole(SessionMessageRole role) {
-        return role == SessionMessageRole.ASSISTANT || role == SessionMessageRole.HUMAN_OPERATOR;
+        return role == SessionMessageRole.ASSISTANT
+            || role == SessionMessageRole.HUMAN_OPERATOR
+            || role == SessionMessageRole.SYSTEM;
     }
 
     private static Map<String, Object> objectBlock(Object value) {

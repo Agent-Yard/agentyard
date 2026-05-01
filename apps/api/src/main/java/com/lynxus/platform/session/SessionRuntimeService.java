@@ -14,12 +14,10 @@ import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionMessag
 import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionMessageResponse;
 import com.lynxus.contracts.session.SessionContracts.KnowledgeBindingDescriptor;
 import com.lynxus.contracts.session.SessionContracts.LlmModelDescriptor;
-import com.lynxus.contracts.session.SessionContracts.SessionMessageDeliveryStatus;
 import com.lynxus.contracts.session.SessionContracts.SessionMessageInput;
 import com.lynxus.contracts.session.SessionContracts.SessionOwnerPolicy;
 import com.lynxus.contracts.session.SessionContracts.SessionPolicy;
 import com.lynxus.contracts.session.SessionContracts.SessionStartRequest;
-import com.lynxus.contracts.session.SessionContracts.SessionUserMessageUpdateResult;
 import com.lynxus.contracts.session.SessionContracts.SkillDescriptor;
 import com.lynxus.contracts.session.SessionContracts.ToolDescriptor;
 import com.lynxus.contracts.session.SessionContracts.ToolConnectorAccountSnapshot;
@@ -615,7 +613,11 @@ public class SessionRuntimeService {
             }
             return dispatchLockService.withSessionLock(
                 existing.id(),
-                () -> sendMessageInternal(existing.id(), new SendSessionMessageRequest(request.customerId(), openingMessage), existing)
+                () -> sendMessageInternal(
+                    existing.id(),
+                    new SendSessionMessageRequest(request.customerId(), openingMessage),
+                    existing
+                )
             );
         }
 
@@ -653,7 +655,11 @@ public class SessionRuntimeService {
         }
         return dispatchLockService.withSessionLock(
             updated.id(),
-            () -> sendMessageInternal(updated.id(), new SendSessionMessageRequest(request.customerId(), openingMessage), updated)
+            () -> sendMessageInternal(
+                updated.id(),
+                new SendSessionMessageRequest(request.customerId(), openingMessage),
+                updated
+            )
         );
     }
 
@@ -706,18 +712,21 @@ public class SessionRuntimeService {
         if ("ENDED".equals(current.status())) {
             throw new ConflictException("session has ended");
         }
+        if (current.draining()) {
+            throw new ConflictException("workflow draining");
+        }
         try {
-            SessionUserMessageUpdateResult result = sessionWorkflowGateway.submitUserMessage(
+            if (current.agentTurnActive()) {
+                throw new ConflictException("session is busy");
+            }
+            if (isBlankMessageInput(request.message())) {
+                throw new ConflictException("message content required");
+            }
+            sessionWorkflowGateway.submitUserMessage(
                 sessionId,
                 new UserMessage(nextId("session-message"), request.customerId(), request.message())
             );
-            if (result.status() == SessionMessageDeliveryStatus.BUSY) {
-                throw new ConflictException("session is busy");
-            }
-            if (result.status() == SessionMessageDeliveryStatus.REJECTED) {
-                throw new ConflictException(result.reason() == null ? "session rejected message" : result.reason());
-            }
-            return awaitPersistedSession(sessionId, current);
+            return current;
         } catch (RuntimeException error) {
             if (!sessionWorkflowGateway.isWorkflowOpen(sessionId)) {
                 markEnded(current, Instant.now());

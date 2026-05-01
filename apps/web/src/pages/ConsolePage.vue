@@ -19,7 +19,7 @@ const state = useAppState(currentPageKey);
 const catalogActions = useCatalogActions(state, state.refresh, state.errorMessage);
 const runtimeActions = useRuntimeActions(
   state,
-  { findSessionById: state.findSessionById },
+  { upsertRuntimeSession: state.upsertRuntimeSession },
   state.refresh,
   state.errorMessage,
 );

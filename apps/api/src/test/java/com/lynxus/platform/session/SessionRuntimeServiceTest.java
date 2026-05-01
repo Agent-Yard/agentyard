@@ -12,16 +12,16 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doThrow;
 
 import com.lynxus.contracts.runtime.WorkflowContracts.VersionStatus;
 import com.lynxus.contracts.session.SessionContracts.PlaybookRun;
 import com.lynxus.contracts.session.SessionContracts.PlaybookRunStatus;
-import com.lynxus.contracts.session.SessionContracts.SessionMessageDeliveryStatus;
+import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionMessageRequest;
+import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionMessageResponse;
 import com.lynxus.contracts.session.SessionContracts.SessionMessageInput;
-import com.lynxus.contracts.session.SessionContracts.SessionUserMessageUpdateResult;
 import com.lynxus.platform.catalog.CatalogDtos;
 import com.lynxus.platform.catalog.CatalogService;
 import com.lynxus.platform.shared.ConflictException;
@@ -50,9 +50,6 @@ class SessionRuntimeServiceTest {
         when(repository.findActiveSession("customer-1", "ast-1")).thenReturn(java.util.Optional.of(existing));
         when(repository.findSession("session-existing")).thenReturn(java.util.Optional.of(existing));
         when(gateway.isWorkflowOpen("session-existing")).thenReturn(true);
-        when(gateway.submitUserMessage(any(), any())).thenReturn(
-            new SessionUserMessageUpdateResult(SessionMessageDeliveryStatus.ACCEPTED, "session-existing", null)
-        );
 
         SessionRuntimeDtos.SessionRuntimeSessionDto result = service.createSession(
             new CreateSessionRequest("ast-1", "customer-1", textMessageInput("你好"))
@@ -80,9 +77,6 @@ class SessionRuntimeServiceTest {
         when(repository.findActiveSession("customer-1", "ast-1")).thenReturn(java.util.Optional.of(existing));
         when(repository.findSession("session-existing")).thenReturn(java.util.Optional.of(existing));
         when(gateway.isWorkflowOpen("session-existing")).thenReturn(true);
-        when(gateway.submitUserMessage(any(), any())).thenReturn(
-            new SessionUserMessageUpdateResult(SessionMessageDeliveryStatus.ACCEPTED, "session-existing", null)
-        );
 
         SessionRuntimeDtos.SessionRuntimeSessionDto result = service.createSession(
             new CreateSessionRequest("ast-1", "customer-1", imageMessageInput("https://example.com/refund.png"))
@@ -138,9 +132,6 @@ class SessionRuntimeServiceTest {
         when(repository.findActiveSession("customer-1", "ast-1")).thenReturn(java.util.Optional.empty());
         when(repository.findSession(any())).thenReturn(java.util.Optional.empty());
         when(gateway.isWorkflowOpen(any())).thenReturn(true);
-        when(gateway.submitUserMessage(any(), any())).thenReturn(
-            new SessionUserMessageUpdateResult(SessionMessageDeliveryStatus.ACCEPTED, "session-new", null)
-        );
 
         SessionRuntimeDtos.SessionRuntimeSessionDto result = service.createSession(
             new CreateSessionRequest("ast-1", "customer-1", imageMessageInput("https://example.com/refund.png"))
@@ -175,9 +166,6 @@ class SessionRuntimeServiceTest {
         when(repository.findActiveSession("customer-1", "ast-1")).thenReturn(java.util.Optional.empty());
         when(repository.findSession(argThat(id -> !"session-closed".equals(id)))).thenReturn(java.util.Optional.empty());
         when(gateway.isWorkflowOpen(any())).thenAnswer(invocation -> !"session-closed".equals(invocation.getArgument(0)));
-        when(gateway.submitUserMessage(any(), any())).thenReturn(
-            new SessionUserMessageUpdateResult(SessionMessageDeliveryStatus.ACCEPTED, "session-new", null)
-        );
 
         SessionRuntimeDtos.SessionRuntimeSessionDto result = service.sendMessage(
             "session-closed",
@@ -209,9 +197,6 @@ class SessionRuntimeServiceTest {
         when(repository.findActiveSession("customer-1", "ast-1")).thenReturn(java.util.Optional.empty());
         when(repository.findSession(argThat(id -> !"session-ended".equals(id)))).thenReturn(java.util.Optional.empty());
         when(gateway.isWorkflowOpen(any())).thenAnswer(invocation -> !"session-ended".equals(invocation.getArgument(0)));
-        when(gateway.submitUserMessage(any(), any())).thenReturn(
-            new SessionUserMessageUpdateResult(SessionMessageDeliveryStatus.ACCEPTED, "session-new", null)
-        );
 
         SessionRuntimeDtos.SessionRuntimeSessionDto result = service.sendMessage(
             "session-ended",
@@ -429,7 +414,7 @@ class SessionRuntimeServiceTest {
     }
 
     @Test
-    void sendMessage_shouldWaitForPersistedSessionChangeBeforeReturning() {
+    void sendMessage_shouldReturnAfterWorkflowAcceptsMessageWithoutWaitingForSessionChange() {
         SessionWorkflowGateway gateway = mock(SessionWorkflowGateway.class);
         CatalogService catalogService = mock(CatalogService.class);
         SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
@@ -440,47 +425,17 @@ class SessionRuntimeServiceTest {
             new SessionDispatchLockService()
         );
         SessionRuntimeDtos.SessionRuntimeSessionDto existing = session("session-1", "IDLE", null);
-        SessionRuntimeDtos.SessionRuntimeSessionDto updated = new SessionRuntimeDtos.SessionRuntimeSessionDto(
-            existing.id(),
-            existing.scenarioId(),
-            existing.title(),
-            existing.customerId(),
-            existing.assistantId(),
-            existing.assistantName(),
-            existing.assistantReleaseVersion(),
-            "ACTIVE",
-            existing.primaryAgentId(),
-            existing.currentOwnerAgentId(),
-            existing.activePlaybookRunId(),
-            true,
-            existing.sessionHumanHandoffActive(),
-            existing.pendingOwnerReevaluation(),
-            existing.draining(),
-            existing.sharedState(),
-            existing.idleDeadline(),
-            existing.createdAt(),
-            existing.updatedAt().plusSeconds(1),
-            existing.endedAt(),
-            existing.latestMessageSequence() + 1,
-            existing.latestEventSequence() + 1
-        );
 
-        when(repository.findSession("session-1"))
-            .thenReturn(java.util.Optional.of(existing))
-            .thenReturn(java.util.Optional.of(existing))
-            .thenReturn(java.util.Optional.of(updated));
+        when(repository.findSession("session-1")).thenReturn(java.util.Optional.of(existing));
         when(gateway.isWorkflowOpen("session-1")).thenReturn(true);
-        when(gateway.submitUserMessage(any(), any())).thenReturn(
-            new SessionUserMessageUpdateResult(SessionMessageDeliveryStatus.ACCEPTED, "session-1", null)
-        );
 
         SessionRuntimeDtos.SessionRuntimeSessionDto result = service.sendMessage(
             "session-1",
             new SendSessionMessageRequest("customer-1", textMessageInput("你好"))
         );
 
-        assertEquals(updated, result);
-        verify(repository, times(3)).findSession("session-1");
+        assertEquals(existing, result);
+        verify(gateway).submitUserMessage(eq("session-1"), any());
     }
 
     @Test
@@ -498,14 +453,16 @@ class SessionRuntimeServiceTest {
 
         when(repository.findSession("session-1")).thenReturn(java.util.Optional.of(existing));
         when(gateway.isWorkflowOpen("session-1")).thenReturn(true);
-        when(gateway.submitUserMessage(any(), any())).thenThrow(new ConflictException("session message processing timed out"));
+        doThrow(new ConflictException("session message acceptance timed out"))
+            .when(gateway)
+            .submitUserMessage(any(), any());
 
         ConflictException error = assertThrows(
             ConflictException.class,
             () -> service.sendMessage("session-1", new SendSessionMessageRequest("customer-1", textMessageInput("你好")))
         );
 
-        assertEquals("session message processing timed out", error.getMessage());
+        assertEquals("session message acceptance timed out", error.getMessage());
     }
 
     @Test
@@ -523,9 +480,6 @@ class SessionRuntimeServiceTest {
 
         when(repository.findSession("session-1")).thenReturn(java.util.Optional.of(existing));
         when(gateway.isWorkflowOpen("session-1")).thenReturn(true);
-        when(gateway.submitUserMessage(any(), any())).thenReturn(
-            new SessionUserMessageUpdateResult(SessionMessageDeliveryStatus.REJECTED, "session-1", "message content required")
-        );
 
         ConflictException error = assertThrows(
             ConflictException.class,
@@ -533,6 +487,62 @@ class SessionRuntimeServiceTest {
         );
 
         assertEquals("message content required", error.getMessage());
+    }
+
+    @Test
+    void channelInboundMessage_shouldReturnAfterWorkflowAcceptsMessageWithoutWaitingForTurnCompletion() {
+        SessionWorkflowGateway gateway = mock(SessionWorkflowGateway.class);
+        CatalogService catalogService = mock(CatalogService.class);
+        SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
+        com.lynxus.platform.shared.redis.RedisIdempotencyService idempotencyService = mock(
+            com.lynxus.platform.shared.redis.RedisIdempotencyService.class
+        );
+        SessionRuntimeService service = new SessionRuntimeService(
+            gateway,
+            catalogService,
+            repository,
+            new SessionDispatchLockService(),
+            new org.springframework.data.redis.core.StringRedisTemplate(),
+            new tools.jackson.databind.ObjectMapper(),
+            new com.lynxus.shared.redis.RedisKeyspace(),
+            idempotencyService,
+            null,
+            new ExternalCallbackIdempotencyKeyFactory(new tools.jackson.databind.ObjectMapper()),
+            currentUserResolver("operator-1")
+        );
+        ChannelInboundSessionMessageRequest request = new ChannelInboundSessionMessageRequest(
+            "channel-profile-1",
+            "chat-1",
+            "msg-1",
+            "channel-inbound-event-1",
+            "dedup-1",
+            "ast-1",
+            "customer-1",
+            null,
+            textMessageInput("hello")
+        );
+
+        when(catalogService.getAssistantRuntimeSnapshot("ast-1")).thenReturn(assistant("ast-1"));
+        when(repository.findActiveSession("customer-1", "ast-1")).thenReturn(java.util.Optional.empty());
+        when(repository.findSession(any())).thenAnswer(invocation -> java.util.Optional.of(
+            session(invocation.getArgument(0), "IDLE", null)
+        ));
+        when(gateway.isWorkflowOpen(any())).thenReturn(true);
+        when(idempotencyService.execute(any(), eq(ChannelInboundSessionMessageResponse.class), any())).thenAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            java.util.function.Supplier<ChannelInboundSessionMessageResponse> action = invocation.getArgument(2);
+            return action.get();
+        });
+
+        ChannelInboundSessionMessageResponse response = service.channelInboundMessage(request, "dedup-1");
+
+        assertEquals("IDLE", response.status());
+        verify(gateway).start(any());
+        verify(gateway).submitUserMessage(eq(response.sessionId()), argThat(message ->
+            message.message().metadata().get("source").equals("channel-inbound")
+                && message.message().metadata().get("channelProfileId").equals("channel-profile-1")
+                && message.message().metadata().get("externalConversationId").equals("chat-1")
+        ));
     }
 
     private static CatalogDtos.AssistantDto assistant(String assistantId) {

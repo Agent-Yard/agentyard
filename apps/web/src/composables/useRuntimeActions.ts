@@ -2,7 +2,7 @@ import { message } from 'ant-design-vue';
 import { pagePathByKey } from '../config/navigation';
 import { router } from '../router';
 import { api } from '../services/api';
-import type { SessionMessageInput } from '../types';
+import type { SessionMessageInput, SessionRuntimeSession } from '../types';
 
 interface RuntimeActionState {
   creatingSession: { value: boolean };
@@ -12,7 +12,7 @@ interface RuntimeActionState {
 }
 
 interface RuntimeActionHelpers {
-  findSessionById: (sessionId: string) => { id: string } | undefined;
+  upsertRuntimeSession: (session: SessionRuntimeSession) => void;
 }
 
 export function useRuntimeActions(
@@ -28,6 +28,12 @@ export function useRuntimeActions(
     };
   }
 
+  function refreshRuntimeInBackground(fallback: string) {
+    void refresh(false).catch((error) => {
+      void message.error(errorMessage(error, fallback));
+    });
+  }
+
   async function handleCreateSession(payload: {
     assistantId: string;
     customerId: string;
@@ -40,10 +46,11 @@ export function useRuntimeActions(
         customerId: payload.customerId,
         openingMessage: payload.openingMessage.trim() ? textMessageInput(payload.openingMessage.trim()) : null,
       });
+      helpers.upsertRuntimeSession(created);
       state.runtimePreferredSessionId.value = created.id;
       state.runtimeSelectedSessionId.value = created.id;
-      await refresh();
       void router.push(pagePathByKey.runtime);
+      refreshRuntimeInBackground('刷新会话失败');
       void message.success('会话已创建');
     } catch (error) {
       void message.error(errorMessage(error, '创建会话失败'));
@@ -61,11 +68,11 @@ export function useRuntimeActions(
         customerId: payload.customerId,
         message: textMessageInput(payload.message),
       });
+      helpers.upsertRuntimeSession(session);
       state.runtimePreferredSessionId.value = session.id;
       state.runtimeSelectedSessionId.value = session.id;
-      await refresh();
-      helpers.findSessionById(session.id);
       void router.push(pagePathByKey.runtime);
+      refreshRuntimeInBackground('刷新会话失败');
     } catch (error) {
       await refresh();
       void message.error(errorMessage(error, '发送消息失败'));

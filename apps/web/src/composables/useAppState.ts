@@ -196,6 +196,7 @@ export function useAppState(currentPageKey: Ref<PageKey>) {
     canManageGovernance,
     errorMessage,
     findSessionById,
+    upsertRuntimeSession,
     applyRuntimeSessionDetail,
     refresh,
   };

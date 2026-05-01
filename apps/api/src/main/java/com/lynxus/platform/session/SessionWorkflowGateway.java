@@ -16,15 +16,13 @@ import io.temporal.client.WorkflowUpdateStage;
 import io.temporal.client.WorkflowUpdateTimeoutOrCancelledException;
 import io.temporal.client.WorkflowOptions;
 import io.temporal.client.WorkflowStub;
-import java.time.Duration;
-import java.util.concurrent.TimeUnit;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 public interface SessionWorkflowGateway {
     void start(SessionStartRequest request);
 
-    SessionUserMessageUpdateResult submitUserMessage(String workflowId, UserMessage message);
+    void submitUserMessage(String workflowId, UserMessage message);
 
     SessionSnapshot currentSnapshot(String workflowId);
 
@@ -42,16 +40,13 @@ public interface SessionWorkflowGateway {
     class TemporalSessionWorkflowGateway implements SessionWorkflowGateway {
         private final WorkflowClient workflowClient;
         private final String taskQueue;
-        private final Duration sessionUpdateTimeout;
 
         public TemporalSessionWorkflowGateway(
             WorkflowClient workflowClient,
-            @Value("${lynxus.temporal.task-queue}") String taskQueue,
-            @Value("${lynxus.temporal.session-update-timeout:PT2M}") Duration sessionUpdateTimeout
+            @Value("${lynxus.temporal.task-queue}") String taskQueue
         ) {
             this.workflowClient = workflowClient;
             this.taskQueue = taskQueue;
-            this.sessionUpdateTimeout = sessionUpdateTimeout;
         }
 
         @Override
@@ -61,19 +56,19 @@ public interface SessionWorkflowGateway {
         }
 
         @Override
-        public SessionUserMessageUpdateResult submitUserMessage(String workflowId, UserMessage message) {
+        public void submitUserMessage(String workflowId, UserMessage message) {
             WorkflowStub workflowStub = existingUntypedWorkflowStub(workflowId);
             try {
-                return workflowStub.startUpdate(
+                workflowStub.startUpdate(
                     UpdateOptions.<SessionUserMessageUpdateResult>newBuilder()
                         .setUpdateName("submitUserMessage")
                         .setWaitForStage(WorkflowUpdateStage.ACCEPTED)
                         .setResultClass(SessionUserMessageUpdateResult.class)
                         .build(),
                     message
-                ).getResult(sessionUpdateTimeout.toMillis(), TimeUnit.MILLISECONDS);
+                );
             } catch (WorkflowUpdateTimeoutOrCancelledException error) {
-                throw new ConflictException("session message processing timed out");
+                throw new ConflictException("session message acceptance timed out");
             }
         }
 

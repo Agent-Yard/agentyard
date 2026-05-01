@@ -63,6 +63,32 @@ class SessionChannelOutboundRelayTest {
     }
 
     @Test
+    void relaysSystemFallbackMessagesForBoundChannelSession() {
+        SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
+        ChannelGatewayClient channelGatewayClient = mock(ChannelGatewayClient.class);
+        SessionChannelOutboundRelay relay = new SessionChannelOutboundRelay(
+            repository,
+            channelGatewayClient,
+            mock(RedisPubSubBus.class),
+            new RedisKeyspace(),
+            new RedisJsonCodec(new ObjectMapper())
+        );
+        when(channelGatewayClient.getBindingBySession("session-1")).thenReturn(binding());
+        when(repository.findSession("session-1")).thenReturn(Optional.of(session()));
+        when(repository.listMessages("session-1")).thenReturn(List.of(
+            message("system-message-1", SessionMessageRole.SYSTEM, Map.of("type", "TEXT", "text", "当前处理遇到问题，请稍后再试"))
+        ));
+        when(channelGatewayClient.deliverOutbound(any())).thenReturn(delivery());
+
+        relay.relaySession("session-1");
+
+        ArgumentCaptor<ChannelOutboundDeliveryRequest> request = ArgumentCaptor.forClass(ChannelOutboundDeliveryRequest.class);
+        verify(channelGatewayClient).deliverOutbound(request.capture());
+        assertEquals("system-message-1", request.getValue().sessionMessageId());
+        assertEquals("当前处理遇到问题，请稍后再试", request.getValue().messageBlock().get("text"));
+    }
+
+    @Test
     void skipsSessionsWithoutChannelBinding() {
         SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
         ChannelGatewayClient channelGatewayClient = mock(ChannelGatewayClient.class);
