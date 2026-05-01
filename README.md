@@ -317,13 +317,11 @@ CI 在 `.github/workflows/ci.yml` 中分别跑 Java / Node / Python 三套检查
 
 ## 参与贡献
 
-我们欢迎 issue、讨论与 PR。在提 PR 前，请：
+欢迎 issue、讨论与 PR。在提 PR 前，请：
 
 1. 阅读 [`AGENTS.md`](AGENTS.md) 了解仓库的全局重构原则与目录约定。
 2. 本地跑通对应栈的测试（Java / Node / Python）。
 3. 当 PR 影响数据模型、契约或发布快照时，同步更新 `docs/architecture/` 与 `docs/project_structure.md`。
-
-正式的 `CONTRIBUTING.md` 与 `LICENSE` 仍在筹备中；在此之前，请通过 GitHub Issues 沟通使用与改造意图。
 
 ## 联系方式
 
