@@ -5,6 +5,7 @@ from unittest.mock import patch
 from lynxus_agent_runtime.data_security.mapper import PrivacyMapper
 from lynxus_agent_runtime.data_security.rewriter import PrivateLlmRewriter
 from lynxus_agent_runtime.data_security.rewriter import RewriteResult
+from lynxus_agent_runtime.data_security.rules import restore_value
 from lynxus_agent_runtime.data_security.rules import sanitize_value
 from lynxus_agent_runtime.data_security.rules import SanitizationResult
 from lynxus_agent_runtime.data_security.validator import collect_sensitive_entities
@@ -37,12 +38,18 @@ class _FakeMappingEntry:
 class _FakePrivacyStore:
     def __init__(self) -> None:
         self.mappings: list[tuple[str, str]] = []
+        self.reverse: dict[str, str] = {}
         self.sanitize_records: list[tuple[str, int, dict[str, int]]] = []
         self.blocked_count = 0
 
     def ensure_mapping(self, entity_type: str, raw_value: str) -> _FakeMappingEntry:
         self.mappings.append((entity_type, raw_value))
-        return _FakeMappingEntry(entity_type, raw_value, len(self.mappings))
+        entry = _FakeMappingEntry(entity_type, raw_value, len(self.mappings))
+        self.reverse[entry.placeholder_id] = raw_value
+        return entry
+
+    def restore_placeholder(self, placeholder_id: str) -> str | None:
+        return self.reverse.get(placeholder_id)
 
     def record_sanitize(self, channel: str, new_placeholder_count: int, entity_type_breakdown: dict[str, int]) -> None:
         self.sanitize_records.append((channel, new_placeholder_count, entity_type_breakdown))
@@ -75,8 +82,16 @@ class PrivacyRulesTest(unittest.TestCase):
 
         self.assertEqual([], entities)
         system_prompt = completion.call_args.args[1]["messages"][0]["content"]
-        self.assertIn('If no sensitive entities are present, return {"entities":[]}.', system_prompt)
-        self.assertIn("Never return a bare array or an empty object.", system_prompt)
+        self.assertEqual(
+            (
+                "请从所给的文本中提取可能涉及隐私信息的实体。"
+                "只返回一个如下所示的JSON对象: \n"
+                '{"entities":[{"rawValue":"...","entityType":"PERSON"}]}\n\n'
+                '如果没有隐私信息实体则返回 {"entities":[]}\n'
+                "可能的隐私实体类型: PERSON, ACCOUNT, ORDER, PHONE"
+            ),
+            system_prompt,
+        )
 
     def test_private_rewriter_tolerates_empty_array_or_object_response(self) -> None:
         rewriter = PrivateLlmRewriter(_privacy_model_binding())
@@ -110,6 +125,28 @@ class PrivacyRulesTest(unittest.TestCase):
         self.assertEqual(2, result.total_replacement_count)
         self.assertEqual([("PERSON", "Jane Doe")], store.mappings)
 
+    def test_private_rewriter_should_not_wrap_existing_placeholders(self) -> None:
+        store = _FakePrivacyStore()
+        rewriter = PrivateLlmRewriter(_privacy_model_binding())
+
+        with patch.dict(os.environ, {"LYNXUS_TEST_PRIVATE_REWRITER_API_KEY": "test-key"}), patch.object(
+            rewriter,
+            "_extract_entities",
+            return_value=[
+                {"rawValue": "xxx-customer-[PHONE_001]", "entityType": "ACCOUNT"},
+                {"rawValue": "PHONE_001", "entityType": "ACCOUNT"},
+                {"rawValue": "xxx-customer-[PHONE_001]", "entityType": "USER"},
+                {"rawValue": "Jane Doe", "entityType": "PERSON"},
+            ],
+        ):
+            result = rewriter.rewrite("user_id: xxx-customer-[PHONE_001] owner Jane Doe", store)
+
+        self.assertEqual("user_id: xxx-customer-[PHONE_001] owner [PERSON_001]", result.value)
+        self.assertEqual({"PERSON": 1}, result.entity_type_breakdown)
+        self.assertEqual(1, result.new_placeholder_count)
+        self.assertEqual(1, result.total_replacement_count)
+        self.assertEqual([("PERSON", "Jane Doe")], store.mappings)
+
     def test_should_not_replace_values_only_because_key_name_looks_sensitive(self) -> None:
         store = _FakePrivacyStore()
 
@@ -132,6 +169,27 @@ class PrivacyRulesTest(unittest.TestCase):
         self.assertEqual([], store.mappings)
         self.assertEqual([], collect_sensitive_entities("debug ids: user-admin order-preview customer-local"))
 
+    def test_should_not_treat_identifier_numeric_suffix_as_phone(self) -> None:
+        store = _FakePrivacyStore()
+
+        result = sanitize_value("user_id: xxx-customer-121381941241", store)
+
+        self.assertEqual("user_id: xxx-customer-121381941241", result.value)
+        self.assertEqual({}, result.entity_type_breakdown)
+        self.assertEqual(0, result.new_placeholder_count)
+        self.assertEqual([], store.mappings)
+        self.assertEqual([], collect_sensitive_entities("user_id: xxx-customer-121381941241"))
+
+    def test_should_still_replace_standalone_phone_values(self) -> None:
+        store = _FakePrivacyStore()
+
+        result = sanitize_value("phone 13812345678", store)
+
+        self.assertEqual("phone [PHONE_001]", result.value)
+        self.assertEqual({"PHONE": 1}, result.entity_type_breakdown)
+        self.assertEqual(1, result.new_placeholder_count)
+        self.assertEqual([("PHONE", "13812345678")], store.mappings)
+
     def test_should_still_replace_deterministic_email_values(self) -> None:
         store = _FakePrivacyStore()
 
@@ -141,6 +199,25 @@ class PrivacyRulesTest(unittest.TestCase):
         self.assertEqual({"ACCOUNT": 1}, result.entity_type_breakdown)
         self.assertEqual(1, result.new_placeholder_count)
         self.assertEqual([("ACCOUNT", "alice@example.com")], store.mappings)
+
+    def test_restore_should_resolve_nested_placeholders_from_existing_mappings(self) -> None:
+        store = _FakePrivacyStore()
+        store.reverse["[PHONE_001]"] = "121381941241"
+        store.reverse["[ACCOUNT_001]"] = "xxx-customer-[PHONE_001]"
+
+        restored = restore_value("user_id: [ACCOUNT_001]", store)
+
+        self.assertEqual("user_id: xxx-customer-121381941241", restored)
+
+    def test_restore_should_reject_placeholder_nesting_deeper_than_three(self) -> None:
+        store = _FakePrivacyStore()
+        store.reverse["[ACCOUNT_001]"] = "[ACCOUNT_002]"
+        store.reverse["[ACCOUNT_002]"] = "[ACCOUNT_003]"
+        store.reverse["[ACCOUNT_003]"] = "[ACCOUNT_004]"
+        store.reverse["[ACCOUNT_004]"] = "final-value"
+
+        with self.assertRaisesRegex(ValueError, "exceeded nested placeholder depth"):
+            restore_value("[ACCOUNT_001]", store)
 
     def test_should_preserve_existing_placeholders_while_sanitizing_raw_values(self) -> None:
         store = _FakePrivacyStore()

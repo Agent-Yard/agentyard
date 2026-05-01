@@ -1448,7 +1448,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
 
         self.assertTrue(outcome.success)
         payload = request_log[0]["json"]
-        self.assertIs(True, payload["enable_thinking"])
+        self.assertNotIn("enable_thinking", payload)
         self.assertEqual("high", payload["reasoning_effort"])
 
     def test_should_not_use_reasoning_env_fallback_for_openai_compatible_payload(self) -> None:

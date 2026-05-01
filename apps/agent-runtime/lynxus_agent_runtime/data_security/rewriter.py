@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from typing import Any
 
 from ..openai_compatible import OpenAiCompatibleSettings, apply_reasoning_settings, chat_completion
 from ..privacy_contracts import PrivacyModelBinding
+from .detectors import PLACEHOLDER_PATTERN
 from .store import SessionPrivacyMapStore
 from .validator import PrivacyMappingBlockedError
+
+ENTITY_TYPE_PATTERN = re.compile(r"^[A-Z]+$")
 
 
 @dataclass(frozen=True)
@@ -47,6 +51,7 @@ class PrivateLlmRewriter:
         rendered = text
         entity_counts: dict[str, int] = {}
         new_placeholder_count = 0
+        placeholder_ranges = [(match.start(), match.end()) for match in PLACEHOLDER_PATTERN.finditer(rendered)]
         seen_ranges: list[tuple[int, int]] = []
         replacements: list[tuple[int, int, str, str]] = []
         mapping_cache: dict[tuple[str, str], tuple[str, str]] = {}
@@ -54,6 +59,10 @@ class PrivateLlmRewriter:
             raw_value = str(entity.get("rawValue") or "").strip()
             entity_type = str(entity.get("entityType") or "").strip().upper()
             if not raw_value or not entity_type:
+                continue
+            if not ENTITY_TYPE_PATTERN.fullmatch(entity_type):
+                continue
+            if PLACEHOLDER_PATTERN.search(raw_value):
                 continue
             ranges: list[tuple[int, int]] = []
             search_from = 0
@@ -63,7 +72,7 @@ class PrivateLlmRewriter:
                     break
                 end = start + len(raw_value)
                 search_from = end
-                if any(not (end <= left or start >= right) for left, right in seen_ranges):
+                if _overlaps_any(start, end, placeholder_ranges) or _overlaps_any(start, end, seen_ranges):
                     continue
                 ranges.append((start, end))
             if not ranges:
@@ -148,3 +157,7 @@ def _current_tool_loop_step(usage_tracker: object | None) -> int | None:
     if current_step is None:
         return None
     return current_step()
+
+
+def _overlaps_any(start: int, end: int, ranges: list[tuple[int, int]]) -> bool:
+    return any(not (end <= left or start >= right) for left, right in ranges)

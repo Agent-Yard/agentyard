@@ -7,6 +7,8 @@ from typing import Any
 from .detectors import PLACEHOLDER_PATTERN, detect_sensitive_text
 from .store import MappingEntry, SessionPrivacyMapStore
 
+MAX_PLACEHOLDER_RESTORE_DEPTH = 3
+
 
 @dataclass(frozen=True)
 class SanitizationResult:
@@ -89,7 +91,14 @@ def _restore_text(text: str, store: SessionPrivacyMapStore) -> str:
             raise ValueError(f"unknown placeholder: {placeholder}")
         return raw_value
 
-    return PLACEHOLDER_PATTERN.sub(replace, text)
+    restored = text
+    for _ in range(MAX_PLACEHOLDER_RESTORE_DEPTH):
+        if PLACEHOLDER_PATTERN.search(restored) is None:
+            return restored
+        restored = PLACEHOLDER_PATTERN.sub(replace, restored)
+    if PLACEHOLDER_PATTERN.search(restored) is not None:
+        raise ValueError("privacy restore exceeded nested placeholder depth")
+    return restored
 
 
 def _dedupe_replacements(items: list[tuple[int, int, MappingEntry]]) -> list[tuple[int, int, MappingEntry]]:
