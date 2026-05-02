@@ -50,6 +50,7 @@ class SessionAgentRuntimeGatewayTest {
             assertEquals(1.0, meterRegistry.get("lynxus.runtime_stream.missing_final_outcome").counter().count());
             org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"kind\":\"ERROR\"");
             org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"code\":\"MISSING_FINAL_OUTCOME\"");
+            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"stage\":\"FINAL_OUTCOME_BUILD\"");
         } finally {
             server.stop(0);
         }
@@ -92,6 +93,7 @@ class SessionAgentRuntimeGatewayTest {
             assertEquals(1.0, meterRegistry.get("lynxus.runtime_stream.stream_stall").counter().count());
             assertEquals(1, relayedFrames.size());
             org.assertj.core.api.Assertions.assertThat(relayedFrames.getFirst()).contains("\"code\":\"WORKER_STREAM_STALL\"");
+            org.assertj.core.api.Assertions.assertThat(relayedFrames.getFirst()).contains("\"stage\":\"PROVIDER_STREAM\"");
         } finally {
             server.stop(0);
             serverExecutor.shutdownNow();
@@ -118,6 +120,7 @@ class SessionAgentRuntimeGatewayTest {
             assertEquals(1, relayedFrames.size());
             org.assertj.core.api.Assertions.assertThat(relayedFrames.getFirst()).contains("\"kind\":\"ERROR\"");
             org.assertj.core.api.Assertions.assertThat(relayedFrames.getFirst()).contains("\"code\":\"WORKER_STREAM_ABORTED\"");
+            org.assertj.core.api.Assertions.assertThat(relayedFrames.getFirst()).contains("\"stage\":\"PROVIDER_STREAM\"");
         } finally {
             server.stop(0);
         }
@@ -182,6 +185,7 @@ class SessionAgentRuntimeGatewayTest {
             org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"kind\":\"FINAL_OUTCOME\"");
             org.assertj.core.api.Assertions.assertThat(relayedFrames.get(2)).contains("\"kind\":\"ERROR\"");
             org.assertj.core.api.Assertions.assertThat(relayedFrames.get(2)).contains("\"code\":\"STREAM_RELAY_FAILED\"");
+            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(2)).contains("\"stage\":\"PROVIDER_STREAM\"");
             org.assertj.core.api.Assertions.assertThat(relayedFrames.get(2)).contains("\"frameId\":\"exec-1:3\"");
         } finally {
             server.stop(0);
@@ -216,6 +220,7 @@ class SessionAgentRuntimeGatewayTest {
             org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"kind\":\"FINAL_OUTCOME\"");
             org.assertj.core.api.Assertions.assertThat(relayedFrames.get(2)).contains("\"kind\":\"ERROR\"");
             org.assertj.core.api.Assertions.assertThat(relayedFrames.get(2)).contains("\"code\":\"DUPLICATE_FINAL_OUTCOME\"");
+            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(2)).contains("\"stage\":\"FINAL_OUTCOME_BUILD\"");
             org.assertj.core.api.Assertions.assertThat(relayedFrames.get(2)).contains("\"frameId\":\"exec-1:4\"");
         } finally {
             server.stop(0);
@@ -242,6 +247,7 @@ class SessionAgentRuntimeGatewayTest {
             assertEquals(1, relayedFrames.size());
             org.assertj.core.api.Assertions.assertThat(relayedFrames.getFirst()).contains("\"kind\":\"ERROR\"");
             org.assertj.core.api.Assertions.assertThat(relayedFrames.getFirst()).contains("\"code\":\"INVALID_FINAL_OUTCOME\"");
+            org.assertj.core.api.Assertions.assertThat(relayedFrames.getFirst()).contains("\"stage\":\"FINAL_OUTCOME_BUILD\"");
             org.assertj.core.api.Assertions.assertThat(relayedFrames.getFirst()).contains("\"frameId\":\"exec-1:2\"");
         } finally {
             server.stop(0);
@@ -275,6 +281,7 @@ class SessionAgentRuntimeGatewayTest {
             org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"kind\":\"ERROR\"");
             org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"visibility\":\"OPERATOR\"");
             org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"code\":\"STREAM_RELAY_FAILED\"");
+            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"stage\":\"PROVIDER_STREAM\"");
             org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"frameId\":\"exec-1:2\"");
         } finally {
             server.stop(0);

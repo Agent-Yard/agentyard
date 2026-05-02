@@ -143,6 +143,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertFalse(final_frames[0]["payload"]["outcome"]["success"])
         self.assertIn("non-streaming fallback cannot replay", final_frames[0]["payload"]["outcome"]["failureReason"])
         self.assertEqual("TRANSCRIPT_REPLAY_UNSUPPORTED_ON_FALLBACK", frames[-2]["payload"]["code"])
+        self.assertEqual("TRANSCRIPT_PERSISTENCE", frames[-2]["payload"]["stage"])
         self.assertEqual([], [frame for frame in frames if frame["kind"] == "REPLY_BLOCK_DELTA"])
         self.assertEqual(1, len(transcript_store.failed))
 
@@ -301,6 +302,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
         self.assertEqual("ERROR", frames[-2]["kind"])
         self.assertEqual("TRANSCRIPT_REPLAY_UNSUPPORTED_ON_FALLBACK", frames[-2]["payload"]["code"])
+        self.assertEqual("TRANSCRIPT_PERSISTENCE", frames[-2]["payload"]["stage"])
         self.assertFalse(frames[-1]["payload"]["outcome"]["success"])
 
     def test_should_include_committed_same_owner_epoch_transcript_in_provider_payload(self) -> None:

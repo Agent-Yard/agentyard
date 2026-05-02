@@ -354,6 +354,8 @@ public interface SessionAgentRuntimeGateway {
                     code,
                     "message",
                     message,
+                    "stage",
+                    syntheticErrorStage(code),
                     "retryable",
                     retryable,
                     "details",
@@ -373,6 +375,13 @@ public interface SessionAgentRuntimeGateway {
                     error.toString()
                 );
             }
+        }
+
+        private static String syntheticErrorStage(String code) {
+            return switch (code) {
+                case "DUPLICATE_FINAL_OUTCOME", "INVALID_FINAL_OUTCOME", "MISSING_FINAL_OUTCOME" -> "FINAL_OUTCOME_BUILD";
+                default -> "PROVIDER_STREAM";
+            };
         }
 
         private StreamProtocolFailureException streamProtocolFailure(

@@ -148,7 +148,7 @@ async def stream_agent_turn(
             payload={
                 "code": "TRANSCRIPT_REPLAY_UNSUPPORTED_ON_FALLBACK",
                 "message": message,
-                "stage": "TRANSCRIPT_REPLAY",
+                "stage": "TRANSCRIPT_PERSISTENCE",
                 "retryable": False,
                 "details": {},
             },
