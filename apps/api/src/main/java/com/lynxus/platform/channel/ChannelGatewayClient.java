@@ -3,6 +3,8 @@ package com.lynxus.platform.channel;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundActivityRequest;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundActivityResponse;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDeliveryRequest;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfig;
@@ -41,6 +43,8 @@ public class ChannelGatewayClient {
     private static final ParameterizedTypeReference<ApiEnvelope<ChannelConversationBinding>> CHANNEL_BINDING = new ParameterizedTypeReference<>() {
     };
     private static final ParameterizedTypeReference<ApiEnvelope<ChannelOutboundDelivery>> CHANNEL_OUTBOUND_DELIVERY = new ParameterizedTypeReference<>() {
+    };
+    private static final ParameterizedTypeReference<ApiEnvelope<ChannelOutboundActivityResponse>> CHANNEL_OUTBOUND_ACTIVITY = new ParameterizedTypeReference<>() {
     };
     private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelTemplateBinding>>> CHANNEL_TEMPLATE_BINDING_LIST = new ParameterizedTypeReference<>() {
     };
@@ -148,6 +152,14 @@ public class ChannelGatewayClient {
             .body(request)
             .retrieve()
             .body(CHANNEL_OUTBOUND_DELIVERY)));
+    }
+
+    public ChannelOutboundActivityResponse sendOutboundActivity(ChannelOutboundActivityRequest request) {
+        return invoke(() -> body(restClient.post()
+            .uri("/internal/channel-outbound/activities")
+            .body(request)
+            .retrieve()
+            .body(CHANNEL_OUTBOUND_ACTIVITY)));
     }
 
     public List<ChannelTemplateBinding> listTemplateBindings(String channelProfileId) {

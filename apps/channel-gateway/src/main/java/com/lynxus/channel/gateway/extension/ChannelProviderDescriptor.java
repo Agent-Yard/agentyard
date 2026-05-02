@@ -12,12 +12,14 @@ public record ChannelProviderDescriptor(
     String registrationId,
     String baseUrl,
     String sendOutboundPath,
+    String sendActivityPath,
     String runJobPath,
     boolean gatewayNative,
     Map<String, Object> descriptor,
     String definitionDigest,
     Map<String, Object> configSchema,
     Map<String, Object> defaultConfig,
+    ChannelProviderCapabilities capabilities,
     Map<String, ChannelProviderJobDefinition> jobDefinitionsByType
 ) {
     public ChannelProviderDescriptor {
@@ -28,10 +30,12 @@ public record ChannelProviderDescriptor(
         registrationId = normalizeOptional(registrationId);
         baseUrl = normalizeOptional(baseUrl);
         sendOutboundPath = normalizeOptional(sendOutboundPath);
+        sendActivityPath = normalizeOptional(sendActivityPath);
         runJobPath = normalizeOptional(runJobPath);
         descriptor = immutableObject(descriptor);
         configSchema = immutableObject(configSchema);
         defaultConfig = immutableObject(defaultConfig);
+        capabilities = capabilities == null ? ChannelProviderCapabilities.unsupported() : capabilities;
         jobDefinitionsByType = jobDefinitionsByType == null || jobDefinitionsByType.isEmpty()
             ? Map.of()
             : Collections.unmodifiableMap(new TreeMap<>(jobDefinitionsByType));
@@ -46,6 +50,14 @@ public record ChannelProviderDescriptor(
             return Optional.empty();
         }
         return Optional.ofNullable(jobDefinitionsByType.get(jobType.trim()));
+    }
+
+    public boolean supportsTyping() {
+        return capabilities.typing();
+    }
+
+    public boolean supportsDraftUpdate() {
+        return capabilities.draftUpdate();
     }
 
     private static Map<String, Object> immutableObject(Map<String, Object> value) {
@@ -102,5 +114,11 @@ public record ChannelProviderDescriptor(
             return result;
         }
         return Map.of();
+    }
+
+    public record ChannelProviderCapabilities(boolean typing, boolean draftUpdate) {
+        public static ChannelProviderCapabilities unsupported() {
+            return new ChannelProviderCapabilities(false, false);
+        }
     }
 }

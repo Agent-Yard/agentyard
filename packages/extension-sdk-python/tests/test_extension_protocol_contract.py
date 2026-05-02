@@ -7,6 +7,7 @@ import pytest
 
 from lynxus_extension_sdk.protocol import (
     CHANNEL_PROVIDER_RUN_JOB_ENDPOINT,
+    CHANNEL_PROVIDER_SEND_ACTIVITY_ENDPOINT,
     CHANNEL_PROVIDER_SEND_OUTBOUND_ENDPOINT,
     CREATE_CREDENTIAL_ENDPOINT,
     CREDENTIAL_LIFECYCLE_REQUIRED_HEADERS,
@@ -65,6 +66,7 @@ def test_endpoint_key_constants_match_json_schema_endpoint_properties() -> None:
     }
     channel_endpoint_constants = {
         CHANNEL_PROVIDER_SEND_OUTBOUND_ENDPOINT,
+        CHANNEL_PROVIDER_SEND_ACTIVITY_ENDPOINT,
         CHANNEL_PROVIDER_RUN_JOB_ENDPOINT,
         CREATE_CREDENTIAL_ENDPOINT,
         ROTATE_CREDENTIAL_ENDPOINT,
@@ -75,6 +77,7 @@ def test_endpoint_key_constants_match_json_schema_endpoint_properties() -> None:
     assert tool_endpoint_constants == {"invoke", "createCredential", "rotateCredential", "revokeCredential", "validateCredential"}
     assert channel_endpoint_constants == {
         "sendOutbound",
+        "sendActivity",
         "runJob",
         "createCredential",
         "rotateCredential",

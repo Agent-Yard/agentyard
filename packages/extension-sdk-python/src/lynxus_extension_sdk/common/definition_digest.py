@@ -29,13 +29,19 @@ def channel_provider_definition_digest_input(descriptor: dict[str, Any]) -> dict
     job_definitions.sort(key=lambda job: _utf16_sort_key(job["jobType"]))
 
     endpoints = descriptor.get("endpoints") or {}
+    capabilities = descriptor.get("capabilities") or {}
     return {
         "descriptorType": CHANNEL_PROVIDER_DESCRIPTOR_TYPE,
         "providerType": descriptor.get("providerType"),
         "accountConfigSchema": validation_only_schema(descriptor.get("accountConfigSchema")),
         "credentialSchema": validation_only_schema(descriptor.get("credentialSchema")),
+        "capabilities": {
+            "draftUpdate": capabilities.get("draftUpdate") is True,
+            "typing": capabilities.get("typing") is True,
+        },
         "endpoints": {
             "sendOutbound": endpoints.get("sendOutbound"),
+            "sendActivity": endpoints.get("sendActivity"),
             "runJob": endpoints.get("runJob"),
             "createCredential": endpoints.get("createCredential"),
             "rotateCredential": endpoints.get("rotateCredential"),

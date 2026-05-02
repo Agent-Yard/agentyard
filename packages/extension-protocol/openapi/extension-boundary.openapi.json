@@ -208,6 +208,60 @@
         }
       }
     },
+    "/channel/send-activity": {
+      "post": {
+        "operationId": "sendChannelActivity",
+        "summary": "Representative path for channelProvider.endpoints.sendActivity. Actual path is manifest-declared.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AuthorizationHeader"
+          },
+          {
+            "$ref": "#/components/parameters/RegistrationIdHeaderRequired"
+          },
+          {
+            "$ref": "#/components/parameters/DescriptorTypeHeader"
+          },
+          {
+            "$ref": "#/components/parameters/DescriptorIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/TraceIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/RequestIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChannelProviderActivityRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Transient channel activity result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelOutboundActivityResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/ExtensionErrorResponse"
+          }
+        }
+      }
+    },
     "/channel/run-job": {
       "post": {
         "operationId": "runChannelProviderJob",
@@ -751,8 +805,25 @@
               "$ref": "#/components/schemas/ChannelJobDefinition"
             }
           },
+          "capabilities": {
+            "$ref": "#/components/schemas/ChannelProviderCapabilities"
+          },
           "endpoints": {
             "$ref": "#/components/schemas/ChannelProviderEndpoints"
+          }
+        }
+      },
+      "ChannelProviderCapabilities": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "typing": {
+            "type": "boolean",
+            "default": false
+          },
+          "draftUpdate": {
+            "type": "boolean",
+            "default": false
           }
         }
       },
@@ -830,6 +901,9 @@
         "required": ["sendOutbound"],
         "properties": {
           "sendOutbound": {
+            "$ref": "#/components/schemas/DeclaredPath"
+          },
+          "sendActivity": {
             "$ref": "#/components/schemas/DeclaredPath"
           },
           "runJob": {
@@ -1236,6 +1310,80 @@
           },
           "externalMessageId": {
             "type": "string"
+          },
+          "retryable": {
+            "type": "boolean"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/JsonObject"
+          }
+        }
+      },
+      "ChannelOutboundActivityType": {
+        "type": "string",
+        "enum": ["TYPING_START", "TYPING_STOP", "DRAFT_CREATE", "DRAFT_UPDATE", "DRAFT_COMPLETE", "DRAFT_DISCARD"]
+      },
+      "ChannelProviderActivityRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["providerType", "channelProfileId", "config", "idempotencyKey", "traceContext", "payload"],
+        "properties": {
+          "providerType": {
+            "type": "string"
+          },
+          "channelProfileId": {
+            "type": "string"
+          },
+          "config": {
+            "$ref": "#/components/schemas/JsonObject"
+          },
+          "externalSecretRef": {
+            "$ref": "#/components/schemas/ExternalSecretRef"
+          },
+          "idempotencyKey": {
+            "$ref": "#/components/schemas/IdempotencyKey"
+          },
+          "traceContext": {
+            "$ref": "#/components/schemas/TraceContext"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/ChannelProviderActivityPayload"
+          }
+        }
+      },
+      "ChannelProviderActivityPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["externalConversationId", "frameId", "activityType", "activity"],
+        "properties": {
+          "externalConversationId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": ["string", "null"]
+          },
+          "turnId": {
+            "type": ["string", "null"]
+          },
+          "frameId": {
+            "type": "string"
+          },
+          "activityType": {
+            "$ref": "#/components/schemas/ChannelOutboundActivityType"
+          },
+          "activity": {
+            "$ref": "#/components/schemas/JsonObject"
+          }
+        }
+      },
+      "ChannelOutboundActivityResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "retryable", "metadata"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["SENT", "ACCEPTED", "UNSUPPORTED", "NO_OP"]
           },
           "retryable": {
             "type": "boolean"

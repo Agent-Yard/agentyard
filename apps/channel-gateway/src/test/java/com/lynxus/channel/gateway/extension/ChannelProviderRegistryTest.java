@@ -56,11 +56,14 @@ final class ChannelProviderRegistryTest {
     @Test
     void ignoresToolOnlyRegistrationsAndLoadsRemoteChannelProvidersWithSdkHeaders() {
         CapturingFetcher fetcher = new CapturingFetcher();
-        fetcher.responses.put("acme-channel-provider", manifest(channelDescriptor(
+        Map<String, Object> channelDescriptor = channelDescriptor(
             "enterprise.acme.internal-im",
             objectSchema(Map.of("tenant", Map.of("type", "string")), List.of("tenant")),
             Map.of("tenant", "acme")
-        )));
+        );
+        channelDescriptor.put("capabilities", Map.of("typing", true, "draftUpdate", false));
+        ((Map<String, Object>) channelDescriptor.get("endpoints")).put("sendActivity", "/channel/send-activity");
+        fetcher.responses.put("acme-channel-provider", manifest(channelDescriptor));
 
         RuntimeChannelProviderRegistry registry = registry("""
             lynxus:
@@ -83,7 +86,11 @@ final class ChannelProviderRegistryTest {
             """, fetcher);
 
         assertTrue(registry.snapshot().ready());
-        assertEquals("enterprise.acme.internal-im", registry.requireProvider("enterprise.acme.internal-im").providerType());
+        ChannelProviderDescriptor provider = registry.requireProvider("enterprise.acme.internal-im");
+        assertEquals("enterprise.acme.internal-im", provider.providerType());
+        assertEquals("/channel/send-activity", provider.sendActivityPath());
+        assertTrue(provider.supportsTyping());
+        assertFalse(provider.supportsDraftUpdate());
         assertEquals(Map.of("tenant", "custom"), registry.materializeAndValidateProfileConfig(
             "enterprise.acme.internal-im",
             Map.of("tenant", "custom")

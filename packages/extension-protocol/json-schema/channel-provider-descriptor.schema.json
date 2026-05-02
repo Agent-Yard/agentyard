@@ -56,12 +56,29 @@
         "$ref": "job-definition.schema.json"
       }
     },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "typing": {
+          "type": "boolean",
+          "default": false
+        },
+        "draftUpdate": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
     "endpoints": {
       "type": "object",
       "additionalProperties": false,
       "required": ["sendOutbound"],
       "properties": {
         "sendOutbound": {
+          "$ref": "#/$defs/declaredPath"
+        },
+        "sendActivity": {
           "$ref": "#/$defs/declaredPath"
         },
         "runJob": {

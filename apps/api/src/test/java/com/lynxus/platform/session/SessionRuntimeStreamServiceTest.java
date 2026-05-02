@@ -3,6 +3,7 @@ package com.lynxus.platform.session;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -11,6 +12,7 @@ import static org.mockito.Mockito.when;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamFrame;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamFrameKind;
 import com.lynxus.contracts.session.SessionContracts.StreamVisibility;
+import com.lynxus.platform.channel.ChannelGatewayClient;
 import com.lynxus.contracts.session.SessionRuntimeChangeNotice;
 import com.lynxus.platform.session.SessionRuntimeDtos.SessionRuntimeDetailDto;
 import com.lynxus.platform.session.SessionRuntimeDtos.SessionRuntimeSessionDto;
@@ -190,6 +192,53 @@ class SessionRuntimeStreamServiceTest {
 
         verify(replayStore, org.mockito.Mockito.never()).append(any());
         verify(pubSubBus, org.mockito.Mockito.never()).publish(any(), any());
+    }
+
+    @Test
+    void shouldRelayAcceptedStreamFramesToChannelActivityRelay() {
+        SessionRuntimeReplayStore replayStore = mock(SessionRuntimeReplayStore.class);
+        RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);
+        SessionChannelActivityRelay activityRelay = mock(SessionChannelActivityRelay.class);
+        SessionRuntimeStreamService service = new SessionRuntimeStreamService(
+            mock(SessionRuntimeRepository.class),
+            replayStore,
+            pubSubBus,
+            new RedisKeyspace(),
+            new RedisJsonCodec(new ObjectMapper()),
+            new RedisSharedStateProperties("instance-a", Duration.ofSeconds(10), Duration.ofSeconds(3), Duration.ofHours(24), Duration.ofMinutes(15), 128, Duration.ofSeconds(1)),
+            activityRelay,
+            new io.micrometer.core.instrument.simple.SimpleMeterRegistry()
+        );
+
+        AgentTurnStreamFrame frame = frame(AgentTurnStreamFrameKind.TURN_STARTED, StreamVisibility.OPERATOR, 2, Map.of());
+        service.acceptStreamFrame(frame);
+
+        verify(activityRelay).relay(frame);
+    }
+
+    @Test
+    void shouldStillAcceptAndPublishFrameWhenChannelBindingLookupFails() {
+        SessionRuntimeReplayStore replayStore = mock(SessionRuntimeReplayStore.class);
+        RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);
+        RedisKeyspace keyspace = new RedisKeyspace();
+        ChannelGatewayClient channelGatewayClient = mock(ChannelGatewayClient.class);
+        when(channelGatewayClient.getBindingBySession("session-1")).thenThrow(new IllegalStateException("gateway unavailable"));
+        when(replayStore.append(any())).thenReturn(true);
+        SessionRuntimeStreamService service = new SessionRuntimeStreamService(
+            mock(SessionRuntimeRepository.class),
+            replayStore,
+            pubSubBus,
+            keyspace,
+            new RedisJsonCodec(new ObjectMapper()),
+            new RedisSharedStateProperties("instance-a", Duration.ofSeconds(10), Duration.ofSeconds(3), Duration.ofHours(24), Duration.ofMinutes(15), 128, Duration.ofSeconds(1)),
+            new DefaultSessionChannelActivityRelay(channelGatewayClient),
+            new io.micrometer.core.instrument.simple.SimpleMeterRegistry()
+        );
+
+        assertDoesNotThrow(() -> service.acceptStreamFrame(frame(AgentTurnStreamFrameKind.TURN_STARTED, StreamVisibility.OPERATOR, 2, Map.of())));
+
+        verify(replayStore).append(argThat(event -> "SESSION_PROGRESS".equals(event.type())));
+        verify(pubSubBus).publish(eq(keyspace.sseChannelSessionUpdated()), any());
     }
 
     @Test

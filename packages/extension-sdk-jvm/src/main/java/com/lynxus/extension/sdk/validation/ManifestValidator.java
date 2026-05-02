@@ -174,6 +174,9 @@ public final class ManifestValidator {
 
         Map<String, Object> endpoints = requireObjectField(descriptor, "endpoints", path, errors);
         validateDeclaredEndpoint(endpoints, LynxusExtensionProtocol.CHANNEL_PROVIDER_SEND_OUTBOUND_ENDPOINT, path + "/endpoints", errors);
+        if (endpoints.containsKey(LynxusExtensionProtocol.CHANNEL_PROVIDER_SEND_ACTIVITY_ENDPOINT)) {
+            validateDeclaredEndpoint(endpoints, LynxusExtensionProtocol.CHANNEL_PROVIDER_SEND_ACTIVITY_ENDPOINT, path + "/endpoints", errors);
+        }
         validateCredentialEndpointCompleteness(descriptor, endpoints, path, errors);
 
         validateUiPair(

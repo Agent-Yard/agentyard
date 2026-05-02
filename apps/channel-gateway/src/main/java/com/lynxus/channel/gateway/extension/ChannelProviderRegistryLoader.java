@@ -125,12 +125,14 @@ public final class ChannelProviderRegistryLoader {
                         registration.registrationId(),
                         registration.baseUrl(),
                         sendOutboundPath(descriptor),
+                        sendActivityPath(descriptor),
                         runJobPath(descriptor),
                         ExtensionRegistrationLoader.CORE_CHANNEL_GATEWAY_REGISTRATION_ID.equals(registration.registrationId()),
                         descriptor,
                         definitionDigest,
                         configSchema,
                         defaultConfig,
+                        capabilities(descriptor),
                         ChannelProviderDescriptor.jobDefinitions(descriptor)
                     )
                 );
@@ -181,22 +183,37 @@ public final class ChannelProviderRegistryLoader {
 
     @SuppressWarnings("unchecked")
     private static String sendOutboundPath(Map<String, Object> descriptor) {
+        return endpointPath(descriptor, "sendOutbound");
+    }
+
+    private static String sendActivityPath(Map<String, Object> descriptor) {
+        return endpointPath(descriptor, "sendActivity");
+    }
+
+    private static String runJobPath(Map<String, Object> descriptor) {
+        return endpointPath(descriptor, "runJob");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String endpointPath(Map<String, Object> descriptor, String endpointName) {
         Object endpoints = descriptor.get("endpoints");
         if (!(endpoints instanceof Map<?, ?> rawEndpoints)) {
             return null;
         }
-        Object value = rawEndpoints.get("sendOutbound");
+        Object value = rawEndpoints.get(endpointName);
         return value instanceof String path && !path.isBlank() ? path.trim() : null;
     }
 
     @SuppressWarnings("unchecked")
-    private static String runJobPath(Map<String, Object> descriptor) {
-        Object endpoints = descriptor.get("endpoints");
-        if (!(endpoints instanceof Map<?, ?> rawEndpoints)) {
-            return null;
+    private static ChannelProviderDescriptor.ChannelProviderCapabilities capabilities(Map<String, Object> descriptor) {
+        Object rawCapabilities = descriptor.get("capabilities");
+        if (!(rawCapabilities instanceof Map<?, ?> capabilities)) {
+            return ChannelProviderDescriptor.ChannelProviderCapabilities.unsupported();
         }
-        Object value = rawEndpoints.get("runJob");
-        return value instanceof String path && !path.isBlank() ? path.trim() : null;
+        return new ChannelProviderDescriptor.ChannelProviderCapabilities(
+            Boolean.TRUE.equals(capabilities.get("typing")),
+            Boolean.TRUE.equals(capabilities.get("draftUpdate"))
+        );
     }
 
     private List<ExtensionRegistration> channelProviderRegistrations() {

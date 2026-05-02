@@ -109,6 +109,7 @@ public class SessionRuntimeStreamService {
     private final RedisKeyspace keyspace;
     private final RedisJsonCodec codec;
     private final RedisSharedStateProperties properties;
+    private final SessionChannelActivityRelay channelActivityRelay;
     private final Counter noticeMaterializedCounter;
     private final Counter fallbackPollCounter;
     private final Map<String, CopyOnWriteArraySet<Subscriber>> emittersBySession = new ConcurrentHashMap<>();
@@ -132,6 +133,7 @@ public class SessionRuntimeStreamService {
         RedisKeyspace keyspace,
         RedisJsonCodec codec,
         RedisSharedStateProperties properties,
+        SessionChannelActivityRelay channelActivityRelay,
         MeterRegistry meterRegistry
     ) {
         this.repository = repository;
@@ -140,6 +142,7 @@ public class SessionRuntimeStreamService {
         this.keyspace = keyspace;
         this.codec = codec;
         this.properties = properties;
+        this.channelActivityRelay = channelActivityRelay == null ? SessionChannelActivityRelay.noop() : channelActivityRelay;
         this.noticeMaterializedCounter = Counter.builder("lynxus.shared_state.runtime.notice.materialized")
             .description("Number of runtime change notices materialized into SSE update events")
             .register(meterRegistry);
@@ -156,7 +159,7 @@ public class SessionRuntimeStreamService {
         RedisJsonCodec codec,
         RedisSharedStateProperties properties
     ) {
-        this(repository, replayStore, pubSubBus, keyspace, codec, properties, new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+        this(repository, replayStore, pubSubBus, keyspace, codec, properties, SessionChannelActivityRelay.noop(), new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
     }
 
     @PostConstruct
@@ -227,6 +230,7 @@ public class SessionRuntimeStreamService {
 
     public boolean acceptStreamFrame(AgentTurnStreamFrame frame) {
         validateFrame(frame);
+        channelActivityRelay.relay(frame);
         Optional<SessionRuntimeStreamEvent> event = projectFrame(frame);
         if (event.isEmpty()) {
             return true;

@@ -16,6 +16,10 @@ import com.lynxus.channel.gateway.extension.GatewayNativeChannelProviderAdapters
 import com.lynxus.channel.gateway.testing.EmbeddedPostgresTestDatabase;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelAssistantBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundActivityRequest;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundActivityResponse;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundActivityResponseStatus;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundActivityType;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDeliveryRequest;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDeliveryStatus;
@@ -194,6 +198,32 @@ class OutboundDeliveryExecutionServiceTest {
         assertEquals(first.idempotencyKey(), second.idempotencyKey());
         assertEquals(1, sender.calls());
         assertEquals(1, repository.listOutboundDeliveries(profile.id()).size());
+    }
+
+    @Test
+    void extensionProviderReceivesCanonicalTextImageAndRichTextBlocksUnchanged() {
+        CapturingSender sender = new CapturingSender();
+        ChannelProviderRegistry registry = registry(remoteDescriptor("http://provider.example.com"));
+        ChannelGatewayProfile profile = createProfile(adminService(registry), PROVIDER_TYPE, Map.of(), null);
+        OutboundDeliveryExecutionService service = outboundService(registry, sender);
+        List<Map<String, Object>> blocks = List.of(
+            textBlock("hello"),
+            imageBlock("https://cdn.example.com/image.png", "image/png"),
+            richTextBlock("**hello**")
+        );
+
+        for (Map<String, Object> block : blocks) {
+            service.deliver(new ChannelOutboundDeliveryRequest(
+                profile.id(),
+                "assistant-1",
+                "chat-1",
+                null,
+                null,
+                block,
+                null
+            ));
+            assertEquals(block, sender.invocation.get().requestBody().payload().messageBlock());
+        }
     }
 
     @Test
@@ -435,6 +465,49 @@ class OutboundDeliveryExecutionServiceTest {
         assertEquals("hello", feishuSender.command.get().text());
     }
 
+    @Test
+    void outboundActivityRoutesTypingWhenCapabilityAndEndpointAreDeclared() {
+        CapturingActivitySender sender = new CapturingActivitySender();
+        ChannelProviderRegistry registry = registry(remoteActivityDescriptor("http://provider.example.com", true, false));
+        ChannelGatewayProfile profile = createProfile(adminService(registry), PROVIDER_TYPE, Map.of(), null);
+        OutboundActivityExecutionService service = activityService(registry, sender);
+        ChannelOutboundActivityRequest request = activityRequest(
+            profile.id(),
+            ChannelOutboundActivityType.TYPING_START,
+            "exec-1:1",
+            "activity:exec-1:1:TYPING_START",
+            Map.of()
+        );
+
+        ChannelOutboundActivityResponse first = service.send(request);
+        ChannelOutboundActivityResponse second = service.send(request);
+
+        assertEquals(ChannelOutboundActivityResponseStatus.ACCEPTED, first.status());
+        assertEquals(ChannelOutboundActivityResponseStatus.NO_OP, second.status());
+        assertEquals(1, sender.calls());
+        assertEquals(ChannelOutboundActivityType.TYPING_START, sender.invocation.get().request().activityType());
+        assertEquals("activity:exec-1:1:TYPING_START", sender.invocation.get().requestBody().idempotencyKey());
+    }
+
+    @Test
+    void outboundActivityDoesNotRouteDraftDeltaWhenDraftCapabilityUnsupported() {
+        CapturingActivitySender sender = new CapturingActivitySender();
+        ChannelProviderRegistry registry = registry(remoteActivityDescriptor("http://provider.example.com", true, false));
+        ChannelGatewayProfile profile = createProfile(adminService(registry), PROVIDER_TYPE, Map.of(), null);
+
+        ChannelOutboundActivityResponse response = activityService(registry, sender).send(activityRequest(
+            profile.id(),
+            ChannelOutboundActivityType.DRAFT_UPDATE,
+            "exec-1:2",
+            "activity:exec-1:2:DRAFT_UPDATE",
+            Map.of("delta", "hello")
+        ));
+
+        assertEquals(ChannelOutboundActivityResponseStatus.UNSUPPORTED, response.status());
+        assertEquals(0, sender.calls());
+        assertEquals(0, repository.listOutboundDeliveries(profile.id()).size());
+    }
+
     private ChannelAdminService adminService(ChannelProviderRegistry registry) {
         return new ChannelAdminService(repository, registry);
     }
@@ -449,6 +522,13 @@ class OutboundDeliveryExecutionServiceTest {
             registry,
             sender
         );
+    }
+
+    private OutboundActivityExecutionService activityService(
+        ChannelProviderRegistry registry,
+        ChannelProviderActivitySender sender
+    ) {
+        return new OutboundActivityExecutionService(repository, registry, sender);
     }
 
     private ChannelGatewayProfile createProfile(
@@ -490,6 +570,22 @@ class OutboundDeliveryExecutionServiceTest {
         return Map.copyOf(block);
     }
 
+    private static Map<String, Object> imageBlock(String url, String mimeType) {
+        Map<String, Object> block = new LinkedHashMap<>();
+        block.put("type", "IMAGE");
+        block.put("url", url);
+        block.put("mimeType", mimeType);
+        return Map.copyOf(block);
+    }
+
+    private static Map<String, Object> richTextBlock(String content) {
+        Map<String, Object> block = new LinkedHashMap<>();
+        block.put("type", "RICH_TEXT");
+        block.put("format", "MARKDOWN");
+        block.put("content", content);
+        return Map.copyOf(block);
+    }
+
     private static Map<String, Object> cardBlock(Map<String, Object> data) {
         Map<String, Object> block = new LinkedHashMap<>();
         block.put("type", "CARD");
@@ -513,6 +609,14 @@ class OutboundDeliveryExecutionServiceTest {
         return descriptor(PROVIDER_TYPE, "acme-channel-provider", baseUrl, false);
     }
 
+    private static ChannelProviderDescriptor remoteActivityDescriptor(
+        String baseUrl,
+        boolean typing,
+        boolean draftUpdate
+    ) {
+        return descriptor(PROVIDER_TYPE, "acme-channel-provider", baseUrl, false, typing, draftUpdate, "/channel/send-activity");
+    }
+
     private static ChannelProviderDescriptor nativeDescriptor() {
         return descriptor(FeishuGatewayNativeChannelProviderAdapter.PROVIDER_TYPE, "core-channel-gateway", "http://channel-gateway.example.com", true);
     }
@@ -523,6 +627,18 @@ class OutboundDeliveryExecutionServiceTest {
         String baseUrl,
         boolean gatewayNative
     ) {
+        return descriptor(providerType, registrationId, baseUrl, gatewayNative, false, false, null);
+    }
+
+    private static ChannelProviderDescriptor descriptor(
+        String providerType,
+        String registrationId,
+        String baseUrl,
+        boolean gatewayNative,
+        boolean typing,
+        boolean draftUpdate,
+        String sendActivityPath
+    ) {
         Map<String, Object> descriptor = new LinkedHashMap<>();
         descriptor.put("providerType", providerType);
         descriptor.put("title", "Outbound Provider");
@@ -532,19 +648,48 @@ class OutboundDeliveryExecutionServiceTest {
         descriptor.put("configUiSchema", List.of());
         descriptor.put("defaultConfig", Map.of());
         descriptor.put("jobDefinitions", List.of());
-        descriptor.put("endpoints", Map.of("sendOutbound", "/channel/send-outbound"));
+        descriptor.put("capabilities", Map.of("typing", typing, "draftUpdate", draftUpdate));
+        Map<String, Object> endpoints = new LinkedHashMap<>();
+        endpoints.put("sendOutbound", "/channel/send-outbound");
+        if (sendActivityPath != null) {
+            endpoints.put("sendActivity", sendActivityPath);
+        }
+        descriptor.put("endpoints", endpoints);
         return new ChannelProviderDescriptor(
             providerType,
             registrationId,
             baseUrl,
             "/channel/send-outbound",
+            sendActivityPath,
             null,
             gatewayNative,
             descriptor,
             "digest-" + providerType,
             Map.of(),
             Map.of(),
+            new ChannelProviderDescriptor.ChannelProviderCapabilities(typing, draftUpdate),
             Map.of()
+        );
+    }
+
+    private static ChannelOutboundActivityRequest activityRequest(
+        String channelProfileId,
+        ChannelOutboundActivityType activityType,
+        String frameId,
+        String idempotencyKey,
+        Map<String, Object> payload
+    ) {
+        return new ChannelOutboundActivityRequest(
+            channelProfileId,
+            "assistant-1",
+            "chat-1",
+            "session-1",
+            "turn-1",
+            frameId,
+            activityType,
+            idempotencyKey,
+            payload,
+            new NormalizedChannelTraceContext("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01", null)
         );
     }
 
@@ -562,11 +707,29 @@ class OutboundDeliveryExecutionServiceTest {
 
     private static final class CapturingSender implements ChannelProviderOutboundSender {
         private int calls;
+        private final AtomicReference<ChannelOutboundInvocation> invocation = new AtomicReference<>();
 
         @Override
         public ChannelOutboundResponse send(ChannelOutboundInvocation invocation) {
             calls += 1;
+            this.invocation.set(invocation);
             return new ChannelOutboundResponse(ChannelOutboundResponseStatus.SENT, "msg-1", false, Map.of());
+        }
+
+        int calls() {
+            return calls;
+        }
+    }
+
+    private static final class CapturingActivitySender implements ChannelProviderActivitySender {
+        private int calls;
+        private final AtomicReference<ChannelOutboundActivityInvocation> invocation = new AtomicReference<>();
+
+        @Override
+        public ChannelOutboundActivityResponse send(ChannelOutboundActivityInvocation invocation) {
+            calls += 1;
+            this.invocation.set(invocation);
+            return new ChannelOutboundActivityResponse(ChannelOutboundActivityResponseStatus.ACCEPTED, false, Map.of());
         }
 
         int calls() {

@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileAccountSnapshot;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileStatus;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundActivityRequest;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundActivityType;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfigWriteRequest;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobScheduleType;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobScheduleWriteConfig;
@@ -296,6 +298,55 @@ class ChannelGatewayClientTest {
             assertEquals("/internal/channel-admin/profiles/channel-profile-1/jobs/PULL_MESSAGES", requestUri.get());
             assertTrue(requestBody.get().contains("\"enabled\":true"));
             assertEquals("PULL_MESSAGES", job.jobType());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void shouldProxyOutboundActivityToGateway() throws Exception {
+        AtomicReference<String> method = new AtomicReference<>();
+        AtomicReference<String> requestUri = new AtomicReference<>();
+        AtomicReference<String> requestBody = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/internal/channel-outbound/activities", exchange -> {
+            method.set(exchange.getRequestMethod());
+            requestUri.set(exchange.getRequestURI().toString());
+            requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            writeJson(exchange, 200, """
+                {
+                  "success": true,
+                  "data": {
+                    "status": "ACCEPTED",
+                    "retryable": false,
+                    "metadata": {}
+                  },
+                  "timestamp": "2026-05-02T00:00:00Z"
+                }
+                """);
+        });
+        server.start();
+
+        try {
+            ChannelGatewayClient client = new ChannelGatewayClient(serverUrl(server), "internal-token", new ObjectMapper());
+            var response = client.sendOutboundActivity(new ChannelOutboundActivityRequest(
+                "channel-profile-1",
+                "assistant-1",
+                "chat-1",
+                "session-1",
+                "turn-1",
+                "exec-1:1",
+                ChannelOutboundActivityType.TYPING_START,
+                "stream-frame:exec-1:1:TYPING_START",
+                Map.of(),
+                null
+            ));
+
+            assertEquals("POST", method.get());
+            assertEquals("/internal/channel-outbound/activities", requestUri.get());
+            assertTrue(requestBody.get().contains("\"activityType\":\"TYPING_START\""));
+            assertTrue(requestBody.get().contains("\"idempotencyKey\":\"stream-frame:exec-1:1:TYPING_START\""));
+            assertEquals("ACCEPTED", response.status().name());
         } finally {
             server.stop(0);
         }

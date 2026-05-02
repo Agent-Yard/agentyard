@@ -344,6 +344,31 @@ public final class ChannelContracts {
         ACCEPTED
     }
 
+    public enum ChannelOutboundActivityType {
+        TYPING_START,
+        TYPING_STOP,
+        DRAFT_CREATE,
+        DRAFT_UPDATE,
+        DRAFT_COMPLETE,
+        DRAFT_DISCARD
+    }
+
+    public enum ChannelOutboundActivityResponseStatus {
+        SENT,
+        ACCEPTED,
+        UNSUPPORTED,
+        NO_OP
+    }
+
+    public record ChannelProviderCapabilities(
+        boolean typing,
+        boolean draftUpdate
+    ) {
+        public static ChannelProviderCapabilities unsupported() {
+            return new ChannelProviderCapabilities(false, false);
+        }
+    }
+
     public record ChannelOutboundResponse(
         ChannelOutboundResponseStatus status,
         String externalMessageId,
@@ -351,6 +376,60 @@ public final class ChannelContracts {
         Map<String, Object> metadata
     ) {
         public ChannelOutboundResponse {
+            metadata = requiredImmutableObjectMap(metadata, "metadata");
+        }
+    }
+
+    public record ChannelOutboundActivityRequest(
+        String channelProfileId,
+        String assistantId,
+        String externalConversationId,
+        String sessionId,
+        String turnId,
+        String frameId,
+        ChannelOutboundActivityType activityType,
+        String idempotencyKey,
+        Map<String, Object> payload,
+        NormalizedChannelTraceContext traceContext
+    ) {
+        public ChannelOutboundActivityRequest {
+            payload = immutableObjectMap(payload);
+        }
+    }
+
+    public record ChannelProviderActivityPayload(
+        String externalConversationId,
+        String sessionId,
+        String turnId,
+        String frameId,
+        ChannelOutboundActivityType activityType,
+        Map<String, Object> activity
+    ) {
+        public ChannelProviderActivityPayload {
+            activity = immutableObjectMap(activity);
+        }
+    }
+
+    public record ChannelProviderActivityRequest(
+        String providerType,
+        String channelProfileId,
+        Map<String, Object> config,
+        String externalSecretRef,
+        String idempotencyKey,
+        NormalizedChannelTraceContext traceContext,
+        ChannelProviderActivityPayload payload
+    ) {
+        public ChannelProviderActivityRequest {
+            config = requiredImmutableObjectMap(config, "config");
+        }
+    }
+
+    public record ChannelOutboundActivityResponse(
+        ChannelOutboundActivityResponseStatus status,
+        boolean retryable,
+        Map<String, Object> metadata
+    ) {
+        public ChannelOutboundActivityResponse {
             metadata = requiredImmutableObjectMap(metadata, "metadata");
         }
     }

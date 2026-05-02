@@ -63,6 +63,7 @@ final class ExtensionProtocolContractTest {
         );
         Set<String> channelEndpointConstants = Set.of(
             LynxusExtensionProtocol.CHANNEL_PROVIDER_SEND_OUTBOUND_ENDPOINT,
+            LynxusExtensionProtocol.CHANNEL_PROVIDER_SEND_ACTIVITY_ENDPOINT,
             LynxusExtensionProtocol.CHANNEL_PROVIDER_RUN_JOB_ENDPOINT,
             LynxusExtensionProtocol.CREATE_CREDENTIAL_ENDPOINT,
             LynxusExtensionProtocol.ROTATE_CREDENTIAL_ENDPOINT,
@@ -72,7 +73,7 @@ final class ExtensionProtocolContractTest {
 
         assertEquals(Set.of("invoke", "createCredential", "rotateCredential", "revokeCredential", "validateCredential"), toolEndpointConstants);
         assertEquals(
-            Set.of("sendOutbound", "runJob", "createCredential", "rotateCredential", "revokeCredential", "validateCredential"),
+            Set.of("sendOutbound", "sendActivity", "runJob", "createCredential", "rotateCredential", "revokeCredential", "validateCredential"),
             channelEndpointConstants
         );
         assertEquals(toolEndpointConstants, endpointPropertyKeys(toolDescriptorSchema));

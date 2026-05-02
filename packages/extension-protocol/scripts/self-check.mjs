@@ -417,6 +417,7 @@ function checkOpenApi() {
     "/health/ready",
     "/tools/invoke",
     "/channel/send-outbound",
+    "/channel/send-activity",
     "/channel/run-job",
     "/credentials",
     "/credentials/rotate",
@@ -435,6 +436,8 @@ function checkOpenApi() {
     "RemoteToolInvokeRequest",
     "ToolInvokeResponse",
     "ChannelOutboundRequest",
+    "ChannelProviderActivityRequest",
+    "ChannelOutboundActivityResponse",
     "ChannelRunJobRequest",
     "CreateCredentialRequest",
     "RotateCredentialRequest",
@@ -458,7 +461,7 @@ function checkOpenApi() {
 
   assertNormalizedEventAcceptedOpenApi(openApi);
 
-  const descriptorPaths = ["/tools/invoke", "/channel/send-outbound", "/channel/run-job", "/internal/channel-events/normalized"];
+  const descriptorPaths = ["/tools/invoke", "/channel/send-outbound", "/channel/send-activity", "/channel/run-job", "/internal/channel-events/normalized"];
   for (const descriptorPath of descriptorPaths) {
     const headers = operationHeaders(openApi, descriptorPath, "post");
     for (const header of [
@@ -702,6 +705,9 @@ function validateManifest(manifest) {
 function validateChannelProvider(descriptor, pathPrefix, errors) {
   requireFields(descriptor, ["providerType", "title", "accountConfigSchema", "accountConfigUiSchema", "configSchema", "configUiSchema", "endpoints"], pathPrefix, errors);
   validateDeclaredPath(descriptor.endpoints?.sendOutbound, `${pathPrefix}/endpoints/sendOutbound`, errors);
+  if (hasOwn(descriptor.endpoints ?? {}, "sendActivity")) {
+    validateDeclaredPath(descriptor.endpoints?.sendActivity, `${pathPrefix}/endpoints/sendActivity`, errors);
+  }
   validateCredentialCapability(descriptor, pathPrefix, errors);
   validateUiPair(descriptor.accountConfigSchema, descriptor.accountConfigUiSchema ?? [], `${pathPrefix}/accountConfigUiSchema`, false, errors);
   validateUiPair(descriptor.configSchema, descriptor.configUiSchema ?? [], `${pathPrefix}/configUiSchema`, false, errors);
@@ -1208,8 +1214,13 @@ function channelProviderDigestObject(descriptor) {
     providerType: descriptor.providerType,
     accountConfigSchema: validationOnlySchema(descriptor.accountConfigSchema ?? null),
     credentialSchema: validationOnlySchema(descriptor.credentialSchema ?? null),
+    capabilities: {
+      draftUpdate: descriptor.capabilities?.draftUpdate === true,
+      typing: descriptor.capabilities?.typing === true
+    },
     endpoints: {
       sendOutbound: descriptor.endpoints?.sendOutbound ?? null,
+      sendActivity: descriptor.endpoints?.sendActivity ?? null,
       runJob: descriptor.endpoints?.runJob ?? null,
       createCredential: descriptor.endpoints?.createCredential ?? null,
       rotateCredential: descriptor.endpoints?.rotateCredential ?? null,

@@ -14,6 +14,7 @@ from referencing.jsonschema import DRAFT202012
 
 from lynxus_extension_sdk.protocol import (
     CHANNEL_PROVIDER_RUN_JOB_ENDPOINT,
+    CHANNEL_PROVIDER_SEND_ACTIVITY_ENDPOINT,
     CHANNEL_PROVIDER_SEND_OUTBOUND_ENDPOINT,
     CREATE_CREDENTIAL_ENDPOINT,
     EXTENSION_API_VERSION,
@@ -165,6 +166,8 @@ def _validate_channel_provider(descriptor: dict[str, Any], path: str, errors: li
 
     endpoints = _require_object_field(descriptor, "endpoints", path, errors)
     _validate_declared_endpoint(endpoints, CHANNEL_PROVIDER_SEND_OUTBOUND_ENDPOINT, f"{path}/endpoints", errors)
+    if CHANNEL_PROVIDER_SEND_ACTIVITY_ENDPOINT in endpoints:
+        _validate_declared_endpoint(endpoints, CHANNEL_PROVIDER_SEND_ACTIVITY_ENDPOINT, f"{path}/endpoints", errors)
     _validate_credential_endpoint_completeness(descriptor, endpoints, path, errors)
 
     _validate_ui_pair(

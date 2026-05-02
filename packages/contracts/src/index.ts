@@ -39,6 +39,14 @@ export type ChannelProviderJobScheduleType = 'INTERVAL' | 'CRON' | 'MANUAL';
 export type ChannelProviderJobStatus = 'ACTIVE' | 'RUNNING' | 'PAUSED' | 'DISABLED';
 export type ChannelProviderJobRunStatus = 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'TIMED_OUT';
 export type ChannelOutboundResponseStatus = 'SENT' | 'ACCEPTED';
+export type ChannelOutboundActivityType =
+  | 'TYPING_START'
+  | 'TYPING_STOP'
+  | 'DRAFT_CREATE'
+  | 'DRAFT_UPDATE'
+  | 'DRAFT_COMPLETE'
+  | 'DRAFT_DISCARD';
+export type ChannelOutboundActivityResponseStatus = 'SENT' | 'ACCEPTED' | 'UNSUPPORTED' | 'NO_OP';
 export type ChannelRunJobResponseStatus = 'SUCCEEDED' | 'NOOP';
 export type NormalizedChannelEventType =
   | 'MESSAGE_RECEIVED'
@@ -510,6 +518,49 @@ export interface ChannelOutboundRequest {
 export interface ChannelOutboundResponse {
   status: ChannelOutboundResponseStatus;
   externalMessageId?: string | null;
+  retryable: boolean;
+  metadata: Record<string, unknown>;
+}
+
+export interface ChannelProviderCapabilities {
+  typing: boolean;
+  draftUpdate: boolean;
+}
+
+export interface ChannelOutboundActivityRequest {
+  channelProfileId: string;
+  assistantId: string;
+  externalConversationId: string;
+  sessionId?: string | null;
+  turnId?: string | null;
+  frameId: string;
+  activityType: ChannelOutboundActivityType;
+  idempotencyKey: string;
+  payload: Record<string, unknown>;
+  traceContext?: NormalizedChannelTraceContext | null;
+}
+
+export interface ChannelProviderActivityPayload {
+  externalConversationId: string;
+  sessionId?: string | null;
+  turnId?: string | null;
+  frameId: string;
+  activityType: ChannelOutboundActivityType;
+  activity: Record<string, unknown>;
+}
+
+export interface ChannelProviderActivityRequest {
+  providerType: string;
+  channelProfileId: string;
+  config: Record<string, unknown>;
+  externalSecretRef?: string | null;
+  idempotencyKey: string;
+  traceContext: NormalizedChannelTraceContext;
+  payload: ChannelProviderActivityPayload;
+}
+
+export interface ChannelOutboundActivityResponse {
+  status: ChannelOutboundActivityResponseStatus;
   retryable: boolean;
   metadata: Record<string, unknown>;
 }

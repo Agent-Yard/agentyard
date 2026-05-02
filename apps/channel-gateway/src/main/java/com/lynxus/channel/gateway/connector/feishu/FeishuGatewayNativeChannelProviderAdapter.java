@@ -61,6 +61,7 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
         descriptor.put("configSchema", configSchema());
         descriptor.put("configUiSchema", configUiSchema());
         descriptor.put("defaultConfig", Map.of("receiveIdType", DEFAULT_RECEIVE_ID_TYPE));
+        descriptor.put("capabilities", Map.of("typing", false, "draftUpdate", false));
         descriptor.put("jobDefinitions", List.of());
         descriptor.put("endpoints", endpoints);
         return Map.copyOf(descriptor);
