@@ -27,7 +27,7 @@ from .redis_support import RedisSettings, create_redis_client
 from .streaming import stream_agent_turn
 from .tool_connectors import reset_default_tool_connector_registry, set_default_tool_connector_registry
 from .tooling import execute_playbook_tool_task
-from .transcript_store import TranscriptStoreSettings, create_transcript_store
+from .transcript_store import TranscriptStoreSettings, create_transcript_cache, create_transcript_store
 
 LOGGER = logging.getLogger("lynxus-agent-runtime")
 INSTANCE_ID = (os.getenv("LYNXUS_INSTANCE_ID") or "lynxus-agent-runtime").strip() or "lynxus-agent-runtime"
@@ -79,7 +79,9 @@ async def lifespan(app: FastAPI):
     )
     app.state.redis_client = redis_client
     app.state.redis_settings = redis_settings
-    transcript_store = create_transcript_store()
+    transcript_store_settings = TranscriptStoreSettings.from_env()
+    transcript_cache = create_transcript_cache(redis_settings, transcript_store_settings)
+    transcript_store = create_transcript_store(transcript_store_settings, transcript_cache=transcript_cache)
     transcript_store.initialize()
     retention_sweep_result = transcript_store.sweep_expired()
     app.state.transcript_store = transcript_store
@@ -93,6 +95,7 @@ async def lifespan(app: FastAPI):
             "turnExecutionRetentionSeconds": transcript_store.settings.turn_execution_retention_seconds,
             "transcriptEntryRetentionSeconds": transcript_store.settings.transcript_entry_retention_seconds,
             "retentionSweepLimit": transcript_store.settings.retention_sweep_limit,
+            "transcriptCacheTtlSeconds": transcript_store.settings.transcript_cache_ttl_seconds,
         },
     )
     yield

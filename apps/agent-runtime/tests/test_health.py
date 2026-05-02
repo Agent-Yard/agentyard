@@ -27,13 +27,31 @@ class FakeRedisClient:
 
 
 class FakeTranscriptStore:
-    settings = type("Settings", (), {"database_url": "postgresql+psycopg://test"})()
+    settings = type(
+        "Settings",
+        (),
+        {
+            "database_url": "postgresql+psycopg://test",
+            "turn_execution_retention_seconds": 60,
+            "transcript_entry_retention_seconds": 60,
+            "retention_sweep_limit": 50,
+            "transcript_cache_ttl_seconds": 60,
+        },
+    )()
 
     def __init__(self, check_results: list[object]) -> None:
         self._check_results = deque(check_results)
 
     def initialize(self) -> None:
         return None
+
+    def sweep_expired(self) -> dict[str, int]:
+        return {
+            "turnExecutionsAborted": 0,
+            "turnExecutionsDeleted": 0,
+            "transcriptEntriesAborted": 0,
+            "transcriptEntriesDeleted": 0,
+        }
 
     def check_database(self) -> dict[str, object]:
         if not self._check_results:

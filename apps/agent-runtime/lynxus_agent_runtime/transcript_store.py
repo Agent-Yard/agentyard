@@ -3,22 +3,27 @@ from __future__ import annotations
 import os
 import uuid
 import json
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, Protocol
 
+from redis.exceptions import RedisError
 from sqlalchemy import DateTime, Integer, JSON, MetaData, String, Text, UniqueConstraint, create_engine, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from .models import AgentTurnExecutionOutcome
 from .openai_compatible import OpenAiCompatibleStreamMessage
+from .redis_support import RedisSettings, create_sync_redis_client
 
 DEFAULT_DATABASE_URL = "postgresql+psycopg://lynxus:lynxus@127.0.0.1:5432/lynxus_core"
 SCHEMA_NAME = "agent_runtime"
 DEFAULT_TURN_EXECUTION_RETENTION_SECONDS = 30 * 24 * 60 * 60
 DEFAULT_TRANSCRIPT_ENTRY_RETENTION_SECONDS = 30 * 24 * 60 * 60
 DEFAULT_RETENTION_SWEEP_LIMIT = 500
+DEFAULT_TRANSCRIPT_CACHE_TTL_SECONDS = 60 * 60
+LOGGER = logging.getLogger(__name__)
 
 
 def now_utc() -> datetime:
@@ -31,6 +36,7 @@ class TranscriptStoreSettings:
     turn_execution_retention_seconds: int = DEFAULT_TURN_EXECUTION_RETENTION_SECONDS
     transcript_entry_retention_seconds: int = DEFAULT_TRANSCRIPT_ENTRY_RETENTION_SECONDS
     retention_sweep_limit: int = DEFAULT_RETENTION_SWEEP_LIMIT
+    transcript_cache_ttl_seconds: int = DEFAULT_TRANSCRIPT_CACHE_TTL_SECONDS
 
     @classmethod
     def from_env(cls) -> "TranscriptStoreSettings":
@@ -48,6 +54,10 @@ class TranscriptStoreSettings:
             retention_sweep_limit=_positive_int_env(
                 "LYNXUS_AGENT_RUNTIME_RETENTION_SWEEP_LIMIT",
                 DEFAULT_RETENTION_SWEEP_LIMIT,
+            ),
+            transcript_cache_ttl_seconds=_positive_int_env(
+                "LYNXUS_AGENT_RUNTIME_TRANSCRIPT_CACHE_TTL_SECONDS",
+                DEFAULT_TRANSCRIPT_CACHE_TTL_SECONDS,
             ),
         )
 
@@ -116,11 +126,94 @@ class CommittedTranscriptEntry:
     content_json: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class TranscriptCachePayload:
+    session_id: str
+    owner_agent_id: str
+    ownership_epoch: int
+    provider_type: str
+    last_committed_seq: int
+    messages: list[dict[str, Any]]
+
+
+class TranscriptCache(Protocol):
+    def get(self, context: TurnExecutionContext, provider_type: str) -> TranscriptCachePayload | None:
+        ...
+
+    def put(self, context: TurnExecutionContext, payload: TranscriptCachePayload) -> None:
+        ...
+
+    def delete(self, context: TurnExecutionContext) -> None:
+        ...
+
+    def close(self) -> None:
+        ...
+
+
+class RedisTranscriptCache:
+    def __init__(self, redis_client: Any, ttl_seconds: int) -> None:
+        self.redis_client = redis_client
+        self.ttl_seconds = max(1, ttl_seconds)
+
+    def get(self, context: TurnExecutionContext, provider_type: str) -> TranscriptCachePayload | None:
+        key = transcript_cache_key(context)
+        try:
+            raw_payload = self.redis_client.get(key)
+        except RedisError as error:
+            LOGGER.warning("transcript cache read failed key=%s reason=%s", key, error)
+            return None
+        if raw_payload is None:
+            return None
+        try:
+            payload = json.loads(raw_payload)
+        except (TypeError, json.JSONDecodeError):
+            LOGGER.warning("transcript cache payload is malformed key=%s", key)
+            return None
+        return _hydrate_transcript_cache_payload(payload, context, provider_type)
+
+    def put(self, context: TurnExecutionContext, payload: TranscriptCachePayload) -> None:
+        key = transcript_cache_key(context)
+        try:
+            self.redis_client.set(
+                key,
+                json.dumps(_transcript_cache_payload_json(payload), ensure_ascii=False),
+                ex=self.ttl_seconds,
+            )
+        except RedisError as error:
+            LOGGER.warning("transcript cache write failed key=%s reason=%s", key, error)
+
+    def delete(self, context: TurnExecutionContext) -> None:
+        key = transcript_cache_key(context)
+        try:
+            self.redis_client.delete(key)
+        except RedisError as error:
+            LOGGER.warning("transcript cache delete failed key=%s reason=%s", key, error)
+
+    def close(self) -> None:
+        close = getattr(self.redis_client, "close", None)
+        if callable(close):
+            close()
+
+
+def create_transcript_cache(
+    redis_settings: RedisSettings,
+    store_settings: TranscriptStoreSettings,
+) -> RedisTranscriptCache:
+    return RedisTranscriptCache(
+        create_sync_redis_client(redis_settings),
+        ttl_seconds=store_settings.transcript_cache_ttl_seconds,
+    )
+
+
 class TranscriptStore(Protocol):
     def begin_execution(self, context: TurnExecutionContext) -> AgentTurnExecutionOutcome | None:
         ...
 
-    def load_committed_provider_messages(self, context: TurnExecutionContext) -> list[dict[str, Any]]:
+    def load_committed_provider_messages(
+        self,
+        context: TurnExecutionContext,
+        provider_type: str = "OPENAI_COMPATIBLE",
+    ) -> list[dict[str, Any]]:
         ...
 
     def append_pending_entries(self, context: TurnExecutionContext, entries: list[TranscriptEntry]) -> None:
@@ -208,8 +301,14 @@ class OwnerContextSequenceRecord(Base):
 
 
 class PostgresTranscriptStore:
-    def __init__(self, settings: TranscriptStoreSettings | None = None) -> None:
+    def __init__(
+        self,
+        settings: TranscriptStoreSettings | None = None,
+        *,
+        transcript_cache: TranscriptCache | None = None,
+    ) -> None:
         self.settings = settings or TranscriptStoreSettings.from_env()
+        self.transcript_cache = transcript_cache
         self.engine = create_engine(self.settings.database_url, future=True)
         self.session_factory = sessionmaker(bind=self.engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
@@ -281,7 +380,15 @@ class PostgresTranscriptStore:
             session.commit()
         return None
 
-    def load_committed_provider_messages(self, context: TurnExecutionContext) -> list[dict[str, Any]]:
+    def load_committed_provider_messages(
+        self,
+        context: TurnExecutionContext,
+        provider_type: str = "OPENAI_COMPATIBLE",
+    ) -> list[dict[str, Any]]:
+        normalized_provider_type = normalize_provider_type(provider_type)
+        cached_payload = self._get_transcript_cache(context, normalized_provider_type)
+        if cached_payload is not None:
+            return [dict(message) for message in cached_payload.messages]
         with self.session_factory() as session:
             entries = session.scalars(
                 select(TranscriptEntryRecord)
@@ -301,7 +408,19 @@ class PostgresTranscriptStore:
             )
             for entry in entries
         ]
-        return transcript_entries_to_provider_messages(committed)
+        messages = transcript_entries_to_provider_messages(committed, provider_type=normalized_provider_type)
+        self._put_transcript_cache(
+            context,
+            TranscriptCachePayload(
+                session_id=context.session_id,
+                owner_agent_id=context.owner_agent_id,
+                ownership_epoch=context.ownership_epoch,
+                provider_type=normalized_provider_type,
+                last_committed_seq=max((entry.transcript_seq for entry in committed), default=0),
+                messages=messages,
+            ),
+        )
+        return messages
 
     def append_pending_entries(self, context: TurnExecutionContext, entries: list[TranscriptEntry]) -> None:
         if not entries:
@@ -373,6 +492,7 @@ class PostgresTranscriptStore:
             record.completed_at = completed_at
             record.expires_at = turn_expires_at
             session.commit()
+        self._delete_transcript_cache(context)
 
     def mark_failed(self, context: TurnExecutionContext, reason: str) -> None:
         turn_expires_at = self._turn_execution_expires_at()
@@ -485,6 +605,8 @@ class PostgresTranscriptStore:
 
     def close(self) -> None:
         self.engine.dispose()
+        if self.transcript_cache is not None:
+            self.transcript_cache.close()
 
     def _turn_execution_expires_at(self) -> datetime:
         return now_utc() + timedelta(seconds=self.settings.turn_execution_retention_seconds)
@@ -498,9 +620,30 @@ class PostgresTranscriptStore:
             return configured_limit
         return max(1, min(limit, configured_limit))
 
+    def _get_transcript_cache(
+        self,
+        context: TurnExecutionContext,
+        provider_type: str,
+    ) -> TranscriptCachePayload | None:
+        if self.transcript_cache is None:
+            return None
+        return self.transcript_cache.get(context, provider_type)
 
-def create_transcript_store() -> PostgresTranscriptStore:
-    return PostgresTranscriptStore()
+    def _put_transcript_cache(self, context: TurnExecutionContext, payload: TranscriptCachePayload) -> None:
+        if self.transcript_cache is not None:
+            self.transcript_cache.put(context, payload)
+
+    def _delete_transcript_cache(self, context: TurnExecutionContext) -> None:
+        if self.transcript_cache is not None:
+            self.transcript_cache.delete(context)
+
+
+def create_transcript_store(
+    settings: TranscriptStoreSettings | None = None,
+    *,
+    transcript_cache: TranscriptCache | None = None,
+) -> PostgresTranscriptStore:
+    return PostgresTranscriptStore(settings, transcript_cache=transcript_cache)
 
 
 def ensure_postgres_configuration(database_url: str) -> None:
@@ -521,6 +664,53 @@ def _positive_int_env(name: str, default: int) -> int:
     except ValueError:
         return default
     return value if value > 0 else default
+
+
+def transcript_cache_key(context: TurnExecutionContext) -> str:
+    return f"agent-runtime:transcript:{context.session_id}:{context.owner_agent_id}:{context.ownership_epoch}"
+
+
+def _hydrate_transcript_cache_payload(
+    payload: Any,
+    context: TurnExecutionContext,
+    provider_type: str,
+) -> TranscriptCachePayload | None:
+    if not isinstance(payload, dict):
+        return None
+    try:
+        ownership_epoch = int(payload.get("ownershipEpoch") or -1)
+        last_committed_seq = int(payload.get("lastCommittedSeq") or 0)
+    except (TypeError, ValueError):
+        return None
+    if (
+        payload.get("sessionId") != context.session_id
+        or payload.get("ownerAgentId") != context.owner_agent_id
+        or ownership_epoch != context.ownership_epoch
+        or normalize_provider_type(str(payload.get("providerType") or "")) != normalize_provider_type(provider_type)
+    ):
+        return None
+    messages = payload.get("messages")
+    if not isinstance(messages, list) or not all(isinstance(message, dict) for message in messages):
+        return None
+    return TranscriptCachePayload(
+        session_id=context.session_id,
+        owner_agent_id=context.owner_agent_id,
+        ownership_epoch=context.ownership_epoch,
+        provider_type=normalize_provider_type(provider_type),
+        last_committed_seq=last_committed_seq,
+        messages=[dict(message) for message in messages],
+    )
+
+
+def _transcript_cache_payload_json(payload: TranscriptCachePayload) -> dict[str, Any]:
+    return {
+        "sessionId": payload.session_id,
+        "ownerAgentId": payload.owner_agent_id,
+        "ownershipEpoch": payload.ownership_epoch,
+        "providerType": normalize_provider_type(payload.provider_type),
+        "lastCommittedSeq": payload.last_committed_seq,
+        "messages": [dict(message) for message in payload.messages],
+    }
 
 
 def transcript_entries_from_provider_messages(
@@ -585,6 +775,38 @@ def normalize_provider_message(message: dict[str, Any]) -> dict[str, Any]:
     role = str(message.get("role") or "")
     blocks: list[RuntimeContentBlock] = []
     content = message.get("content")
+    if isinstance(content, list):
+        for content_block in content:
+            if not isinstance(content_block, dict):
+                continue
+            block_type = content_block.get("type")
+            if block_type == "text":
+                text = content_block.get("text")
+                if text is not None and str(text):
+                    blocks.append(RuntimeContentBlock(type="text", text=str(text)))
+            elif block_type == "thinking":
+                thinking = content_block.get("thinking") or content_block.get("text")
+                if thinking is not None and str(thinking):
+                    blocks.append(RuntimeContentBlock(type="thinking", text=str(thinking)))
+            elif block_type == "tool_use":
+                blocks.append(
+                    RuntimeContentBlock(
+                        type="tool_call",
+                        id=str(content_block.get("id") or ""),
+                        name=str(content_block.get("name") or ""),
+                        arguments=content_block.get("input") if isinstance(content_block.get("input"), dict) else {},
+                    )
+                )
+            elif block_type == "tool_result":
+                blocks.append(
+                    RuntimeContentBlock(
+                        type="tool_result",
+                        tool_call_id=str(content_block.get("tool_use_id") or content_block.get("tool_call_id") or ""),
+                        content=content_block.get("content") if content_block.get("content") is not None else "",
+                    )
+                )
+        if blocks:
+            return runtime_content_json(blocks)
     if role == "tool":
         blocks.append(
             RuntimeContentBlock(
@@ -618,16 +840,31 @@ def runtime_content_json(blocks: list[RuntimeContentBlock]) -> dict[str, Any]:
     return {"version": 1, "blocks": [block.to_json() for block in blocks]}
 
 
-def transcript_entries_to_provider_messages(entries: list[CommittedTranscriptEntry]) -> list[dict[str, Any]]:
+def transcript_entries_to_provider_messages(
+    entries: list[CommittedTranscriptEntry],
+    *,
+    provider_type: str = "OPENAI_COMPATIBLE",
+) -> list[dict[str, Any]]:
     messages: list[dict[str, Any]] = []
     for entry in sorted(entries, key=lambda item: item.transcript_seq):
-        message = provider_message_from_transcript_entry(entry.role, entry.content_json)
+        message = provider_message_from_transcript_entry(entry.role, entry.content_json, provider_type=provider_type)
         if message is not None:
             messages.append(message)
     return messages
 
 
-def provider_message_from_transcript_entry(role: str, content_json: dict[str, Any]) -> dict[str, Any] | None:
+def provider_message_from_transcript_entry(
+    role: str,
+    content_json: dict[str, Any],
+    *,
+    provider_type: str = "OPENAI_COMPATIBLE",
+) -> dict[str, Any] | None:
+    if is_anthropic_like_provider(provider_type):
+        return anthropic_message_from_transcript_entry(role, content_json)
+    return openai_message_from_transcript_entry(role, content_json)
+
+
+def openai_message_from_transcript_entry(role: str, content_json: dict[str, Any]) -> dict[str, Any] | None:
     blocks = content_json.get("blocks")
     if not isinstance(blocks, list):
         return None
@@ -669,6 +906,63 @@ def provider_message_from_transcript_entry(role: str, content_json: dict[str, An
     return message
 
 
+def anthropic_message_from_transcript_entry(role: str, content_json: dict[str, Any]) -> dict[str, Any] | None:
+    blocks = content_json.get("blocks")
+    if not isinstance(blocks, list):
+        return None
+    content_blocks: list[dict[str, Any]] = []
+    if role == "tool":
+        for block in blocks:
+            if not isinstance(block, dict) or block.get("type") != "tool_result":
+                continue
+            content_blocks.append(
+                {
+                    "type": "tool_result",
+                    "tool_use_id": str(block.get("tool_call_id") or ""),
+                    "content": _anthropic_tool_result_content(block.get("content")),
+                }
+            )
+        return {"role": "user", "content": content_blocks} if content_blocks else None
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        block_type = block.get("type")
+        if block_type == "text":
+            text = str(block.get("text") or "")
+            if text:
+                content_blocks.append({"type": "text", "text": text})
+        elif block_type == "thinking":
+            thinking = str(block.get("text") or "")
+            if thinking:
+                content_blocks.append({"type": "thinking", "thinking": thinking})
+        elif block_type == "tool_call":
+            content_blocks.append(
+                {
+                    "type": "tool_use",
+                    "id": str(block.get("id") or ""),
+                    "name": str(block.get("name") or ""),
+                    "input": block.get("arguments") if isinstance(block.get("arguments"), dict) else {},
+                }
+            )
+        elif role == "user" and block_type == "tool_result":
+            content_blocks.append(
+                {
+                    "type": "tool_result",
+                    "tool_use_id": str(block.get("tool_call_id") or ""),
+                    "content": _anthropic_tool_result_content(block.get("content")),
+                }
+            )
+    return {"role": role, "content": content_blocks} if content_blocks else None
+
+
+def normalize_provider_type(provider_type: str | None) -> str:
+    return (provider_type or "OPENAI_COMPATIBLE").strip().upper() or "OPENAI_COMPATIBLE"
+
+
+def is_anthropic_like_provider(provider_type: str | None) -> bool:
+    return normalize_provider_type(provider_type) in {"ANTHROPIC", "ANTHROPIC_COMPATIBLE", "ANTHROPIC_LIKE", "CLAUDE"}
+
+
 def _parse_provider_tool_arguments(raw_arguments: Any) -> dict[str, Any]:
     if isinstance(raw_arguments, dict):
         return dict(raw_arguments)
@@ -687,6 +981,12 @@ def _provider_tool_result_content(content: Any) -> str:
     if isinstance(content, str):
         return content
     return json.dumps(content if content is not None else "", ensure_ascii=False)
+
+
+def _anthropic_tool_result_content(content: Any) -> Any:
+    if isinstance(content, str) or isinstance(content, list):
+        return content
+    return _provider_tool_result_content(content)
 
 
 def _allocate_transcript_seqs(session: Session, context: TurnExecutionContext, count: int) -> int:

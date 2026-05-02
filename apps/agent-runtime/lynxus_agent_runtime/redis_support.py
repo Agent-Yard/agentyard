@@ -4,7 +4,8 @@ import os
 from dataclasses import dataclass
 from urllib.parse import quote
 
-from redis.asyncio import Redis
+from redis import Redis as SyncRedis
+from redis.asyncio import Redis as AsyncRedis
 
 
 @dataclass(frozen=True)
@@ -38,8 +39,18 @@ class RedisSettings:
         )
 
 
-def create_redis_client(settings: RedisSettings) -> Redis:
-    return Redis.from_url(
+def create_redis_client(settings: RedisSettings) -> AsyncRedis:
+    return AsyncRedis.from_url(
+        settings.url,
+        decode_responses=True,
+        encoding="utf-8",
+        socket_connect_timeout=3,
+        socket_timeout=3,
+    )
+
+
+def create_sync_redis_client(settings: RedisSettings) -> SyncRedis:
+    return SyncRedis.from_url(
         settings.url,
         decode_responses=True,
         encoding="utf-8",

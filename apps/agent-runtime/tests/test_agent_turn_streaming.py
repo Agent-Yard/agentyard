@@ -37,6 +37,7 @@ class FakeTranscriptStore:
             "turn_execution_retention_seconds": 60,
             "transcript_entry_retention_seconds": 60,
             "retention_sweep_limit": 50,
+            "transcript_cache_ttl_seconds": 60,
         },
     )()
 
@@ -72,13 +73,16 @@ class FakeTranscriptStore:
         self.begin_contexts.append(context)
         return self.cached_outcome
 
-    def load_committed_provider_messages(self, context):  # noqa: ANN001
+    def load_committed_provider_messages(self, context, provider_type: str = "OPENAI_COMPATIBLE"):  # noqa: ANN001
         self.load_contexts.append(context)
         entries = self.committed_entries_by_context.get(
             (context.session_id, context.owner_agent_id, context.ownership_epoch),
             [],
         )
-        return [provider_message_from_transcript_entry(entry.role, entry.content_json) for entry in entries]
+        return [
+            provider_message_from_transcript_entry(entry.role, entry.content_json, provider_type=provider_type)
+            for entry in entries
+        ]
 
     def append_pending_entries(self, context, entries):  # noqa: ANN001
         self.pending_entries.append((context, list(entries)))

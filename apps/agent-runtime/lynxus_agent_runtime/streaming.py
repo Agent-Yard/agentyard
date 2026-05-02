@@ -99,6 +99,8 @@ async def stream_agent_turn(
     writer = _FrameWriter(request)
     turn_context = _turn_execution_context(request, writer)
     replay_messages: list[dict[str, Any]] = []
+    provider_settings = None if request.effectivePrivacyMappingEnabled else _resolve_provider_settings(request)
+    provider_type = _request_provider_type(request, provider_settings.provider_type if provider_settings is not None else None)
     if transcript_store is not None:
         cached_outcome = await run_in_threadpool(transcript_store.begin_execution, turn_context)
         if cached_outcome is not None:
@@ -111,6 +113,7 @@ async def stream_agent_turn(
         replay_messages = await run_in_threadpool(
             transcript_store.load_committed_provider_messages,
             turn_context,
+            provider_type,
         )
 
     yield _serialize(writer.frame(
@@ -196,6 +199,14 @@ def _can_use_provider_stream(request: AgentTurnRequest) -> bool:
     if request.effectivePrivacyMappingEnabled:
         return False
     return _resolve_provider_settings(request) is not None
+
+
+def _request_provider_type(request: AgentTurnRequest, resolved_provider_type: str | None) -> str:
+    if resolved_provider_type:
+        return resolved_provider_type
+    if request.currentOwner.model is not None and request.currentOwner.model.providerType:
+        return request.currentOwner.model.providerType
+    return "OPENAI_COMPATIBLE"
 
 
 async def _stream_via_openai_compatible(

@@ -12,6 +12,7 @@ from lynxus_agent_runtime.transcript_store import (
     Base,
     CommittedTranscriptEntry,
     PostgresTranscriptStore,
+    TranscriptCachePayload,
     TranscriptEntry,
     TranscriptEntryRecord,
     TranscriptStoreSettings,
@@ -20,6 +21,8 @@ from lynxus_agent_runtime.transcript_store import (
     _allocate_transcript_seqs,
     _transcript_entry_record,
     normalize_provider_message,
+    transcript_cache_key,
+    transcript_entries_from_provider_messages,
     transcript_entries_to_provider_messages,
     transcript_entry_from_stream_message,
 )
@@ -115,6 +118,168 @@ class TranscriptStoreSerializationTest(unittest.TestCase):
             messages[0],
         )
 
+    def test_should_render_anthropic_like_replay_blocks_without_flattening_thinking(self) -> None:
+        messages = transcript_entries_to_provider_messages(
+            [
+                CommittedTranscriptEntry(
+                    transcript_seq=1,
+                    role="assistant",
+                    content_json={
+                        "version": 1,
+                        "blocks": [
+                            {"type": "text", "text": "visible"},
+                            {"type": "thinking", "text": "hidden"},
+                            {
+                                "type": "tool_call",
+                                "id": "call-1",
+                                "name": "create_ticket",
+                                "arguments": {"subject": "refund"},
+                            },
+                        ],
+                    },
+                ),
+                CommittedTranscriptEntry(
+                    transcript_seq=2,
+                    role="tool",
+                    content_json={
+                        "version": 1,
+                        "blocks": [
+                            {
+                                "type": "tool_result",
+                                "tool_call_id": "call-1",
+                                "content": {"accepted": True},
+                            }
+                        ],
+                    },
+                ),
+            ],
+            provider_type="ANTHROPIC",
+        )
+
+        self.assertEqual(
+            [
+                {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "text", "text": "visible"},
+                        {"type": "thinking", "thinking": "hidden"},
+                        {
+                            "type": "tool_use",
+                            "id": "call-1",
+                            "name": "create_ticket",
+                            "input": {"subject": "refund"},
+                        },
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call-1",
+                            "content": '{"accepted": true}',
+                        }
+                    ],
+                },
+            ],
+            messages,
+        )
+
+    def test_should_normalize_anthropic_blocks_without_provider_metadata(self) -> None:
+        content_json = normalize_provider_message(
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": "visible"},
+                    {"type": "thinking", "thinking": "hidden"},
+                    {"type": "tool_use", "id": "call-1", "name": "create_ticket", "input": {"subject": "refund"}},
+                ],
+                "stop_reason": "tool_use",
+                "usage": {"input_tokens": 11, "output_tokens": 7},
+                "model": "claude-test",
+            }
+        )
+
+        self.assertEqual(
+            {
+                "version": 1,
+                "blocks": [
+                    {"type": "text", "text": "visible"},
+                    {"type": "thinking", "text": "hidden"},
+                    {"type": "tool_call", "id": "call-1", "name": "create_ticket", "arguments": {"subject": "refund"}},
+                ],
+            },
+            content_json,
+        )
+        self.assertNotIn("stop_reason", content_json)
+        self.assertNotIn("usage", content_json)
+        self.assertNotIn("model", content_json)
+
+    def test_should_replay_anthropic_user_tool_result_after_normalization(self) -> None:
+        entries = transcript_entries_from_provider_messages(
+            [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call-1",
+                            "content": [{"type": "text", "text": "accepted"}],
+                        }
+                    ],
+                    "stop_reason": "tool_use",
+                    "usage": {"input_tokens": 11, "output_tokens": 7},
+                    "model": "claude-test",
+                }
+            ],
+            model_round_id="round-1",
+        )
+
+        self.assertEqual("user", entries[0].role)
+        self.assertEqual(
+            {
+                "version": 1,
+                "blocks": [
+                    {
+                        "type": "tool_result",
+                        "tool_call_id": "call-1",
+                        "content": [{"type": "text", "text": "accepted"}],
+                    }
+                ],
+            },
+            entries[0].content_json,
+        )
+        self.assertNotIn("stop_reason", entries[0].content_json)
+        self.assertNotIn("usage", entries[0].content_json)
+        self.assertNotIn("model", entries[0].content_json)
+
+        messages = transcript_entries_to_provider_messages(
+            [
+                CommittedTranscriptEntry(
+                    transcript_seq=1,
+                    role=entries[0].role,
+                    content_json=entries[0].content_json,
+                )
+            ],
+            provider_type="ANTHROPIC",
+        )
+
+        self.assertEqual(
+            [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call-1",
+                            "content": [{"type": "text", "text": "accepted"}],
+                        }
+                    ],
+                }
+            ],
+            messages,
+        )
+
     def test_should_normalize_tool_result_as_explicit_runtime_block(self) -> None:
         content_json = normalize_provider_message(
             {
@@ -208,6 +373,104 @@ class TranscriptStoreSerializationTest(unittest.TestCase):
             session.add(_transcript_entry_record(context, entry, transcript_seq, "COMMITTED"))
             with self.assertRaises(IntegrityError):
                 session.commit()
+
+    def test_should_load_committed_provider_messages_from_transcript_cache_hit(self) -> None:
+        context = _turn_context()
+        cache = _FakeTranscriptCache(
+            hit=TranscriptCachePayload(
+                session_id=context.session_id,
+                owner_agent_id=context.owner_agent_id,
+                ownership_epoch=context.ownership_epoch,
+                provider_type="OPENAI_COMPATIBLE",
+                last_committed_seq=9,
+                messages=[{"role": "assistant", "content": "cached"}],
+            )
+        )
+        store = _sqlite_transcript_store(transcript_cache=cache)
+
+        messages = store.load_committed_provider_messages(context)
+
+        self.assertEqual([{"role": "assistant", "content": "cached"}], messages)
+        self.assertEqual([(transcript_cache_key(context), "OPENAI_COMPATIBLE")], cache.gets)
+        self.assertEqual([], cache.puts)
+
+    def test_should_write_transcript_cache_on_miss_after_sorting_committed_entries(self) -> None:
+        context = _turn_context()
+        cache = _FakeTranscriptCache()
+        store = _sqlite_transcript_store(transcript_cache=cache)
+        first_entry = TranscriptEntry(
+            role="assistant",
+            content_json={"version": 1, "blocks": [{"type": "text", "text": "first"}]},
+            model_round_id="round-1",
+            seq=1,
+        )
+        second_entry = TranscriptEntry(
+            role="assistant",
+            content_json={"version": 1, "blocks": [{"type": "text", "text": "second"}]},
+            model_round_id="round-2",
+            seq=1,
+        )
+        pending_entry = TranscriptEntry(
+            role="assistant",
+            content_json={"version": 1, "blocks": [{"type": "text", "text": "pending"}]},
+            model_round_id="round-3",
+            seq=1,
+        )
+        with store.session_factory() as session:
+            session.add(_transcript_entry_record(context, second_entry, 20, "COMMITTED"))
+            session.add(_transcript_entry_record(context, first_entry, 10, "COMMITTED"))
+            session.add(_transcript_entry_record(context, pending_entry, 30, "PENDING"))
+            session.commit()
+
+        messages = store.load_committed_provider_messages(context)
+
+        self.assertEqual(["first", "second"], [message["content"] for message in messages])
+        self.assertEqual(1, len(cache.puts))
+        put_key, put_payload = cache.puts[0]
+        self.assertEqual("agent-runtime:transcript:session-1:agent-a:1", put_key)
+        self.assertEqual(20, put_payload.last_committed_seq)
+        self.assertEqual(["first", "second"], [message["content"] for message in put_payload.messages])
+
+    def test_should_delete_transcript_cache_after_successful_commit(self) -> None:
+        context = _turn_context()
+        cache = _FakeTranscriptCache()
+        store = _sqlite_transcript_store(transcript_cache=cache)
+        entry = TranscriptEntry(
+            role="assistant",
+            content_json={"version": 1, "blocks": [{"type": "text", "text": "committed"}]},
+            model_round_id="round-1",
+            seq=1,
+        )
+
+        store.begin_execution(context)
+        store.commit_success(
+            context,
+            AgentTurnExecutionOutcome(
+                success=True,
+                result=AgentTurnResult(decision=AgentDecision(action="NO_OP")),
+            ),
+            [entry],
+        )
+
+        self.assertEqual([transcript_cache_key(context)], cache.deletes)
+
+    def test_should_not_write_transcript_cache_when_pending_entries_are_aborted(self) -> None:
+        context = _turn_context()
+        cache = _FakeTranscriptCache()
+        store = _sqlite_transcript_store(transcript_cache=cache)
+        entry = TranscriptEntry(
+            role="assistant",
+            content_json={"version": 1, "blocks": [{"type": "text", "text": "pending"}]},
+            model_round_id="round-1",
+            seq=1,
+        )
+
+        store.begin_execution(context)
+        store.append_pending_entries(context, [entry])
+        store.mark_failed(context, "provider failed")
+
+        self.assertEqual([], cache.puts)
+        self.assertEqual([], cache.deletes)
 
     def test_should_set_retention_expiry_on_turn_execution_and_transcript_entries(self) -> None:
         store = _sqlite_transcript_store()
@@ -350,7 +613,32 @@ def _sqlite_agent_runtime_session_factory():  # noqa: ANN201
     return sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
 
-def _sqlite_transcript_store(settings: TranscriptStoreSettings | None = None) -> PostgresTranscriptStore:
+class _FakeTranscriptCache:
+    def __init__(self, hit: TranscriptCachePayload | None = None) -> None:
+        self.hit = hit
+        self.gets: list[tuple[str, str]] = []
+        self.puts: list[tuple[str, TranscriptCachePayload]] = []
+        self.deletes: list[str] = []
+        self.closed = False
+
+    def get(self, context: TurnExecutionContext, provider_type: str) -> TranscriptCachePayload | None:
+        self.gets.append((transcript_cache_key(context), provider_type))
+        return self.hit
+
+    def put(self, context: TurnExecutionContext, payload: TranscriptCachePayload) -> None:
+        self.puts.append((transcript_cache_key(context), payload))
+
+    def delete(self, context: TurnExecutionContext) -> None:
+        self.deletes.append(transcript_cache_key(context))
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _sqlite_transcript_store(
+    settings: TranscriptStoreSettings | None = None,
+    transcript_cache=None,  # noqa: ANN001
+) -> PostgresTranscriptStore:
     engine = _sqlite_agent_runtime_engine()
     with engine.begin() as connection:
         Base.metadata.create_all(bind=connection)
@@ -360,7 +648,9 @@ def _sqlite_transcript_store(settings: TranscriptStoreSettings | None = None) ->
         turn_execution_retention_seconds=60,
         transcript_entry_retention_seconds=60,
         retention_sweep_limit=50,
+        transcript_cache_ttl_seconds=60,
     )
+    store.transcript_cache = transcript_cache
     store.engine = engine
     store.session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
     return store
