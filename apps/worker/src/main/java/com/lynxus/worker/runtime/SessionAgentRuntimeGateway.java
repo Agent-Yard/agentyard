@@ -200,6 +200,7 @@ public interface SessionAgentRuntimeGateway {
                                 error
                             );
                         }
+                        relayRuntimeFrame(frame, context);
                     } else {
                         relayRuntimeFrame(frame, context);
                     }

@@ -243,12 +243,13 @@ async def _stream_via_openai_compatible(
         apply_reasoning_settings(payload, settings)
         max_steps = _max_streaming_tool_steps()
         for step in range(max_steps + 1):
+            model_round_id = f"{writer.turn_execution_id}:round-{step}"
             usage_tracker.set_tool_loop_step(step)
             payload["messages"] = provider_messages
             yield writer.frame(
                 kind="MODEL_STARTED",
                 visibility="DEVELOPER",
-                payload={"providerType": settings.provider_type, "modelId": settings.model_id, "toolLoopStep": step},
+                payload={"modelRoundId": model_round_id},
             )
             round_accumulator = OpenAiCompatibleStreamAccumulator()
             events = stream_chat_completion_events(
@@ -281,10 +282,8 @@ async def _stream_via_openai_compatible(
                         kind="ACTION_TOOL_ARGUMENT_DELTA",
                         visibility="INTERNAL",
                         payload={
-                            "index": event.tool_call_index,
                             "toolCallId": event.tool_call_id,
-                            "toolName": event.tool_name,
-                            "argumentsDelta": event.arguments_delta,
+                            "delta": event.arguments_delta,
                         },
                     )
             message = round_accumulator.build_message()
@@ -294,9 +293,8 @@ async def _stream_via_openai_compatible(
                 kind="MODEL_COMPLETED",
                 visibility="DEVELOPER",
                 payload={
-                    "finishReason": message.finish_reason,
-                    "usageAvailable": message.usage is not None,
-                    "toolLoopStep": step,
+                    "modelRoundId": model_round_id,
+                    "status": "SUCCEEDED",
                 },
             )
             if text_guard.json_like or _is_legacy_json_contract_text(message.content):
@@ -308,7 +306,6 @@ async def _stream_via_openai_compatible(
                 break
             if message.content:
                 outcome_accumulator.append_assistant_text(message.content)
-            model_round_id = f"{writer.turn_execution_id}:round-{step}"
             assistant_provider_message = _provider_message_from_stream_message(message)
             if message.tool_calls:
                 provider_messages.append(assistant_provider_message)
@@ -328,6 +325,7 @@ async def _stream_via_openai_compatible(
                         kind="ACTION_TOOL_STARTED",
                         visibility="OPERATOR",
                         payload={
+                            "modelRoundId": model_round_id,
                             "toolCallId": tool_call.call_id,
                             "toolName": tool_call.tool_name,
                             "toolKind": kind,
@@ -339,15 +337,19 @@ async def _stream_via_openai_compatible(
                         should_continue = True
                     elif kind in {"STATE_TOOL", "MESSAGE_BLOCK_TOOL"}:
                         should_continue = True
+                    completed_payload = {
+                        "toolCallId": tool_call.call_id,
+                        "toolName": tool_call.tool_name,
+                        "toolKind": kind,
+                        "status": _tool_completion_status(tool_result),
+                    }
+                    produced = _tool_produced_payload(kind, tool_call, tool_result)
+                    if produced is not None:
+                        completed_payload["produced"] = produced
                     yield writer.frame(
                         kind="ACTION_TOOL_COMPLETED",
                         visibility="OPERATOR",
-                        payload={
-                            "toolCallId": tool_call.call_id,
-                            "toolName": tool_call.tool_name,
-                            "toolKind": kind,
-                            "accepted": bool(tool_result.get("accepted", True)),
-                        },
+                        payload=completed_payload,
                     )
                     tool_provider_message = _provider_tool_result_message(tool_call, tool_result)
                     provider_messages.append(tool_provider_message)
@@ -403,6 +405,19 @@ async def _stream_via_openai_compatible(
                     visibility="CUSTOMER",
                     payload={"blockId": block_id, "block": block.model_dump(mode="json")},
                 )
+        if not outcome.success:
+            failure_reason = outcome.failureReason or "agent turn rejected"
+            yield writer.frame(
+                kind="ERROR",
+                visibility="OPERATOR",
+                payload={
+                    "code": "FINAL_OUTCOME_REJECTED",
+                    "message": failure_reason,
+                    "stage": "FINAL_OUTCOME_BUILD",
+                    "retryable": False,
+                    "details": {},
+                },
+            )
         yield writer.frame(
             kind="FINAL_OUTCOME",
             visibility="INTERNAL",
@@ -842,6 +857,34 @@ def _tool_acceptance(error: str | None) -> dict[str, Any]:
     if error:
         return {"accepted": False, "error": error}
     return {"accepted": True}
+
+
+def _tool_completion_status(result: dict[str, Any]) -> str:
+    return "ACCEPTED" if bool(result.get("accepted", True)) else "REJECTED"
+
+
+def _tool_produced_payload(
+    kind: str,
+    tool_call: OpenAiCompatibleStreamToolCall,
+    result: dict[str, Any],
+) -> dict[str, Any] | None:
+    if kind == "STATE_TOOL":
+        return {"sharedStateUpdated": bool(result.get("accepted", True))}
+    if kind == "MESSAGE_BLOCK_TOOL":
+        block_id = result.get("blockId")
+        return {"messageBlockId": str(block_id)} if block_id else None
+    if kind == "LIFECYCLE_ACTION_TOOL":
+        return {"action": _lifecycle_action_name(tool_call.tool_name)}
+    return None
+
+
+def _lifecycle_action_name(tool_name: str) -> str:
+    return {
+        "switch_owner": "SWITCH_OWNER",
+        "run_playbook": "RUN_PLAYBOOK",
+        "human_handoff": "SESSION_HUMAN_HANDOFF",
+        "security_block": "SECURITY_BLOCK",
+    }.get(tool_name, tool_name)
 
 
 def _has_message_content(message: SessionMessageInput | None) -> bool:

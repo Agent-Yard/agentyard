@@ -633,8 +633,19 @@ class AgentTurnStreamingTest(unittest.TestCase):
         tool_delta_frames = [frame for frame in frames if frame["kind"] == "ACTION_TOOL_ARGUMENT_DELTA"]
         self.assertEqual(3, len(tool_delta_frames))
         self.assertTrue(all(frame["visibility"] == "INTERNAL" for frame in tool_delta_frames))
+        self.assertTrue(all("delta" in frame["payload"] for frame in tool_delta_frames))
+        self.assertTrue(all("argumentsDelta" not in frame["payload"] for frame in tool_delta_frames))
         self.assertEqual([], [frame for frame in frames if frame["visibility"] == "CUSTOMER" and "argumentsDelta" in frame["payload"]])
-        self.assertTrue(any(frame["kind"] == "ACTION_TOOL_COMPLETED" for frame in frames))
+        self.assertTrue(all("modelRoundId" in frame["payload"] for frame in frames if frame["kind"] == "MODEL_STARTED"))
+        self.assertTrue(all("modelRoundId" in frame["payload"] for frame in frames if frame["kind"] == "MODEL_COMPLETED"))
+        self.assertTrue(all("status" in frame["payload"] for frame in frames if frame["kind"] == "MODEL_COMPLETED"))
+        tool_started_frames = [frame for frame in frames if frame["kind"] == "ACTION_TOOL_STARTED"]
+        self.assertTrue(tool_started_frames)
+        self.assertTrue(all("modelRoundId" in frame["payload"] for frame in tool_started_frames))
+        tool_completed_frames = [frame for frame in frames if frame["kind"] == "ACTION_TOOL_COMPLETED"]
+        self.assertTrue(tool_completed_frames)
+        self.assertTrue(all(frame["payload"].get("status") in {"ACCEPTED", "REJECTED", "FAILED"} for frame in tool_completed_frames))
+        self.assertEqual([], [frame for frame in tool_completed_frames if "accepted" in frame["payload"]])
         outcome = frames[-1]["payload"]["outcome"]
         self.assertTrue(outcome["success"])
         decision = outcome["result"]["decision"]
@@ -858,6 +869,58 @@ class AgentTurnStreamingTest(unittest.TestCase):
         outcome = [json.loads(line) for line in response.text.splitlines() if line.strip()][-1]["payload"]["outcome"]
         self.assertFalse(outcome["success"])
         self.assertIn("multiple lifecycle actions", outcome["failureReason"])
+        self.assertEqual([], transcript_store.committed_successes)
+        self.assertEqual(1, len(transcript_store.failed))
+
+    def test_should_emit_error_before_failed_final_outcome_after_customer_draft(self) -> None:
+        request = _request_payload()
+        request["turnId"] = "turn-conflict-draft"
+        request["turnExecutionId"] = "exec-conflict-draft"
+        request["currentOwner"]["allowedActions"] = ["SWITCH_OWNER", "RUN_PLAYBOOK"]
+        request["currentOwner"]["switchableOwnerAgentIds"] = ["agent-b"]
+
+        events = iter(
+            [
+                OpenAiCompatibleStreamEvent(event_type="content_delta", delta="我先准备回复。"),
+                OpenAiCompatibleStreamEvent(
+                    event_type="tool_call_delta",
+                    tool_call_index=0,
+                    tool_call_id="call-switch",
+                    tool_name="switch_owner",
+                    arguments_delta=json.dumps({"targetAgentId": "agent-b"}, ensure_ascii=False),
+                ),
+                OpenAiCompatibleStreamEvent(
+                    event_type="tool_call_delta",
+                    tool_call_index=1,
+                    tool_call_id="call-playbook",
+                    tool_name="run_playbook",
+                    arguments_delta=json.dumps({"playbookId": "pb-1", "playbookInput": {}}, ensure_ascii=False),
+                ),
+                OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
+                OpenAiCompatibleStreamEvent(event_type="done"),
+            ]
+        )
+
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        transcript_store = FakeTranscriptStore()
+        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
+            with agent_runtime_client(transcript_store) as client:
+                response = client.post(
+                    "/agent-turns/execute-stream",
+                    json=request,
+                    headers={"Authorization": "Bearer test-internal-token"},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
+        self.assertTrue(any(frame["kind"] == "REPLY_BLOCK_DELTA" for frame in frames))
+        self.assertEqual("ERROR", frames[-2]["kind"])
+        self.assertEqual("FINAL_OUTCOME_REJECTED", frames[-2]["payload"]["code"])
+        self.assertEqual("FINAL_OUTCOME_BUILD", frames[-2]["payload"]["stage"])
+        self.assertFalse(frames[-2]["payload"]["retryable"])
+        self.assertEqual("FINAL_OUTCOME", frames[-1]["kind"])
+        self.assertFalse(frames[-1]["payload"]["outcome"]["success"])
+        self.assertIn("multiple lifecycle actions", frames[-2]["payload"]["message"])
         self.assertEqual([], transcript_store.committed_successes)
         self.assertEqual(1, len(transcript_store.failed))
 
