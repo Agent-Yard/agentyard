@@ -59,6 +59,53 @@ class PrivacyMapper:
         self._trace.record_sanitize(channel, result.entity_type_breakdown, result.new_placeholder_count)
         return result.value
 
+    def sanitize_texts(
+        self,
+        texts: list[str],
+        channel: str,
+        strategy: PrivacyStrategy = PrivacyStrategy.RULES_THEN_PRIVATE_LLM,
+    ) -> list[str]:
+        if not self._policy.enabled or strategy == PrivacyStrategy.SKIP:
+            return list(texts)
+        results = [sanitize_value(text, self._store) for text in texts]
+        if strategy == PrivacyStrategy.RULES_THEN_PRIVATE_LLM:
+            rewrite_indexes = [
+                index
+                for index, result in enumerate(results)
+                if isinstance(result.value, str) and self._should_rewrite_private_text(result.value)
+            ]
+            if rewrite_indexes:
+                rewritten_items = self._rewriter.rewrite_many(
+                    [str(results[index].value) for index in rewrite_indexes],
+                    self._store,
+                )
+                for index, rewritten in zip(rewrite_indexes, rewritten_items, strict=True):
+                    if rewritten.total_replacement_count > 0:
+                        current = results[index]
+                        results[index] = SanitizationResult(
+                            value=rewritten.value,
+                            entity_type_breakdown=_merge_breakdowns(
+                                current.entity_type_breakdown,
+                                rewritten.entity_type_breakdown,
+                            ),
+                            new_placeholder_count=current.new_placeholder_count + rewritten.new_placeholder_count,
+                            total_replacement_count=(
+                                current.total_replacement_count + rewritten.total_replacement_count
+                            ),
+                        )
+        sanitized_values: list[str] = []
+        for text, result in zip(texts, results, strict=True):
+            try:
+                validate_sanitized_output(text, result.value)
+            except PrivacyMappingBlockedError:
+                self._store.record_blocked()
+                self._trace.record_blocked()
+                raise
+            self._store.record_sanitize(channel, result.new_placeholder_count, result.entity_type_breakdown)
+            self._trace.record_sanitize(channel, result.entity_type_breakdown, result.new_placeholder_count)
+            sanitized_values.append(str(result.value))
+        return sanitized_values
+
     def _rewrite_private_leaves(self, value: Any) -> SanitizationResult:
         if isinstance(value, str):
             return self._rewrite_private_text(value)
@@ -89,9 +136,7 @@ class PrivacyMapper:
         return SanitizationResult(value, {}, 0, 0)
 
     def _rewrite_private_text(self, text: str) -> SanitizationResult:
-        if not text.strip():
-            return SanitizationResult(text, {}, 0, 0)
-        if not (collect_sensitive_entities(text) or self._rewriter.configured):
+        if not self._should_rewrite_private_text(text):
             return SanitizationResult(text, {}, 0, 0)
         rewritten = self._rewriter.rewrite(text, self._store)
         return SanitizationResult(
@@ -100,6 +145,11 @@ class PrivacyMapper:
             rewritten.new_placeholder_count,
             rewritten.total_replacement_count,
         )
+
+    def _should_rewrite_private_text(self, text: str) -> bool:
+        if not text.strip():
+            return False
+        return bool(collect_sensitive_entities(text) or self._rewriter.configured)
 
     def restore(self, payload: Any, channel: str) -> Any:
         if not self._policy.enabled:

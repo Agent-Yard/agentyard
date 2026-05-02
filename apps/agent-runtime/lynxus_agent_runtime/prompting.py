@@ -121,6 +121,9 @@ def build_prompt_bundle(request: AgentTurnRequest) -> PromptBundle:
     event_window = _event_window_size(request)
     runtime_budget = DEFAULT_RUNTIME_BYTE_BUDGET
     shared_state_view = _shared_state_view(request.sharedState, runtime_budget // 2, event_window)
+    shared_state_privacy_strategy = (
+        PrivacyStrategy.SKIP if not request.sharedState else PrivacyStrategy.RULES_THEN_PRIVATE_LLM
+    )
     runtime_messages: list[SemanticMessage] = [
         SemanticMessage(
             kind="system_event",
@@ -137,6 +140,7 @@ def build_prompt_bundle(request: AgentTurnRequest) -> PromptBundle:
             kind="system_event",
             content="Visible sharedState slice (use get_shared_state tool if you need more keys):\n"
             + json.dumps(shared_state_view, ensure_ascii=False),
+            privacy_strategy=shared_state_privacy_strategy,
             privacy_source="shared_state_slice",
         ),
     ]

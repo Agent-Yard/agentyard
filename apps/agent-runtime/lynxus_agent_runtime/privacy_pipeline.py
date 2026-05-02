@@ -46,7 +46,7 @@ class PrivacyPipeline:
                 bundle.instruction_privacy_strategy,
                 source="prompt.instruction",
             ),
-            runtime_messages=[self.sanitize_semantic_message(message) for message in bundle.runtime_messages],
+            runtime_messages=self.sanitize_semantic_messages(bundle.runtime_messages),
             capabilities=self.sanitize_fragment(
                 "PROMPT_CAPABILITIES",
                 bundle.capabilities,
@@ -65,19 +65,70 @@ class PrivacyPipeline:
         )
 
     def sanitize_semantic_message(self, message: SemanticMessage) -> SemanticMessage:
-        return SemanticMessage(
-            kind=message.kind,
-            content=self.sanitize_fragment(
+        return self.sanitize_semantic_messages([message])[0]
+
+    def sanitize_semantic_messages(self, messages: list[SemanticMessage]) -> list[SemanticMessage]:
+        if self._mapper is None:
+            return messages
+        sanitized_contents: list[str | None] = [None] * len(messages)
+        batch_indices: list[int] = []
+        batch_payloads: list[str] = []
+        batch_cache_keys: list[str | None] = []
+
+        for index, message in enumerate(messages):
+            strategy = message.privacy_strategy
+            if strategy == PrivacyStrategy.SKIP:
+                sanitized_contents[index] = message.content
+                continue
+            cache_key = self._fragment_cache_key(strategy, message.privacy_source, message.content)
+            if cache_key is not None and self._store is not None:
+                cached = self._store.read_sanitized_fragment(cache_key)
+                if cached is not None:
+                    sanitized_contents[index] = str(cached)
+                    continue
+            if strategy == PrivacyStrategy.RULES_THEN_PRIVATE_LLM:
+                batch_indices.append(index)
+                batch_payloads.append(message.content)
+                batch_cache_keys.append(cache_key)
+                continue
+            sanitized = self.sanitize_fragment(
                 "PROMPT_RUNTIME_MESSAGE",
                 message.content,
-                message.privacy_strategy,
+                strategy,
                 source=message.privacy_source,
-            ),
-            tool_calls=message.tool_calls,
-            tool_call_id=message.tool_call_id,
-            privacy_strategy=message.privacy_strategy,
-            privacy_source=message.privacy_source,
-        )
+            )
+            sanitized_contents[index] = str(sanitized)
+
+        if batch_indices:
+            sanitized_batch = self._mapper.sanitize_texts(
+                batch_payloads,
+                "PROMPT_RUNTIME_MESSAGE",
+                PrivacyStrategy.RULES_THEN_PRIVATE_LLM,
+            )
+            for index, sanitized, cache_key in zip(batch_indices, sanitized_batch, batch_cache_keys, strict=True):
+                sanitized_contents[index] = sanitized
+                if cache_key is not None and self._store is not None:
+                    self._store.write_sanitized_fragment(
+                        cache_key,
+                        sanitized,
+                        self._fragment_cache_metadata(
+                            messages[index].privacy_strategy,
+                            messages[index].privacy_source or "",
+                            messages[index].content,
+                        ),
+                    )
+
+        return [
+            SemanticMessage(
+                kind=message.kind,
+                content=sanitized_contents[index] if sanitized_contents[index] is not None else message.content,
+                tool_calls=message.tool_calls,
+                tool_call_id=message.tool_call_id,
+                privacy_strategy=message.privacy_strategy,
+                privacy_source=message.privacy_source,
+            )
+            for index, message in enumerate(messages)
+        ]
 
     def sanitize_fragment(
         self,

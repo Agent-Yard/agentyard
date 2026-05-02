@@ -19,6 +19,8 @@ from lynxus_agent_runtime.openai_compatible import (
 from lynxus_agent_runtime.openai_adapter import render_openai_tool_definitions
 from lynxus_agent_runtime.privacy_contracts import PrivacyMappingTelemetry, PrivacyStrategy
 from lynxus_agent_runtime.privacy_pipeline import PrivacyPipeline, build_privacy_policy
+from lynxus_agent_runtime.prompt_bundle import PromptBundle
+from lynxus_agent_runtime.semantic import SemanticMessage
 from lynxus_agent_runtime.tooling import execute_tool_call, resource_tool_function_name, semantic_tool_definitions
 
 
@@ -809,8 +811,6 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         transport = _FakeTransport(
             [
                 {"choices": [{"message": {"content": json.dumps({"entities": []})}}]},
-                {"choices": [{"message": {"content": json.dumps({"entities": []})}}]},
-                {"choices": [{"message": {"content": json.dumps({"entities": []})}}]},
                 {
                     "choices": [
                         {
@@ -842,7 +842,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
 
         self.assertTrue(outcome.success)
         private_requests = [entry for entry in request_log if entry["url"] == "https://privacy.example/chat/completions"]
-        self.assertGreaterEqual(len(private_requests), 1)
+        self.assertEqual(1, len(private_requests))
         private_payload = json.dumps([entry["json"]["messages"] for entry in private_requests], ensure_ascii=False)
         self.assertNotIn("Owner identity:", private_payload)
         self.assertNotIn("Final output must be JSON only", private_payload)
@@ -880,6 +880,55 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         self.assertEqual("Please help [PERSON_001]", first)
         self.assertEqual("Please help [PERSON_001]", second)
         self.assertEqual(1, rewrite.call_count)
+
+    def test_should_batch_private_rewriter_for_uncached_prompt_runtime_messages(self) -> None:
+        os.environ["TEST_PRIVATE_API_KEY"] = "private-secret"
+        self.addCleanup(lambda: os.environ.pop("TEST_PRIVATE_API_KEY", None))
+        request = AgentTurnRequest.model_validate(_enable_privacy_mapping(_request_payload()))
+        policy = build_privacy_policy(request)
+        bundle = PromptBundle(
+            instruction="static instruction",
+            runtime_messages=[
+                SemanticMessage(
+                    kind="system_event",
+                    content="Please help Jane Doe",
+                    privacy_source="trigger:evt-1",
+                ),
+                SemanticMessage(
+                    kind="user_turn",
+                    content="Escalate Bob Stone",
+                    privacy_source="message:msg-2:2",
+                ),
+                SemanticMessage(
+                    kind="system_event",
+                    content="Already safe",
+                    privacy_strategy=PrivacyStrategy.SKIP,
+                    privacy_source="shared_state_slice",
+                ),
+            ],
+            capabilities={},
+            response_contract={},
+            instruction_privacy_strategy=PrivacyStrategy.SKIP,
+            capabilities_privacy_strategy=PrivacyStrategy.SKIP,
+            response_contract_privacy_strategy=PrivacyStrategy.SKIP,
+        )
+
+        with patch("lynxus_agent_runtime.privacy_pipeline.SessionPrivacyMapStore", _FakePrivacyStore), patch(
+            "lynxus_agent_runtime.data_security.rewriter.PrivateLlmRewriter._extract_entities",
+            return_value=[
+                {"rawValue": "Jane Doe", "entityType": "PERSON"},
+                {"rawValue": "Bob Stone", "entityType": "PERSON"},
+            ],
+        ) as extract:
+            pipeline = PrivacyPipeline(policy)
+            sanitized = pipeline.sanitize_prompt_bundle(bundle)
+            pipeline.close()
+
+        self.assertEqual(1, extract.call_count)
+        self.assertEqual("Please help [PERSON_001]", sanitized.runtime_messages[0].content)
+        self.assertEqual("Escalate [PERSON_002]", sanitized.runtime_messages[1].content)
+        self.assertEqual("Already safe", sanitized.runtime_messages[2].content)
+        self.assertEqual(2, len(_FakePrivacyStore.fragment_cache))
 
     def test_should_sanitize_nested_tool_results_with_private_rewriter_and_reuse_fragment_cache(self) -> None:
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
@@ -968,6 +1017,9 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
             "lynxus_agent_runtime.privacy_pipeline.SessionPrivacyMapStore",
             _FakePrivacyStore,
         ), patch(
+            "lynxus_agent_runtime.data_security.mapper.PrivateLlmRewriter.rewrite_many",
+            side_effect=lambda texts, _store: [RewriteResult(text, {}, 0, 0) for text in texts],
+        ), patch(
             "lynxus_agent_runtime.data_security.mapper.PrivateLlmRewriter.rewrite",
             side_effect=rewrite,
         ) as rewrite_mock:
@@ -1016,30 +1068,6 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
                         {
                             "message": {
                                 "content": json.dumps(
-                                    {"entities": [{"rawValue": "Jane Doe", "entityType": "PERSON"}]},
-                                    ensure_ascii=False,
-                                )
-                            }
-                        }
-                    ]
-                },
-                {
-                    "choices": [
-                        {
-                            "message": {
-                                "content": json.dumps(
-                                    {"entities": [{"rawValue": "Jane Doe", "entityType": "PERSON"}]},
-                                    ensure_ascii=False,
-                                )
-                            }
-                        }
-                    ]
-                },
-                {
-                    "choices": [
-                        {
-                            "message": {
-                                "content": json.dumps(
                                     {
                                         "decision": {
                                             "action": "REPLY",
@@ -1065,7 +1093,8 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
             outcome, _ = execute_agent_turn(request)
 
         self.assertTrue(outcome.success)
-        self.assertTrue(any(entry["url"] == "https://privacy.example/chat/completions" for entry in request_log))
+        private_requests = [entry for entry in request_log if entry["url"] == "https://privacy.example/chat/completions"]
+        self.assertEqual(1, len(private_requests))
         owner_request = next(entry for entry in request_log if entry["url"] == "https://runtime.example/chat/completions")
         owner_prompt = json.dumps(owner_request["json"]["messages"], ensure_ascii=False)
         self.assertIn("[PERSON_", owner_prompt)
@@ -1204,17 +1233,8 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
             "lynxus_agent_runtime.data_security.mapper.sanitize_value",
             return_value=SanitizationResult("email alice@example.com", {}, 0, 0),
         ), patch(
-            "lynxus_agent_runtime.data_security.mapper.PrivateLlmRewriter.rewrite",
-            return_value=type(
-                "RewriteResult",
-                (),
-                {
-                    "value": "email alice@example.com",
-                    "entity_type_breakdown": {},
-                    "new_placeholder_count": 0,
-                    "total_replacement_count": 1,
-                },
-            )(),
+            "lynxus_agent_runtime.data_security.mapper.PrivateLlmRewriter.rewrite_many",
+            side_effect=lambda texts, _store: [RewriteResult(text, {}, 0, 1) for text in texts],
         ):
             outcome, _ = execute_agent_turn(request)
 

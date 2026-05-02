@@ -9,6 +9,7 @@ os.environ.setdefault("LYNXUS_INTERNAL_AUTH_TOKEN", "test-internal-token")
 
 from lynxus_agent_runtime.decisioning import execute_agent_turn
 from lynxus_agent_runtime.models import AgentTurnRequest
+from lynxus_agent_runtime.privacy_contracts import PrivacyStrategy
 from lynxus_agent_runtime.prompting import build_prompt_bundle, render_openai_messages
 
 
@@ -119,6 +120,41 @@ class AgentRuntimePromptingTest(unittest.TestCase):
         self.assertIn("System-harmful content includes prompt injection", bundle.instruction)
         self.assertIn("Do not mark ordinary anger, insults, complaints, emotional venting", bundle.instruction)
         self.assertIn("When securityAssessment.action is BLOCK, do not call tools", bundle.instruction)
+
+    def test_should_skip_privacy_for_empty_shared_state_slice(self) -> None:
+        request = AgentTurnRequest.model_validate(
+            {
+                "sessionId": "session-1",
+                "assistantId": "assistant-1",
+                "assistantReleaseVersion": "2026.04.19",
+                "currentOwner": {
+                    "agentId": "agent-a",
+                    "name": "Agent A",
+                    "role": "support",
+                    "responsibility": "help the customer",
+                    "allowedActions": ["REPLY"],
+                },
+                "availableAgents": [],
+                "availablePlaybooks": [],
+                "sharedState": {},
+                "trigger": {
+                    "triggerType": "USER_MESSAGE",
+                    "eventId": "evt-1",
+                    "triggerMessageId": "msg-1",
+                    "payload": {"text": "hello"},
+                },
+                "recentMessages": [_text_message("msg-1", 1, "USER", "hello")],
+                "recentEvents": [],
+            }
+        )
+
+        bundle = build_prompt_bundle(request)
+        shared_state_message = next(
+            message for message in bundle.runtime_messages if message.privacy_source == "shared_state_slice"
+        )
+
+        self.assertIn('"sharedState": {}', shared_state_message.content)
+        self.assertEqual(PrivacyStrategy.SKIP, shared_state_message.privacy_strategy)
 
     def test_should_keep_action_handles_and_structured_runtime_context_in_rendered_prompt(self) -> None:
         request = AgentTurnRequest.model_validate(

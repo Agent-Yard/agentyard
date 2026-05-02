@@ -48,51 +48,26 @@ class PrivateLlmRewriter:
             entities = self._extract_entities(text, api_key)
         except Exception as error:  # noqa: BLE001
             raise PrivacyMappingBlockedError("private privacy model rewrite failed") from error
-        rendered = text
-        entity_counts: dict[str, int] = {}
-        new_placeholder_count = 0
-        placeholder_ranges = [(match.start(), match.end()) for match in PLACEHOLDER_PATTERN.finditer(rendered)]
-        seen_ranges: list[tuple[int, int]] = []
-        replacements: list[tuple[int, int, str, str]] = []
+        return _rewrite_text_with_entities(text, entities, store, {})
+
+    def rewrite_many(self, texts: list[str], store: SessionPrivacyMapStore) -> list[RewriteResult]:
+        results = [RewriteResult(text, {}, 0, 0) for text in texts]
+        indexed_texts = [(index, text) for index, text in enumerate(texts) if text.strip()]
+        if not self.enabled or not indexed_texts:
+            return results
+        if self._binding is None:
+            return results
+        api_key = (os.getenv(self._binding.api_key_env_var) or "").strip()
+        if not api_key:
+            raise PrivacyMappingBlockedError("private privacy model api key is not configured")
+        try:
+            entities = self._extract_entities(_batch_entity_extraction_text(indexed_texts), api_key)
+        except Exception as error:  # noqa: BLE001
+            raise PrivacyMappingBlockedError("private privacy model rewrite failed") from error
         mapping_cache: dict[tuple[str, str], tuple[str, str]] = {}
-        for entity in entities:
-            raw_value = str(entity.get("rawValue") or "").strip()
-            entity_type = str(entity.get("entityType") or "").strip().upper()
-            if not raw_value or not entity_type:
-                continue
-            if not ENTITY_TYPE_PATTERN.fullmatch(entity_type):
-                continue
-            if PLACEHOLDER_PATTERN.search(raw_value):
-                continue
-            ranges: list[tuple[int, int]] = []
-            search_from = 0
-            while True:
-                start = rendered.find(raw_value, search_from)
-                if start < 0:
-                    break
-                end = start + len(raw_value)
-                search_from = end
-                if _overlaps_any(start, end, placeholder_ranges) or _overlaps_any(start, end, seen_ranges):
-                    continue
-                ranges.append((start, end))
-            if not ranges:
-                continue
-            cache_key = (entity_type, raw_value)
-            cached = mapping_cache.get(cache_key)
-            if cached is None:
-                entry = store.ensure_mapping(entity_type, raw_value)
-                cached = (entry.placeholder_id, entry.entity_type)
-                mapping_cache[cache_key] = cached
-                if entry.created:
-                    new_placeholder_count += 1
-            placeholder, mapped_entity_type = cached
-            for start, end in ranges:
-                replacements.append((start, end, placeholder, mapped_entity_type))
-                seen_ranges.append((start, end))
-        for start, end, placeholder, entity_type in sorted(replacements, key=lambda item: item[0], reverse=True):
-            rendered = rendered[:start] + placeholder + rendered[end:]
-            entity_counts[entity_type] = entity_counts.get(entity_type, 0) + 1
-        return RewriteResult(rendered, entity_counts, new_placeholder_count, len(replacements))
+        for index, text in indexed_texts:
+            results[index] = _rewrite_text_with_entities(text, entities, store, mapping_cache)
+        return results
 
     def _extract_entities(self, text: str, api_key: str) -> list[dict[str, Any]]:
         if self._binding is None:
@@ -150,6 +125,58 @@ class PrivateLlmRewriter:
         return [item for item in entities if isinstance(item, dict)] if isinstance(entities, list) else []
 
 
+def _rewrite_text_with_entities(
+    text: str,
+    entities: list[dict[str, Any]],
+    store: SessionPrivacyMapStore,
+    mapping_cache: dict[tuple[str, str], tuple[str, str]],
+) -> RewriteResult:
+    rendered = text
+    entity_counts: dict[str, int] = {}
+    new_placeholder_count = 0
+    placeholder_ranges = [(match.start(), match.end()) for match in PLACEHOLDER_PATTERN.finditer(rendered)]
+    seen_ranges: list[tuple[int, int]] = []
+    replacements: list[tuple[int, int, str, str]] = []
+    for entity in entities:
+        raw_value = str(entity.get("rawValue") or "").strip()
+        entity_type = str(entity.get("entityType") or "").strip().upper()
+        if not raw_value or not entity_type:
+            continue
+        if not ENTITY_TYPE_PATTERN.fullmatch(entity_type):
+            continue
+        if PLACEHOLDER_PATTERN.search(raw_value):
+            continue
+        ranges: list[tuple[int, int]] = []
+        search_from = 0
+        while True:
+            start = rendered.find(raw_value, search_from)
+            if start < 0:
+                break
+            end = start + len(raw_value)
+            search_from = end
+            if _overlaps_any(start, end, placeholder_ranges) or _overlaps_any(start, end, seen_ranges):
+                continue
+            ranges.append((start, end))
+        if not ranges:
+            continue
+        cache_key = (entity_type, raw_value)
+        cached = mapping_cache.get(cache_key)
+        if cached is None:
+            entry = store.ensure_mapping(entity_type, raw_value)
+            cached = (entry.placeholder_id, entry.entity_type)
+            mapping_cache[cache_key] = cached
+            if entry.created:
+                new_placeholder_count += 1
+        placeholder, mapped_entity_type = cached
+        for start, end in ranges:
+            replacements.append((start, end, placeholder, mapped_entity_type))
+            seen_ranges.append((start, end))
+    for start, end, placeholder, entity_type in sorted(replacements, key=lambda item: item[0], reverse=True):
+        rendered = rendered[:start] + placeholder + rendered[end:]
+        entity_counts[entity_type] = entity_counts.get(entity_type, 0) + 1
+    return RewriteResult(rendered, entity_counts, new_placeholder_count, len(replacements))
+
+
 def _current_tool_loop_step(usage_tracker: object | None) -> int | None:
     if usage_tracker is None:
         return None
@@ -161,3 +188,7 @@ def _current_tool_loop_step(usage_tracker: object | None) -> int | None:
 
 def _overlaps_any(start: int, end: int, ranges: list[tuple[int, int]]) -> bool:
     return any(not (end <= left or start >= right) for left, right in ranges)
+
+
+def _batch_entity_extraction_text(indexed_texts: list[tuple[int, str]]) -> str:
+    return "\n\n".join(f"文本 {index}:\n{text}" for index, text in indexed_texts)
