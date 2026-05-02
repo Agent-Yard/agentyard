@@ -37,10 +37,9 @@ from .tooling import execute_tool_call, streaming_semantic_tool_definitions, too
 from .transcript_store import (
     TranscriptEntry,
     TranscriptStore,
-    normalize_provider_message,
     TurnExecutionContext,
-    transcript_entries_from_provider_messages,
     transcript_entry_from_stream_message,
+    transcript_entry_from_tool_result_message,
 )
 
 
@@ -219,14 +218,9 @@ async def _stream_via_openai_compatible(
             raise RuntimeError("no supported model provider configured for current owner")
         prompt_bundle = build_streaming_prompt_bundle(request)
         sanitized_bundle = privacy_pipeline.sanitize_prompt_bundle(prompt_bundle)
-        current_messages = render_openai_streaming_messages(sanitized_bundle)
+        current_messages = _collapse_current_system_messages(render_openai_streaming_messages(sanitized_bundle))
         provider_messages = _merge_replay_messages(current_messages, replay_messages)
-        current_entries = transcript_entries_from_provider_messages(
-            current_messages,
-            model_round_id=writer.turn_execution_id,
-        )
-        if transcript_store is not None:
-            await run_in_threadpool(transcript_store.append_pending_entries, turn_context, current_entries)
+        completed_transcript_entries: list[TranscriptEntry] = []
         payload: dict[str, Any] = {
             "model": settings.model_id,
             "temperature": settings.temperature,
@@ -307,18 +301,13 @@ async def _stream_via_openai_compatible(
             assistant_provider_message = _provider_message_from_stream_message(message)
             if message.tool_calls:
                 provider_messages.append(assistant_provider_message)
-                if transcript_store is not None:
-                    await run_in_threadpool(
-                        transcript_store.append_pending_entries,
-                        turn_context,
-                        [
-                            transcript_entry_from_stream_message(
-                                message,
-                                model_round_id=model_round_id,
-                                seq=1,
-                            )
-                        ],
+                completed_transcript_entries.append(
+                    transcript_entry_from_stream_message(
+                        message,
+                        model_round_id=model_round_id,
+                        seq=1,
                     )
+                )
                 should_continue = False
                 for index, tool_call in enumerate(message.tool_calls, start=1):
                     kind = tool_kind(tool_call.tool_name)
@@ -351,19 +340,13 @@ async def _stream_via_openai_compatible(
                     )
                     tool_provider_message = _provider_tool_result_message(tool_call, tool_result)
                     provider_messages.append(tool_provider_message)
-                    if transcript_store is not None:
-                        await run_in_threadpool(
-                            transcript_store.append_pending_entries,
-                            turn_context,
-                            [
-                                TranscriptEntry(
-                                    role="tool",
-                                    content_json=normalize_provider_message(tool_provider_message),
-                                    model_round_id=model_round_id,
-                                    seq=index + 1,
-                                )
-                            ],
+                    completed_transcript_entries.append(
+                        transcript_entry_from_tool_result_message(
+                            tool_provider_message,
+                            model_round_id=model_round_id,
+                            seq=index + 1,
                         )
+                    )
                 if should_continue:
                     continue
             outcome = outcome_accumulator.build_outcome(usage_tracker)
@@ -376,16 +359,20 @@ async def _stream_via_openai_compatible(
             )
         if transcript_store is not None:
             if outcome.success:
-                completed_entries = []
                 if not message.tool_calls:
-                    completed_entries.append(
+                    completed_transcript_entries.append(
                         transcript_entry_from_stream_message(
                             message,
-                            model_round_id=f"{writer.turn_execution_id}:final",
-                            seq=len(current_entries) + 1,
+                            model_round_id=f"{writer.turn_execution_id}:round-{step}",
+                            seq=1,
                         )
                     )
-                await run_in_threadpool(transcript_store.commit_success, turn_context, outcome, completed_entries)
+                await run_in_threadpool(
+                    transcript_store.commit_success,
+                    turn_context,
+                    outcome,
+                    completed_transcript_entries,
+                )
             else:
                 await run_in_threadpool(
                     transcript_store.mark_failed,
@@ -487,6 +474,27 @@ def _merge_replay_messages(
     if not replay_messages or not current_messages:
         return [*current_messages]
     return [current_messages[0], *replay_messages, *current_messages[1:]]
+
+
+def _collapse_current_system_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not messages:
+        return []
+    system_contents: list[str] = []
+    collapsed: list[dict[str, Any]] = []
+    system_inserted = False
+    for message in messages:
+        if message.get("role") == "system":
+            content = str(message.get("content") or "").strip()
+            if content:
+                system_contents.append(content)
+            continue
+        if not system_inserted:
+            collapsed.append({"role": "system", "content": "\n\n".join(system_contents)})
+            system_inserted = True
+        collapsed.append(message)
+    if not system_inserted:
+        collapsed.insert(0, {"role": "system", "content": "\n\n".join(system_contents)})
+    return collapsed
 
 
 def _transcript_entries_from_successful_outcome(
@@ -736,6 +744,8 @@ class _CustomerTextStreamGuard:
 
 def _provider_message_from_stream_message(message: OpenAiCompatibleStreamMessage) -> dict[str, Any]:
     rendered: dict[str, Any] = {"role": "assistant", "content": message.content}
+    if message.thinking:
+        rendered["reasoning_content"] = message.thinking
     if message.tool_calls:
         rendered["tool_calls"] = [
             {

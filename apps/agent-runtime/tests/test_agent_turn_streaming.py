@@ -321,6 +321,77 @@ class AgentTurnStreamingTest(unittest.TestCase):
             captured_payloads[0]["messages"],
         )
 
+    def test_should_replay_prior_tool_call_tool_result_and_thinking_without_prompt_duplication(self) -> None:
+        request = _request_payload()
+        request["turnId"] = "turn-2"
+        request["turnExecutionId"] = "exec-2"
+        transcript_store = FakeTranscriptStore(
+            committed_entries_by_context={
+                ("session-1", "agent-a", 1): [
+                    CommittedTranscriptEntry(
+                        transcript_seq=1,
+                        role="assistant",
+                        content_json={
+                            "version": 1,
+                            "blocks": [
+                                {"type": "thinking", "text": "look up order"},
+                                {
+                                    "type": "tool_call",
+                                    "id": "call-previous",
+                                    "name": "read_skill",
+                                    "arguments": {"resourceVersionId": "skill-ver-1"},
+                                },
+                            ],
+                        },
+                    ),
+                    CommittedTranscriptEntry(
+                        transcript_seq=2,
+                        role="tool",
+                        content_json={
+                            "version": 1,
+                            "blocks": [
+                                {
+                                    "type": "tool_result",
+                                    "tool_call_id": "call-previous",
+                                    "content": {"accepted": True, "content": "policy"},
+                                }
+                            ],
+                        },
+                    ),
+                ]
+            }
+        )
+        captured_payloads: list[dict] = []
+
+        def fake_stream(_settings, payload, *, idle_timeout_seconds):  # noqa: ANN001
+            captured_payloads.append(payload)
+            return iter(
+                [
+                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta="next"),
+                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
+                    OpenAiCompatibleStreamEvent(event_type="done"),
+                ]
+            )
+
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
+            with agent_runtime_client(transcript_store) as client:
+                response = client.post(
+                    "/agent-turns/execute-stream",
+                    json=request,
+                    headers={"Authorization": "Bearer test-internal-token"},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        messages = captured_payloads[0]["messages"]
+        self.assertEqual(1, len([message for message in messages if message.get("role") == "system"]))
+        replayed_assistant = next(message for message in messages if message.get("tool_calls"))
+        self.assertEqual("", replayed_assistant["content"])
+        self.assertEqual("look up order", replayed_assistant["reasoning_content"])
+        self.assertEqual("call-previous", replayed_assistant["tool_calls"][0]["id"])
+        replayed_tool = next(message for message in messages if message.get("role") == "tool")
+        self.assertEqual("call-previous", replayed_tool["tool_call_id"])
+
     def test_should_not_include_committed_transcript_from_different_owner_or_epoch(self) -> None:
         request = _request_payload()
         request["turnId"] = "turn-2"
@@ -554,6 +625,134 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual("REQUESTED", outcome["result"]["sharedState"]["refundStatus"])
         self.assertEqual(1, len([frame for frame in frames if frame["kind"] == "FINAL_OUTCOME"]))
         self.assertEqual(1, len(transcript_store.committed_successes))
+        committed_entries = transcript_store.committed_successes[0][2]
+        self.assertEqual(["assistant", "tool", "tool", "assistant", "tool"], [entry.role for entry in committed_entries])
+        self.assertEqual("call-1", committed_entries[0].content_json["blocks"][1]["id"])
+        self.assertEqual("call-1", committed_entries[1].content_json["blocks"][0]["tool_call_id"])
+        self.assertEqual("call-3", committed_entries[3].content_json["blocks"][1]["id"])
+        self.assertEqual("call-3", committed_entries[4].content_json["blocks"][0]["tool_call_id"])
+
+    def test_should_replay_same_turn_thinking_with_tool_call_as_reasoning_content(self) -> None:
+        request = _request_payload()
+        request["turnId"] = "turn-thinking-tool"
+        request["turnExecutionId"] = "exec-thinking-tool"
+        captured_payloads: list[dict] = []
+
+        def fake_stream(_settings, payload, *, idle_timeout_seconds):  # noqa: ANN001
+            captured_payloads.append(payload)
+            if len(captured_payloads) == 1:
+                return iter(
+                    [
+                        OpenAiCompatibleStreamEvent(event_type="thinking_delta", delta="internal lookup plan"),
+                        OpenAiCompatibleStreamEvent(
+                            event_type="tool_call_delta",
+                            tool_call_index=0,
+                            tool_call_id="call-skill-thinking",
+                            tool_name="read_skill",
+                            arguments_delta=json.dumps({"resourceVersionId": "skill-ver-1"}, ensure_ascii=False),
+                        ),
+                        OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
+                        OpenAiCompatibleStreamEvent(event_type="done"),
+                    ]
+                )
+            return iter(
+                [
+                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta="已读取规则。"),
+                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
+                    OpenAiCompatibleStreamEvent(event_type="done"),
+                ]
+            )
+
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
+            with agent_runtime_client() as client:
+                response = client.post(
+                    "/agent-turns/execute-stream",
+                    json=request,
+                    headers={"Authorization": "Bearer test-internal-token"},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(2, len(captured_payloads))
+        replayed_assistant = next(message for message in captured_payloads[1]["messages"] if message.get("tool_calls"))
+        self.assertEqual("internal lookup plan", replayed_assistant["reasoning_content"])
+        self.assertNotIn("internal lookup plan", replayed_assistant.get("content") or "")
+
+    def test_should_fail_tool_call_with_missing_id_before_executing_tool_or_committing(self) -> None:
+        request = _request_payload()
+        request["turnId"] = "turn-missing-tool-id"
+        request["turnExecutionId"] = "exec-missing-tool-id"
+        transcript_store = FakeTranscriptStore()
+
+        events = iter(
+            [
+                OpenAiCompatibleStreamEvent(
+                    event_type="tool_call_delta",
+                    tool_call_index=0,
+                    tool_name="read_skill",
+                    arguments_delta=json.dumps({"resourceVersionId": "skill-ver-1"}, ensure_ascii=False),
+                ),
+                OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
+                OpenAiCompatibleStreamEvent(event_type="done"),
+            ]
+        )
+
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
+            with patch("lynxus_agent_runtime.streaming.execute_tool_call") as execute_tool:
+                with agent_runtime_client(transcript_store) as client:
+                    response = client.post(
+                        "/agent-turns/execute-stream",
+                        json=request,
+                        headers={"Authorization": "Bearer test-internal-token"},
+                    )
+
+        self.assertEqual(response.status_code, 200)
+        execute_tool.assert_not_called()
+        frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
+        self.assertEqual("FINAL_OUTCOME", frames[-1]["kind"])
+        outcome = frames[-1]["payload"]["outcome"]
+        self.assertFalse(outcome["success"])
+        self.assertIn("tool call id is required", outcome["failureReason"])
+        self.assertEqual([], transcript_store.committed_successes)
+        self.assertEqual([], transcript_store.pending_entries)
+        self.assertEqual(1, len(transcript_store.failed))
+
+    def test_should_not_persist_current_system_or_runtime_prompt_as_transcript(self) -> None:
+        request = _request_payload()
+        request["turnId"] = "turn-hygiene"
+        request["turnExecutionId"] = "exec-hygiene"
+        transcript_store = FakeTranscriptStore()
+
+        events = iter(
+            [
+                OpenAiCompatibleStreamEvent(event_type="content_delta", delta="final answer"),
+                OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
+                OpenAiCompatibleStreamEvent(
+                    event_type="usage",
+                    usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+                ),
+                OpenAiCompatibleStreamEvent(event_type="done"),
+            ]
+        )
+
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
+            with agent_runtime_client(transcript_store) as client:
+                response = client.post(
+                    "/agent-turns/execute-stream",
+                    json=request,
+                    headers={"Authorization": "Bearer test-internal-token"},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        committed_entries = transcript_store.committed_successes[0][2]
+        self.assertEqual([], transcript_store.pending_entries)
+        self.assertEqual(["assistant"], [entry.role for entry in committed_entries])
+        self.assertEqual({"version": 1, "blocks": [{"type": "text", "text": "final answer"}]}, committed_entries[0].content_json)
+        self.assertNotIn("usage", committed_entries[0].content_json)
+        self.assertNotIn("finish_reason", committed_entries[0].content_json)
+        self.assertNotIn("model", committed_entries[0].content_json)
 
     def test_should_accumulate_action_only_switch_owner_without_reply_message(self) -> None:
         request = _request_payload()

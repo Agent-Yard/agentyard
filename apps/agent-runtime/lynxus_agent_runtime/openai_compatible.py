@@ -136,6 +136,8 @@ class OpenAiCompatibleStreamAccumulator:
                 raise OpenAiCompatibleStreamMalformedError(
                     f"tool call arguments for index {index} must decode to a JSON object"
                 )
+            if not parts.call_id.strip():
+                raise OpenAiCompatibleStreamMalformedError(f"tool call id is required for index {index}")
             if not parts.tool_name.strip():
                 raise OpenAiCompatibleStreamMalformedError(f"tool call {index} missing function name")
             tool_calls.append(

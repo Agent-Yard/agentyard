@@ -5,7 +5,7 @@ import uuid
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from sqlalchemy import DateTime, Integer, JSON, MetaData, String, Text, UniqueConstraint, create_engine, select, text
 from sqlalchemy.engine import make_url
@@ -50,6 +50,45 @@ class TranscriptEntry:
     content_json: dict[str, Any]
     model_round_id: str
     seq: int
+
+
+RuntimeContentBlockType = Literal[
+    "text",
+    "thinking",
+    "tool_call",
+    "tool_result",
+    "runtime_reminder",
+    "system_runtime_context",
+]
+
+
+@dataclass(frozen=True)
+class RuntimeContentBlock:
+    type: RuntimeContentBlockType
+    text: str | None = None
+    id: str | None = None
+    name: str | None = None
+    arguments: dict[str, Any] | None = None
+    tool_call_id: str | None = None
+    content: Any = None
+
+    def to_json(self) -> dict[str, Any]:
+        if self.type in {"text", "thinking", "runtime_reminder", "system_runtime_context"}:
+            return {"type": self.type, "text": self.text or ""}
+        if self.type == "tool_call":
+            return {
+                "type": "tool_call",
+                "id": self.id or "",
+                "name": self.name or "",
+                "arguments": dict(self.arguments or {}),
+            }
+        if self.type == "tool_result":
+            return {
+                "type": "tool_result",
+                "tool_call_id": self.tool_call_id or "",
+                "content": self.content if self.content is not None else "",
+            }
+        raise ValueError(f"unsupported runtime content block type: {self.type}")
 
 
 @dataclass(frozen=True)
@@ -365,23 +404,37 @@ def transcript_entry_from_stream_message(
     model_round_id: str,
     seq: int,
 ) -> TranscriptEntry:
-    blocks: list[dict[str, Any]] = []
+    blocks: list[RuntimeContentBlock] = []
     if message.content:
-        blocks.append({"type": "text", "text": message.content})
+        blocks.append(RuntimeContentBlock(type="text", text=message.content))
     if message.thinking:
-        blocks.append({"type": "thinking", "text": message.thinking})
+        blocks.append(RuntimeContentBlock(type="thinking", text=message.thinking))
     for tool_call in message.tool_calls:
         blocks.append(
-            {
-                "type": "tool_call",
-                "id": tool_call.call_id,
-                "name": tool_call.tool_name,
-                "arguments": dict(tool_call.arguments),
-            }
+            RuntimeContentBlock(
+                type="tool_call",
+                id=tool_call.call_id,
+                name=tool_call.tool_name,
+                arguments=dict(tool_call.arguments),
+            )
         )
     return TranscriptEntry(
         role="assistant",
-        content_json={"version": 1, "blocks": blocks},
+        content_json=runtime_content_json(blocks),
+        model_round_id=model_round_id,
+        seq=seq,
+    )
+
+
+def transcript_entry_from_tool_result_message(
+    message: dict[str, Any],
+    *,
+    model_round_id: str,
+    seq: int,
+) -> TranscriptEntry:
+    return TranscriptEntry(
+        role="tool",
+        content_json=normalize_provider_message(message),
         model_round_id=model_round_id,
         seq=seq,
     )
@@ -389,29 +442,39 @@ def transcript_entry_from_stream_message(
 
 def normalize_provider_message(message: dict[str, Any]) -> dict[str, Any]:
     role = str(message.get("role") or "")
-    blocks: list[dict[str, Any]] = []
+    blocks: list[RuntimeContentBlock] = []
     content = message.get("content")
+    if role == "tool":
+        blocks.append(
+            RuntimeContentBlock(
+                type="tool_result",
+                tool_call_id=str(message.get("tool_call_id") or ""),
+                content=content if content is not None else "",
+            )
+        )
+        return runtime_content_json(blocks)
     if content is not None and str(content):
-        blocks.append({"type": "text", "text": str(content)})
+        blocks.append(RuntimeContentBlock(type="text", text=str(content)))
     thinking = message.get("reasoning_content") or message.get("thinking")
     if thinking is not None and str(thinking):
-        blocks.append({"type": "thinking", "text": str(thinking)})
+        blocks.append(RuntimeContentBlock(type="thinking", text=str(thinking)))
     for tool_call in message.get("tool_calls") or []:
         function_call = tool_call.get("function") if isinstance(tool_call, dict) else None
         if not isinstance(function_call, dict):
             continue
         blocks.append(
-            {
-                "type": "tool_call",
-                "id": str(tool_call.get("id") or ""),
-                "name": str(function_call.get("name") or ""),
-                "arguments": function_call.get("arguments") or "{}",
-            }
+            RuntimeContentBlock(
+                type="tool_call",
+                id=str(tool_call.get("id") or ""),
+                name=str(function_call.get("name") or ""),
+                arguments=_parse_provider_tool_arguments(function_call.get("arguments")),
+            )
         )
-    content_json: dict[str, Any] = {"version": 1, "blocks": blocks}
-    if role == "tool":
-        content_json["toolCallId"] = str(message.get("tool_call_id") or "")
-    return content_json
+    return runtime_content_json(blocks)
+
+
+def runtime_content_json(blocks: list[RuntimeContentBlock]) -> dict[str, Any]:
+    return {"version": 1, "blocks": [block.to_json() for block in blocks]}
 
 
 def transcript_entries_to_provider_messages(entries: list[CommittedTranscriptEntry]) -> list[dict[str, Any]]:
@@ -426,6 +489,16 @@ def transcript_entries_to_provider_messages(entries: list[CommittedTranscriptEnt
 def provider_message_from_transcript_entry(role: str, content_json: dict[str, Any]) -> dict[str, Any] | None:
     blocks = content_json.get("blocks")
     if not isinstance(blocks, list):
+        return None
+    if role == "tool":
+        for block in blocks:
+            if not isinstance(block, dict) or block.get("type") != "tool_result":
+                continue
+            return {
+                "role": "tool",
+                "tool_call_id": str(block.get("tool_call_id") or ""),
+                "content": _provider_tool_result_content(block.get("content")),
+            }
         return None
     text = "".join(str(block.get("text") or "") for block in blocks if isinstance(block, dict) and block.get("type") == "text")
     message: dict[str, Any] = {"role": role, "content": text}
@@ -452,9 +525,27 @@ def provider_message_from_transcript_entry(role: str, content_json: dict[str, An
         )
     if tool_calls:
         message["tool_calls"] = tool_calls
-    if role == "tool":
-        message["tool_call_id"] = str(content_json.get("toolCallId") or "")
     return message
+
+
+def _parse_provider_tool_arguments(raw_arguments: Any) -> dict[str, Any]:
+    if isinstance(raw_arguments, dict):
+        return dict(raw_arguments)
+    if not isinstance(raw_arguments, str):
+        return {}
+    text_value = raw_arguments.strip()
+    if not text_value:
+        return {}
+    parsed = json.loads(text_value)
+    if not isinstance(parsed, dict):
+        raise ValueError("provider tool call arguments must decode to an object")
+    return parsed
+
+
+def _provider_tool_result_content(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    return json.dumps(content if content is not None else "", ensure_ascii=False)
 
 
 def _allocate_transcript_seqs(session: Session, context: TurnExecutionContext, count: int) -> int:

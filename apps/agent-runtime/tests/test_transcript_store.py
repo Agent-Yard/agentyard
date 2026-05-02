@@ -15,6 +15,7 @@ from lynxus_agent_runtime.transcript_store import (
     TurnExecutionContext,
     _allocate_transcript_seqs,
     _transcript_entry_record,
+    normalize_provider_message,
     transcript_entries_to_provider_messages,
     transcript_entry_from_stream_message,
 )
@@ -108,6 +109,60 @@ class TranscriptStoreSerializationTest(unittest.TestCase):
                 ],
             },
             messages[0],
+        )
+
+    def test_should_normalize_tool_result_as_explicit_runtime_block(self) -> None:
+        content_json = normalize_provider_message(
+            {
+                "role": "tool",
+                "tool_call_id": "call-1",
+                "content": '{"accepted": true}',
+                "finish_reason": "stop",
+                "usage": {"total_tokens": 12},
+                "model": "provider-model",
+            }
+        )
+
+        self.assertEqual(
+            {
+                "version": 1,
+                "blocks": [
+                    {
+                        "type": "tool_result",
+                        "tool_call_id": "call-1",
+                        "content": '{"accepted": true}',
+                    }
+                ],
+            },
+            content_json,
+        )
+        self.assertNotIn("finish_reason", content_json)
+        self.assertNotIn("usage", content_json)
+        self.assertNotIn("model", content_json)
+
+    def test_should_replay_tool_result_with_matching_provider_tool_call_id(self) -> None:
+        messages = transcript_entries_to_provider_messages(
+            [
+                CommittedTranscriptEntry(
+                    transcript_seq=1,
+                    role="tool",
+                    content_json={
+                        "version": 1,
+                        "blocks": [
+                            {
+                                "type": "tool_result",
+                                "tool_call_id": "call-1",
+                                "content": {"accepted": True},
+                            }
+                        ],
+                    },
+                )
+            ]
+        )
+
+        self.assertEqual(
+            [{"role": "tool", "tool_call_id": "call-1", "content": '{"accepted": true}'}],
+            messages,
         )
 
     def test_should_allocate_transcript_seq_from_owner_context_sequence_row(self) -> None:
