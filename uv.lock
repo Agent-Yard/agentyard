@@ -682,8 +682,10 @@ dependencies = [
     { name = "httpx" },
     { name = "lynxus-extension-sdk" },
     { name = "lynxus-python-common" },
+    { name = "psycopg", extra = ["binary"] },
     { name = "pydantic" },
     { name = "redis", extra = ["hiredis"] },
+    { name = "sqlalchemy" },
     { name = "structlog" },
     { name = "uvicorn" },
 ]
@@ -695,8 +697,10 @@ requires-dist = [
     { name = "httpx", specifier = "==0.28.1" },
     { name = "lynxus-extension-sdk", editable = "packages/extension-sdk-python" },
     { name = "lynxus-python-common", editable = "packages/python-common" },
+    { name = "psycopg", extras = ["binary"], specifier = "==3.2.6" },
     { name = "pydantic" },
     { name = "redis", extras = ["hiredis"], specifier = "==6.0.0" },
+    { name = "sqlalchemy", specifier = "==2.0.39" },
     { name = "structlog" },
     { name = "uvicorn" },
 ]

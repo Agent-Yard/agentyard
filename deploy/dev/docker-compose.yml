@@ -192,6 +192,7 @@ services:
       LYNXUS_API_BASE_URL: http://api-router:8080/api
       LYNXUS_CHANNEL_GATEWAY_BASE_URL: http://channel-gateway:8082
       LYNXUS_AGENT_RUNTIME_BASE_URL: http://agent-runtime-router:8090
+      LYNXUS_AGENT_RUNTIME_DATABASE_URL: postgresql+psycopg://${SPRING_DATASOURCE_USERNAME:-lynxus}:${SPRING_DATASOURCE_PASSWORD:-lynxus}@postgres:5432/lynxus_core
       LYNXUS_EXTENSION_REGISTRATION_FILE: ${LYNXUS_EXTENSION_REGISTRATION_FILE:-}
       LYNXUS_KNOWLEDGE_SERVICE_BASE_URL: http://knowledge-service-router:8091
       LYNXUS_REDIS_HOST: redis
@@ -209,6 +210,8 @@ services:
         aliases:
           - agent-runtime-router
     depends_on:
+      postgres-bootstrap:
+        condition: service_completed_successfully
       knowledge-service:
         condition: service_started
       redis:
@@ -228,6 +231,7 @@ services:
       LYNXUS_API_BASE_URL: http://api-router:8080/api
       LYNXUS_CHANNEL_GATEWAY_BASE_URL: http://channel-gateway:8082
       LYNXUS_AGENT_RUNTIME_BASE_URL: http://agent-runtime-router:8090
+      LYNXUS_AGENT_RUNTIME_DATABASE_URL: postgresql+psycopg://${SPRING_DATASOURCE_USERNAME:-lynxus}:${SPRING_DATASOURCE_PASSWORD:-lynxus}@postgres:5432/lynxus_core
       LYNXUS_EXTENSION_REGISTRATION_FILE: ${LYNXUS_EXTENSION_REGISTRATION_FILE:-}
       LYNXUS_KNOWLEDGE_SERVICE_BASE_URL: http://knowledge-service-router:8091
       LYNXUS_REDIS_HOST: redis
@@ -245,6 +249,8 @@ services:
         aliases:
           - agent-runtime-router
     depends_on:
+      postgres-bootstrap:
+        condition: service_completed_successfully
       knowledge-service:
         condition: service_started
       redis:

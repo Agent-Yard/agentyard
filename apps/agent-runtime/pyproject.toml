@@ -10,7 +10,9 @@ dependencies = [
     "lynxus-extension-sdk",
     "lynxus-python-common",
     "pydantic",
+    "psycopg[binary]==3.2.6",
     "redis[hiredis]==6.0.0",
+    "sqlalchemy==2.0.39",
     "structlog",
     "uvicorn",
 ]

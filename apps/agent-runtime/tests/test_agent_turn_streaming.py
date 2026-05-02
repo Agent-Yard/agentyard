@@ -11,6 +11,11 @@ os.environ.setdefault("LYNXUS_INTERNAL_AUTH_TOKEN", "test-internal-token")
 from lynxus_agent_runtime.main import app
 from lynxus_agent_runtime.models import AgentDecision, AgentTurnExecutionOutcome, AgentTurnResult, SessionMessageInput
 from lynxus_agent_runtime.openai_compatible import OpenAiCompatibleStreamEvent, OpenAiCompatibleStreamMalformedError
+from lynxus_agent_runtime.transcript_store import (
+    CommittedTranscriptEntry,
+    TranscriptEntry,
+    provider_message_from_transcript_entry,
+)
 
 from test_decisioning_loop import _request_payload
 
@@ -23,33 +28,74 @@ class FakeRedisClient:
         return None
 
 
+class FakeTranscriptStore:
+    settings = type("Settings", (), {"database_url": "postgresql+psycopg://test"})()
+
+    def __init__(
+        self,
+        *,
+        cached_outcome: AgentTurnExecutionOutcome | None = None,
+        committed_entries_by_context: dict[tuple[str, str, int], list[CommittedTranscriptEntry]] | None = None,
+    ) -> None:
+        self.cached_outcome = cached_outcome
+        self.committed_entries_by_context = committed_entries_by_context or {}
+        self.begin_contexts: list[object] = []
+        self.load_contexts: list[object] = []
+        self.pending_entries: list[tuple[object, list[TranscriptEntry]]] = []
+        self.committed_successes: list[tuple[object, AgentTurnExecutionOutcome, list[TranscriptEntry]]] = []
+        self.failed: list[tuple[object, str]] = []
+
+    def initialize(self) -> None:
+        return None
+
+    def begin_execution(self, context):  # noqa: ANN001
+        self.begin_contexts.append(context)
+        return self.cached_outcome
+
+    def load_committed_provider_messages(self, context):  # noqa: ANN001
+        self.load_contexts.append(context)
+        entries = self.committed_entries_by_context.get(
+            (context.session_id, context.owner_agent_id, context.ownership_epoch),
+            [],
+        )
+        return [provider_message_from_transcript_entry(entry.role, entry.content_json) for entry in entries]
+
+    def append_pending_entries(self, context, entries):  # noqa: ANN001
+        self.pending_entries.append((context, list(entries)))
+
+    def commit_success(self, context, outcome, entries):  # noqa: ANN001
+        self.committed_successes.append((context, outcome, list(entries)))
+
+    def mark_failed(self, context, reason):  # noqa: ANN001
+        self.failed.append((context, reason))
+
+    def check_database(self) -> dict[str, object]:
+        return {"backend": "postgresql", "schema": "agent_runtime"}
+
+    def close(self) -> None:
+        return None
+
+
 @contextmanager
-def agent_runtime_client():
+def agent_runtime_client(transcript_store: FakeTranscriptStore | None = None):
+    store = transcript_store or FakeTranscriptStore()
     with patch("lynxus_agent_runtime.main.create_redis_client", return_value=FakeRedisClient()):
-        with TestClient(app) as client:
-            yield client
+        with patch("lynxus_agent_runtime.main.create_transcript_store", return_value=store):
+            with TestClient(app) as client:
+                yield client
 
 
 class AgentTurnStreamingTest(unittest.TestCase):
-    def test_should_emit_ndjson_frames_with_single_final_outcome_for_non_streaming_fallback(self) -> None:
+    def test_should_fail_execute_stream_non_streaming_fallback_when_transcript_store_is_enabled(self) -> None:
         os.environ.pop("TEST_OPENAI_COMPATIBLE_API_KEY", None)
         request = _request_payload()
         request["turnId"] = "turn-1"
         request["turnExecutionId"] = "exec-1"
         request["ownershipEpoch"] = 3
-        reply = SessionMessageInput.model_validate(
-            {"blocks": [{"type": "TEXT", "text": "已查到订单。"}], "metadata": {}}
-        )
-        outcome = AgentTurnExecutionOutcome(
-            success=True,
-            result=AgentTurnResult(
-                decision=AgentDecision(action="REPLY", replyMessage=reply),
-                sharedState={"knownPreference": "email"},
-            ),
-        )
+        transcript_store = FakeTranscriptStore()
 
-        with patch("lynxus_agent_runtime.streaming.execute_agent_turn", return_value=(outcome, object())):
-            with agent_runtime_client() as client:
+        with patch("lynxus_agent_runtime.streaming.execute_agent_turn") as fallback_execute:
+            with agent_runtime_client(transcript_store) as client:
                 response = client.post(
                     "/agent-turns/execute-stream",
                     json=request,
@@ -57,6 +103,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
                 )
 
         self.assertEqual(response.status_code, 200)
+        fallback_execute.assert_not_called()
         self.assertEqual(response.headers["content-type"].split(";")[0], "application/x-ndjson")
         frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
         self.assertGreaterEqual(len(frames), 3)
@@ -69,13 +116,17 @@ class AgentTurnStreamingTest(unittest.TestCase):
 
         final_frames = [frame for frame in frames if frame["kind"] == "FINAL_OUTCOME"]
         self.assertEqual(1, len(final_frames))
-        self.assertTrue(final_frames[0]["payload"]["outcome"]["success"])
+        self.assertFalse(final_frames[0]["payload"]["outcome"]["success"])
+        self.assertIn("non-streaming fallback cannot replay", final_frames[0]["payload"]["outcome"]["failureReason"])
+        self.assertEqual("TRANSCRIPT_REPLAY_UNSUPPORTED_ON_FALLBACK", frames[-2]["payload"]["code"])
         self.assertEqual([], [frame for frame in frames if frame["kind"] == "REPLY_BLOCK_DELTA"])
+        self.assertEqual(1, len(transcript_store.failed))
 
     def test_should_stream_provider_text_delta_before_final_outcome(self) -> None:
         request = _request_payload()
         request["turnId"] = "turn-1"
         request["turnExecutionId"] = "exec-1"
+        transcript_store = FakeTranscriptStore()
 
         events = iter(
             [
@@ -92,7 +143,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
         with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
-            with agent_runtime_client() as client:
+            with agent_runtime_client(transcript_store) as client:
                 response = client.post(
                     "/agent-turns/execute-stream",
                     json=request,
@@ -110,6 +161,213 @@ class AgentTurnStreamingTest(unittest.TestCase):
         final_text = outcome["result"]["decision"]["replyMessage"]["blocks"][0]["text"]
         self.assertEqual("".join(frame["payload"]["delta"] for frame in delta_frames), final_text)
         self.assertEqual(1, len([frame for frame in frames if frame["kind"] == "FINAL_OUTCOME"]))
+        self.assertEqual(1, len(transcript_store.committed_successes))
+        committed_entries = transcript_store.committed_successes[0][2]
+        self.assertEqual("assistant", committed_entries[-1].role)
+        self.assertEqual("已查到订单。", committed_entries[-1].content_json["blocks"][0]["text"])
+
+    def test_should_return_cached_successful_final_outcome_without_calling_provider(self) -> None:
+        request = _request_payload()
+        request["turnId"] = "turn-1"
+        request["turnExecutionId"] = "exec-1"
+        reply = SessionMessageInput.model_validate({"blocks": [{"type": "TEXT", "text": "cached"}], "metadata": {}})
+        cached_outcome = AgentTurnExecutionOutcome(
+            success=True,
+            result=AgentTurnResult(
+                decision=AgentDecision(action="REPLY", replyMessage=reply),
+                sharedState={"from": "cache"},
+            ),
+        )
+        transcript_store = FakeTranscriptStore(cached_outcome=cached_outcome)
+
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events") as provider:
+            with agent_runtime_client(transcript_store) as client:
+                response = client.post(
+                    "/agent-turns/execute-stream",
+                    json=request,
+                    headers={"Authorization": "Bearer test-internal-token"},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        provider.assert_not_called()
+        frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
+        self.assertEqual(["FINAL_OUTCOME"], [frame["kind"] for frame in frames])
+        outcome = frames[0]["payload"]["outcome"]
+        self.assertTrue(outcome["success"])
+        self.assertEqual("cached", outcome["result"]["decision"]["replyMessage"]["blocks"][0]["text"])
+        self.assertEqual([], transcript_store.committed_successes)
+
+    def test_should_not_call_provider_when_turn_execution_is_already_running(self) -> None:
+        request = _request_payload()
+        request["turnId"] = "turn-1"
+        request["turnExecutionId"] = "exec-1"
+        running_conflict = AgentTurnExecutionOutcome(
+            success=False,
+            failureReason="turn execution is already RUNNING for this turnExecutionId; retry later",
+        )
+        transcript_store = FakeTranscriptStore(cached_outcome=running_conflict)
+
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events") as provider:
+            with agent_runtime_client(transcript_store) as client:
+                response = client.post(
+                    "/agent-turns/execute-stream",
+                    json=request,
+                    headers={"Authorization": "Bearer test-internal-token"},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        provider.assert_not_called()
+        frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
+        self.assertEqual(["FINAL_OUTCOME"], [frame["kind"] for frame in frames])
+        self.assertFalse(frames[0]["payload"]["outcome"]["success"])
+        self.assertIn("already RUNNING", frames[0]["payload"]["outcome"]["failureReason"])
+        self.assertEqual([], transcript_store.pending_entries)
+
+    def test_should_not_reuse_failed_execution_as_success_cache(self) -> None:
+        request = _request_payload()
+        request["turnId"] = "turn-1"
+        request["turnExecutionId"] = "exec-1"
+        transcript_store = FakeTranscriptStore()
+        captured_payloads: list[dict] = []
+
+        def fake_stream(_settings, payload, *, idle_timeout_seconds):  # noqa: ANN001
+            captured_payloads.append(payload)
+            return iter(
+                [
+                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta="fresh"),
+                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
+                    OpenAiCompatibleStreamEvent(event_type="done"),
+                ]
+            )
+
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
+            with agent_runtime_client(transcript_store) as client:
+                response = client.post(
+                    "/agent-turns/execute-stream",
+                    json=request,
+                    headers={"Authorization": "Bearer test-internal-token"},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(1, len(captured_payloads))
+        frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
+        self.assertEqual("fresh", frames[-1]["payload"]["outcome"]["result"]["decision"]["replyMessage"]["blocks"][0]["text"])
+
+    def test_should_fail_privacy_mapping_execute_stream_fallback_without_calling_decisioning(self) -> None:
+        request = _request_payload()
+        request["turnId"] = "turn-privacy"
+        request["turnExecutionId"] = "exec-privacy"
+        request["effectivePrivacyMappingEnabled"] = True
+        transcript_store = FakeTranscriptStore()
+
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        with patch("lynxus_agent_runtime.streaming.execute_agent_turn") as fallback_execute:
+            with agent_runtime_client(transcript_store) as client:
+                response = client.post(
+                    "/agent-turns/execute-stream",
+                    json=request,
+                    headers={"Authorization": "Bearer test-internal-token"},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        fallback_execute.assert_not_called()
+        frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
+        self.assertEqual("ERROR", frames[-2]["kind"])
+        self.assertEqual("TRANSCRIPT_REPLAY_UNSUPPORTED_ON_FALLBACK", frames[-2]["payload"]["code"])
+        self.assertFalse(frames[-1]["payload"]["outcome"]["success"])
+
+    def test_should_include_committed_same_owner_epoch_transcript_in_provider_payload(self) -> None:
+        request = _request_payload()
+        request["turnId"] = "turn-2"
+        request["turnExecutionId"] = "exec-2"
+        transcript_store = FakeTranscriptStore(
+            committed_entries_by_context={
+                ("session-1", "agent-a", 1): [
+                    CommittedTranscriptEntry(
+                        transcript_seq=7,
+                        role="assistant",
+                        content_json={"version": 1, "blocks": [{"type": "text", "text": "previous answer"}]},
+                    )
+                ]
+            }
+        )
+        captured_payloads: list[dict] = []
+
+        def fake_stream(_settings, payload, *, idle_timeout_seconds):  # noqa: ANN001
+            captured_payloads.append(payload)
+            return iter(
+                [
+                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta="next answer"),
+                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
+                    OpenAiCompatibleStreamEvent(event_type="done"),
+                ]
+            )
+
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
+            with agent_runtime_client(transcript_store) as client:
+                response = client.post(
+                    "/agent-turns/execute-stream",
+                    json=request,
+                    headers={"Authorization": "Bearer test-internal-token"},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(
+            {"role": "assistant", "content": "previous answer"},
+            captured_payloads[0]["messages"],
+        )
+
+    def test_should_not_include_committed_transcript_from_different_owner_or_epoch(self) -> None:
+        request = _request_payload()
+        request["turnId"] = "turn-2"
+        request["turnExecutionId"] = "exec-2"
+        transcript_store = FakeTranscriptStore(
+            committed_entries_by_context={
+                ("session-1", "agent-b", 1): [
+                    CommittedTranscriptEntry(
+                        transcript_seq=1,
+                        role="assistant",
+                        content_json={"version": 1, "blocks": [{"type": "text", "text": "wrong owner"}]},
+                    )
+                ],
+                ("session-1", "agent-a", 2): [
+                    CommittedTranscriptEntry(
+                        transcript_seq=2,
+                        role="assistant",
+                        content_json={"version": 1, "blocks": [{"type": "text", "text": "wrong epoch"}]},
+                    )
+                ],
+            }
+        )
+        captured_payloads: list[dict] = []
+
+        def fake_stream(_settings, payload, *, idle_timeout_seconds):  # noqa: ANN001
+            captured_payloads.append(payload)
+            return iter(
+                [
+                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta="current"),
+                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
+                    OpenAiCompatibleStreamEvent(event_type="done"),
+                ]
+            )
+
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
+            with agent_runtime_client(transcript_store) as client:
+                response = client.post(
+                    "/agent-turns/execute-stream",
+                    json=request,
+                    headers={"Authorization": "Bearer test-internal-token"},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        rendered = "\n".join(str(message.get("content") or "") for message in captured_payloads[0]["messages"])
+        self.assertNotIn("wrong owner", rendered)
+        self.assertNotIn("wrong epoch", rendered)
 
     def test_should_not_stream_or_persist_legacy_json_decision_as_reply(self) -> None:
         request = _request_payload()

@@ -27,6 +27,7 @@ from .redis_support import RedisSettings, create_redis_client
 from .streaming import stream_agent_turn
 from .tool_connectors import reset_default_tool_connector_registry, set_default_tool_connector_registry
 from .tooling import execute_playbook_tool_task
+from .transcript_store import TranscriptStoreSettings, create_transcript_store
 
 LOGGER = logging.getLogger("lynxus-agent-runtime")
 INSTANCE_ID = (os.getenv("LYNXUS_INSTANCE_ID") or "lynxus-agent-runtime").strip() or "lynxus-agent-runtime"
@@ -78,10 +79,22 @@ async def lifespan(app: FastAPI):
     )
     app.state.redis_client = redis_client
     app.state.redis_settings = redis_settings
+    transcript_store = create_transcript_store()
+    transcript_store.initialize()
+    app.state.transcript_store = transcript_store
+    app.state.transcript_store_settings = transcript_store.settings
+    LOGGER.info(
+        "agent-runtime postgres connectivity verified",
+        extra={
+            "instanceId": INSTANCE_ID,
+            "databaseSchema": "agent_runtime",
+        },
+    )
     yield
     reset_default_tool_connector_registry()
     reset_shared_http_client_registry()
     await redis_client.aclose()
+    transcript_store.close()
     clear_log_context()
 
 
@@ -112,6 +125,17 @@ async def healthz() -> JSONResponse:
             "database": redis_settings.database,
         }
 
+    async def check_database() -> dict[str, object]:
+        transcript_store = getattr(app.state, "transcript_store", None)
+        if transcript_store is None:
+            raise RuntimeError("transcript store is not initialized")
+        settings = getattr(app.state, "transcript_store_settings", TranscriptStoreSettings.from_env())
+        result = transcript_store.check_database()
+        return {
+            **result,
+            "databaseUrlConfigured": bool(settings.database_url),
+        }
+
     report = await build_readiness_report(
         service_name="lynxus-agent-runtime",
         instance_id=INSTANCE_ID,
@@ -119,7 +143,11 @@ async def healthz() -> JSONResponse:
             ReadinessCheck(
                 name="redis",
                 probe=check_redis,
-            )
+            ),
+            ReadinessCheck(
+                name="database",
+                probe=check_database,
+            ),
         ],
     )
     return JSONResponse(status_code=report.status_code, content=report.body)
@@ -194,7 +222,8 @@ async def execute_turn_stream(
         sessionId=request.sessionId,
         customerId=str(request.trigger.payload.get("customerId") or ""),
     )
-    return StreamingResponse(stream_agent_turn(request), media_type="application/x-ndjson")
+    transcript_store = getattr(app.state, "transcript_store", None)
+    return StreamingResponse(stream_agent_turn(request, transcript_store=transcript_store), media_type="application/x-ndjson")
 
 
 @app.post("/playbook-tool-tasks/execute", response_model=PlaybookToolTaskResult)
