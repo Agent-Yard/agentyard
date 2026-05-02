@@ -395,8 +395,9 @@ class AgentTurnStreamingTest(unittest.TestCase):
         )
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        transcript_store = FakeTranscriptStore()
         with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
-            with agent_runtime_client() as client:
+            with agent_runtime_client(transcript_store) as client:
                 response = client.post(
                     "/agent-turns/execute-stream",
                     json=request,
@@ -470,19 +471,199 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertFalse(outcome["success"])
         self.assertIsNone(outcome["result"])
 
-    def test_should_emit_internal_tool_argument_delta_without_successful_durable_message(self) -> None:
+    def test_should_accumulate_text_message_block_state_and_run_playbook_action(self) -> None:
         request = _request_payload()
         request["turnId"] = "turn-1"
         request["turnExecutionId"] = "exec-1"
+        captured_payloads: list[dict] = []
+
+        def fake_stream(_settings, payload, *, idle_timeout_seconds):  # noqa: ANN001
+            captured_payloads.append(payload)
+            if len(captured_payloads) == 1:
+                return iter(
+                    [
+                        OpenAiCompatibleStreamEvent(event_type="content_delta", delta="我来处理。"),
+                        OpenAiCompatibleStreamEvent(
+                            event_type="tool_call_delta",
+                            tool_call_index=0,
+                            tool_call_id="call-1",
+                            tool_name="append_text_block",
+                            arguments_delta=json.dumps({"text": "已准备发起流程。"}, ensure_ascii=False),
+                        ),
+                        OpenAiCompatibleStreamEvent(
+                            event_type="tool_call_delta",
+                            tool_call_index=1,
+                            tool_call_id="call-2",
+                            tool_name="update_shared_state",
+                            arguments_delta=json.dumps({"patch": {"refundStatus": "REQUESTED"}}, ensure_ascii=False),
+                        ),
+                        OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
+                        OpenAiCompatibleStreamEvent(event_type="done"),
+                    ]
+                )
+            return iter(
+                [
+                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta="流程已确认。"),
+                    OpenAiCompatibleStreamEvent(
+                        event_type="tool_call_delta",
+                        tool_call_index=0,
+                        tool_call_id="call-3",
+                        tool_name="run_playbook",
+                        arguments_delta=json.dumps(
+                            {"playbookId": "pb-1", "playbookInput": {"orderId": "order-1"}},
+                            ensure_ascii=False,
+                        ),
+                    ),
+                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
+                    OpenAiCompatibleStreamEvent(event_type="done"),
+                ]
+            )
+
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        transcript_store = FakeTranscriptStore()
+        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
+            with agent_runtime_client(transcript_store) as client:
+                response = client.post(
+                    "/agent-turns/execute-stream",
+                    json=request,
+                    headers={"Authorization": "Bearer test-internal-token"},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(2, len(captured_payloads))
+        second_round_tool_results = [message for message in captured_payloads[1]["messages"] if message.get("role") == "tool"]
+        self.assertTrue(any('"blockId"' in str(message.get("content")) for message in second_round_tool_results))
+        self.assertTrue(any('"accepted": true' in str(message.get("content")) for message in second_round_tool_results))
+        frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
+        tool_delta_frames = [frame for frame in frames if frame["kind"] == "ACTION_TOOL_ARGUMENT_DELTA"]
+        self.assertEqual(3, len(tool_delta_frames))
+        self.assertTrue(all(frame["visibility"] == "INTERNAL" for frame in tool_delta_frames))
+        self.assertEqual([], [frame for frame in frames if frame["visibility"] == "CUSTOMER" and "argumentsDelta" in frame["payload"]])
+        self.assertTrue(any(frame["kind"] == "ACTION_TOOL_COMPLETED" for frame in frames))
+        outcome = frames[-1]["payload"]["outcome"]
+        self.assertTrue(outcome["success"])
+        decision = outcome["result"]["decision"]
+        self.assertEqual("RUN_PLAYBOOK", decision["action"])
+        self.assertEqual("pb-1", decision["playbookId"])
+        self.assertEqual({"orderId": "order-1"}, decision["playbookInput"])
+        self.assertEqual(
+            ["我来处理。", "已准备发起流程。", "流程已确认。"],
+            [block["text"] for block in decision["replyMessage"]["blocks"]],
+        )
+        self.assertEqual("email", outcome["result"]["sharedState"]["knownPreference"])
+        self.assertEqual("REQUESTED", outcome["result"]["sharedState"]["refundStatus"])
+        self.assertEqual(1, len([frame for frame in frames if frame["kind"] == "FINAL_OUTCOME"]))
+        self.assertEqual(1, len(transcript_store.committed_successes))
+
+    def test_should_accumulate_action_only_switch_owner_without_reply_message(self) -> None:
+        request = _request_payload()
+        request["turnId"] = "turn-switch"
+        request["turnExecutionId"] = "exec-switch"
+        request["currentOwner"]["allowedActions"] = ["SWITCH_OWNER"]
+        request["currentOwner"]["switchableOwnerAgentIds"] = ["agent-b"]
 
         events = iter(
             [
                 OpenAiCompatibleStreamEvent(
                     event_type="tool_call_delta",
                     tool_call_index=0,
-                    tool_call_id="call-1",
-                    tool_name="create_ticket",
-                    arguments_delta='{"subject":"refund"}',
+                    tool_call_id="call-switch",
+                    tool_name="switch_owner",
+                    arguments_delta=json.dumps({"targetAgentId": "agent-b"}, ensure_ascii=False),
+                ),
+                OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
+                OpenAiCompatibleStreamEvent(event_type="done"),
+            ]
+        )
+
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        transcript_store = FakeTranscriptStore()
+        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
+            with agent_runtime_client(transcript_store) as client:
+                response = client.post(
+                    "/agent-turns/execute-stream",
+                    json=request,
+                    headers={"Authorization": "Bearer test-internal-token"},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        outcome = [json.loads(line) for line in response.text.splitlines() if line.strip()][-1]["payload"]["outcome"]
+        self.assertTrue(outcome["success"])
+        self.assertEqual("SWITCH_OWNER", outcome["result"]["decision"]["action"])
+        self.assertEqual("agent-b", outcome["result"]["decision"]["targetAgentId"])
+        self.assertIsNone(outcome["result"]["decision"]["replyMessage"])
+
+    def test_should_fail_multiple_non_security_lifecycle_actions(self) -> None:
+        request = _request_payload()
+        request["turnId"] = "turn-conflict"
+        request["turnExecutionId"] = "exec-conflict"
+        request["currentOwner"]["allowedActions"] = ["SWITCH_OWNER", "RUN_PLAYBOOK"]
+        request["currentOwner"]["switchableOwnerAgentIds"] = ["agent-b"]
+
+        events = iter(
+            [
+                OpenAiCompatibleStreamEvent(
+                    event_type="tool_call_delta",
+                    tool_call_index=0,
+                    tool_call_id="call-switch",
+                    tool_name="switch_owner",
+                    arguments_delta=json.dumps({"targetAgentId": "agent-b"}, ensure_ascii=False),
+                ),
+                OpenAiCompatibleStreamEvent(
+                    event_type="tool_call_delta",
+                    tool_call_index=1,
+                    tool_call_id="call-playbook",
+                    tool_name="run_playbook",
+                    arguments_delta=json.dumps({"playbookId": "pb-1", "playbookInput": {}}, ensure_ascii=False),
+                ),
+                OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
+                OpenAiCompatibleStreamEvent(event_type="done"),
+            ]
+        )
+
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        transcript_store = FakeTranscriptStore()
+        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
+            with agent_runtime_client(transcript_store) as client:
+                response = client.post(
+                    "/agent-turns/execute-stream",
+                    json=request,
+                    headers={"Authorization": "Bearer test-internal-token"},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        outcome = [json.loads(line) for line in response.text.splitlines() if line.strip()][-1]["payload"]["outcome"]
+        self.assertFalse(outcome["success"])
+        self.assertIn("multiple lifecycle actions", outcome["failureReason"])
+        self.assertEqual([], transcript_store.committed_successes)
+        self.assertEqual(1, len(transcript_store.failed))
+
+    def test_should_prioritize_security_block_over_other_lifecycle_actions_with_reply(self) -> None:
+        request = _request_payload()
+        request["turnId"] = "turn-security"
+        request["turnExecutionId"] = "exec-security"
+        request["currentOwner"]["allowedActions"] = ["SWITCH_OWNER"]
+        request["currentOwner"]["switchableOwnerAgentIds"] = ["agent-b"]
+
+        events = iter(
+            [
+                OpenAiCompatibleStreamEvent(event_type="content_delta", delta="我需要阻断这个请求。"),
+                OpenAiCompatibleStreamEvent(
+                    event_type="tool_call_delta",
+                    tool_call_index=0,
+                    tool_call_id="call-switch",
+                    tool_name="switch_owner",
+                    arguments_delta=json.dumps({"targetAgentId": "agent-b"}, ensure_ascii=False),
+                ),
+                OpenAiCompatibleStreamEvent(
+                    event_type="tool_call_delta",
+                    tool_call_index=1,
+                    tool_call_id="call-security",
+                    tool_name="security_block",
+                    arguments_delta=json.dumps(
+                        {"categories": ["PROMPT_INJECTION"], "reason": "prompt_injection", "confidence": 0.95},
+                        ensure_ascii=False,
+                    ),
                 ),
                 OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
                 OpenAiCompatibleStreamEvent(event_type="done"),
@@ -499,15 +680,273 @@ class AgentTurnStreamingTest(unittest.TestCase):
                 )
 
         self.assertEqual(response.status_code, 200)
-        frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
-        tool_delta_frames = [frame for frame in frames if frame["kind"] == "ACTION_TOOL_ARGUMENT_DELTA"]
-        self.assertEqual(1, len(tool_delta_frames))
-        self.assertEqual("INTERNAL", tool_delta_frames[0]["visibility"])
-        self.assertEqual('{"subject":"refund"}', tool_delta_frames[0]["payload"]["argumentsDelta"])
-        outcome = frames[-1]["payload"]["outcome"]
-        self.assertFalse(outcome["success"])
-        self.assertIsNone(outcome["result"])
-        self.assertEqual([], [frame for frame in frames if frame["kind"] == "REPLY_BLOCK_COMPLETED"])
+        outcome = [json.loads(line) for line in response.text.splitlines() if line.strip()][-1]["payload"]["outcome"]
+        self.assertTrue(outcome["success"])
+        self.assertEqual("SECURITY_BLOCK", outcome["result"]["decision"]["action"])
+        self.assertEqual("我需要阻断这个请求。", outcome["result"]["decision"]["replyMessage"]["blocks"][0]["text"])
+        self.assertEqual("BLOCK", outcome["result"]["securityAssessment"]["action"])
+        self.assertEqual(["PROMPT_INJECTION"], outcome["result"]["securityAssessment"]["categories"])
+
+    def test_should_prioritize_security_block_over_invalid_lifecycle_actions(self) -> None:
+        cases = [
+            ("switch_owner", {"targetAgentId": "agent-x"}),
+            ("run_playbook", {"playbookId": "pb-x", "playbookInput": {}}),
+            ("human_handoff", {"reason": "billing"}),
+        ]
+
+        for index, (tool_name, arguments) in enumerate(cases, start=1):
+            request = _request_payload()
+            request["turnId"] = f"turn-security-invalid-{index}"
+            request["turnExecutionId"] = f"exec-security-invalid-{index}"
+            request["currentOwner"]["allowedActions"] = ["SWITCH_OWNER", "RUN_PLAYBOOK"]
+            request["currentOwner"]["switchableOwnerAgentIds"] = ["agent-b"]
+            events = iter(
+                [
+                    OpenAiCompatibleStreamEvent(
+                        event_type="tool_call_delta",
+                        tool_call_index=0,
+                        tool_call_id=f"call-invalid-{index}",
+                        tool_name=tool_name,
+                        arguments_delta=json.dumps(arguments, ensure_ascii=False),
+                    ),
+                    OpenAiCompatibleStreamEvent(
+                        event_type="tool_call_delta",
+                        tool_call_index=1,
+                        tool_call_id=f"call-security-{index}",
+                        tool_name="security_block",
+                        arguments_delta=json.dumps(
+                            {"categories": ["PROMPT_INJECTION"], "reason": "prompt_injection", "confidence": 0.97},
+                            ensure_ascii=False,
+                        ),
+                    ),
+                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
+                    OpenAiCompatibleStreamEvent(event_type="done"),
+                ]
+            )
+
+            os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+            with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
+                with agent_runtime_client() as client:
+                    response = client.post(
+                        "/agent-turns/execute-stream",
+                        json=request,
+                        headers={"Authorization": "Bearer test-internal-token"},
+                    )
+
+            self.assertEqual(response.status_code, 200)
+            outcome = [json.loads(line) for line in response.text.splitlines() if line.strip()][-1]["payload"]["outcome"]
+            self.assertTrue(outcome["success"])
+            self.assertEqual("SECURITY_BLOCK", outcome["result"]["decision"]["action"])
+            self.assertEqual(["PROMPT_INJECTION"], outcome["result"]["securityAssessment"]["categories"])
+
+    def test_should_fail_multiple_same_lifecycle_actions_without_security_block(self) -> None:
+        cases = [
+            (
+                [
+                    ("call-switch-1", "switch_owner", {"targetAgentId": "agent-b"}),
+                    ("call-switch-2", "switch_owner", {"targetAgentId": "agent-b"}),
+                ],
+                "multiple lifecycle actions",
+            ),
+            (
+                [
+                    ("call-playbook-1", "run_playbook", {"playbookId": "pb-1", "playbookInput": {"step": 1}}),
+                    ("call-playbook-2", "run_playbook", {"playbookId": "pb-1", "playbookInput": {"step": 2}}),
+                ],
+                "multiple lifecycle actions",
+            ),
+        ]
+
+        for index, (tool_calls, expected_reason) in enumerate(cases, start=1):
+            request = _request_payload()
+            request["turnId"] = f"turn-same-action-{index}"
+            request["turnExecutionId"] = f"exec-same-action-{index}"
+            request["currentOwner"]["allowedActions"] = ["SWITCH_OWNER", "RUN_PLAYBOOK"]
+            request["currentOwner"]["switchableOwnerAgentIds"] = ["agent-b"]
+            events = [
+                OpenAiCompatibleStreamEvent(
+                    event_type="tool_call_delta",
+                    tool_call_index=tool_index,
+                    tool_call_id=tool_call_id,
+                    tool_name=tool_name,
+                    arguments_delta=json.dumps(arguments, ensure_ascii=False),
+                )
+                for tool_index, (tool_call_id, tool_name, arguments) in enumerate(tool_calls)
+            ]
+            events.extend(
+                [
+                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
+                    OpenAiCompatibleStreamEvent(event_type="done"),
+                ]
+            )
+
+            os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+            with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", return_value=iter(events)):
+                with agent_runtime_client() as client:
+                    response = client.post(
+                        "/agent-turns/execute-stream",
+                        json=request,
+                        headers={"Authorization": "Bearer test-internal-token"},
+                    )
+
+            self.assertEqual(response.status_code, 200)
+            outcome = [json.loads(line) for line in response.text.splitlines() if line.strip()][-1]["payload"]["outcome"]
+            self.assertFalse(outcome["success"])
+            self.assertIn(expected_reason, outcome["failureReason"])
+
+    def test_should_merge_update_shared_state_patch_into_final_snapshot(self) -> None:
+        request = _request_payload()
+        request["turnId"] = "turn-state"
+        request["turnExecutionId"] = "exec-state"
+        request["currentOwner"]["allowedActions"] = ["NO_OP"]
+        captured_payloads: list[dict] = []
+
+        def fake_stream(_settings, payload, *, idle_timeout_seconds):  # noqa: ANN001
+            captured_payloads.append(payload)
+            if len(captured_payloads) == 1:
+                return iter(
+                    [
+                        OpenAiCompatibleStreamEvent(
+                            event_type="tool_call_delta",
+                            tool_call_index=0,
+                            tool_call_id="call-state",
+                            tool_name="update_shared_state",
+                            arguments_delta=json.dumps({"patch": {"nested": {"value": 1}}}, ensure_ascii=False),
+                        ),
+                        OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
+                        OpenAiCompatibleStreamEvent(event_type="done"),
+                    ]
+                )
+            return iter(
+                [
+                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
+                    OpenAiCompatibleStreamEvent(event_type="done"),
+                ]
+            )
+
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
+            with agent_runtime_client() as client:
+                response = client.post(
+                    "/agent-turns/execute-stream",
+                    json=request,
+                    headers={"Authorization": "Bearer test-internal-token"},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(2, len(captured_payloads))
+        outcome = [json.loads(line) for line in response.text.splitlines() if line.strip()][-1]["payload"]["outcome"]
+        self.assertTrue(outcome["success"])
+        self.assertEqual("NO_OP", outcome["result"]["decision"]["action"])
+        self.assertEqual({"knownPreference": "email", "nested": {"value": 1}}, outcome["result"]["sharedState"])
+
+    def test_should_return_read_skill_result_to_next_streaming_model_round(self) -> None:
+        request = _request_payload()
+        request["turnId"] = "turn-skill"
+        request["turnExecutionId"] = "exec-skill"
+        captured_payloads: list[dict] = []
+
+        def fake_stream(_settings, payload, *, idle_timeout_seconds):  # noqa: ANN001
+            captured_payloads.append(payload)
+            if len(captured_payloads) == 1:
+                return iter(
+                    [
+                        OpenAiCompatibleStreamEvent(
+                            event_type="tool_call_delta",
+                            tool_call_index=0,
+                            tool_call_id="call-skill",
+                            tool_name="read_skill",
+                            arguments_delta=json.dumps({"resourceVersionId": "skill-ver-1"}, ensure_ascii=False),
+                        ),
+                        OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
+                        OpenAiCompatibleStreamEvent(event_type="done"),
+                    ]
+                )
+            return iter(
+                [
+                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta="已读取退款规则。"),
+                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
+                    OpenAiCompatibleStreamEvent(event_type="done"),
+                ]
+            )
+
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
+            with agent_runtime_client() as client:
+                response = client.post(
+                    "/agent-turns/execute-stream",
+                    json=request,
+                    headers={"Authorization": "Bearer test-internal-token"},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(2, len(captured_payloads))
+        tool_names = {
+            tool["function"]["name"]
+            for tool in captured_payloads[0]["tools"]
+            if tool.get("type") == "function" and isinstance(tool.get("function"), dict)
+        }
+        self.assertTrue(
+            {
+                "read_skill",
+                "append_text_block",
+                "append_image_block",
+                "append_rich_text_block",
+                "append_card_block",
+                "update_shared_state",
+                "switch_owner",
+                "run_playbook",
+                "human_handoff",
+                "security_block",
+            }.issubset(tool_names)
+        )
+        tool_result_messages = [message for message in captured_payloads[1]["messages"] if message.get("role") == "tool"]
+        self.assertTrue(any("退款时必须先确认订单状态" in str(message.get("content")) for message in tool_result_messages))
+        outcome = [json.loads(line) for line in response.text.splitlines() if line.strip()][-1]["payload"]["outcome"]
+        self.assertTrue(outcome["success"])
+        self.assertEqual("REPLY", outcome["result"]["decision"]["action"])
+        self.assertEqual("已读取退款规则。", outcome["result"]["decision"]["replyMessage"]["blocks"][0]["text"])
+
+    def test_should_reject_invalid_native_lifecycle_tool_arguments(self) -> None:
+        cases = [
+            ("switch_owner", {"targetAgentId": "agent-x"}, "switch_owner targetAgentId is not allowed"),
+            ("run_playbook", {"playbookId": "pb-x", "playbookInput": {}}, "run_playbook playbookId is not allowed"),
+            ("human_handoff", {"reason": "billing"}, "action SESSION_HUMAN_HANDOFF is not allowed"),
+        ]
+
+        for index, (tool_name, arguments, expected_reason) in enumerate(cases, start=1):
+            request = _request_payload()
+            request["turnId"] = f"turn-invalid-{index}"
+            request["turnExecutionId"] = f"exec-invalid-{index}"
+            request["currentOwner"]["allowedActions"] = ["SWITCH_OWNER", "RUN_PLAYBOOK"]
+            request["currentOwner"]["switchableOwnerAgentIds"] = ["agent-b"]
+            events = iter(
+                [
+                    OpenAiCompatibleStreamEvent(
+                        event_type="tool_call_delta",
+                        tool_call_index=0,
+                        tool_call_id=f"call-invalid-{index}",
+                        tool_name=tool_name,
+                        arguments_delta=json.dumps(arguments, ensure_ascii=False),
+                    ),
+                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
+                    OpenAiCompatibleStreamEvent(event_type="done"),
+                ]
+            )
+
+            os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+            with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
+                with agent_runtime_client() as client:
+                    response = client.post(
+                        "/agent-turns/execute-stream",
+                        json=request,
+                        headers={"Authorization": "Bearer test-internal-token"},
+                    )
+
+            self.assertEqual(response.status_code, 200)
+            outcome = [json.loads(line) for line in response.text.splitlines() if line.strip()][-1]["payload"]["outcome"]
+            self.assertFalse(outcome["success"])
+            self.assertIn(expected_reason, outcome["failureReason"])
 
     def test_should_protect_stream_endpoint_with_internal_auth(self) -> None:
         with agent_runtime_client() as client:

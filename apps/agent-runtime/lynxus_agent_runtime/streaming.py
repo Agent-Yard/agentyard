@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -25,16 +26,18 @@ from .openai_compatible import (
     OpenAiCompatibleStreamIdleTimeoutError,
     OpenAiCompatibleStreamMalformedError,
     OpenAiCompatibleStreamMessage,
+    OpenAiCompatibleStreamToolCall,
     apply_reasoning_settings,
     stream_chat_completion_events,
 )
 from .openai_adapter import render_openai_tool_definitions
 from .privacy_pipeline import build_privacy_pipeline
 from .prompting import build_streaming_prompt_bundle, render_openai_streaming_messages
-from .tooling import semantic_tool_definitions
+from .tooling import execute_tool_call, streaming_semantic_tool_definitions, tool_kind
 from .transcript_store import (
     TranscriptEntry,
     TranscriptStore,
+    normalize_provider_message,
     TurnExecutionContext,
     transcript_entries_from_provider_messages,
     transcript_entry_from_stream_message,
@@ -205,7 +208,7 @@ async def _stream_via_openai_compatible(
     turn_context: TurnExecutionContext,
 ) -> AsyncIterator[AgentTurnStreamFrame]:
     usage_tracker = LlmUsageTracker()
-    accumulator = OpenAiCompatibleStreamAccumulator()
+    outcome_accumulator = _StreamingOutcomeAccumulator(request)
     text_guard = _CustomerTextStreamGuard()
     reply_block_started = False
     block_id = "reply-block-1"
@@ -228,70 +231,160 @@ async def _stream_via_openai_compatible(
             "model": settings.model_id,
             "temperature": settings.temperature,
             "messages": provider_messages,
-            "tools": render_openai_tool_definitions(semantic_tool_definitions(request)),
+            "tools": render_openai_tool_definitions(streaming_semantic_tool_definitions(request)),
         }
         if settings.max_tokens > 0:
             payload["max_tokens"] = settings.max_tokens
         apply_reasoning_settings(payload, settings)
-        yield writer.frame(
-            kind="MODEL_STARTED",
-            visibility="DEVELOPER",
-            payload={"providerType": settings.provider_type, "modelId": settings.model_id},
-        )
-        events = stream_chat_completion_events(
-            settings,
-            payload,
-            idle_timeout_seconds=20.0,
-        )
-        while True:
-            event = await run_in_threadpool(_next_stream_event, events)
-            if event is None:
-                break
-            accumulator.apply(event)
-            if event.event_type == "content_delta" and event.delta:
-                customer_delta = text_guard.accept(event.delta)
-                if customer_delta and not reply_block_started:
-                    reply_block_started = True
+        max_steps = _max_streaming_tool_steps()
+        for step in range(max_steps + 1):
+            usage_tracker.set_tool_loop_step(step)
+            payload["messages"] = provider_messages
+            yield writer.frame(
+                kind="MODEL_STARTED",
+                visibility="DEVELOPER",
+                payload={"providerType": settings.provider_type, "modelId": settings.model_id, "toolLoopStep": step},
+            )
+            round_accumulator = OpenAiCompatibleStreamAccumulator()
+            events = stream_chat_completion_events(
+                settings,
+                payload,
+                idle_timeout_seconds=20.0,
+            )
+            while True:
+                event = await run_in_threadpool(_next_stream_event, events)
+                if event is None:
+                    break
+                round_accumulator.apply(event)
+                if event.event_type == "content_delta" and event.delta:
+                    customer_delta = text_guard.accept(event.delta)
+                    if customer_delta and not reply_block_started:
+                        reply_block_started = True
+                        yield writer.frame(
+                            kind="REPLY_BLOCK_STARTED",
+                            visibility="CUSTOMER",
+                            payload={"blockId": block_id, "blockType": "TEXT"},
+                        )
+                    if customer_delta:
+                        yield writer.frame(
+                            kind="REPLY_BLOCK_DELTA",
+                            visibility="CUSTOMER",
+                            payload={"blockId": block_id, "blockType": "TEXT", "delta": customer_delta},
+                        )
+                elif event.event_type == "tool_call_delta":
                     yield writer.frame(
-                        kind="REPLY_BLOCK_STARTED",
-                        visibility="CUSTOMER",
-                        payload={"blockId": block_id, "blockType": "TEXT"},
+                        kind="ACTION_TOOL_ARGUMENT_DELTA",
+                        visibility="INTERNAL",
+                        payload={
+                            "index": event.tool_call_index,
+                            "toolCallId": event.tool_call_id,
+                            "toolName": event.tool_name,
+                            "argumentsDelta": event.arguments_delta,
+                        },
                     )
-                if customer_delta:
-                    yield writer.frame(
-                        kind="REPLY_BLOCK_DELTA",
-                        visibility="CUSTOMER",
-                        payload={"blockId": block_id, "blockType": "TEXT", "delta": customer_delta},
-                    )
-            elif event.event_type == "tool_call_delta":
-                yield writer.frame(
-                    kind="ACTION_TOOL_ARGUMENT_DELTA",
-                    visibility="INTERNAL",
-                    payload={
-                        "index": event.tool_call_index,
-                        "toolCallId": event.tool_call_id,
-                        "toolName": event.tool_name,
-                        "argumentsDelta": event.arguments_delta,
-                    },
+            message = round_accumulator.build_message()
+            if message.usage is not None:
+                usage_tracker.record("SESSION_OWNER_MODEL", settings, message.usage, tool_loop_step=step)
+            yield writer.frame(
+                kind="MODEL_COMPLETED",
+                visibility="DEVELOPER",
+                payload={
+                    "finishReason": message.finish_reason,
+                    "usageAvailable": message.usage is not None,
+                    "toolLoopStep": step,
+                },
+            )
+            if text_guard.json_like or _is_legacy_json_contract_text(message.content):
+                outcome = AgentTurnExecutionOutcome(
+                    success=False,
+                    failureReason="legacy JSON streaming unsupported: assistant text must not contain decision JSON",
+                    llmUsage=usage_tracker.entries(),
                 )
-        message = accumulator.build_message()
-        if message.usage is not None:
-            usage_tracker.record("SESSION_OWNER_MODEL", settings, message.usage)
-        yield writer.frame(
-            kind="MODEL_COMPLETED",
-            visibility="DEVELOPER",
-            payload={"finishReason": message.finish_reason, "usageAvailable": message.usage is not None},
-        )
-        outcome = _outcome_from_stream_message(request, message, usage_tracker, text_guard)
+                break
+            if message.content:
+                outcome_accumulator.append_assistant_text(message.content)
+            model_round_id = f"{writer.turn_execution_id}:round-{step}"
+            assistant_provider_message = _provider_message_from_stream_message(message)
+            if message.tool_calls:
+                provider_messages.append(assistant_provider_message)
+                if transcript_store is not None:
+                    await run_in_threadpool(
+                        transcript_store.append_pending_entries,
+                        turn_context,
+                        [
+                            transcript_entry_from_stream_message(
+                                message,
+                                model_round_id=model_round_id,
+                                seq=1,
+                            )
+                        ],
+                    )
+                should_continue = False
+                for index, tool_call in enumerate(message.tool_calls, start=1):
+                    kind = tool_kind(tool_call.tool_name)
+                    if kind is None:
+                        raise ValueError(f"unsupported streaming tool call: {tool_call.tool_name}")
+                    yield writer.frame(
+                        kind="ACTION_TOOL_STARTED",
+                        visibility="OPERATOR",
+                        payload={
+                            "toolCallId": tool_call.call_id,
+                            "toolName": tool_call.tool_name,
+                            "toolKind": kind,
+                        },
+                    )
+                    tool_result = outcome_accumulator.apply_tool_call(tool_call, kind)
+                    if kind == "CONTEXT_TOOL":
+                        tool_result = execute_tool_call(request, tool_call.tool_name, tool_call.arguments)
+                        should_continue = True
+                    elif kind in {"STATE_TOOL", "MESSAGE_BLOCK_TOOL"}:
+                        should_continue = True
+                    yield writer.frame(
+                        kind="ACTION_TOOL_COMPLETED",
+                        visibility="OPERATOR",
+                        payload={
+                            "toolCallId": tool_call.call_id,
+                            "toolName": tool_call.tool_name,
+                            "toolKind": kind,
+                            "accepted": bool(tool_result.get("accepted", True)),
+                        },
+                    )
+                    tool_provider_message = _provider_tool_result_message(tool_call, tool_result)
+                    provider_messages.append(tool_provider_message)
+                    if transcript_store is not None:
+                        await run_in_threadpool(
+                            transcript_store.append_pending_entries,
+                            turn_context,
+                            [
+                                TranscriptEntry(
+                                    role="tool",
+                                    content_json=normalize_provider_message(tool_provider_message),
+                                    model_round_id=model_round_id,
+                                    seq=index + 1,
+                                )
+                            ],
+                        )
+                if should_continue:
+                    continue
+            outcome = outcome_accumulator.build_outcome(usage_tracker)
+            break
+        else:
+            outcome = AgentTurnExecutionOutcome(
+                success=False,
+                failureReason="model did not return a final streaming outcome within loop step budget",
+                llmUsage=usage_tracker.entries(),
+            )
         if transcript_store is not None:
             if outcome.success:
-                completed_entries = [
-                    transcript_entry_from_stream_message(
-                        message,
-                        model_round_id=writer.turn_execution_id,
-                        seq=len(current_entries) + 1,
-                    ),
-                ]
+                completed_entries = []
+                if not message.tool_calls:
+                    completed_entries.append(
+                        transcript_entry_from_stream_message(
+                            message,
+                            model_round_id=f"{writer.turn_execution_id}:final",
+                            seq=len(current_entries) + 1,
+                        )
+                    )
                 await run_in_threadpool(transcript_store.commit_success, turn_context, outcome, completed_entries)
             else:
                 await run_in_threadpool(
@@ -304,7 +397,7 @@ async def _stream_via_openai_compatible(
             yield writer.frame(
                 kind="REPLY_BLOCK_SNAPSHOT",
                 visibility="CUSTOMER",
-                payload={"blockId": block_id, "blockType": "TEXT", "text": message.content},
+                payload={"blockId": block_id, "blockType": "TEXT", "text": text_guard.accepted_text},
             )
             if block is not None:
                 yield writer.frame(
@@ -420,43 +513,193 @@ def _transcript_entries_from_successful_outcome(
     return [transcript_entry_from_stream_message(message, model_round_id=model_round_id, seq=1)]
 
 
-def _outcome_from_stream_message(
-    request: AgentTurnRequest,
-    message: OpenAiCompatibleStreamMessage,
-    usage_tracker: LlmUsageTracker,
-    text_guard: "_CustomerTextStreamGuard",
-) -> AgentTurnExecutionOutcome:
-    if text_guard.json_like or _is_legacy_json_contract_text(message.content):
-        return AgentTurnExecutionOutcome(
-            success=False,
-            failureReason="legacy JSON streaming unsupported: assistant text must not contain decision JSON",
-            llmUsage=usage_tracker.entries(),
-        )
-    if message.tool_calls:
-        return AgentTurnExecutionOutcome(
-            success=False,
-            failureReason="openai-compatible stream returned tool calls before streaming tool loop is available",
-            llmUsage=usage_tracker.entries(),
-        )
-    text = message.content
-    if text:
-        reply = SessionMessageInput.model_validate({"blocks": [{"type": "TEXT", "text": text}], "metadata": {}})
-        decision = AgentDecision(action="REPLY", replyMessage=reply)
-    else:
-        decision = AgentDecision(action="NO_OP")
-    return AgentTurnExecutionOutcome(
-        success=True,
-        result=AgentTurnResult(
-            decision=decision,
-            sharedState=dict(request.sharedState),
-        ),
-        llmUsage=usage_tracker.entries(),
-    )
+@dataclass(frozen=True)
+class _LifecycleActionCandidate:
+    action: str
+    payload: dict[str, Any]
+    error: str | None = None
+
+
+class _StreamingOutcomeAccumulator:
+    def __init__(self, request: AgentTurnRequest) -> None:
+        self._request = request
+        self._reply_blocks: list[dict[str, Any]] = []
+        self._shared_state: dict[str, Any] = dict(request.sharedState)
+        self._lifecycle_actions: list[_LifecycleActionCandidate] = []
+        self._security_assessment: dict[str, Any] | None = None
+
+    def append_assistant_text(self, text: str) -> None:
+        if text.strip():
+            self._reply_blocks.append({"type": "TEXT", "text": text})
+
+    def apply_tool_call(
+        self,
+        tool_call: OpenAiCompatibleStreamToolCall,
+        kind: str,
+    ) -> dict[str, Any]:
+        if kind == "STATE_TOOL":
+            return self._apply_state_tool(tool_call)
+        if kind == "MESSAGE_BLOCK_TOOL":
+            return self._apply_message_block_tool(tool_call)
+        if kind == "LIFECYCLE_ACTION_TOOL":
+            return self._apply_lifecycle_action_tool(tool_call)
+        return {"accepted": True}
+
+    def build_outcome(self, usage_tracker: LlmUsageTracker) -> AgentTurnExecutionOutcome:
+        try:
+            decision = self._build_decision()
+            self._validate_final_action(decision.action)
+            return AgentTurnExecutionOutcome(
+                success=True,
+                result=AgentTurnResult(
+                    decision=decision,
+                    sharedState=dict(self._shared_state),
+                    securityAssessment=self._security_assessment,
+                ),
+                llmUsage=usage_tracker.entries(),
+            )
+        except Exception as error:  # noqa: BLE001
+            return AgentTurnExecutionOutcome(
+                success=False,
+                failureReason=str(error) or "streaming outcome validation failed",
+                llmUsage=usage_tracker.entries(),
+            )
+
+    def _apply_state_tool(self, tool_call: OpenAiCompatibleStreamToolCall) -> dict[str, Any]:
+        if tool_call.tool_name != "update_shared_state":
+            raise ValueError(f"unsupported state tool: {tool_call.tool_name}")
+        patch = tool_call.arguments.get("patch")
+        if not isinstance(patch, dict):
+            raise ValueError("update_shared_state.patch must be an object")
+        self._shared_state = _deep_merge_dicts(self._shared_state, patch)
+        return {"accepted": True}
+
+    def _apply_message_block_tool(self, tool_call: OpenAiCompatibleStreamToolCall) -> dict[str, Any]:
+        block = _message_block_from_tool_call(tool_call)
+        reply = SessionMessageInput.model_validate({"blocks": [block], "metadata": {}})
+        normalized = reply.blocks[0].model_dump(mode="json")
+        self._reply_blocks.append(normalized)
+        return {"accepted": True, "blockId": f"tool-block-{len(self._reply_blocks)}"}
+
+    def _apply_lifecycle_action_tool(self, tool_call: OpenAiCompatibleStreamToolCall) -> dict[str, Any]:
+        if tool_call.tool_name == "switch_owner":
+            action = "SWITCH_OWNER"
+            target_agent_id = str(tool_call.arguments.get("targetAgentId") or "").strip()
+            error = None
+            if action not in set(self._request.currentOwner.allowedActions):
+                error = f"action {action} is not allowed"
+            elif not target_agent_id:
+                error = "switch_owner targetAgentId is required"
+            elif target_agent_id not in set(self._request.currentOwner.switchableOwnerAgentIds):
+                error = "switch_owner targetAgentId is not allowed"
+            self._lifecycle_actions.append(
+                _LifecycleActionCandidate(
+                    action=action,
+                    payload={"targetAgentId": target_agent_id},
+                    error=error,
+                )
+            )
+            return _tool_acceptance(error)
+        if tool_call.tool_name == "run_playbook":
+            action = "RUN_PLAYBOOK"
+            playbook_id = str(tool_call.arguments.get("playbookId") or "").strip()
+            playbook_input = tool_call.arguments.get("playbookInput")
+            error = None
+            if action not in set(self._request.currentOwner.allowedActions):
+                error = f"action {action} is not allowed"
+            elif not playbook_id:
+                error = "run_playbook playbookId is required"
+            elif playbook_id not in set(self._request.currentOwner.playbookIds):
+                error = "run_playbook playbookId is not allowed"
+            elif not isinstance(playbook_input, dict):
+                error = "run_playbook playbookInput must be an object"
+            self._lifecycle_actions.append(
+                _LifecycleActionCandidate(
+                    action=action,
+                    payload={"playbookId": playbook_id, "playbookInput": playbook_input if isinstance(playbook_input, dict) else {}},
+                    error=error,
+                )
+            )
+            return _tool_acceptance(error)
+        if tool_call.tool_name == "human_handoff":
+            action = "SESSION_HUMAN_HANDOFF"
+            error = None if action in set(self._request.currentOwner.allowedActions) else f"action {action} is not allowed"
+            self._lifecycle_actions.append(_LifecycleActionCandidate(action=action, payload={}, error=error))
+            return _tool_acceptance(error)
+        if tool_call.tool_name == "security_block":
+            categories = tool_call.arguments.get("categories")
+            if not isinstance(categories, list) or not all(isinstance(item, str) and item.strip() for item in categories):
+                raise ValueError("security_block categories must be a non-empty string array")
+            reason = str(tool_call.arguments.get("reason") or "").strip()
+            if not reason:
+                raise ValueError("security_block reason is required")
+            confidence = tool_call.arguments.get("confidence")
+            if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):
+                raise ValueError("security_block confidence must be a number")
+            self._security_assessment = {
+                "action": "BLOCK",
+                "categories": [item.strip() for item in categories],
+                "reason": reason,
+                "confidence": float(confidence),
+            }
+            self._lifecycle_actions.append(_LifecycleActionCandidate(action="SECURITY_BLOCK", payload={}))
+            return {"accepted": True}
+        raise ValueError(f"unsupported lifecycle action tool: {tool_call.tool_name}")
+
+    def _build_decision(self) -> AgentDecision:
+        reply = self._reply_message()
+        lifecycle_action = self._resolve_lifecycle_action()
+        if lifecycle_action is None:
+            return AgentDecision(action="REPLY", replyMessage=reply) if reply is not None else AgentDecision(action="NO_OP")
+        if lifecycle_action.action == "SECURITY_BLOCK":
+            return AgentDecision(action="SECURITY_BLOCK", replyMessage=reply)
+        if lifecycle_action.action == "SWITCH_OWNER":
+            return AgentDecision(
+                action="SWITCH_OWNER",
+                replyMessage=reply,
+                targetAgentId=str(lifecycle_action.payload.get("targetAgentId") or ""),
+            )
+        if lifecycle_action.action == "RUN_PLAYBOOK":
+            return AgentDecision(
+                action="RUN_PLAYBOOK",
+                replyMessage=reply,
+                playbookId=str(lifecycle_action.payload.get("playbookId") or ""),
+                playbookInput=dict(lifecycle_action.payload.get("playbookInput") or {}),
+            )
+        if lifecycle_action.action == "SESSION_HUMAN_HANDOFF":
+            return AgentDecision(action="SESSION_HUMAN_HANDOFF", replyMessage=reply)
+        raise ValueError(f"unsupported lifecycle action: {lifecycle_action.action}")
+
+    def _reply_message(self) -> SessionMessageInput | None:
+        if not self._reply_blocks:
+            return None
+        reply = SessionMessageInput.model_validate({"blocks": self._reply_blocks, "metadata": {}})
+        return reply if _has_message_content(reply) else None
+
+    def _resolve_lifecycle_action(self) -> _LifecycleActionCandidate | None:
+        security_actions = [candidate for candidate in self._lifecycle_actions if candidate.action == "SECURITY_BLOCK"]
+        if security_actions:
+            return security_actions[-1]
+        lifecycle_actions = [candidate for candidate in self._lifecycle_actions if candidate.action != "SECURITY_BLOCK"]
+        if len(lifecycle_actions) > 1:
+            raise ValueError("multiple lifecycle actions are not allowed in one streaming outcome")
+        for candidate in lifecycle_actions:
+            if candidate.error:
+                raise ValueError(candidate.error)
+        return lifecycle_actions[-1] if lifecycle_actions else None
+
+    def _validate_allowed_action(self, action: str) -> None:
+        if action != "SECURITY_BLOCK" and action not in set(self._request.currentOwner.allowedActions):
+            raise ValueError(f"action {action} is not allowed")
+
+    def _validate_final_action(self, action: str) -> None:
+        self._validate_allowed_action(action)
 
 
 class _CustomerTextStreamGuard:
     def __init__(self) -> None:
         self._pending_parts: list[str] = []
+        self._accepted_parts: list[str] = []
         self._json_like = False
         self._decided_text = False
 
@@ -464,11 +707,18 @@ class _CustomerTextStreamGuard:
     def json_like(self) -> bool:
         return self._json_like
 
+    @property
+    def accepted_text(self) -> str:
+        if self._json_like:
+            return ""
+        return "".join(self._accepted_parts)
+
     def accept(self, delta: str) -> str:
         if self._json_like:
             self._pending_parts.append(delta)
             return ""
         if self._decided_text:
+            self._accepted_parts.append(delta)
             return delta
         self._pending_parts.append(delta)
         pending = "".join(self._pending_parts)
@@ -480,7 +730,135 @@ class _CustomerTextStreamGuard:
             return ""
         self._decided_text = True
         self._pending_parts.clear()
+        self._accepted_parts.append(pending)
         return pending
+
+
+def _provider_message_from_stream_message(message: OpenAiCompatibleStreamMessage) -> dict[str, Any]:
+    rendered: dict[str, Any] = {"role": "assistant", "content": message.content}
+    if message.tool_calls:
+        rendered["tool_calls"] = [
+            {
+                "id": tool_call.call_id,
+                "type": "function",
+                "function": {
+                    "name": tool_call.tool_name,
+                    "arguments": json.dumps(tool_call.arguments, ensure_ascii=False),
+                },
+            }
+            for tool_call in message.tool_calls
+        ]
+    return rendered
+
+
+def _provider_tool_result_message(
+    tool_call: OpenAiCompatibleStreamToolCall,
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "role": "tool",
+        "tool_call_id": tool_call.call_id,
+        "content": json.dumps(result, ensure_ascii=False),
+    }
+
+
+def _message_block_from_tool_call(tool_call: OpenAiCompatibleStreamToolCall) -> dict[str, Any]:
+    arguments = tool_call.arguments
+    if tool_call.tool_name == "append_text_block":
+        text = str(arguments.get("text") or "")
+        if not text.strip():
+            raise ValueError("append_text_block.text is required")
+        return {"type": "TEXT", "text": text}
+    if tool_call.tool_name == "append_image_block":
+        url = str(arguments.get("url") or "").strip()
+        if not url:
+            raise ValueError("append_image_block.url is required")
+        return {
+            key: value
+            for key, value in {
+                "type": "IMAGE",
+                "url": url,
+                "mimeType": _optional_string(arguments.get("mimeType")),
+                "width": _optional_int(arguments.get("width")),
+                "height": _optional_int(arguments.get("height")),
+                "alt": _optional_string(arguments.get("alt")),
+            }.items()
+            if value is not None
+        }
+    if tool_call.tool_name == "append_rich_text_block":
+        content = str(arguments.get("content") or "")
+        if not content.strip():
+            raise ValueError("append_rich_text_block.content is required")
+        return {"type": "RICH_TEXT", "format": str(arguments.get("format") or "MARKDOWN"), "content": content}
+    if tool_call.tool_name == "append_card_block":
+        card_type = str(arguments.get("cardType") or "").strip()
+        version = str(arguments.get("version") or "").strip()
+        if not card_type or not version:
+            raise ValueError("append_card_block cardType and version are required")
+        data = arguments.get("data")
+        actions = arguments.get("actions")
+        return {
+            "type": "CARD",
+            "cardType": card_type,
+            "version": version,
+            "data": data if isinstance(data, dict) else {},
+            "actions": actions if isinstance(actions, list) else [],
+        }
+    raise ValueError(f"unsupported message block tool: {tool_call.tool_name}")
+
+
+def _deep_merge_dicts(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base)
+    for key, value in patch.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge_dicts(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _tool_acceptance(error: str | None) -> dict[str, Any]:
+    if error:
+        return {"accepted": False, "error": error}
+    return {"accepted": True}
+
+
+def _has_message_content(message: SessionMessageInput | None) -> bool:
+    if message is None:
+        return False
+    return any(block.model_dump(mode="json") for block in message.blocks)
+
+
+def _optional_string(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _optional_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _max_streaming_tool_steps() -> int:
+    raw_value = ""
+    try:
+        import os
+
+        raw_value = (os.getenv("LYNXUS_AGENT_RUNTIME_MAX_TOOL_STEPS") or "").strip()
+    except Exception:  # pragma: no cover
+        raw_value = ""
+    if not raw_value:
+        return 4
+    try:
+        return max(1, min(int(raw_value), 8))
+    except ValueError:
+        return 4
 
 
 def _is_legacy_json_contract_text(text: str) -> bool:

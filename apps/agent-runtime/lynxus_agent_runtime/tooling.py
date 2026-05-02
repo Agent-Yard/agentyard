@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from dataclasses import dataclass
 from typing import Any
 
 from .json_schema import validate_json_schema_value
@@ -22,14 +23,65 @@ from .tool_connectors import ConnectorRuntime, call_connector_tool
 _RESOURCE_TOOL_PREFIX = "resource_tool__"
 _KNOWLEDGE_SEARCH_TOOL = "knowledge_search"
 _KNOWLEDGE_READ_TOOL = "knowledge_read"
+NativeToolKind = str
+
+
+@dataclass(frozen=True)
+class NativeToolSpec:
+    name: str
+    kind: NativeToolKind
+
+
+_NATIVE_TOOL_SPECS: dict[str, NativeToolSpec] = {
+    "read_skill": NativeToolSpec("read_skill", "CONTEXT_TOOL"),
+    "update_shared_state": NativeToolSpec("update_shared_state", "STATE_TOOL"),
+    "append_text_block": NativeToolSpec("append_text_block", "MESSAGE_BLOCK_TOOL"),
+    "append_image_block": NativeToolSpec("append_image_block", "MESSAGE_BLOCK_TOOL"),
+    "append_rich_text_block": NativeToolSpec("append_rich_text_block", "MESSAGE_BLOCK_TOOL"),
+    "append_card_block": NativeToolSpec("append_card_block", "MESSAGE_BLOCK_TOOL"),
+    "switch_owner": NativeToolSpec("switch_owner", "LIFECYCLE_ACTION_TOOL"),
+    "run_playbook": NativeToolSpec("run_playbook", "LIFECYCLE_ACTION_TOOL"),
+    "human_handoff": NativeToolSpec("human_handoff", "LIFECYCLE_ACTION_TOOL"),
+    "security_block": NativeToolSpec("security_block", "LIFECYCLE_ACTION_TOOL"),
+}
 
 
 def semantic_tool_definitions(request: AgentTurnRequest) -> list[SemanticToolDefinition]:
     return [*_builtin_tool_definitions(resolve_knowledge_binding(request.currentOwner)), *_resource_tool_definitions(request)]
 
 
+def streaming_semantic_tool_definitions(request: AgentTurnRequest) -> list[SemanticToolDefinition]:
+    return [
+        *_builtin_tool_definitions(resolve_knowledge_binding(request.currentOwner)),
+        *_native_tool_definitions(),
+        *_resource_tool_definitions(request),
+    ]
+
+
+def tool_kind(tool_name: str) -> NativeToolKind | None:
+    spec = _NATIVE_TOOL_SPECS.get(tool_name)
+    if spec is not None:
+        return spec.kind
+    if tool_name in {
+        "get_owner_capabilities",
+        "list_available_agents",
+        "list_available_playbooks",
+        "get_active_playbook",
+        "list_recent_events",
+        "get_shared_state",
+        _KNOWLEDGE_SEARCH_TOOL,
+        _KNOWLEDGE_READ_TOOL,
+    }:
+        return "CONTEXT_TOOL"
+    if tool_name.startswith(_RESOURCE_TOOL_PREFIX):
+        return "CONTEXT_TOOL"
+    return None
+
+
 def execute_tool_call(request: AgentTurnRequest, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     knowledge_binding = resolve_knowledge_binding(request.currentOwner)
+    if tool_name == "read_skill":
+        return {"skills": load_skills(request, _read_skill_resource_version_ids(arguments))}
     if tool_name == "get_owner_capabilities":
         return {
             "ownerAgentId": request.currentOwner.agentId,
@@ -147,6 +199,26 @@ def load_skills(request: AgentTurnRequest, resource_version_ids: list[str]) -> l
             }
         )
     return loaded
+
+
+def _read_skill_resource_version_ids(arguments: dict[str, Any]) -> list[str]:
+    raw_single = arguments.get("resourceVersionId") or arguments.get("skillResourceVersionId")
+    raw_many = arguments.get("resourceVersionIds") or arguments.get("skillResourceVersionIds")
+    values: list[Any]
+    if raw_many is not None:
+        if not isinstance(raw_many, list):
+            raise ValueError("read_skill.resourceVersionIds must be an array")
+        values = raw_many
+    else:
+        values = [raw_single]
+    resource_version_ids: list[str] = []
+    for item in values:
+        resource_version_id = str(item or "").strip()
+        if not resource_version_id:
+            raise ValueError("read_skill requires resourceVersionId")
+        if resource_version_id not in resource_version_ids:
+            resource_version_ids.append(resource_version_id)
+    return resource_version_ids
 
 
 def resolve_knowledge_binding(agent: AgentConfig) -> KnowledgeBindingDescriptor | None:
@@ -342,6 +414,163 @@ def _builtin_tool_definitions(binding: KnowledgeBindingDescriptor | None) -> lis
             ),
         )
     return definitions
+
+
+def _native_tool_definitions() -> list[SemanticToolDefinition]:
+    return [
+        _semantic_tool(
+            "read_skill",
+            "Read mounted skill prompt content by resourceVersionId and continue the model round with the tool result.",
+            {
+                "type": "object",
+                "properties": {
+                    "resourceVersionId": {"type": "string"},
+                    "resourceVersionIds": {"type": "array", "items": {"type": "string"}},
+                },
+                "additionalProperties": False,
+            },
+            {
+                "type": "object",
+                "properties": {"skills": {"type": "array", "items": {"type": "object"}}},
+                "required": ["skills"],
+                "additionalProperties": False,
+            },
+        ),
+        _semantic_tool(
+            "update_shared_state",
+            "Merge a patch into the final sharedState snapshot for this turn.",
+            {
+                "type": "object",
+                "properties": {"patch": {"type": "object"}},
+                "required": ["patch"],
+                "additionalProperties": False,
+            },
+            _accepted_output_schema(),
+        ),
+        _semantic_tool(
+            "append_text_block",
+            "Append a user-visible TEXT block to the final replyMessage.",
+            {
+                "type": "object",
+                "properties": {"text": {"type": "string"}},
+                "required": ["text"],
+                "additionalProperties": False,
+            },
+            _accepted_block_output_schema(),
+        ),
+        _semantic_tool(
+            "append_image_block",
+            "Append an IMAGE block to the final replyMessage. Non-text draft streaming is not emitted in this phase.",
+            {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string"},
+                    "mimeType": {"type": "string"},
+                    "width": {"type": "integer"},
+                    "height": {"type": "integer"},
+                    "alt": {"type": "string"},
+                },
+                "required": ["url"],
+                "additionalProperties": False,
+            },
+            _accepted_block_output_schema(),
+        ),
+        _semantic_tool(
+            "append_rich_text_block",
+            "Append a RICH_TEXT Markdown block to the final replyMessage.",
+            {
+                "type": "object",
+                "properties": {
+                    "format": {"type": "string", "enum": ["MARKDOWN"]},
+                    "content": {"type": "string"},
+                },
+                "required": ["content"],
+                "additionalProperties": False,
+            },
+            _accepted_block_output_schema(),
+        ),
+        _semantic_tool(
+            "append_card_block",
+            "Append a CARD block to the final replyMessage.",
+            {
+                "type": "object",
+                "properties": {
+                    "cardType": {"type": "string"},
+                    "version": {"type": "string"},
+                    "data": {"type": "object"},
+                    "actions": {"type": "array", "items": {"type": "object"}},
+                },
+                "required": ["cardType", "version"],
+                "additionalProperties": False,
+            },
+            _accepted_block_output_schema(),
+        ),
+        _semantic_tool(
+            "switch_owner",
+            "Request a session owner switch. targetAgentId must be in switchableOwnerAgentIds.",
+            {
+                "type": "object",
+                "properties": {"targetAgentId": {"type": "string"}},
+                "required": ["targetAgentId"],
+                "additionalProperties": False,
+            },
+            _accepted_output_schema(),
+        ),
+        _semantic_tool(
+            "run_playbook",
+            "Request a playbook run. playbookId must be enabled for the current owner.",
+            {
+                "type": "object",
+                "properties": {
+                    "playbookId": {"type": "string"},
+                    "playbookInput": {"type": "object"},
+                },
+                "required": ["playbookId", "playbookInput"],
+                "additionalProperties": False,
+            },
+            _accepted_output_schema(),
+        ),
+        _semantic_tool(
+            "human_handoff",
+            "Request session human handoff.",
+            {
+                "type": "object",
+                "properties": {"reason": {"type": "string"}},
+                "additionalProperties": False,
+            },
+            _accepted_output_schema(),
+        ),
+        _semantic_tool(
+            "security_block",
+            "Block a system-harmful current user message. This action has priority over other lifecycle actions.",
+            {
+                "type": "object",
+                "properties": {
+                    "categories": {"type": "array", "items": {"type": "string"}},
+                    "reason": {"type": "string"},
+                    "confidence": {"type": "number"},
+                },
+                "required": ["categories", "reason", "confidence"],
+                "additionalProperties": False,
+            },
+            _accepted_output_schema(),
+        ),
+    ]
+
+
+def _accepted_output_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {"accepted": {"type": "boolean"}},
+        "required": ["accepted"],
+        "additionalProperties": True,
+    }
+
+
+def _accepted_block_output_schema() -> dict[str, Any]:
+    schema = _accepted_output_schema()
+    schema["properties"]["blockId"] = {"type": "string"}
+    return schema
 
 
 def _resource_tool_definitions(request: AgentTurnRequest) -> list[SemanticToolDefinition]:
