@@ -273,7 +273,7 @@ services:
       LYNXUS_CHANNEL_GATEWAY_DATASOURCE_URL: jdbc:postgresql://postgres:5432/lynxus_channel_gateway
       SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-lynxus}
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-lynxus}
-      LYNXUS_API_BASE_URL: http://api-router:8080
+      LYNXUS_WORKER_API_BASE_URL: http://api-router:8080
       LYNXUS_CHANNEL_GATEWAY_BASE_URL: http://channel-gateway:8082
       LYNXUS_AGENT_RUNTIME_BASE_URL: http://agent-runtime-router:8090
       LYNXUS_INTERNAL_AUTH_TOKEN: ${LYNXUS_INTERNAL_AUTH_TOKEN}
@@ -413,6 +413,7 @@ services:
       LYNXUS_REDIS_USERNAME: ${LYNXUS_REDIS_USERNAME:-}
       LYNXUS_REDIS_PASSWORD: ${LYNXUS_REDIS_PASSWORD:-lynxus}
       LYNXUS_REDIS_SSL_ENABLED: ${LYNXUS_REDIS_SSL_ENABLED:-false}
+      LYNXUS_WORKER_API_BASE_URL: http://api-router:8080
       LYNXUS_AGENT_RUNTIME_BASE_URL: http://agent-runtime-router:8090
       LYNXUS_SANDBOX_BASE_URL: http://sandbox:8080
       LYNXUS_KNOWLEDGE_SERVICE_BASE_URL: http://knowledge-service-router:8091
@@ -423,6 +424,8 @@ services:
       LYNXUS_TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT: ${LYNXUS_TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT:-PT2M}
     depends_on:
       temporal:
+        condition: service_started
+      api:
         condition: service_started
       knowledge-service:
         condition: service_started
@@ -453,6 +456,7 @@ services:
       LYNXUS_REDIS_USERNAME: ${LYNXUS_REDIS_USERNAME:-}
       LYNXUS_REDIS_PASSWORD: ${LYNXUS_REDIS_PASSWORD:-lynxus}
       LYNXUS_REDIS_SSL_ENABLED: ${LYNXUS_REDIS_SSL_ENABLED:-false}
+      LYNXUS_API_BASE_URL: http://api-router:8080
       LYNXUS_AGENT_RUNTIME_BASE_URL: http://agent-runtime-router:8090
       LYNXUS_SANDBOX_BASE_URL: http://sandbox:8080
       LYNXUS_KNOWLEDGE_SERVICE_BASE_URL: http://knowledge-service-router:8091
@@ -463,6 +467,8 @@ services:
       LYNXUS_TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT: ${LYNXUS_TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT:-PT2M}
     depends_on:
       temporal:
+        condition: service_started
+      api:
         condition: service_started
       knowledge-service:
         condition: service_started

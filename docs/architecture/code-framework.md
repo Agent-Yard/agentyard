@@ -110,13 +110,14 @@ Java core 数据访问当前以 `Flyway + jOOQ + packages/persistence-jvm` 为�
 
 1. API 创建 `session`，并以 assistant release 的 `primaryAgentId` 初始化 owner
 2. `SessionWorkflow` 接收用户消息 Update，并维护 owner、shared state、handoff、idle timer、playbook 生命周期
-3. worker 调用 Python runtime `/agent-turns/execute`
+3. worker 调用 Python runtime `/agent-turns/execute-stream`
 4. Python runtime 只执行当前 owner 的单轮决策，返回：
    - `REPLY`
-   - `NO_REPLY`
+   - `NO_OP`
    - `SWITCH_OWNER`
    - `RUN_PLAYBOOK`
    - `SESSION_HUMAN_HANDOFF`
+   - `SECURITY_BLOCK`
 5. 若 owner 启动 playbook，则由 `PlaybookWorkflow` 作为 child workflow 承担强流程
 6. playbook 的等待、恢复和终态结果写入 `session event / playbook run`
 7. 非 handoff 状态下，playbook 终态会触发 owner reevaluation 继续推进

@@ -32,10 +32,11 @@
 - assistant 显式配置唯一 `primaryAgentId`，运行时维护唯一 `currentOwnerAgentId`
 - owner agent 只负责单轮推理与动作决策，动作收敛为：
   - `REPLY`
-  - `NO_REPLY`
+  - `NO_OP`
   - `SWITCH_OWNER`
   - `RUN_PLAYBOOK`
   - `SESSION_HUMAN_HANDOFF`
+  - `SECURITY_BLOCK`
 - 强业务流程统一下沉为 `playbook` child workflow
 - 轻量认知能力不再建模为独立 workflow，而是 owner agent 在单轮推理内通过 tool / knowledge / skill 完成
 - 运行态权威模型收敛为 `session_runtime_session / session_runtime_event / session_runtime_playbook_run`

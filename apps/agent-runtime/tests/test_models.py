@@ -33,27 +33,27 @@ class AgentDecisionModelTest(unittest.TestCase):
         self.assertEqual(decision.action, "SWITCH_OWNER")
         self.assertEqual(decision.playbookInput, {"unexpected": True})
 
-    def test_no_reply_allows_accompanying_reply_for_soft_validation(self) -> None:
+    def test_no_op_allows_empty_reply(self) -> None:
         decision = AgentDecision.model_validate(
             {
-                "action": "NO_REPLY",
-                "accompanyingMessage": _text_message_input("should not block runtime parsing"),
+                "action": "NO_OP",
             }
         )
-        self.assertEqual(decision.action, "NO_REPLY")
-        self.assertEqual(decision.accompanyingMessage.blocks[0].text, "should not block runtime parsing")
+        self.assertEqual(decision.action, "NO_OP")
 
-    def test_reply_allows_accompanying_reply_for_soft_validation(self) -> None:
-        decision = AgentDecision.model_validate(
-            {
-                "action": "REPLY",
-                "replyMessage": _text_message_input("hello"),
-                "accompanyingMessage": _text_message_input("should not block runtime parsing"),
-            }
-        )
-        self.assertEqual(decision.action, "REPLY")
-        self.assertEqual(decision.replyMessage.blocks[0].text, "hello")
-        self.assertEqual(decision.accompanyingMessage.blocks[0].text, "should not block runtime parsing")
+    def test_rejects_removed_accompanying_message(self) -> None:
+        with self.assertRaises(ValidationError):
+            AgentDecision.model_validate(
+                {
+                    "action": "REPLY",
+                    "replyMessage": _text_message_input("hello"),
+                    "accompanyingMessage": _text_message_input("removed"),
+                }
+            )
+
+    def test_security_block_action_is_valid(self) -> None:
+        decision = AgentDecision.model_validate({"action": "SECURITY_BLOCK"})
+        self.assertEqual(decision.action, "SECURITY_BLOCK")
 
     def test_tool_connector_release_shape_reads_account_snapshot(self) -> None:
         tool = ToolDescriptor.model_validate(

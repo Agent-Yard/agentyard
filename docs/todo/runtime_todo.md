@@ -8,6 +8,7 @@
 
 - §1 人工接管与恢复操作台 ↔ 主 todos §2.1
 - §2 长 session 历史分页 ↔ 主 todos §2.4
+- 流式执行与回复草稿目标方案见 [`runtime_streaming_plan.md`](./runtime_streaming_plan.md)
 
 ## 1. 人工接管与恢复操作台还不完整
 

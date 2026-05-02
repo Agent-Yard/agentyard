@@ -162,6 +162,8 @@ const currentView = computed(() => {
         assistants: state.catalog.value!.assistants,
         sessions: state.conversationSessions.value,
         sessionDetail: state.runtimeSessionDetail.value,
+        runtimeDrafts: state.runtimeDrafts.value,
+        runtimeProgress: state.runtimeProgress.value,
         creatingSession: state.creatingSession.value,
         sendingSessionId: state.sendingSessionId.value,
         preferredSessionId: state.runtimePreferredSessionId.value,

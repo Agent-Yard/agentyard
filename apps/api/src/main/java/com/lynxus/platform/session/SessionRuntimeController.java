@@ -1,8 +1,13 @@
 package com.lynxus.platform.session;
 
+import com.lynxus.contracts.session.SessionContracts.StreamVisibility;
+import com.lynxus.platform.auth.AuthModels.Role;
+import com.lynxus.platform.auth.CurrentUserResolver;
 import com.lynxus.platform.auth.RequireRuntimeAccess;
 import com.lynxus.platform.shared.ApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.EnumSet;
+import java.util.Set;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,13 +26,16 @@ import static com.lynxus.platform.session.SessionRuntimeDtos.*;
 public class SessionRuntimeController {
     private final SessionRuntimeService sessionRuntimeService;
     private final SessionRuntimeStreamService sessionRuntimeStreamService;
+    private final CurrentUserResolver currentUserResolver;
 
     public SessionRuntimeController(
         SessionRuntimeService sessionRuntimeService,
-        SessionRuntimeStreamService sessionRuntimeStreamService
+        SessionRuntimeStreamService sessionRuntimeStreamService,
+        CurrentUserResolver currentUserResolver
     ) {
         this.sessionRuntimeService = sessionRuntimeService;
         this.sessionRuntimeStreamService = sessionRuntimeStreamService;
+        this.currentUserResolver = currentUserResolver;
     }
 
     @GetMapping("/sessions")
@@ -53,9 +61,24 @@ public class SessionRuntimeController {
         HttpServletRequest request
     ) {
         String lastEventId = lastEventIdHeader != null && !lastEventIdHeader.isBlank() ? lastEventIdHeader : lastEventIdParam;
-        return sessionRuntimeStreamService.connect(sessionId, lastEventId, request.getUserPrincipal() == null
-            ? "anonymous"
-            : request.getUserPrincipal().getName());
+        return sessionRuntimeStreamService.connect(
+            sessionId,
+            lastEventId,
+            request.getUserPrincipal() == null ? "anonymous" : request.getUserPrincipal().getName(),
+            streamVisibility()
+        );
+    }
+
+    private Set<StreamVisibility> streamVisibility() {
+        Set<Role> roles = Set.copyOf(currentUserResolver.resolveCurrentUser().roles());
+        if (roles.contains(Role.PLATFORM_ADMIN) || roles.contains(Role.DOMAIN_ADMIN) || roles.contains(Role.DEVELOPER)) {
+            return EnumSet.of(
+                StreamVisibility.CUSTOMER,
+                StreamVisibility.OPERATOR,
+                StreamVisibility.DEVELOPER
+            );
+        }
+        return EnumSet.of(StreamVisibility.CUSTOMER);
     }
 
     @GetMapping("/sessions/{sessionId}/privacy-mapping-summary")

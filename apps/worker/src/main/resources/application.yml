@@ -35,6 +35,8 @@ lynxus:
     instance-id: ${LYNXUS_INSTANCE_ID:}
   agent-runtime:
     base-url: ${LYNXUS_AGENT_RUNTIME_BASE_URL:http://127.0.0.1:8090}
+  api:
+    base-url: ${LYNXUS_WORKER_API_BASE_URL:http://127.0.0.1:8080}
   sandbox:
     base-url: ${LYNXUS_SANDBOX_BASE_URL:http://127.0.0.1:8092}
   knowledge-service:

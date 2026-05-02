@@ -3,7 +3,10 @@ import type {
   SessionEvent as ContractsSessionEvent,
   SessionMessage as ContractsSessionMessage,
   SessionMessageInput as ContractsSessionMessageInput,
+  SessionProgressEvent as ContractsSessionProgressEvent,
+  SessionReplyDraftEvent as ContractsSessionReplyDraftEvent,
   SessionRuntimeStreamEvent as ContractsSessionRuntimeStreamEvent,
+  SessionStreamErrorEvent as ContractsSessionStreamErrorEvent,
 } from '../../../../packages/contracts/src';
 
 export type SessionEvent = ContractsSessionEvent;
@@ -44,6 +47,18 @@ export interface SessionRuntimeDetail {
 }
 
 export type SessionRuntimeStreamEvent = ContractsSessionRuntimeStreamEvent<SessionRuntimeDetail>;
+export type SessionProgressEvent = ContractsSessionProgressEvent;
+export type SessionReplyDraftEvent = ContractsSessionReplyDraftEvent;
+export type SessionStreamErrorEvent = ContractsSessionStreamErrorEvent;
+
+export interface RuntimeDraftMessage {
+  sessionId: string;
+  turnId: string;
+  messageId: string;
+  text: string;
+  failed: boolean;
+  updatedAt: string;
+}
 
 export interface PrivacyMappingSummary {
   enabled: boolean;

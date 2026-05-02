@@ -5,7 +5,7 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from lynxus_common import (
     ReadinessCheck,
@@ -24,6 +24,7 @@ from .extension_registry import load_tool_connector_registry, validate_tool_conn
 from .http_clients import reset_shared_http_client_registry
 from .models import AgentTurnExecutionOutcome, AgentTurnRequest, PlaybookToolTaskRequest, PlaybookToolTaskResult
 from .redis_support import RedisSettings, create_redis_client
+from .streaming import stream_agent_turn
 from .tool_connectors import reset_default_tool_connector_registry, set_default_tool_connector_registry
 from .tooling import execute_playbook_tool_task
 
@@ -182,6 +183,18 @@ async def execute_turn(
             extra={**log_extra, "failureReason": outcome.failureReason},
         )
     return outcome
+
+
+@app.post("/agent-turns/execute-stream")
+async def execute_turn_stream(
+    request: AgentTurnRequest,
+    _: None = Depends(require_internal_bearer),
+) -> StreamingResponse:
+    bind_log_context(
+        sessionId=request.sessionId,
+        customerId=str(request.trigger.payload.get("customerId") or ""),
+    )
+    return StreamingResponse(stream_agent_turn(request), media_type="application/x-ndjson")
 
 
 @app.post("/playbook-tool-tasks/execute", response_model=PlaybookToolTaskResult)

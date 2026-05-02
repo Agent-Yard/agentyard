@@ -1,5 +1,6 @@
 package com.lynxus.platform.session;
 
+import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamFrame;
 import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionMessageRequest;
 import com.lynxus.platform.integration.InternalRuntimeAuth;
 import com.lynxus.platform.shared.ApiResponse;
@@ -13,15 +14,18 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class InternalSessionRuntimeController {
     private final SessionRuntimeService sessionRuntimeService;
+    private final SessionRuntimeStreamService streamService;
     private final SessionChannelOutboundRelay outboundRelay;
     private final InternalRuntimeAuth internalRuntimeAuth;
 
     public InternalSessionRuntimeController(
         SessionRuntimeService sessionRuntimeService,
+        SessionRuntimeStreamService streamService,
         SessionChannelOutboundRelay outboundRelay,
         InternalRuntimeAuth internalRuntimeAuth
     ) {
         this.sessionRuntimeService = sessionRuntimeService;
+        this.streamService = streamService;
         this.outboundRelay = outboundRelay;
         this.internalRuntimeAuth = internalRuntimeAuth;
     }
@@ -44,5 +48,15 @@ public class InternalSessionRuntimeController {
         internalRuntimeAuth.requireBearer(authorization);
         outboundRelay.relaySession(sessionId);
         return ApiResponse.ok(Map.of("sessionId", sessionId));
+    }
+
+    @PostMapping("/api/internal/session-runtime/stream-frames")
+    public ApiResponse<?> acceptStreamFrame(
+        @RequestBody AgentTurnStreamFrame frame,
+        @RequestHeader(name = "Authorization", required = false) String authorization
+    ) {
+        internalRuntimeAuth.requireBearer(authorization);
+        streamService.acceptStreamFrame(frame);
+        return ApiResponse.ok(Map.of("frameId", frame.frameId(), "accepted", true));
     }
 }

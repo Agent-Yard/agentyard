@@ -102,6 +102,7 @@ public class SessionWorkflowImpl implements SessionWorkflow {
     private SessionTrigger pendingOwnerReevaluationTrigger;
     private Instant workflowStartedAt;
     private Instant sessionCreatedAt;
+    private long ownershipEpoch = 1;
     private boolean ended;
 
     public SessionWorkflowImpl() {
@@ -147,6 +148,7 @@ public class SessionWorkflowImpl implements SessionWorkflow {
         this.pendingOwnerReevaluationTrigger = null;
         this.workflowStartedAt = now();
         this.sessionCreatedAt = workflowStartedAt;
+        this.ownershipEpoch = 1;
         this.ended = false;
         request.agents().forEach(agent -> agentsById.put(agent.agentId(), agent));
         request.playbooks().forEach(playbook -> playbooksById.put(playbook.playbookId(), playbook));
@@ -384,9 +386,14 @@ public class SessionWorkflowImpl implements SessionWorkflow {
                 break;
             }
             AgentTurnExecutionOutcome outcome;
+            String turnId = "turn-" + Workflow.randomUUID();
+            String turnExecutionId = turnId + ":exec-1";
             try {
                 outcome = activities.executeTurn(new AgentTurnRequest(
                     snapshot.sessionId(),
+                    turnId,
+                    turnExecutionId,
+                    ownershipEpoch,
                     snapshot.assistantId(),
                     snapshot.assistantReleaseVersion(),
                     owner,
@@ -431,6 +438,10 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             }
             AgentTurnResult result = outcome.result();
             if (isSecurityBlocked(result == null ? null : result.securityAssessment())) {
+                AgentDecision decision = result == null ? null : result.decision();
+                if (decision != null && hasMessageContent(decision.replyMessage())) {
+                    emitOwnerReply(decision.replyMessage(), SessionActorType.AGENT, currentOwnerAgentId, activePlaybookRunId, currentOwnerAgentId, null);
+                }
                 emitSecurityBlocked(
                     result.securityAssessment(),
                     trigger,
@@ -472,22 +483,28 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             }
             AgentDecision decision = validation.decision();
 
-            if (decision.action() == AgentDecisionAction.REPLY) {
+            if (hasMessageContent(decision.replyMessage())) {
                 emitOwnerReply(decision.replyMessage(), SessionActorType.AGENT, currentOwnerAgentId, activePlaybookRunId, currentOwnerAgentId, null);
-                break;
             }
-            if (decision.action() == AgentDecisionAction.NO_REPLY) {
+            if (decision.action() == AgentDecisionAction.REPLY || decision.action() == AgentDecisionAction.NO_OP) {
                 break;
             }
 
-            if (shouldEmitAccompanyingReply(decision)) {
-                emitOwnerReply(decision.accompanyingMessage(), SessionActorType.AGENT, currentOwnerAgentId, activePlaybookRunId, currentOwnerAgentId, null);
+            if (decision.action() == AgentDecisionAction.SECURITY_BLOCK) {
+                emitSecurityBlocked(
+                    securityAssessmentOrDefault(result.securityAssessment()),
+                    trigger,
+                    currentOwnerAgentId,
+                    activePlaybookRunId
+                );
+                break;
             }
 
             if (decision.action() == AgentDecisionAction.SWITCH_OWNER) {
                 String previousOwnerAgentId = currentOwnerAgentId;
                 currentOwnerAgentId = decision.targetAgentId();
                 switchCount += 1;
+                ownershipEpoch += 1;
                 appendEvent(
                     SessionEventType.OWNER_SWITCH,
                     SessionActorType.AGENT,
@@ -696,12 +713,12 @@ public class SessionWorkflowImpl implements SessionWorkflow {
         if (decision == null) {
             return DecisionValidation.rejected("decision_missing");
         }
-        if (!owner.allowedActions().contains(decision.action())) {
+        if (decision.action() != AgentDecisionAction.SECURITY_BLOCK && !owner.allowedActions().contains(decision.action())) {
             return DecisionValidation.rejected("action_not_allowed");
         }
         return switch (decision.action()) {
             case REPLY -> validateReplyDecision(decision);
-            case NO_REPLY -> DecisionValidation.accepted(decision);
+            case NO_OP -> DecisionValidation.accepted(decision);
             case SWITCH_OWNER -> validateSwitchOwnerDecision(
                 owner,
                 decision,
@@ -713,6 +730,7 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             case SESSION_HUMAN_HANDOFF -> sessionHumanHandoffActive
                 ? DecisionValidation.idempotentSessionHandoff(decision)
                 : DecisionValidation.accepted(decision);
+            case SECURITY_BLOCK -> DecisionValidation.accepted(decision);
         };
     }
 
@@ -791,17 +809,14 @@ public class SessionWorkflowImpl implements SessionWorkflow {
         }
     }
 
-    private boolean shouldEmitAccompanyingReply(AgentDecision decision) {
-        return hasMessageContent(decision.accompanyingMessage())
-            && (
-                decision.action() == AgentDecisionAction.SWITCH_OWNER
-                    || decision.action() == AgentDecisionAction.RUN_PLAYBOOK
-                    || decision.action() == AgentDecisionAction.SESSION_HUMAN_HANDOFF
-            );
-    }
-
     private boolean isSecurityBlocked(SecurityAssessment assessment) {
         return assessment != null && "BLOCK".equalsIgnoreCase(assessment.action());
+    }
+
+    private SecurityAssessment securityAssessmentOrDefault(SecurityAssessment assessment) {
+        return assessment == null
+            ? new SecurityAssessment("BLOCK", List.of("SECURITY_BLOCK"), "security_block_action", 1.0)
+            : assessment;
     }
 
     private void emitSecurityBlocked(

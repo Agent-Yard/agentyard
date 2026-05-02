@@ -312,6 +312,9 @@ export const api = {
     };
     eventSource.addEventListener('SESSION_SNAPSHOT', handleEvent);
     eventSource.addEventListener('SESSION_UPDATED', handleEvent);
+    eventSource.addEventListener('SESSION_PROGRESS', handleEvent);
+    eventSource.addEventListener('SESSION_REPLY_DRAFT', handleEvent);
+    eventSource.addEventListener('SESSION_STREAM_ERROR', handleEvent);
     eventSource.onopen = () => handlers.onOpen?.();
     eventSource.onerror = () => handlers.onError?.();
     return eventSource;

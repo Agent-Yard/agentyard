@@ -253,11 +253,11 @@ def _seed_final_response_privacy_cache(
         pre_restore_decision = AgentDecision.model_validate(pre_restore_decision_payload)
     except ValueError:
         return
-    for pre_restore_message, restored_message in (
-        (pre_restore_decision.replyMessage, restored_decision.replyMessage),
-        (pre_restore_decision.accompanyingMessage, restored_decision.accompanyingMessage),
-    ):
-        _seed_final_response_message_privacy_cache(privacy_pipeline, pre_restore_message, restored_message)
+    _seed_final_response_message_privacy_cache(
+        privacy_pipeline,
+        pre_restore_decision.replyMessage,
+        restored_decision.replyMessage,
+    )
 
 
 def _seed_final_response_message_privacy_cache(
@@ -302,7 +302,7 @@ def _security_block_result(
     privacy_pipeline: Any,
 ) -> AgentTurnResult:
     return AgentTurnResult(
-        decision=AgentDecision.model_validate({"action": "NO_REPLY"}),
+        decision=AgentDecision.model_validate({"action": "SECURITY_BLOCK"}),
         sharedState=dict(request.sharedState),
         mappingTelemetry=privacy_pipeline.telemetry(),
         securityAssessment=assessment,

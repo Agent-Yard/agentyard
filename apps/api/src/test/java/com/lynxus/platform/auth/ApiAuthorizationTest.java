@@ -346,9 +346,10 @@ class ApiAuthorizationTest {
         @Bean
         SessionRuntimeController sessionRuntimeController(
             SessionRuntimeService sessionRuntimeService,
-            SessionRuntimeStreamService sessionRuntimeStreamService
+            SessionRuntimeStreamService sessionRuntimeStreamService,
+            CurrentUserResolver currentUserResolver
         ) {
-            return new SessionRuntimeController(sessionRuntimeService, sessionRuntimeStreamService);
+            return new SessionRuntimeController(sessionRuntimeService, sessionRuntimeStreamService, currentUserResolver);
         }
 
         @Bean

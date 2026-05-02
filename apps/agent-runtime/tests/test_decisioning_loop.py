@@ -583,7 +583,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         self.assertNotIn("knowledge_read", tool_names)
         self.assertIsNone(owner_capabilities["knowledgeBinding"])
 
-    def test_should_allow_reply_with_extra_accompanying_reply_field(self) -> None:
+    def test_should_reject_removed_accompanying_reply_field(self) -> None:
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
         request = AgentTurnRequest.model_validate(_request_payload())
         transport = _FakeTransport(
@@ -615,11 +615,8 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=factory):
             outcome, _ = execute_agent_turn(request)
 
-        self.assertTrue(outcome.success)
-        result = outcome.result
-        self.assertIsNotNone(result)
-        self.assertEqual(result.decision.action, "REPLY")
-        self.assertEqual(result.decision.accompanyingMessage.blocks[0].text, "这条不该阻断")
+        self.assertFalse(outcome.success)
+        self.assertIn("accompanyingMessage", outcome.failureReason or "")
         self.assertEqual(1, len(outcome.llmUsage))
         self.assertFalse(outcome.llmUsage[0].usageAvailable)
         self.assertIsNone(outcome.llmUsage[0].promptTokens)
@@ -636,7 +633,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
                             "message": {
                                 "content": json.dumps(
                                     {
-                                        "decision": {"action": "NO_REPLY"},
+                                        "decision": {"action": "NO_OP"},
                                         "sharedState": {"knownPreference": "email"},
                                         "securityAssessment": {
                                             "action": "BLOCK",
@@ -662,7 +659,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         self.assertTrue(outcome.success)
         result = outcome.result
         self.assertIsNotNone(result)
-        self.assertEqual(result.decision.action, "NO_REPLY")
+        self.assertEqual(result.decision.action, "SECURITY_BLOCK")
         self.assertIsNotNone(result.securityAssessment)
         self.assertEqual(result.securityAssessment.action, "BLOCK")
         self.assertEqual(result.securityAssessment.categories, ["PROMPT_INJECTION"])
@@ -705,7 +702,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
         self.assertTrue(outcome.success)
         result = outcome.result
         self.assertIsNotNone(result)
-        self.assertEqual(result.decision.action, "NO_REPLY")
+        self.assertEqual(result.decision.action, "SECURITY_BLOCK")
         self.assertEqual(result.sharedState, request.sharedState)
         self.assertEqual(result.securityAssessment.action, "BLOCK")
         self.assertEqual(result.securityAssessment.categories, ["SECRET_EXFILTRATION"])
@@ -1380,7 +1377,7 @@ class AgentRuntimeDecisionLoopTest(unittest.TestCase):
                             "choices": [
                                 {
                                     "message": {
-                                        "content": json.dumps({"decision": {"action": "NO_REPLY"}}),
+                                        "content": json.dumps({"decision": {"action": "NO_OP"}}),
                                     }
                                 }
                             ],

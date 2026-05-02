@@ -25,10 +25,11 @@ export type KnowledgeImportJobStage = 'QUEUED' | 'FETCHING_SOURCE' | 'PARSING' |
 export type KnowledgeIndexSnapshotStage = 'QUEUED' | 'COLLECTING_DOCUMENTS' | 'INDEXING' | 'READY' | 'FAILED';
 export type AgentDecisionAction =
   | 'REPLY'
-  | 'NO_REPLY'
+  | 'NO_OP'
   | 'SWITCH_OWNER'
   | 'RUN_PLAYBOOK'
-  | 'SESSION_HUMAN_HANDOFF';
+  | 'SESSION_HUMAN_HANDOFF'
+  | 'SECURITY_BLOCK';
 
 export interface UserSession {
   userId: string;

@@ -151,7 +151,8 @@ demo/                 演示素材目录，不参与当前主实现说明
 - `Owner Agent`
   - 接收用户消息或系统触发
   - 执行单轮推理
-  - 决定 `REPLY / NO_REPLY / SWITCH_OWNER / RUN_PLAYBOOK / SESSION_HUMAN_HANDOFF`
+  - 通过最终 outcome 决定 `REPLY / NO_OP / SWITCH_OWNER / RUN_PLAYBOOK / SESSION_HUMAN_HANDOFF / SECURITY_BLOCK`
+  - 可在任意 action 中携带完整 `replyMessage`
 - `Playbook`
   - 由 owner 显式启动
   - 作为 Temporal child workflow 运行

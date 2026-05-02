@@ -276,8 +276,8 @@ CI 在 `.github/workflows/ci.yml` 中分别跑 Java / Node / Python 三套检查
 
 1. API 创建 `session`，按 assistant release 的 `primaryAgentId` 初始化 owner。
 2. `SessionWorkflow` 接收用户消息 Update，维护 owner、shared state、handoff、idle timer 与 playbook 生命周期。
-3. Worker 调用 Python `agent-runtime` `/agent-turns/execute`。
-4. Owner agent 单轮推理后返回决策：`REPLY` / `NO_REPLY` / `SWITCH_OWNER` / `RUN_PLAYBOOK` / `SESSION_HUMAN_HANDOFF`。
+3. Worker 调用 Python `agent-runtime` `/agent-turns/execute-stream`，在 activity 内转发 transient stream frame，并只把最终 outcome 交给 workflow。
+4. Owner agent 单轮推理后返回决策：`REPLY` / `NO_OP` / `SWITCH_OWNER` / `RUN_PLAYBOOK` / `SESSION_HUMAN_HANDOFF` / `SECURITY_BLOCK`；`replyMessage` 可与非 `REPLY` action 同时存在。
 5. 若启动 playbook，则 `PlaybookWorkflow` 作为 child workflow 承担强流程，节点类型为 `STEP / TOOL_TASK / HUMAN_TASK / EXTERNAL_INTERACTION / END`。
 6. playbook 等待、恢复、终态结果统一写入 `session event` / `playbook run`。
 7. 非 handoff 状态下，playbook 终态会触发 owner reevaluation 继续推进。

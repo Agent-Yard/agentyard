@@ -1033,7 +1033,7 @@ public final class CatalogDtos {
                 true,
                 List.of(
                     AgentDecisionAction.REPLY,
-                    AgentDecisionAction.NO_REPLY,
+                    AgentDecisionAction.NO_OP,
                     AgentDecisionAction.SWITCH_OWNER,
                     AgentDecisionAction.RUN_PLAYBOOK,
                     AgentDecisionAction.SESSION_HUMAN_HANDOFF
@@ -1068,7 +1068,7 @@ public final class CatalogDtos {
                 true,
                 List.of(
                     AgentDecisionAction.REPLY,
-                    AgentDecisionAction.NO_REPLY,
+                    AgentDecisionAction.NO_OP,
                     AgentDecisionAction.SWITCH_OWNER,
                     AgentDecisionAction.RUN_PLAYBOOK,
                     AgentDecisionAction.SESSION_HUMAN_HANDOFF

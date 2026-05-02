@@ -15,6 +15,6 @@ public class AgentTurnActivitiesImpl implements AgentTurnActivities {
 
     @Override
     public AgentTurnExecutionOutcome executeTurn(AgentTurnRequest request) {
-        return sessionAgentRuntimeGateway.executeTurn(request);
+        return sessionAgentRuntimeGateway.executeTurnStream(request);
     }
 }

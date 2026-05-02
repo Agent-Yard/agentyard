@@ -1400,6 +1400,24 @@ paths:
             text/event-stream:
               schema:
                 $ref: '#/components/schemas/SessionRuntimeStreamEvent'
+  /internal/session-runtime/stream-frames:
+    post:
+      summary: Accept an internal agent-turn stream frame for transient SSE relay
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentTurnStreamFrame'
+      responses:
+        '200':
+          description: Frame accepted
+          content:
+            application/json:
+              schema:
+                type: object
   /session-runtime/sessions/{sessionId}/messages:
     post:
       summary: Send a user message into an existing session
@@ -1515,6 +1533,10 @@ paths:
         '409':
           description: Duplicate callback is already being processed
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
   schemas:
     PlatformRole:
       type: string
@@ -4002,6 +4024,14 @@ components:
           items:
             $ref: '#/components/schemas/PlaybookRun'
     SessionRuntimeStreamEvent:
+      oneOf:
+        - $ref: '#/components/schemas/SessionRuntimeSnapshotEvent'
+        - $ref: '#/components/schemas/SessionProgressEvent'
+        - $ref: '#/components/schemas/SessionReplyDraftEvent'
+        - $ref: '#/components/schemas/SessionStreamErrorEvent'
+      discriminator:
+        propertyName: type
+    SessionRuntimeSnapshotEvent:
       type: object
       required: [id, type, occurredAt, sessionId, detail]
       properties:
@@ -4017,6 +4047,331 @@ components:
           type: string
         detail:
           $ref: '#/components/schemas/SessionRuntimeDetail'
+    StreamVisibility:
+      type: string
+      enum: [CUSTOMER, OPERATOR, DEVELOPER, INTERNAL]
+    SessionProgressEvent:
+      type: object
+      required: [id, type, occurredAt, sessionId, turnId, visibility, phase, status, title, detail]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [SESSION_PROGRESS]
+        occurredAt:
+          type: string
+          format: date-time
+        sessionId:
+          type: string
+        turnId:
+          type: string
+        visibility:
+          $ref: '#/components/schemas/StreamVisibility'
+        phase:
+          type: string
+        status:
+          type: string
+        title:
+          type: string
+        detail:
+          type: object
+          additionalProperties: true
+    SessionReplyDraftEvent:
+      type: object
+      required: [id, type, occurredAt, sessionId, turnId, messageId, operation, blockId, blockType]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [SESSION_REPLY_DRAFT]
+        occurredAt:
+          type: string
+          format: date-time
+        sessionId:
+          type: string
+        turnId:
+          type: string
+        messageId:
+          type: string
+        operation:
+          type: string
+          enum: [STARTED, DELTA, SNAPSHOT, COMPLETED, DISCARD]
+        blockId:
+          type: string
+        blockType:
+          $ref: '#/components/schemas/SessionMessageBlockType'
+        delta:
+          type: string
+          nullable: true
+        text:
+          type: string
+          nullable: true
+    SessionStreamErrorEvent:
+      type: object
+      required: [id, type, occurredAt, sessionId, turnId, code, message, retryable, detail]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [SESSION_STREAM_ERROR]
+        occurredAt:
+          type: string
+          format: date-time
+        sessionId:
+          type: string
+        turnId:
+          type: string
+        code:
+          type: string
+        message:
+          type: string
+        retryable:
+          type: boolean
+        detail:
+          type: object
+          additionalProperties: true
+    AgentTurnStreamFrameKind:
+      type: string
+      enum:
+        - TURN_STARTED
+        - MODEL_STARTED
+        - MODEL_COMPLETED
+        - USER_NOTICE
+        - PROVIDER_DEBUG
+        - ACTION_TOOL_STARTED
+        - ACTION_TOOL_ARGUMENT_DELTA
+        - ACTION_TOOL_COMPLETED
+        - TOOL_PROGRESS
+        - REPLY_BLOCK_STARTED
+        - REPLY_BLOCK_DELTA
+        - REPLY_BLOCK_SNAPSHOT
+        - REPLY_BLOCK_COMPLETED
+        - FINAL_OUTCOME
+        - ERROR
+    AgentTurnStreamFrame:
+      type: object
+      required:
+        - protocol
+        - frameId
+        - streamId
+        - sessionId
+        - turnId
+        - turnExecutionId
+        - ownerAgentId
+        - ownershipEpoch
+        - seq
+        - kind
+        - visibility
+        - occurredAt
+        - payload
+      properties:
+        protocol:
+          type: string
+          enum: [lynxus.agent-turn-stream.v1]
+        frameId:
+          type: string
+          description: Stable dedup key. Must be `${turnExecutionId}:${seq}`.
+        streamId:
+          type: string
+        sessionId:
+          type: string
+        turnId:
+          type: string
+        turnExecutionId:
+          type: string
+        ownerAgentId:
+          type: string
+        ownershipEpoch:
+          type: integer
+          format: int64
+        seq:
+          type: integer
+          format: int64
+        kind:
+          $ref: '#/components/schemas/AgentTurnStreamFrameKind'
+        visibility:
+          $ref: '#/components/schemas/StreamVisibility'
+        occurredAt:
+          type: string
+          format: date-time
+        payload:
+          oneOf:
+            - $ref: '#/components/schemas/TurnStartedPayload'
+            - $ref: '#/components/schemas/ModelStartedPayload'
+            - $ref: '#/components/schemas/ModelCompletedPayload'
+            - $ref: '#/components/schemas/UserNoticePayload'
+            - $ref: '#/components/schemas/ProviderDebugPayload'
+            - $ref: '#/components/schemas/ToolStartedPayload'
+            - $ref: '#/components/schemas/ToolArgumentDeltaPayload'
+            - $ref: '#/components/schemas/ToolCompletedPayload'
+            - $ref: '#/components/schemas/ToolProgressPayload'
+            - $ref: '#/components/schemas/ReplyBlockStartedPayload'
+            - $ref: '#/components/schemas/ReplyBlockDeltaPayload'
+            - $ref: '#/components/schemas/ReplyBlockSnapshotPayload'
+            - $ref: '#/components/schemas/ReplyBlockCompletedPayload'
+            - $ref: '#/components/schemas/FinalOutcomePayload'
+            - $ref: '#/components/schemas/ErrorPayload'
+    TurnStartedPayload:
+      type: object
+      required: [triggerType]
+      properties:
+        triggerType:
+          $ref: '#/components/schemas/SessionTriggerType'
+    UserNoticePayload:
+      type: object
+      required: [label, text]
+      properties:
+        label:
+          type: string
+        text:
+          type: string
+    ModelStartedPayload:
+      type: object
+      required: [modelRoundId]
+      properties:
+        modelRoundId:
+          type: string
+    ModelCompletedPayload:
+      type: object
+      required: [modelRoundId, status]
+      properties:
+        modelRoundId:
+          type: string
+        status:
+          type: string
+          enum: [SUCCEEDED, FAILED, ABORTED]
+    ProviderDebugPayload:
+      type: object
+      required: [modelRoundId, providerEventType]
+      properties:
+        modelRoundId:
+          type: string
+        providerEventType:
+          type: string
+        contentBlockIndex:
+          type: integer
+    RuntimeToolKind:
+      type: string
+      enum: [CONTEXT_TOOL, STATE_TOOL, MESSAGE_BLOCK_TOOL, LIFECYCLE_ACTION_TOOL]
+    ToolStartedPayload:
+      type: object
+      required: [modelRoundId, toolCallId, toolName, toolKind]
+      properties:
+        modelRoundId:
+          type: string
+        toolCallId:
+          type: string
+        toolName:
+          type: string
+        toolKind:
+          $ref: '#/components/schemas/RuntimeToolKind'
+    ToolArgumentDeltaPayload:
+      type: object
+      required: [toolCallId, delta]
+      properties:
+        toolCallId:
+          type: string
+        delta:
+          type: string
+    ToolCompletedPayload:
+      type: object
+      required: [toolCallId, toolName, toolKind, status]
+      properties:
+        toolCallId:
+          type: string
+        toolName:
+          type: string
+        toolKind:
+          $ref: '#/components/schemas/RuntimeToolKind'
+        status:
+          type: string
+          enum: [ACCEPTED, REJECTED, FAILED]
+        produced:
+          type: object
+          properties:
+            action:
+              type: string
+            messageBlockId:
+              type: string
+            sharedStateUpdated:
+              type: boolean
+    ToolProgressPayload:
+      type: object
+      required: [label, status]
+      properties:
+        toolCallId:
+          type: string
+        label:
+          type: string
+        status:
+          type: string
+          enum: [STARTED, RUNNING, SUCCEEDED, FAILED]
+        detail:
+          type: object
+          additionalProperties: true
+    ReplyBlockStartedPayload:
+      type: object
+      required: [blockId, blockType]
+      properties:
+        blockId:
+          type: string
+        blockType:
+          $ref: '#/components/schemas/SessionMessageBlockType'
+    ReplyBlockDeltaPayload:
+      type: object
+      required: [blockId, blockType, delta]
+      properties:
+        blockId:
+          type: string
+        blockType:
+          type: string
+          enum: [TEXT]
+        delta:
+          type: string
+    ReplyBlockSnapshotPayload:
+      type: object
+      required: [blockId, blockType, text]
+      properties:
+        blockId:
+          type: string
+        blockType:
+          type: string
+          enum: [TEXT]
+        text:
+          type: string
+    ReplyBlockCompletedPayload:
+      type: object
+      required: [blockId, block]
+      properties:
+        blockId:
+          type: string
+        block:
+          $ref: '#/components/schemas/SessionMessageBlock'
+    FinalOutcomePayload:
+      type: object
+      required: [outcome]
+      properties:
+        outcome:
+          $ref: '#/components/schemas/AgentTurnExecutionOutcome'
+    ErrorPayload:
+      type: object
+      required: [code, message, stage, retryable]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        stage:
+          type: string
+          enum: [PROVIDER_STREAM, TOOL_ARGUMENT_PARSE, TOOL_EXECUTION, FINAL_OUTCOME_BUILD, TRANSCRIPT_PERSISTENCE]
+        retryable:
+          type: boolean
+        details:
+          type: object
+          additionalProperties: true
     ToolOutcomeSummary:
       type: object
       properties:

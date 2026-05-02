@@ -683,13 +683,67 @@ export interface UpdateChannelProfileInternalPayload {
   expectedRevision: number;
 }
 
-export interface SessionRuntimeStreamEvent<Detail = unknown> {
+export type SessionRuntimeStreamEventType =
+  | 'SESSION_SNAPSHOT'
+  | 'SESSION_UPDATED'
+  | 'SESSION_PROGRESS'
+  | 'SESSION_REPLY_DRAFT'
+  | 'SESSION_STREAM_ERROR';
+
+export type StreamVisibility = 'CUSTOMER' | 'OPERATOR' | 'DEVELOPER' | 'INTERNAL';
+
+export interface SessionRuntimeSnapshotEvent<Detail = unknown> {
   id: string;
   type: 'SESSION_SNAPSHOT' | 'SESSION_UPDATED';
   occurredAt: string;
   sessionId: string;
   detail: Detail;
 }
+
+export interface SessionProgressEvent {
+  id: string;
+  type: 'SESSION_PROGRESS';
+  occurredAt: string;
+  sessionId: string;
+  turnId: string;
+  visibility: Exclude<StreamVisibility, 'INTERNAL'>;
+  phase: string;
+  status: 'STARTED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | string;
+  title: string;
+  detail: Record<string, unknown>;
+}
+
+export interface SessionReplyDraftEvent {
+  id: string;
+  type: 'SESSION_REPLY_DRAFT';
+  occurredAt: string;
+  sessionId: string;
+  turnId: string;
+  messageId: string;
+  operation: 'STARTED' | 'DELTA' | 'SNAPSHOT' | 'COMPLETED' | 'DISCARD';
+  blockId: string;
+  blockType: SessionMessageBlockType;
+  delta: string | null;
+  text: string | null;
+}
+
+export interface SessionStreamErrorEvent {
+  id: string;
+  type: 'SESSION_STREAM_ERROR';
+  occurredAt: string;
+  sessionId: string;
+  turnId: string;
+  code: string;
+  message: string;
+  retryable: boolean;
+  detail: Record<string, unknown>;
+}
+
+export type SessionRuntimeStreamEvent<Detail = unknown> =
+  | SessionRuntimeSnapshotEvent<Detail>
+  | SessionProgressEvent
+  | SessionReplyDraftEvent
+  | SessionStreamErrorEvent;
 
 export interface KnowledgeUploadSession {
   id: string;
@@ -797,10 +851,11 @@ export type RichTextFormat = 'MARKDOWN';
 export type CardActionType = 'LINK';
 export type AgentDecisionAction =
   | 'REPLY'
-  | 'NO_REPLY'
+  | 'NO_OP'
   | 'SWITCH_OWNER'
   | 'RUN_PLAYBOOK'
-  | 'SESSION_HUMAN_HANDOFF';
+  | 'SESSION_HUMAN_HANDOFF'
+  | 'SECURITY_BLOCK';
 export type SessionTriggerType = 'USER_MESSAGE' | 'PLAYBOOK_COMPLETED';
 export type SessionActorType = 'CUSTOMER' | 'AGENT' | 'SYSTEM' | 'HUMAN_OPERATOR' | 'EXTERNAL_SYSTEM';
 export type SessionEventType =
@@ -1126,7 +1181,6 @@ export interface AgentDecision {
   targetAgentId: string | null;
   playbookId: string | null;
   playbookInput: Record<string, unknown>;
-  accompanyingMessage: SessionMessageInput | null;
 }
 
 export type LlmUsageSourceType = 'SESSION_OWNER_MODEL' | 'SESSION_PRIVACY_MODEL';
@@ -1149,6 +1203,9 @@ export interface LlmUsageEntry {
 
 export interface AgentTurnRequest {
   sessionId: string;
+  turnId: string;
+  turnExecutionId: string;
+  ownershipEpoch: number;
   assistantId: string;
   assistantReleaseVersion: string;
   currentOwner: OwnerAgentConfig;
@@ -1183,6 +1240,156 @@ export interface AgentTurnExecutionOutcome {
   failureReason: string | null;
   llmUsage: LlmUsageEntry[];
 }
+
+export type AgentTurnStreamFrameKind =
+  | 'TURN_STARTED'
+  | 'MODEL_STARTED'
+  | 'MODEL_COMPLETED'
+  | 'USER_NOTICE'
+  | 'PROVIDER_DEBUG'
+  | 'ACTION_TOOL_STARTED'
+  | 'ACTION_TOOL_ARGUMENT_DELTA'
+  | 'ACTION_TOOL_COMPLETED'
+  | 'TOOL_PROGRESS'
+  | 'REPLY_BLOCK_STARTED'
+  | 'REPLY_BLOCK_DELTA'
+  | 'REPLY_BLOCK_SNAPSHOT'
+  | 'REPLY_BLOCK_COMPLETED'
+  | 'FINAL_OUTCOME'
+  | 'ERROR';
+
+export type ModelStreamStatus = 'SUCCEEDED' | 'FAILED' | 'ABORTED';
+export type RuntimeToolKind = 'CONTEXT_TOOL' | 'STATE_TOOL' | 'MESSAGE_BLOCK_TOOL' | 'LIFECYCLE_ACTION_TOOL';
+export type ToolCompletionStatus = 'ACCEPTED' | 'REJECTED' | 'FAILED';
+export type ToolProgressStatus = 'STARTED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED';
+export type StreamErrorStage =
+  | 'PROVIDER_STREAM'
+  | 'TOOL_ARGUMENT_PARSE'
+  | 'TOOL_EXECUTION'
+  | 'FINAL_OUTCOME_BUILD'
+  | 'TRANSCRIPT_PERSISTENCE';
+
+export interface AgentTurnStreamFrame<K extends AgentTurnStreamFrameKind, P> {
+  protocol: 'lynxus.agent-turn-stream.v1';
+  frameId: string;
+  streamId: string;
+  sessionId: string;
+  turnId: string;
+  turnExecutionId: string;
+  ownerAgentId: string;
+  ownershipEpoch: number;
+  seq: number;
+  kind: K;
+  visibility: StreamVisibility;
+  occurredAt: string;
+  payload: P;
+}
+
+export interface TurnStartedPayload {
+  triggerType: SessionTriggerType;
+}
+
+export interface ModelStartedPayload {
+  modelRoundId: string;
+}
+
+export interface ModelCompletedPayload {
+  modelRoundId: string;
+  status: ModelStreamStatus;
+}
+
+export interface UserNoticePayload {
+  label: string;
+  text: string;
+}
+
+export interface ProviderDebugPayload {
+  modelRoundId: string;
+  providerEventType: string;
+  contentBlockIndex?: number;
+}
+
+export interface ToolStartedPayload {
+  modelRoundId: string;
+  toolCallId: string;
+  toolName: string;
+  toolKind: RuntimeToolKind;
+}
+
+export interface ToolArgumentDeltaPayload {
+  toolCallId: string;
+  delta: string;
+}
+
+export interface ToolCompletedPayload {
+  toolCallId: string;
+  toolName: string;
+  toolKind: RuntimeToolKind;
+  status: ToolCompletionStatus;
+  produced?: {
+    action?: string;
+    messageBlockId?: string;
+    sharedStateUpdated?: boolean;
+  };
+}
+
+export interface ToolProgressPayload {
+  toolCallId?: string;
+  label: string;
+  status: ToolProgressStatus;
+  detail?: Record<string, unknown>;
+}
+
+export interface ReplyBlockStartedPayload {
+  blockId: string;
+  blockType: SessionMessageBlockType;
+}
+
+export interface ReplyBlockDeltaPayload {
+  blockId: string;
+  blockType: 'TEXT';
+  delta: string;
+}
+
+export interface ReplyBlockSnapshotPayload {
+  blockId: string;
+  blockType: 'TEXT';
+  text: string;
+}
+
+export interface ReplyBlockCompletedPayload {
+  blockId: string;
+  block: SessionMessageBlock;
+}
+
+export interface FinalOutcomePayload {
+  outcome: AgentTurnExecutionOutcome;
+}
+
+export interface ErrorPayload {
+  code: string;
+  message: string;
+  stage: StreamErrorStage;
+  retryable: boolean;
+  details?: Record<string, unknown>;
+}
+
+export type AgentTurnFrame =
+  | AgentTurnStreamFrame<'TURN_STARTED', TurnStartedPayload>
+  | AgentTurnStreamFrame<'MODEL_STARTED', ModelStartedPayload>
+  | AgentTurnStreamFrame<'MODEL_COMPLETED', ModelCompletedPayload>
+  | AgentTurnStreamFrame<'USER_NOTICE', UserNoticePayload>
+  | AgentTurnStreamFrame<'PROVIDER_DEBUG', ProviderDebugPayload>
+  | AgentTurnStreamFrame<'ACTION_TOOL_STARTED', ToolStartedPayload>
+  | AgentTurnStreamFrame<'ACTION_TOOL_ARGUMENT_DELTA', ToolArgumentDeltaPayload>
+  | AgentTurnStreamFrame<'ACTION_TOOL_COMPLETED', ToolCompletedPayload>
+  | AgentTurnStreamFrame<'TOOL_PROGRESS', ToolProgressPayload>
+  | AgentTurnStreamFrame<'REPLY_BLOCK_STARTED', ReplyBlockStartedPayload>
+  | AgentTurnStreamFrame<'REPLY_BLOCK_DELTA', ReplyBlockDeltaPayload>
+  | AgentTurnStreamFrame<'REPLY_BLOCK_SNAPSHOT', ReplyBlockSnapshotPayload>
+  | AgentTurnStreamFrame<'REPLY_BLOCK_COMPLETED', ReplyBlockCompletedPayload>
+  | AgentTurnStreamFrame<'FINAL_OUTCOME', FinalOutcomePayload>
+  | AgentTurnStreamFrame<'ERROR', ErrorPayload>;
 
 export interface SessionUserMessageUpdateResult {
   status: SessionMessageDeliveryStatus;

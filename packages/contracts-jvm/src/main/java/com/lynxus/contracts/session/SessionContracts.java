@@ -76,10 +76,78 @@ public final class SessionContracts {
 
     public enum AgentDecisionAction {
         REPLY,
-        NO_REPLY,
+        NO_OP,
         SWITCH_OWNER,
         RUN_PLAYBOOK,
-        SESSION_HUMAN_HANDOFF
+        SESSION_HUMAN_HANDOFF,
+        SECURITY_BLOCK
+    }
+
+    public enum StreamVisibility {
+        CUSTOMER,
+        OPERATOR,
+        DEVELOPER,
+        INTERNAL
+    }
+
+    public enum AgentTurnStreamFrameKind {
+        TURN_STARTED,
+        MODEL_STARTED,
+        MODEL_COMPLETED,
+        USER_NOTICE,
+        PROVIDER_DEBUG,
+        ACTION_TOOL_STARTED,
+        ACTION_TOOL_ARGUMENT_DELTA,
+        ACTION_TOOL_COMPLETED,
+        TOOL_PROGRESS,
+        REPLY_BLOCK_STARTED,
+        REPLY_BLOCK_DELTA,
+        REPLY_BLOCK_SNAPSHOT,
+        REPLY_BLOCK_COMPLETED,
+        FINAL_OUTCOME,
+        ERROR
+    }
+
+    public enum ModelStreamStatus {
+        SUCCEEDED,
+        FAILED,
+        ABORTED
+    }
+
+    public enum ToolKind {
+        CONTEXT_TOOL,
+        STATE_TOOL,
+        MESSAGE_BLOCK_TOOL,
+        LIFECYCLE_ACTION_TOOL
+    }
+
+    public enum ToolCompletionStatus {
+        ACCEPTED,
+        REJECTED,
+        FAILED
+    }
+
+    public enum ToolProgressStatus {
+        STARTED,
+        RUNNING,
+        SUCCEEDED,
+        FAILED
+    }
+
+    public enum StreamErrorStage {
+        PROVIDER_STREAM,
+        TOOL_ARGUMENT_PARSE,
+        TOOL_EXECUTION,
+        FINAL_OUTCOME_BUILD,
+        TRANSCRIPT_PERSISTENCE
+    }
+
+    public enum SessionReplyDraftOperation {
+        STARTED,
+        DELTA,
+        SNAPSHOT,
+        COMPLETED,
+        DISCARD
     }
 
     public enum SessionTriggerType {
@@ -551,11 +619,151 @@ public final class SessionContracts {
         SessionMessageInput replyMessage,
         String targetAgentId,
         String playbookId,
-        Map<String, Object> playbookInput,
-        SessionMessageInput accompanyingMessage
+        Map<String, Object> playbookInput
     ) {
         public AgentDecision {
             playbookInput = immutableObjectMap(playbookInput);
+        }
+    }
+
+    public record AgentTurnStreamFrame(
+        String protocol,
+        String frameId,
+        String streamId,
+        String sessionId,
+        String turnId,
+        String turnExecutionId,
+        String ownerAgentId,
+        long ownershipEpoch,
+        long seq,
+        AgentTurnStreamFrameKind kind,
+        StreamVisibility visibility,
+        Instant occurredAt,
+        Map<String, Object> payload
+    ) {
+        public static final String PROTOCOL = "lynxus.agent-turn-stream.v1";
+
+        public AgentTurnStreamFrame {
+            payload = immutableObjectMap(payload);
+        }
+    }
+
+    public record TurnStartedPayload(SessionTriggerType triggerType) {
+    }
+
+    public record ModelStartedPayload(String modelRoundId) {
+    }
+
+    public record ModelCompletedPayload(String modelRoundId, ModelStreamStatus status) {
+    }
+
+    public record UserNoticePayload(String label, String text) {
+    }
+
+    public record ProviderDebugPayload(String modelRoundId, String providerEventType, Integer contentBlockIndex) {
+    }
+
+    public record ToolStartedPayload(String modelRoundId, String toolCallId, String toolName, ToolKind toolKind) {
+    }
+
+    public record ToolArgumentDeltaPayload(String toolCallId, String delta) {
+    }
+
+    public record ToolProducedPayload(String action, String messageBlockId, Boolean sharedStateUpdated) {
+    }
+
+    public record ToolCompletedPayload(
+        String toolCallId,
+        String toolName,
+        ToolKind toolKind,
+        ToolCompletionStatus status,
+        ToolProducedPayload produced
+    ) {
+    }
+
+    public record ToolProgressPayload(
+        String toolCallId,
+        String label,
+        ToolProgressStatus status,
+        Map<String, Object> detail
+    ) {
+        public ToolProgressPayload {
+            detail = immutableObjectMap(detail);
+        }
+    }
+
+    public record ReplyBlockStartedPayload(String blockId, SessionMessageBlockType blockType) {
+    }
+
+    public record ReplyBlockDeltaPayload(String blockId, SessionMessageBlockType blockType, String delta) {
+    }
+
+    public record ReplyBlockSnapshotPayload(String blockId, SessionMessageBlockType blockType, String text) {
+    }
+
+    public record ReplyBlockCompletedPayload(String blockId, Object block) {
+    }
+
+    public record FinalOutcomePayload(AgentTurnExecutionOutcome outcome) {
+    }
+
+    public record ErrorPayload(
+        String code,
+        String message,
+        StreamErrorStage stage,
+        boolean retryable,
+        Map<String, Object> details
+    ) {
+        public ErrorPayload {
+            details = immutableObjectMap(details);
+        }
+    }
+
+    public record SessionProgressEvent(
+        String id,
+        String type,
+        Instant occurredAt,
+        String sessionId,
+        String turnId,
+        StreamVisibility visibility,
+        String phase,
+        String status,
+        String title,
+        Map<String, Object> detail
+    ) {
+        public SessionProgressEvent {
+            detail = immutableObjectMap(detail);
+        }
+    }
+
+    public record SessionReplyDraftEvent(
+        String id,
+        String type,
+        Instant occurredAt,
+        String sessionId,
+        String turnId,
+        String messageId,
+        SessionReplyDraftOperation operation,
+        String blockId,
+        SessionMessageBlockType blockType,
+        String delta,
+        String text
+    ) {
+    }
+
+    public record SessionStreamErrorEvent(
+        String id,
+        String type,
+        Instant occurredAt,
+        String sessionId,
+        String turnId,
+        String code,
+        String message,
+        boolean retryable,
+        Map<String, Object> detail
+    ) {
+        public SessionStreamErrorEvent {
+            detail = immutableObjectMap(detail);
         }
     }
 
@@ -572,6 +780,9 @@ public final class SessionContracts {
 
     public record AgentTurnRequest(
         String sessionId,
+        String turnId,
+        String turnExecutionId,
+        long ownershipEpoch,
         String assistantId,
         String assistantReleaseVersion,
         AgentConfig currentOwner,

@@ -38,7 +38,7 @@ const createForm = reactive<CreateAgentPayload>({
   role: '',
   responsibility: '',
   canOwnSession: true,
-  allowedActions: ['REPLY', 'NO_REPLY', 'SWITCH_OWNER', 'RUN_PLAYBOOK', 'SESSION_HUMAN_HANDOFF'],
+  allowedActions: ['REPLY', 'NO_OP', 'SWITCH_OWNER', 'RUN_PLAYBOOK', 'SESSION_HUMAN_HANDOFF'],
   switchableOwnerAgentIds: [],
   playbookIds: [],
   executionPolicy: {
@@ -60,7 +60,7 @@ const editForm = reactive<UpdateAgentPayload>({
   role: '',
   responsibility: '',
   canOwnSession: true,
-  allowedActions: ['REPLY', 'NO_REPLY', 'SWITCH_OWNER', 'RUN_PLAYBOOK', 'SESSION_HUMAN_HANDOFF'],
+  allowedActions: ['REPLY', 'NO_OP', 'SWITCH_OWNER', 'RUN_PLAYBOOK', 'SESSION_HUMAN_HANDOFF'],
   switchableOwnerAgentIds: [],
   playbookIds: [],
   executionPolicy: {
@@ -109,7 +109,7 @@ const toolResources = computed(() => props.resources.filter((item) => item.type 
 const knowledgeBaseOptions = computed(() => props.knowledgeBases.map((item) => ({ label: item.name, value: item.id })));
 const actionOptions = [
   { label: 'REPLY', value: 'REPLY' },
-  { label: 'NO_REPLY', value: 'NO_REPLY' },
+  { label: 'NO_OP', value: 'NO_OP' },
   { label: 'SWITCH_OWNER', value: 'SWITCH_OWNER' },
   { label: 'RUN_PLAYBOOK', value: 'RUN_PLAYBOOK' },
   { label: 'SESSION_HUMAN_HANDOFF', value: 'SESSION_HUMAN_HANDOFF' },
@@ -316,7 +316,7 @@ function submitCreate() {
   createForm.role = '';
   createForm.responsibility = '';
   createForm.canOwnSession = true;
-  createForm.allowedActions = ['REPLY', 'NO_REPLY', 'SWITCH_OWNER', 'RUN_PLAYBOOK', 'SESSION_HUMAN_HANDOFF'];
+  createForm.allowedActions = ['REPLY', 'NO_OP', 'SWITCH_OWNER', 'RUN_PLAYBOOK', 'SESSION_HUMAN_HANDOFF'];
   createForm.switchableOwnerAgentIds = [];
   createForm.playbookIds = [];
   createForm.executionPolicy.systemPrompt = '';

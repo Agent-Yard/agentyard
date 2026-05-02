@@ -771,7 +771,7 @@ class SessionRuntimeServiceTest {
                     "draft responsibilities",
                     new CatalogDtos.AgentExecutionPolicyDto(true, null, "draft prompt", false, false, null, 4, List.of(), List.of()),
                     true,
-                    List.of(com.lynxus.contracts.session.SessionContracts.AgentDecisionAction.NO_REPLY),
+                    List.of(com.lynxus.contracts.session.SessionContracts.AgentDecisionAction.NO_OP),
                     List.of(),
                     List.of()
                 )

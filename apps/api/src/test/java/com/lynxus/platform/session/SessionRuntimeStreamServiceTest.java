@@ -3,10 +3,14 @@ package com.lynxus.platform.session;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamFrame;
+import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamFrameKind;
+import com.lynxus.contracts.session.SessionContracts.StreamVisibility;
 import com.lynxus.contracts.session.SessionRuntimeChangeNotice;
 import com.lynxus.platform.session.SessionRuntimeDtos.SessionRuntimeDetailDto;
 import com.lynxus.platform.session.SessionRuntimeDtos.SessionRuntimeSessionDto;
@@ -20,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.databind.ObjectMapper;
 
 class SessionRuntimeStreamServiceTest {
@@ -134,6 +139,220 @@ class SessionRuntimeStreamServiceTest {
         verify(pubSubBus).publish(eq(keyspace.sseChannelSessionUpdated()), argThat(payload -> payload.contains(updatedFingerprint)));
     }
 
+    @Test
+    void shouldProjectCustomerNoticeFrameIntoSessionProgressEvent() {
+        SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
+        SessionRuntimeReplayStore replayStore = mock(SessionRuntimeReplayStore.class);
+        RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);
+        RedisKeyspace keyspace = new RedisKeyspace();
+        SessionRuntimeStreamService service = new SessionRuntimeStreamService(
+            repository,
+            replayStore,
+            pubSubBus,
+            keyspace,
+            new RedisJsonCodec(new ObjectMapper()),
+            new RedisSharedStateProperties("instance-a", Duration.ofSeconds(10), Duration.ofSeconds(3), Duration.ofHours(24), Duration.ofMinutes(15), 128, Duration.ofSeconds(1))
+        );
+        when(replayStore.append(any())).thenReturn(true);
+
+        service.acceptStreamFrame(frame(AgentTurnStreamFrameKind.USER_NOTICE, StreamVisibility.CUSTOMER, 2, Map.of(
+            "label",
+            "PROCESSING",
+            "text",
+            "我正在处理。"
+        )));
+
+        verify(replayStore).append(argThat(event ->
+            "SESSION_PROGRESS".equals(event.type())
+                && "progress:session-1:turn-1:2".equals(event.id())
+                && "我正在处理。".equals(event.title())
+        ));
+        verify(pubSubBus).publish(eq(keyspace.sseChannelSessionUpdated()), any());
+    }
+
+    @Test
+    void shouldIgnoreInternalAndFinalOutcomeFrames() {
+        SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
+        SessionRuntimeReplayStore replayStore = mock(SessionRuntimeReplayStore.class);
+        RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);
+        RedisKeyspace keyspace = new RedisKeyspace();
+        SessionRuntimeStreamService service = new SessionRuntimeStreamService(
+            repository,
+            replayStore,
+            pubSubBus,
+            keyspace,
+            new RedisJsonCodec(new ObjectMapper()),
+            new RedisSharedStateProperties("instance-a", Duration.ofSeconds(10), Duration.ofSeconds(3), Duration.ofHours(24), Duration.ofMinutes(15), 128, Duration.ofSeconds(1))
+        );
+
+        service.acceptStreamFrame(frame(AgentTurnStreamFrameKind.PROVIDER_DEBUG, StreamVisibility.DEVELOPER, 2, Map.of()));
+        service.acceptStreamFrame(frame(AgentTurnStreamFrameKind.FINAL_OUTCOME, StreamVisibility.INTERNAL, 3, Map.of()));
+
+        verify(replayStore, org.mockito.Mockito.never()).append(any());
+        verify(pubSubBus, org.mockito.Mockito.never()).publish(any(), any());
+    }
+
+    @Test
+    void shouldRejectCustomerActionToolFramesBeforeProjection() {
+        SessionRuntimeReplayStore replayStore = mock(SessionRuntimeReplayStore.class);
+        RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);
+        SessionRuntimeStreamService service = serviceWith(replayStore, pubSubBus);
+
+        assertThrows(ResponseStatusException.class, () -> service.acceptStreamFrame(frame(
+            AgentTurnStreamFrameKind.ACTION_TOOL_STARTED,
+            StreamVisibility.CUSTOMER,
+            2,
+            Map.of("toolName", "order_service.lookupShipment")
+        )));
+
+        verify(replayStore, org.mockito.Mockito.never()).append(any());
+        verify(pubSubBus, org.mockito.Mockito.never()).publish(any(), any());
+    }
+
+    @Test
+    void shouldRejectCustomerToolProgressFramesBeforeProjection() {
+        SessionRuntimeReplayStore replayStore = mock(SessionRuntimeReplayStore.class);
+        RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);
+        SessionRuntimeStreamService service = serviceWith(replayStore, pubSubBus);
+
+        assertThrows(ResponseStatusException.class, () -> service.acceptStreamFrame(frame(
+            AgentTurnStreamFrameKind.TOOL_PROGRESS,
+            StreamVisibility.CUSTOMER,
+            2,
+            Map.of("label", "HTTP_RESPONSE_RECEIVED", "detail", Map.of("endpoint", "/internal/orders"))
+        )));
+
+        verify(replayStore, org.mockito.Mockito.never()).append(any());
+        verify(pubSubBus, org.mockito.Mockito.never()).publish(any(), any());
+    }
+
+    @Test
+    void shouldRejectCustomerNoticeWithInternalPayloadFields() {
+        SessionRuntimeReplayStore replayStore = mock(SessionRuntimeReplayStore.class);
+        RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);
+        SessionRuntimeStreamService service = serviceWith(replayStore, pubSubBus);
+
+        assertThrows(ResponseStatusException.class, () -> service.acceptStreamFrame(frame(
+            AgentTurnStreamFrameKind.USER_NOTICE,
+            StreamVisibility.CUSTOMER,
+            2,
+            Map.of("label", "PROCESSING", "text", "我正在处理。", "modelId", "gpt-internal")
+        )));
+
+        verify(replayStore, org.mockito.Mockito.never()).append(any());
+        verify(pubSubBus, org.mockito.Mockito.never()).publish(any(), any());
+    }
+
+    @Test
+    void shouldAllowWhitelistedCustomerNoticeOnlyWithLabelAndText() {
+        SessionRuntimeReplayStore replayStore = mock(SessionRuntimeReplayStore.class);
+        RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);
+        RedisKeyspace keyspace = new RedisKeyspace();
+        SessionRuntimeStreamService service = serviceWith(replayStore, pubSubBus, keyspace);
+        when(replayStore.append(any())).thenReturn(true);
+
+        service.acceptStreamFrame(frame(AgentTurnStreamFrameKind.USER_NOTICE, StreamVisibility.CUSTOMER, 2, Map.of(
+            "label",
+            "CHECKING_ORDER",
+            "text",
+            "我正在核对订单和物流信息。"
+        )));
+
+        verify(replayStore).append(argThat(event ->
+            "SESSION_PROGRESS".equals(event.type())
+                && StreamVisibility.CUSTOMER == event.visibility()
+                && "USER_NOTICE".equals(event.phase())
+                && "我正在核对订单和物流信息。".equals(event.title())
+                && ((Map<?, ?>) event.detail()).isEmpty()
+        ));
+        verify(pubSubBus).publish(eq(keyspace.sseChannelSessionUpdated()), any());
+    }
+
+    @Test
+    void shouldNotProjectInternalFramesToWebReplay() {
+        SessionRuntimeReplayStore replayStore = mock(SessionRuntimeReplayStore.class);
+        RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);
+        SessionRuntimeStreamService service = serviceWith(replayStore, pubSubBus);
+
+        service.acceptStreamFrame(frame(
+            AgentTurnStreamFrameKind.TOOL_PROGRESS,
+            StreamVisibility.INTERNAL,
+            2,
+            Map.of("label", "HTTP_RESPONSE_RECEIVED", "detail", Map.of("durationMs", 218))
+        ));
+
+        verify(replayStore, org.mockito.Mockito.never()).append(any());
+        verify(pubSubBus, org.mockito.Mockito.never()).publish(any(), any());
+    }
+
+    @Test
+    void shouldAllowCustomerReplyBlockCompletedWithSafeTextBlock() {
+        SessionRuntimeReplayStore replayStore = mock(SessionRuntimeReplayStore.class);
+        RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);
+        RedisKeyspace keyspace = new RedisKeyspace();
+        SessionRuntimeStreamService service = serviceWith(replayStore, pubSubBus, keyspace);
+        when(replayStore.append(any())).thenReturn(true);
+
+        service.acceptStreamFrame(frame(AgentTurnStreamFrameKind.REPLY_BLOCK_COMPLETED, StreamVisibility.CUSTOMER, 2, Map.of(
+            "blockId",
+            "block-1",
+            "block",
+            Map.of("type", "TEXT", "text", "这是一段最终回复。")
+        )));
+
+        verify(replayStore).append(argThat(event ->
+            "SESSION_REPLY_DRAFT".equals(event.type())
+                && StreamVisibility.CUSTOMER == event.visibility()
+                && "block-1".equals(event.blockId())
+                && "这是一段最终回复。".equals(event.text())
+        ));
+        verify(pubSubBus).publish(eq(keyspace.sseChannelSessionUpdated()), any());
+    }
+
+    @Test
+    void shouldRejectCustomerReplyBlockCompletedWithInternalBlockFields() {
+        SessionRuntimeReplayStore replayStore = mock(SessionRuntimeReplayStore.class);
+        RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);
+        SessionRuntimeStreamService service = serviceWith(replayStore, pubSubBus);
+
+        assertThrows(ResponseStatusException.class, () -> service.acceptStreamFrame(frame(
+            AgentTurnStreamFrameKind.REPLY_BLOCK_COMPLETED,
+            StreamVisibility.CUSTOMER,
+            2,
+            Map.of(
+                "blockId",
+                "block-1",
+                "block",
+                Map.of("type", "TEXT", "text", "ok", "providerDebug", Map.of("model", "gpt-internal"))
+            )
+        )));
+
+        verify(replayStore, org.mockito.Mockito.never()).append(any());
+        verify(pubSubBus, org.mockito.Mockito.never()).publish(any(), any());
+    }
+
+    private static SessionRuntimeStreamService serviceWith(
+        SessionRuntimeReplayStore replayStore,
+        RedisPubSubBus pubSubBus
+    ) {
+        return serviceWith(replayStore, pubSubBus, new RedisKeyspace());
+    }
+
+    private static SessionRuntimeStreamService serviceWith(
+        SessionRuntimeReplayStore replayStore,
+        RedisPubSubBus pubSubBus,
+        RedisKeyspace keyspace
+    ) {
+        return new SessionRuntimeStreamService(
+            mock(SessionRuntimeRepository.class),
+            replayStore,
+            pubSubBus,
+            keyspace,
+            new RedisJsonCodec(new ObjectMapper()),
+            new RedisSharedStateProperties("instance-a", Duration.ofSeconds(10), Duration.ofSeconds(3), Duration.ofHours(24), Duration.ofMinutes(15), 128, Duration.ofSeconds(1))
+        );
+    }
+
     private static SessionRuntimeSessionDto session(String sessionId, Instant updatedAt, long latestSequence) {
         return new SessionRuntimeSessionDto(
             sessionId,
@@ -158,6 +377,29 @@ class SessionRuntimeStreamServiceTest {
             null,
             latestSequence,
             latestSequence
+        );
+    }
+
+    private static AgentTurnStreamFrame frame(
+        AgentTurnStreamFrameKind kind,
+        StreamVisibility visibility,
+        long seq,
+        Map<String, Object> payload
+    ) {
+        return new AgentTurnStreamFrame(
+            AgentTurnStreamFrame.PROTOCOL,
+            "exec-1:" + seq,
+            "stream-1",
+            "session-1",
+            "turn-1",
+            "exec-1",
+            "agent-1",
+            1,
+            seq,
+            kind,
+            visibility,
+            Instant.parse("2026-05-02T00:00:00Z"),
+            payload
         );
     }
 }

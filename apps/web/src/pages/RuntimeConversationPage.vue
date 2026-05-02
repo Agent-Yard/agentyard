@@ -7,9 +7,11 @@ import type {
   Assistant,
   PrivacyMappingSummary,
   PlaybookRun,
+  RuntimeDraftMessage,
   Scenario,
   SessionEvent,
   SessionMessage,
+  SessionProgressEvent,
   SessionRuntimeDetail,
   SessionRuntimeSession,
 } from '../types';
@@ -19,6 +21,8 @@ const props = defineProps<{
   assistants: Assistant[];
   sessions: SessionRuntimeSession[];
   sessionDetail: SessionRuntimeDetail | null;
+  runtimeDrafts: RuntimeDraftMessage[];
+  runtimeProgress: SessionProgressEvent[];
   creatingSession: boolean;
   sendingSessionId: string | null;
   preferredSessionId: string | null;
@@ -47,6 +51,12 @@ const currentSession = computed(() =>
 );
 const currentDetail = computed(() =>
   props.sessionDetail?.session.id === currentSession.value?.id ? props.sessionDetail : null,
+);
+const currentDrafts = computed(() =>
+  currentSession.value ? props.runtimeDrafts.filter((draft) => draft.sessionId === currentSession.value?.id) : [],
+);
+const currentProgress = computed(() =>
+  currentSession.value ? props.runtimeProgress.filter((event) => event.sessionId === currentSession.value?.id).slice(-12) : [],
 );
 const currentScenario = computed(() =>
   props.scenarios.find((item) => item.id === currentSession.value?.scenarioId) ?? null,
@@ -384,6 +394,35 @@ function formatSharedState(value: Record<string, unknown> | null | undefined) {
               </a-list-item>
             </template>
           </a-list>
+          <div v-if="currentDrafts.length" class="runtime-drafts">
+            <div
+              v-for="draft in currentDrafts"
+              :key="draft.turnId"
+              class="runtime-draft"
+              :class="{ 'runtime-draft--failed': draft.failed }"
+            >
+              <div class="timeline-title">
+                <strong>助手回复草稿</strong>
+              </div>
+              <div class="timeline-meta">{{ draft.updatedAt }}</div>
+              <pre class="runtime-json">{{ draft.text }}</pre>
+            </div>
+          </div>
+        </a-card>
+
+        <a-card v-if="currentProgress.length" title="实时进度">
+          <a-timeline>
+            <a-timeline-item
+              v-for="event in currentProgress"
+              :key="event.id"
+              :color="event.status === 'FAILED' ? 'red' : event.status === 'SUCCEEDED' ? 'green' : 'blue'"
+            >
+              <div class="timeline-title">
+                <strong>{{ event.title }}</strong>
+              </div>
+              <div class="timeline-meta">{{ event.occurredAt }} · {{ event.phase }}</div>
+            </a-timeline-item>
+          </a-timeline>
         </a-card>
 
         <a-card v-if="currentDetail" title="Session Events">
@@ -508,6 +547,25 @@ function formatSharedState(value: Record<string, unknown> | null | undefined) {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.runtime-drafts {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.runtime-draft {
+  padding: 12px;
+  border: 1px solid rgba(22, 119, 255, 0.2);
+  border-radius: 8px;
+  background: rgba(22, 119, 255, 0.04);
+}
+
+.runtime-draft--failed {
+  border-color: rgba(255, 77, 79, 0.3);
+  background: rgba(255, 77, 79, 0.04);
 }
 
 .runtime-message-image {

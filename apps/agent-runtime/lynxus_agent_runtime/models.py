@@ -246,18 +246,20 @@ class SessionEvent(BaseModel):
 
 
 class AgentDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     action: Literal[
         "REPLY",
-        "NO_REPLY",
+        "NO_OP",
         "SWITCH_OWNER",
         "RUN_PLAYBOOK",
         "SESSION_HUMAN_HANDOFF",
+        "SECURITY_BLOCK",
     ]
     replyMessage: SessionMessageInput | None = None
     targetAgentId: str | None = None
     playbookId: str | None = None
     playbookInput: dict[str, Any] | None = None
-    accompanyingMessage: SessionMessageInput | None = None
 
     @model_validator(mode="after")
     def validate_action_payload(self) -> "AgentDecision":
@@ -281,6 +283,9 @@ class SecurityAssessment(BaseModel):
 
 class AgentTurnRequest(BaseModel):
     sessionId: str
+    turnId: str | None = None
+    turnExecutionId: str | None = None
+    ownershipEpoch: int = 1
     assistantId: str
     assistantReleaseVersion: str
     currentOwner: AgentConfig
@@ -315,6 +320,91 @@ class AgentTurnExecutionOutcome(BaseModel):
         if not self.success and not (self.failureReason or "").strip():
             raise ValueError("failed outcome requires failureReason")
         return self
+
+
+StreamVisibility = Literal["CUSTOMER", "OPERATOR", "DEVELOPER", "INTERNAL"]
+AgentTurnStreamFrameKind = Literal[
+    "TURN_STARTED",
+    "MODEL_STARTED",
+    "MODEL_COMPLETED",
+    "USER_NOTICE",
+    "PROVIDER_DEBUG",
+    "ACTION_TOOL_STARTED",
+    "ACTION_TOOL_ARGUMENT_DELTA",
+    "ACTION_TOOL_COMPLETED",
+    "TOOL_PROGRESS",
+    "REPLY_BLOCK_STARTED",
+    "REPLY_BLOCK_DELTA",
+    "REPLY_BLOCK_SNAPSHOT",
+    "REPLY_BLOCK_COMPLETED",
+    "FINAL_OUTCOME",
+    "ERROR",
+]
+
+
+class TurnStartedPayload(BaseModel):
+    triggerType: str
+
+
+class UserNoticePayload(BaseModel):
+    label: str
+    text: str
+
+
+class ReplyBlockStartedPayload(BaseModel):
+    blockId: str
+    blockType: str
+
+
+class ReplyBlockDeltaPayload(BaseModel):
+    blockId: str
+    blockType: Literal["TEXT"]
+    delta: str
+
+
+class ReplyBlockSnapshotPayload(BaseModel):
+    blockId: str
+    blockType: Literal["TEXT"]
+    text: str
+
+
+class ReplyBlockCompletedPayload(BaseModel):
+    blockId: str
+    block: SessionMessageBlock
+
+
+class FinalOutcomePayload(BaseModel):
+    outcome: AgentTurnExecutionOutcome
+
+
+class ErrorPayload(BaseModel):
+    code: str
+    message: str
+    stage: Literal[
+        "PROVIDER_STREAM",
+        "TOOL_ARGUMENT_PARSE",
+        "TOOL_EXECUTION",
+        "FINAL_OUTCOME_BUILD",
+        "TRANSCRIPT_PERSISTENCE",
+    ]
+    retryable: bool = False
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentTurnStreamFrame(BaseModel):
+    protocol: Literal["lynxus.agent-turn-stream.v1"] = "lynxus.agent-turn-stream.v1"
+    frameId: str
+    streamId: str
+    sessionId: str
+    turnId: str
+    turnExecutionId: str
+    ownerAgentId: str
+    ownershipEpoch: int
+    seq: int
+    kind: AgentTurnStreamFrameKind
+    visibility: StreamVisibility
+    occurredAt: str
+    payload: dict[str, Any]
 
 
 class PlaybookToolTaskRequest(BaseModel):

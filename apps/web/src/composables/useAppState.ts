@@ -1,6 +1,8 @@
 import { computed, onBeforeUnmount, ref, watch, type Ref } from 'vue';
 import type {
   CatalogSummary,
+  RuntimeDraftMessage,
+  SessionProgressEvent,
   SessionRuntimeDetail,
   SessionRuntimeStreamEvent,
   SessionRuntimeSession,
@@ -25,6 +27,8 @@ export function useAppState(currentPageKey: Ref<PageKey>) {
   const catalog = ref<CatalogSummary | null>(null);
   const conversationSessions = ref<SessionRuntimeSession[]>([]);
   const runtimeSessionDetail = ref<SessionRuntimeDetail | null>(null);
+  const runtimeDrafts = ref<RuntimeDraftMessage[]>([]);
+  const runtimeProgress = ref<SessionProgressEvent[]>([]);
   const runtimeStreamConnected = ref(false);
   let refreshInFlight = false;
   let runtimeStream: EventSource | null = null;
@@ -66,7 +70,69 @@ export function useAppState(currentPageKey: Ref<PageKey>) {
 
   function applyRuntimeStreamEvent(event: SessionRuntimeStreamEvent) {
     runtimeStreamLastEventId = event.id;
-    applyRuntimeSessionDetail(event.detail);
+    if (event.type === 'SESSION_SNAPSHOT' || event.type === 'SESSION_UPDATED') {
+      applyRuntimeSessionDetail(event.detail);
+      runtimeDrafts.value = runtimeDrafts.value.filter((draft) => draft.sessionId !== event.sessionId);
+      return;
+    }
+    if (event.type === 'SESSION_PROGRESS') {
+      runtimeProgress.value = [...runtimeProgress.value.filter((item) => item.id !== event.id), event].slice(-80);
+      return;
+    }
+    if (event.type === 'SESSION_REPLY_DRAFT') {
+      applyRuntimeReplyDraft(event);
+      return;
+    }
+    if (event.type === 'SESSION_STREAM_ERROR') {
+      const progress: SessionProgressEvent = {
+        id: event.id,
+        type: 'SESSION_PROGRESS',
+        occurredAt: event.occurredAt,
+        sessionId: event.sessionId,
+        turnId: event.turnId,
+        visibility: 'OPERATOR',
+        phase: 'ERROR',
+        status: 'FAILED',
+        title: event.message,
+        detail: event.detail,
+      };
+      runtimeProgress.value = [
+        ...runtimeProgress.value,
+        progress,
+      ].slice(-80);
+      runtimeDrafts.value = runtimeDrafts.value.map((draft) =>
+        draft.sessionId === event.sessionId && draft.turnId === event.turnId
+          ? { ...draft, failed: true, updatedAt: event.occurredAt }
+          : draft,
+      );
+    }
+  }
+
+  function applyRuntimeReplyDraft(event: Extract<SessionRuntimeStreamEvent, { type: 'SESSION_REPLY_DRAFT' }>) {
+    if (event.blockType !== 'TEXT') {
+      return;
+    }
+    const existing = runtimeDrafts.value.find((draft) => draft.sessionId === event.sessionId && draft.turnId === event.turnId);
+    if (event.operation === 'DISCARD') {
+      runtimeDrafts.value = runtimeDrafts.value.filter((draft) => !(draft.sessionId === event.sessionId && draft.turnId === event.turnId));
+      return;
+    }
+    const current: RuntimeDraftMessage = existing ?? {
+      sessionId: event.sessionId,
+      turnId: event.turnId,
+      messageId: event.messageId,
+      text: '',
+      failed: false,
+      updatedAt: event.occurredAt,
+    };
+    const text = event.operation === 'SNAPSHOT'
+      ? event.text ?? current.text
+      : current.text + (event.delta ?? '');
+    const next = { ...current, text, failed: false, updatedAt: event.occurredAt };
+    runtimeDrafts.value = [
+      ...runtimeDrafts.value.filter((draft) => !(draft.sessionId === event.sessionId && draft.turnId === event.turnId)),
+      next,
+    ];
   }
 
   function stopRuntimePolling() {
@@ -139,6 +205,8 @@ export function useAppState(currentPageKey: Ref<PageKey>) {
       if (!sessionList.length) {
         runtimeSelectedSessionId.value = null;
         runtimeSessionDetail.value = null;
+        runtimeDrafts.value = [];
+        runtimeProgress.value = [];
       } else if (runtimePreferredSessionId.value && sessionList.some((item) => item.id === runtimePreferredSessionId.value)) {
         runtimeSelectedSessionId.value = runtimePreferredSessionId.value;
       } else if (!runtimeSelectedSessionId.value || !sessionList.some((item) => item.id === runtimeSelectedSessionId.value)) {
@@ -189,6 +257,8 @@ export function useAppState(currentPageKey: Ref<PageKey>) {
     catalog,
     conversationSessions,
     runtimeSessionDetail,
+    runtimeDrafts,
+    runtimeProgress,
     runtimeStreamConnected,
     selectedKeys,
     currentPageMeta,

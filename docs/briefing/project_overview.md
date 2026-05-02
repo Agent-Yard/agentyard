@@ -67,10 +67,11 @@ Lynxus 当前的解法，是把这些问题收束到统一平台结构中：
 - 用户消息通过 `/api/session-runtime/sessions/{sessionId}/messages` 进入当前 session
 - owner 只能返回以下控制动作：
   - `REPLY`
-  - `NO_REPLY`
+  - `NO_OP`
   - `SWITCH_OWNER`
   - `RUN_PLAYBOOK`
   - `SESSION_HUMAN_HANDOFF`
+  - `SECURITY_BLOCK`
 
 ### 3.3 运行观测主模型已经切换
 
