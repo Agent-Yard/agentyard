@@ -81,6 +81,7 @@ async def lifespan(app: FastAPI):
     app.state.redis_settings = redis_settings
     transcript_store = create_transcript_store()
     transcript_store.initialize()
+    retention_sweep_result = transcript_store.sweep_expired()
     app.state.transcript_store = transcript_store
     app.state.transcript_store_settings = transcript_store.settings
     LOGGER.info(
@@ -88,6 +89,10 @@ async def lifespan(app: FastAPI):
         extra={
             "instanceId": INSTANCE_ID,
             "databaseSchema": "agent_runtime",
+            "retentionSweepResult": retention_sweep_result,
+            "turnExecutionRetentionSeconds": transcript_store.settings.turn_execution_retention_seconds,
+            "transcriptEntryRetentionSeconds": transcript_store.settings.transcript_entry_retention_seconds,
+            "retentionSweepLimit": transcript_store.settings.retention_sweep_limit,
         },
     )
     yield

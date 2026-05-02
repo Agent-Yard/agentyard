@@ -15,13 +15,17 @@ import com.lynxus.shared.redis.RedisKeyspace;
 import com.lynxus.shared.redis.RedisPubSubBus;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Collection;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -112,8 +116,15 @@ public class SessionRuntimeStreamService {
     private final SessionChannelActivityRelay channelActivityRelay;
     private final Counter noticeMaterializedCounter;
     private final Counter fallbackPollCounter;
+    private final Counter actionToolStartedCounter;
+    private final Counter rejectedCustomerFrameCounter;
+    private final Timer ttftTimer;
+    private final Timer assistantTextStreamDurationTimer;
     private final Map<String, CopyOnWriteArraySet<Subscriber>> emittersBySession = new ConcurrentHashMap<>();
     private final Map<String, String> observedFingerprints = new ConcurrentHashMap<>();
+    private final Map<String, Instant> turnStartedAtByExecution = new ConcurrentHashMap<>();
+    private final Map<String, Instant> assistantTextStartedAtByExecution = new ConcurrentHashMap<>();
+    private final Set<String> ttftRecordedExecutions = ConcurrentHashMap.newKeySet();
     private AutoCloseable updatedSubscription;
     private AutoCloseable changeSubscription;
 
@@ -148,6 +159,18 @@ public class SessionRuntimeStreamService {
             .register(meterRegistry);
         this.fallbackPollCounter = Counter.builder("lynxus.shared_state.runtime.poll.fallback")
             .description("Number of runtime SSE updates materialized by polling fallback")
+            .register(meterRegistry);
+        this.actionToolStartedCounter = Counter.builder("lynxus.runtime_stream.action_tool.started")
+            .description("Number of action tool calls started in runtime stream frames")
+            .register(meterRegistry);
+        this.rejectedCustomerFrameCounter = Counter.builder("lynxus.runtime_stream.customer_frame.rejected")
+            .description("Number of rejected customer-visible runtime stream frames")
+            .register(meterRegistry);
+        this.ttftTimer = Timer.builder("lynxus.runtime_stream.ttft")
+            .description("Time from TURN_STARTED to first assistant text delta")
+            .register(meterRegistry);
+        this.assistantTextStreamDurationTimer = Timer.builder("lynxus.runtime_stream.assistant_text.duration")
+            .description("Duration of assistant customer-visible text draft streaming")
             .register(meterRegistry);
     }
 
@@ -229,14 +252,18 @@ public class SessionRuntimeStreamService {
     }
 
     public boolean acceptStreamFrame(AgentTurnStreamFrame frame) {
-        validateFrame(frame);
-        channelActivityRelay.relay(frame);
-        Optional<SessionRuntimeStreamEvent> event = projectFrame(frame);
-        if (event.isEmpty()) {
-            return true;
+        try {
+            validateFrame(frame);
+        } catch (ResponseStatusException error) {
+            recordRejectedFrame(frame, error);
+            throw error;
         }
-        if (replayStore.append(event.orElseThrow())) {
-            pubSubBus.publish(keyspace.sseChannelSessionUpdated(), codec.write(event.orElseThrow()));
+        recordAcceptedFrame(frame);
+        channelActivityRelay.relay(frame);
+        for (SessionRuntimeStreamEvent event : projectFrame(frame)) {
+            if (replayStore.append(event)) {
+                pubSubBus.publish(keyspace.sseChannelSessionUpdated(), codec.write(event));
+            }
         }
         return true;
     }
@@ -345,67 +372,74 @@ public class SessionRuntimeStreamService {
         return emitters != null && !emitters.isEmpty();
     }
 
-    private Optional<SessionRuntimeStreamEvent> projectFrame(AgentTurnStreamFrame frame) {
+    private List<SessionRuntimeStreamEvent> projectFrame(AgentTurnStreamFrame frame) {
         if (frame.kind() == AgentTurnStreamFrameKind.FINAL_OUTCOME
             || frame.kind() == AgentTurnStreamFrameKind.PROVIDER_DEBUG
             || frame.visibility() == StreamVisibility.INTERNAL) {
-            return Optional.empty();
+            return List.of();
         }
         return switch (frame.kind()) {
-            case USER_NOTICE -> Optional.of(progressEvent(
+            case USER_NOTICE -> List.of(progressEvent(
                 frame,
                 "USER_NOTICE",
                 "RUNNING",
                 stringPayload(frame, "text", "正在处理")
             ));
-            case TURN_STARTED -> Optional.of(progressEvent(frame, "TURN_STARTED", "STARTED", "已收到"));
-            case MODEL_STARTED -> Optional.of(progressEvent(frame, "MODEL_STARTED", "RUNNING", "模型处理中"));
-            case MODEL_COMPLETED -> Optional.of(progressEvent(
+            case TURN_STARTED -> List.of(progressEvent(frame, "TURN_STARTED", "STARTED", "已收到"));
+            case MODEL_STARTED -> List.of(progressEvent(frame, "MODEL_STARTED", "RUNNING", "模型处理中"));
+            case MODEL_COMPLETED -> List.of(progressEvent(
                 frame,
                 "MODEL_COMPLETED",
                 stringPayload(frame, "status", "SUCCEEDED"),
                 "模型处理完成"
             ));
-            case ACTION_TOOL_STARTED -> Optional.of(progressEvent(
+            case ACTION_TOOL_STARTED -> List.of(progressEvent(
                 frame,
                 "ACTION_TOOL_STARTED",
                 "RUNNING",
                 stringPayload(frame, "toolName", "工具处理中")
             ));
-            case ACTION_TOOL_ARGUMENT_DELTA -> Optional.of(progressEvent(
+            case ACTION_TOOL_ARGUMENT_DELTA -> List.of(progressEvent(
                 frame,
                 "ACTION_TOOL_ARGUMENT_DELTA",
                 "RUNNING",
                 "工具参数生成中"
             ));
-            case ACTION_TOOL_COMPLETED -> Optional.of(progressEvent(
+            case ACTION_TOOL_COMPLETED -> List.of(progressEvent(
                 frame,
                 "ACTION_TOOL_COMPLETED",
                 stringPayload(frame, "status", "SUCCEEDED"),
                 stringPayload(frame, "toolName", "工具处理完成")
             ));
-            case TOOL_PROGRESS -> Optional.of(progressEvent(
+            case TOOL_PROGRESS -> List.of(progressEvent(
                 frame,
                 stringPayload(frame, "label", "TOOL_PROGRESS"),
                 stringPayload(frame, "status", "RUNNING"),
                 stringPayload(frame, "label", "正在处理")
             ));
-            case REPLY_BLOCK_STARTED -> Optional.of(draftEvent(frame, SessionReplyDraftOperation.STARTED));
-            case REPLY_BLOCK_DELTA -> Optional.of(draftEvent(frame, SessionReplyDraftOperation.DELTA));
-            case REPLY_BLOCK_SNAPSHOT -> Optional.of(draftEvent(frame, SessionReplyDraftOperation.SNAPSHOT));
-            case REPLY_BLOCK_COMPLETED -> Optional.of(draftEvent(frame, SessionReplyDraftOperation.COMPLETED));
-            case ERROR -> Optional.of(SessionRuntimeStreamEvent.streamError(
-                "stream-error:" + frame.sessionId() + ":" + frame.turnId() + ":" + frame.seq(),
-                frame.occurredAt(),
-                frame.sessionId(),
-                frame.turnId(),
-                stringPayload(frame, "code", "STREAM_ERROR"),
-                stringPayload(frame, "message", "stream error"),
-                booleanPayload(frame, "retryable", false),
-                mapPayload(frame, "details")
-            ));
-            case PROVIDER_DEBUG, FINAL_OUTCOME -> Optional.empty();
+            case REPLY_BLOCK_STARTED -> List.of(draftEvent(frame, SessionReplyDraftOperation.STARTED));
+            case REPLY_BLOCK_DELTA -> List.of(draftEvent(frame, SessionReplyDraftOperation.DELTA));
+            case REPLY_BLOCK_SNAPSHOT -> List.of(draftEvent(frame, SessionReplyDraftOperation.SNAPSHOT));
+            case REPLY_BLOCK_COMPLETED -> List.of(draftEvent(frame, SessionReplyDraftOperation.COMPLETED));
+            case ERROR -> errorEvents(frame);
+            case PROVIDER_DEBUG, FINAL_OUTCOME -> List.of();
         };
+    }
+
+    private List<SessionRuntimeStreamEvent> errorEvents(AgentTurnStreamFrame frame) {
+        List<SessionRuntimeStreamEvent> events = new ArrayList<>();
+        events.add(draftEvent(frame, SessionReplyDraftOperation.DISCARD));
+        events.add(SessionRuntimeStreamEvent.streamError(
+            "stream-error:" + frame.sessionId() + ":" + frame.turnId() + ":" + frame.seq(),
+            frame.occurredAt(),
+            frame.sessionId(),
+            frame.turnId(),
+            stringPayload(frame, "code", "STREAM_ERROR"),
+            stringPayload(frame, "message", "stream error"),
+            booleanPayload(frame, "retryable", false),
+            mapPayload(frame, "details")
+        ));
+        return List.copyOf(events);
     }
 
     private SessionRuntimeStreamEvent progressEvent(
@@ -440,6 +474,80 @@ public class SessionRuntimeStreamService {
             stringPayload(frame, "delta", null),
             replyDraftTextPayload(frame)
         );
+    }
+
+    private void recordAcceptedFrame(AgentTurnStreamFrame frame) {
+        LOGGER.info(
+            "session runtime stream frame accepted sessionId={} turnId={} turnExecutionId={} streamSeq={} frameKind={} visibility={}",
+            frame.sessionId(),
+            frame.turnId(),
+            frame.turnExecutionId(),
+            frame.seq(),
+            frame.kind(),
+            frame.visibility()
+        );
+        String key = frame.turnExecutionId();
+        switch (frame.kind()) {
+            case TURN_STARTED -> turnStartedAtByExecution.put(key, frame.occurredAt());
+            case REPLY_BLOCK_STARTED -> assistantTextStartedAtByExecution.putIfAbsent(key, frame.occurredAt());
+            case REPLY_BLOCK_DELTA -> recordAssistantTextDelta(frame, key);
+            case REPLY_BLOCK_COMPLETED -> recordAssistantTextCompleted(frame, key);
+            case ACTION_TOOL_STARTED -> actionToolStartedCounter.increment();
+            case ERROR, FINAL_OUTCOME -> cleanupStreamObservation(key);
+            case USER_NOTICE,
+                MODEL_STARTED,
+                MODEL_COMPLETED,
+                ACTION_TOOL_ARGUMENT_DELTA,
+                ACTION_TOOL_COMPLETED,
+                TOOL_PROGRESS,
+                REPLY_BLOCK_SNAPSHOT,
+                PROVIDER_DEBUG -> {
+            }
+        }
+    }
+
+    private void recordAssistantTextDelta(AgentTurnStreamFrame frame, String key) {
+        assistantTextStartedAtByExecution.putIfAbsent(key, frame.occurredAt());
+        if (ttftRecordedExecutions.add(key)) {
+            Instant startedAt = turnStartedAtByExecution.get(key);
+            if (startedAt != null) {
+                ttftTimer.record(nonNegativeDuration(startedAt, frame.occurredAt()));
+            }
+        }
+    }
+
+    private void recordAssistantTextCompleted(AgentTurnStreamFrame frame, String key) {
+        Instant startedAt = assistantTextStartedAtByExecution.remove(key);
+        if (startedAt != null) {
+            assistantTextStreamDurationTimer.record(nonNegativeDuration(startedAt, frame.occurredAt()));
+        }
+        turnStartedAtByExecution.remove(key);
+        ttftRecordedExecutions.remove(key);
+    }
+
+    private void cleanupStreamObservation(String turnExecutionId) {
+        turnStartedAtByExecution.remove(turnExecutionId);
+        assistantTextStartedAtByExecution.remove(turnExecutionId);
+        ttftRecordedExecutions.remove(turnExecutionId);
+    }
+
+    private void recordRejectedFrame(AgentTurnStreamFrame frame, ResponseStatusException error) {
+        rejectedCustomerFrameCounter.increment();
+        LOGGER.warn(
+            "session runtime stream frame rejected sessionId={} turnId={} turnExecutionId={} streamSeq={} frameKind={} visibility={} reason={}",
+            frame == null ? null : frame.sessionId(),
+            frame == null ? null : frame.turnId(),
+            frame == null ? null : frame.turnExecutionId(),
+            frame == null ? null : frame.seq(),
+            frame == null ? null : frame.kind(),
+            frame == null ? null : frame.visibility(),
+            error.getReason()
+        );
+    }
+
+    private static Duration nonNegativeDuration(Instant startedAt, Instant completedAt) {
+        Duration duration = Duration.between(startedAt, completedAt);
+        return duration.isNegative() ? Duration.ZERO : duration;
     }
 
     private void validateFrame(AgentTurnStreamFrame frame) {

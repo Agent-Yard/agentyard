@@ -29,7 +29,16 @@ class FakeRedisClient:
 
 
 class FakeTranscriptStore:
-    settings = type("Settings", (), {"database_url": "postgresql+psycopg://test"})()
+    settings = type(
+        "Settings",
+        (),
+        {
+            "database_url": "postgresql+psycopg://test",
+            "turn_execution_retention_seconds": 60,
+            "transcript_entry_retention_seconds": 60,
+            "retention_sweep_limit": 50,
+        },
+    )()
 
     def __init__(
         self,
@@ -44,9 +53,20 @@ class FakeTranscriptStore:
         self.pending_entries: list[tuple[object, list[TranscriptEntry]]] = []
         self.committed_successes: list[tuple[object, AgentTurnExecutionOutcome, list[TranscriptEntry]]] = []
         self.failed: list[tuple[object, str]] = []
+        self.sweep_results: list[dict[str, int]] = []
 
     def initialize(self) -> None:
         return None
+
+    def sweep_expired(self, *, now=None, limit=None) -> dict[str, int]:  # noqa: ANN001
+        result = {
+            "turnExecutionsAborted": 0,
+            "turnExecutionsDeleted": 0,
+            "transcriptEntriesAborted": 0,
+            "transcriptEntriesDeleted": 0,
+        }
+        self.sweep_results.append(result)
+        return result
 
     def begin_execution(self, context):  # noqa: ANN001
         self.begin_contexts.append(context)

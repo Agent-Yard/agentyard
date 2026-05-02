@@ -1,10 +1,12 @@
 import unittest
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from lynxus_agent_runtime.models import AgentDecision, AgentTurnExecutionOutcome, AgentTurnResult
 from lynxus_agent_runtime.openai_compatible import OpenAiCompatibleStreamMessage, OpenAiCompatibleStreamToolCall
 from lynxus_agent_runtime.transcript_store import (
     Base,
@@ -12,7 +14,9 @@ from lynxus_agent_runtime.transcript_store import (
     PostgresTranscriptStore,
     TranscriptEntry,
     TranscriptEntryRecord,
+    TranscriptStoreSettings,
     TurnExecutionContext,
+    TurnExecutionRecord,
     _allocate_transcript_seqs,
     _transcript_entry_record,
     normalize_provider_message,
@@ -205,6 +209,115 @@ class TranscriptStoreSerializationTest(unittest.TestCase):
             with self.assertRaises(IntegrityError):
                 session.commit()
 
+    def test_should_set_retention_expiry_on_turn_execution_and_transcript_entries(self) -> None:
+        store = _sqlite_transcript_store()
+        context = _turn_context()
+        entry = TranscriptEntry(
+            role="assistant",
+            content_json={"version": 1, "blocks": [{"type": "text", "text": "hello"}]},
+            model_round_id="round-1",
+            seq=1,
+        )
+
+        store.begin_execution(context)
+        store.append_pending_entries(context, [entry])
+        store.commit_success(
+            context,
+            AgentTurnExecutionOutcome(
+                success=True,
+                result=AgentTurnResult(decision=AgentDecision(action="NO_OP")),
+            ),
+            [],
+        )
+
+        with store.session_factory() as session:
+            turn_execution = session.get(TurnExecutionRecord, context.turn_execution_id)
+            transcript_entries = session.query(TranscriptEntryRecord).all()
+
+        self.assertIsNotNone(turn_execution)
+        self.assertIsNotNone(turn_execution.expires_at)
+        self.assertTrue(transcript_entries)
+        self.assertTrue(all(entry_record.expires_at is not None for entry_record in transcript_entries))
+        self.assertTrue(all(entry_record.status == "COMMITTED" for entry_record in transcript_entries))
+
+    def test_should_sweep_expired_rows_with_bounded_abort_and_delete_semantics(self) -> None:
+        store = _sqlite_transcript_store()
+        now = datetime(2026, 5, 3, tzinfo=UTC)
+        expired_at = now - timedelta(seconds=1)
+        active_at = now + timedelta(seconds=60)
+        running_context = _turn_context()
+        completed_context = TurnExecutionContext(
+            session_id="session-1",
+            owner_agent_id="agent-a",
+            ownership_epoch=1,
+            turn_id="turn-2",
+            turn_execution_id="exec-2",
+            execution_attempt_id="attempt-2",
+        )
+        entry = TranscriptEntry(
+            role="assistant",
+            content_json={"version": 1, "blocks": [{"type": "text", "text": "expired"}]},
+            model_round_id="round-1",
+            seq=1,
+        )
+
+        with store.session_factory() as session:
+            session.add(
+                TurnExecutionRecord(
+                    turn_execution_id=running_context.turn_execution_id,
+                    session_id=running_context.session_id,
+                    owner_agent_id=running_context.owner_agent_id,
+                    ownership_epoch=running_context.ownership_epoch,
+                    turn_id=running_context.turn_id,
+                    current_execution_attempt_id=running_context.execution_attempt_id,
+                    status="RUNNING",
+                    expires_at=expired_at,
+                )
+            )
+            session.add(
+                TurnExecutionRecord(
+                    turn_execution_id=completed_context.turn_execution_id,
+                    session_id=completed_context.session_id,
+                    owner_agent_id=completed_context.owner_agent_id,
+                    ownership_epoch=completed_context.ownership_epoch,
+                    turn_id=completed_context.turn_id,
+                    current_execution_attempt_id=completed_context.execution_attempt_id,
+                    status="SUCCEEDED",
+                    completed_at=expired_at,
+                    expires_at=expired_at,
+                )
+            )
+            session.add(_transcript_entry_record(running_context, entry, 1, "PENDING", expires_at=expired_at))
+            session.add(_transcript_entry_record(running_context, entry, 2, "COMMITTED", expires_at=expired_at))
+            session.add(_transcript_entry_record(running_context, entry, 3, "COMMITTED", expires_at=active_at))
+            session.commit()
+
+        result = store.sweep_expired(now=now, limit=10)
+
+        with store.session_factory() as session:
+            running_record = session.get(TurnExecutionRecord, running_context.turn_execution_id)
+            completed_record = session.get(TurnExecutionRecord, completed_context.turn_execution_id)
+            entries = {
+                entry_record.transcript_seq: entry_record
+                for entry_record in session.query(TranscriptEntryRecord).order_by(TranscriptEntryRecord.transcript_seq.asc()).all()
+            }
+
+        self.assertEqual(
+            {
+                "turnExecutionsAborted": 1,
+                "turnExecutionsDeleted": 1,
+                "transcriptEntriesAborted": 1,
+                "transcriptEntriesDeleted": 1,
+            },
+            result,
+        )
+        self.assertIsNotNone(running_record)
+        self.assertEqual("ABORTED", running_record.status)
+        self.assertIsNone(completed_record)
+        self.assertEqual("ABORTED", entries[1].status)
+        self.assertNotIn(2, entries)
+        self.assertEqual("COMMITTED", entries[3].status)
+
     def test_database_check_should_fail_when_owner_context_sequence_table_is_missing(self) -> None:
         engine = _sqlite_agent_runtime_engine()
         with engine.begin() as connection:
@@ -235,6 +348,22 @@ def _sqlite_agent_runtime_session_factory():  # noqa: ANN201
     with engine.begin() as connection:
         Base.metadata.create_all(bind=connection)
     return sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+
+
+def _sqlite_transcript_store(settings: TranscriptStoreSettings | None = None) -> PostgresTranscriptStore:
+    engine = _sqlite_agent_runtime_engine()
+    with engine.begin() as connection:
+        Base.metadata.create_all(bind=connection)
+    store = PostgresTranscriptStore.__new__(PostgresTranscriptStore)
+    store.settings = settings or TranscriptStoreSettings(
+        database_url="postgresql+psycopg://test:test@127.0.0.1:5432/test",
+        turn_execution_retention_seconds=60,
+        transcript_entry_retention_seconds=60,
+        retention_sweep_limit=50,
+    )
+    store.engine = engine
+    store.session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    return store
 
 
 def _sqlite_agent_runtime_engine():  # noqa: ANN201

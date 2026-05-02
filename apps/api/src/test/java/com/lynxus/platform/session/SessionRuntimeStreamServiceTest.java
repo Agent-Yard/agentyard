@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -16,6 +17,7 @@ import com.lynxus.platform.channel.ChannelGatewayClient;
 import com.lynxus.contracts.session.SessionRuntimeChangeNotice;
 import com.lynxus.platform.session.SessionRuntimeDtos.SessionRuntimeDetailDto;
 import com.lynxus.platform.session.SessionRuntimeDtos.SessionRuntimeSessionDto;
+import com.lynxus.platform.session.SessionRuntimeStreamDtos.SessionRuntimeStreamEvent;
 import com.lynxus.platform.shared.redis.RedisSharedStateProperties;
 import com.lynxus.shared.redis.RedisJsonCodec;
 import com.lynxus.shared.redis.RedisKeyspace;
@@ -26,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.databind.ObjectMapper;
 
@@ -242,6 +245,67 @@ class SessionRuntimeStreamServiceTest {
     }
 
     @Test
+    void shouldRecordRuntimeStreamMetricsFromAcceptedFrames() {
+        SessionRuntimeReplayStore replayStore = mock(SessionRuntimeReplayStore.class);
+        RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);
+        io.micrometer.core.instrument.simple.SimpleMeterRegistry meterRegistry = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        SessionRuntimeStreamService service = new SessionRuntimeStreamService(
+            mock(SessionRuntimeRepository.class),
+            replayStore,
+            pubSubBus,
+            new RedisKeyspace(),
+            new RedisJsonCodec(new ObjectMapper()),
+            new RedisSharedStateProperties("instance-a", Duration.ofSeconds(10), Duration.ofSeconds(3), Duration.ofHours(24), Duration.ofMinutes(15), 128, Duration.ofSeconds(1)),
+            SessionChannelActivityRelay.noop(),
+            meterRegistry
+        );
+
+        service.acceptStreamFrame(frameAt(AgentTurnStreamFrameKind.TURN_STARTED, StreamVisibility.OPERATOR, 1, Map.of(), Instant.parse("2026-05-02T00:00:00Z")));
+        service.acceptStreamFrame(frameAt(AgentTurnStreamFrameKind.ACTION_TOOL_STARTED, StreamVisibility.OPERATOR, 2, Map.of("toolName", "lookup"), Instant.parse("2026-05-02T00:00:01Z")));
+        service.acceptStreamFrame(frameAt(AgentTurnStreamFrameKind.REPLY_BLOCK_DELTA, StreamVisibility.CUSTOMER, 3, Map.of(
+            "blockId",
+            "block-1",
+            "blockType",
+            "TEXT",
+            "delta",
+            "hi"
+        ), Instant.parse("2026-05-02T00:00:02Z")));
+        service.acceptStreamFrame(frameAt(AgentTurnStreamFrameKind.REPLY_BLOCK_COMPLETED, StreamVisibility.CUSTOMER, 4, Map.of(
+            "blockId",
+            "block-1",
+            "block",
+            Map.of("type", "TEXT", "text", "hi")
+        ), Instant.parse("2026-05-02T00:00:05Z")));
+
+        assertEquals(1.0, meterRegistry.get("lynxus.runtime_stream.action_tool.started").counter().count());
+        assertEquals(1, meterRegistry.get("lynxus.runtime_stream.ttft").timer().count());
+        assertEquals(1, meterRegistry.get("lynxus.runtime_stream.assistant_text.duration").timer().count());
+    }
+
+    @Test
+    void shouldProjectErrorIntoDraftDiscardAndStreamError() {
+        SessionRuntimeReplayStore replayStore = mock(SessionRuntimeReplayStore.class);
+        RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);
+        RedisKeyspace keyspace = new RedisKeyspace();
+        SessionRuntimeStreamService service = serviceWith(replayStore, pubSubBus, keyspace);
+        when(replayStore.append(any())).thenReturn(true);
+
+        service.acceptStreamFrame(frame(AgentTurnStreamFrameKind.ERROR, StreamVisibility.OPERATOR, 5, Map.of(
+            "code",
+            "PROVIDER_STREAM_MALFORMED",
+            "message",
+            "provider stream malformed"
+        )));
+
+        ArgumentCaptor<SessionRuntimeStreamEvent> events = ArgumentCaptor.forClass(SessionRuntimeStreamEvent.class);
+        verify(replayStore, org.mockito.Mockito.times(2)).append(events.capture());
+        assertEquals("SESSION_REPLY_DRAFT", events.getAllValues().get(0).type());
+        assertEquals(com.lynxus.contracts.session.SessionContracts.SessionReplyDraftOperation.DISCARD, events.getAllValues().get(0).operation());
+        assertEquals("SESSION_STREAM_ERROR", events.getAllValues().get(1).type());
+        verify(pubSubBus, org.mockito.Mockito.times(2)).publish(eq(keyspace.sseChannelSessionUpdated()), any());
+    }
+
+    @Test
     void shouldRejectCustomerActionToolFramesBeforeProjection() {
         SessionRuntimeReplayStore replayStore = mock(SessionRuntimeReplayStore.class);
         RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);
@@ -287,6 +351,35 @@ class SessionRuntimeStreamServiceTest {
             2,
             Map.of("label", "PROCESSING", "text", "我正在处理。", "modelId", "gpt-internal")
         )));
+
+        verify(replayStore, org.mockito.Mockito.never()).append(any());
+        verify(pubSubBus, org.mockito.Mockito.never()).publish(any(), any());
+    }
+
+    @Test
+    void shouldRejectCustomerFramesWithSensitiveInternalFields() {
+        SessionRuntimeReplayStore replayStore = mock(SessionRuntimeReplayStore.class);
+        RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);
+        SessionRuntimeStreamService service = serviceWith(replayStore, pubSubBus);
+        List<Map<String, Object>> sensitivePayloads = List.of(
+            Map.of("label", "PROCESSING", "text", "ok", "model", "gpt"),
+            Map.of("label", "PROCESSING", "text", "ok", "toolName", "lookup"),
+            Map.of("label", "PROCESSING", "text", "ok", "prompt", "raw prompt"),
+            Map.of("label", "PROCESSING", "text", "ok", "credential", "vault://secret"),
+            Map.of("label", "PROCESSING", "text", "ok", "privacy", Map.of("placeholder", "x")),
+            Map.of("label", "PROCESSING", "text", "ok", "system-reminder", "hidden")
+        );
+
+        for (int index = 0; index < sensitivePayloads.size(); index += 1) {
+            Map<String, Object> payload = sensitivePayloads.get(index);
+            int seq = index + 10;
+            assertThrows(ResponseStatusException.class, () -> service.acceptStreamFrame(frame(
+                AgentTurnStreamFrameKind.USER_NOTICE,
+                StreamVisibility.CUSTOMER,
+                seq,
+                payload
+            )));
+        }
 
         verify(replayStore, org.mockito.Mockito.never()).append(any());
         verify(pubSubBus, org.mockito.Mockito.never()).publish(any(), any());
@@ -435,6 +528,16 @@ class SessionRuntimeStreamServiceTest {
         long seq,
         Map<String, Object> payload
     ) {
+        return frameAt(kind, visibility, seq, payload, Instant.parse("2026-05-02T00:00:00Z"));
+    }
+
+    private static AgentTurnStreamFrame frameAt(
+        AgentTurnStreamFrameKind kind,
+        StreamVisibility visibility,
+        long seq,
+        Map<String, Object> payload,
+        Instant occurredAt
+    ) {
         return new AgentTurnStreamFrame(
             AgentTurnStreamFrame.PROTOCOL,
             "exec-1:" + seq,
@@ -447,7 +550,7 @@ class SessionRuntimeStreamServiceTest {
             seq,
             kind,
             visibility,
-            Instant.parse("2026-05-02T00:00:00Z"),
+            occurredAt,
             payload
         );
     }

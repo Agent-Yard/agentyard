@@ -4,7 +4,7 @@ import os
 import uuid
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, Protocol
 
 from sqlalchemy import DateTime, Integer, JSON, MetaData, String, Text, UniqueConstraint, create_engine, select, text
@@ -16,6 +16,9 @@ from .openai_compatible import OpenAiCompatibleStreamMessage
 
 DEFAULT_DATABASE_URL = "postgresql+psycopg://lynxus:lynxus@127.0.0.1:5432/lynxus_core"
 SCHEMA_NAME = "agent_runtime"
+DEFAULT_TURN_EXECUTION_RETENTION_SECONDS = 30 * 24 * 60 * 60
+DEFAULT_TRANSCRIPT_ENTRY_RETENTION_SECONDS = 30 * 24 * 60 * 60
+DEFAULT_RETENTION_SWEEP_LIMIT = 500
 
 
 def now_utc() -> datetime:
@@ -25,12 +28,27 @@ def now_utc() -> datetime:
 @dataclass(frozen=True)
 class TranscriptStoreSettings:
     database_url: str = DEFAULT_DATABASE_URL
+    turn_execution_retention_seconds: int = DEFAULT_TURN_EXECUTION_RETENTION_SECONDS
+    transcript_entry_retention_seconds: int = DEFAULT_TRANSCRIPT_ENTRY_RETENTION_SECONDS
+    retention_sweep_limit: int = DEFAULT_RETENTION_SWEEP_LIMIT
 
     @classmethod
     def from_env(cls) -> "TranscriptStoreSettings":
         return cls(
             database_url=(os.getenv("LYNXUS_AGENT_RUNTIME_DATABASE_URL") or DEFAULT_DATABASE_URL).strip()
-            or DEFAULT_DATABASE_URL
+            or DEFAULT_DATABASE_URL,
+            turn_execution_retention_seconds=_positive_int_env(
+                "LYNXUS_AGENT_RUNTIME_TURN_EXECUTION_RETENTION_SECONDS",
+                DEFAULT_TURN_EXECUTION_RETENTION_SECONDS,
+            ),
+            transcript_entry_retention_seconds=_positive_int_env(
+                "LYNXUS_AGENT_RUNTIME_TRANSCRIPT_ENTRY_RETENTION_SECONDS",
+                DEFAULT_TRANSCRIPT_ENTRY_RETENTION_SECONDS,
+            ),
+            retention_sweep_limit=_positive_int_env(
+                "LYNXUS_AGENT_RUNTIME_RETENTION_SWEEP_LIMIT",
+                DEFAULT_RETENTION_SWEEP_LIMIT,
+            ),
         )
 
 
@@ -117,6 +135,9 @@ class TranscriptStore(Protocol):
         ...
 
     def mark_failed(self, context: TurnExecutionContext, reason: str) -> None:
+        ...
+
+    def sweep_expired(self, *, now: datetime | None = None, limit: int | None = None) -> dict[str, int]:
         ...
 
     def check_database(self) -> dict[str, object]:
@@ -225,6 +246,7 @@ class PostgresTranscriptStore:
             )
 
     def begin_execution(self, context: TurnExecutionContext) -> AgentTurnExecutionOutcome | None:
+        expires_at = self._turn_execution_expires_at()
         with self.session_factory() as session:
             record = session.get(TurnExecutionRecord, context.turn_execution_id)
             if record is not None:
@@ -241,7 +263,8 @@ class PostgresTranscriptStore:
                 record.final_outcome_json = None
                 record.failure_reason = None
                 record.completed_at = None
-                _abort_all_pending_entries(session, context)
+                record.expires_at = expires_at
+                _abort_all_pending_entries(session, context, expires_at=self._transcript_entry_expires_at())
             else:
                 session.add(
                     TurnExecutionRecord(
@@ -252,6 +275,7 @@ class PostgresTranscriptStore:
                         turn_id=context.turn_id,
                         current_execution_attempt_id=context.execution_attempt_id,
                         status="RUNNING",
+                        expires_at=expires_at,
                     )
                 )
             session.commit()
@@ -282,6 +306,7 @@ class PostgresTranscriptStore:
     def append_pending_entries(self, context: TurnExecutionContext, entries: list[TranscriptEntry]) -> None:
         if not entries:
             return
+        expires_at = self._transcript_entry_expires_at()
         with self.session_factory() as session:
             record = session.get(TurnExecutionRecord, context.turn_execution_id, with_for_update=True)
             if record is None or record.status != "RUNNING":
@@ -290,7 +315,15 @@ class PostgresTranscriptStore:
             _assert_current_attempt(record, context)
             next_transcript_seq = _allocate_transcript_seqs(session, context, len(entries))
             for offset, entry in enumerate(entries):
-                session.add(_transcript_entry_record(context, entry, next_transcript_seq + offset, "PENDING"))
+                session.add(
+                    _transcript_entry_record(
+                        context,
+                        entry,
+                        next_transcript_seq + offset,
+                        "PENDING",
+                        expires_at=expires_at,
+                    )
+                )
             session.commit()
 
     def commit_success(
@@ -301,6 +334,8 @@ class PostgresTranscriptStore:
     ) -> None:
         outcome_json = outcome.model_dump(mode="json")
         completed_at = now_utc()
+        turn_expires_at = self._turn_execution_expires_at()
+        transcript_expires_at = self._transcript_entry_expires_at()
         with self.session_factory() as session:
             record = session.get(TurnExecutionRecord, context.turn_execution_id)
             if record is None:
@@ -310,7 +345,9 @@ class PostgresTranscriptStore:
                     owner_agent_id=context.owner_agent_id,
                     ownership_epoch=context.ownership_epoch,
                     turn_id=context.turn_id,
+                    current_execution_attempt_id=context.execution_attempt_id,
                     status="RUNNING",
+                    expires_at=turn_expires_at,
                 )
                 session.add(record)
             else:
@@ -318,17 +355,28 @@ class PostgresTranscriptStore:
                 _assert_current_attempt(record, context)
                 if record.status != "RUNNING":
                     raise RuntimeError("turn execution is not RUNNING")
-            _update_pending_entries(session, context, "COMMITTED")
+            _update_pending_entries(session, context, "COMMITTED", expires_at=transcript_expires_at)
             next_transcript_seq = _allocate_transcript_seqs(session, context, len(entries))
             for offset, entry in enumerate(entries):
-                session.add(_transcript_entry_record(context, entry, next_transcript_seq + offset, "COMMITTED"))
+                session.add(
+                    _transcript_entry_record(
+                        context,
+                        entry,
+                        next_transcript_seq + offset,
+                        "COMMITTED",
+                        expires_at=transcript_expires_at,
+                    )
+                )
             record.status = "SUCCEEDED"
             record.final_outcome_json = outcome_json
             record.failure_reason = None
             record.completed_at = completed_at
+            record.expires_at = turn_expires_at
             session.commit()
 
     def mark_failed(self, context: TurnExecutionContext, reason: str) -> None:
+        turn_expires_at = self._turn_execution_expires_at()
+        transcript_expires_at = self._transcript_entry_expires_at()
         with self.session_factory() as session:
             record = session.get(TurnExecutionRecord, context.turn_execution_id)
             if record is None:
@@ -340,6 +388,7 @@ class PostgresTranscriptStore:
                     turn_id=context.turn_id,
                     current_execution_attempt_id=context.execution_attempt_id,
                     status="FAILED",
+                    expires_at=turn_expires_at,
                 )
                 session.add(record)
             else:
@@ -352,8 +401,77 @@ class PostgresTranscriptStore:
             record.final_outcome_json = None
             record.failure_reason = reason
             record.completed_at = now_utc()
-            _update_pending_entries(session, context, "ABORTED")
+            record.expires_at = turn_expires_at
+            _update_pending_entries(session, context, "ABORTED", expires_at=transcript_expires_at)
             session.commit()
+
+    def sweep_expired(self, *, now: datetime | None = None, limit: int | None = None) -> dict[str, int]:
+        cutoff = now or now_utc()
+        bounded_limit = self._bounded_sweep_limit(limit)
+        with self.session_factory() as session:
+            committed_entries = session.scalars(
+                select(TranscriptEntryRecord)
+                .where(
+                    TranscriptEntryRecord.status != "PENDING",
+                    TranscriptEntryRecord.expires_at.is_not(None),
+                    TranscriptEntryRecord.expires_at <= cutoff,
+                )
+                .order_by(TranscriptEntryRecord.expires_at.asc())
+                .limit(bounded_limit)
+            ).all()
+            committed_entry_count = len(committed_entries)
+            for entry in committed_entries:
+                session.delete(entry)
+
+            completed_records = session.scalars(
+                select(TurnExecutionRecord)
+                .where(
+                    TurnExecutionRecord.status != "RUNNING",
+                    TurnExecutionRecord.expires_at.is_not(None),
+                    TurnExecutionRecord.expires_at <= cutoff,
+                )
+                .order_by(TurnExecutionRecord.expires_at.asc())
+                .limit(bounded_limit)
+            ).all()
+            completed_record_count = len(completed_records)
+            for record in completed_records:
+                session.delete(record)
+
+            running_records = session.scalars(
+                select(TurnExecutionRecord)
+                .where(
+                    TurnExecutionRecord.status == "RUNNING",
+                    TurnExecutionRecord.expires_at.is_not(None),
+                    TurnExecutionRecord.expires_at <= cutoff,
+                )
+                .order_by(TurnExecutionRecord.expires_at.asc())
+                .limit(bounded_limit)
+            ).all()
+            for record in running_records:
+                record.status = "ABORTED"
+                record.failure_reason = record.failure_reason or "turn execution expired before completion"
+                record.completed_at = cutoff
+
+            pending_entries = session.scalars(
+                select(TranscriptEntryRecord)
+                .where(
+                    TranscriptEntryRecord.status == "PENDING",
+                    TranscriptEntryRecord.expires_at.is_not(None),
+                    TranscriptEntryRecord.expires_at <= cutoff,
+                )
+                .order_by(TranscriptEntryRecord.expires_at.asc())
+                .limit(bounded_limit)
+            ).all()
+            for entry in pending_entries:
+                entry.status = "ABORTED"
+
+            session.commit()
+        return {
+            "turnExecutionsAborted": len(running_records),
+            "turnExecutionsDeleted": completed_record_count,
+            "transcriptEntriesAborted": len(pending_entries),
+            "transcriptEntriesDeleted": committed_entry_count,
+        }
 
     def check_database(self) -> dict[str, object]:
         with self.engine.connect() as connection:
@@ -368,6 +486,18 @@ class PostgresTranscriptStore:
     def close(self) -> None:
         self.engine.dispose()
 
+    def _turn_execution_expires_at(self) -> datetime:
+        return now_utc() + timedelta(seconds=self.settings.turn_execution_retention_seconds)
+
+    def _transcript_entry_expires_at(self) -> datetime:
+        return now_utc() + timedelta(seconds=self.settings.transcript_entry_retention_seconds)
+
+    def _bounded_sweep_limit(self, limit: int | None) -> int:
+        configured_limit = max(1, self.settings.retention_sweep_limit)
+        if limit is None:
+            return configured_limit
+        return max(1, min(limit, configured_limit))
+
 
 def create_transcript_store() -> PostgresTranscriptStore:
     return PostgresTranscriptStore()
@@ -380,6 +510,17 @@ def ensure_postgres_configuration(database_url: str) -> None:
         raise RuntimeError(f"invalid agent-runtime database url: {exc}") from exc
     if url.get_backend_name() != "postgresql":
         raise RuntimeError("agent-runtime transcript store requires PostgreSQL")
+
+
+def _positive_int_env(name: str, default: int) -> int:
+    raw_value = (os.getenv(name) or "").strip()
+    if not raw_value:
+        return default
+    try:
+        value = int(raw_value)
+    except ValueError:
+        return default
+    return value if value > 0 else default
 
 
 def transcript_entries_from_provider_messages(
@@ -574,6 +715,8 @@ def _transcript_entry_record(
     entry: TranscriptEntry,
     transcript_seq: int,
     status: str,
+    *,
+    expires_at: datetime | None = None,
 ) -> TranscriptEntryRecord:
     return TranscriptEntryRecord(
         entry_id="entry-" + str(uuid.uuid4()),
@@ -588,10 +731,17 @@ def _transcript_entry_record(
         role=entry.role,
         content_json=entry.content_json,
         status=status,
+        expires_at=expires_at,
     )
 
 
-def _update_pending_entries(session: Session, context: TurnExecutionContext, status: str) -> None:
+def _update_pending_entries(
+    session: Session,
+    context: TurnExecutionContext,
+    status: str,
+    *,
+    expires_at: datetime | None = None,
+) -> None:
     entries = session.scalars(
         select(TranscriptEntryRecord).where(
             TranscriptEntryRecord.turn_execution_id == context.turn_execution_id,
@@ -601,9 +751,16 @@ def _update_pending_entries(session: Session, context: TurnExecutionContext, sta
     ).all()
     for entry in entries:
         entry.status = status
+        if expires_at is not None:
+            entry.expires_at = expires_at
 
 
-def _abort_all_pending_entries(session: Session, context: TurnExecutionContext) -> None:
+def _abort_all_pending_entries(
+    session: Session,
+    context: TurnExecutionContext,
+    *,
+    expires_at: datetime | None = None,
+) -> None:
     entries = session.scalars(
         select(TranscriptEntryRecord).where(
             TranscriptEntryRecord.turn_execution_id == context.turn_execution_id,
@@ -612,6 +769,8 @@ def _abort_all_pending_entries(session: Session, context: TurnExecutionContext) 
     ).all()
     for entry in entries:
         entry.status = "ABORTED"
+        if expires_at is not None:
+            entry.expires_at = expires_at
 
 
 def _assert_same_context(record: TurnExecutionRecord, context: TurnExecutionContext) -> None:
