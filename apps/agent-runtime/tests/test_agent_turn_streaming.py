@@ -128,7 +128,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual("knowledge_search", tool_names[1])
         self.assertEqual("knowledge_read", tool_names[2])
         self.assertIn("read_skill", tool_names)
-        self.assertIn("append_text_block", tool_names)
+        self.assertNotIn("append_text_block", tool_names)
         self.assertIn("update_shared_state", tool_names)
         self.assertIn("run_playbook", tool_names)
         self.assertNotIn("switch_owner", tool_names)
@@ -145,7 +145,6 @@ class AgentTurnStreamingTest(unittest.TestCase):
         specs_by_name = {spec.name: spec for spec in runtime_tool_specs(request)}
         self.assertEqual(RuntimeToolKind.CONTEXT_TOOL, specs_by_name["knowledge_search"].kind)
         self.assertEqual(RuntimeToolKind.CONTEXT_TOOL, specs_by_name["read_skill"].kind)
-        self.assertEqual(RuntimeToolKind.MESSAGE_BLOCK_TOOL, specs_by_name["append_text_block"].kind)
         self.assertEqual(RuntimeToolKind.STATE_TOOL, specs_by_name["update_shared_state"].kind)
         self.assertEqual(RuntimeToolKind.LIFECYCLE_ACTION_TOOL, specs_by_name["run_playbook"].kind)
         self.assertNotIn("switch_owner", specs_by_name)
@@ -813,7 +812,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertFalse(outcome["success"])
         self.assertIsNone(outcome["result"])
 
-    def test_should_accumulate_text_message_block_state_and_run_playbook_action(self) -> None:
+    def test_should_accumulate_streamed_text_state_and_run_playbook_action(self) -> None:
         request = request_payload()
         request["turnId"] = "turn-1"
         request["turnExecutionId"] = "exec-1"
@@ -828,13 +827,6 @@ class AgentTurnStreamingTest(unittest.TestCase):
                         OpenAiCompatibleStreamEvent(
                             event_type="tool_call_delta",
                             tool_call_index=0,
-                            tool_call_id="call-1",
-                            tool_name="append_text_block",
-                            arguments_delta=json.dumps({"text": "已准备发起流程。"}, ensure_ascii=False),
-                        ),
-                        OpenAiCompatibleStreamEvent(
-                            event_type="tool_call_delta",
-                            tool_call_index=1,
                             tool_call_id="call-2",
                             tool_name="update_shared_state",
                             arguments_delta=json.dumps({"patch": {"refundStatus": "REQUESTED"}}, ensure_ascii=False),
@@ -874,7 +866,6 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(2, len(captured_payloads))
         second_round_tool_results = [message for message in captured_payloads[1]["messages"] if message.get("role") == "tool"]
-        self.assertTrue(any('"blockId"' in str(message.get("content")) for message in second_round_tool_results))
         self.assertTrue(any('"accepted": true' in str(message.get("content")) for message in second_round_tool_results))
         frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
         self.assertEqual([], [frame for frame in frames if frame["kind"] == "ACTION_TOOL_ARGUMENT_DELTA"])
@@ -896,7 +887,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual("pb-1", decision["playbookId"])
         self.assertEqual({"orderId": "order-1"}, decision["playbookInput"])
         self.assertEqual(
-            ["我来处理。", "已准备发起流程。", "流程已确认。"],
+            ["我来处理。", "流程已确认。"],
             [block["text"] for block in decision["replyMessage"]["blocks"]],
         )
         self.assertEqual("email", outcome["result"]["sharedState"]["knownPreference"])
@@ -906,12 +897,12 @@ class AgentTurnStreamingTest(unittest.TestCase):
         committed_entries = transcript_store.committed_successes[0][2]
         self.assertEqual(["system", "system", "system", "user"], [entry.role for entry in committed_entries[:4]])
         interaction_entries = committed_entries[4:]
-        self.assertEqual(["assistant", "tool", "tool", "assistant", "tool"], [entry.role for entry in interaction_entries])
+        self.assertEqual(["assistant", "tool", "assistant", "tool"], [entry.role for entry in interaction_entries])
         self.assertTrue(all(entry.provider_type == "OPENAI_COMPATIBLE" for entry in committed_entries))
-        self.assertEqual("call-1", interaction_entries[0].content_json["tool_calls"][0]["id"])
-        self.assertEqual("call-1", interaction_entries[1].content_json["tool_call_id"])
-        self.assertEqual("call-3", interaction_entries[3].content_json["tool_calls"][0]["id"])
-        self.assertEqual("call-3", interaction_entries[4].content_json["tool_call_id"])
+        self.assertEqual("call-2", interaction_entries[0].content_json["tool_calls"][0]["id"])
+        self.assertEqual("call-2", interaction_entries[1].content_json["tool_call_id"])
+        self.assertEqual("call-3", interaction_entries[2].content_json["tool_calls"][0]["id"])
+        self.assertEqual("call-3", interaction_entries[3].content_json["tool_call_id"])
 
     def test_should_replay_same_turn_thinking_with_tool_call_as_reasoning_content(self) -> None:
         request = request_payload()
@@ -1425,7 +1416,6 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertTrue(
             {
                 "read_skill",
-                "append_text_block",
                 "append_image_block",
                 "append_rich_text_block",
                 "append_card_block",

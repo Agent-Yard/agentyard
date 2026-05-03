@@ -414,17 +414,6 @@ def _outcome_tool_specs(request: AgentTurnRequest) -> list[RuntimeToolSpec]:
             _accepted_output_schema(),
         ),
         _semantic_tool(
-            "append_text_block",
-            "Append a user-visible TEXT block to the final replyMessage.",
-            {
-                "type": "object",
-                "properties": {"text": {"type": "string"}},
-                "required": ["text"],
-                "additionalProperties": False,
-            },
-            _accepted_block_output_schema(),
-        ),
-        _semantic_tool(
             "append_image_block",
             "Append an IMAGE block to the final replyMessage. Non-text draft streaming is not emitted in this phase.",
             {
@@ -475,7 +464,6 @@ def _outcome_tool_specs(request: AgentTurnRequest) -> list[RuntimeToolSpec]:
     definitions.extend(_lifecycle_action_tool_definitions(request))
     kinds = {
         "update_shared_state": RuntimeToolKind.STATE_TOOL,
-        "append_text_block": RuntimeToolKind.MESSAGE_BLOCK_TOOL,
         "append_image_block": RuntimeToolKind.MESSAGE_BLOCK_TOOL,
         "append_rich_text_block": RuntimeToolKind.MESSAGE_BLOCK_TOOL,
         "append_card_block": RuntimeToolKind.MESSAGE_BLOCK_TOOL,

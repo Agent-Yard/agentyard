@@ -875,11 +875,6 @@ def _provider_tool_result_message(
 
 def _message_block_from_tool_call(tool_call: OpenAiCompatibleStreamToolCall) -> dict[str, Any]:
     arguments = tool_call.arguments
-    if tool_call.tool_name == "append_text_block":
-        text = str(arguments.get("text") or "")
-        if not text.strip():
-            raise ValueError("append_text_block.text is required")
-        return {"type": "TEXT", "text": text}
     if tool_call.tool_name == "append_image_block":
         url = str(arguments.get("url") or "").strip()
         if not url:
