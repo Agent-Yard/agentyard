@@ -17,12 +17,11 @@ from lynxus_common import (
     configure_structured_logging,
 )
 
-from .decisioning import execute_agent_turn
 from .descriptor_provider import default_descriptor_provider
 from .extension_registration import load_extension_registration
 from .extension_registry import load_tool_connector_registry, validate_tool_connector_registry
 from .http_clients import reset_shared_http_client_registry
-from .models import AgentTurnExecutionOutcome, AgentTurnRequest, PlaybookToolTaskRequest, PlaybookToolTaskResult
+from .models import AgentTurnRequest, PlaybookToolTaskRequest, PlaybookToolTaskResult
 from .redis_support import RedisSettings, create_redis_client
 from .streaming import stream_agent_turn
 from .tool_connectors import reset_default_tool_connector_registry, set_default_tool_connector_registry
@@ -184,41 +183,6 @@ async def tool_connector_registry_validation(
         result = validate_tool_connector_registry(registration_set, descriptor_provider=provider)
     status_code = 200 if result.get("status") == "READY" else 503
     return JSONResponse(status_code=status_code, content=result)
-
-
-@app.post("/agent-turns/execute", response_model=AgentTurnExecutionOutcome)
-async def execute_turn(
-    request: AgentTurnRequest,
-    _: None = Depends(require_internal_bearer),
-) -> AgentTurnExecutionOutcome:
-    bind_log_context(
-        sessionId=request.sessionId,
-        customerId=str(request.trigger.payload.get("customerId") or ""),
-    )
-    outcome, prompt_bundle = execute_agent_turn(request)
-    log_extra = {
-        "instanceId": INSTANCE_ID,
-        "sessionId": request.sessionId,
-        "assistantId": request.assistantId,
-        "ownerAgentId": request.currentOwner.agentId,
-        "runtimeMessageCount": len(prompt_bundle.runtime_messages),
-        "llmUsageCount": len(outcome.llmUsage),
-        "hasOpenAiCompatibleProvider": bool(
-            (os.getenv("LYNXUS_OPENAI_COMPATIBLE_BASE_URL") or "").strip()
-            and (os.getenv("LYNXUS_OPENAI_COMPATIBLE_MODEL_ID") or "").strip()
-        ),
-    }
-    if outcome.success and outcome.result is not None:
-        LOGGER.info(
-            "agent turn executed",
-            extra={**log_extra, "action": outcome.result.decision.action},
-        )
-    else:
-        LOGGER.warning(
-            "agent turn execution returned failure",
-            extra={**log_extra, "failureReason": outcome.failureReason},
-        )
-    return outcome
 
 
 @app.post("/agent-turns/execute-stream")

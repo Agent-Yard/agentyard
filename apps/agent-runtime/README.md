@@ -35,7 +35,7 @@ uv run --directory apps/agent-runtime --package lynxus-agent-runtime pytest test
 
 当前 runtime 暴露的核心接口：
 
-- `POST /agent-turns/execute`
+- `POST /agent-turns/execute-stream`
 - `POST /playbook-tool-tasks/execute`
 
 它们都由 `apps/worker` 通过 HTTP 调用，不直接面向控制台页面。
