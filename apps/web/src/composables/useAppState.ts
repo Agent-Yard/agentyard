@@ -125,9 +125,7 @@ export function useAppState(currentPageKey: Ref<PageKey>) {
       failed: false,
       updatedAt: event.occurredAt,
     };
-    const text = event.operation === 'SNAPSHOT'
-      ? event.text ?? current.text
-      : current.text + (event.delta ?? '');
+    const text = current.text + (event.delta ?? '');
     const next = { ...current, text, failed: false, updatedAt: event.occurredAt };
     runtimeDrafts.value = [
       ...runtimeDrafts.value.filter((draft) => !(draft.sessionId === event.sessionId && draft.turnId === event.turnId)),

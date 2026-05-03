@@ -45,22 +45,9 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 public class SessionRuntimeStreamService {
     private static final Logger LOGGER = LoggerFactory.getLogger(SessionRuntimeStreamService.class);
     private static final Set<AgentTurnStreamFrameKind> CUSTOMER_VISIBLE_FRAME_KINDS = EnumSet.of(
-        AgentTurnStreamFrameKind.USER_NOTICE,
-        AgentTurnStreamFrameKind.REPLY_BLOCK_STARTED,
         AgentTurnStreamFrameKind.REPLY_BLOCK_DELTA,
-        AgentTurnStreamFrameKind.REPLY_BLOCK_SNAPSHOT,
         AgentTurnStreamFrameKind.REPLY_BLOCK_COMPLETED
     );
-    private static final Set<String> CUSTOMER_USER_NOTICE_LABELS = Set.of(
-        "PROCESSING",
-        "CHECKING_ORDER",
-        "CHECKING_INFORMATION",
-        "SEARCHING_KNOWLEDGE",
-        "PREPARING_REPLY",
-        "COMPOSING_REPLY",
-        "FINALIZING_REPLY"
-    );
-    private static final Set<String> CUSTOMER_USER_NOTICE_KEYS = Set.of("label", "text");
     private static final Set<String> CUSTOMER_REPLY_DRAFT_KEYS = Set.of("blockId", "blockType", "delta", "text");
     private static final Set<String> CUSTOMER_REPLY_COMPLETED_KEYS = Set.of("blockId", "block");
     private static final Set<String> CUSTOMER_TEXT_BLOCK_KEYS = Set.of("type", "text");
@@ -374,17 +361,10 @@ public class SessionRuntimeStreamService {
 
     private List<SessionRuntimeStreamEvent> projectFrame(AgentTurnStreamFrame frame) {
         if (frame.kind() == AgentTurnStreamFrameKind.FINAL_OUTCOME
-            || frame.kind() == AgentTurnStreamFrameKind.PROVIDER_DEBUG
             || frame.visibility() == StreamVisibility.INTERNAL) {
             return List.of();
         }
         return switch (frame.kind()) {
-            case USER_NOTICE -> List.of(progressEvent(
-                frame,
-                "USER_NOTICE",
-                "RUNNING",
-                stringPayload(frame, "text", "正在处理")
-            ));
             case TURN_STARTED -> List.of(progressEvent(frame, "TURN_STARTED", "STARTED", "已收到"));
             case MODEL_STARTED -> List.of(progressEvent(frame, "MODEL_STARTED", "RUNNING", "模型处理中"));
             case MODEL_COMPLETED -> List.of(progressEvent(
@@ -399,30 +379,16 @@ public class SessionRuntimeStreamService {
                 "RUNNING",
                 stringPayload(frame, "toolName", "工具处理中")
             ));
-            case ACTION_TOOL_ARGUMENT_DELTA -> List.of(progressEvent(
-                frame,
-                "ACTION_TOOL_ARGUMENT_DELTA",
-                "RUNNING",
-                "工具参数生成中"
-            ));
             case ACTION_TOOL_COMPLETED -> List.of(progressEvent(
                 frame,
                 "ACTION_TOOL_COMPLETED",
                 stringPayload(frame, "status", "SUCCEEDED"),
                 stringPayload(frame, "toolName", "工具处理完成")
             ));
-            case TOOL_PROGRESS -> List.of(progressEvent(
-                frame,
-                stringPayload(frame, "label", "TOOL_PROGRESS"),
-                stringPayload(frame, "status", "RUNNING"),
-                stringPayload(frame, "label", "正在处理")
-            ));
-            case REPLY_BLOCK_STARTED -> List.of(draftEvent(frame, SessionReplyDraftOperation.STARTED));
             case REPLY_BLOCK_DELTA -> List.of(draftEvent(frame, SessionReplyDraftOperation.DELTA));
-            case REPLY_BLOCK_SNAPSHOT -> List.of(draftEvent(frame, SessionReplyDraftOperation.SNAPSHOT));
             case REPLY_BLOCK_COMPLETED -> List.of(draftEvent(frame, SessionReplyDraftOperation.COMPLETED));
             case ERROR -> errorEvents(frame);
-            case PROVIDER_DEBUG, FINAL_OUTCOME -> List.of();
+            case FINAL_OUTCOME -> List.of();
         };
     }
 
@@ -489,19 +455,13 @@ public class SessionRuntimeStreamService {
         String key = frame.turnExecutionId();
         switch (frame.kind()) {
             case TURN_STARTED -> turnStartedAtByExecution.put(key, frame.occurredAt());
-            case REPLY_BLOCK_STARTED -> assistantTextStartedAtByExecution.putIfAbsent(key, frame.occurredAt());
             case REPLY_BLOCK_DELTA -> recordAssistantTextDelta(frame, key);
             case REPLY_BLOCK_COMPLETED -> recordAssistantTextCompleted(frame, key);
             case ACTION_TOOL_STARTED -> actionToolStartedCounter.increment();
             case ERROR, FINAL_OUTCOME -> cleanupStreamObservation(key);
-            case USER_NOTICE,
-                MODEL_STARTED,
+            case MODEL_STARTED,
                 MODEL_COMPLETED,
-                ACTION_TOOL_ARGUMENT_DELTA,
-                ACTION_TOOL_COMPLETED,
-                TOOL_PROGRESS,
-                REPLY_BLOCK_SNAPSHOT,
-                PROVIDER_DEBUG -> {
+                ACTION_TOOL_COMPLETED -> {
             }
         }
     }
@@ -587,25 +547,7 @@ public class SessionRuntimeStreamService {
         if (containsInternalPayloadField(frame.payload())) {
             throw badFrame("customer stream payload contains internal fields");
         }
-        if (frame.kind() == AgentTurnStreamFrameKind.USER_NOTICE) {
-            validateCustomerUserNotice(frame);
-            return;
-        }
         validateCustomerReplyDraft(frame);
-    }
-
-    private static void validateCustomerUserNotice(AgentTurnStreamFrame frame) {
-        if (!CUSTOMER_USER_NOTICE_KEYS.containsAll(frame.payload().keySet())) {
-            throw badFrame("customer user notice payload only allows label and text");
-        }
-        String label = stringPayload(frame, "label", null);
-        String text = stringPayload(frame, "text", null);
-        if (isBlank(label) || !CUSTOMER_USER_NOTICE_LABELS.contains(label)) {
-            throw badFrame("customer user notice label is not allowed");
-        }
-        if (isBlank(text) || containsInternalTextToken(text)) {
-            throw badFrame("customer user notice text is not allowed");
-        }
     }
 
     private static void validateCustomerReplyDraft(AgentTurnStreamFrame frame) {
@@ -627,9 +569,6 @@ public class SessionRuntimeStreamService {
         }
         if (frame.kind() == AgentTurnStreamFrameKind.REPLY_BLOCK_DELTA && isBlank(delta)) {
             throw badFrame("customer reply draft delta requires text");
-        }
-        if (frame.kind() == AgentTurnStreamFrameKind.REPLY_BLOCK_SNAPSHOT && isBlank(text)) {
-            throw badFrame("customer reply draft snapshot requires text");
         }
     }
 

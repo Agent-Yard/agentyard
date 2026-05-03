@@ -89,18 +89,13 @@ final class DefaultSessionChannelActivityRelay implements SessionChannelActivity
         }
         return switch (frame.kind()) {
             case TURN_STARTED -> List.of(ChannelOutboundActivityType.TYPING_START);
-            case REPLY_BLOCK_STARTED -> customerOnly(frame, ChannelOutboundActivityType.DRAFT_CREATE);
-            case REPLY_BLOCK_DELTA, REPLY_BLOCK_SNAPSHOT -> customerOnly(frame, ChannelOutboundActivityType.DRAFT_UPDATE);
+            case REPLY_BLOCK_DELTA -> customerOnly(frame, ChannelOutboundActivityType.DRAFT_UPDATE);
             case REPLY_BLOCK_COMPLETED -> List.of(ChannelOutboundActivityType.DRAFT_COMPLETE, ChannelOutboundActivityType.TYPING_STOP);
             case ERROR -> List.of(ChannelOutboundActivityType.DRAFT_DISCARD, ChannelOutboundActivityType.TYPING_STOP);
-            case USER_NOTICE,
-                MODEL_STARTED,
+            case MODEL_STARTED,
                 MODEL_COMPLETED,
                 ACTION_TOOL_STARTED,
-                ACTION_TOOL_ARGUMENT_DELTA,
                 ACTION_TOOL_COMPLETED,
-                TOOL_PROGRESS,
-                PROVIDER_DEBUG,
                 FINAL_OUTCOME -> List.of();
         };
     }

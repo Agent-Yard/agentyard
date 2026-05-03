@@ -42,7 +42,6 @@ export type ChannelOutboundResponseStatus = 'SENT' | 'ACCEPTED';
 export type ChannelOutboundActivityType =
   | 'TYPING_START'
   | 'TYPING_STOP'
-  | 'DRAFT_CREATE'
   | 'DRAFT_UPDATE'
   | 'DRAFT_COMPLETE'
   | 'DRAFT_DISCARD';
@@ -771,7 +770,7 @@ export interface SessionReplyDraftEvent {
   sessionId: string;
   turnId: string;
   messageId: string;
-  operation: 'STARTED' | 'DELTA' | 'SNAPSHOT' | 'COMPLETED' | 'DISCARD';
+  operation: 'DELTA' | 'COMPLETED' | 'DISCARD';
   blockId: string;
   blockType: SessionMessageBlockType;
   delta: string | null;
@@ -1296,15 +1295,9 @@ export type AgentTurnStreamFrameKind =
   | 'TURN_STARTED'
   | 'MODEL_STARTED'
   | 'MODEL_COMPLETED'
-  | 'USER_NOTICE'
-  | 'PROVIDER_DEBUG'
   | 'ACTION_TOOL_STARTED'
-  | 'ACTION_TOOL_ARGUMENT_DELTA'
   | 'ACTION_TOOL_COMPLETED'
-  | 'TOOL_PROGRESS'
-  | 'REPLY_BLOCK_STARTED'
   | 'REPLY_BLOCK_DELTA'
-  | 'REPLY_BLOCK_SNAPSHOT'
   | 'REPLY_BLOCK_COMPLETED'
   | 'FINAL_OUTCOME'
   | 'ERROR';
@@ -1312,7 +1305,6 @@ export type AgentTurnStreamFrameKind =
 export type ModelStreamStatus = 'SUCCEEDED' | 'FAILED' | 'ABORTED';
 export type RuntimeToolKind = 'CONTEXT_TOOL' | 'STATE_TOOL' | 'MESSAGE_BLOCK_TOOL' | 'LIFECYCLE_ACTION_TOOL';
 export type ToolCompletionStatus = 'ACCEPTED' | 'REJECTED' | 'FAILED';
-export type ToolProgressStatus = 'STARTED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED';
 export type StreamErrorStage =
   | 'PROVIDER_STREAM'
   | 'TOOL_ARGUMENT_PARSE'
@@ -1349,27 +1341,11 @@ export interface ModelCompletedPayload {
   status: ModelStreamStatus;
 }
 
-export interface UserNoticePayload {
-  label: string;
-  text: string;
-}
-
-export interface ProviderDebugPayload {
-  modelRoundId: string;
-  providerEventType: string;
-  contentBlockIndex?: number;
-}
-
 export interface ToolStartedPayload {
   modelRoundId: string;
   toolCallId: string;
   toolName: string;
   toolKind: RuntimeToolKind;
-}
-
-export interface ToolArgumentDeltaPayload {
-  toolCallId: string;
-  delta: string;
 }
 
 export interface ToolCompletedPayload {
@@ -1384,28 +1360,10 @@ export interface ToolCompletedPayload {
   };
 }
 
-export interface ToolProgressPayload {
-  toolCallId?: string;
-  label: string;
-  status: ToolProgressStatus;
-  detail?: Record<string, unknown>;
-}
-
-export interface ReplyBlockStartedPayload {
-  blockId: string;
-  blockType: SessionMessageBlockType;
-}
-
 export interface ReplyBlockDeltaPayload {
   blockId: string;
   blockType: 'TEXT';
   delta: string;
-}
-
-export interface ReplyBlockSnapshotPayload {
-  blockId: string;
-  blockType: 'TEXT';
-  text: string;
 }
 
 export interface ReplyBlockCompletedPayload {
@@ -1429,15 +1387,9 @@ export type AgentTurnFrame =
   | AgentTurnStreamFrame<'TURN_STARTED', TurnStartedPayload>
   | AgentTurnStreamFrame<'MODEL_STARTED', ModelStartedPayload>
   | AgentTurnStreamFrame<'MODEL_COMPLETED', ModelCompletedPayload>
-  | AgentTurnStreamFrame<'USER_NOTICE', UserNoticePayload>
-  | AgentTurnStreamFrame<'PROVIDER_DEBUG', ProviderDebugPayload>
   | AgentTurnStreamFrame<'ACTION_TOOL_STARTED', ToolStartedPayload>
-  | AgentTurnStreamFrame<'ACTION_TOOL_ARGUMENT_DELTA', ToolArgumentDeltaPayload>
   | AgentTurnStreamFrame<'ACTION_TOOL_COMPLETED', ToolCompletedPayload>
-  | AgentTurnStreamFrame<'TOOL_PROGRESS', ToolProgressPayload>
-  | AgentTurnStreamFrame<'REPLY_BLOCK_STARTED', ReplyBlockStartedPayload>
   | AgentTurnStreamFrame<'REPLY_BLOCK_DELTA', ReplyBlockDeltaPayload>
-  | AgentTurnStreamFrame<'REPLY_BLOCK_SNAPSHOT', ReplyBlockSnapshotPayload>
   | AgentTurnStreamFrame<'REPLY_BLOCK_COMPLETED', ReplyBlockCompletedPayload>
   | AgentTurnStreamFrame<'FINAL_OUTCOME', FinalOutcomePayload>
   | AgentTurnStreamFrame<'ERROR', ErrorPayload>;

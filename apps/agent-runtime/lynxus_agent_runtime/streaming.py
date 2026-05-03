@@ -172,11 +172,6 @@ async def stream_agent_turn(
         visibility="OPERATOR",
         payload={"triggerType": request.trigger.triggerType},
     )
-    yield writer.frame(
-        kind="USER_NOTICE",
-        visibility="CUSTOMER",
-        payload={"label": "PROCESSING", "text": "已收到，我正在处理。"},
-    )
 
     if provider is None:
         message = "execute-stream requires a configured streaming model provider for current owner"
@@ -284,26 +279,12 @@ async def _stream_via_openai_compatible(
                     customer_delta = text_guard.accept(event.delta)
                     if customer_delta and not reply_block_started:
                         reply_block_started = True
-                        yield writer.frame(
-                            kind="REPLY_BLOCK_STARTED",
-                            visibility="CUSTOMER",
-                            payload={"blockId": block_id, "blockType": "TEXT"},
-                        )
                     if customer_delta:
                         yield writer.frame(
                             kind="REPLY_BLOCK_DELTA",
                             visibility="CUSTOMER",
                             payload={"blockId": block_id, "blockType": "TEXT", "delta": customer_delta},
                         )
-                elif event.event_type == "tool_call_delta":
-                    yield writer.frame(
-                        kind="ACTION_TOOL_ARGUMENT_DELTA",
-                        visibility="INTERNAL",
-                        payload={
-                            "toolCallId": event.tool_call_id,
-                            "delta": event.arguments_delta,
-                        },
-                    )
             message = round_accumulator.build_message()
             if message.usage is not None:
                 usage_tracker.record("SESSION_OWNER_MODEL", settings, message.usage, tool_loop_step=step)
@@ -418,11 +399,6 @@ async def _stream_via_openai_compatible(
                 )
         if reply_block_started and outcome.success and outcome.result is not None:
             block = outcome.result.decision.replyMessage.blocks[0] if outcome.result.decision.replyMessage else None
-            yield writer.frame(
-                kind="REPLY_BLOCK_SNAPSHOT",
-                visibility="CUSTOMER",
-                payload={"blockId": block_id, "blockType": "TEXT", "text": text_guard.accepted_text},
-            )
             if block is not None:
                 yield writer.frame(
                     kind="REPLY_BLOCK_COMPLETED",

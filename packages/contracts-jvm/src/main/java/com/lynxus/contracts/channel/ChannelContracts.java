@@ -347,7 +347,6 @@ public final class ChannelContracts {
     public enum ChannelOutboundActivityType {
         TYPING_START,
         TYPING_STOP,
-        DRAFT_CREATE,
         DRAFT_UPDATE,
         DRAFT_COMPLETE,
         DRAFT_DISCARD

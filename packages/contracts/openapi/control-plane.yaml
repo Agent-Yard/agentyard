@@ -4097,7 +4097,7 @@ components:
           type: string
         operation:
           type: string
-          enum: [STARTED, DELTA, SNAPSHOT, COMPLETED, DISCARD]
+          enum: [DELTA, COMPLETED, DISCARD]
         blockId:
           type: string
         blockType:
@@ -4139,15 +4139,9 @@ components:
         - TURN_STARTED
         - MODEL_STARTED
         - MODEL_COMPLETED
-        - USER_NOTICE
-        - PROVIDER_DEBUG
         - ACTION_TOOL_STARTED
-        - ACTION_TOOL_ARGUMENT_DELTA
         - ACTION_TOOL_COMPLETED
-        - TOOL_PROGRESS
-        - REPLY_BLOCK_STARTED
         - REPLY_BLOCK_DELTA
-        - REPLY_BLOCK_SNAPSHOT
         - REPLY_BLOCK_COMPLETED
         - FINAL_OUTCOME
         - ERROR
@@ -4202,15 +4196,9 @@ components:
             - $ref: '#/components/schemas/TurnStartedPayload'
             - $ref: '#/components/schemas/ModelStartedPayload'
             - $ref: '#/components/schemas/ModelCompletedPayload'
-            - $ref: '#/components/schemas/UserNoticePayload'
-            - $ref: '#/components/schemas/ProviderDebugPayload'
             - $ref: '#/components/schemas/ToolStartedPayload'
-            - $ref: '#/components/schemas/ToolArgumentDeltaPayload'
             - $ref: '#/components/schemas/ToolCompletedPayload'
-            - $ref: '#/components/schemas/ToolProgressPayload'
-            - $ref: '#/components/schemas/ReplyBlockStartedPayload'
             - $ref: '#/components/schemas/ReplyBlockDeltaPayload'
-            - $ref: '#/components/schemas/ReplyBlockSnapshotPayload'
             - $ref: '#/components/schemas/ReplyBlockCompletedPayload'
             - $ref: '#/components/schemas/FinalOutcomePayload'
             - $ref: '#/components/schemas/ErrorPayload'
@@ -4220,14 +4208,6 @@ components:
       properties:
         triggerType:
           $ref: '#/components/schemas/SessionTriggerType'
-    UserNoticePayload:
-      type: object
-      required: [label, text]
-      properties:
-        label:
-          type: string
-        text:
-          type: string
     ModelStartedPayload:
       type: object
       required: [modelRoundId]
@@ -4243,16 +4223,6 @@ components:
         status:
           type: string
           enum: [SUCCEEDED, FAILED, ABORTED]
-    ProviderDebugPayload:
-      type: object
-      required: [modelRoundId, providerEventType]
-      properties:
-        modelRoundId:
-          type: string
-        providerEventType:
-          type: string
-        contentBlockIndex:
-          type: integer
     RuntimeToolKind:
       type: string
       enum: [CONTEXT_TOOL, STATE_TOOL, MESSAGE_BLOCK_TOOL, LIFECYCLE_ACTION_TOOL]
@@ -4268,14 +4238,6 @@ components:
           type: string
         toolKind:
           $ref: '#/components/schemas/RuntimeToolKind'
-    ToolArgumentDeltaPayload:
-      type: object
-      required: [toolCallId, delta]
-      properties:
-        toolCallId:
-          type: string
-        delta:
-          type: string
     ToolCompletedPayload:
       type: object
       required: [toolCallId, toolName, toolKind, status]
@@ -4298,28 +4260,6 @@ components:
               type: string
             sharedStateUpdated:
               type: boolean
-    ToolProgressPayload:
-      type: object
-      required: [label, status]
-      properties:
-        toolCallId:
-          type: string
-        label:
-          type: string
-        status:
-          type: string
-          enum: [STARTED, RUNNING, SUCCEEDED, FAILED]
-        detail:
-          type: object
-          additionalProperties: true
-    ReplyBlockStartedPayload:
-      type: object
-      required: [blockId, blockType]
-      properties:
-        blockId:
-          type: string
-        blockType:
-          $ref: '#/components/schemas/SessionMessageBlockType'
     ReplyBlockDeltaPayload:
       type: object
       required: [blockId, blockType, delta]
@@ -4330,17 +4270,6 @@ components:
           type: string
           enum: [TEXT]
         delta:
-          type: string
-    ReplyBlockSnapshotPayload:
-      type: object
-      required: [blockId, blockType, text]
-      properties:
-        blockId:
-          type: string
-        blockType:
-          type: string
-          enum: [TEXT]
-        text:
           type: string
     ReplyBlockCompletedPayload:
       type: object

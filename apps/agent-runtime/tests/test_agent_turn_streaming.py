@@ -228,6 +228,9 @@ class AgentTurnStreamingTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
+        self.assertEqual([], [frame for frame in frames if frame["kind"] == "USER_NOTICE"])
+        self.assertEqual([], [frame for frame in frames if frame["kind"] == "REPLY_BLOCK_STARTED"])
+        self.assertEqual([], [frame for frame in frames if frame["kind"] == "REPLY_BLOCK_SNAPSHOT"])
         delta_frames = [frame for frame in frames if frame["kind"] == "REPLY_BLOCK_DELTA"]
         self.assertEqual(["已查到", "订单。"], [frame["payload"]["delta"] for frame in delta_frames])
         final_frame = frames[-1]
@@ -711,12 +714,8 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertTrue(any('"blockId"' in str(message.get("content")) for message in second_round_tool_results))
         self.assertTrue(any('"accepted": true' in str(message.get("content")) for message in second_round_tool_results))
         frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
-        tool_delta_frames = [frame for frame in frames if frame["kind"] == "ACTION_TOOL_ARGUMENT_DELTA"]
-        self.assertEqual(3, len(tool_delta_frames))
-        self.assertTrue(all(frame["visibility"] == "INTERNAL" for frame in tool_delta_frames))
-        self.assertTrue(all("delta" in frame["payload"] for frame in tool_delta_frames))
-        self.assertTrue(all("argumentsDelta" not in frame["payload"] for frame in tool_delta_frames))
-        self.assertEqual([], [frame for frame in frames if frame["visibility"] == "CUSTOMER" and "argumentsDelta" in frame["payload"]])
+        self.assertEqual([], [frame for frame in frames if frame["kind"] == "ACTION_TOOL_ARGUMENT_DELTA"])
+        self.assertEqual([], [frame for frame in frames if "argumentsDelta" in frame["payload"]])
         self.assertTrue(all("modelRoundId" in frame["payload"] for frame in frames if frame["kind"] == "MODEL_STARTED"))
         self.assertTrue(all("modelRoundId" in frame["payload"] for frame in frames if frame["kind"] == "MODEL_COMPLETED"))
         self.assertTrue(all("status" in frame["payload"] for frame in frames if frame["kind"] == "MODEL_COMPLETED"))

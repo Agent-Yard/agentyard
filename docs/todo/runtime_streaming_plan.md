@@ -74,42 +74,29 @@ Web / Channel inbound
 
 ### 3.3 进度不是系统日志直出
 
-进度展示必须经过一层 **progress projection**，把真实底层事件投影成不同 audience 能理解的状态。
+进度展示必须经过一层 **progress projection**，把模型、工具、回复等底层事件投影成不同 audience 能理解的状态。
 
 内部事件示例：
 
 ```json
 {
-  "kind": "TOOL_PROGRESS",
-  "visibility": "INTERNAL",
+  "kind": "ACTION_TOOL_COMPLETED",
+  "visibility": "OPERATOR",
   "payload": {
-    "tool": "order_service.lookupShipment",
-    "stage": "HTTP_RESPONSE_RECEIVED",
-    "durationMs": 218
-  }
-}
-```
-
-业务用户看到的投影：
-
-```json
-{
-  "kind": "USER_NOTICE",
-  "visibility": "CUSTOMER",
-  "payload": {
-    "label": "CHECKING_ORDER",
-    "text": "我正在核对订单和物流信息。"
+    "toolCallId": "call-1",
+    "toolName": "order_service.lookupShipment",
+    "toolKind": "CONTEXT_TOOL",
+    "status": "ACCEPTED"
   }
 }
 ```
 
 投影规则：
 
-1. customer 进度必须使用业务语义 label，不使用 provider、tool、HTTP、prompt、privacy、schema 等系统词。
+1. customer 侧只接收回复草稿和完成事件，不接收内部 progress frame。
 2. operator 可以看到“知识检索 / 工单查询 / playbook 等待 / 渠道投递”级别的信息。
 3. developer 才能看到模型、工具、stream parser、connector adapter、latency 等工程细节。
-4. 每个 agent 或 assistant profile 可以配置允许对 customer 暴露的 progress label 集合；未配置时只展示通用处理态。
-5. 底层事件可以很多，但 customer 进度需要节流和去重，同一 label 未变化时不重复刷屏。
+4. 底层事件可以很多，但 customer 可见协议保持最小集合，避免进度文案与回复草稿重复。
 
 ## 4. 权威边界
 
@@ -332,9 +319,8 @@ Content-Type: application/json
 
 ```json
 {"protocol":"lynxus.agent-turn-stream.v1","frameId":"exec-1:1","streamId":"stream-1","sessionId":"session-1","turnId":"turn-1","turnExecutionId":"exec-1","ownerAgentId":"agent-1","ownershipEpoch":1,"seq":1,"kind":"TURN_STARTED","visibility":"OPERATOR","occurredAt":"2026-05-02T00:00:00Z","payload":{"triggerType":"USER_MESSAGE"}}
-{"protocol":"lynxus.agent-turn-stream.v1","frameId":"exec-1:2","streamId":"stream-1","sessionId":"session-1","turnId":"turn-1","turnExecutionId":"exec-1","ownerAgentId":"agent-1","ownershipEpoch":1,"seq":2,"kind":"USER_NOTICE","visibility":"CUSTOMER","occurredAt":"2026-05-02T00:00:01Z","payload":{"label":"CHECKING_ORDER","text":"我正在核对相关信息。"}}
-{"protocol":"lynxus.agent-turn-stream.v1","frameId":"exec-1:3","streamId":"stream-1","sessionId":"session-1","turnId":"turn-1","turnExecutionId":"exec-1","ownerAgentId":"agent-1","ownershipEpoch":1,"seq":3,"kind":"REPLY_BLOCK_DELTA","visibility":"CUSTOMER","occurredAt":"2026-05-02T00:00:02Z","payload":{"blockId":"block-1","blockType":"TEXT","delta":"我查到这笔订单"}}
-{"protocol":"lynxus.agent-turn-stream.v1","frameId":"exec-1:4","streamId":"stream-1","sessionId":"session-1","turnId":"turn-1","turnExecutionId":"exec-1","ownerAgentId":"agent-1","ownershipEpoch":1,"seq":4,"kind":"FINAL_OUTCOME","visibility":"INTERNAL","occurredAt":"2026-05-02T00:00:03Z","payload":{"outcome":{"success":true,"result":{},"failureReason":null,"llmUsage":[]}}}
+{"protocol":"lynxus.agent-turn-stream.v1","frameId":"exec-1:2","streamId":"stream-1","sessionId":"session-1","turnId":"turn-1","turnExecutionId":"exec-1","ownerAgentId":"agent-1","ownershipEpoch":1,"seq":2,"kind":"REPLY_BLOCK_DELTA","visibility":"CUSTOMER","occurredAt":"2026-05-02T00:00:02Z","payload":{"blockId":"block-1","blockType":"TEXT","delta":"我查到这笔订单"}}
+{"protocol":"lynxus.agent-turn-stream.v1","frameId":"exec-1:3","streamId":"stream-1","sessionId":"session-1","turnId":"turn-1","turnExecutionId":"exec-1","ownerAgentId":"agent-1","ownershipEpoch":1,"seq":3,"kind":"FINAL_OUTCOME","visibility":"INTERNAL","occurredAt":"2026-05-02T00:00:03Z","payload":{"outcome":{"success":true,"result":{},"failureReason":null,"llmUsage":[]}}}
 ```
 
 ### 5.2 Frame schema contract
@@ -380,23 +366,17 @@ Frame id / ordering 规则：
 3. `visibility=CUSTOMER` 的 frame 必须已经过 agent-runtime 过滤，不包含内部细节。
 4. `INTERNAL` frame 不进入 Web/Channel。
 5. `FINAL_OUTCOME` 不进入 Web/Channel。
-6. Web replay 优先使用 `REPLY_BLOCK_SNAPSHOT` 或 coalesced `REPLY_BLOCK_DELTA`，避免 reconnect 后依赖完整 token 历史。
-7. provider raw event 不作为正式 payload；如需 debug，用 normalized `PROVIDER_DEBUG`，raw event 写 trace。
+6. Web replay 优先使用 coalesced `REPLY_BLOCK_DELTA` 和 `REPLY_BLOCK_COMPLETED`，避免 reconnect 后依赖完整 token 历史。
+7. provider raw event 不作为正式 payload；如需 debug，写 trace，不进入正式 stream frame。
 
 frame kind 首批只保留必要集合：
 
 - `TURN_STARTED`
 - `MODEL_STARTED`
 - `MODEL_COMPLETED`
-- `USER_NOTICE`
-- `PROVIDER_DEBUG`
 - `ACTION_TOOL_STARTED`
-- `ACTION_TOOL_ARGUMENT_DELTA`
 - `ACTION_TOOL_COMPLETED`
-- `TOOL_PROGRESS`
-- `REPLY_BLOCK_STARTED`
 - `REPLY_BLOCK_DELTA`
-- `REPLY_BLOCK_SNAPSHOT`
 - `REPLY_BLOCK_COMPLETED`
 - `FINAL_OUTCOME`
 - `ERROR`
@@ -408,15 +388,9 @@ type AgentTurnFrame =
   | AgentTurnStreamFrame<'TURN_STARTED', TurnStartedPayload>
   | AgentTurnStreamFrame<'MODEL_STARTED', ModelStartedPayload>
   | AgentTurnStreamFrame<'MODEL_COMPLETED', ModelCompletedPayload>
-  | AgentTurnStreamFrame<'USER_NOTICE', UserNoticePayload>
-  | AgentTurnStreamFrame<'PROVIDER_DEBUG', ProviderDebugPayload>
   | AgentTurnStreamFrame<'ACTION_TOOL_STARTED', ToolStartedPayload>
-  | AgentTurnStreamFrame<'ACTION_TOOL_ARGUMENT_DELTA', ToolArgumentDeltaPayload>
   | AgentTurnStreamFrame<'ACTION_TOOL_COMPLETED', ToolCompletedPayload>
-  | AgentTurnStreamFrame<'TOOL_PROGRESS', ToolProgressPayload>
-  | AgentTurnStreamFrame<'REPLY_BLOCK_STARTED', ReplyBlockStartedPayload>
   | AgentTurnStreamFrame<'REPLY_BLOCK_DELTA', ReplyBlockDeltaPayload>
-  | AgentTurnStreamFrame<'REPLY_BLOCK_SNAPSHOT', ReplyBlockSnapshotPayload>
   | AgentTurnStreamFrame<'REPLY_BLOCK_COMPLETED', ReplyBlockCompletedPayload>
   | AgentTurnStreamFrame<'FINAL_OUTCOME', FinalOutcomePayload>
   | AgentTurnStreamFrame<'ERROR', ErrorPayload>
@@ -434,27 +408,11 @@ type ModelCompletedPayload = {
   status: 'SUCCEEDED' | 'FAILED' | 'ABORTED'
 }
 
-type UserNoticePayload = {
-  label: string
-  text: string
-}
-
-type ProviderDebugPayload = {
-  modelRoundId: string
-  providerEventType: string
-  contentBlockIndex?: number
-}
-
 type ToolStartedPayload = {
   modelRoundId: string
   toolCallId: string
   toolName: string
   toolKind: 'CONTEXT_TOOL' | 'STATE_TOOL' | 'MESSAGE_BLOCK_TOOL' | 'LIFECYCLE_ACTION_TOOL'
-}
-
-type ToolArgumentDeltaPayload = {
-  toolCallId: string
-  delta: string
 }
 
 type ToolCompletedPayload = {
@@ -469,28 +427,10 @@ type ToolCompletedPayload = {
   }
 }
 
-type ToolProgressPayload = {
-  toolCallId?: string
-  label: string
-  status: 'STARTED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED'
-  detail?: Record<string, unknown>
-}
-
-type ReplyBlockStartedPayload = {
-  blockId: string
-  blockType: SessionMessageBlockType
-}
-
 type ReplyBlockDeltaPayload = {
   blockId: string
   blockType: 'TEXT'
   delta: string
-}
-
-type ReplyBlockSnapshotPayload = {
-  blockId: string
-  blockType: 'TEXT'
-  text: string
 }
 
 type ReplyBlockCompletedPayload = {
@@ -514,8 +454,8 @@ type ErrorPayload = {
 message block 预留：
 
 1. `REPLY_BLOCK_*` 的 `blockType` 使用当前 `SessionMessageBlockType`：`TEXT / IMAGE / RICH_TEXT / CARD`。
-2. 现阶段只有 `TEXT` 需要 `DELTA / SNAPSHOT`。
-3. `IMAGE / RICH_TEXT / CARD` 可以先只发 `REPLY_BLOCK_STARTED` + `REPLY_BLOCK_COMPLETED`，`COMPLETED.payload.block` 携带完整 block。
+2. 现阶段只有 `TEXT` 需要 `DELTA`。
+3. `IMAGE / RICH_TEXT / CARD` 可以先只发 `REPLY_BLOCK_COMPLETED`，`COMPLETED.payload.block` 携带完整 block。
 4. Web/Channel 可以先忽略非 text draft，只依赖最终 `SESSION_UPDATED` 中的 durable `replyMessage.blocks` 渲染。
 
 ### 5.3 Final outcome contract
@@ -628,10 +568,10 @@ GET /api/session-runtime/sessions/{sessionId}/stream
   "occurredAt": "2026-05-02T00:00:00Z",
   "sessionId": "session-1",
   "turnId": "turn-1",
-  "visibility": "CUSTOMER",
-  "phase": "USER_NOTICE",
+  "visibility": "OPERATOR",
+  "phase": "MODEL_STARTED",
   "status": "RUNNING",
-  "title": "我正在核对相关信息",
+  "title": "模型处理中",
   "detail": {}
 }
 ```
@@ -754,7 +694,7 @@ RuntimeToolSpec(
 
 首期规则：
 
-1. assistant text delta 只累计为 `TEXT` block，并支持 `REPLY_BLOCK_DELTA` / `REPLY_BLOCK_SNAPSHOT` streaming。
+1. assistant text delta 只累计为 `TEXT` block，并支持 `REPLY_BLOCK_DELTA` streaming。
 2. `IMAGE / RICH_TEXT / CARD` 由 message block tool 产生结构化 block，runtime 校验后追加到当前 `replyMessage.blocks`。
 3. message block tool 不等同于 action tool；它不触发 owner switch、playbook、handoff 等 runtime lifecycle action。
 4. block 顺序按 provider-native transcript 中的 assistant text / tool use 顺序归并。
@@ -843,8 +783,8 @@ human_handoff({
 LLM streaming 具体流程：
 
 1. agent-runtime 构造 provider messages、`<system-reminder>`、tool schemas，并以 `stream=true` 调用底层 LLM。
-2. `text_delta` 立即累计到当前 assistant draft，经基础 customer-visible guard 后映射为 `REPLY_BLOCK_DELTA` / `REPLY_BLOCK_SNAPSHOT`。
-3. `tool_use` / `tool_call` argument delta 只在内部累计，映射为 `ACTION_TOOL_ARGUMENT_DELTA`，默认 `INTERNAL`。
+2. `text_delta` 立即累计到当前 assistant draft，经基础 customer-visible guard 后映射为 `REPLY_BLOCK_DELTA`。
+3. `tool_use` / `tool_call` argument delta 只在 provider accumulator 内部累计，不作为 runtime stream frame 暴露。
 4. `read_skill` 完成后返回 tool result，继续下一轮 provider stream。
 5. `update_shared_state` 完成后累计 state patch，可返回 accepted tool result，继续生成。
 6. `append_image_block`、`append_rich_text_block`、`append_card_block` 完成后追加 message block，可返回 accepted tool result，继续生成。
@@ -959,7 +899,7 @@ type RuntimeContentBlock =
 3. tool use / tool result 必须保留 provider-native id 关系，确保下一轮 provider call 能正确接续。
 4. usage、finish reason、model metadata 只进入 metrics / trace，不进入 owner-context transcript。
 5. OpenAI-compatible 与 Anthropic-like adapter 可以共享 normalized accumulator，但各自负责 provider-native replay 格式。
-6. provider raw event 只写 trace；正式 stream frame 使用 `PROVIDER_DEBUG` 摘要，不把 raw event 放进 replay 协议。
+6. provider raw event 只写 trace，不进入 replay 协议或正式 stream frame。
 
 ## 8. 上下文模型
 
@@ -1048,7 +988,6 @@ activity types：
 
 - `TYPING_START`
 - `TYPING_STOP`
-- `DRAFT_CREATE`
 - `DRAFT_UPDATE`
 - `DRAFT_COMPLETE`
 - `DRAFT_DISCARD`
@@ -1085,7 +1024,7 @@ Progress 规则：
 - [ ] 更新 OpenAPI：session SSE 新增事件 schema，internal stream ingress 新增 endpoint。
 - [ ] 明确 visibility enum：`CUSTOMER / OPERATOR / DEVELOPER / INTERNAL`。
 - [ ] 明确 frame id 规则：`streamId` 仅表示一次 HTTP stream，`seq` 是 `turnExecutionId` 内逻辑顺序，`frameId = ${turnExecutionId}:${seq}`，并定义 `modelRoundId`、`toolCallId`、`blockId`。
-- [ ] 把 `FINAL_OUTCOME` 和 `PROVIDER_DEBUG` 标记为 internal-only，不进入 Web/Channel projection。
+- [ ] 把 `FINAL_OUTCOME` 标记为 internal-only，不进入 Web/Channel projection。
 - [ ] 增加 progress label / projection contract，禁止 customer 直接消费内部 frame kind。
 
 验收：
@@ -1192,7 +1131,7 @@ Progress 规则：
 - [ ] OpenAI-compatible adapter 实现 normalized block 到 provider-native messages 的回放。
 - [ ] Anthropic-like adapter 实现 normalized block 到 provider-native messages 的回放。
 - [ ] thinking / tool use / tool result 保持 provider-native replay 所需字段。
-- [ ] raw provider event 只进入 trace；正式 frame 只发 `PROVIDER_DEBUG` 摘要。
+- [ ] raw provider event 只进入 trace，不进入正式 stream frame。
 
 验收：
 

@@ -94,15 +94,9 @@ public final class SessionContracts {
         TURN_STARTED,
         MODEL_STARTED,
         MODEL_COMPLETED,
-        USER_NOTICE,
-        PROVIDER_DEBUG,
         ACTION_TOOL_STARTED,
-        ACTION_TOOL_ARGUMENT_DELTA,
         ACTION_TOOL_COMPLETED,
-        TOOL_PROGRESS,
-        REPLY_BLOCK_STARTED,
         REPLY_BLOCK_DELTA,
-        REPLY_BLOCK_SNAPSHOT,
         REPLY_BLOCK_COMPLETED,
         FINAL_OUTCOME,
         ERROR
@@ -127,13 +121,6 @@ public final class SessionContracts {
         FAILED
     }
 
-    public enum ToolProgressStatus {
-        STARTED,
-        RUNNING,
-        SUCCEEDED,
-        FAILED
-    }
-
     public enum StreamErrorStage {
         PROVIDER_STREAM,
         TOOL_ARGUMENT_PARSE,
@@ -143,9 +130,7 @@ public final class SessionContracts {
     }
 
     public enum SessionReplyDraftOperation {
-        STARTED,
         DELTA,
-        SNAPSHOT,
         COMPLETED,
         DISCARD
     }
@@ -657,16 +642,7 @@ public final class SessionContracts {
     public record ModelCompletedPayload(String modelRoundId, ModelStreamStatus status) {
     }
 
-    public record UserNoticePayload(String label, String text) {
-    }
-
-    public record ProviderDebugPayload(String modelRoundId, String providerEventType, Integer contentBlockIndex) {
-    }
-
     public record ToolStartedPayload(String modelRoundId, String toolCallId, String toolName, ToolKind toolKind) {
-    }
-
-    public record ToolArgumentDeltaPayload(String toolCallId, String delta) {
     }
 
     public record ToolProducedPayload(String action, String messageBlockId, Boolean sharedStateUpdated) {
@@ -681,24 +657,7 @@ public final class SessionContracts {
     ) {
     }
 
-    public record ToolProgressPayload(
-        String toolCallId,
-        String label,
-        ToolProgressStatus status,
-        Map<String, Object> detail
-    ) {
-        public ToolProgressPayload {
-            detail = immutableObjectMap(detail);
-        }
-    }
-
-    public record ReplyBlockStartedPayload(String blockId, SessionMessageBlockType blockType) {
-    }
-
     public record ReplyBlockDeltaPayload(String blockId, SessionMessageBlockType blockType, String delta) {
-    }
-
-    public record ReplyBlockSnapshotPayload(String blockId, SessionMessageBlockType blockType, String text) {
     }
 
     public record ReplyBlockCompletedPayload(String blockId, Object block) {

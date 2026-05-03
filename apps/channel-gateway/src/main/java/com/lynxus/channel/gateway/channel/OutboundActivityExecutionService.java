@@ -87,7 +87,7 @@ public class OutboundActivityExecutionService {
     private static boolean supports(ChannelProviderDescriptor descriptor, ChannelOutboundActivityType activityType) {
         return switch (activityType) {
             case TYPING_START, TYPING_STOP -> descriptor.supportsTyping();
-            case DRAFT_CREATE, DRAFT_UPDATE, DRAFT_COMPLETE, DRAFT_DISCARD -> descriptor.supportsDraftUpdate();
+            case DRAFT_UPDATE, DRAFT_COMPLETE, DRAFT_DISCARD -> descriptor.supportsDraftUpdate();
         };
     }
 

@@ -327,15 +327,9 @@ AgentTurnStreamFrameKind = Literal[
     "TURN_STARTED",
     "MODEL_STARTED",
     "MODEL_COMPLETED",
-    "USER_NOTICE",
-    "PROVIDER_DEBUG",
     "ACTION_TOOL_STARTED",
-    "ACTION_TOOL_ARGUMENT_DELTA",
     "ACTION_TOOL_COMPLETED",
-    "TOOL_PROGRESS",
-    "REPLY_BLOCK_STARTED",
     "REPLY_BLOCK_DELTA",
-    "REPLY_BLOCK_SNAPSHOT",
     "REPLY_BLOCK_COMPLETED",
     "FINAL_OUTCOME",
     "ERROR",
@@ -346,26 +340,10 @@ class TurnStartedPayload(BaseModel):
     triggerType: str
 
 
-class UserNoticePayload(BaseModel):
-    label: str
-    text: str
-
-
-class ReplyBlockStartedPayload(BaseModel):
-    blockId: str
-    blockType: str
-
-
 class ReplyBlockDeltaPayload(BaseModel):
     blockId: str
     blockType: Literal["TEXT"]
     delta: str
-
-
-class ReplyBlockSnapshotPayload(BaseModel):
-    blockId: str
-    blockType: Literal["TEXT"]
-    text: str
 
 
 class ReplyBlockCompletedPayload(BaseModel):
