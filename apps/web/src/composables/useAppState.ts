@@ -66,13 +66,13 @@ export function useAppState(currentPageKey: Ref<PageKey>) {
     if (runtimeSelectedSessionId.value === detail.session.id) {
       runtimeSessionDetail.value = detail;
     }
+    runtimeDrafts.value = reconcileRuntimeDraftsWithDetail(runtimeDrafts.value, detail);
   }
 
   function applyRuntimeStreamEvent(event: SessionRuntimeStreamEvent) {
     runtimeStreamLastEventId = event.id;
     if (event.type === 'SESSION_SNAPSHOT' || event.type === 'SESSION_UPDATED') {
       applyRuntimeSessionDetail(event.detail);
-      runtimeDrafts.value = runtimeDrafts.value.filter((draft) => draft.sessionId !== event.sessionId);
       return;
     }
     if (event.type === 'SESSION_PROGRESS') {
@@ -112,9 +112,9 @@ export function useAppState(currentPageKey: Ref<PageKey>) {
     if (event.blockType !== 'TEXT') {
       return;
     }
-    const existing = runtimeDrafts.value.find((draft) => draft.sessionId === event.sessionId && draft.turnId === event.turnId);
+    const existing = runtimeDrafts.value.find((draft) => sameRuntimeDraft(draft, event));
     if (event.operation === 'DISCARD') {
-      runtimeDrafts.value = runtimeDrafts.value.filter((draft) => !(draft.sessionId === event.sessionId && draft.turnId === event.turnId));
+      runtimeDrafts.value = runtimeDrafts.value.filter((draft) => !sameRuntimeDraft(draft, event));
       return;
     }
     const current: RuntimeDraftMessage = existing ?? {
@@ -128,7 +128,7 @@ export function useAppState(currentPageKey: Ref<PageKey>) {
     const text = current.text + (event.delta ?? '');
     const next = { ...current, text, failed: false, updatedAt: event.occurredAt };
     runtimeDrafts.value = [
-      ...runtimeDrafts.value.filter((draft) => !(draft.sessionId === event.sessionId && draft.turnId === event.turnId)),
+      ...runtimeDrafts.value.filter((draft) => !sameRuntimeDraft(draft, event)),
       next,
     ];
   }
@@ -268,4 +268,22 @@ export function useAppState(currentPageKey: Ref<PageKey>) {
     applyRuntimeSessionDetail,
     refresh,
   };
+}
+
+export function reconcileRuntimeDraftsWithDetail(
+  drafts: RuntimeDraftMessage[],
+  detail: SessionRuntimeDetail,
+): RuntimeDraftMessage[] {
+  const durableMessageIds = new Set(detail.messages.map((message) => message.messageId));
+  if (!durableMessageIds.size) {
+    return drafts;
+  }
+  return drafts.filter((draft) => draft.sessionId !== detail.session.id || !durableMessageIds.has(draft.messageId));
+}
+
+function sameRuntimeDraft(
+  draft: RuntimeDraftMessage,
+  event: Extract<SessionRuntimeStreamEvent, { type: 'SESSION_REPLY_DRAFT' }>,
+) {
+  return draft.sessionId === event.sessionId && draft.messageId === event.messageId;
 }

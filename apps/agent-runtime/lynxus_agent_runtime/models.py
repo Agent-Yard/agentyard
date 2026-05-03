@@ -285,6 +285,7 @@ class AgentTurnRequest(BaseModel):
     sessionId: str
     turnId: str | None = None
     turnExecutionId: str | None = None
+    replyMessageId: str
     ownershipEpoch: int = 1
     assistantId: str
     assistantReleaseVersion: str
@@ -341,12 +342,14 @@ class TurnStartedPayload(BaseModel):
 
 
 class ReplyBlockDeltaPayload(BaseModel):
+    messageId: str
     blockId: str
     blockType: Literal["TEXT"]
     delta: str
 
 
 class ReplyBlockCompletedPayload(BaseModel):
+    messageId: str
     blockId: str
     block: SessionMessageBlock
 

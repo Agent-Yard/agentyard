@@ -1255,6 +1255,7 @@ export interface AgentTurnRequest {
   sessionId: string;
   turnId: string;
   turnExecutionId: string;
+  replyMessageId: string;
   ownershipEpoch: number;
   assistantId: string;
   assistantReleaseVersion: string;
@@ -1361,12 +1362,14 @@ export interface ToolCompletedPayload {
 }
 
 export interface ReplyBlockDeltaPayload {
+  messageId: string;
   blockId: string;
   blockType: 'TEXT';
   delta: string;
 }
 
 export interface ReplyBlockCompletedPayload {
+  messageId: string;
   blockId: string;
   block: SessionMessageBlock;
 }

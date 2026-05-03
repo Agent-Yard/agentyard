@@ -352,6 +352,8 @@ public interface SessionAgentRuntimeGateway {
                 Map.of(
                     "code",
                     code,
+                    "messageId",
+                    context.replyMessageId(),
                     "message",
                     message,
                     "stage",
@@ -430,6 +432,7 @@ public interface SessionAgentRuntimeGateway {
             String sessionId,
             String turnId,
             String turnExecutionId,
+            String replyMessageId,
             String ownerAgentId,
             long ownershipEpoch
         ) {
@@ -439,6 +442,7 @@ public interface SessionAgentRuntimeGateway {
                     safeString(request.sessionId()),
                     safeString(request.turnId()),
                     safeString(request.turnExecutionId()),
+                    safeString(request.replyMessageId()),
                     safeString(ownerAgentId),
                     request.ownershipEpoch()
                 );

@@ -657,10 +657,10 @@ public final class SessionContracts {
     ) {
     }
 
-    public record ReplyBlockDeltaPayload(String blockId, SessionMessageBlockType blockType, String delta) {
+    public record ReplyBlockDeltaPayload(String messageId, String blockId, SessionMessageBlockType blockType, String delta) {
     }
 
-    public record ReplyBlockCompletedPayload(String blockId, Object block) {
+    public record ReplyBlockCompletedPayload(String messageId, String blockId, Object block) {
     }
 
     public record FinalOutcomePayload(AgentTurnExecutionOutcome outcome) {
@@ -741,6 +741,7 @@ public final class SessionContracts {
         String sessionId,
         String turnId,
         String turnExecutionId,
+        String replyMessageId,
         long ownershipEpoch,
         String assistantId,
         String assistantReleaseVersion,

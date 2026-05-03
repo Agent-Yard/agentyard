@@ -269,6 +269,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertFalse(final_frames[0]["payload"]["outcome"]["success"])
         self.assertIn("configured streaming model provider", final_frames[0]["payload"]["outcome"]["failureReason"])
         self.assertEqual("PROVIDER_STREAM_UNAVAILABLE", frames[-2]["payload"]["code"])
+        self.assertEqual("session-message-reply-1", frames[-2]["payload"]["messageId"])
         self.assertEqual("PROVIDER_STREAM", frames[-2]["payload"]["stage"])
         self.assertFalse(frames[-2]["payload"]["retryable"])
         self.assertEqual([], [frame for frame in frames if frame["kind"] == "REPLY_BLOCK_DELTA"])
@@ -309,6 +310,9 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual([], [frame for frame in frames if frame["kind"] == "REPLY_BLOCK_SNAPSHOT"])
         delta_frames = [frame for frame in frames if frame["kind"] == "REPLY_BLOCK_DELTA"]
         self.assertEqual(["已查到", "订单。"], [frame["payload"]["delta"] for frame in delta_frames])
+        self.assertTrue(all(frame["payload"]["messageId"] == "session-message-reply-1" for frame in delta_frames))
+        completed_frames = [frame for frame in frames if frame["kind"] == "REPLY_BLOCK_COMPLETED"]
+        self.assertEqual(["session-message-reply-1"], [frame["payload"]["messageId"] for frame in completed_frames])
         final_frame = frames[-1]
         self.assertEqual("FINAL_OUTCOME", final_frame["kind"])
         outcome = final_frame["payload"]["outcome"]

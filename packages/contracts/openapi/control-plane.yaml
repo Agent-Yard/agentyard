@@ -4262,8 +4262,10 @@ components:
               type: boolean
     ReplyBlockDeltaPayload:
       type: object
-      required: [blockId, blockType, delta]
+      required: [messageId, blockId, blockType, delta]
       properties:
+        messageId:
+          type: string
         blockId:
           type: string
         blockType:
@@ -4273,8 +4275,10 @@ components:
           type: string
     ReplyBlockCompletedPayload:
       type: object
-      required: [blockId, block]
+      required: [messageId, blockId, block]
       properties:
+        messageId:
+          type: string
         blockId:
           type: string
         block:

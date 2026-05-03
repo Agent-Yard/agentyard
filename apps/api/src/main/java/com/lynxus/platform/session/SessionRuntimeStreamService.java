@@ -48,8 +48,8 @@ public class SessionRuntimeStreamService {
         AgentTurnStreamFrameKind.REPLY_BLOCK_DELTA,
         AgentTurnStreamFrameKind.REPLY_BLOCK_COMPLETED
     );
-    private static final Set<String> CUSTOMER_REPLY_DRAFT_KEYS = Set.of("blockId", "blockType", "delta", "text");
-    private static final Set<String> CUSTOMER_REPLY_COMPLETED_KEYS = Set.of("blockId", "block");
+    private static final Set<String> CUSTOMER_REPLY_DRAFT_KEYS = Set.of("messageId", "blockId", "blockType", "delta", "text");
+    private static final Set<String> CUSTOMER_REPLY_COMPLETED_KEYS = Set.of("messageId", "blockId", "block");
     private static final Set<String> CUSTOMER_TEXT_BLOCK_KEYS = Set.of("type", "text");
     private static final Set<String> INTERNAL_PAYLOAD_KEY_TOKENS = Set.of(
         "model",
@@ -433,7 +433,7 @@ public class SessionRuntimeStreamService {
             frame.occurredAt(),
             frame.sessionId(),
             frame.turnId(),
-            "draft:" + frame.turnId(),
+            replyMessageIdPayload(frame),
             operation,
             stringPayload(frame, "blockId", "block-1"),
             blockTypePayload(frame),
@@ -558,6 +558,9 @@ public class SessionRuntimeStreamService {
         if (!CUSTOMER_REPLY_DRAFT_KEYS.containsAll(frame.payload().keySet())) {
             throw badFrame("customer reply draft payload only allows draft text fields");
         }
+        if (isBlank(stringPayload(frame, "messageId", null))) {
+            throw badFrame("customer reply draft messageId is required");
+        }
         String blockType = stringPayload(frame, "blockType", SessionMessageBlockType.TEXT.name());
         if (!SessionMessageBlockType.TEXT.name().equals(blockType)) {
             throw badFrame("customer reply draft only allows text blocks");
@@ -574,7 +577,10 @@ public class SessionRuntimeStreamService {
 
     private static void validateCustomerReplyCompleted(AgentTurnStreamFrame frame) {
         if (!frame.payload().keySet().equals(CUSTOMER_REPLY_COMPLETED_KEYS)) {
-            throw badFrame("customer reply completed payload only allows blockId and block");
+            throw badFrame("customer reply completed payload only allows messageId, blockId, and block");
+        }
+        if (isBlank(stringPayload(frame, "messageId", null))) {
+            throw badFrame("customer reply completed messageId is required");
         }
         if (isBlank(stringPayload(frame, "blockId", null))) {
             throw badFrame("customer reply completed blockId is required");
@@ -663,6 +669,10 @@ public class SessionRuntimeStreamService {
 
     private static String replyDraftTextPayload(AgentTurnStreamFrame frame) {
         return replyBlockPayload(frame, "text", stringPayload(frame, "text", null));
+    }
+
+    private static String replyMessageIdPayload(AgentTurnStreamFrame frame) {
+        return stringPayload(frame, "messageId", "draft:" + frame.turnId());
     }
 
     private static String replyBlockPayload(AgentTurnStreamFrame frame, String key, String defaultValue) {

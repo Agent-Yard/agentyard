@@ -50,6 +50,7 @@ class SessionAgentRuntimeGatewayTest {
             assertEquals(1.0, meterRegistry.get("lynxus.runtime_stream.missing_final_outcome").counter().count());
             org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"kind\":\"ERROR\"");
             org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"code\":\"MISSING_FINAL_OUTCOME\"");
+            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"messageId\":\"session-message-reply-1\"");
             org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"stage\":\"FINAL_OUTCOME_BUILD\"");
         } finally {
             server.stop(0);
@@ -328,6 +329,7 @@ class SessionAgentRuntimeGatewayTest {
             "session-1",
             "turn-1",
             "exec-1",
+            "session-message-reply-1",
             1,
             "assistant-1",
             "1.0.0",
@@ -371,7 +373,7 @@ class SessionAgentRuntimeGatewayTest {
                 + "\"turnId\":\"turn-1\",\"turnExecutionId\":\"exec-1\",\"ownerAgentId\":\"agent-1\","
                 + "\"ownershipEpoch\":1,\"seq\":1,\"kind\":\"REPLY_BLOCK_DELTA\",\"visibility\":\"CUSTOMER\","
                 + "\"occurredAt\":\"2026-05-03T00:00:01Z\","
-                + "\"payload\":{\"blockId\":\"block-1\",\"blockType\":\"TEXT\",\"delta\":\"hello\"}}"
+                + "\"payload\":{\"messageId\":\"session-message-reply-1\",\"blockId\":\"block-1\",\"blockType\":\"TEXT\",\"delta\":\"hello\"}}"
         ).formatted(AgentTurnStreamFrame.PROTOCOL);
     }
 

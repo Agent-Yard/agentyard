@@ -397,7 +397,7 @@ function formatSharedState(value: Record<string, unknown> | null | undefined) {
           <div v-if="currentDrafts.length" class="runtime-drafts">
             <div
               v-for="draft in currentDrafts"
-              :key="draft.turnId"
+              :key="draft.messageId"
               class="runtime-draft"
               :class="{ 'runtime-draft--failed': draft.failed }"
             >

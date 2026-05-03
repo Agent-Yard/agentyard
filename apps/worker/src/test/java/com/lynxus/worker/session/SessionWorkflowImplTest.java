@@ -361,8 +361,9 @@ class SessionWorkflowImplTest {
         try (TestWorkflowEnvironment environment = newRealTimeWorkflowEnvironment()) {
             Worker worker = environment.newWorker("session-tests-reply-extra-fields");
             RecordingPersistenceActivities persistence = new RecordingPersistenceActivities();
+            ReplyWithExtraFieldsActivities activities = new ReplyWithExtraFieldsActivities();
             worker.registerWorkflowImplementationTypes(SessionWorkflowImpl.class);
-            worker.registerActivitiesImplementations(new ReplyWithExtraFieldsActivities(), persistence);
+            worker.registerActivitiesImplementations(activities, persistence);
             environment.start();
 
             SessionWorkflow workflow = environment.getWorkflowClient().newWorkflowStub(
@@ -382,6 +383,10 @@ class SessionWorkflowImplTest {
             waitForMessage(environment, persistence, SessionMessageRole.ASSISTANT);
             assertEquals(0, countEvents(persistence.events(), SessionEventType.AGENT_DECISION_REJECTED));
             assertEquals(1, countMessages(persistence.messages(), SessionMessageRole.ASSISTANT));
+            assertEquals(
+                activities.replyMessageIds().getFirst(),
+                latestMessageOfRole(persistence.messages(), SessionMessageRole.ASSISTANT).messageId()
+            );
         }
     }
 
@@ -1080,8 +1085,11 @@ class SessionWorkflowImplTest {
     }
 
     private static final class ReplyWithExtraFieldsActivities implements AgentTurnActivities {
+        private final List<String> replyMessageIds = new CopyOnWriteArrayList<>();
+
         @Override
         public AgentTurnExecutionOutcome executeTurn(AgentTurnRequest request) {
+            replyMessageIds.add(request.replyMessageId());
             return successOutcome(new AgentTurnResult(
                     new AgentDecision(
                         AgentDecisionAction.REPLY,
@@ -1093,6 +1101,10 @@ class SessionWorkflowImplTest {
                 Map.of(),
                 null
             ));
+        }
+
+        List<String> replyMessageIds() {
+            return replyMessageIds;
         }
     }
 

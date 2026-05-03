@@ -237,6 +237,8 @@ class SessionRuntimeStreamServiceTest {
         service.acceptStreamFrame(frameAt(AgentTurnStreamFrameKind.TURN_STARTED, StreamVisibility.OPERATOR, 1, Map.of(), Instant.parse("2026-05-02T00:00:00Z")));
         service.acceptStreamFrame(frameAt(AgentTurnStreamFrameKind.ACTION_TOOL_STARTED, StreamVisibility.OPERATOR, 2, Map.of("toolName", "lookup"), Instant.parse("2026-05-02T00:00:01Z")));
         service.acceptStreamFrame(frameAt(AgentTurnStreamFrameKind.REPLY_BLOCK_DELTA, StreamVisibility.CUSTOMER, 3, Map.of(
+            "messageId",
+            "session-message-reply-1",
             "blockId",
             "block-1",
             "blockType",
@@ -245,6 +247,8 @@ class SessionRuntimeStreamServiceTest {
             "hi"
         ), Instant.parse("2026-05-02T00:00:02Z")));
         service.acceptStreamFrame(frameAt(AgentTurnStreamFrameKind.REPLY_BLOCK_COMPLETED, StreamVisibility.CUSTOMER, 4, Map.of(
+            "messageId",
+            "session-message-reply-1",
             "blockId",
             "block-1",
             "block",
@@ -280,6 +284,33 @@ class SessionRuntimeStreamServiceTest {
     }
 
     @Test
+    void shouldProjectReplyDraftWithRuntimeReplyMessageId() {
+        SessionRuntimeReplayStore replayStore = mock(SessionRuntimeReplayStore.class);
+        RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);
+        RedisKeyspace keyspace = new RedisKeyspace();
+        SessionRuntimeStreamService service = serviceWith(replayStore, pubSubBus, keyspace);
+        when(replayStore.append(any())).thenReturn(true);
+
+        service.acceptStreamFrame(frame(AgentTurnStreamFrameKind.REPLY_BLOCK_DELTA, StreamVisibility.CUSTOMER, 2, Map.of(
+            "messageId",
+            "session-message-reply-1",
+            "blockId",
+            "block-1",
+            "blockType",
+            "TEXT",
+            "delta",
+            "hi"
+        )));
+
+        verify(replayStore).append(argThat(event ->
+            "SESSION_REPLY_DRAFT".equals(event.type())
+                && "session-message-reply-1".equals(event.messageId())
+                && "hi".equals(event.delta())
+        ));
+        verify(pubSubBus).publish(eq(keyspace.sseChannelSessionUpdated()), any());
+    }
+
+    @Test
     void shouldRejectCustomerActionToolFramesBeforeProjection() {
         SessionRuntimeReplayStore replayStore = mock(SessionRuntimeReplayStore.class);
         RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);
@@ -302,12 +333,12 @@ class SessionRuntimeStreamServiceTest {
         RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);
         SessionRuntimeStreamService service = serviceWith(replayStore, pubSubBus);
         List<Map<String, Object>> sensitivePayloads = List.of(
-            Map.of("blockId", "block-1", "blockType", "TEXT", "delta", "ok", "model", "gpt"),
-            Map.of("blockId", "block-1", "blockType", "TEXT", "delta", "ok", "toolName", "lookup"),
-            Map.of("blockId", "block-1", "blockType", "TEXT", "delta", "ok", "prompt", "raw prompt"),
-            Map.of("blockId", "block-1", "blockType", "TEXT", "delta", "ok", "credential", "vault://secret"),
-            Map.of("blockId", "block-1", "blockType", "TEXT", "delta", "ok", "privacy", Map.of("placeholder", "x")),
-            Map.of("blockId", "block-1", "blockType", "TEXT", "delta", "ok", "system-reminder", "hidden")
+            Map.of("messageId", "session-message-reply-1", "blockId", "block-1", "blockType", "TEXT", "delta", "ok", "model", "gpt"),
+            Map.of("messageId", "session-message-reply-1", "blockId", "block-1", "blockType", "TEXT", "delta", "ok", "toolName", "lookup"),
+            Map.of("messageId", "session-message-reply-1", "blockId", "block-1", "blockType", "TEXT", "delta", "ok", "prompt", "raw prompt"),
+            Map.of("messageId", "session-message-reply-1", "blockId", "block-1", "blockType", "TEXT", "delta", "ok", "credential", "vault://secret"),
+            Map.of("messageId", "session-message-reply-1", "blockId", "block-1", "blockType", "TEXT", "delta", "ok", "privacy", Map.of("placeholder", "x")),
+            Map.of("messageId", "session-message-reply-1", "blockId", "block-1", "blockType", "TEXT", "delta", "ok", "system-reminder", "hidden")
         );
 
         for (int index = 0; index < sensitivePayloads.size(); index += 1) {
@@ -351,6 +382,8 @@ class SessionRuntimeStreamServiceTest {
         when(replayStore.append(any())).thenReturn(true);
 
         service.acceptStreamFrame(frame(AgentTurnStreamFrameKind.REPLY_BLOCK_COMPLETED, StreamVisibility.CUSTOMER, 2, Map.of(
+            "messageId",
+            "session-message-reply-1",
             "blockId",
             "block-1",
             "block",
@@ -360,6 +393,7 @@ class SessionRuntimeStreamServiceTest {
         verify(replayStore).append(argThat(event ->
             "SESSION_REPLY_DRAFT".equals(event.type())
                 && StreamVisibility.CUSTOMER == event.visibility()
+                && "session-message-reply-1".equals(event.messageId())
                 && "block-1".equals(event.blockId())
                 && "这是一段最终回复。".equals(event.text())
         ));
@@ -377,6 +411,8 @@ class SessionRuntimeStreamServiceTest {
             StreamVisibility.CUSTOMER,
             2,
             Map.of(
+                "messageId",
+                "session-message-reply-1",
                 "blockId",
                 "block-1",
                 "block",

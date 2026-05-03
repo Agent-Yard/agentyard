@@ -388,11 +388,13 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             AgentTurnExecutionOutcome outcome;
             String turnId = "turn-" + Workflow.randomUUID();
             String turnExecutionId = turnId + ":exec-1";
+            String replyMessageId = nextMessageId();
             try {
                 outcome = activities.executeTurn(new AgentTurnRequest(
                     snapshot.sessionId(),
                     turnId,
                     turnExecutionId,
+                    replyMessageId,
                     ownershipEpoch,
                     snapshot.assistantId(),
                     snapshot.assistantReleaseVersion(),
@@ -440,7 +442,7 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             if (isSecurityBlocked(result == null ? null : result.securityAssessment())) {
                 AgentDecision decision = result == null ? null : result.decision();
                 if (decision != null && hasMessageContent(decision.replyMessage())) {
-                    emitOwnerReply(decision.replyMessage(), SessionActorType.AGENT, currentOwnerAgentId, activePlaybookRunId, currentOwnerAgentId, null);
+                    emitOwnerReply(replyMessageId, decision.replyMessage(), SessionActorType.AGENT, currentOwnerAgentId, activePlaybookRunId, currentOwnerAgentId, null);
                 }
                 emitSecurityBlocked(
                     result.securityAssessment(),
@@ -477,14 +479,15 @@ public class SessionWorkflowImpl implements SessionWorkflow {
                     validation.rejectReason(),
                     result == null ? null : result.decision(),
                     currentOwnerAgentId,
-                    activePlaybookRunId
+                    activePlaybookRunId,
+                    replyMessageId
                 );
                 break;
             }
             AgentDecision decision = validation.decision();
 
             if (hasMessageContent(decision.replyMessage())) {
-                emitOwnerReply(decision.replyMessage(), SessionActorType.AGENT, currentOwnerAgentId, activePlaybookRunId, currentOwnerAgentId, null);
+                emitOwnerReply(replyMessageId, decision.replyMessage(), SessionActorType.AGENT, currentOwnerAgentId, activePlaybookRunId, currentOwnerAgentId, null);
             }
             if (decision.action() == AgentDecisionAction.REPLY || decision.action() == AgentDecisionAction.NO_OP) {
                 break;
@@ -880,6 +883,16 @@ public class SessionWorkflowImpl implements SessionWorkflow {
     }
 
     private void emitDecisionRejected(String reason, AgentDecision decision, String ownerAgentId, String activePlaybookRunId) {
+        emitDecisionRejected(reason, decision, ownerAgentId, activePlaybookRunId, null);
+    }
+
+    private void emitDecisionRejected(
+        String reason,
+        AgentDecision decision,
+        String ownerAgentId,
+        String activePlaybookRunId,
+        String messageId
+    ) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("rejectReason", reason);
         if (decision != null) {
@@ -894,7 +907,8 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             payload,
             activePlaybookRunId,
             ownerAgentId,
-            textMessageInput(DECISION_REJECTED_REPLY)
+            textMessageInput(DECISION_REJECTED_REPLY),
+            messageId
         );
     }
 
@@ -945,21 +959,33 @@ public class SessionWorkflowImpl implements SessionWorkflow {
         String relatedOwnerAgentId,
         SessionMessageInput reply
     ) {
+        emitSystemEventBackedReply(eventType, actorId, payload, relatedPlaybookRunId, relatedOwnerAgentId, reply, null);
+    }
+
+    private void emitSystemEventBackedReply(
+        SessionEventType eventType,
+        String actorId,
+        Map<String, Object> payload,
+        String relatedPlaybookRunId,
+        String relatedOwnerAgentId,
+        SessionMessageInput reply,
+        String messageId
+    ) {
         if (!hasMessageContent(reply)) {
             appendEvent(eventType, SessionActorType.SYSTEM, actorId, payload, relatedPlaybookRunId, relatedOwnerAgentId);
             return;
         }
-        String messageId = nextMessageId();
+        String resolvedMessageId = messageId == null || messageId.isBlank() ? nextMessageId() : messageId;
         String eventId = appendEvent(
             eventType,
             SessionActorType.SYSTEM,
             actorId,
             payload,
-            messageId,
+            resolvedMessageId,
             relatedPlaybookRunId,
             relatedOwnerAgentId
         );
-        emitOwnerReply(messageId, reply, SessionActorType.SYSTEM, null, relatedPlaybookRunId, relatedOwnerAgentId, eventId);
+        emitOwnerReply(resolvedMessageId, reply, SessionActorType.SYSTEM, null, relatedPlaybookRunId, relatedOwnerAgentId, eventId);
     }
 
     private ActivePlaybookSummary activePlaybookSummary(String runId) {

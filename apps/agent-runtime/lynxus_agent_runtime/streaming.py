@@ -63,6 +63,7 @@ class _FrameWriter:
         self._seq = 0
         self._turn_id = request.turnId or request.trigger.eventId or "turn-" + str(uuid.uuid4())
         self._turn_execution_id = request.turnExecutionId or self._turn_id + ":exec-1"
+        self._reply_message_id = request.replyMessageId
         self._execution_attempt_id = "attempt-" + str(uuid.uuid4())
 
     @property
@@ -72,6 +73,10 @@ class _FrameWriter:
     @property
     def turn_execution_id(self) -> str:
         return self._turn_execution_id
+
+    @property
+    def reply_message_id(self) -> str:
+        return self._reply_message_id
 
     @property
     def execution_attempt_id(self) -> str:
@@ -186,6 +191,7 @@ async def stream_agent_turn(
             visibility="OPERATOR",
             payload={
                 "code": "PROVIDER_STREAM_UNAVAILABLE",
+                "messageId": writer.reply_message_id,
                 "message": message,
                 "stage": "PROVIDER_STREAM",
                 "retryable": False,
@@ -287,7 +293,12 @@ async def _stream_via_openai_compatible(
                         yield writer.frame(
                             kind="REPLY_BLOCK_DELTA",
                             visibility="CUSTOMER",
-                            payload={"blockId": block_id, "blockType": "TEXT", "delta": customer_delta},
+                            payload={
+                                "messageId": writer.reply_message_id,
+                                "blockId": block_id,
+                                "blockType": "TEXT",
+                                "delta": customer_delta,
+                            },
                         )
             message = round_accumulator.build_message()
             customer_tail = customer_restorer.flush()
@@ -297,7 +308,12 @@ async def _stream_via_openai_compatible(
                 yield writer.frame(
                     kind="REPLY_BLOCK_DELTA",
                     visibility="CUSTOMER",
-                    payload={"blockId": block_id, "blockType": "TEXT", "delta": customer_tail},
+                    payload={
+                        "messageId": writer.reply_message_id,
+                        "blockId": block_id,
+                        "blockType": "TEXT",
+                        "delta": customer_tail,
+                    },
                 )
             if message.usage is not None:
                 usage_tracker.record("SESSION_OWNER_MODEL", settings, message.usage, tool_loop_step=step)
@@ -419,7 +435,11 @@ async def _stream_via_openai_compatible(
                 yield writer.frame(
                     kind="REPLY_BLOCK_COMPLETED",
                     visibility="CUSTOMER",
-                    payload={"blockId": block_id, "block": block.model_dump(mode="json")},
+                    payload={
+                        "messageId": writer.reply_message_id,
+                        "blockId": block_id,
+                        "block": block.model_dump(mode="json"),
+                    },
                 )
         if not outcome.success:
             failure_reason = outcome.failureReason or "agent turn rejected"
@@ -428,6 +448,7 @@ async def _stream_via_openai_compatible(
                 visibility="OPERATOR",
                 payload={
                     "code": "FINAL_OUTCOME_REJECTED",
+                    "messageId": writer.reply_message_id,
                     "message": failure_reason,
                     "stage": "FINAL_OUTCOME_BUILD",
                     "retryable": False,
@@ -452,6 +473,7 @@ async def _stream_via_openai_compatible(
             visibility="OPERATOR",
             payload={
                 "code": _provider_stream_error_code(error),
+                "messageId": writer.reply_message_id,
                 "message": outcome.failureReason,
                 "stage": "PROVIDER_STREAM",
                 "retryable": isinstance(error, OpenAiCompatibleStreamIdleTimeoutError),
@@ -476,6 +498,7 @@ async def _stream_via_openai_compatible(
             visibility="OPERATOR",
             payload={
                 "code": "PROVIDER_STREAM_FAILED",
+                "messageId": writer.reply_message_id,
                 "message": outcome.failureReason,
                 "stage": "PROVIDER_STREAM",
                 "retryable": True,

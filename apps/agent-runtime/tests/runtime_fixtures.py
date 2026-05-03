@@ -6,6 +6,7 @@ import json
 def request_payload() -> dict:
     return {
         "sessionId": "session-1",
+        "replyMessageId": "session-message-reply-1",
         "assistantId": "assistant-1",
         "assistantReleaseVersion": "2026.04.19",
         "currentOwner": {

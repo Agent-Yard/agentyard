@@ -66,6 +66,7 @@ class AgentRuntimePromptingTest(unittest.TestCase):
         request = AgentTurnRequest.model_validate(
             {
                 "sessionId": "session-1",
+                "replyMessageId": "session-message-reply-1",
                 "assistantId": "assistant-1",
                 "assistantReleaseVersion": "2026.04.19",
                 "currentOwner": {
@@ -116,6 +117,7 @@ class AgentRuntimePromptingTest(unittest.TestCase):
         request = AgentTurnRequest.model_validate(
             {
                 "sessionId": "session-1",
+                "replyMessageId": "session-message-reply-1",
                 "assistantId": "assistant-1",
                 "assistantReleaseVersion": "2026.04.19",
                 "currentOwner": {
@@ -151,6 +153,7 @@ class AgentRuntimePromptingTest(unittest.TestCase):
         request = AgentTurnRequest.model_validate(
             {
                 "sessionId": "session-1",
+                "replyMessageId": "session-message-reply-1",
                 "assistantId": "assistant-1",
                 "assistantReleaseVersion": "2026.04.19",
                 "currentOwner": {
@@ -271,6 +274,7 @@ class AgentRuntimePromptingTest(unittest.TestCase):
         request = AgentTurnRequest.model_validate(
             {
                 "sessionId": "session-1",
+                "replyMessageId": "session-message-reply-1",
                 "assistantId": "assistant-1",
                 "assistantReleaseVersion": "2026.04.19",
                 "currentOwner": {
@@ -326,6 +330,7 @@ class AgentRuntimePromptingTest(unittest.TestCase):
         request = AgentTurnRequest.model_validate(
             {
                 "sessionId": "session-1",
+                "replyMessageId": "session-message-reply-1",
                 "assistantId": "assistant-1",
                 "assistantReleaseVersion": "2026.04.19",
                 "currentOwner": {
@@ -374,6 +379,7 @@ class AgentRuntimePromptingTest(unittest.TestCase):
         request = AgentTurnRequest.model_validate(
             {
                 "sessionId": "session-1",
+                "replyMessageId": "session-message-reply-1",
                 "assistantId": "assistant-1",
                 "assistantReleaseVersion": "2026.04.19",
                 "currentOwner": {
@@ -418,6 +424,7 @@ class AgentRuntimePromptingTest(unittest.TestCase):
         request = AgentTurnRequest.model_validate(
             {
                 "sessionId": "session-1",
+                "replyMessageId": "session-message-reply-1",
                 "assistantId": "assistant-1",
                 "assistantReleaseVersion": "2026.04.19",
                 "currentOwner": {
@@ -453,6 +460,7 @@ class AgentRuntimePromptingTest(unittest.TestCase):
         request = AgentTurnRequest.model_validate(
             {
                 "sessionId": "session-1",
+                "replyMessageId": "session-message-reply-1",
                 "assistantId": "assistant-1",
                 "assistantReleaseVersion": "2026.04.19",
                 "currentOwner": {
