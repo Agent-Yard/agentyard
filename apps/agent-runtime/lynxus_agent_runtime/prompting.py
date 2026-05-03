@@ -32,6 +32,16 @@ def build_prompt_bundle(request: AgentTurnRequest) -> PromptBundle:
     )
 
 
+def build_turn_input_messages(request: AgentTurnRequest) -> list[SemanticMessage]:
+    event_window = _event_window_size(request)
+    return [
+        _trigger_context_message(request),
+        _shared_state_context_message(request, event_window),
+        *_active_playbook_context_messages(request),
+        *_current_trigger_messages(request),
+    ]
+
+
 def _build_instruction(request: AgentTurnRequest) -> str:
     return "\n".join(
         [
@@ -112,65 +122,79 @@ def _build_capabilities(request: AgentTurnRequest) -> dict[str, Any]:
 
 def _build_runtime_messages(request: AgentTurnRequest) -> list[SemanticMessage]:
     event_window = _event_window_size(request)
+    runtime_messages = [
+        _trigger_context_message(request),
+        _shared_state_context_message(request, event_window),
+        *_active_playbook_context_messages(request),
+    ]
+    runtime_messages.extend(_recent_message_messages(request, event_window))
+    runtime_messages.extend(_recent_event_messages(request, event_window))
+    runtime_messages.extend(_current_trigger_messages(request))
+    return runtime_messages
+
+
+def _trigger_context_message(request: AgentTurnRequest) -> SemanticMessage:
+    return SemanticMessage(
+        kind="system_event",
+        content="Session trigger:\n" + json.dumps(
+            {
+                "triggerType": request.trigger.triggerType,
+                "payload": request.trigger.payload,
+            },
+            ensure_ascii=False,
+        ),
+        privacy_source=f"trigger:{request.trigger.eventId or request.trigger.triggerType}",
+    )
+
+
+def _shared_state_context_message(request: AgentTurnRequest, event_window: int) -> SemanticMessage:
     runtime_budget = DEFAULT_RUNTIME_BYTE_BUDGET
     shared_state_view = _shared_state_view(request.sharedState, runtime_budget // 2, event_window)
     shared_state_privacy_strategy = (
         PrivacyStrategy.SKIP if not request.sharedState else PrivacyStrategy.RULES_THEN_PRIVATE_LLM
     )
-    runtime_messages: list[SemanticMessage] = [
+    return SemanticMessage(
+        kind="system_event",
+        content="Visible sharedState slice (use get_shared_state tool if you need more keys):\n"
+        + json.dumps(shared_state_view, ensure_ascii=False),
+        privacy_strategy=shared_state_privacy_strategy,
+        privacy_source="shared_state_slice",
+    )
+
+
+def _active_playbook_context_messages(request: AgentTurnRequest) -> list[SemanticMessage]:
+    if request.activePlaybook is None:
+        return []
+    return [
         SemanticMessage(
             kind="system_event",
-            content="Session trigger:\n" + json.dumps(
-                {
-                    "triggerType": request.trigger.triggerType,
-                    "payload": request.trigger.payload,
-                },
-                ensure_ascii=False,
-            ),
-            privacy_source=f"trigger:{request.trigger.eventId or request.trigger.triggerType}",
-        ),
-        SemanticMessage(
-            kind="system_event",
-            content="Visible sharedState slice (use get_shared_state tool if you need more keys):\n"
-            + json.dumps(shared_state_view, ensure_ascii=False),
-            privacy_strategy=shared_state_privacy_strategy,
-            privacy_source="shared_state_slice",
-        ),
-    ]
-    if request.activePlaybook is not None:
-        runtime_messages.append(
-            SemanticMessage(
-                kind="system_event",
-                content="Active playbook summary:\n"
-                + json.dumps(request.activePlaybook.model_dump(mode="json"), ensure_ascii=False),
-                privacy_source=f"active_playbook:{request.activePlaybook.runId}",
-            )
+            content="Active playbook summary:\n"
+            + json.dumps(request.activePlaybook.model_dump(mode="json"), ensure_ascii=False),
+            privacy_source=f"active_playbook:{request.activePlaybook.runId}",
         )
-    runtime_messages.extend(_recent_message_messages(request, event_window))
-    runtime_messages.extend(_recent_event_messages(request, event_window))
+    ]
+
+
+def _current_trigger_messages(request: AgentTurnRequest) -> list[SemanticMessage]:
     if request.trigger.triggerType == "USER_MESSAGE":
         trigger_message = _find_trigger_message(request)
         if trigger_message is not None:
-            runtime_messages.append(_message_to_runtime_message(trigger_message))
-        else:
-            runtime_messages.append(
-                SemanticMessage(
-                    kind="system_event",
-                    content="Session trigger references a missing message",
-                    privacy_strategy=PrivacyStrategy.RULES_ONLY,
-                    privacy_source=f"missing_trigger_message:{request.trigger.triggerMessageId or 'unknown'}",
-                )
-            )
-    else:
-        runtime_messages.append(
+            return [_message_to_runtime_message(trigger_message)]
+        return [
             SemanticMessage(
                 kind="system_event",
-                content="System event result:\n"
-                + json.dumps(request.trigger.payload, ensure_ascii=False),
-                privacy_source=f"system_event_result:{request.trigger.eventId or request.trigger.triggerType}",
+                content="Session trigger references a missing message",
+                privacy_strategy=PrivacyStrategy.RULES_ONLY,
+                privacy_source=f"missing_trigger_message:{request.trigger.triggerMessageId or 'unknown'}",
             )
+        ]
+    return [
+        SemanticMessage(
+            kind="system_event",
+            content="System event result:\n" + json.dumps(request.trigger.payload, ensure_ascii=False),
+            privacy_source=f"system_event_result:{request.trigger.eventId or request.trigger.triggerType}",
         )
-    return runtime_messages
+    ]
 
 
 def render_openai_streaming_messages(bundle: PromptBundle) -> list[dict[str, Any]]:
@@ -181,6 +205,10 @@ def render_openai_streaming_messages(bundle: PromptBundle) -> list[dict[str, Any
     messages: list[dict[str, Any]] = [{"role": "system", "content": "\n\n".join(system_sections)}]
     messages.extend(render_openai_runtime_message(message) for message in bundle.runtime_messages)
     return messages
+
+
+def render_openai_runtime_messages(messages: list[SemanticMessage]) -> list[dict[str, Any]]:
+    return [render_openai_runtime_message(message) for message in messages]
 
 
 def loaded_skill_runtime_message(loaded_skills: list[dict[str, str]]) -> SemanticMessage:

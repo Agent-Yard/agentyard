@@ -4,9 +4,10 @@ import os
 import uuid
 import json
 import logging
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal, Protocol
+from typing import Any, Protocol
 
 from redis.exceptions import RedisError
 from sqlalchemy import DateTime, Integer, JSON, MetaData, String, Text, UniqueConstraint, create_engine, select, text
@@ -14,7 +15,6 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from .models import AgentTurnExecutionOutcome
-from .openai_compatible import OpenAiCompatibleStreamMessage
 from .redis_support import RedisSettings, create_sync_redis_client
 
 DEFAULT_DATABASE_URL = "postgresql+psycopg://lynxus:lynxus@127.0.0.1:5432/lynxus_core"
@@ -75,54 +75,17 @@ class TurnExecutionContext:
 @dataclass(frozen=True)
 class TranscriptEntry:
     role: str
+    provider_type: str
     content_json: dict[str, Any]
     model_round_id: str
     seq: int
-
-
-RuntimeContentBlockType = Literal[
-    "text",
-    "thinking",
-    "tool_call",
-    "tool_result",
-    "runtime_reminder",
-    "system_runtime_context",
-]
-
-
-@dataclass(frozen=True)
-class RuntimeContentBlock:
-    type: RuntimeContentBlockType
-    text: str | None = None
-    id: str | None = None
-    name: str | None = None
-    arguments: dict[str, Any] | None = None
-    tool_call_id: str | None = None
-    content: Any = None
-
-    def to_json(self) -> dict[str, Any]:
-        if self.type in {"text", "thinking", "runtime_reminder", "system_runtime_context"}:
-            return {"type": self.type, "text": self.text or ""}
-        if self.type == "tool_call":
-            return {
-                "type": "tool_call",
-                "id": self.id or "",
-                "name": self.name or "",
-                "arguments": dict(self.arguments or {}),
-            }
-        if self.type == "tool_result":
-            return {
-                "type": "tool_result",
-                "tool_call_id": self.tool_call_id or "",
-                "content": self.content if self.content is not None else "",
-            }
-        raise ValueError(f"unsupported runtime content block type: {self.type}")
 
 
 @dataclass(frozen=True)
 class CommittedTranscriptEntry:
     transcript_seq: int
     role: str
+    provider_type: str
     content_json: dict[str, Any]
 
 
@@ -283,6 +246,7 @@ class TranscriptEntryRecord(Base):
     model_round_id: Mapped[str] = mapped_column(String(128), index=True)
     seq: Mapped[int] = mapped_column(Integer)
     role: Mapped[str] = mapped_column(String(32))
+    provider_type: Mapped[str] = mapped_column(String(64), index=True)
     content_json: Mapped[dict[str, Any]] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String(32), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
@@ -327,6 +291,19 @@ class PostgresTranscriptStore:
                 text(
                     "alter table agent_runtime.transcript_entry "
                     "add column if not exists execution_attempt_id varchar(128)"
+                )
+            )
+            connection.execute(
+                text(
+                    "alter table agent_runtime.transcript_entry "
+                    "add column if not exists provider_type varchar(64)"
+                )
+            )
+            connection.execute(
+                text(
+                    "update agent_runtime.transcript_entry "
+                    "set provider_type = 'OPENAI_COMPATIBLE' "
+                    "where provider_type is null"
                 )
             )
             connection.execute(
@@ -388,7 +365,7 @@ class PostgresTranscriptStore:
         normalized_provider_type = normalize_provider_type(provider_type)
         cached_payload = self._get_transcript_cache(context, normalized_provider_type)
         if cached_payload is not None:
-            return [dict(message) for message in cached_payload.messages]
+            return [_clone_provider_message(message) for message in cached_payload.messages]
         with self.session_factory() as session:
             entries = session.scalars(
                 select(TranscriptEntryRecord)
@@ -396,6 +373,7 @@ class PostgresTranscriptStore:
                     TranscriptEntryRecord.session_id == context.session_id,
                     TranscriptEntryRecord.owner_agent_id == context.owner_agent_id,
                     TranscriptEntryRecord.ownership_epoch == context.ownership_epoch,
+                    TranscriptEntryRecord.provider_type == normalized_provider_type,
                     TranscriptEntryRecord.status == "COMMITTED",
                 )
                 .order_by(TranscriptEntryRecord.transcript_seq.asc())
@@ -404,11 +382,12 @@ class PostgresTranscriptStore:
             CommittedTranscriptEntry(
                 transcript_seq=entry.transcript_seq,
                 role=entry.role,
-                content_json=dict(entry.content_json),
+                provider_type=entry.provider_type,
+                content_json=_clone_provider_message(entry.content_json),
             )
             for entry in entries
         ]
-        messages = transcript_entries_to_provider_messages(committed, provider_type=normalized_provider_type)
+        messages = [_clone_provider_message(entry.content_json) for entry in committed]
         self._put_transcript_cache(
             context,
             TranscriptCachePayload(
@@ -698,7 +677,7 @@ def _hydrate_transcript_cache_payload(
         ownership_epoch=context.ownership_epoch,
         provider_type=normalize_provider_type(provider_type),
         last_committed_seq=last_committed_seq,
-        messages=[dict(message) for message in messages],
+        messages=[_clone_provider_message(message) for message in messages],
     )
 
 
@@ -709,19 +688,24 @@ def _transcript_cache_payload_json(payload: TranscriptCachePayload) -> dict[str,
         "ownershipEpoch": payload.ownership_epoch,
         "providerType": normalize_provider_type(payload.provider_type),
         "lastCommittedSeq": payload.last_committed_seq,
-        "messages": [dict(message) for message in payload.messages],
+        "messages": [_clone_provider_message(message) for message in payload.messages],
     }
+
+
+def _clone_provider_message(message: dict[str, Any]) -> dict[str, Any]:
+    return deepcopy(message)
 
 
 def transcript_entries_from_provider_messages(
     messages: list[dict[str, Any]],
     *,
+    provider_type: str = "OPENAI_COMPATIBLE",
     model_round_id: str,
 ) -> list[TranscriptEntry]:
     return [
-        TranscriptEntry(
-            role=str(message.get("role") or ""),
-            content_json=normalize_provider_message(message),
+        transcript_entry_from_provider_message(
+            message,
+            provider_type=provider_type,
             model_round_id=model_round_id,
             seq=index,
         )
@@ -729,264 +713,24 @@ def transcript_entries_from_provider_messages(
     ]
 
 
-def transcript_entry_from_stream_message(
-    message: OpenAiCompatibleStreamMessage,
-    *,
-    model_round_id: str,
-    seq: int,
-) -> TranscriptEntry:
-    blocks: list[RuntimeContentBlock] = []
-    if message.content:
-        blocks.append(RuntimeContentBlock(type="text", text=message.content))
-    if message.thinking:
-        blocks.append(RuntimeContentBlock(type="thinking", text=message.thinking))
-    for tool_call in message.tool_calls:
-        blocks.append(
-            RuntimeContentBlock(
-                type="tool_call",
-                id=tool_call.call_id,
-                name=tool_call.tool_name,
-                arguments=dict(tool_call.arguments),
-            )
-        )
-    return TranscriptEntry(
-        role="assistant",
-        content_json=runtime_content_json(blocks),
-        model_round_id=model_round_id,
-        seq=seq,
-    )
-
-
-def transcript_entry_from_tool_result_message(
+def transcript_entry_from_provider_message(
     message: dict[str, Any],
     *,
+    provider_type: str = "OPENAI_COMPATIBLE",
     model_round_id: str,
     seq: int,
 ) -> TranscriptEntry:
     return TranscriptEntry(
-        role="tool",
-        content_json=normalize_provider_message(message),
+        role=str(message.get("role") or ""),
+        provider_type=normalize_provider_type(provider_type),
+        content_json=_clone_provider_message(message),
         model_round_id=model_round_id,
         seq=seq,
     )
-
-
-def normalize_provider_message(message: dict[str, Any]) -> dict[str, Any]:
-    role = str(message.get("role") or "")
-    blocks: list[RuntimeContentBlock] = []
-    content = message.get("content")
-    if isinstance(content, list):
-        for content_block in content:
-            if not isinstance(content_block, dict):
-                continue
-            block_type = content_block.get("type")
-            if block_type == "text":
-                text = content_block.get("text")
-                if text is not None and str(text):
-                    blocks.append(RuntimeContentBlock(type="text", text=str(text)))
-            elif block_type == "thinking":
-                thinking = content_block.get("thinking") or content_block.get("text")
-                if thinking is not None and str(thinking):
-                    blocks.append(RuntimeContentBlock(type="thinking", text=str(thinking)))
-            elif block_type == "tool_use":
-                blocks.append(
-                    RuntimeContentBlock(
-                        type="tool_call",
-                        id=str(content_block.get("id") or ""),
-                        name=str(content_block.get("name") or ""),
-                        arguments=content_block.get("input") if isinstance(content_block.get("input"), dict) else {},
-                    )
-                )
-            elif block_type == "tool_result":
-                blocks.append(
-                    RuntimeContentBlock(
-                        type="tool_result",
-                        tool_call_id=str(content_block.get("tool_use_id") or content_block.get("tool_call_id") or ""),
-                        content=content_block.get("content") if content_block.get("content") is not None else "",
-                    )
-                )
-        if blocks:
-            return runtime_content_json(blocks)
-    if role == "tool":
-        blocks.append(
-            RuntimeContentBlock(
-                type="tool_result",
-                tool_call_id=str(message.get("tool_call_id") or ""),
-                content=content if content is not None else "",
-            )
-        )
-        return runtime_content_json(blocks)
-    if content is not None and str(content):
-        blocks.append(RuntimeContentBlock(type="text", text=str(content)))
-    thinking = message.get("reasoning_content") or message.get("thinking")
-    if thinking is not None and str(thinking):
-        blocks.append(RuntimeContentBlock(type="thinking", text=str(thinking)))
-    for tool_call in message.get("tool_calls") or []:
-        function_call = tool_call.get("function") if isinstance(tool_call, dict) else None
-        if not isinstance(function_call, dict):
-            continue
-        blocks.append(
-            RuntimeContentBlock(
-                type="tool_call",
-                id=str(tool_call.get("id") or ""),
-                name=str(function_call.get("name") or ""),
-                arguments=_parse_provider_tool_arguments(function_call.get("arguments")),
-            )
-        )
-    return runtime_content_json(blocks)
-
-
-def runtime_content_json(blocks: list[RuntimeContentBlock]) -> dict[str, Any]:
-    return {"version": 1, "blocks": [block.to_json() for block in blocks]}
-
-
-def transcript_entries_to_provider_messages(
-    entries: list[CommittedTranscriptEntry],
-    *,
-    provider_type: str = "OPENAI_COMPATIBLE",
-) -> list[dict[str, Any]]:
-    messages: list[dict[str, Any]] = []
-    for entry in sorted(entries, key=lambda item: item.transcript_seq):
-        message = provider_message_from_transcript_entry(entry.role, entry.content_json, provider_type=provider_type)
-        if message is not None:
-            messages.append(message)
-    return messages
-
-
-def provider_message_from_transcript_entry(
-    role: str,
-    content_json: dict[str, Any],
-    *,
-    provider_type: str = "OPENAI_COMPATIBLE",
-) -> dict[str, Any] | None:
-    if is_anthropic_like_provider(provider_type):
-        return anthropic_message_from_transcript_entry(role, content_json)
-    return openai_message_from_transcript_entry(role, content_json)
-
-
-def openai_message_from_transcript_entry(role: str, content_json: dict[str, Any]) -> dict[str, Any] | None:
-    blocks = content_json.get("blocks")
-    if not isinstance(blocks, list):
-        return None
-    if role == "tool":
-        for block in blocks:
-            if not isinstance(block, dict) or block.get("type") != "tool_result":
-                continue
-            return {
-                "role": "tool",
-                "tool_call_id": str(block.get("tool_call_id") or ""),
-                "content": _provider_tool_result_content(block.get("content")),
-            }
-        return None
-    text = "".join(str(block.get("text") or "") for block in blocks if isinstance(block, dict) and block.get("type") == "text")
-    message: dict[str, Any] = {"role": role, "content": text}
-    thinking = "".join(
-        str(block.get("text") or "") for block in blocks if isinstance(block, dict) and block.get("type") == "thinking"
-    )
-    if thinking:
-        message["reasoning_content"] = thinking
-    tool_calls = []
-    for block in blocks:
-        if not isinstance(block, dict) or block.get("type") != "tool_call":
-            continue
-        tool_calls.append(
-            {
-                "id": str(block.get("id") or ""),
-                "type": "function",
-                "function": {
-                    "name": str(block.get("name") or ""),
-                    "arguments": block.get("arguments")
-                    if isinstance(block.get("arguments"), str)
-                    else json.dumps(block.get("arguments") or {}, ensure_ascii=False),
-                },
-            }
-        )
-    if tool_calls:
-        message["tool_calls"] = tool_calls
-    return message
-
-
-def anthropic_message_from_transcript_entry(role: str, content_json: dict[str, Any]) -> dict[str, Any] | None:
-    blocks = content_json.get("blocks")
-    if not isinstance(blocks, list):
-        return None
-    content_blocks: list[dict[str, Any]] = []
-    if role == "tool":
-        for block in blocks:
-            if not isinstance(block, dict) or block.get("type") != "tool_result":
-                continue
-            content_blocks.append(
-                {
-                    "type": "tool_result",
-                    "tool_use_id": str(block.get("tool_call_id") or ""),
-                    "content": _anthropic_tool_result_content(block.get("content")),
-                }
-            )
-        return {"role": "user", "content": content_blocks} if content_blocks else None
-    for block in blocks:
-        if not isinstance(block, dict):
-            continue
-        block_type = block.get("type")
-        if block_type == "text":
-            text = str(block.get("text") or "")
-            if text:
-                content_blocks.append({"type": "text", "text": text})
-        elif block_type == "thinking":
-            thinking = str(block.get("text") or "")
-            if thinking:
-                content_blocks.append({"type": "thinking", "thinking": thinking})
-        elif block_type == "tool_call":
-            content_blocks.append(
-                {
-                    "type": "tool_use",
-                    "id": str(block.get("id") or ""),
-                    "name": str(block.get("name") or ""),
-                    "input": block.get("arguments") if isinstance(block.get("arguments"), dict) else {},
-                }
-            )
-        elif role == "user" and block_type == "tool_result":
-            content_blocks.append(
-                {
-                    "type": "tool_result",
-                    "tool_use_id": str(block.get("tool_call_id") or ""),
-                    "content": _anthropic_tool_result_content(block.get("content")),
-                }
-            )
-    return {"role": role, "content": content_blocks} if content_blocks else None
 
 
 def normalize_provider_type(provider_type: str | None) -> str:
     return (provider_type or "OPENAI_COMPATIBLE").strip().upper() or "OPENAI_COMPATIBLE"
-
-
-def is_anthropic_like_provider(provider_type: str | None) -> bool:
-    return normalize_provider_type(provider_type) in {"ANTHROPIC", "ANTHROPIC_COMPATIBLE", "ANTHROPIC_LIKE", "CLAUDE"}
-
-
-def _parse_provider_tool_arguments(raw_arguments: Any) -> dict[str, Any]:
-    if isinstance(raw_arguments, dict):
-        return dict(raw_arguments)
-    if not isinstance(raw_arguments, str):
-        return {}
-    text_value = raw_arguments.strip()
-    if not text_value:
-        return {}
-    parsed = json.loads(text_value)
-    if not isinstance(parsed, dict):
-        raise ValueError("provider tool call arguments must decode to an object")
-    return parsed
-
-
-def _provider_tool_result_content(content: Any) -> str:
-    if isinstance(content, str):
-        return content
-    return json.dumps(content if content is not None else "", ensure_ascii=False)
-
-
-def _anthropic_tool_result_content(content: Any) -> Any:
-    if isinstance(content, str) or isinstance(content, list):
-        return content
-    return _provider_tool_result_content(content)
 
 
 def _allocate_transcript_seqs(session: Session, context: TurnExecutionContext, count: int) -> int:
@@ -1029,6 +773,7 @@ def _transcript_entry_record(
         model_round_id=entry.model_round_id,
         seq=entry.seq,
         role=entry.role,
+        provider_type=normalize_provider_type(entry.provider_type),
         content_json=entry.content_json,
         status=status,
         expires_at=expires_at,

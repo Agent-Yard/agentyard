@@ -14,7 +14,6 @@ from lynxus_agent_runtime.openai_compatible import OpenAiCompatibleStreamEvent, 
 from lynxus_agent_runtime.transcript_store import (
     CommittedTranscriptEntry,
     TranscriptEntry,
-    provider_message_from_transcript_entry,
 )
 
 from runtime_fixtures import request_payload
@@ -79,10 +78,7 @@ class FakeTranscriptStore:
             (context.session_id, context.owner_agent_id, context.ownership_epoch),
             [],
         )
-        return [
-            provider_message_from_transcript_entry(entry.role, entry.content_json, provider_type=provider_type)
-            for entry in entries
-        ]
+        return [dict(entry.content_json) for entry in entries if entry.provider_type == provider_type]
 
     def append_pending_entries(self, context, entries):  # noqa: ANN001
         self.pending_entries.append((context, list(entries)))
@@ -188,7 +184,8 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual(1, len(transcript_store.committed_successes))
         committed_entries = transcript_store.committed_successes[0][2]
         self.assertEqual("assistant", committed_entries[-1].role)
-        self.assertEqual("已查到订单。", committed_entries[-1].content_json["blocks"][0]["text"])
+        self.assertEqual("OPENAI_COMPATIBLE", committed_entries[-1].provider_type)
+        self.assertEqual({"role": "assistant", "content": "已查到订单。"}, committed_entries[-1].content_json)
 
     def test_should_return_cached_successful_final_outcome_without_calling_provider(self) -> None:
         request = request_payload()
@@ -325,7 +322,8 @@ class AgentTurnStreamingTest(unittest.TestCase):
                     CommittedTranscriptEntry(
                         transcript_seq=7,
                         role="assistant",
-                        content_json={"version": 1, "blocks": [{"type": "text", "text": "previous answer"}]},
+                        provider_type="OPENAI_COMPATIBLE",
+                        content_json={"role": "assistant", "content": "previous answer"},
                     )
                 ]
             }
@@ -365,31 +363,31 @@ class AgentTurnStreamingTest(unittest.TestCase):
             CommittedTranscriptEntry(
                 transcript_seq=1,
                 role="assistant",
+                provider_type="OPENAI_COMPATIBLE",
                 content_json={
-                    "version": 1,
-                    "blocks": [
-                        {"type": "thinking", "text": "look up order"},
+                    "role": "assistant",
+                    "content": "",
+                    "reasoning_content": "look up order",
+                    "tool_calls": [
                         {
-                            "type": "tool_call",
                             "id": "call-previous",
-                            "name": "read_skill",
-                            "arguments": {"resourceVersionId": "skill-ver-1"},
-                        },
+                            "type": "function",
+                            "function": {
+                                "name": "read_skill",
+                                "arguments": '{"resourceVersionId": "skill-ver-1"}',
+                            },
+                        }
                     ],
                 },
             ),
             CommittedTranscriptEntry(
                 transcript_seq=2,
                 role="tool",
+                provider_type="OPENAI_COMPATIBLE",
                 content_json={
-                    "version": 1,
-                    "blocks": [
-                        {
-                            "type": "tool_result",
-                            "tool_call_id": "call-previous",
-                            "content": {"accepted": True, "content": "policy"},
-                        }
-                    ],
+                    "role": "tool",
+                    "tool_call_id": "call-previous",
+                    "content": '{"accepted": true, "content": "policy"}',
                 },
             ),
         ]
@@ -421,17 +419,25 @@ class AgentTurnStreamingTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         messages = captured_payloads[0]["messages"]
-        expected_replay_messages = [
-            provider_message_from_transcript_entry(entry.role, entry.content_json, provider_type="OPENAI_COMPATIBLE")
-            for entry in replayed_entries
-        ]
-        self.assertEqual(expected_replay_messages, messages[1:3])
-        replayed_assistant = messages[1]
+        expected_replay_messages = [entry.content_json for entry in replayed_entries]
+        self.assertEqual(expected_replay_messages, messages[:2])
+        appended_messages = messages[2:]
+        self.assertFalse(
+            any("You are the current session owner agent." in str(message.get("content") or "") for message in appended_messages)
+        )
+        self.assertFalse(any("Capabilities:" in str(message.get("content") or "") for message in appended_messages))
+        self.assertEqual(["system", "system", "user"], [message["role"] for message in appended_messages[:3]])
+        self.assertIn("Session trigger:", appended_messages[0]["content"])
+        self.assertIn("Visible sharedState slice", appended_messages[1]["content"])
+        replayed_assistant = messages[0]
         self.assertEqual("", replayed_assistant["content"])
         self.assertEqual("look up order", replayed_assistant["reasoning_content"])
         self.assertEqual("call-previous", replayed_assistant["tool_calls"][0]["id"])
-        replayed_tool = messages[2]
+        replayed_tool = messages[1]
         self.assertEqual("call-previous", replayed_tool["tool_call_id"])
+        committed_entries = transcript_store.committed_successes[0][2]
+        self.assertEqual(["system", "system", "user", "assistant"], [entry.role for entry in committed_entries])
+        self.assertEqual(appended_messages[:3], [entry.content_json for entry in committed_entries[:3]])
 
     def test_should_not_include_committed_transcript_from_different_owner_or_epoch(self) -> None:
         request = request_payload()
@@ -443,14 +449,16 @@ class AgentTurnStreamingTest(unittest.TestCase):
                     CommittedTranscriptEntry(
                         transcript_seq=1,
                         role="assistant",
-                        content_json={"version": 1, "blocks": [{"type": "text", "text": "wrong owner"}]},
+                        provider_type="OPENAI_COMPATIBLE",
+                        content_json={"role": "assistant", "content": "wrong owner"},
                     )
                 ],
                 ("session-1", "agent-a", 2): [
                     CommittedTranscriptEntry(
                         transcript_seq=2,
                         role="assistant",
-                        content_json={"version": 1, "blocks": [{"type": "text", "text": "wrong epoch"}]},
+                        provider_type="OPENAI_COMPATIBLE",
+                        content_json={"role": "assistant", "content": "wrong epoch"},
                     )
                 ],
             }
@@ -678,11 +686,14 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual(1, len([frame for frame in frames if frame["kind"] == "FINAL_OUTCOME"]))
         self.assertEqual(1, len(transcript_store.committed_successes))
         committed_entries = transcript_store.committed_successes[0][2]
-        self.assertEqual(["assistant", "tool", "tool", "assistant", "tool"], [entry.role for entry in committed_entries])
-        self.assertEqual("call-1", committed_entries[0].content_json["blocks"][1]["id"])
-        self.assertEqual("call-1", committed_entries[1].content_json["blocks"][0]["tool_call_id"])
-        self.assertEqual("call-3", committed_entries[3].content_json["blocks"][1]["id"])
-        self.assertEqual("call-3", committed_entries[4].content_json["blocks"][0]["tool_call_id"])
+        self.assertEqual(["system", "system", "system", "user"], [entry.role for entry in committed_entries[:4]])
+        interaction_entries = committed_entries[4:]
+        self.assertEqual(["assistant", "tool", "tool", "assistant", "tool"], [entry.role for entry in interaction_entries])
+        self.assertTrue(all(entry.provider_type == "OPENAI_COMPATIBLE" for entry in committed_entries))
+        self.assertEqual("call-1", interaction_entries[0].content_json["tool_calls"][0]["id"])
+        self.assertEqual("call-1", interaction_entries[1].content_json["tool_call_id"])
+        self.assertEqual("call-3", interaction_entries[3].content_json["tool_calls"][0]["id"])
+        self.assertEqual("call-3", interaction_entries[4].content_json["tool_call_id"])
 
     def test_should_replay_same_turn_thinking_with_tool_call_as_reasoning_content(self) -> None:
         request = request_payload()
@@ -770,7 +781,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual([], transcript_store.pending_entries)
         self.assertEqual(1, len(transcript_store.failed))
 
-    def test_should_not_persist_current_system_or_runtime_prompt_as_transcript(self) -> None:
+    def test_should_persist_current_prompt_bundle_as_provider_transcript(self) -> None:
         request = request_payload()
         request["turnId"] = "turn-hygiene"
         request["turnExecutionId"] = "exec-hygiene"
@@ -800,11 +811,16 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         committed_entries = transcript_store.committed_successes[0][2]
         self.assertEqual([], transcript_store.pending_entries)
-        self.assertEqual(["assistant"], [entry.role for entry in committed_entries])
-        self.assertEqual({"version": 1, "blocks": [{"type": "text", "text": "final answer"}]}, committed_entries[0].content_json)
-        self.assertNotIn("usage", committed_entries[0].content_json)
-        self.assertNotIn("finish_reason", committed_entries[0].content_json)
-        self.assertNotIn("model", committed_entries[0].content_json)
+        self.assertEqual(["system", "system", "system", "user", "assistant"], [entry.role for entry in committed_entries])
+        self.assertTrue(all(entry.provider_type == "OPENAI_COMPATIBLE" for entry in committed_entries))
+        self.assertIn("You are the current session owner agent.", committed_entries[0].content_json["content"])
+        self.assertIn("Session trigger:", committed_entries[1].content_json["content"])
+        self.assertIn("Visible sharedState slice", committed_entries[2].content_json["content"])
+        self.assertEqual({"role": "user", "content": "帮我发起退款"}, committed_entries[3].content_json)
+        self.assertEqual({"role": "assistant", "content": "final answer"}, committed_entries[4].content_json)
+        self.assertNotIn("usage", committed_entries[4].content_json)
+        self.assertNotIn("finish_reason", committed_entries[4].content_json)
+        self.assertNotIn("model", committed_entries[4].content_json)
 
     def test_should_accumulate_action_only_switch_owner_without_reply_message(self) -> None:
         request = request_payload()
@@ -1209,6 +1225,76 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertTrue(outcome["success"])
         self.assertEqual("REPLY", outcome["result"]["decision"]["action"])
         self.assertEqual("已读取退款规则。", outcome["result"]["decision"]["replyMessage"]["blocks"][0]["text"])
+
+    def test_should_persist_sanitized_tool_result_provider_message(self) -> None:
+        request = request_payload()
+        request["turnId"] = "turn-sanitized-tool"
+        request["turnExecutionId"] = "exec-sanitized-tool"
+        captured_payloads: list[dict] = []
+        transcript_store = FakeTranscriptStore()
+
+        class FakePrivacyPipeline:
+            def __init__(self) -> None:
+                self.sanitized_payloads: list[tuple[str, dict]] = []
+
+            def sanitize_prompt_bundle(self, bundle):  # noqa: ANN001
+                return bundle
+
+            def sanitize_outbound(self, channel, payload):  # noqa: ANN001
+                self.sanitized_payloads.append((channel, payload))
+                if channel == "TOOL_RESULT":
+                    return {"accepted": payload.get("accepted"), "content": "sanitized skill content"}
+                return payload
+
+            def close(self) -> None:
+                return None
+
+        privacy_pipeline = FakePrivacyPipeline()
+
+        def fake_stream(_settings, payload, *, idle_timeout_seconds):  # noqa: ANN001
+            captured_payloads.append(payload)
+            if len(captured_payloads) == 1:
+                return iter(
+                    [
+                        OpenAiCompatibleStreamEvent(
+                            event_type="tool_call_delta",
+                            tool_call_index=0,
+                            tool_call_id="call-skill",
+                            tool_name="read_skill",
+                            arguments_delta=json.dumps({"resourceVersionId": "skill-ver-1"}, ensure_ascii=False),
+                        ),
+                        OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
+                        OpenAiCompatibleStreamEvent(event_type="done"),
+                    ]
+                )
+            return iter(
+                [
+                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta="done"),
+                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
+                    OpenAiCompatibleStreamEvent(event_type="done"),
+                ]
+            )
+
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        with patch("lynxus_agent_runtime.streaming.build_privacy_pipeline", return_value=privacy_pipeline):
+            with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
+                with agent_runtime_client(transcript_store) as client:
+                    response = client.post(
+                        "/agent-turns/execute-stream",
+                        json=request,
+                        headers={"Authorization": "Bearer test-internal-token"},
+                    )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual("TOOL_RESULT", privacy_pipeline.sanitized_payloads[0][0])
+        tool_messages = [message for message in captured_payloads[1]["messages"] if message.get("role") == "tool"]
+        self.assertEqual(1, len(tool_messages))
+        self.assertIn("sanitized skill content", tool_messages[0]["content"])
+        self.assertNotIn("退款时必须先确认订单状态", tool_messages[0]["content"])
+        committed_tool_entries = [
+            entry for entry in transcript_store.committed_successes[0][2] if entry.role == "tool"
+        ]
+        self.assertEqual(tool_messages, [entry.content_json for entry in committed_tool_entries])
 
     def test_should_reject_invalid_native_lifecycle_tool_arguments(self) -> None:
         cases = [

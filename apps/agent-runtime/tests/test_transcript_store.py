@@ -7,10 +7,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from lynxus_agent_runtime.models import AgentDecision, AgentTurnExecutionOutcome, AgentTurnResult
-from lynxus_agent_runtime.openai_compatible import OpenAiCompatibleStreamMessage, OpenAiCompatibleStreamToolCall
 from lynxus_agent_runtime.transcript_store import (
     Base,
-    CommittedTranscriptEntry,
     PostgresTranscriptStore,
     TranscriptCachePayload,
     TranscriptEntry,
@@ -20,319 +18,75 @@ from lynxus_agent_runtime.transcript_store import (
     TurnExecutionRecord,
     _allocate_transcript_seqs,
     _transcript_entry_record,
-    normalize_provider_message,
     transcript_cache_key,
     transcript_entries_from_provider_messages,
-    transcript_entries_to_provider_messages,
-    transcript_entry_from_stream_message,
+    transcript_entry_from_provider_message,
 )
 
 
 class TranscriptStoreSerializationTest(unittest.TestCase):
-    def test_should_serialize_assistant_text_thinking_and_tool_calls(self) -> None:
-        entry = transcript_entry_from_stream_message(
-            OpenAiCompatibleStreamMessage(
-                content="visible answer",
-                thinking="private chain",
-                tool_calls=[
-                    OpenAiCompatibleStreamToolCall(
-                        index=0,
-                        call_id="call-1",
-                        tool_name="create_ticket",
-                        arguments={"subject": "refund"},
-                    )
-                ],
-                finish_reason="tool_calls",
-                usage=None,
-            ),
+    def test_should_store_provider_message_without_normalizing_content(self) -> None:
+        provider_message = {
+            "role": "assistant",
+            "content": "visible answer",
+            "reasoning_content": "private chain",
+            "tool_calls": [
+                {
+                    "id": "call-1",
+                    "type": "function",
+                    "function": {"name": "create_ticket", "arguments": '{"subject": "refund"}'},
+                }
+            ],
+        }
+
+        entry = transcript_entry_from_provider_message(
+            provider_message,
+            provider_type="OPENAI_COMPATIBLE",
             model_round_id="round-1",
             seq=3,
         )
 
         self.assertEqual("assistant", entry.role)
+        self.assertEqual("OPENAI_COMPATIBLE", entry.provider_type)
         self.assertEqual("round-1", entry.model_round_id)
         self.assertEqual(3, entry.seq)
-        self.assertEqual(
-            [
-                {"type": "text", "text": "visible answer"},
-                {"type": "thinking", "text": "private chain"},
-                {"type": "tool_call", "id": "call-1", "name": "create_ticket", "arguments": {"subject": "refund"}},
+        self.assertEqual(provider_message, entry.content_json)
+
+    def test_should_store_anthropic_provider_message_without_converting_blocks(self) -> None:
+        provider_message = {
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "visible"},
+                {"type": "thinking", "thinking": "hidden"},
+                {"type": "tool_use", "id": "call-1", "name": "create_ticket", "input": {"subject": "refund"}},
             ],
-            entry.content_json["blocks"],
-        )
+        }
 
-    def test_should_replay_entries_by_transcript_seq_not_input_or_round_id_order(self) -> None:
-        messages = transcript_entries_to_provider_messages(
-            [
-                CommittedTranscriptEntry(
-                    transcript_seq=20,
-                    role="assistant",
-                    content_json={"version": 1, "blocks": [{"type": "text", "text": "second"}]},
-                ),
-                CommittedTranscriptEntry(
-                    transcript_seq=10,
-                    role="assistant",
-                    content_json={"version": 1, "blocks": [{"type": "text", "text": "first"}]},
-                ),
-            ]
-        )
-
-        self.assertEqual(["first", "second"], [message["content"] for message in messages])
-
-    def test_should_render_thinking_and_tool_call_fields_for_provider_replay(self) -> None:
-        messages = transcript_entries_to_provider_messages(
-            [
-                CommittedTranscriptEntry(
-                    transcript_seq=1,
-                    role="assistant",
-                    content_json={
-                        "version": 1,
-                        "blocks": [
-                            {"type": "text", "text": "visible"},
-                            {"type": "thinking", "text": "hidden"},
-                            {
-                                "type": "tool_call",
-                                "id": "call-1",
-                                "name": "create_ticket",
-                                "arguments": {"subject": "refund"},
-                            },
-                        ],
-                    },
-                )
-            ]
-        )
-
-        self.assertEqual(
-            {
-                "role": "assistant",
-                "content": "visible",
-                "reasoning_content": "hidden",
-                "tool_calls": [
-                    {
-                        "id": "call-1",
-                        "type": "function",
-                        "function": {"name": "create_ticket", "arguments": '{"subject": "refund"}'},
-                    }
-                ],
-            },
-            messages[0],
-        )
-
-    def test_should_render_anthropic_like_replay_blocks_without_flattening_thinking(self) -> None:
-        messages = transcript_entries_to_provider_messages(
-            [
-                CommittedTranscriptEntry(
-                    transcript_seq=1,
-                    role="assistant",
-                    content_json={
-                        "version": 1,
-                        "blocks": [
-                            {"type": "text", "text": "visible"},
-                            {"type": "thinking", "text": "hidden"},
-                            {
-                                "type": "tool_call",
-                                "id": "call-1",
-                                "name": "create_ticket",
-                                "arguments": {"subject": "refund"},
-                            },
-                        ],
-                    },
-                ),
-                CommittedTranscriptEntry(
-                    transcript_seq=2,
-                    role="tool",
-                    content_json={
-                        "version": 1,
-                        "blocks": [
-                            {
-                                "type": "tool_result",
-                                "tool_call_id": "call-1",
-                                "content": {"accepted": True},
-                            }
-                        ],
-                    },
-                ),
-            ],
-            provider_type="ANTHROPIC",
-        )
-
-        self.assertEqual(
-            [
-                {
-                    "role": "assistant",
-                    "content": [
-                        {"type": "text", "text": "visible"},
-                        {"type": "thinking", "thinking": "hidden"},
-                        {
-                            "type": "tool_use",
-                            "id": "call-1",
-                            "name": "create_ticket",
-                            "input": {"subject": "refund"},
-                        },
-                    ],
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": "call-1",
-                            "content": '{"accepted": true}',
-                        }
-                    ],
-                },
-            ],
-            messages,
-        )
-
-    def test_should_normalize_anthropic_blocks_without_provider_metadata(self) -> None:
-        content_json = normalize_provider_message(
-            {
-                "role": "assistant",
-                "content": [
-                    {"type": "text", "text": "visible"},
-                    {"type": "thinking", "thinking": "hidden"},
-                    {"type": "tool_use", "id": "call-1", "name": "create_ticket", "input": {"subject": "refund"}},
-                ],
-                "stop_reason": "tool_use",
-                "usage": {"input_tokens": 11, "output_tokens": 7},
-                "model": "claude-test",
-            }
-        )
-
-        self.assertEqual(
-            {
-                "version": 1,
-                "blocks": [
-                    {"type": "text", "text": "visible"},
-                    {"type": "thinking", "text": "hidden"},
-                    {"type": "tool_call", "id": "call-1", "name": "create_ticket", "arguments": {"subject": "refund"}},
-                ],
-            },
-            content_json,
-        )
-        self.assertNotIn("stop_reason", content_json)
-        self.assertNotIn("usage", content_json)
-        self.assertNotIn("model", content_json)
-
-    def test_should_replay_anthropic_user_tool_result_after_normalization(self) -> None:
         entries = transcript_entries_from_provider_messages(
-            [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": "call-1",
-                            "content": [{"type": "text", "text": "accepted"}],
-                        }
-                    ],
-                    "stop_reason": "tool_use",
-                    "usage": {"input_tokens": 11, "output_tokens": 7},
-                    "model": "claude-test",
-                }
-            ],
+            [provider_message],
+            provider_type="ANTHROPIC",
             model_round_id="round-1",
         )
 
-        self.assertEqual("user", entries[0].role)
-        self.assertEqual(
-            {
-                "version": 1,
-                "blocks": [
-                    {
-                        "type": "tool_result",
-                        "tool_call_id": "call-1",
-                        "content": [{"type": "text", "text": "accepted"}],
-                    }
-                ],
-            },
-            entries[0].content_json,
-        )
-        self.assertNotIn("stop_reason", entries[0].content_json)
-        self.assertNotIn("usage", entries[0].content_json)
-        self.assertNotIn("model", entries[0].content_json)
+        self.assertEqual("ANTHROPIC", entries[0].provider_type)
+        self.assertEqual(provider_message, entries[0].content_json)
 
-        messages = transcript_entries_to_provider_messages(
-            [
-                CommittedTranscriptEntry(
-                    transcript_seq=1,
-                    role=entries[0].role,
-                    content_json=entries[0].content_json,
-                )
-            ],
+    def test_should_preserve_provider_message_metadata_when_entry_builder_receives_it(self) -> None:
+        provider_message = {
+            "role": "assistant",
+            "content": "visible",
+            "stop_reason": "tool_use",
+            "usage": {"input_tokens": 11, "output_tokens": 7},
+            "model": "provider-model",
+        }
+
+        entries = transcript_entries_from_provider_messages(
+            [provider_message],
             provider_type="ANTHROPIC",
+            model_round_id="round-1",
         )
 
-        self.assertEqual(
-            [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": "call-1",
-                            "content": [{"type": "text", "text": "accepted"}],
-                        }
-                    ],
-                }
-            ],
-            messages,
-        )
-
-    def test_should_normalize_tool_result_as_explicit_runtime_block(self) -> None:
-        content_json = normalize_provider_message(
-            {
-                "role": "tool",
-                "tool_call_id": "call-1",
-                "content": '{"accepted": true}',
-                "finish_reason": "stop",
-                "usage": {"total_tokens": 12},
-                "model": "provider-model",
-            }
-        )
-
-        self.assertEqual(
-            {
-                "version": 1,
-                "blocks": [
-                    {
-                        "type": "tool_result",
-                        "tool_call_id": "call-1",
-                        "content": '{"accepted": true}',
-                    }
-                ],
-            },
-            content_json,
-        )
-        self.assertNotIn("finish_reason", content_json)
-        self.assertNotIn("usage", content_json)
-        self.assertNotIn("model", content_json)
-
-    def test_should_replay_tool_result_with_matching_provider_tool_call_id(self) -> None:
-        messages = transcript_entries_to_provider_messages(
-            [
-                CommittedTranscriptEntry(
-                    transcript_seq=1,
-                    role="tool",
-                    content_json={
-                        "version": 1,
-                        "blocks": [
-                            {
-                                "type": "tool_result",
-                                "tool_call_id": "call-1",
-                                "content": {"accepted": True},
-                            }
-                        ],
-                    },
-                )
-            ]
-        )
-
-        self.assertEqual(
-            [{"role": "tool", "tool_call_id": "call-1", "content": '{"accepted": true}'}],
-            messages,
-        )
+        self.assertEqual(provider_message, entries[0].content_json)
 
     def test_should_allocate_transcript_seq_from_owner_context_sequence_row(self) -> None:
         SessionLocal = _sqlite_agent_runtime_session_factory()
@@ -362,7 +116,8 @@ class TranscriptStoreSerializationTest(unittest.TestCase):
         context = _turn_context()
         entry = TranscriptEntry(
             role="assistant",
-            content_json={"version": 1, "blocks": [{"type": "text", "text": "duplicate"}]},
+            provider_type="OPENAI_COMPATIBLE",
+            content_json={"role": "assistant", "content": "duplicate"},
             model_round_id="round-1",
             seq=1,
         )
@@ -400,19 +155,22 @@ class TranscriptStoreSerializationTest(unittest.TestCase):
         store = _sqlite_transcript_store(transcript_cache=cache)
         first_entry = TranscriptEntry(
             role="assistant",
-            content_json={"version": 1, "blocks": [{"type": "text", "text": "first"}]},
+            provider_type="OPENAI_COMPATIBLE",
+            content_json={"role": "assistant", "content": "first"},
             model_round_id="round-1",
             seq=1,
         )
         second_entry = TranscriptEntry(
             role="assistant",
-            content_json={"version": 1, "blocks": [{"type": "text", "text": "second"}]},
+            provider_type="OPENAI_COMPATIBLE",
+            content_json={"role": "assistant", "content": "second"},
             model_round_id="round-2",
             seq=1,
         )
         pending_entry = TranscriptEntry(
             role="assistant",
-            content_json={"version": 1, "blocks": [{"type": "text", "text": "pending"}]},
+            provider_type="OPENAI_COMPATIBLE",
+            content_json={"role": "assistant", "content": "pending"},
             model_round_id="round-3",
             seq=1,
         )
@@ -437,7 +195,8 @@ class TranscriptStoreSerializationTest(unittest.TestCase):
         store = _sqlite_transcript_store(transcript_cache=cache)
         entry = TranscriptEntry(
             role="assistant",
-            content_json={"version": 1, "blocks": [{"type": "text", "text": "committed"}]},
+            provider_type="OPENAI_COMPATIBLE",
+            content_json={"role": "assistant", "content": "committed"},
             model_round_id="round-1",
             seq=1,
         )
@@ -460,7 +219,8 @@ class TranscriptStoreSerializationTest(unittest.TestCase):
         store = _sqlite_transcript_store(transcript_cache=cache)
         entry = TranscriptEntry(
             role="assistant",
-            content_json={"version": 1, "blocks": [{"type": "text", "text": "pending"}]},
+            provider_type="OPENAI_COMPATIBLE",
+            content_json={"role": "assistant", "content": "pending"},
             model_round_id="round-1",
             seq=1,
         )
@@ -477,7 +237,8 @@ class TranscriptStoreSerializationTest(unittest.TestCase):
         context = _turn_context()
         entry = TranscriptEntry(
             role="assistant",
-            content_json={"version": 1, "blocks": [{"type": "text", "text": "hello"}]},
+            provider_type="OPENAI_COMPATIBLE",
+            content_json={"role": "assistant", "content": "hello"},
             model_round_id="round-1",
             seq=1,
         )
@@ -519,7 +280,8 @@ class TranscriptStoreSerializationTest(unittest.TestCase):
         )
         entry = TranscriptEntry(
             role="assistant",
-            content_json={"version": 1, "blocks": [{"type": "text", "text": "expired"}]},
+            provider_type="OPENAI_COMPATIBLE",
+            content_json={"role": "assistant", "content": "expired"},
             model_round_id="round-1",
             seq=1,
         )

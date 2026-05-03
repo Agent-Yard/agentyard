@@ -33,14 +33,19 @@ from .openai_compatible import (
 from .openai_adapter import render_openai_tool_definitions
 from .privacy_pipeline import build_privacy_pipeline
 from .provider_settings import resolve_provider_settings
-from .prompting import build_prompt_bundle, render_openai_streaming_messages
+from .prompting import (
+    build_prompt_bundle,
+    build_turn_input_messages,
+    render_openai_runtime_messages,
+    render_openai_streaming_messages,
+)
 from .tooling import execute_tool_call, streaming_semantic_tool_definitions, tool_kind
 from .transcript_store import (
     TranscriptEntry,
     TranscriptStore,
     TurnExecutionContext,
-    transcript_entry_from_stream_message,
-    transcript_entry_from_tool_result_message,
+    transcript_entries_from_provider_messages,
+    transcript_entry_from_provider_message,
 )
 
 
@@ -229,11 +234,21 @@ async def _stream_via_openai_compatible(
     block_id = "reply-block-1"
     privacy_pipeline = build_privacy_pipeline(request, usage_tracker)
     try:
-        prompt_bundle = build_prompt_bundle(request)
-        sanitized_bundle = privacy_pipeline.sanitize_prompt_bundle(prompt_bundle)
-        current_messages = render_openai_streaming_messages(sanitized_bundle)
+        if replay_messages:
+            turn_input_messages = privacy_pipeline.sanitize_semantic_messages(build_turn_input_messages(request))
+            current_messages = render_openai_runtime_messages(turn_input_messages)
+            current_messages_round_id = f"{writer.turn_execution_id}:turn-input"
+        else:
+            prompt_bundle = build_prompt_bundle(request)
+            sanitized_bundle = privacy_pipeline.sanitize_prompt_bundle(prompt_bundle)
+            current_messages = render_openai_streaming_messages(sanitized_bundle)
+            current_messages_round_id = f"{writer.turn_execution_id}:prompt"
         provider_messages = _merge_replay_messages(current_messages, replay_messages)
-        completed_transcript_entries: list[TranscriptEntry] = []
+        completed_transcript_entries: list[TranscriptEntry] = transcript_entries_from_provider_messages(
+            current_messages,
+            provider_type=settings.provider_type,
+            model_round_id=current_messages_round_id,
+        )
         payload: dict[str, Any] = {
             "model": settings.model_id,
             "temperature": settings.temperature,
@@ -312,8 +327,9 @@ async def _stream_via_openai_compatible(
             if message.tool_calls:
                 provider_messages.append(assistant_provider_message)
                 completed_transcript_entries.append(
-                    transcript_entry_from_stream_message(
-                        message,
+                    transcript_entry_from_provider_message(
+                        assistant_provider_message,
+                        provider_type=settings.provider_type,
                         model_round_id=model_round_id,
                         seq=1,
                     )
@@ -353,11 +369,13 @@ async def _stream_via_openai_compatible(
                         visibility="OPERATOR",
                         payload=completed_payload,
                     )
-                    tool_provider_message = _provider_tool_result_message(tool_call, tool_result)
+                    provider_tool_result = privacy_pipeline.sanitize_outbound("TOOL_RESULT", tool_result)
+                    tool_provider_message = _provider_tool_result_message(tool_call, provider_tool_result)
                     provider_messages.append(tool_provider_message)
                     completed_transcript_entries.append(
-                        transcript_entry_from_tool_result_message(
+                        transcript_entry_from_provider_message(
                             tool_provider_message,
+                            provider_type=settings.provider_type,
                             model_round_id=model_round_id,
                             seq=index + 1,
                         )
@@ -376,8 +394,9 @@ async def _stream_via_openai_compatible(
             if outcome.success:
                 if not message.tool_calls:
                     completed_transcript_entries.append(
-                        transcript_entry_from_stream_message(
-                            message,
+                        transcript_entry_from_provider_message(
+                            assistant_provider_message,
+                            provider_type=settings.provider_type,
                             model_round_id=f"{writer.turn_execution_id}:round-{step}",
                             seq=1,
                         )
@@ -503,8 +522,8 @@ def _merge_replay_messages(
         return [*current_messages]
     if not current_messages:
         return [*replay_messages]
-    # Keep committed provider-native messages byte-for-byte stable for LLM prefix caching.
-    return [current_messages[0], *replay_messages, *current_messages[1:]]
+    # Keep committed provider-native messages as the exact LLM prefix for cache stability.
+    return [*replay_messages, *current_messages]
 
 
 @dataclass(frozen=True)
