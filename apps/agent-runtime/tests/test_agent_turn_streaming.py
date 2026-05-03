@@ -110,7 +110,7 @@ def agent_runtime_client(transcript_store: FakeTranscriptStore | None = None):
 
 
 class AgentTurnStreamingTest(unittest.TestCase):
-    def test_should_fail_execute_stream_non_streaming_fallback_when_transcript_store_is_enabled(self) -> None:
+    def test_should_fail_execute_stream_when_provider_streaming_is_unavailable(self) -> None:
         os.environ.pop("TEST_OPENAI_COMPATIBLE_API_KEY", None)
         request = _request_payload()
         request["turnId"] = "turn-1"
@@ -118,16 +118,14 @@ class AgentTurnStreamingTest(unittest.TestCase):
         request["ownershipEpoch"] = 3
         transcript_store = FakeTranscriptStore()
 
-        with patch("lynxus_agent_runtime.streaming.execute_agent_turn") as fallback_execute:
-            with agent_runtime_client(transcript_store) as client:
-                response = client.post(
-                    "/agent-turns/execute-stream",
-                    json=request,
-                    headers={"Authorization": "Bearer test-internal-token"},
-                )
+        with agent_runtime_client(transcript_store) as client:
+            response = client.post(
+                "/agent-turns/execute-stream",
+                json=request,
+                headers={"Authorization": "Bearer test-internal-token"},
+            )
 
         self.assertEqual(response.status_code, 200)
-        fallback_execute.assert_not_called()
         self.assertEqual(response.headers["content-type"].split(";")[0], "application/x-ndjson")
         frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
         self.assertGreaterEqual(len(frames), 3)
@@ -141,9 +139,10 @@ class AgentTurnStreamingTest(unittest.TestCase):
         final_frames = [frame for frame in frames if frame["kind"] == "FINAL_OUTCOME"]
         self.assertEqual(1, len(final_frames))
         self.assertFalse(final_frames[0]["payload"]["outcome"]["success"])
-        self.assertIn("non-streaming fallback cannot replay", final_frames[0]["payload"]["outcome"]["failureReason"])
-        self.assertEqual("TRANSCRIPT_REPLAY_UNSUPPORTED_ON_FALLBACK", frames[-2]["payload"]["code"])
-        self.assertEqual("TRANSCRIPT_PERSISTENCE", frames[-2]["payload"]["stage"])
+        self.assertIn("configured streaming model provider", final_frames[0]["payload"]["outcome"]["failureReason"])
+        self.assertEqual("PROVIDER_STREAM_UNAVAILABLE", frames[-2]["payload"]["code"])
+        self.assertEqual("PROVIDER_STREAM", frames[-2]["payload"]["stage"])
+        self.assertFalse(frames[-2]["payload"]["retryable"])
         self.assertEqual([], [frame for frame in frames if frame["kind"] == "REPLY_BLOCK_DELTA"])
         self.assertEqual(1, len(transcript_store.failed))
 
@@ -281,15 +280,26 @@ class AgentTurnStreamingTest(unittest.TestCase):
         frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
         self.assertEqual("fresh", frames[-1]["payload"]["outcome"]["result"]["decision"]["replyMessage"]["blocks"][0]["text"])
 
-    def test_should_fail_privacy_mapping_execute_stream_fallback_without_calling_decisioning(self) -> None:
+    def test_should_stream_provider_when_privacy_mapping_is_enabled(self) -> None:
         request = _request_payload()
         request["turnId"] = "turn-privacy"
         request["turnExecutionId"] = "exec-privacy"
         request["effectivePrivacyMappingEnabled"] = True
         transcript_store = FakeTranscriptStore()
+        captured_payloads: list[dict] = []
+
+        def fake_stream(_settings, payload, *, idle_timeout_seconds):  # noqa: ANN001
+            captured_payloads.append(payload)
+            return iter(
+                [
+                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta="隐私映射开启时也继续流式。"),
+                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
+                    OpenAiCompatibleStreamEvent(event_type="done"),
+                ]
+            )
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("lynxus_agent_runtime.streaming.execute_agent_turn") as fallback_execute:
+        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
             with agent_runtime_client(transcript_store) as client:
                 response = client.post(
                     "/agent-turns/execute-stream",
@@ -298,12 +308,12 @@ class AgentTurnStreamingTest(unittest.TestCase):
                 )
 
         self.assertEqual(response.status_code, 200)
-        fallback_execute.assert_not_called()
+        self.assertEqual(1, len(captured_payloads))
         frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
-        self.assertEqual("ERROR", frames[-2]["kind"])
-        self.assertEqual("TRANSCRIPT_REPLAY_UNSUPPORTED_ON_FALLBACK", frames[-2]["payload"]["code"])
-        self.assertEqual("TRANSCRIPT_PERSISTENCE", frames[-2]["payload"]["stage"])
-        self.assertFalse(frames[-1]["payload"]["outcome"]["success"])
+        self.assertEqual([], [frame for frame in frames if frame["kind"] == "ERROR"])
+        self.assertEqual("FINAL_OUTCOME", frames[-1]["kind"])
+        self.assertTrue(frames[-1]["payload"]["outcome"]["success"])
+        self.assertEqual(1, len(transcript_store.committed_successes))
 
     def test_should_include_committed_same_owner_epoch_transcript_in_provider_payload(self) -> None:
         request = _request_payload()

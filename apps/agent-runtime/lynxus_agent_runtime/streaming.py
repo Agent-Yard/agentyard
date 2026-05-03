@@ -9,7 +9,7 @@ from typing import Any
 
 from starlette.concurrency import run_in_threadpool
 
-from .decisioning import _resolve_provider_settings, execute_agent_turn
+from .decisioning import _resolve_provider_settings
 from .models import (
     AgentDecision,
     AgentTurnExecutionOutcome,
@@ -99,7 +99,7 @@ async def stream_agent_turn(
     writer = _FrameWriter(request)
     turn_context = _turn_execution_context(request, writer)
     replay_messages: list[dict[str, Any]] = []
-    provider_settings = None if request.effectivePrivacyMappingEnabled else _resolve_provider_settings(request)
+    provider_settings = _resolve_provider_settings(request)
     provider_type = _request_provider_type(request, provider_settings.provider_type if provider_settings is not None else None)
     if transcript_store is not None:
         cached_outcome = await run_in_threadpool(transcript_store.begin_execution, turn_context)
@@ -127,28 +127,18 @@ async def stream_agent_turn(
         payload={"label": "PROCESSING", "text": "已收到，我正在处理。"},
     ))
 
-    if _can_use_provider_stream(request):
-        async for frame in _stream_via_openai_compatible(
-            request,
-            writer,
-            replay_messages=replay_messages,
-            transcript_store=transcript_store,
-            turn_context=turn_context,
-        ):
-            yield _serialize(frame)
-        return
-
-    if transcript_store is not None:
-        message = "execute-stream requires provider streaming because non-streaming fallback cannot replay owner transcript"
+    if provider_settings is None:
+        message = "execute-stream requires a configured streaming model provider for current owner"
         outcome = AgentTurnExecutionOutcome(success=False, failureReason=message)
-        await run_in_threadpool(transcript_store.mark_failed, turn_context, message)
+        if transcript_store is not None:
+            await run_in_threadpool(transcript_store.mark_failed, turn_context, message)
         yield _serialize(writer.frame(
             kind="ERROR",
             visibility="OPERATOR",
             payload={
-                "code": "TRANSCRIPT_REPLAY_UNSUPPORTED_ON_FALLBACK",
+                "code": "PROVIDER_STREAM_UNAVAILABLE",
                 "message": message,
-                "stage": "TRANSCRIPT_PERSISTENCE",
+                "stage": "PROVIDER_STREAM",
                 "retryable": False,
                 "details": {},
             },
@@ -160,45 +150,14 @@ async def stream_agent_turn(
         ))
         return
 
-    try:
-        outcome, _ = await run_in_threadpool(execute_agent_turn, request)
-    except Exception as error:  # noqa: BLE001
-        message = str(error) or "agent turn execution failed"
-        yield _serialize(writer.frame(
-            kind="ERROR",
-            visibility="OPERATOR",
-            payload={
-                "code": "AGENT_TURN_EXECUTION_FAILED",
-                "message": message,
-                "stage": "FINAL_OUTCOME_BUILD",
-                "retryable": True,
-                "details": {},
-            },
-        ))
-        outcome = AgentTurnExecutionOutcome(success=False, failureReason=message)
-
-    if transcript_store is not None:
-        if outcome.success:
-            entries = _transcript_entries_from_successful_outcome(outcome, model_round_id=writer.turn_execution_id)
-            await run_in_threadpool(transcript_store.commit_success, turn_context, outcome, entries)
-        else:
-            await run_in_threadpool(
-                transcript_store.mark_failed,
-                turn_context,
-                outcome.failureReason or "agent turn execution failed",
-            )
-
-    yield _serialize(writer.frame(
-        kind="FINAL_OUTCOME",
-        visibility="INTERNAL",
-        payload={"outcome": outcome.model_dump(mode="json")},
-    ))
-
-
-def _can_use_provider_stream(request: AgentTurnRequest) -> bool:
-    if request.effectivePrivacyMappingEnabled:
-        return False
-    return _resolve_provider_settings(request) is not None
+    async for frame in _stream_via_openai_compatible(
+        request,
+        writer,
+        replay_messages=replay_messages,
+        transcript_store=transcript_store,
+        turn_context=turn_context,
+    ):
+        yield _serialize(frame)
 
 
 def _request_provider_type(request: AgentTurnRequest, resolved_provider_type: str | None) -> str:
@@ -521,30 +480,6 @@ def _collapse_current_system_messages(messages: list[dict[str, Any]]) -> list[di
     if not system_inserted:
         collapsed.insert(0, {"role": "system", "content": "\n\n".join(system_contents)})
     return collapsed
-
-
-def _transcript_entries_from_successful_outcome(
-    outcome: AgentTurnExecutionOutcome,
-    *,
-    model_round_id: str,
-) -> list[TranscriptEntry]:
-    if not outcome.success or outcome.result is None or outcome.result.decision.replyMessage is None:
-        return []
-    text = "".join(
-        block.text
-        for block in outcome.result.decision.replyMessage.blocks
-        if getattr(block, "type", None) == "TEXT" and getattr(block, "text", "")
-    )
-    if not text:
-        return []
-    message = OpenAiCompatibleStreamMessage(
-        content=text,
-        thinking="",
-        tool_calls=[],
-        finish_reason="stop",
-        usage=None,
-    )
-    return [transcript_entry_from_stream_message(message, model_round_id=model_round_id, seq=1)]
 
 
 @dataclass(frozen=True)
