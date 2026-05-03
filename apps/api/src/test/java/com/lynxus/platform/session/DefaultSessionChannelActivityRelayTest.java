@@ -42,6 +42,8 @@ class DefaultSessionChannelActivityRelayTest {
         DefaultSessionChannelActivityRelay relay = new DefaultSessionChannelActivityRelay(client);
 
         relay.relay(frame(AgentTurnStreamFrameKind.REPLY_BLOCK_COMPLETED, StreamVisibility.CUSTOMER, 2, Map.of(
+            "messageId",
+            "session-message-reply-1",
             "blockId",
             "block-1",
             "block",
@@ -51,6 +53,7 @@ class DefaultSessionChannelActivityRelayTest {
         ArgumentCaptor<ChannelOutboundActivityRequest> request = ArgumentCaptor.forClass(ChannelOutboundActivityRequest.class);
         verify(client, org.mockito.Mockito.times(2)).sendOutboundActivity(request.capture());
         assertEquals(ChannelOutboundActivityType.DRAFT_COMPLETE, request.getAllValues().get(0).activityType());
+        assertEquals("session-message-reply-1", request.getAllValues().get(0).payload().get("messageId"));
         assertEquals(ChannelOutboundActivityType.TYPING_STOP, request.getAllValues().get(1).activityType());
     }
 
@@ -59,11 +62,17 @@ class DefaultSessionChannelActivityRelayTest {
         ChannelGatewayClient client = mockClient();
         DefaultSessionChannelActivityRelay relay = new DefaultSessionChannelActivityRelay(client);
 
-        relay.relay(frame(AgentTurnStreamFrameKind.ERROR, StreamVisibility.OPERATOR, 3, Map.of("code", "STREAM_ERROR")));
+        relay.relay(frame(AgentTurnStreamFrameKind.ERROR, StreamVisibility.OPERATOR, 3, Map.of(
+            "code",
+            "STREAM_ERROR",
+            "messageId",
+            "session-message-reply-1"
+        )));
 
         ArgumentCaptor<ChannelOutboundActivityRequest> request = ArgumentCaptor.forClass(ChannelOutboundActivityRequest.class);
         verify(client, org.mockito.Mockito.times(2)).sendOutboundActivity(request.capture());
         assertEquals(ChannelOutboundActivityType.DRAFT_DISCARD, request.getAllValues().get(0).activityType());
+        assertEquals("session-message-reply-1", request.getAllValues().get(0).payload().get("messageId"));
         assertEquals(ChannelOutboundActivityType.TYPING_STOP, request.getAllValues().get(1).activityType());
     }
 
@@ -113,13 +122,17 @@ class DefaultSessionChannelActivityRelayTest {
         DefaultSessionChannelActivityRelay relay = new DefaultSessionChannelActivityRelay(client);
 
         relay.relay(frame(AgentTurnStreamFrameKind.REPLY_BLOCK_DELTA, StreamVisibility.CUSTOMER, 6, Map.of(
+            "messageId",
+            "session-message-reply-1",
             "blockId",
             "block-1",
             "delta",
             "hello"
         )));
 
-        verify(client).sendOutboundActivity(any());
+        ArgumentCaptor<ChannelOutboundActivityRequest> request = ArgumentCaptor.forClass(ChannelOutboundActivityRequest.class);
+        verify(client).sendOutboundActivity(request.capture());
+        assertEquals("session-message-reply-1", request.getValue().payload().get("messageId"));
         verify(client, never()).deliverOutbound(any());
     }
 

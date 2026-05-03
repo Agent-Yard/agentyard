@@ -114,6 +114,12 @@ final class DefaultSessionChannelActivityRelay implements SessionChannelActivity
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("activityType", activityType.name());
         payload.put("frameId", frame.frameId());
+        if (isDraftActivity(activityType)) {
+            Object messageId = frame.payload().get("messageId");
+            if (messageId != null) {
+                payload.put("messageId", messageId);
+            }
+        }
         Object blockId = frame.payload().get("blockId");
         if (blockId != null) {
             payload.put("blockId", blockId);
@@ -135,6 +141,12 @@ final class DefaultSessionChannelActivityRelay implements SessionChannelActivity
             payload.put("block", block);
         }
         return Map.copyOf(payload);
+    }
+
+    private static boolean isDraftActivity(ChannelOutboundActivityType activityType) {
+        return activityType == ChannelOutboundActivityType.DRAFT_UPDATE
+            || activityType == ChannelOutboundActivityType.DRAFT_COMPLETE
+            || activityType == ChannelOutboundActivityType.DRAFT_DISCARD;
     }
 
     private static String activityIdempotencyKey(String frameId, ChannelOutboundActivityType activityType) {
