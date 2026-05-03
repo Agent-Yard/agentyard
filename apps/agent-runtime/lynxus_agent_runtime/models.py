@@ -338,6 +338,7 @@ AgentTurnStreamFrameKind = Literal[
 
 
 class TurnStartedPayload(BaseModel):
+    messageId: str
     triggerType: str
 
 
@@ -355,11 +356,13 @@ class ReplyBlockCompletedPayload(BaseModel):
 
 
 class FinalOutcomePayload(BaseModel):
+    messageId: str
     outcome: AgentTurnExecutionOutcome
 
 
 class ErrorPayload(BaseModel):
     code: str
+    messageId: str
     message: str
     stage: Literal[
         "PROVIDER_STREAM",

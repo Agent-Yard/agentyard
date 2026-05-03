@@ -6,6 +6,13 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.JsonParser;
+import tools.jackson.databind.DeserializationContext;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ValueDeserializer;
+import tools.jackson.databind.annotation.JsonDeserialize;
 
 public final class SessionContracts {
     private SessionContracts() {
@@ -611,6 +618,7 @@ public final class SessionContracts {
         }
     }
 
+    @JsonDeserialize(using = AgentTurnStreamFrameJsonDeserializer.class)
     public record AgentTurnStreamFrame(
         String protocol,
         String frameId,
@@ -624,25 +632,69 @@ public final class SessionContracts {
         AgentTurnStreamFrameKind kind,
         StreamVisibility visibility,
         Instant occurredAt,
-        Map<String, Object> payload
+        AgentTurnStreamPayload payload
     ) {
         public static final String PROTOCOL = "lynxus.agent-turn-stream.v1";
 
         public AgentTurnStreamFrame {
-            payload = immutableObjectMap(payload);
+            payload = normalizePayload(kind, payload);
+        }
+
+        public AgentTurnStreamFrame(
+            String protocol,
+            String frameId,
+            String streamId,
+            String sessionId,
+            String turnId,
+            String turnExecutionId,
+            String ownerAgentId,
+            long ownershipEpoch,
+            long seq,
+            AgentTurnStreamFrameKind kind,
+            StreamVisibility visibility,
+            Instant occurredAt,
+            Map<String, Object> payload
+        ) {
+            this(
+                protocol,
+                frameId,
+                streamId,
+                sessionId,
+                turnId,
+                turnExecutionId,
+                ownerAgentId,
+                ownershipEpoch,
+                seq,
+                kind,
+                visibility,
+                occurredAt,
+                payloadFromMap(kind, payload)
+            );
         }
     }
 
-    public record TurnStartedPayload(SessionTriggerType triggerType) {
+    public sealed interface AgentTurnStreamPayload permits
+        TurnStartedPayload,
+        ModelStartedPayload,
+        ModelCompletedPayload,
+        ToolStartedPayload,
+        ToolCompletedPayload,
+        ReplyBlockDeltaPayload,
+        ReplyBlockCompletedPayload,
+        FinalOutcomePayload,
+        ErrorPayload {
     }
 
-    public record ModelStartedPayload(String modelRoundId) {
+    public record TurnStartedPayload(String messageId, SessionTriggerType triggerType) implements AgentTurnStreamPayload {
     }
 
-    public record ModelCompletedPayload(String modelRoundId, ModelStreamStatus status) {
+    public record ModelStartedPayload(String modelRoundId) implements AgentTurnStreamPayload {
     }
 
-    public record ToolStartedPayload(String modelRoundId, String toolCallId, String toolName, ToolKind toolKind) {
+    public record ModelCompletedPayload(String modelRoundId, ModelStreamStatus status) implements AgentTurnStreamPayload {
+    }
+
+    public record ToolStartedPayload(String modelRoundId, String toolCallId, String toolName, ToolKind toolKind) implements AgentTurnStreamPayload {
     }
 
     public record ToolProducedPayload(String action, String messageBlockId, Boolean sharedStateUpdated) {
@@ -654,28 +706,531 @@ public final class SessionContracts {
         ToolKind toolKind,
         ToolCompletionStatus status,
         ToolProducedPayload produced
-    ) {
+    ) implements AgentTurnStreamPayload {
     }
 
-    public record ReplyBlockDeltaPayload(String messageId, String blockId, SessionMessageBlockType blockType, String delta) {
+    public record ReplyBlockDeltaPayload(
+        String messageId,
+        String blockId,
+        SessionMessageBlockType blockType,
+        String delta
+    ) implements AgentTurnStreamPayload {
     }
 
-    public record ReplyBlockCompletedPayload(String messageId, String blockId, Object block) {
+    public record ReplyBlockCompletedPayload(String messageId, String blockId, Object block) implements AgentTurnStreamPayload {
     }
 
-    public record FinalOutcomePayload(AgentTurnExecutionOutcome outcome) {
+    public record FinalOutcomePayload(String messageId, AgentTurnExecutionOutcome outcome) implements AgentTurnStreamPayload {
     }
 
     public record ErrorPayload(
         String code,
+        String messageId,
         String message,
         StreamErrorStage stage,
         boolean retryable,
         Map<String, Object> details
-    ) {
+    ) implements AgentTurnStreamPayload {
         public ErrorPayload {
             details = immutableObjectMap(details);
         }
+    }
+
+    public static final class AgentTurnStreamFrameJsonDeserializer extends ValueDeserializer<AgentTurnStreamFrame> {
+        @Override
+        public AgentTurnStreamFrame deserialize(JsonParser parser, DeserializationContext context) throws JacksonException {
+            JsonNode node = context.readTree(parser);
+            AgentTurnStreamFrameKind kind = jsonEnumValue(
+                context,
+                requiredText(context, node, "kind"),
+                AgentTurnStreamFrameKind.class,
+                "kind"
+            );
+            try {
+                return new AgentTurnStreamFrame(
+                    requiredText(context, node, "protocol"),
+                    requiredText(context, node, "frameId"),
+                    requiredText(context, node, "streamId"),
+                    requiredText(context, node, "sessionId"),
+                    requiredText(context, node, "turnId"),
+                    requiredText(context, node, "turnExecutionId"),
+                    requiredText(context, node, "ownerAgentId"),
+                    requiredLong(context, node, "ownershipEpoch"),
+                    requiredLong(context, node, "seq"),
+                    kind,
+                    jsonEnumValue(context, requiredText(context, node, "visibility"), StreamVisibility.class, "visibility"),
+                    Instant.parse(requiredText(context, node, "occurredAt")),
+                    payloadFromJson(context, kind, requiredObject(context, node, "payload"))
+                );
+            } catch (IllegalArgumentException error) {
+                return context.reportInputMismatch(AgentTurnStreamFrame.class, error.getMessage());
+            }
+        }
+    }
+
+    private static AgentTurnStreamPayload normalizePayload(AgentTurnStreamFrameKind kind, AgentTurnStreamPayload payload) {
+        if (kind == null) {
+            throw new IllegalArgumentException("agent turn stream frame kind is required");
+        }
+        if (payload == null) {
+            throw new IllegalArgumentException("agent turn stream frame payload is required");
+        }
+        boolean matches = switch (kind) {
+            case TURN_STARTED -> payload instanceof TurnStartedPayload;
+            case MODEL_STARTED -> payload instanceof ModelStartedPayload;
+            case MODEL_COMPLETED -> payload instanceof ModelCompletedPayload;
+            case ACTION_TOOL_STARTED -> payload instanceof ToolStartedPayload;
+            case ACTION_TOOL_COMPLETED -> payload instanceof ToolCompletedPayload;
+            case REPLY_BLOCK_DELTA -> payload instanceof ReplyBlockDeltaPayload;
+            case REPLY_BLOCK_COMPLETED -> payload instanceof ReplyBlockCompletedPayload;
+            case FINAL_OUTCOME -> payload instanceof FinalOutcomePayload;
+            case ERROR -> payload instanceof ErrorPayload;
+        };
+        if (!matches) {
+            throw new IllegalArgumentException("agent turn stream payload does not match kind " + kind);
+        }
+        validatePayloadContent(payload);
+        return payload;
+    }
+
+    private static void validatePayloadContent(AgentTurnStreamPayload payload) {
+        switch (payload) {
+            case TurnStartedPayload turnStarted -> {
+                requirePayloadText(turnStarted.messageId(), "payload.messageId");
+                requirePayloadValue(turnStarted.triggerType(), "payload.triggerType");
+            }
+            case ModelStartedPayload modelStarted -> requirePayloadText(modelStarted.modelRoundId(), "payload.modelRoundId");
+            case ModelCompletedPayload modelCompleted -> {
+                requirePayloadText(modelCompleted.modelRoundId(), "payload.modelRoundId");
+                requirePayloadValue(modelCompleted.status(), "payload.status");
+            }
+            case ToolStartedPayload toolStarted -> {
+                requirePayloadText(toolStarted.modelRoundId(), "payload.modelRoundId");
+                requirePayloadText(toolStarted.toolCallId(), "payload.toolCallId");
+                requirePayloadText(toolStarted.toolName(), "payload.toolName");
+                requirePayloadValue(toolStarted.toolKind(), "payload.toolKind");
+            }
+            case ToolCompletedPayload toolCompleted -> {
+                requirePayloadText(toolCompleted.toolCallId(), "payload.toolCallId");
+                requirePayloadText(toolCompleted.toolName(), "payload.toolName");
+                requirePayloadValue(toolCompleted.toolKind(), "payload.toolKind");
+                requirePayloadValue(toolCompleted.status(), "payload.status");
+            }
+            case ReplyBlockDeltaPayload replyBlockDelta -> {
+                requirePayloadText(replyBlockDelta.messageId(), "payload.messageId");
+                requirePayloadText(replyBlockDelta.blockId(), "payload.blockId");
+                if (replyBlockDelta.blockType() != SessionMessageBlockType.TEXT) {
+                    throw new IllegalArgumentException("payload.blockType must be TEXT");
+                }
+                requirePayloadText(replyBlockDelta.delta(), "payload.delta");
+            }
+            case ReplyBlockCompletedPayload replyBlockCompleted -> {
+                requirePayloadText(replyBlockCompleted.messageId(), "payload.messageId");
+                requirePayloadText(replyBlockCompleted.blockId(), "payload.blockId");
+                requirePayloadValue(replyBlockCompleted.block(), "payload.block");
+            }
+            case FinalOutcomePayload finalOutcome -> {
+                requirePayloadText(finalOutcome.messageId(), "payload.messageId");
+                requirePayloadValue(finalOutcome.outcome(), "payload.outcome");
+            }
+            case ErrorPayload errorPayload -> {
+                requirePayloadText(errorPayload.code(), "payload.code");
+                requirePayloadText(errorPayload.messageId(), "payload.messageId");
+                requirePayloadText(errorPayload.message(), "payload.message");
+                requirePayloadValue(errorPayload.stage(), "payload.stage");
+            }
+        }
+    }
+
+    private static void requirePayloadText(String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(field + " must be a non-empty string");
+        }
+    }
+
+    private static void requirePayloadValue(Object value, String field) {
+        if (value == null) {
+            throw new IllegalArgumentException(field + " is required");
+        }
+    }
+
+    private static AgentTurnStreamPayload payloadFromMap(AgentTurnStreamFrameKind kind, Map<String, Object> payload) {
+        if (kind == null) {
+            throw new IllegalArgumentException("agent turn stream frame kind is required");
+        }
+        Map<String, Object> source = immutableObjectMap(payload);
+        return switch (kind) {
+            case TURN_STARTED -> {
+                requireMapFields(kind, source, Set.of("messageId", "triggerType"), Set.of("messageId", "triggerType"));
+                yield new TurnStartedPayload(
+                    requiredString(source, "messageId"),
+                    requiredEnum(source, "triggerType", SessionTriggerType.class)
+                );
+            }
+            case MODEL_STARTED -> {
+                requireMapFields(kind, source, Set.of("modelRoundId"), Set.of("modelRoundId"));
+                yield new ModelStartedPayload(requiredString(source, "modelRoundId"));
+            }
+            case MODEL_COMPLETED -> {
+                requireMapFields(kind, source, Set.of("modelRoundId", "status"), Set.of("modelRoundId", "status"));
+                yield new ModelCompletedPayload(
+                    requiredString(source, "modelRoundId"),
+                    requiredEnum(source, "status", ModelStreamStatus.class)
+                );
+            }
+            case ACTION_TOOL_STARTED -> {
+                requireMapFields(
+                    kind,
+                    source,
+                    Set.of("modelRoundId", "toolCallId", "toolName", "toolKind"),
+                    Set.of("modelRoundId", "toolCallId", "toolName", "toolKind")
+                );
+                yield new ToolStartedPayload(
+                    requiredString(source, "modelRoundId"),
+                    requiredString(source, "toolCallId"),
+                    requiredString(source, "toolName"),
+                    requiredEnum(source, "toolKind", ToolKind.class)
+                );
+            }
+            case ACTION_TOOL_COMPLETED -> {
+                requireMapFields(
+                    kind,
+                    source,
+                    Set.of("toolCallId", "toolName", "toolKind", "status"),
+                    Set.of("toolCallId", "toolName", "toolKind", "status", "produced")
+                );
+                yield new ToolCompletedPayload(
+                    requiredString(source, "toolCallId"),
+                    requiredString(source, "toolName"),
+                    requiredEnum(source, "toolKind", ToolKind.class),
+                    requiredEnum(source, "status", ToolCompletionStatus.class),
+                    optionalToolProduced(source.get("produced"))
+                );
+            }
+            case REPLY_BLOCK_DELTA -> {
+                requireMapFields(
+                    kind,
+                    source,
+                    Set.of("messageId", "blockId", "blockType", "delta"),
+                    Set.of("messageId", "blockId", "blockType", "delta")
+                );
+                yield new ReplyBlockDeltaPayload(
+                    requiredString(source, "messageId"),
+                    requiredString(source, "blockId"),
+                    requiredEnum(source, "blockType", SessionMessageBlockType.class),
+                    requiredString(source, "delta")
+                );
+            }
+            case REPLY_BLOCK_COMPLETED -> {
+                requireMapFields(
+                    kind,
+                    source,
+                    Set.of("messageId", "blockId", "block"),
+                    Set.of("messageId", "blockId", "block")
+                );
+                yield new ReplyBlockCompletedPayload(
+                    requiredString(source, "messageId"),
+                    requiredString(source, "blockId"),
+                    requiredValue(source, "block")
+                );
+            }
+            case FINAL_OUTCOME -> {
+                requireMapFields(kind, source, Set.of("messageId", "outcome"), Set.of("messageId", "outcome"));
+                Object outcome = requiredValue(source, "outcome");
+                if (!(outcome instanceof AgentTurnExecutionOutcome typedOutcome)) {
+                    throw new IllegalArgumentException("FINAL_OUTCOME payload.outcome must be AgentTurnExecutionOutcome");
+                }
+                yield new FinalOutcomePayload(requiredString(source, "messageId"), typedOutcome);
+            }
+            case ERROR -> {
+                requireMapFields(
+                    kind,
+                    source,
+                    Set.of("code", "messageId", "message", "stage", "retryable"),
+                    Set.of("code", "messageId", "message", "stage", "retryable", "details")
+                );
+                yield new ErrorPayload(
+                    requiredString(source, "code"),
+                    requiredString(source, "messageId"),
+                    requiredString(source, "message"),
+                    requiredEnum(source, "stage", StreamErrorStage.class),
+                    requiredBoolean(source, "retryable"),
+                    optionalObjectMap(source.get("details"))
+                );
+            }
+        };
+    }
+
+    private static AgentTurnStreamPayload payloadFromJson(
+        DeserializationContext context,
+        AgentTurnStreamFrameKind kind,
+        JsonNode payload
+    ) throws JacksonException {
+        return switch (kind) {
+            case TURN_STARTED -> readPayload(
+                context,
+                kind,
+                payload,
+                TurnStartedPayload.class,
+                Set.of("messageId", "triggerType"),
+                Set.of("messageId", "triggerType")
+            );
+            case MODEL_STARTED -> readPayload(
+                context,
+                kind,
+                payload,
+                ModelStartedPayload.class,
+                Set.of("modelRoundId"),
+                Set.of("modelRoundId")
+            );
+            case MODEL_COMPLETED -> readPayload(
+                context,
+                kind,
+                payload,
+                ModelCompletedPayload.class,
+                Set.of("modelRoundId", "status"),
+                Set.of("modelRoundId", "status")
+            );
+            case ACTION_TOOL_STARTED -> readPayload(
+                context,
+                kind,
+                payload,
+                ToolStartedPayload.class,
+                Set.of("modelRoundId", "toolCallId", "toolName", "toolKind"),
+                Set.of("modelRoundId", "toolCallId", "toolName", "toolKind")
+            );
+            case ACTION_TOOL_COMPLETED -> readPayload(
+                context,
+                kind,
+                payload,
+                ToolCompletedPayload.class,
+                Set.of("toolCallId", "toolName", "toolKind", "status"),
+                Set.of("toolCallId", "toolName", "toolKind", "status", "produced")
+            );
+            case REPLY_BLOCK_DELTA -> readPayload(
+                context,
+                kind,
+                payload,
+                ReplyBlockDeltaPayload.class,
+                Set.of("messageId", "blockId", "blockType", "delta"),
+                Set.of("messageId", "blockId", "blockType", "delta")
+            );
+            case REPLY_BLOCK_COMPLETED -> readPayload(
+                context,
+                kind,
+                payload,
+                ReplyBlockCompletedPayload.class,
+                Set.of("messageId", "blockId", "block"),
+                Set.of("messageId", "blockId", "block")
+            );
+            case FINAL_OUTCOME -> readPayload(
+                context,
+                kind,
+                payload,
+                FinalOutcomePayload.class,
+                Set.of("messageId", "outcome"),
+                Set.of("messageId", "outcome")
+            );
+            case ERROR -> readPayload(
+                context,
+                kind,
+                payload,
+                ErrorPayload.class,
+                Set.of("code", "messageId", "message", "stage", "retryable"),
+                Set.of("code", "messageId", "message", "stage", "retryable", "details")
+            );
+        };
+    }
+
+    private static <T extends AgentTurnStreamPayload> T readPayload(
+        DeserializationContext context,
+        AgentTurnStreamFrameKind kind,
+        JsonNode payload,
+        Class<T> payloadType,
+        Set<String> requiredFields,
+        Set<String> allowedFields
+    ) throws JacksonException {
+        requireJsonFields(context, kind, payload, requiredFields, allowedFields);
+        return context.readTreeAsValue(payload, payloadType);
+    }
+
+    private static void requireJsonFields(
+        DeserializationContext context,
+        AgentTurnStreamFrameKind kind,
+        JsonNode payload,
+        Set<String> requiredFields,
+        Set<String> allowedFields
+    ) throws JacksonException {
+        Set<String> actualFields = Set.copyOf(payload.propertyNames());
+        if (!actualFields.containsAll(requiredFields) || !allowedFields.containsAll(actualFields)) {
+            context.reportInputMismatch(
+                AgentTurnStreamFrame.class,
+                "%s payload fields must be compatible with required=%s allowed=%s actual=%s",
+                kind,
+                requiredFields,
+                allowedFields,
+                actualFields
+            );
+        }
+        for (String requiredField : requiredFields) {
+            JsonNode value = payload.get(requiredField);
+            if (value == null || value.isNull()) {
+                context.reportInputMismatch(AgentTurnStreamFrame.class, "%s payload.%s is required", kind, requiredField);
+            }
+        }
+    }
+
+    private static JsonNode requiredObject(
+        DeserializationContext context,
+        JsonNode node,
+        String field
+    ) throws JacksonException {
+        JsonNode value = node == null ? null : node.get(field);
+        if (value == null || !value.isObject()) {
+            return context.reportInputMismatch(AgentTurnStreamFrame.class, "%s must be an object", field);
+        }
+        return value;
+    }
+
+    private static String requiredText(
+        DeserializationContext context,
+        JsonNode node,
+        String field
+    ) throws JacksonException {
+        JsonNode value = node == null ? null : node.get(field);
+        if (value == null || !value.isString() || value.stringValue().isBlank()) {
+            return context.reportInputMismatch(AgentTurnStreamFrame.class, "%s must be a non-empty string", field);
+        }
+        return value.stringValue();
+    }
+
+    private static long requiredLong(
+        DeserializationContext context,
+        JsonNode node,
+        String field
+    ) throws JacksonException {
+        JsonNode value = node == null ? null : node.get(field);
+        if (value == null || !value.isIntegralNumber()) {
+            return context.reportInputMismatch(AgentTurnStreamFrame.class, "%s must be an integer", field);
+        }
+        return value.longValue();
+    }
+
+    private static <T extends Enum<T>> T jsonEnumValue(
+        DeserializationContext context,
+        String value,
+        Class<T> enumType,
+        String field
+    ) throws JacksonException {
+        try {
+            return Enum.valueOf(enumType, value);
+        } catch (IllegalArgumentException error) {
+            return context.reportInputMismatch(AgentTurnStreamFrame.class, "%s has unsupported value %s", field, value);
+        }
+    }
+
+    private static void requireMapFields(
+        AgentTurnStreamFrameKind kind,
+        Map<String, Object> payload,
+        Set<String> requiredFields,
+        Set<String> allowedFields
+    ) {
+        Set<String> actualFields = payload.keySet();
+        if (!actualFields.containsAll(requiredFields) || !allowedFields.containsAll(actualFields)) {
+            throw new IllegalArgumentException(
+                kind + " payload fields must be compatible with required=" + requiredFields
+                    + " allowed=" + allowedFields
+                    + " actual=" + actualFields
+            );
+        }
+    }
+
+    private static Object requiredValue(Map<String, Object> payload, String field) {
+        Object value = payload.get(field);
+        if (value == null) {
+            throw new IllegalArgumentException(field + " is required");
+        }
+        return value;
+    }
+
+    private static String requiredString(Map<String, Object> payload, String field) {
+        Object value = requiredValue(payload, field);
+        if (value instanceof String text && !text.isBlank()) {
+            return text;
+        }
+        throw new IllegalArgumentException(field + " must be a non-empty string");
+    }
+
+    private static String optionalString(Map<String, Object> payload, String field) {
+        Object value = payload.get(field);
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof String text) {
+            return text;
+        }
+        throw new IllegalArgumentException(field + " must be a string");
+    }
+
+    private static boolean requiredBoolean(Map<String, Object> payload, String field) {
+        Object value = requiredValue(payload, field);
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        throw new IllegalArgumentException(field + " must be a boolean");
+    }
+
+    private static <T extends Enum<T>> T requiredEnum(Map<String, Object> payload, String field, Class<T> enumType) {
+        Object value = requiredValue(payload, field);
+        if (enumType.isInstance(value)) {
+            return enumType.cast(value);
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            try {
+                return Enum.valueOf(enumType, text);
+            } catch (IllegalArgumentException error) {
+                throw new IllegalArgumentException(field + " has unsupported value " + text, error);
+            }
+        }
+        throw new IllegalArgumentException(field + " must be " + enumType.getSimpleName());
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> optionalObjectMap(Object value) {
+        if (value == null) {
+            return Map.of();
+        }
+        if (value instanceof Map<?, ?> map) {
+            return immutableObjectMap((Map<String, Object>) map);
+        }
+        throw new IllegalArgumentException("details must be an object");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static ToolProducedPayload optionalToolProduced(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof ToolProducedPayload produced) {
+            return produced;
+        }
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> produced = immutableObjectMap((Map<String, Object>) map);
+            Set<String> allowedFields = Set.of("action", "messageBlockId", "sharedStateUpdated");
+            if (!allowedFields.containsAll(produced.keySet())) {
+                throw new IllegalArgumentException("produced payload fields must be compatible with allowed=" + allowedFields);
+            }
+            Object sharedStateUpdated = produced.get("sharedStateUpdated");
+            if (sharedStateUpdated != null && !(sharedStateUpdated instanceof Boolean)) {
+                throw new IllegalArgumentException("produced.sharedStateUpdated must be a boolean");
+            }
+            return new ToolProducedPayload(
+                optionalString(produced, "action"),
+                optionalString(produced, "messageBlockId"),
+                (Boolean) sharedStateUpdated
+            );
+        }
+        throw new IllegalArgumentException("produced must be an object");
     }
 
     public record SessionProgressEvent(

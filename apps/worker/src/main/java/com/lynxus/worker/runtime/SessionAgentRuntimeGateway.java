@@ -4,6 +4,7 @@ import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamFrame;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamFrameKind;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnRequest;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnExecutionOutcome;
+import com.lynxus.contracts.session.SessionContracts.FinalOutcomePayload;
 import com.lynxus.contracts.session.SessionContracts.PlaybookToolTaskRequest;
 import com.lynxus.contracts.session.SessionContracts.PlaybookToolTaskResult;
 import com.lynxus.contracts.session.SessionContracts.StreamVisibility;
@@ -190,13 +191,13 @@ public interface SessionAgentRuntimeGateway {
                             );
                         }
                         try {
-                            finalOutcome = readFinalOutcome(frame);
-                        } catch (IOException | RuntimeException error) {
+                            finalOutcome = readFinalOutcome(frame, context);
+                        } catch (RuntimeException error) {
                             throw streamProtocolFailure(
                                 context,
                                 lastSeq + 1,
                                 "INVALID_FINAL_OUTCOME",
-                                "FINAL_OUTCOME frame missing or invalid payload.outcome",
+                                "FINAL_OUTCOME frame missing or invalid payload.messageId/payload.outcome",
                                 error
                             );
                         }
@@ -260,12 +261,14 @@ public interface SessionAgentRuntimeGateway {
             }
         }
 
-        private AgentTurnExecutionOutcome readFinalOutcome(AgentTurnStreamFrame frame) throws IOException {
-            Object outcome = frame.payload().get("outcome");
-            if (outcome == null) {
+        private AgentTurnExecutionOutcome readFinalOutcome(AgentTurnStreamFrame frame, StreamReadContext context) {
+            if (!(frame.payload() instanceof FinalOutcomePayload payload) || payload.outcome() == null) {
                 throw new IllegalStateException("FINAL_OUTCOME frame missing payload.outcome");
             }
-            return objectMapper.readValue(objectMapper.writeValueAsString(outcome), AgentTurnExecutionOutcome.class);
+            if (!context.replyMessageId().equals(payload.messageId())) {
+                throw new IllegalStateException("FINAL_OUTCOME payload.messageId does not match request replyMessageId");
+            }
+            return payload.outcome();
         }
 
         private void relayRuntimeFrame(AgentTurnStreamFrame frame, StreamReadContext context) throws IOException, InterruptedException {

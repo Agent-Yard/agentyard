@@ -163,7 +163,7 @@ async def stream_agent_turn(
             yield writer.frame(
                 kind="FINAL_OUTCOME",
                 visibility="INTERNAL",
-                payload={"outcome": cached_outcome.model_dump(mode="json")},
+                payload={"messageId": writer.reply_message_id, "outcome": cached_outcome.model_dump(mode="json")},
             )
             return
 
@@ -178,7 +178,7 @@ async def stream_agent_turn(
     yield writer.frame(
         kind="TURN_STARTED",
         visibility="OPERATOR",
-        payload={"triggerType": request.trigger.triggerType},
+        payload={"messageId": writer.reply_message_id, "triggerType": request.trigger.triggerType},
     )
 
     if provider is None:
@@ -201,7 +201,7 @@ async def stream_agent_turn(
         yield writer.frame(
             kind="FINAL_OUTCOME",
             visibility="INTERNAL",
-            payload={"outcome": outcome.model_dump(mode="json")},
+            payload={"messageId": writer.reply_message_id, "outcome": outcome.model_dump(mode="json")},
         )
         return
 
@@ -458,7 +458,7 @@ async def _stream_via_openai_compatible(
         yield writer.frame(
             kind="FINAL_OUTCOME",
             visibility="INTERNAL",
-            payload={"outcome": outcome.model_dump(mode="json")},
+            payload={"messageId": writer.reply_message_id, "outcome": outcome.model_dump(mode="json")},
         )
     except OpenAiCompatibleStreamError as error:
         outcome = AgentTurnExecutionOutcome(
@@ -483,7 +483,7 @@ async def _stream_via_openai_compatible(
         yield writer.frame(
             kind="FINAL_OUTCOME",
             visibility="INTERNAL",
-            payload={"outcome": outcome.model_dump(mode="json")},
+            payload={"messageId": writer.reply_message_id, "outcome": outcome.model_dump(mode="json")},
         )
     except Exception as error:  # noqa: BLE001
         outcome = AgentTurnExecutionOutcome(
@@ -508,7 +508,7 @@ async def _stream_via_openai_compatible(
         yield writer.frame(
             kind="FINAL_OUTCOME",
             visibility="INTERNAL",
-            payload={"outcome": outcome.model_dump(mode="json")},
+            payload={"messageId": writer.reply_message_id, "outcome": outcome.model_dump(mode="json")},
         )
     finally:
         privacy_pipeline.close()

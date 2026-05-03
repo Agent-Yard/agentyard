@@ -15,9 +15,13 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundActivityResp
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundActivityType;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamFrame;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamFrameKind;
+import com.lynxus.contracts.session.SessionContracts.AgentTurnExecutionOutcome;
+import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamPayload;
+import com.lynxus.contracts.session.SessionContracts.FinalOutcomePayload;
 import com.lynxus.contracts.session.SessionContracts.StreamVisibility;
 import com.lynxus.platform.channel.ChannelGatewayClient;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -28,7 +32,12 @@ class DefaultSessionChannelActivityRelayTest {
         ChannelGatewayClient client = mockClient();
         DefaultSessionChannelActivityRelay relay = new DefaultSessionChannelActivityRelay(client);
 
-        relay.relay(frame(AgentTurnStreamFrameKind.TURN_STARTED, StreamVisibility.OPERATOR, 1, Map.of()));
+        relay.relay(frame(
+            AgentTurnStreamFrameKind.TURN_STARTED,
+            StreamVisibility.OPERATOR,
+            1,
+            Map.of("messageId", "session-message-reply-1", "triggerType", "USER_MESSAGE")
+        ));
 
         ArgumentCaptor<ChannelOutboundActivityRequest> request = ArgumentCaptor.forClass(ChannelOutboundActivityRequest.class);
         verify(client).sendOutboundActivity(request.capture());
@@ -66,7 +75,15 @@ class DefaultSessionChannelActivityRelayTest {
             "code",
             "STREAM_ERROR",
             "messageId",
-            "session-message-reply-1"
+            "session-message-reply-1",
+            "message",
+            "stream error",
+            "stage",
+            "PROVIDER_STREAM",
+            "retryable",
+            false,
+            "details",
+            Map.of()
         )));
 
         ArgumentCaptor<ChannelOutboundActivityRequest> request = ArgumentCaptor.forClass(ChannelOutboundActivityRequest.class);
@@ -81,17 +98,27 @@ class DefaultSessionChannelActivityRelayTest {
         ChannelGatewayClient client = mockClient();
         DefaultSessionChannelActivityRelay relay = new DefaultSessionChannelActivityRelay(client);
 
-        relay.relay(frame(AgentTurnStreamFrameKind.TURN_STARTED, StreamVisibility.OPERATOR, 7, Map.of()));
-        relay.relay(frame(AgentTurnStreamFrameKind.FINAL_OUTCOME, StreamVisibility.INTERNAL, 8, Map.of(
-            "result",
-            Map.of("decision", Map.of("replyMessage", Map.of("blocks", java.util.List.of(Map.of("type", "TEXT", "text", "final")))))
-        )));
+        relay.relay(frame(
+            AgentTurnStreamFrameKind.TURN_STARTED,
+            StreamVisibility.OPERATOR,
+            7,
+            Map.of("messageId", "session-message-reply-1", "triggerType", "USER_MESSAGE")
+        ));
+        relay.relay(frame(
+            AgentTurnStreamFrameKind.FINAL_OUTCOME,
+            StreamVisibility.INTERNAL,
+            8,
+            finalOutcomePayload()
+        ));
 
         ArgumentCaptor<ChannelOutboundActivityRequest> request = ArgumentCaptor.forClass(ChannelOutboundActivityRequest.class);
         verify(client, org.mockito.Mockito.times(2)).sendOutboundActivity(request.capture());
         assertEquals(ChannelOutboundActivityType.TYPING_START, request.getAllValues().get(0).activityType());
         assertEquals(ChannelOutboundActivityType.TYPING_STOP, request.getAllValues().get(1).activityType());
-        assertEquals(Map.of("activityType", "TYPING_STOP", "frameId", "exec-1:8"), request.getAllValues().get(1).payload());
+        assertEquals(
+            Map.of("activityType", "TYPING_STOP", "frameId", "exec-1:8", "messageId", "session-message-reply-1"),
+            request.getAllValues().get(1).payload()
+        );
     }
 
     @Test
@@ -100,7 +127,12 @@ class DefaultSessionChannelActivityRelayTest {
         when(client.getBindingBySession("session-1")).thenThrow(new IllegalStateException("gateway unavailable"));
 
         new DefaultSessionChannelActivityRelay(client)
-            .relay(frame(AgentTurnStreamFrameKind.TURN_STARTED, StreamVisibility.OPERATOR, 9, Map.of()));
+            .relay(frame(
+                AgentTurnStreamFrameKind.TURN_STARTED,
+                StreamVisibility.OPERATOR,
+                9,
+                Map.of("messageId", "session-message-reply-1", "triggerType", "USER_MESSAGE")
+            ));
 
         verify(client, never()).sendOutboundActivity(any());
     }
@@ -110,8 +142,17 @@ class DefaultSessionChannelActivityRelayTest {
         ChannelGatewayClient client = mockClient();
         DefaultSessionChannelActivityRelay relay = new DefaultSessionChannelActivityRelay(client);
 
-        relay.relay(frame(AgentTurnStreamFrameKind.MODEL_STARTED, StreamVisibility.OPERATOR, 4, Map.of()));
-        relay.relay(frame(AgentTurnStreamFrameKind.REPLY_BLOCK_DELTA, StreamVisibility.DEVELOPER, 5, Map.of("delta", "secret")));
+        relay.relay(frame(AgentTurnStreamFrameKind.MODEL_STARTED, StreamVisibility.OPERATOR, 4, Map.of("modelRoundId", "round-1")));
+        relay.relay(frame(AgentTurnStreamFrameKind.REPLY_BLOCK_DELTA, StreamVisibility.DEVELOPER, 5, Map.of(
+            "messageId",
+            "session-message-reply-1",
+            "blockId",
+            "block-1",
+            "blockType",
+            "TEXT",
+            "delta",
+            "secret"
+        )));
 
         verify(client, never()).sendOutboundActivity(any());
     }
@@ -126,6 +167,8 @@ class DefaultSessionChannelActivityRelayTest {
             "session-message-reply-1",
             "blockId",
             "block-1",
+            "blockType",
+            "TEXT",
             "delta",
             "hello"
         )));
@@ -177,6 +220,36 @@ class DefaultSessionChannelActivityRelayTest {
             visibility,
             Instant.parse("2026-05-02T00:00:00Z"),
             payload
+        );
+    }
+
+    private static AgentTurnStreamFrame frame(
+        AgentTurnStreamFrameKind kind,
+        StreamVisibility visibility,
+        long seq,
+        AgentTurnStreamPayload payload
+    ) {
+        return new AgentTurnStreamFrame(
+            AgentTurnStreamFrame.PROTOCOL,
+            "exec-1:" + seq,
+            "stream-1",
+            "session-1",
+            "turn-1",
+            "exec-1",
+            "agent-1",
+            1,
+            seq,
+            kind,
+            visibility,
+            Instant.parse("2026-05-02T00:00:00Z"),
+            payload
+        );
+    }
+
+    private static FinalOutcomePayload finalOutcomePayload() {
+        return new FinalOutcomePayload(
+            "session-message-reply-1",
+            new AgentTurnExecutionOutcome(false, null, "done", List.of())
         );
     }
 }

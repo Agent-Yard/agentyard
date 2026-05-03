@@ -318,9 +318,9 @@ Content-Type: application/json
 响应为 NDJSON，每行一个完整 JSON frame：
 
 ```json
-{"protocol":"lynxus.agent-turn-stream.v1","frameId":"exec-1:1","streamId":"stream-1","sessionId":"session-1","turnId":"turn-1","turnExecutionId":"exec-1","ownerAgentId":"agent-1","ownershipEpoch":1,"seq":1,"kind":"TURN_STARTED","visibility":"OPERATOR","occurredAt":"2026-05-02T00:00:00Z","payload":{"triggerType":"USER_MESSAGE"}}
-{"protocol":"lynxus.agent-turn-stream.v1","frameId":"exec-1:2","streamId":"stream-1","sessionId":"session-1","turnId":"turn-1","turnExecutionId":"exec-1","ownerAgentId":"agent-1","ownershipEpoch":1,"seq":2,"kind":"REPLY_BLOCK_DELTA","visibility":"CUSTOMER","occurredAt":"2026-05-02T00:00:02Z","payload":{"blockId":"block-1","blockType":"TEXT","delta":"我查到这笔订单"}}
-{"protocol":"lynxus.agent-turn-stream.v1","frameId":"exec-1:3","streamId":"stream-1","sessionId":"session-1","turnId":"turn-1","turnExecutionId":"exec-1","ownerAgentId":"agent-1","ownershipEpoch":1,"seq":3,"kind":"FINAL_OUTCOME","visibility":"INTERNAL","occurredAt":"2026-05-02T00:00:03Z","payload":{"outcome":{"success":true,"result":{},"failureReason":null,"llmUsage":[]}}}
+{"protocol":"lynxus.agent-turn-stream.v1","frameId":"exec-1:1","streamId":"stream-1","sessionId":"session-1","turnId":"turn-1","turnExecutionId":"exec-1","ownerAgentId":"agent-1","ownershipEpoch":1,"seq":1,"kind":"TURN_STARTED","visibility":"OPERATOR","occurredAt":"2026-05-02T00:00:00Z","payload":{"messageId":"session-message-reply-1","triggerType":"USER_MESSAGE"}}
+{"protocol":"lynxus.agent-turn-stream.v1","frameId":"exec-1:2","streamId":"stream-1","sessionId":"session-1","turnId":"turn-1","turnExecutionId":"exec-1","ownerAgentId":"agent-1","ownershipEpoch":1,"seq":2,"kind":"REPLY_BLOCK_DELTA","visibility":"CUSTOMER","occurredAt":"2026-05-02T00:00:02Z","payload":{"messageId":"session-message-reply-1","blockId":"block-1","blockType":"TEXT","delta":"我查到这笔订单"}}
+{"protocol":"lynxus.agent-turn-stream.v1","frameId":"exec-1:3","streamId":"stream-1","sessionId":"session-1","turnId":"turn-1","turnExecutionId":"exec-1","ownerAgentId":"agent-1","ownershipEpoch":1,"seq":3,"kind":"FINAL_OUTCOME","visibility":"INTERNAL","occurredAt":"2026-05-02T00:00:03Z","payload":{"messageId":"session-message-reply-1","outcome":{"success":true,"result":{},"failureReason":null,"llmUsage":[]}}}
 ```
 
 ### 5.2 Frame schema contract
@@ -396,6 +396,7 @@ type AgentTurnFrame =
   | AgentTurnStreamFrame<'ERROR', ErrorPayload>
 
 type TurnStartedPayload = {
+  messageId: string
   triggerType: SessionTriggerType
 }
 
@@ -428,22 +429,26 @@ type ToolCompletedPayload = {
 }
 
 type ReplyBlockDeltaPayload = {
+  messageId: string
   blockId: string
   blockType: 'TEXT'
   delta: string
 }
 
 type ReplyBlockCompletedPayload = {
+  messageId: string
   blockId: string
   block: SessionMessageBlock
 }
 
 type FinalOutcomePayload = {
+  messageId: string
   outcome: AgentTurnExecutionOutcome
 }
 
 type ErrorPayload = {
   code: string
+  messageId: string
   message: string
   stage: 'PROVIDER_STREAM' | 'TOOL_ARGUMENT_PARSE' | 'TOOL_EXECUTION' | 'FINAL_OUTCOME_BUILD' | 'TRANSCRIPT_PERSISTENCE'
   retryable: boolean
@@ -1029,8 +1034,8 @@ Progress 规则：
 
 验收：
 
-- [ ] Java / TS 契约能表达 frame discriminated union。
-- [ ] 每个 frame kind 都有显式 payload schema，没有自由形态 `payload: {}`。
+- [x] Java / TS 契约能表达 frame discriminated union。
+- [x] 每个 frame kind 都有显式 payload schema，没有自由形态 `payload: {}`。
 - [ ] OpenAPI 能描述新增 SSE event payload。
 - [ ] `INTERNAL` frame 不会被 Web API 对 business user 返回。
 

@@ -5,7 +5,12 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundActivityRequ
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundActivityType;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamFrame;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamFrameKind;
+import com.lynxus.contracts.session.SessionContracts.ErrorPayload;
+import com.lynxus.contracts.session.SessionContracts.FinalOutcomePayload;
+import com.lynxus.contracts.session.SessionContracts.ReplyBlockCompletedPayload;
+import com.lynxus.contracts.session.SessionContracts.ReplyBlockDeltaPayload;
 import com.lynxus.contracts.session.SessionContracts.StreamVisibility;
+import com.lynxus.contracts.session.SessionContracts.TurnStartedPayload;
 import com.lynxus.platform.channel.ChannelGatewayClient;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -114,39 +119,70 @@ final class DefaultSessionChannelActivityRelay implements SessionChannelActivity
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("activityType", activityType.name());
         payload.put("frameId", frame.frameId());
-        if (isDraftActivity(activityType)) {
-            Object messageId = frame.payload().get("messageId");
-            if (messageId != null) {
-                payload.put("messageId", messageId);
-            }
+        if (messageId(frame) != null) {
+            payload.put("messageId", messageId(frame));
         }
-        Object blockId = frame.payload().get("blockId");
+        String blockId = blockId(frame);
         if (blockId != null) {
             payload.put("blockId", blockId);
         }
-        Object blockType = frame.payload().get("blockType");
+        String blockType = blockType(frame);
         if (blockType != null) {
             payload.put("blockType", blockType);
         }
-        Object delta = frame.payload().get("delta");
+        String delta = delta(frame);
         if (delta != null) {
             payload.put("delta", delta);
         }
-        Object text = frame.payload().get("text");
-        if (text != null) {
-            payload.put("text", text);
-        }
-        Object block = frame.payload().get("block");
+        Object block = block(frame);
         if (block != null) {
             payload.put("block", block);
         }
         return Map.copyOf(payload);
     }
 
-    private static boolean isDraftActivity(ChannelOutboundActivityType activityType) {
-        return activityType == ChannelOutboundActivityType.DRAFT_UPDATE
-            || activityType == ChannelOutboundActivityType.DRAFT_COMPLETE
-            || activityType == ChannelOutboundActivityType.DRAFT_DISCARD;
+    private static String messageId(AgentTurnStreamFrame frame) {
+        if (frame.payload() instanceof ReplyBlockDeltaPayload payload) {
+            return payload.messageId();
+        }
+        if (frame.payload() instanceof ReplyBlockCompletedPayload payload) {
+            return payload.messageId();
+        }
+        if (frame.payload() instanceof ErrorPayload payload) {
+            return payload.messageId();
+        }
+        if (frame.payload() instanceof TurnStartedPayload payload) {
+            return payload.messageId();
+        }
+        if (frame.payload() instanceof FinalOutcomePayload payload) {
+            return payload.messageId();
+        }
+        return null;
+    }
+
+    private static String blockId(AgentTurnStreamFrame frame) {
+        if (frame.payload() instanceof ReplyBlockDeltaPayload payload) {
+            return payload.blockId();
+        }
+        if (frame.payload() instanceof ReplyBlockCompletedPayload payload) {
+            return payload.blockId();
+        }
+        return null;
+    }
+
+    private static String blockType(AgentTurnStreamFrame frame) {
+        if (frame.payload() instanceof ReplyBlockDeltaPayload payload && payload.blockType() != null) {
+            return payload.blockType().name();
+        }
+        return null;
+    }
+
+    private static String delta(AgentTurnStreamFrame frame) {
+        return frame.payload() instanceof ReplyBlockDeltaPayload payload ? payload.delta() : null;
+    }
+
+    private static Object block(AgentTurnStreamFrame frame) {
+        return frame.payload() instanceof ReplyBlockCompletedPayload payload ? payload.block() : null;
     }
 
     private static String activityIdempotencyKey(String frameId, ChannelOutboundActivityType activityType) {

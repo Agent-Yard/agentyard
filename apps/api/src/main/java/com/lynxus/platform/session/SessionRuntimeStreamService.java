@@ -2,9 +2,17 @@ package com.lynxus.platform.session;
 
 import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamFrame;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamFrameKind;
+import com.lynxus.contracts.session.SessionContracts.ErrorPayload;
+import com.lynxus.contracts.session.SessionContracts.ModelCompletedPayload;
+import com.lynxus.contracts.session.SessionContracts.ReplyBlockCompletedPayload;
+import com.lynxus.contracts.session.SessionContracts.ReplyBlockDeltaPayload;
 import com.lynxus.contracts.session.SessionContracts.SessionMessageBlockType;
 import com.lynxus.contracts.session.SessionContracts.SessionReplyDraftOperation;
 import com.lynxus.contracts.session.SessionContracts.StreamVisibility;
+import com.lynxus.contracts.session.SessionContracts.TextMessageBlock;
+import com.lynxus.contracts.session.SessionContracts.ToolCompletedPayload;
+import com.lynxus.contracts.session.SessionContracts.ToolStartedPayload;
+import com.lynxus.contracts.session.SessionContracts.TurnStartedPayload;
 import com.lynxus.contracts.session.SessionRuntimeChangeNotice;
 import com.lynxus.platform.session.SessionRuntimeDtos.SessionRuntimeDetailDto;
 import com.lynxus.platform.session.SessionRuntimeStreamDtos.SessionRuntimeStreamEvent;
@@ -22,11 +30,8 @@ import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Collection;
 import java.util.EnumSet;
 import java.util.List;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -48,34 +53,7 @@ public class SessionRuntimeStreamService {
         AgentTurnStreamFrameKind.REPLY_BLOCK_DELTA,
         AgentTurnStreamFrameKind.REPLY_BLOCK_COMPLETED
     );
-    private static final Set<String> CUSTOMER_REPLY_DRAFT_KEYS = Set.of("messageId", "blockId", "blockType", "delta", "text");
-    private static final Set<String> CUSTOMER_REPLY_COMPLETED_KEYS = Set.of("messageId", "blockId", "block");
     private static final Set<String> CUSTOMER_TEXT_BLOCK_KEYS = Set.of("type", "text");
-    private static final Set<String> INTERNAL_PAYLOAD_KEY_TOKENS = Set.of(
-        "model",
-        "provider",
-        "prompt",
-        "system",
-        "privacy",
-        "placeholder",
-        "restore",
-        "sanitize",
-        "tool",
-        "connector",
-        "endpoint",
-        "http",
-        "credential",
-        "secret",
-        "token",
-        "stack",
-        "trace",
-        "schema",
-        "raw",
-        "debug",
-        "latency",
-        "duration",
-        "internal"
-    );
     private static final Set<String> INTERNAL_TEXT_TOKENS = Set.of(
         "model",
         "provider",
@@ -365,26 +343,11 @@ public class SessionRuntimeStreamService {
             return List.of();
         }
         return switch (frame.kind()) {
-            case TURN_STARTED -> List.of(progressEvent(frame, "TURN_STARTED", "STARTED", "已收到"));
+            case TURN_STARTED -> List.of(turnStartedProgressEvent(frame));
             case MODEL_STARTED -> List.of(progressEvent(frame, "MODEL_STARTED", "RUNNING", "模型处理中"));
-            case MODEL_COMPLETED -> List.of(progressEvent(
-                frame,
-                "MODEL_COMPLETED",
-                stringPayload(frame, "status", "SUCCEEDED"),
-                "模型处理完成"
-            ));
-            case ACTION_TOOL_STARTED -> List.of(progressEvent(
-                frame,
-                "ACTION_TOOL_STARTED",
-                "RUNNING",
-                stringPayload(frame, "toolName", "工具处理中")
-            ));
-            case ACTION_TOOL_COMPLETED -> List.of(progressEvent(
-                frame,
-                "ACTION_TOOL_COMPLETED",
-                stringPayload(frame, "status", "SUCCEEDED"),
-                stringPayload(frame, "toolName", "工具处理完成")
-            ));
+            case MODEL_COMPLETED -> List.of(modelCompletedProgressEvent(frame));
+            case ACTION_TOOL_STARTED -> List.of(toolStartedProgressEvent(frame));
+            case ACTION_TOOL_COMPLETED -> List.of(toolCompletedProgressEvent(frame));
             case REPLY_BLOCK_DELTA -> List.of(draftEvent(frame, SessionReplyDraftOperation.DELTA));
             case REPLY_BLOCK_COMPLETED -> List.of(draftEvent(frame, SessionReplyDraftOperation.COMPLETED));
             case ERROR -> errorEvents(frame);
@@ -392,7 +355,34 @@ public class SessionRuntimeStreamService {
         };
     }
 
+    private SessionRuntimeStreamEvent turnStartedProgressEvent(AgentTurnStreamFrame frame) {
+        TurnStartedPayload payload = (TurnStartedPayload) frame.payload();
+        return progressEvent(
+            frame,
+            "TURN_STARTED",
+            "STARTED",
+            "已收到",
+            Map.of("messageId", payload.messageId())
+        );
+    }
+
+    private SessionRuntimeStreamEvent modelCompletedProgressEvent(AgentTurnStreamFrame frame) {
+        ModelCompletedPayload payload = (ModelCompletedPayload) frame.payload();
+        return progressEvent(frame, "MODEL_COMPLETED", payload.status().name(), "模型处理完成");
+    }
+
+    private SessionRuntimeStreamEvent toolStartedProgressEvent(AgentTurnStreamFrame frame) {
+        ToolStartedPayload payload = (ToolStartedPayload) frame.payload();
+        return progressEvent(frame, "ACTION_TOOL_STARTED", "RUNNING", payload.toolName());
+    }
+
+    private SessionRuntimeStreamEvent toolCompletedProgressEvent(AgentTurnStreamFrame frame) {
+        ToolCompletedPayload payload = (ToolCompletedPayload) frame.payload();
+        return progressEvent(frame, "ACTION_TOOL_COMPLETED", payload.status().name(), payload.toolName());
+    }
+
     private List<SessionRuntimeStreamEvent> errorEvents(AgentTurnStreamFrame frame) {
+        ErrorPayload payload = (ErrorPayload) frame.payload();
         List<SessionRuntimeStreamEvent> events = new ArrayList<>();
         events.add(draftEvent(frame, SessionReplyDraftOperation.DISCARD));
         events.add(SessionRuntimeStreamEvent.streamError(
@@ -400,10 +390,10 @@ public class SessionRuntimeStreamService {
             frame.occurredAt(),
             frame.sessionId(),
             frame.turnId(),
-            stringPayload(frame, "code", "STREAM_ERROR"),
-            stringPayload(frame, "message", "stream error"),
-            booleanPayload(frame, "retryable", false),
-            mapPayload(frame, "details")
+            payload.code(),
+            payload.message(),
+            payload.retryable(),
+            payload.details()
         ));
         return List.copyOf(events);
     }
@@ -414,6 +404,16 @@ public class SessionRuntimeStreamService {
         String status,
         String title
     ) {
+        return progressEvent(frame, phase, status, title, Map.of());
+    }
+
+    private SessionRuntimeStreamEvent progressEvent(
+        AgentTurnStreamFrame frame,
+        String phase,
+        String status,
+        String title,
+        Map<String, Object> detail
+    ) {
         return SessionRuntimeStreamEvent.progress(
             "progress:" + frame.sessionId() + ":" + frame.turnId() + ":" + frame.seq(),
             frame.occurredAt(),
@@ -423,7 +423,7 @@ public class SessionRuntimeStreamService {
             phase,
             status,
             title,
-            mapPayload(frame, "detail")
+            detail
         );
     }
 
@@ -435,9 +435,9 @@ public class SessionRuntimeStreamService {
             frame.turnId(),
             replyMessageIdPayload(frame),
             operation,
-            stringPayload(frame, "blockId", "block-1"),
+            replyBlockIdPayload(frame),
             blockTypePayload(frame),
-            stringPayload(frame, "delta", null),
+            replyDeltaPayload(frame),
             replyDraftTextPayload(frame)
         );
     }
@@ -544,50 +544,45 @@ public class SessionRuntimeStreamService {
         if (!CUSTOMER_VISIBLE_FRAME_KINDS.contains(frame.kind())) {
             throw badFrame("customer stream frame kind is not allowed");
         }
-        if (containsInternalPayloadField(frame.payload())) {
-            throw badFrame("customer stream payload contains internal fields");
-        }
         validateCustomerReplyDraft(frame);
     }
 
     private static void validateCustomerReplyDraft(AgentTurnStreamFrame frame) {
-        if (frame.kind() == AgentTurnStreamFrameKind.REPLY_BLOCK_COMPLETED) {
+        if (frame.payload() instanceof ReplyBlockDeltaPayload payload) {
+            if (isBlank(payload.messageId()) || isBlank(payload.blockId())) {
+                throw badFrame("customer reply draft messageId and blockId are required");
+            }
+            if (payload.blockType() != SessionMessageBlockType.TEXT) {
+                throw badFrame("customer reply draft only allows text blocks");
+            }
+            if (isBlank(payload.delta()) || containsInternalTextToken(payload.delta())) {
+                throw badFrame("customer reply draft delta is not allowed");
+            }
+            return;
+        }
+        if (frame.payload() instanceof ReplyBlockCompletedPayload) {
             validateCustomerReplyCompleted(frame);
             return;
         }
-        if (!CUSTOMER_REPLY_DRAFT_KEYS.containsAll(frame.payload().keySet())) {
-            throw badFrame("customer reply draft payload only allows draft text fields");
-        }
-        if (isBlank(stringPayload(frame, "messageId", null))) {
-            throw badFrame("customer reply draft messageId is required");
-        }
-        String blockType = stringPayload(frame, "blockType", SessionMessageBlockType.TEXT.name());
-        if (!SessionMessageBlockType.TEXT.name().equals(blockType)) {
-            throw badFrame("customer reply draft only allows text blocks");
-        }
-        String delta = stringPayload(frame, "delta", null);
-        String text = stringPayload(frame, "text", null);
-        if (containsInternalTextToken(delta) || containsInternalTextToken(text)) {
-            throw badFrame("customer reply draft text is not allowed");
-        }
-        if (frame.kind() == AgentTurnStreamFrameKind.REPLY_BLOCK_DELTA && isBlank(delta)) {
-            throw badFrame("customer reply draft delta requires text");
-        }
+        throw badFrame("customer reply draft payload type is not allowed");
     }
 
     private static void validateCustomerReplyCompleted(AgentTurnStreamFrame frame) {
-        if (!frame.payload().keySet().equals(CUSTOMER_REPLY_COMPLETED_KEYS)) {
-            throw badFrame("customer reply completed payload only allows messageId, blockId, and block");
+        if (!(frame.payload() instanceof ReplyBlockCompletedPayload payload)) {
+            throw badFrame("customer reply completed payload type is required");
         }
-        if (isBlank(stringPayload(frame, "messageId", null))) {
-            throw badFrame("customer reply completed messageId is required");
+        if (isBlank(payload.messageId()) || isBlank(payload.blockId())) {
+            throw badFrame("customer reply completed messageId and blockId are required");
         }
-        if (isBlank(stringPayload(frame, "blockId", null))) {
-            throw badFrame("customer reply completed blockId is required");
-        }
-        Object block = frame.payload().get("block");
+        Object block = payload.block();
         if (!(block instanceof Map<?, ?> blockMap)) {
-            throw badFrame("customer reply completed block is required");
+            if (block instanceof TextMessageBlock textBlock
+                && textBlock.type() == SessionMessageBlockType.TEXT
+                && !isBlank(textBlock.text())
+                && !containsInternalTextToken(textBlock.text())) {
+                return;
+            }
+            throw badFrame("customer reply completed text block is required");
         }
         if (!blockMap.keySet().equals(CUSTOMER_TEXT_BLOCK_KEYS)) {
             throw badFrame("customer reply completed text block contains unsupported fields");
@@ -600,23 +595,6 @@ public class SessionRuntimeStreamService {
         if (!(text instanceof String textValue) || isBlank(textValue) || containsInternalTextToken(textValue)) {
             throw badFrame("customer reply completed text is not allowed");
         }
-    }
-
-    private static boolean containsInternalPayloadField(Object value) {
-        if (value instanceof Map<?, ?> map) {
-            for (Map.Entry<?, ?> entry : map.entrySet()) {
-                String key = String.valueOf(entry.getKey()).toLowerCase();
-                if (INTERNAL_PAYLOAD_KEY_TOKENS.stream().anyMatch(key::contains)
-                    || containsInternalPayloadField(entry.getValue())) {
-                    return true;
-                }
-            }
-            return false;
-        }
-        if (value instanceof Collection<?> collection) {
-            return collection.stream().anyMatch(SessionRuntimeStreamService::containsInternalPayloadField);
-        }
-        return false;
     }
 
     private static boolean containsInternalTextToken(String value) {
@@ -637,29 +615,11 @@ public class SessionRuntimeStreamService {
         );
     }
 
-    private static String stringPayload(AgentTurnStreamFrame frame, String key, String defaultValue) {
-        Object value = frame.payload().get(key);
-        return value == null ? defaultValue : String.valueOf(value);
-    }
-
-    private static Boolean booleanPayload(AgentTurnStreamFrame frame, String key, boolean defaultValue) {
-        Object value = frame.payload().get(key);
-        if (value instanceof Boolean bool) {
-            return bool;
-        }
-        return defaultValue;
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> mapPayload(AgentTurnStreamFrame frame, String key) {
-        Object value = frame.payload().get(key);
-        return value instanceof Map<?, ?> map
-            ? Collections.unmodifiableMap(new LinkedHashMap<>((Map<String, Object>) map))
-            : Map.of();
-    }
-
     private static SessionMessageBlockType blockTypePayload(AgentTurnStreamFrame frame) {
-        String value = replyBlockPayload(frame, "type", stringPayload(frame, "blockType", SessionMessageBlockType.TEXT.name()));
+        if (frame.payload() instanceof ReplyBlockDeltaPayload payload) {
+            return payload.blockType();
+        }
+        String value = replyBlockPayload(frame, "type", SessionMessageBlockType.TEXT.name());
         try {
             return SessionMessageBlockType.valueOf(value);
         } catch (IllegalArgumentException error) {
@@ -667,16 +627,49 @@ public class SessionRuntimeStreamService {
         }
     }
 
+    private static String replyDeltaPayload(AgentTurnStreamFrame frame) {
+        return frame.payload() instanceof ReplyBlockDeltaPayload payload ? payload.delta() : null;
+    }
+
     private static String replyDraftTextPayload(AgentTurnStreamFrame frame) {
-        return replyBlockPayload(frame, "text", stringPayload(frame, "text", null));
+        return replyBlockPayload(frame, "text", null);
     }
 
     private static String replyMessageIdPayload(AgentTurnStreamFrame frame) {
-        return stringPayload(frame, "messageId", "draft:" + frame.turnId());
+        if (frame.payload() instanceof ReplyBlockDeltaPayload payload) {
+            return payload.messageId();
+        }
+        if (frame.payload() instanceof ReplyBlockCompletedPayload payload) {
+            return payload.messageId();
+        }
+        if (frame.payload() instanceof ErrorPayload payload && payload.messageId() != null) {
+            return payload.messageId();
+        }
+        return "draft:" + frame.turnId();
+    }
+
+    private static String replyBlockIdPayload(AgentTurnStreamFrame frame) {
+        if (frame.payload() instanceof ReplyBlockDeltaPayload payload) {
+            return payload.blockId();
+        }
+        if (frame.payload() instanceof ReplyBlockCompletedPayload payload) {
+            return payload.blockId();
+        }
+        return "block-1";
     }
 
     private static String replyBlockPayload(AgentTurnStreamFrame frame, String key, String defaultValue) {
-        Object block = frame.payload().get("block");
+        if (!(frame.payload() instanceof ReplyBlockCompletedPayload payload)) {
+            return defaultValue;
+        }
+        Object block = payload.block();
+        if (block instanceof TextMessageBlock textBlock) {
+            return switch (key) {
+                case "type" -> textBlock.type() == null ? defaultValue : textBlock.type().name();
+                case "text" -> textBlock.text() == null ? defaultValue : textBlock.text();
+                default -> defaultValue;
+            };
+        }
         if (block instanceof Map<?, ?> blockMap) {
             Object value = blockMap.get(key);
             return value == null ? defaultValue : String.valueOf(value);

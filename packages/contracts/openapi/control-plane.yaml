@@ -4146,6 +4146,29 @@ components:
         - FINAL_OUTCOME
         - ERROR
     AgentTurnStreamFrame:
+      oneOf:
+        - $ref: '#/components/schemas/TurnStartedFrame'
+        - $ref: '#/components/schemas/ModelStartedFrame'
+        - $ref: '#/components/schemas/ModelCompletedFrame'
+        - $ref: '#/components/schemas/ToolStartedFrame'
+        - $ref: '#/components/schemas/ToolCompletedFrame'
+        - $ref: '#/components/schemas/ReplyBlockDeltaFrame'
+        - $ref: '#/components/schemas/ReplyBlockCompletedFrame'
+        - $ref: '#/components/schemas/FinalOutcomeFrame'
+        - $ref: '#/components/schemas/ErrorFrame'
+      discriminator:
+        propertyName: kind
+        mapping:
+          TURN_STARTED: '#/components/schemas/TurnStartedFrame'
+          MODEL_STARTED: '#/components/schemas/ModelStartedFrame'
+          MODEL_COMPLETED: '#/components/schemas/ModelCompletedFrame'
+          ACTION_TOOL_STARTED: '#/components/schemas/ToolStartedFrame'
+          ACTION_TOOL_COMPLETED: '#/components/schemas/ToolCompletedFrame'
+          REPLY_BLOCK_DELTA: '#/components/schemas/ReplyBlockDeltaFrame'
+          REPLY_BLOCK_COMPLETED: '#/components/schemas/ReplyBlockCompletedFrame'
+          FINAL_OUTCOME: '#/components/schemas/FinalOutcomeFrame'
+          ERROR: '#/components/schemas/ErrorFrame'
+    AgentTurnStreamFrameBase:
       type: object
       required:
         - protocol
@@ -4157,10 +4180,8 @@ components:
         - ownerAgentId
         - ownershipEpoch
         - seq
-        - kind
         - visibility
         - occurredAt
-        - payload
       properties:
         protocol:
           type: string
@@ -4184,38 +4205,129 @@ components:
         seq:
           type: integer
           format: int64
-        kind:
-          $ref: '#/components/schemas/AgentTurnStreamFrameKind'
         visibility:
           $ref: '#/components/schemas/StreamVisibility'
         occurredAt:
           type: string
           format: date-time
-        payload:
-          oneOf:
-            - $ref: '#/components/schemas/TurnStartedPayload'
-            - $ref: '#/components/schemas/ModelStartedPayload'
-            - $ref: '#/components/schemas/ModelCompletedPayload'
-            - $ref: '#/components/schemas/ToolStartedPayload'
-            - $ref: '#/components/schemas/ToolCompletedPayload'
-            - $ref: '#/components/schemas/ReplyBlockDeltaPayload'
-            - $ref: '#/components/schemas/ReplyBlockCompletedPayload'
-            - $ref: '#/components/schemas/FinalOutcomePayload'
-            - $ref: '#/components/schemas/ErrorPayload'
+    TurnStartedFrame:
+      allOf:
+        - $ref: '#/components/schemas/AgentTurnStreamFrameBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind:
+              type: string
+              enum: [TURN_STARTED]
+            payload:
+              $ref: '#/components/schemas/TurnStartedPayload'
+    ModelStartedFrame:
+      allOf:
+        - $ref: '#/components/schemas/AgentTurnStreamFrameBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind:
+              type: string
+              enum: [MODEL_STARTED]
+            payload:
+              $ref: '#/components/schemas/ModelStartedPayload'
+    ModelCompletedFrame:
+      allOf:
+        - $ref: '#/components/schemas/AgentTurnStreamFrameBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind:
+              type: string
+              enum: [MODEL_COMPLETED]
+            payload:
+              $ref: '#/components/schemas/ModelCompletedPayload'
+    ToolStartedFrame:
+      allOf:
+        - $ref: '#/components/schemas/AgentTurnStreamFrameBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind:
+              type: string
+              enum: [ACTION_TOOL_STARTED]
+            payload:
+              $ref: '#/components/schemas/ToolStartedPayload'
+    ToolCompletedFrame:
+      allOf:
+        - $ref: '#/components/schemas/AgentTurnStreamFrameBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind:
+              type: string
+              enum: [ACTION_TOOL_COMPLETED]
+            payload:
+              $ref: '#/components/schemas/ToolCompletedPayload'
+    ReplyBlockDeltaFrame:
+      allOf:
+        - $ref: '#/components/schemas/AgentTurnStreamFrameBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind:
+              type: string
+              enum: [REPLY_BLOCK_DELTA]
+            payload:
+              $ref: '#/components/schemas/ReplyBlockDeltaPayload'
+    ReplyBlockCompletedFrame:
+      allOf:
+        - $ref: '#/components/schemas/AgentTurnStreamFrameBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind:
+              type: string
+              enum: [REPLY_BLOCK_COMPLETED]
+            payload:
+              $ref: '#/components/schemas/ReplyBlockCompletedPayload'
+    FinalOutcomeFrame:
+      allOf:
+        - $ref: '#/components/schemas/AgentTurnStreamFrameBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind:
+              type: string
+              enum: [FINAL_OUTCOME]
+            payload:
+              $ref: '#/components/schemas/FinalOutcomePayload'
+    ErrorFrame:
+      allOf:
+        - $ref: '#/components/schemas/AgentTurnStreamFrameBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind:
+              type: string
+              enum: [ERROR]
+            payload:
+              $ref: '#/components/schemas/ErrorPayload'
     TurnStartedPayload:
       type: object
-      required: [triggerType]
+      additionalProperties: false
+      required: [messageId, triggerType]
       properties:
+        messageId:
+          type: string
         triggerType:
           $ref: '#/components/schemas/SessionTriggerType'
     ModelStartedPayload:
       type: object
+      additionalProperties: false
       required: [modelRoundId]
       properties:
         modelRoundId:
           type: string
     ModelCompletedPayload:
       type: object
+      additionalProperties: false
       required: [modelRoundId, status]
       properties:
         modelRoundId:
@@ -4228,6 +4340,7 @@ components:
       enum: [CONTEXT_TOOL, STATE_TOOL, MESSAGE_BLOCK_TOOL, LIFECYCLE_ACTION_TOOL]
     ToolStartedPayload:
       type: object
+      additionalProperties: false
       required: [modelRoundId, toolCallId, toolName, toolKind]
       properties:
         modelRoundId:
@@ -4240,6 +4353,7 @@ components:
           $ref: '#/components/schemas/RuntimeToolKind'
     ToolCompletedPayload:
       type: object
+      additionalProperties: false
       required: [toolCallId, toolName, toolKind, status]
       properties:
         toolCallId:
@@ -4253,6 +4367,7 @@ components:
           enum: [ACCEPTED, REJECTED, FAILED]
         produced:
           type: object
+          additionalProperties: false
           properties:
             action:
               type: string
@@ -4262,6 +4377,7 @@ components:
               type: boolean
     ReplyBlockDeltaPayload:
       type: object
+      additionalProperties: false
       required: [messageId, blockId, blockType, delta]
       properties:
         messageId:
@@ -4275,6 +4391,7 @@ components:
           type: string
     ReplyBlockCompletedPayload:
       type: object
+      additionalProperties: false
       required: [messageId, blockId, block]
       properties:
         messageId:
@@ -4285,15 +4402,21 @@ components:
           $ref: '#/components/schemas/SessionMessageBlock'
     FinalOutcomePayload:
       type: object
-      required: [outcome]
+      additionalProperties: false
+      required: [messageId, outcome]
       properties:
+        messageId:
+          type: string
         outcome:
           $ref: '#/components/schemas/AgentTurnExecutionOutcome'
     ErrorPayload:
       type: object
-      required: [code, message, stage, retryable]
+      additionalProperties: false
+      required: [code, messageId, message, stage, retryable]
       properties:
         code:
+          type: string
+        messageId:
           type: string
         message:
           type: string

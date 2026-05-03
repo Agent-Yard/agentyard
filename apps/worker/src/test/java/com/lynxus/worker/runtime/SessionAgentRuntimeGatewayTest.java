@@ -1,11 +1,13 @@
 package com.lynxus.worker.runtime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.lynxus.contracts.session.SessionContracts.AgentConfig;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnRequest;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamFrame;
+import com.lynxus.contracts.session.SessionContracts.ReplyBlockDeltaPayload;
 import com.lynxus.contracts.session.SessionContracts.SessionTrigger;
 import com.lynxus.contracts.session.SessionContracts.SessionTriggerType;
 import com.sun.net.httpserver.HttpExchange;
@@ -25,6 +27,31 @@ import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
 class SessionAgentRuntimeGatewayTest {
+    @Test
+    void shouldDeserializeRuntimeFrameIntoKindSpecificPayload() throws Exception {
+        AgentTurnStreamFrame frame = new ObjectMapper().readValue(customerDraftDeltaFrame(), AgentTurnStreamFrame.class);
+
+        ReplyBlockDeltaPayload payload = assertInstanceOf(ReplyBlockDeltaPayload.class, frame.payload());
+        assertEquals("session-message-reply-1", payload.messageId());
+        assertEquals("hello", payload.delta());
+    }
+
+    @Test
+    void shouldRejectRuntimeFrameWhenKindAndPayloadDoNotMatch() {
+        String invalidFrame = (
+            "{\"protocol\":\"%s\",\"frameId\":\"exec-1:1\",\"streamId\":\"stream-1\",\"sessionId\":\"session-1\","
+                + "\"turnId\":\"turn-1\",\"turnExecutionId\":\"exec-1\",\"ownerAgentId\":\"agent-1\","
+                + "\"ownershipEpoch\":1,\"seq\":1,\"kind\":\"REPLY_BLOCK_DELTA\",\"visibility\":\"CUSTOMER\","
+                + "\"occurredAt\":\"2026-05-03T00:00:01Z\","
+                + "\"payload\":{\"outcome\":{\"success\":false,\"failureReason\":\"done\",\"llmUsage\":[]}}}"
+        ).formatted(AgentTurnStreamFrame.PROTOCOL);
+
+        assertThrows(
+            Exception.class,
+            () -> new ObjectMapper().readValue(invalidFrame, AgentTurnStreamFrame.class)
+        );
+    }
+
     @Test
     void shouldFailAndRelaySyntheticErrorWhenRuntimeStreamMissesFinalOutcome() throws Exception {
         CopyOnWriteArrayList<String> relayedFrames = new CopyOnWriteArrayList<>();
@@ -157,6 +184,37 @@ class SessionAgentRuntimeGatewayTest {
     }
 
     @Test
+    void shouldRejectFinalOutcomeWhenMessageIdDiffersFromRequest() throws Exception {
+        CopyOnWriteArrayList<String> relayedFrames = new CopyOnWriteArrayList<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext(
+            "/agent-turns/execute-stream",
+            exchange -> writeNdjson(exchange, turnStartedFrame() + "\n" + finalOutcomeFrame(2, true, "different-message-id"))
+        );
+        server.createContext("/api/internal/session-runtime/stream-frames", exchange -> {
+            relayedFrames.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            writeJson(exchange, "{\"success\":true}");
+        });
+        server.start();
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+
+        try {
+            SessionAgentRuntimeGateway gateway = gateway(server, meterRegistry, Duration.ofMillis(500));
+
+            assertThrows(IllegalStateException.class, () -> gateway.executeTurnStream(request()));
+
+            assertEquals(2, relayedFrames.size());
+            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(0)).contains("\"kind\":\"TURN_STARTED\"");
+            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"kind\":\"ERROR\"");
+            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"code\":\"INVALID_FINAL_OUTCOME\"");
+            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"messageId\":\"session-message-reply-1\"");
+            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"frameId\":\"exec-1:3\"");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void shouldRelaySyntheticErrorWhenApiRejectsFinalOutcomeFrame() throws Exception {
         CopyOnWriteArrayList<String> relayedFrames = new CopyOnWriteArrayList<>();
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
@@ -247,9 +305,9 @@ class SessionAgentRuntimeGatewayTest {
 
             assertEquals(1, relayedFrames.size());
             org.assertj.core.api.Assertions.assertThat(relayedFrames.getFirst()).contains("\"kind\":\"ERROR\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.getFirst()).contains("\"code\":\"INVALID_FINAL_OUTCOME\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.getFirst()).contains("\"stage\":\"FINAL_OUTCOME_BUILD\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.getFirst()).contains("\"frameId\":\"exec-1:2\"");
+            org.assertj.core.api.Assertions.assertThat(relayedFrames.getFirst()).contains("\"code\":\"WORKER_STREAM_ABORTED\"");
+            org.assertj.core.api.Assertions.assertThat(relayedFrames.getFirst()).contains("\"stage\":\"PROVIDER_STREAM\"");
+            org.assertj.core.api.Assertions.assertThat(relayedFrames.getFirst()).contains("\"frameId\":\"exec-1:1\"");
         } finally {
             server.stop(0);
         }
@@ -351,13 +409,18 @@ class SessionAgentRuntimeGatewayTest {
             "{\"protocol\":\"%s\",\"frameId\":\"exec-1:1\",\"streamId\":\"stream-1\",\"sessionId\":\"session-1\","
                 + "\"turnId\":\"turn-1\",\"turnExecutionId\":\"exec-1\",\"ownerAgentId\":\"agent-1\","
                 + "\"ownershipEpoch\":1,\"seq\":1,\"kind\":\"TURN_STARTED\",\"visibility\":\"OPERATOR\","
-                + "\"occurredAt\":\"2026-05-03T00:00:00Z\",\"payload\":{}}"
+                + "\"occurredAt\":\"2026-05-03T00:00:00Z\","
+                + "\"payload\":{\"messageId\":\"session-message-reply-1\",\"triggerType\":\"USER_MESSAGE\"}}"
         ).formatted(AgentTurnStreamFrame.PROTOCOL);
     }
 
     private static String finalOutcomeFrame(long seq, boolean includeOutcome) {
+        return finalOutcomeFrame(seq, includeOutcome, "session-message-reply-1");
+    }
+
+    private static String finalOutcomeFrame(long seq, boolean includeOutcome, String messageId) {
         String payload = includeOutcome
-            ? "\"payload\":{\"outcome\":{\"success\":false,\"failureReason\":\"done\",\"llmUsage\":[]}}"
+            ? "\"payload\":{\"messageId\":\"%s\",\"outcome\":{\"success\":false,\"failureReason\":\"done\",\"llmUsage\":[]}}".formatted(messageId)
             : "\"payload\":{}";
         return (
             "{\"protocol\":\"%s\",\"frameId\":\"exec-1:%d\",\"streamId\":\"stream-1\",\"sessionId\":\"session-1\","

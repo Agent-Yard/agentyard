@@ -1330,6 +1330,7 @@ export interface AgentTurnStreamFrame<K extends AgentTurnStreamFrameKind, P> {
 }
 
 export interface TurnStartedPayload {
+  messageId: string;
   triggerType: SessionTriggerType;
 }
 
@@ -1375,11 +1376,13 @@ export interface ReplyBlockCompletedPayload {
 }
 
 export interface FinalOutcomePayload {
+  messageId: string;
   outcome: AgentTurnExecutionOutcome;
 }
 
 export interface ErrorPayload {
   code: string;
+  messageId: string;
   message: string;
   stage: StreamErrorStage;
   retryable: boolean;
