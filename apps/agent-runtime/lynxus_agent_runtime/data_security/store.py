@@ -89,7 +89,7 @@ end
 
 local breakdown = summary["entityTypeBreakdown"] or {}
 local nextOrdinal = tonumber(breakdown[entityType] or 0) + 1
-local placeholderId = string.format("[%s_%03d]", entityType, nextOrdinal)
+local placeholderId = string.format("<<%s_%03d>>", entityType, nextOrdinal)
 
 redis.call("HSET", forwardKey, fingerprint, placeholderId)
 redis.call("HSET", reverseKey, placeholderId, reversePayload)

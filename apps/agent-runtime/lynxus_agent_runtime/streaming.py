@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -9,6 +10,8 @@ from typing import Any, Protocol
 
 from starlette.concurrency import run_in_threadpool
 
+from .data_security.detectors import PLACEHOLDER_PATTERN
+from .data_security.validator import collect_placeholders
 from .models import (
     AgentDecision,
     AgentTurnExecutionOutcome,
@@ -31,7 +34,7 @@ from .openai_compatible import (
     stream_chat_completion_events,
 )
 from .openai_adapter import render_openai_tool_definitions
-from .privacy_pipeline import build_privacy_pipeline
+from .privacy_pipeline import PrivacyPipeline, build_privacy_pipeline
 from .provider_settings import resolve_provider_settings
 from .prompting import (
     build_prompt_bundle,
@@ -228,6 +231,7 @@ async def _stream_via_openai_compatible(
     reply_block_started = False
     block_id = "reply-block-1"
     privacy_pipeline = build_privacy_pipeline(request, usage_tracker)
+    customer_restorer = _ChunkSafePrivacyRestorer(privacy_pipeline)
     try:
         if replay_messages:
             turn_input_messages = privacy_pipeline.sanitize_semantic_messages(build_turn_input_messages(request))
@@ -276,7 +280,7 @@ async def _stream_via_openai_compatible(
                     break
                 round_accumulator.apply(event)
                 if event.event_type == "content_delta" and event.delta:
-                    customer_delta = text_guard.accept(event.delta)
+                    customer_delta = customer_restorer.accept(text_guard.accept(event.delta))
                     if customer_delta and not reply_block_started:
                         reply_block_started = True
                     if customer_delta:
@@ -286,6 +290,15 @@ async def _stream_via_openai_compatible(
                             payload={"blockId": block_id, "blockType": "TEXT", "delta": customer_delta},
                         )
             message = round_accumulator.build_message()
+            customer_tail = customer_restorer.flush()
+            if customer_tail and not reply_block_started:
+                reply_block_started = True
+            if customer_tail:
+                yield writer.frame(
+                    kind="REPLY_BLOCK_DELTA",
+                    visibility="CUSTOMER",
+                    payload={"blockId": block_id, "blockType": "TEXT", "delta": customer_tail},
+                )
             if message.usage is not None:
                 usage_tracker.record("SESSION_OWNER_MODEL", settings, message.usage, tool_loop_step=step)
             yield writer.frame(
@@ -366,7 +379,10 @@ async def _stream_via_openai_compatible(
                     )
                 if should_continue:
                     continue
-            outcome = outcome_accumulator.build_outcome(usage_tracker)
+            outcome = _restore_successful_outcome(
+                privacy_pipeline,
+                outcome_accumulator.build_outcome(usage_tracker),
+            )
             break
         else:
             outcome = AgentTurnExecutionOutcome(
@@ -724,6 +740,107 @@ class _CustomerTextStreamGuard:
         self._pending_parts.clear()
         self._accepted_parts.append(pending)
         return pending
+
+
+_PRIVACY_PLACEHOLDER_PREFIX_PATTERN = re.compile(r"^[A-Z][A-Z0-9]{0,31}(?:_(?:\d{0,6})?)?$")
+_RESERVED_PRIVACY_MARKER_PATTERN = re.compile(r"<<[A-Z][A-Z0-9_]*")
+_PRIVACY_PLACEHOLDER_MAX_LENGTH = len("<<") + 32 + len("_") + 6 + len(">>")
+
+
+class _ChunkSafePrivacyRestorer:
+    def __init__(self, privacy_pipeline: PrivacyPipeline) -> None:
+        self._privacy_pipeline = privacy_pipeline
+        self._enabled = bool(privacy_pipeline.enabled)
+        self._buffer = ""
+
+    def accept(self, delta: str) -> str:
+        if not delta:
+            return ""
+        if not self._enabled:
+            return delta
+        self._buffer += delta
+        release_end = _safe_privacy_release_index(self._buffer)
+        if release_end <= 0:
+            return ""
+        segment = self._buffer[:release_end]
+        self._buffer = self._buffer[release_end:]
+        return _restore_privacy_payload(self._privacy_pipeline, "MODEL_FINAL_RESPONSE", segment)
+
+    def flush(self) -> str:
+        if not self._enabled:
+            return ""
+        if not self._buffer:
+            return ""
+        segment = self._buffer
+        self._buffer = ""
+        return _restore_privacy_payload(self._privacy_pipeline, "MODEL_FINAL_RESPONSE", segment)
+
+
+def _safe_privacy_release_index(text: str) -> int:
+    start = text.rfind("<<")
+    if start < 0:
+        return len(text)
+    suffix = text[start:]
+    if _is_incomplete_privacy_placeholder_prefix(suffix):
+        return start
+    return len(text)
+
+
+def _is_incomplete_privacy_placeholder_prefix(text: str) -> bool:
+    if not text.startswith("<<") or PLACEHOLDER_PATTERN.fullmatch(text):
+        return False
+    if len(text) > _PRIVACY_PLACEHOLDER_MAX_LENGTH:
+        return False
+    body = text[2:]
+    if not body:
+        return True
+    if ">" in body[:-1]:
+        return False
+    if body.endswith(">"):
+        body = body[:-1]
+    if not body:
+        return True
+    return _PRIVACY_PLACEHOLDER_PREFIX_PATTERN.fullmatch(body) is not None
+
+
+def _restore_successful_outcome(
+    privacy_pipeline: PrivacyPipeline,
+    outcome: AgentTurnExecutionOutcome,
+) -> AgentTurnExecutionOutcome:
+    if not privacy_pipeline.enabled or not outcome.success or outcome.result is None:
+        return outcome
+    restored_payload = _restore_privacy_payload(
+        privacy_pipeline,
+        "MODEL_FINAL_RESPONSE",
+        outcome.result.model_dump(mode="json"),
+    )
+    result = AgentTurnResult.model_validate(restored_payload)
+    telemetry = privacy_pipeline.telemetry()
+    if telemetry is not None and telemetry.enabled:
+        result = result.model_copy(update={"mappingTelemetry": telemetry})
+    return outcome.model_copy(update={"result": result})
+
+
+def _restore_privacy_payload(privacy_pipeline: PrivacyPipeline, channel: str, payload: Any) -> Any:
+    _assert_no_malformed_privacy_markers(payload)
+    if not collect_placeholders(payload):
+        return payload
+    return privacy_pipeline.restore_inbound(channel, payload)
+
+
+def _assert_no_malformed_privacy_markers(payload: Any) -> None:
+    if isinstance(payload, str):
+        sanitized = PLACEHOLDER_PATTERN.sub("", payload)
+        if _RESERVED_PRIVACY_MARKER_PATTERN.search(sanitized):
+            raise ValueError("unresolved privacy placeholder marker")
+        return
+    if isinstance(payload, dict):
+        for item in payload.values():
+            _assert_no_malformed_privacy_markers(item)
+        return
+    if isinstance(payload, list):
+        for item in payload:
+            _assert_no_malformed_privacy_markers(item)
 
 
 def _provider_message_from_stream_message(message: OpenAiCompatibleStreamMessage) -> dict[str, Any]:

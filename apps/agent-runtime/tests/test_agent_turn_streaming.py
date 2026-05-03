@@ -17,6 +17,7 @@ from lynxus_agent_runtime.models import (
     SessionMessageInput,
 )
 from lynxus_agent_runtime.openai_compatible import OpenAiCompatibleStreamEvent, OpenAiCompatibleStreamMalformedError
+from lynxus_agent_runtime.privacy_contracts import PrivacyMappingTelemetry
 from lynxus_agent_runtime.tooling import (
     RuntimeToolKind,
     execute_tool_call,
@@ -446,6 +447,92 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual("FINAL_OUTCOME", frames[-1]["kind"])
         self.assertTrue(frames[-1]["payload"]["outcome"]["success"])
         self.assertEqual(1, len(transcript_store.committed_successes))
+
+    def test_should_restore_split_privacy_placeholders_before_customer_stream_and_final_outcome(self) -> None:
+        request = request_payload()
+        request["turnId"] = "turn-privacy-restore"
+        request["turnExecutionId"] = "exec-privacy-restore"
+        request["effectivePrivacyMappingEnabled"] = True
+        transcript_store = FakeTranscriptStore()
+
+        class FakePrivacyPipeline:
+            enabled = True
+
+            def __init__(self) -> None:
+                self.restore_count = 0
+
+            def sanitize_prompt_bundle(self, bundle):  # noqa: ANN001
+                return bundle
+
+            def restore_inbound(self, channel, payload):  # noqa: ANN001
+                self.restore_count += 1
+
+                def restore(value):  # noqa: ANN001
+                    if isinstance(value, str):
+                        return value.replace(
+                            "<<PERSON_001>>",
+                            "Alice Johnson",
+                        ).replace("<<PHONE_001>>", "13812345678")
+                    if isinstance(value, dict):
+                        return {key: restore(item) for key, item in value.items()}
+                    if isinstance(value, list):
+                        return [restore(item) for item in value]
+                    return value
+
+                return restore(payload)
+
+            def telemetry(self) -> PrivacyMappingTelemetry:
+                return PrivacyMappingTelemetry(
+                    enabled=True,
+                    restoreCountByChannel={"MODEL_FINAL_RESPONSE": self.restore_count},
+                )
+
+            def close(self) -> None:
+                return None
+
+        privacy_pipeline = FakePrivacyPipeline()
+
+        def fake_stream(_settings, _payload, *, idle_timeout_seconds):  # noqa: ANN001
+            return iter(
+                [
+                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta="Hello <<PER"),
+                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta="SON_001"),
+                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta=">>, your phone is <<PHONE_001"),
+                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta=">>."),
+                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
+                    OpenAiCompatibleStreamEvent(event_type="done"),
+                ]
+            )
+
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        with patch("lynxus_agent_runtime.streaming.build_privacy_pipeline", return_value=privacy_pipeline):
+            with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
+                with agent_runtime_client(transcript_store) as client:
+                    response = client.post(
+                        "/agent-turns/execute-stream",
+                        json=request,
+                        headers={"Authorization": "Bearer test-internal-token"},
+                    )
+
+        self.assertEqual(response.status_code, 200)
+        frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
+        delta_text = "".join(
+            frame["payload"]["delta"]
+            for frame in frames
+            if frame["kind"] == "REPLY_BLOCK_DELTA"
+        )
+        self.assertEqual("Hello Alice Johnson, your phone is 13812345678.", delta_text)
+        self.assertNotIn("<<PERSON_001>>", delta_text)
+        self.assertNotIn("<<PHONE_001>>", delta_text)
+        final_outcome = frames[-1]["payload"]["outcome"]
+        final_text = final_outcome["result"]["decision"]["replyMessage"]["blocks"][0]["text"]
+        self.assertEqual("Hello Alice Johnson, your phone is 13812345678.", final_text)
+        self.assertEqual(
+            {"MODEL_FINAL_RESPONSE": privacy_pipeline.restore_count},
+            final_outcome["result"]["mappingTelemetry"]["restoreCountByChannel"],
+        )
+        committed_text = transcript_store.committed_successes[0][2][-1].content_json["content"]
+        self.assertEqual("Hello <<PERSON_001>>, your phone is <<PHONE_001>>.", committed_text)
 
     def test_should_include_committed_same_owner_epoch_transcript_in_provider_payload(self) -> None:
         request = request_payload()
@@ -1364,6 +1451,8 @@ class AgentTurnStreamingTest(unittest.TestCase):
         transcript_store = FakeTranscriptStore()
 
         class FakePrivacyPipeline:
+            enabled = True
+
             def __init__(self) -> None:
                 self.sanitized_payloads: list[tuple[str, dict]] = []
 
@@ -1375,6 +1464,9 @@ class AgentTurnStreamingTest(unittest.TestCase):
                 if channel == "TOOL_RESULT":
                     return {"accepted": payload.get("accepted"), "content": "sanitized skill content"}
                 return payload
+
+            def telemetry(self) -> None:
+                return None
 
             def close(self) -> None:
                 return None

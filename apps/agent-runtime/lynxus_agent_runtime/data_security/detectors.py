@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-PLACEHOLDER_PATTERN = re.compile(r"\[([A-Z]+)_(\d{3})\]")
+PLACEHOLDER_PATTERN = re.compile(r"<<([A-Z][A-Z0-9]{0,31})_(\d{3,6})>>")
 EMAIL_PATTERN = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 PHONE_PATTERN = re.compile(r"(?<![A-Za-z0-9_-])(?:\+?\d[\d\-\s]{7,}\d)(?![A-Za-z0-9_-])")
 UUID_PATTERN = re.compile(

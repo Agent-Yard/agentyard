@@ -47,7 +47,7 @@ class _FakeRedis:
                 return [existing_placeholder, encoded, "0"]
 
             next_ordinal = int(summary["entityTypeBreakdown"].get(entity_type, 0)) + 1
-            placeholder_id = f"[{entity_type}_{next_ordinal:03d}]"
+            placeholder_id = f"<<{entity_type}_{next_ordinal:03d}>>"
             forward_hash[fingerprint] = placeholder_id
             reverse_hash[placeholder_id] = reverse_payload
             summary["entityTypeBreakdown"][entity_type] = next_ordinal
@@ -97,9 +97,9 @@ class SessionPrivacyMapStoreTest(unittest.TestCase):
         second = store.ensure_mapping("PERSON", "Alice Johnson")
         summary = store.read_summary()
 
-        self.assertEqual(first.placeholder_id, "[PERSON_001]")
+        self.assertEqual(first.placeholder_id, "<<PERSON_001>>")
         self.assertTrue(first.created)
-        self.assertEqual(second.placeholder_id, "[PERSON_001]")
+        self.assertEqual(second.placeholder_id, "<<PERSON_001>>")
         self.assertFalse(second.created)
         self.assertEqual(summary["placeholderCount"], 1)
         self.assertEqual(summary["entityTypeBreakdown"]["PERSON"], 1)
@@ -112,9 +112,9 @@ class SessionPrivacyMapStoreTest(unittest.TestCase):
         third = store.ensure_mapping("ACCOUNT", "alice@example.com")
         summary = store.read_summary()
 
-        self.assertEqual(first.placeholder_id, "[PERSON_001]")
-        self.assertEqual(second.placeholder_id, "[PERSON_002]")
-        self.assertEqual(third.placeholder_id, "[ACCOUNT_001]")
+        self.assertEqual(first.placeholder_id, "<<PERSON_001>>")
+        self.assertEqual(second.placeholder_id, "<<PERSON_002>>")
+        self.assertEqual(third.placeholder_id, "<<ACCOUNT_001>>")
         self.assertEqual(summary["placeholderCount"], 3)
         self.assertEqual(summary["entityTypeBreakdown"], {"PERSON": 2, "ACCOUNT": 1})
 
@@ -124,7 +124,7 @@ class SessionPrivacyMapStoreTest(unittest.TestCase):
 
         store.write_sanitized_fragment(
             "fragment:key-1",
-            "hello [PERSON_001]",
+            "hello <<PERSON_001>>",
             {
                 "policyVersion": "agent-runtime-privacy-v2",
                 "strategy": "RULES_THEN_PRIVATE_LLM",
@@ -133,10 +133,10 @@ class SessionPrivacyMapStoreTest(unittest.TestCase):
             },
         )
 
-        self.assertEqual("hello [PERSON_001]", store.read_sanitized_fragment("fragment:key-1"))
+        self.assertEqual("hello <<PERSON_001>>", store.read_sanitized_fragment("fragment:key-1"))
         self.assertIsNone(store.read_sanitized_fragment("fragment:missing"))
         raw_entry = redis_client._hashes[store.fragments_key]["fragment:key-1"]
-        self.assertNotIn("hello [PERSON_001]", raw_entry)
+        self.assertNotIn("hello <<PERSON_001>>", raw_entry)
         self.assertNotIn("value", json.loads(raw_entry))
         self.assertIn("ciphertext", json.loads(raw_entry))
         self.assertEqual("recent_message:msg-1:1", json.loads(raw_entry)["metadata"]["source"])
