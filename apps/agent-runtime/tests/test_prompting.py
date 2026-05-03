@@ -270,7 +270,7 @@ class AgentRuntimePromptingTest(unittest.TestCase):
         self.assertIn('"resourceVersionId"', rendered_prompt)
         self.assertIn('"canSwitchTo": true', rendered_prompt)
         self.assertIn("take over escalations", rendered_prompt)
-        self.assertIn("Use native function tools", rendered_prompt)
+        self.assertIn("Use function tools for context reads", rendered_prompt)
         self.assertIn("Refund Playbook", rendered_prompt)
         self.assertIn("knownPreference", rendered_prompt)
 

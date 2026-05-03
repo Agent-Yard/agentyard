@@ -39,7 +39,7 @@ from .prompting import (
     render_openai_runtime_messages,
     render_openai_streaming_messages,
 )
-from .tooling import execute_tool_call, streaming_semantic_tool_definitions, tool_kind
+from .tooling import RuntimeToolKind, execute_tool_call, runtime_tool_registry
 from .transcript_store import (
     TranscriptEntry,
     TranscriptStore,
@@ -249,11 +249,12 @@ async def _stream_via_openai_compatible(
             provider_type=settings.provider_type,
             model_round_id=current_messages_round_id,
         )
+        tool_registry = runtime_tool_registry(request)
         payload: dict[str, Any] = {
             "model": settings.model_id,
             "temperature": settings.temperature,
             "messages": provider_messages,
-            "tools": render_openai_tool_definitions(streaming_semantic_tool_definitions(request)),
+            "tools": render_openai_tool_definitions([spec.definition for spec in tool_registry.values()]),
         }
         if settings.max_tokens > 0:
             payload["max_tokens"] = settings.max_tokens
@@ -336,9 +337,10 @@ async def _stream_via_openai_compatible(
                 )
                 should_continue = False
                 for index, tool_call in enumerate(message.tool_calls, start=1):
-                    kind = tool_kind(tool_call.tool_name)
-                    if kind is None:
+                    spec = tool_registry.get(tool_call.tool_name)
+                    if spec is None:
                         raise ValueError(f"unsupported streaming tool call: {tool_call.tool_name}")
+                    kind = spec.kind
                     yield writer.frame(
                         kind="ACTION_TOOL_STARTED",
                         visibility="OPERATOR",
@@ -346,19 +348,20 @@ async def _stream_via_openai_compatible(
                             "modelRoundId": model_round_id,
                             "toolCallId": tool_call.call_id,
                             "toolName": tool_call.tool_name,
-                            "toolKind": kind,
+                            "toolKind": kind.value,
                         },
                     )
-                    tool_result = outcome_accumulator.apply_tool_call(tool_call, kind)
-                    if kind == "CONTEXT_TOOL":
+                    if kind == RuntimeToolKind.CONTEXT_TOOL:
                         tool_result = execute_tool_call(request, tool_call.tool_name, tool_call.arguments)
                         should_continue = True
-                    elif kind in {"STATE_TOOL", "MESSAGE_BLOCK_TOOL"}:
+                    else:
+                        tool_result = outcome_accumulator.apply_tool_call(tool_call, kind)
+                    if kind in {RuntimeToolKind.STATE_TOOL, RuntimeToolKind.MESSAGE_BLOCK_TOOL}:
                         should_continue = True
                     completed_payload = {
                         "toolCallId": tool_call.call_id,
                         "toolName": tool_call.tool_name,
-                        "toolKind": kind,
+                        "toolKind": kind.value,
                         "status": _tool_completion_status(tool_result),
                     }
                     produced = _tool_produced_payload(kind, tool_call, tool_result)
@@ -548,13 +551,13 @@ class _StreamingOutcomeAccumulator:
     def apply_tool_call(
         self,
         tool_call: OpenAiCompatibleStreamToolCall,
-        kind: str,
+        kind: RuntimeToolKind,
     ) -> dict[str, Any]:
-        if kind == "STATE_TOOL":
+        if kind == RuntimeToolKind.STATE_TOOL:
             return self._apply_state_tool(tool_call)
-        if kind == "MESSAGE_BLOCK_TOOL":
+        if kind == RuntimeToolKind.MESSAGE_BLOCK_TOOL:
             return self._apply_message_block_tool(tool_call)
-        if kind == "LIFECYCLE_ACTION_TOOL":
+        if kind == RuntimeToolKind.LIFECYCLE_ACTION_TOOL:
             return self._apply_lifecycle_action_tool(tool_call)
         return {"accepted": True}
 
@@ -843,16 +846,16 @@ def _tool_completion_status(result: dict[str, Any]) -> str:
 
 
 def _tool_produced_payload(
-    kind: str,
+    kind: RuntimeToolKind,
     tool_call: OpenAiCompatibleStreamToolCall,
     result: dict[str, Any],
 ) -> dict[str, Any] | None:
-    if kind == "STATE_TOOL":
+    if kind == RuntimeToolKind.STATE_TOOL:
         return {"sharedStateUpdated": bool(result.get("accepted", True))}
-    if kind == "MESSAGE_BLOCK_TOOL":
+    if kind == RuntimeToolKind.MESSAGE_BLOCK_TOOL:
         block_id = result.get("blockId")
         return {"messageBlockId": str(block_id)} if block_id else None
-    if kind == "LIFECYCLE_ACTION_TOOL":
+    if kind == RuntimeToolKind.LIFECYCLE_ACTION_TOOL:
         return {"action": _lifecycle_action_name(tool_call.tool_name)}
     return None
 

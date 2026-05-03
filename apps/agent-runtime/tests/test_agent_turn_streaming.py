@@ -9,8 +9,20 @@ from fastapi.testclient import TestClient
 os.environ.setdefault("LYNXUS_INTERNAL_AUTH_TOKEN", "test-internal-token")
 
 from lynxus_agent_runtime.main import app
-from lynxus_agent_runtime.models import AgentDecision, AgentTurnExecutionOutcome, AgentTurnResult, SessionMessageInput
+from lynxus_agent_runtime.models import (
+    AgentDecision,
+    AgentTurnExecutionOutcome,
+    AgentTurnRequest,
+    AgentTurnResult,
+    SessionMessageInput,
+)
 from lynxus_agent_runtime.openai_compatible import OpenAiCompatibleStreamEvent, OpenAiCompatibleStreamMalformedError
+from lynxus_agent_runtime.tooling import (
+    RuntimeToolKind,
+    semantic_tool_definitions,
+    streaming_semantic_tool_definitions,
+    tool_kind,
+)
 from lynxus_agent_runtime.transcript_store import (
     CommittedTranscriptEntry,
     TranscriptEntry,
@@ -106,6 +118,50 @@ def agent_runtime_client(transcript_store: FakeTranscriptStore | None = None):
 
 
 class AgentTurnStreamingTest(unittest.TestCase):
+    def test_should_build_streaming_runtime_tool_registry_with_stable_kinds(self) -> None:
+        request = AgentTurnRequest.model_validate(request_payload())
+
+        tool_names = [definition.name for definition in streaming_semantic_tool_definitions(request)]
+
+        self.assertEqual("get_owner_capabilities", tool_names[0])
+        self.assertEqual("knowledge_search", tool_names[1])
+        self.assertEqual("knowledge_read", tool_names[2])
+        self.assertIn("read_skill", tool_names)
+        self.assertIn("append_text_block", tool_names)
+        self.assertIn("update_shared_state", tool_names)
+        self.assertIn("run_playbook", tool_names)
+        self.assertIn("security_block", tool_names)
+        self.assertIn("resource_tool__tool_ver_1__create_ticket", tool_names)
+        self.assertEqual(RuntimeToolKind.CONTEXT_TOOL, tool_kind(request, "knowledge_search"))
+        self.assertEqual(RuntimeToolKind.CONTEXT_TOOL, tool_kind(request, "read_skill"))
+        self.assertEqual(RuntimeToolKind.MESSAGE_BLOCK_TOOL, tool_kind(request, "append_text_block"))
+        self.assertEqual(RuntimeToolKind.STATE_TOOL, tool_kind(request, "update_shared_state"))
+        self.assertEqual(RuntimeToolKind.LIFECYCLE_ACTION_TOOL, tool_kind(request, "run_playbook"))
+        self.assertEqual(RuntimeToolKind.CONTEXT_TOOL, tool_kind(request, "resource_tool__tool_ver_1__create_ticket"))
+
+    def test_should_exclude_outcome_tools_from_non_streaming_semantic_definitions(self) -> None:
+        request = AgentTurnRequest.model_validate(request_payload())
+
+        tool_names = {definition.name for definition in semantic_tool_definitions(request)}
+
+        self.assertIn("get_owner_capabilities", tool_names)
+        self.assertIn("knowledge_search", tool_names)
+        self.assertIn("read_skill", tool_names)
+        self.assertIn("resource_tool__tool_ver_1__create_ticket", tool_names)
+        self.assertNotIn("append_text_block", tool_names)
+        self.assertNotIn("update_shared_state", tool_names)
+        self.assertNotIn("run_playbook", tool_names)
+
+    def test_should_exclude_knowledge_tools_without_effective_binding(self) -> None:
+        payload = request_payload()
+        payload["currentOwner"]["knowledgeEnabled"] = False
+        request = AgentTurnRequest.model_validate(payload)
+
+        tool_names = {definition.name for definition in streaming_semantic_tool_definitions(request)}
+
+        self.assertNotIn("knowledge_search", tool_names)
+        self.assertNotIn("knowledge_read", tool_names)
+
     def test_should_fail_execute_stream_when_provider_streaming_is_unavailable(self) -> None:
         os.environ.pop("TEST_OPENAI_COMPATIBLE_API_KEY", None)
         request = request_payload()

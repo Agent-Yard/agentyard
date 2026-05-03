@@ -716,18 +716,16 @@ Current shared state summary: ...
 
 ### 6.3 Tool registry semantics
 
-LLM 不需要看到 tool category，但 agent-runtime 实现必须有内部 tool registry，用来决定 tool result、累计方式、校验规则和 final outcome 映射。
+LLM 不需要看到 tool category，但 agent-runtime 实现必须有 request-scoped runtime tool registry，用来决定 tool result、累计方式、校验规则和 final outcome 映射。`builtin` / `native` / resource 只表达来源，不再作为执行分发依据；执行统一依赖 registry 中的 `kind` 与 handler。
 
-建议内部结构：
+当前内部结构：
 
 ```python
-ToolSpec(
+RuntimeToolSpec(
     name="switch_owner",
-    kind="LIFECYCLE_ACTION",
-    allowsMultiple=False,
-    producesReplyBlock=False,
-    producesFinalAction=True,
-    executesSideEffect=False,
+    kind="LIFECYCLE_ACTION_TOOL",
+    definition=SemanticToolDefinition(...),
+    handler=None,
 )
 ```
 
@@ -735,7 +733,7 @@ ToolSpec(
 
 | Kind | Tools | 语义 |
 | --- | --- | --- |
-| `CONTEXT_TOOL` | `read_skill` | 返回 tool result，继续 LLM loop，不直接影响 final outcome |
+| `CONTEXT_TOOL` | context/builtin 读取工具、`read_skill`、resource connector tools | 返回 tool result，继续 LLM loop，不直接影响 final outcome |
 | `STATE_TOOL` | `update_shared_state` | 累计 sharedState，允许多次，最终合并进 outcome |
 | `MESSAGE_BLOCK_TOOL` | `append_image_block`、`append_rich_text_block`、`append_card_block` | 追加 `replyMessage.blocks`，不触发 lifecycle action |
 | `LIFECYCLE_ACTION_TOOL` | `switch_owner`、`run_playbook`、`human_handoff`、`security_block` | 产生最终 action，同一 turn 互斥 |
@@ -1176,10 +1174,10 @@ Progress 规则：
 ### Phase 5C: Native tool registry and accumulator
 
 - [ ] 在 `models.py` 增加 provider-native built-in action tool schemas 和 message block tool schemas。
-- [ ] 增加内部 tool registry semantics：`CONTEXT_TOOL / STATE_TOOL / MESSAGE_BLOCK_TOOL / LIFECYCLE_ACTION_TOOL`。
+- [x] 增加内部 tool registry semantics：`CONTEXT_TOOL / STATE_TOOL / MESSAGE_BLOCK_TOOL / LIFECYCLE_ACTION_TOOL`。
 - [ ] 在 `decisioning.py` 增加 tool accumulator：text、message blocks、tool args、state update、runtime action 分开累计。
-- [ ] 实现 `read_skill`、`update_shared_state`、`switch_owner`、`run_playbook`、`human_handoff`、`security_block`。
-- [ ] 预留 `append_image_block`、`append_rich_text_block`、`append_card_block`，先只定义 block schema 和归并规则。
+- [x] 实现 `read_skill`、`update_shared_state`、`switch_owner`、`run_playbook`、`human_handoff`、`security_block`。
+- [x] 预留 `append_image_block`、`append_rich_text_block`、`append_card_block`，先只定义 block schema 和归并规则。
 
 验收：
 
