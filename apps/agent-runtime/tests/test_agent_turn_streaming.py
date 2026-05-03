@@ -361,40 +361,41 @@ class AgentTurnStreamingTest(unittest.TestCase):
         request = request_payload()
         request["turnId"] = "turn-2"
         request["turnExecutionId"] = "exec-2"
+        replayed_entries = [
+            CommittedTranscriptEntry(
+                transcript_seq=1,
+                role="assistant",
+                content_json={
+                    "version": 1,
+                    "blocks": [
+                        {"type": "thinking", "text": "look up order"},
+                        {
+                            "type": "tool_call",
+                            "id": "call-previous",
+                            "name": "read_skill",
+                            "arguments": {"resourceVersionId": "skill-ver-1"},
+                        },
+                    ],
+                },
+            ),
+            CommittedTranscriptEntry(
+                transcript_seq=2,
+                role="tool",
+                content_json={
+                    "version": 1,
+                    "blocks": [
+                        {
+                            "type": "tool_result",
+                            "tool_call_id": "call-previous",
+                            "content": {"accepted": True, "content": "policy"},
+                        }
+                    ],
+                },
+            ),
+        ]
         transcript_store = FakeTranscriptStore(
             committed_entries_by_context={
-                ("session-1", "agent-a", 1): [
-                    CommittedTranscriptEntry(
-                        transcript_seq=1,
-                        role="assistant",
-                        content_json={
-                            "version": 1,
-                            "blocks": [
-                                {"type": "thinking", "text": "look up order"},
-                                {
-                                    "type": "tool_call",
-                                    "id": "call-previous",
-                                    "name": "read_skill",
-                                    "arguments": {"resourceVersionId": "skill-ver-1"},
-                                },
-                            ],
-                        },
-                    ),
-                    CommittedTranscriptEntry(
-                        transcript_seq=2,
-                        role="tool",
-                        content_json={
-                            "version": 1,
-                            "blocks": [
-                                {
-                                    "type": "tool_result",
-                                    "tool_call_id": "call-previous",
-                                    "content": {"accepted": True, "content": "policy"},
-                                }
-                            ],
-                        },
-                    ),
-                ]
+                ("session-1", "agent-a", 1): replayed_entries,
             }
         )
         captured_payloads: list[dict] = []
@@ -420,12 +421,16 @@ class AgentTurnStreamingTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         messages = captured_payloads[0]["messages"]
-        self.assertEqual(1, len([message for message in messages if message.get("role") == "system"]))
-        replayed_assistant = next(message for message in messages if message.get("tool_calls"))
+        expected_replay_messages = [
+            provider_message_from_transcript_entry(entry.role, entry.content_json, provider_type="OPENAI_COMPATIBLE")
+            for entry in replayed_entries
+        ]
+        self.assertEqual(expected_replay_messages, messages[1:3])
+        replayed_assistant = messages[1]
         self.assertEqual("", replayed_assistant["content"])
         self.assertEqual("look up order", replayed_assistant["reasoning_content"])
         self.assertEqual("call-previous", replayed_assistant["tool_calls"][0]["id"])
-        replayed_tool = next(message for message in messages if message.get("role") == "tool")
+        replayed_tool = messages[2]
         self.assertEqual("call-previous", replayed_tool["tool_call_id"])
 
     def test_should_not_include_committed_transcript_from_different_owner_or_epoch(self) -> None:

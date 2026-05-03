@@ -11,7 +11,6 @@ from lynxus_agent_runtime.models import AgentTurnRequest
 from lynxus_agent_runtime.privacy_contracts import PrivacyStrategy
 from lynxus_agent_runtime.prompting import (
     build_prompt_bundle,
-    build_streaming_prompt_bundle,
     render_openai_streaming_messages,
 )
 
@@ -109,7 +108,8 @@ class AgentRuntimePromptingTest(unittest.TestCase):
         self.assertEqual(bundle.runtime_messages[2].content, "hi")
         self.assertEqual(bundle.runtime_messages[-1].kind, "user_turn")
         self.assertEqual(bundle.runtime_messages[-1].content, "hello")
-        self.assertEqual("Runtime context bundle for Lynxus provider-native streaming.", bundle.instruction)
+        self.assertIn("You are the current session owner agent.", bundle.instruction)
+        self.assertIn("Owner identity: Agent A", bundle.instruction)
 
     def test_should_skip_privacy_for_empty_shared_state_slice(self) -> None:
         request = AgentTurnRequest.model_validate(
@@ -241,7 +241,7 @@ class AgentRuntimePromptingTest(unittest.TestCase):
 
         rendered_prompt = "\n\n".join(
             str(message.get("content") or "")
-            for message in render_openai_streaming_messages(build_streaming_prompt_bundle(request))
+            for message in render_openai_streaming_messages(build_prompt_bundle(request))
         )
 
         for runtime_id in (

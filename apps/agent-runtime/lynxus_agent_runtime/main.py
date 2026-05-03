@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
@@ -21,7 +22,7 @@ from .descriptor_provider import default_descriptor_provider
 from .extension_registration import load_extension_registration
 from .extension_registry import load_tool_connector_registry, validate_tool_connector_registry
 from .http_clients import reset_shared_http_client_registry
-from .models import AgentTurnRequest, PlaybookToolTaskRequest, PlaybookToolTaskResult
+from .models import AgentTurnRequest, AgentTurnStreamFrame, PlaybookToolTaskRequest, PlaybookToolTaskResult
 from .redis_support import RedisSettings, create_redis_client
 from .streaming import stream_agent_turn
 from .tool_connectors import reset_default_tool_connector_registry, set_default_tool_connector_registry
@@ -30,6 +31,11 @@ from .transcript_store import TranscriptStoreSettings, create_transcript_cache, 
 
 LOGGER = logging.getLogger("lynxus-agent-runtime")
 INSTANCE_ID = (os.getenv("LYNXUS_INSTANCE_ID") or "lynxus-agent-runtime").strip() or "lynxus-agent-runtime"
+
+
+async def _serialize_ndjson_frames(frames: AsyncIterator[AgentTurnStreamFrame]) -> AsyncIterator[str]:
+    async for frame in frames:
+        yield frame.model_dump_json() + "\n"
 
 
 def require_internal_bearer(authorization: str | None = Header(default=None, alias="Authorization")) -> None:
@@ -195,7 +201,8 @@ async def execute_turn_stream(
         customerId=str(request.trigger.payload.get("customerId") or ""),
     )
     transcript_store = getattr(app.state, "transcript_store", None)
-    return StreamingResponse(stream_agent_turn(request, transcript_store=transcript_store), media_type="application/x-ndjson")
+    frames = stream_agent_turn(request, transcript_store=transcript_store)
+    return StreamingResponse(_serialize_ndjson_frames(frames), media_type="application/x-ndjson")
 
 
 @app.post("/playbook-tool-tasks/execute", response_model=PlaybookToolTaskResult)

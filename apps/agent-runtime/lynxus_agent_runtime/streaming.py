@@ -5,7 +5,7 @@ import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Protocol
 
 from starlette.concurrency import run_in_threadpool
 
@@ -26,13 +26,14 @@ from .openai_compatible import (
     OpenAiCompatibleStreamMalformedError,
     OpenAiCompatibleStreamMessage,
     OpenAiCompatibleStreamToolCall,
+    OpenAiCompatibleSettings,
     apply_reasoning_settings,
     stream_chat_completion_events,
 )
 from .openai_adapter import render_openai_tool_definitions
 from .privacy_pipeline import build_privacy_pipeline
 from .provider_settings import resolve_provider_settings
-from .prompting import build_streaming_prompt_bundle, render_openai_streaming_messages
+from .prompting import build_prompt_bundle, render_openai_streaming_messages
 from .tooling import execute_tool_call, streaming_semantic_tool_definitions, tool_kind
 from .transcript_store import (
     TranscriptEntry,
@@ -92,47 +93,92 @@ class _FrameWriter:
         )
 
 
+class _LlmStreamProvider(Protocol):
+    @property
+    def provider_type(self) -> str:
+        ...
+
+    def stream(
+        self,
+        request: AgentTurnRequest,
+        writer: _FrameWriter,
+        *,
+        replay_messages: list[dict[str, Any]],
+        transcript_store: TranscriptStore | None,
+        turn_context: TurnExecutionContext,
+    ) -> AsyncIterator[AgentTurnStreamFrame]:
+        ...
+
+
+@dataclass(frozen=True)
+class _OpenAiCompatibleStreamProvider:
+    settings: OpenAiCompatibleSettings
+
+    @property
+    def provider_type(self) -> str:
+        return self.settings.provider_type
+
+    def stream(
+        self,
+        request: AgentTurnRequest,
+        writer: _FrameWriter,
+        *,
+        replay_messages: list[dict[str, Any]],
+        transcript_store: TranscriptStore | None,
+        turn_context: TurnExecutionContext,
+    ) -> AsyncIterator[AgentTurnStreamFrame]:
+        return _stream_via_openai_compatible(
+            request,
+            writer,
+            settings=self.settings,
+            replay_messages=replay_messages,
+            transcript_store=transcript_store,
+            turn_context=turn_context,
+        )
+
+
 async def stream_agent_turn(
     request: AgentTurnRequest,
     transcript_store: TranscriptStore | None = None,
-) -> AsyncIterator[str]:
+) -> AsyncIterator[AgentTurnStreamFrame]:
     writer = _FrameWriter(request)
     turn_context = _turn_execution_context(request, writer)
     replay_messages: list[dict[str, Any]] = []
-    provider_settings = resolve_provider_settings(request)
-    provider_type = _request_provider_type(request, provider_settings.provider_type if provider_settings is not None else None)
     if transcript_store is not None:
         cached_outcome = await run_in_threadpool(transcript_store.begin_execution, turn_context)
         if cached_outcome is not None:
-            yield _serialize(writer.frame(
+            yield writer.frame(
                 kind="FINAL_OUTCOME",
                 visibility="INTERNAL",
                 payload={"outcome": cached_outcome.model_dump(mode="json")},
-            ))
+            )
             return
+
+    provider = _resolve_llm_stream_provider(request)
+    if transcript_store is not None and provider is not None:
         replay_messages = await run_in_threadpool(
             transcript_store.load_committed_provider_messages,
             turn_context,
-            provider_type,
+            provider.provider_type,
         )
 
-    yield _serialize(writer.frame(
+    yield writer.frame(
         kind="TURN_STARTED",
         visibility="OPERATOR",
         payload={"triggerType": request.trigger.triggerType},
-    ))
-    yield _serialize(writer.frame(
+    )
+    yield writer.frame(
         kind="USER_NOTICE",
         visibility="CUSTOMER",
         payload={"label": "PROCESSING", "text": "已收到，我正在处理。"},
-    ))
+    )
 
-    if provider_settings is None:
+    if provider is None:
         message = "execute-stream requires a configured streaming model provider for current owner"
         outcome = AgentTurnExecutionOutcome(success=False, failureReason=message)
         if transcript_store is not None:
             await run_in_threadpool(transcript_store.mark_failed, turn_context, message)
-        yield _serialize(writer.frame(
+        yield writer.frame(
             kind="ERROR",
             visibility="OPERATOR",
             payload={
@@ -142,36 +188,36 @@ async def stream_agent_turn(
                 "retryable": False,
                 "details": {},
             },
-        ))
-        yield _serialize(writer.frame(
+        )
+        yield writer.frame(
             kind="FINAL_OUTCOME",
             visibility="INTERNAL",
             payload={"outcome": outcome.model_dump(mode="json")},
-        ))
+        )
         return
 
-    async for frame in _stream_via_openai_compatible(
+    async for frame in provider.stream(
         request,
         writer,
         replay_messages=replay_messages,
         transcript_store=transcript_store,
         turn_context=turn_context,
     ):
-        yield _serialize(frame)
+        yield frame
 
 
-def _request_provider_type(request: AgentTurnRequest, resolved_provider_type: str | None) -> str:
-    if resolved_provider_type:
-        return resolved_provider_type
-    if request.currentOwner.model is not None and request.currentOwner.model.providerType:
-        return request.currentOwner.model.providerType
-    return "OPENAI_COMPATIBLE"
+def _resolve_llm_stream_provider(request: AgentTurnRequest) -> _LlmStreamProvider | None:
+    settings = resolve_provider_settings(request)
+    if settings is None:
+        return None
+    return _OpenAiCompatibleStreamProvider(settings=settings)
 
 
 async def _stream_via_openai_compatible(
     request: AgentTurnRequest,
     writer: _FrameWriter,
     *,
+    settings: OpenAiCompatibleSettings,
     replay_messages: list[dict[str, Any]],
     transcript_store: TranscriptStore | None,
     turn_context: TurnExecutionContext,
@@ -183,12 +229,9 @@ async def _stream_via_openai_compatible(
     block_id = "reply-block-1"
     privacy_pipeline = build_privacy_pipeline(request, usage_tracker)
     try:
-        settings = resolve_provider_settings(request)
-        if settings is None:
-            raise RuntimeError("no supported model provider configured for current owner")
-        prompt_bundle = build_streaming_prompt_bundle(request)
+        prompt_bundle = build_prompt_bundle(request)
         sanitized_bundle = privacy_pipeline.sanitize_prompt_bundle(prompt_bundle)
-        current_messages = _collapse_current_system_messages(render_openai_streaming_messages(sanitized_bundle))
+        current_messages = render_openai_streaming_messages(sanitized_bundle)
         provider_messages = _merge_replay_messages(current_messages, replay_messages)
         completed_transcript_entries: list[TranscriptEntry] = []
         payload: dict[str, Any] = {
@@ -456,30 +499,12 @@ def _merge_replay_messages(
     current_messages: list[dict[str, Any]],
     replay_messages: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    if not replay_messages or not current_messages:
+    if not replay_messages:
         return [*current_messages]
+    if not current_messages:
+        return [*replay_messages]
+    # Keep committed provider-native messages byte-for-byte stable for LLM prefix caching.
     return [current_messages[0], *replay_messages, *current_messages[1:]]
-
-
-def _collapse_current_system_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    if not messages:
-        return []
-    system_contents: list[str] = []
-    collapsed: list[dict[str, Any]] = []
-    system_inserted = False
-    for message in messages:
-        if message.get("role") == "system":
-            content = str(message.get("content") or "").strip()
-            if content:
-                system_contents.append(content)
-            continue
-        if not system_inserted:
-            collapsed.append({"role": "system", "content": "\n\n".join(system_contents)})
-            system_inserted = True
-        collapsed.append(message)
-    if not system_inserted:
-        collapsed.insert(0, {"role": "system", "content": "\n\n".join(system_contents)})
-    return collapsed
 
 
 @dataclass(frozen=True)
@@ -880,7 +905,3 @@ def _provider_stream_error_code(error: OpenAiCompatibleStreamError) -> str:
     if isinstance(error, OpenAiCompatibleStreamIdleTimeoutError):
         return "PROVIDER_STREAM_IDLE_TIMEOUT"
     return "PROVIDER_STREAM_FAILED"
-
-
-def _serialize(frame: AgentTurnStreamFrame) -> str:
-    return frame.model_dump_json() + "\n"
