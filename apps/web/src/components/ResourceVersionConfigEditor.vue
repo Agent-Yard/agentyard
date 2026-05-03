@@ -222,8 +222,11 @@ function setOperationMapping(operationName: string, value: JsonObject) {
           </template>
           <a-row :gutter="[16, 16]">
             <a-col :span="12">
-              <a-form-item label="操作名">
-                <a-input v-model:value="operation.name" placeholder="例如：evaluate_refund / create_ticket" />
+              <a-form-item
+                label="操作名"
+                extra="会直接作为 LLM function name；使用小写 snake_case，并在当前助手可用工具范围内保持唯一，建议带领域前缀。"
+              >
+                <a-input v-model:value="operation.name" placeholder="例如：ticket_create / refund_evaluate" />
               </a-form-item>
             </a-col>
             <a-col :span="12">

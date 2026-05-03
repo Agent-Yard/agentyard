@@ -333,7 +333,7 @@ async def _stream_via_openai_compatible(
                         },
                     )
                     if kind == RuntimeToolKind.CONTEXT_TOOL:
-                        tool_result = execute_tool_call(request, tool_call.tool_name, tool_call.arguments)
+                        tool_result = execute_tool_call(request, spec, tool_call.arguments)
                         should_continue = True
                     else:
                         tool_result = outcome_accumulator.apply_tool_call(tool_call, kind)

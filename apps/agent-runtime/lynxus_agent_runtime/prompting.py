@@ -8,7 +8,7 @@ from .openai_adapter import render_openai_runtime_message
 from .privacy_contracts import PrivacyStrategy
 from .prompt_bundle import PromptBundle
 from .semantic import SemanticMessage
-from .tooling import resolve_knowledge_binding, skill_catalog
+from .tooling import resolve_knowledge_binding
 
 DEFAULT_EVENT_WINDOW = 8
 MAX_EVENT_WINDOW = 20
@@ -17,18 +17,11 @@ DEFAULT_RUNTIME_BYTE_BUDGET = 6000
 ASSISTANT_HISTORY_PRIVACY_SOURCE = "assistant_history_message:v1"
 
 
-def _allowed_actions_with_security_block(actions: list[str]) -> list[str]:
-    ordered = list(actions or [])
-    if "SECURITY_BLOCK" not in ordered:
-        ordered.append("SECURITY_BLOCK")
-    return ordered
-
-
 def build_prompt_bundle(request: AgentTurnRequest) -> PromptBundle:
     return PromptBundle(
         instruction=_build_instruction(request),
         runtime_messages=_build_runtime_messages(request),
-        capabilities=_build_capabilities(request),
+        capability_summary=_build_capability_summary(request),
     )
 
 
@@ -64,60 +57,17 @@ def _build_instruction(request: AgentTurnRequest) -> str:
     )
 
 
-def _build_capabilities(request: AgentTurnRequest) -> dict[str, Any]:
-    knowledge_binding = resolve_knowledge_binding(request.currentOwner)
-    return {
-        "allowedActions": _allowed_actions_with_security_block(request.currentOwner.allowedActions),
-        "switchableOwnerAgentIds": request.currentOwner.switchableOwnerAgentIds,
-        "playbookIds": request.currentOwner.playbookIds,
-        "availableSkills": skill_catalog(request),
-        "availableTools": [
-            {
-                "resourceId": tool.resourceId,
-                "resourceVersionId": tool.resourceVersionId,
-                "resourceName": tool.resourceName,
-                "connectorType": None if tool.connector is None else tool.connector.connectorType,
-                "operations": [
-                    {
-                        "name": operation.name,
-                        "description": operation.description,
-                        "inputSchema": operation.inputSchema,
-                        "outputSchema": operation.outputSchema,
-                    }
-                    for operation in tool.operations
-                ],
-            }
-            for tool in request.currentOwner.tools
-        ],
-        "knowledgeBinding": None
-        if knowledge_binding is None
-        else {
-            "knowledgeBaseId": knowledge_binding.knowledgeBaseId,
-            "knowledgeBaseName": knowledge_binding.knowledgeBaseName,
-            "knowledgeReleaseVersion": knowledge_binding.knowledgeReleaseVersion,
-            "snapshotId": knowledge_binding.snapshotId,
-        },
-        "availableAgents": [
-            {
-                "agentId": agent.agentId,
-                "name": agent.name,
-                "role": agent.role,
-                "responsibility": agent.responsibility,
-                "canOwnSession": agent.canOwnSession,
-                "canSwitchTo": agent.agentId in set(request.currentOwner.switchableOwnerAgentIds),
-                "allowedActions": agent.allowedActions,
-            }
-            for agent in request.availableAgents
-        ],
-        "availablePlaybooks": [
-            {
-                "playbookId": playbook.playbookId,
-                "name": playbook.name,
-                "description": playbook.description,
-            }
-            for playbook in request.availablePlaybooks
-        ],
-    }
+def _build_capability_summary(request: AgentTurnRequest) -> str:
+    lines = [
+        "Function tools define the current owner capability boundary, including context reads, mounted skills, resource actions, message blocks, state updates, lifecycle actions, and security blocks.",
+        "Use function tool names, parameter schemas, and parameter descriptions for allowed target ids and operation details.",
+        "Use get_owner_capabilities, list_available_agents, or list_available_playbooks if you need a fuller runtime directory.",
+    ]
+    if resolve_knowledge_binding(request.currentOwner) is not None:
+        lines.append(
+            "For factual questions about enterprises, products, policies, or other domain facts, query the knowledge base first; do not answer from pretrained knowledge."
+        )
+    return "\n".join(lines)
 
 
 def _build_runtime_messages(request: AgentTurnRequest) -> list[SemanticMessage]:
@@ -200,7 +150,7 @@ def _current_trigger_messages(request: AgentTurnRequest) -> list[SemanticMessage
 def render_openai_streaming_messages(bundle: PromptBundle) -> list[dict[str, Any]]:
     system_sections = [
         bundle.instruction,
-        "Capabilities:\n" + json.dumps(bundle.capabilities, ensure_ascii=False),
+        "Capability summary:\n" + bundle.capability_summary,
     ]
     messages: list[dict[str, Any]] = [{"role": "system", "content": "\n\n".join(system_sections)}]
     messages.extend(render_openai_runtime_message(message) for message in bundle.runtime_messages)

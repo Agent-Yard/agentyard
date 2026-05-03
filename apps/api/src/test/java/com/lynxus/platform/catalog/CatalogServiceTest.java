@@ -1680,6 +1680,101 @@ class CatalogServiceTest {
         assertTrue(error.getMessage().contains("tool connector operation mapping query_customer does not satisfy connector schema"));
     }
 
+    @Test
+    void shouldRejectAssistantReleaseWhenToolOperationNameIsNotAFunctionName() {
+        CatalogService catalogService = catalogServiceWithCoreToolConnectors();
+        CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("函数名域", "function names"));
+        CatalogDtos.ScenarioDto scenario = catalogService.createScenario(new CatalogDtos.CreateScenarioRequest(domain.id(), "函数名场景", "function names"));
+        CatalogDtos.ResourceDto defaultModel = catalogService.createResource(
+            new CatalogDtos.CreateResourceRequest(
+                domain.id(),
+                "默认模型",
+                ResourceType.LLM_MODEL,
+                ShareScope.DOMAIN_SHARED,
+                "DOMAIN",
+                domain.id(),
+                "default model",
+                "model team",
+                List.of("llm"),
+                new CatalogDtos.CreateResourceVersionRequest("model", VersionStatus.PUBLISHED, null)
+            )
+        );
+        CatalogDtos.ResourceDto tool = createPublishedToolResource(
+            catalogService,
+            domain.id(),
+            "Bad Tool",
+            simpleHttpToolConfig("Create Ticket")
+        );
+        CatalogDtos.AssistantDto assistant = catalogService.createAssistant(
+            new CatalogDtos.CreateAssistantRequest(
+                scenario.id(),
+                "函数名助手",
+                "release assistant",
+                new CatalogDtos.AssistantModelPolicyDto(defaultModel.id()),
+                null,
+                null
+            )
+        );
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, () ->
+            publishAssistantWithTool(catalogService, assistant, tool.id())
+        );
+
+        assertTrue(error.getMessage().contains("assistant release tool operation name must match ^[a-z][a-z0-9_]{0,63}$"));
+        assertTrue(error.getMessage().contains("Bad Tool.Create Ticket"));
+    }
+
+    @Test
+    void shouldRejectAssistantReleaseWhenAgentToolOperationNamesConflict() {
+        CatalogService catalogService = catalogServiceWithCoreToolConnectors();
+        CatalogDtos.BusinessDomainDto domain = catalogService.createDomain(new CatalogDtos.CreateDomainRequest("冲突域", "function conflicts"));
+        CatalogDtos.ScenarioDto scenario = catalogService.createScenario(new CatalogDtos.CreateScenarioRequest(domain.id(), "冲突场景", "function conflicts"));
+        CatalogDtos.ResourceDto defaultModel = catalogService.createResource(
+            new CatalogDtos.CreateResourceRequest(
+                domain.id(),
+                "默认模型",
+                ResourceType.LLM_MODEL,
+                ShareScope.DOMAIN_SHARED,
+                "DOMAIN",
+                domain.id(),
+                "default model",
+                "model team",
+                List.of("llm"),
+                new CatalogDtos.CreateResourceVersionRequest("model", VersionStatus.PUBLISHED, null)
+            )
+        );
+        CatalogDtos.ResourceDto firstTool = createPublishedToolResource(
+            catalogService,
+            domain.id(),
+            "CRM Tool A",
+            simpleHttpToolConfig("query_customer")
+        );
+        CatalogDtos.ResourceDto secondTool = createPublishedToolResource(
+            catalogService,
+            domain.id(),
+            "CRM Tool B",
+            simpleHttpToolConfig("query_customer")
+        );
+        CatalogDtos.AssistantDto assistant = catalogService.createAssistant(
+            new CatalogDtos.CreateAssistantRequest(
+                scenario.id(),
+                "冲突助手",
+                "release assistant",
+                new CatalogDtos.AssistantModelPolicyDto(defaultModel.id()),
+                null,
+                null
+            )
+        );
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, () ->
+            publishAssistantWithTools(catalogService, assistant, List.of(firstTool.id(), secondTool.id()))
+        );
+
+        assertTrue(error.getMessage().contains("duplicate assistant release tool operation name for agent 工具智能体: query_customer"));
+        assertTrue(error.getMessage().contains("CRM Tool A"));
+        assertTrue(error.getMessage().contains("CRM Tool B"));
+    }
+
     private static CatalogService catalogServiceWithToolConnectors(
         List<Map<String, Object>> toolConnectorDescriptors,
         IntegrationAccountService integrationAccountService,
@@ -1784,14 +1879,23 @@ class CatalogServiceTest {
 
     private static CatalogDtos.ResourceDto createToolResource(CatalogService service, CatalogDtos.ToolConfigDto toolConfig) {
         CatalogDtos.BusinessDomainDto domain = service.createDomain(new CatalogDtos.CreateDomainRequest("工具域-" + System.nanoTime(), "tool config"));
+        return createPublishedToolResource(service, domain.id(), "CRM Tool", toolConfig);
+    }
+
+    private static CatalogDtos.ResourceDto createPublishedToolResource(
+        CatalogService service,
+        String domainId,
+        String resourceName,
+        CatalogDtos.ToolConfigDto toolConfig
+    ) {
         return service.createResource(
             new CatalogDtos.CreateResourceRequest(
-                domain.id(),
-                "CRM Tool",
+                domainId,
+                resourceName,
                 ResourceType.TOOL,
                 ShareScope.DOMAIN_SHARED,
                 "DOMAIN",
-                domain.id(),
+                domainId,
                 "CRM tool",
                 "Tool team",
                 List.of("crm"),
@@ -1908,12 +2012,20 @@ class CatalogServiceTest {
         CatalogDtos.AssistantDto assistant,
         String toolId
     ) {
+        return publishAssistantWithTools(service, assistant, List.of(toolId));
+    }
+
+    private static CatalogDtos.AssistantDto publishAssistantWithTools(
+        CatalogService service,
+        CatalogDtos.AssistantDto assistant,
+        List<String> toolIds
+    ) {
         service.createAgent(new CatalogDtos.CreateAgentRequest(
             assistant.id(),
             "工具智能体",
             "owner",
             "owns tool calls",
-            new CatalogDtos.AgentExecutionPolicyDto(true, null, "", false, false, null, 8, List.of(), List.of(toolId))
+            new CatalogDtos.AgentExecutionPolicyDto(true, null, "", false, false, null, 8, List.of(), toolIds)
         ));
         return publishAssistant(service, assistant);
     }
@@ -1924,8 +2036,18 @@ class CatalogServiceTest {
         Map<String, Object> config,
         Map<String, Map<String, Object>> operationMappings
     ) {
+        return toolConfig(connectorType, accountId, config, "query_customer", operationMappings);
+    }
+
+    private static CatalogDtos.ToolConfigDto toolConfig(
+        String connectorType,
+        String accountId,
+        Map<String, Object> config,
+        String operationName,
+        Map<String, Map<String, Object>> operationMappings
+    ) {
         return new CatalogDtos.ToolConfigDto(
-            List.of(new CatalogDtos.ToolOperationDto("query_customer", "查询客户", "{\"type\":\"object\"}", "{\"type\":\"object\"}")),
+            List.of(new CatalogDtos.ToolOperationDto(operationName, "查询客户", "{\"type\":\"object\"}", "{\"type\":\"object\"}")),
             new CatalogDtos.ToolConnectorConfigDto(
                 connectorType,
                 accountId,
@@ -1939,11 +2061,16 @@ class CatalogServiceTest {
     }
 
     private static CatalogDtos.ToolConfigDto simpleHttpToolConfig() {
+        return simpleHttpToolConfig("query_customer");
+    }
+
+    private static CatalogDtos.ToolConfigDto simpleHttpToolConfig(String operationName) {
         return toolConfig(
             "simple-http",
             null,
             Map.of("baseUrl", "https://tools.example.com"),
-            Map.of("query_customer", Map.of("endpoint", "/customers"))
+            operationName,
+            Map.of(operationName, Map.of("endpoint", "/customers"))
         );
     }
 

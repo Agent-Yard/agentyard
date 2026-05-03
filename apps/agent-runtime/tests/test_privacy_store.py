@@ -149,7 +149,7 @@ class SessionPrivacyMapStoreTest(unittest.TestCase):
 
         metadata = pipeline._fragment_cache_metadata(
             PrivacyStrategy.RULES_THEN_PRIVATE_LLM,
-            "tool_result:resource_tool__tool_ver_1__create_ticket",
+            "tool_result:create_ticket",
             {"note": "hi"},
         )
 

@@ -101,9 +101,10 @@ class AgentRuntimePromptingTest(unittest.TestCase):
 
         bundle = build_prompt_bundle(request)
 
-        self.assertIn("allowedActions", bundle.capabilities)
-        self.assertEqual(bundle.capabilities["playbookIds"], ["pb-1"])
-        self.assertIn("availableSkills", bundle.capabilities)
+        self.assertIn("Function tools define the current owner capability boundary", bundle.capability_summary)
+        self.assertNotIn("Knowledge binding:", bundle.capability_summary)
+        self.assertNotIn("For factual questions about enterprises, products", bundle.capability_summary)
+        self.assertIn("Use function tool names, parameter schemas, and parameter descriptions", bundle.capability_summary)
         self.assertEqual(bundle.runtime_messages[2].kind, "user_turn")
         self.assertEqual(bundle.runtime_messages[2].content, "hi")
         self.assertEqual(bundle.runtime_messages[-1].kind, "user_turn")
@@ -254,22 +255,14 @@ class AgentRuntimePromptingTest(unittest.TestCase):
             self.assertNotIn(runtime_id, rendered_prompt)
         self.assertIn("customer-1", rendered_prompt)
         self.assertIn("run-1", rendered_prompt)
-        for action_handle in (
-            "agent-b",
-            "pb-1",
-            "skill-1",
-            "skill-ver-1",
-            "tool-1",
-            "tool-ver-1",
-        ):
-            self.assertIn(action_handle, rendered_prompt)
+        self.assertIn("pb-1", rendered_prompt)
+        self.assertNotIn("agent-b", rendered_prompt)
+        self.assertNotIn("skill-ver-1", rendered_prompt)
+        self.assertNotIn("tool-1", rendered_prompt)
+        self.assertNotIn("tool-ver-1", rendered_prompt)
+        self.assertNotIn("Create a support ticket.", rendered_prompt)
         self.assertNotIn('"eventId"', rendered_prompt)
         self.assertIn('"customerId"', rendered_prompt)
-        self.assertIn('"agentId"', rendered_prompt)
-        self.assertIn('"playbookId"', rendered_prompt)
-        self.assertIn('"resourceVersionId"', rendered_prompt)
-        self.assertIn('"canSwitchTo": true', rendered_prompt)
-        self.assertIn("take over escalations", rendered_prompt)
         self.assertIn("Use function tools for context reads", rendered_prompt)
         self.assertIn("Refund Playbook", rendered_prompt)
         self.assertIn("knownPreference", rendered_prompt)
@@ -329,7 +322,55 @@ class AgentRuntimePromptingTest(unittest.TestCase):
         self.assertIn('"ticketId": "ticket-secret-1"', active_playbook_message.content)
         self.assertIn('"runId": "run-secret-1"', active_playbook_message.content)
 
-    def test_should_hide_knowledge_binding_from_prompt_when_knowledge_is_disabled(self) -> None:
+    def test_should_add_knowledge_lookup_instruction_when_knowledge_is_enabled(self) -> None:
+        request = AgentTurnRequest.model_validate(
+            {
+                "sessionId": "session-1",
+                "assistantId": "assistant-1",
+                "assistantReleaseVersion": "2026.04.19",
+                "currentOwner": {
+                    "agentId": "agent-a",
+                    "name": "Agent A",
+                    "role": "support",
+                    "responsibility": "help the customer",
+                    "knowledgeEnabled": True,
+                    "knowledgeBaseId": "kb-1",
+                    "knowledgeBinding": {
+                        "knowledgeBaseId": "kb-1",
+                        "knowledgeBaseName": "Refund Knowledge",
+                        "knowledgeReleaseId": "kr-1",
+                        "knowledgeReleaseVersion": "1.0.0",
+                        "snapshotId": "snapshot-1",
+                        "defaultTopK": 5,
+                        "retrievalMode": "HYBRID",
+                        "minScore": 0.1,
+                    },
+                    "allowedActions": ["REPLY"],
+                },
+                "availableAgents": [],
+                "availablePlaybooks": [],
+                "sharedState": {},
+                "trigger": {
+                    "triggerType": "USER_MESSAGE",
+                    "eventId": "evt-1",
+                    "triggerMessageId": "msg-1",
+                    "payload": {"text": "hello"},
+                },
+                "recentMessages": [_text_message("msg-1", 1, "USER", "hello")],
+                "recentEvents": [],
+            }
+        )
+
+        bundle = build_prompt_bundle(request)
+
+        self.assertNotIn("Knowledge binding:", bundle.capability_summary)
+        self.assertNotIn("Refund Knowledge", bundle.capability_summary)
+        self.assertIn(
+            "For factual questions about enterprises, products, policies, or other domain facts, query the knowledge base first; do not answer from pretrained knowledge.",
+            bundle.capability_summary,
+        )
+
+    def test_should_not_add_knowledge_lookup_instruction_when_knowledge_is_disabled(self) -> None:
         request = AgentTurnRequest.model_validate(
             {
                 "sessionId": "session-1",
@@ -370,7 +411,8 @@ class AgentRuntimePromptingTest(unittest.TestCase):
 
         bundle = build_prompt_bundle(request)
 
-        self.assertIsNone(bundle.capabilities["knowledgeBinding"])
+        self.assertNotIn("Knowledge binding:", bundle.capability_summary)
+        self.assertNotIn("For factual questions about enterprises, products", bundle.capability_summary)
 
     def test_should_apply_memory_window_and_truncate_shared_state_view(self) -> None:
         request = AgentTurnRequest.model_validate(

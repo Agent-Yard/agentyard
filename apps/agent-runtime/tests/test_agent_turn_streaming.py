@@ -19,9 +19,8 @@ from lynxus_agent_runtime.models import (
 from lynxus_agent_runtime.openai_compatible import OpenAiCompatibleStreamEvent, OpenAiCompatibleStreamMalformedError
 from lynxus_agent_runtime.tooling import (
     RuntimeToolKind,
-    semantic_tool_definitions,
-    streaming_semantic_tool_definitions,
-    tool_kind,
+    execute_tool_call,
+    runtime_tool_specs,
 )
 from lynxus_agent_runtime.transcript_store import (
     CommittedTranscriptEntry,
@@ -121,7 +120,8 @@ class AgentTurnStreamingTest(unittest.TestCase):
     def test_should_build_streaming_runtime_tool_registry_with_stable_kinds(self) -> None:
         request = AgentTurnRequest.model_validate(request_payload())
 
-        tool_names = [definition.name for definition in streaming_semantic_tool_definitions(request)]
+        definitions = [spec.definition for spec in runtime_tool_specs(request)]
+        tool_names = [definition.name for definition in definitions]
 
         self.assertEqual("get_owner_capabilities", tool_names[0])
         self.assertEqual("knowledge_search", tool_names[1])
@@ -130,24 +130,100 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertIn("append_text_block", tool_names)
         self.assertIn("update_shared_state", tool_names)
         self.assertIn("run_playbook", tool_names)
+        self.assertNotIn("switch_owner", tool_names)
+        self.assertNotIn("human_handoff", tool_names)
         self.assertIn("security_block", tool_names)
-        self.assertIn("resource_tool__tool_ver_1__create_ticket", tool_names)
-        self.assertEqual(RuntimeToolKind.CONTEXT_TOOL, tool_kind(request, "knowledge_search"))
-        self.assertEqual(RuntimeToolKind.CONTEXT_TOOL, tool_kind(request, "read_skill"))
-        self.assertEqual(RuntimeToolKind.MESSAGE_BLOCK_TOOL, tool_kind(request, "append_text_block"))
-        self.assertEqual(RuntimeToolKind.STATE_TOOL, tool_kind(request, "update_shared_state"))
-        self.assertEqual(RuntimeToolKind.LIFECYCLE_ACTION_TOOL, tool_kind(request, "run_playbook"))
-        self.assertEqual(RuntimeToolKind.CONTEXT_TOOL, tool_kind(request, "resource_tool__tool_ver_1__create_ticket"))
+        self.assertIn("create_ticket", tool_names)
+        definitions_by_name = {definition.name: definition for definition in definitions}
+        read_skill_schema = definitions_by_name["read_skill"].input_schema
+        self.assertEqual(["skill-ver-1"], read_skill_schema["properties"]["skillId"]["enum"])
+        self.assertIn("skill-ver-1 = Refund Policy", read_skill_schema["properties"]["skillId"]["description"])
+        run_playbook_schema = definitions_by_name["run_playbook"].input_schema
+        self.assertEqual(["pb-1"], run_playbook_schema["properties"]["playbookId"]["enum"])
+        self.assertIn("pb-1 = Playbook 1 - refund flow", run_playbook_schema["properties"]["playbookId"]["description"])
+        specs_by_name = {spec.name: spec for spec in runtime_tool_specs(request)}
+        self.assertEqual(RuntimeToolKind.CONTEXT_TOOL, specs_by_name["knowledge_search"].kind)
+        self.assertEqual(RuntimeToolKind.CONTEXT_TOOL, specs_by_name["read_skill"].kind)
+        self.assertEqual(RuntimeToolKind.MESSAGE_BLOCK_TOOL, specs_by_name["append_text_block"].kind)
+        self.assertEqual(RuntimeToolKind.STATE_TOOL, specs_by_name["update_shared_state"].kind)
+        self.assertEqual(RuntimeToolKind.LIFECYCLE_ACTION_TOOL, specs_by_name["run_playbook"].kind)
+        self.assertNotIn("switch_owner", specs_by_name)
+        self.assertNotIn("human_handoff", specs_by_name)
+        self.assertEqual(RuntimeToolKind.CONTEXT_TOOL, specs_by_name["create_ticket"].kind)
 
-    def test_should_exclude_outcome_tools_from_non_streaming_semantic_definitions(self) -> None:
+    def test_should_describe_switch_owner_targets_in_tool_schema(self) -> None:
+        payload = request_payload()
+        payload["currentOwner"]["allowedActions"] = ["SWITCH_OWNER"]
+        payload["currentOwner"]["switchableOwnerAgentIds"] = ["agent-b"]
+        request = AgentTurnRequest.model_validate(payload)
+
+        definitions_by_name = {
+            spec.definition.name: spec.definition
+            for spec in runtime_tool_specs(request)
+        }
+
+        self.assertIn("switch_owner", definitions_by_name)
+        self.assertNotIn("run_playbook", definitions_by_name)
+        target_schema = definitions_by_name["switch_owner"].input_schema["properties"]["targetAgentId"]
+        self.assertEqual(["agent-b"], target_schema["enum"])
+        self.assertIn("agent-b = Agent B, ops - handle escalations", target_schema["description"])
+
+    def test_should_hide_connector_type_from_resource_tool_description_fallback(self) -> None:
+        payload = request_payload()
+        payload["currentOwner"]["tools"][0]["operations"][0]["description"] = ""
+        request = AgentTurnRequest.model_validate(payload)
+
+        specs_by_name = {spec.name: spec for spec in runtime_tool_specs(request)}
+
+        description = specs_by_name["create_ticket"].definition.description
+        self.assertEqual("Invoke Ticket Tool.create_ticket.", description)
+        self.assertNotIn("simple-http", description)
+        self.assertNotIn("connector", description)
+
+    def test_should_read_shared_owner_capability_directory(self) -> None:
         request = AgentTurnRequest.model_validate(request_payload())
 
-        tool_names = {definition.name for definition in semantic_tool_definitions(request)}
+        specs_by_name = {spec.name: spec for spec in runtime_tool_specs(request)}
+        capabilities = execute_tool_call(request, specs_by_name["get_owner_capabilities"], {})
+
+        self.assertEqual("agent-a", capabilities["ownerAgentId"])
+        self.assertEqual(["REPLY", "RUN_PLAYBOOK", "SECURITY_BLOCK"], capabilities["allowedActions"])
+        self.assertEqual(["pb-1"], capabilities["playbookIds"])
+        self.assertEqual(
+            [
+                {
+                    "skillId": "skill-ver-1",
+                    "skillName": "Refund Policy",
+                    "skillDesc": "Read refund constraints before answering.",
+                }
+            ],
+            capabilities["skills"],
+        )
+        self.assertEqual("snapshot-1", capabilities["knowledgeBinding"]["snapshotId"])
+        self.assertEqual(
+            {
+                "name": "create_ticket",
+                "description": "Create a service ticket.",
+            },
+            capabilities["functions"][0],
+        )
+        self.assertNotIn("connectorType", capabilities["functions"][0])
+        self.assertNotIn("resourceVersionId", capabilities["functions"][0])
+        self.assertNotIn("resourceName", capabilities["functions"][0])
+        self.assertNotIn("inputSchema", capabilities["functions"][0])
+
+    def test_should_exclude_outcome_tools_from_context_only_runtime_specs(self) -> None:
+        request = AgentTurnRequest.model_validate(request_payload())
+
+        tool_names = {
+            spec.definition.name
+            for spec in runtime_tool_specs(request, include_outcome_tools=False)
+        }
 
         self.assertIn("get_owner_capabilities", tool_names)
         self.assertIn("knowledge_search", tool_names)
         self.assertIn("read_skill", tool_names)
-        self.assertIn("resource_tool__tool_ver_1__create_ticket", tool_names)
+        self.assertIn("create_ticket", tool_names)
         self.assertNotIn("append_text_block", tool_names)
         self.assertNotIn("update_shared_state", tool_names)
         self.assertNotIn("run_playbook", tool_names)
@@ -157,7 +233,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         payload["currentOwner"]["knowledgeEnabled"] = False
         request = AgentTurnRequest.model_validate(payload)
 
-        tool_names = {definition.name for definition in streaming_semantic_tool_definitions(request)}
+        tool_names = {spec.definition.name for spec in runtime_tool_specs(request)}
 
         self.assertNotIn("knowledge_search", tool_names)
         self.assertNotIn("knowledge_read", tool_names)
@@ -433,7 +509,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
                             "type": "function",
                             "function": {
                                 "name": "read_skill",
-                                "arguments": '{"resourceVersionId": "skill-ver-1"}',
+                                "arguments": '{"skillId": "skill-ver-1"}',
                             },
                         }
                     ],
@@ -767,7 +843,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
                             tool_call_index=0,
                             tool_call_id="call-skill-thinking",
                             tool_name="read_skill",
-                            arguments_delta=json.dumps({"resourceVersionId": "skill-ver-1"}, ensure_ascii=False),
+                            arguments_delta=json.dumps({"skillId": "skill-ver-1"}, ensure_ascii=False),
                         ),
                         OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
                         OpenAiCompatibleStreamEvent(event_type="done"),
@@ -808,7 +884,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
                     event_type="tool_call_delta",
                     tool_call_index=0,
                     tool_name="read_skill",
-                    arguments_delta=json.dumps({"resourceVersionId": "skill-ver-1"}, ensure_ascii=False),
+                    arguments_delta=json.dumps({"skillId": "skill-ver-1"}, ensure_ascii=False),
                 ),
                 OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
                 OpenAiCompatibleStreamEvent(event_type="done"),
@@ -1065,7 +1141,6 @@ class AgentTurnStreamingTest(unittest.TestCase):
         cases = [
             ("switch_owner", {"targetAgentId": "agent-x"}),
             ("run_playbook", {"playbookId": "pb-x", "playbookInput": {}}),
-            ("human_handoff", {"reason": "billing"}),
         ]
 
         for index, (tool_name, arguments) in enumerate(cases, start=1):
@@ -1230,7 +1305,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
                             tool_call_index=0,
                             tool_call_id="call-skill",
                             tool_name="read_skill",
-                            arguments_delta=json.dumps({"resourceVersionId": "skill-ver-1"}, ensure_ascii=False),
+                            arguments_delta=json.dumps({"skillId": "skill-ver-1"}, ensure_ascii=False),
                         ),
                         OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
                         OpenAiCompatibleStreamEvent(event_type="done"),
@@ -1268,12 +1343,12 @@ class AgentTurnStreamingTest(unittest.TestCase):
                 "append_rich_text_block",
                 "append_card_block",
                 "update_shared_state",
-                "switch_owner",
                 "run_playbook",
-                "human_handoff",
                 "security_block",
             }.issubset(tool_names)
         )
+        self.assertNotIn("switch_owner", tool_names)
+        self.assertNotIn("human_handoff", tool_names)
         tool_result_messages = [message for message in captured_payloads[1]["messages"] if message.get("role") == "tool"]
         self.assertTrue(any("退款时必须先确认订单状态" in str(message.get("content")) for message in tool_result_messages))
         outcome = [json.loads(line) for line in response.text.splitlines() if line.strip()][-1]["payload"]["outcome"]
@@ -1316,7 +1391,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
                             tool_call_index=0,
                             tool_call_id="call-skill",
                             tool_name="read_skill",
-                            arguments_delta=json.dumps({"resourceVersionId": "skill-ver-1"}, ensure_ascii=False),
+                            arguments_delta=json.dumps({"skillId": "skill-ver-1"}, ensure_ascii=False),
                         ),
                         OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
                         OpenAiCompatibleStreamEvent(event_type="done"),
@@ -1355,7 +1430,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         cases = [
             ("switch_owner", {"targetAgentId": "agent-x"}, "switch_owner targetAgentId is not allowed"),
             ("run_playbook", {"playbookId": "pb-x", "playbookInput": {}}, "run_playbook playbookId is not allowed"),
-            ("human_handoff", {"reason": "billing"}, "action SESSION_HUMAN_HANDOFF is not allowed"),
+            ("human_handoff", {"reason": "billing"}, "unsupported streaming tool call: human_handoff"),
         ]
 
         for index, (tool_name, arguments, expected_reason) in enumerate(cases, start=1):

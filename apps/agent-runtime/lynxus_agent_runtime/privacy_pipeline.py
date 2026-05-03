@@ -47,14 +47,14 @@ class PrivacyPipeline:
                 source="prompt.instruction",
             ),
             runtime_messages=self.sanitize_semantic_messages(bundle.runtime_messages),
-            capabilities=self.sanitize_fragment(
-                "PROMPT_CAPABILITIES",
-                bundle.capabilities,
-                bundle.capabilities_privacy_strategy,
-                source="prompt.capabilities",
+            capability_summary=self.sanitize_fragment(
+                "PROMPT_CAPABILITY_SUMMARY",
+                bundle.capability_summary,
+                bundle.capability_summary_privacy_strategy,
+                source="prompt.capability_summary",
             ),
             instruction_privacy_strategy=bundle.instruction_privacy_strategy,
-            capabilities_privacy_strategy=bundle.capabilities_privacy_strategy,
+            capability_summary_privacy_strategy=bundle.capability_summary_privacy_strategy,
         )
 
     def sanitize_semantic_message(self, message: SemanticMessage) -> SemanticMessage:

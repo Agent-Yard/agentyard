@@ -39,6 +39,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
@@ -48,6 +49,7 @@ public class CatalogService {
     private static final String TOOL_CONNECTOR_CONFIG_SCHEMA_ID = "https://lynxus.local/schemas/tool-connector-config.schema.json";
     private static final int DEFAULT_TOOL_CONNECTOR_TIMEOUT_SECONDS = 15;
     private static final String DEFAULT_TOOL_CONNECTOR_RETRY_POLICY = "NONE";
+    private static final Pattern TOOL_OPERATION_FUNCTION_NAME_PATTERN = Pattern.compile("^[a-z][a-z0-9_]{0,63}$");
     private static final Set<String> REASONING_EFFORT_VALUES = Set.of("low", "medium", "high", "xhigh");
     private static final Set<String> SENSITIVE_CONFIG_KEYS = Set.of(
         "externalsecretref",
@@ -1629,10 +1631,52 @@ public class CatalogService {
             assistant.knowledgeAccessPolicy(),
             assistant.memoryPolicy()
         );
+        validateAssistantReleaseToolOperationNames(release);
         List<AssistantReleaseDto> releases = new ArrayList<>(assistantReleases(state, assistantId));
         releases.add(release);
         state.replaceAssistantReleases(assistantId, releases);
         return release;
+    }
+
+    private void validateAssistantReleaseToolOperationNames(AssistantReleaseDto release) {
+        Map<String, AssistantReleaseResourceDto> resourcesByVersionId = new LinkedHashMap<>();
+        for (AssistantReleaseResourceDto resource : release.resources()) {
+            resourcesByVersionId.put(resource.resourceVersionId(), resource);
+        }
+        for (AssistantReleaseAgentDto agent : release.agents()) {
+            validateAgentReleaseToolOperationNames(agent, resourcesByVersionId);
+        }
+    }
+
+    private void validateAgentReleaseToolOperationNames(
+        AssistantReleaseAgentDto agent,
+        Map<String, AssistantReleaseResourceDto> resourcesByVersionId
+    ) {
+        Map<String, String> operationOwners = new LinkedHashMap<>();
+        for (String resourceVersionId : agent.toolResourceVersionIds()) {
+            AssistantReleaseResourceDto resource = resourcesByVersionId.get(resourceVersionId);
+            if (resource == null) {
+                throw new IllegalStateException("assistant release tool resource version missing from snapshot: " + resourceVersionId);
+            }
+            ToolConfigDto tool = resource.configuration() == null ? null : resource.configuration().tool();
+            List<ToolOperationDto> operations = tool == null || tool.operations() == null ? List.of() : tool.operations();
+            for (ToolOperationDto operation : operations) {
+                String operationName = normalizeOptionalText(operation.name());
+                if (!TOOL_OPERATION_FUNCTION_NAME_PATTERN.matcher(operationName).matches()) {
+                    throw new IllegalStateException(
+                        "assistant release tool operation name must match ^[a-z][a-z0-9_]{0,63}$: "
+                            + resource.resourceName() + "." + operationName
+                    );
+                }
+                String previousOwner = operationOwners.putIfAbsent(operationName, resource.resourceName());
+                if (previousOwner != null) {
+                    throw new IllegalStateException(
+                        "duplicate assistant release tool operation name for agent "
+                            + agent.name() + ": " + operationName + " (" + previousOwner + ", " + resource.resourceName() + ")"
+                    );
+                }
+            }
+        }
     }
 
     private KnowledgeBindingSnapshotDto resolveAssistantKnowledgeBinding(AssistantDto assistant) {

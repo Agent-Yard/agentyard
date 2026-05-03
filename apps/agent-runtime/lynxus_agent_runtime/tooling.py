@@ -12,6 +12,7 @@ from .models import (
     AgentConfig,
     AgentTurnRequest,
     KnowledgeBindingDescriptor,
+    PlaybookConfig,
     PlaybookToolTaskRequest,
     PlaybookToolTaskResult,
     ToolDescriptor,
@@ -21,7 +22,6 @@ from .http_clients import shared_http_client_for_url
 from .semantic import SemanticToolDefinition
 from .tool_connectors import ConnectorRuntime, call_connector_tool
 
-_RESOURCE_TOOL_PREFIX = "resource_tool__"
 _KNOWLEDGE_SEARCH_TOOL = "knowledge_search"
 _KNOWLEDGE_READ_TOOL = "knowledge_read"
 RuntimeToolHandler = Callable[[AgentTurnRequest, dict[str, Any]], dict[str, Any]]
@@ -42,18 +42,10 @@ class RuntimeToolSpec:
     handler: RuntimeToolHandler | None = None
 
 
-def semantic_tool_definitions(request: AgentTurnRequest) -> list[SemanticToolDefinition]:
-    return [spec.definition for spec in runtime_tool_specs(request, include_outcome_tools=False)]
-
-
-def streaming_semantic_tool_definitions(request: AgentTurnRequest) -> list[SemanticToolDefinition]:
-    return [spec.definition for spec in runtime_tool_specs(request, include_outcome_tools=True)]
-
-
 def runtime_tool_specs(request: AgentTurnRequest, *, include_outcome_tools: bool = True) -> list[RuntimeToolSpec]:
     specs = _context_tool_specs(request)
     if include_outcome_tools:
-        specs.extend(_outcome_tool_specs())
+        specs.extend(_outcome_tool_specs(request))
     specs.extend(_resource_tool_specs(request))
     _require_unique_tool_specs(specs)
     return specs
@@ -66,17 +58,9 @@ def runtime_tool_registry(request: AgentTurnRequest, *, include_outcome_tools: b
     }
 
 
-def tool_kind(request: AgentTurnRequest, tool_name: str) -> RuntimeToolKind | None:
-    spec = runtime_tool_registry(request).get(tool_name)
-    return None if spec is None else spec.kind
-
-
-def execute_tool_call(request: AgentTurnRequest, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-    spec = runtime_tool_registry(request).get(tool_name)
-    if spec is None:
-        raise ValueError(f"unsupported tool call: {tool_name}")
+def execute_tool_call(request: AgentTurnRequest, spec: RuntimeToolSpec, arguments: dict[str, Any]) -> dict[str, Any]:
     if spec.kind != RuntimeToolKind.CONTEXT_TOOL or spec.handler is None:
-        raise ValueError(f"tool {tool_name} is not executable as a context tool")
+        raise ValueError(f"tool {spec.name} is not executable as a context tool")
     return spec.handler(request, arguments)
 
 
@@ -113,18 +97,10 @@ def execute_playbook_tool_task(request: PlaybookToolTaskRequest) -> PlaybookTool
     )
 
 
-def resource_tool_function_name(tool: ToolDescriptor, operation: ToolOperationDescriptor) -> str:
-    resource_segment = _sanitize_identifier(tool.resourceVersionId)
-    operation_segment = _sanitize_identifier(operation.name)
-    return f"{_RESOURCE_TOOL_PREFIX}{resource_segment}__{operation_segment}"
-
-
 def skill_catalog(request: AgentTurnRequest) -> list[dict[str, str]]:
     return [
         {
-            "resourceId": skill.resourceId,
-            "resourceVersionId": skill.resourceVersionId,
-            "resourceVersion": skill.resourceVersion,
+            "skillId": skill.resourceVersionId,
             "skillName": skill.skillName,
             "skillDesc": skill.skillDesc,
         }
@@ -132,18 +108,36 @@ def skill_catalog(request: AgentTurnRequest) -> list[dict[str, str]]:
     ]
 
 
-def load_skills(request: AgentTurnRequest, resource_version_ids: list[str]) -> list[dict[str, str]]:
+def owner_capability_directory(request: AgentTurnRequest) -> dict[str, Any]:
+    knowledge_binding = resolve_knowledge_binding(request.currentOwner)
+    return {
+        "ownerAgentId": request.currentOwner.agentId,
+        "allowedActions": _allowed_actions_with_security_block(request.currentOwner.allowedActions),
+        "switchableOwnerAgentIds": request.currentOwner.switchableOwnerAgentIds,
+        "playbookIds": request.currentOwner.playbookIds,
+        "skills": skill_catalog(request),
+        "knowledgeBinding": None if knowledge_binding is None else knowledge_binding.model_dump(mode="json"),
+        "functions": [
+            {
+                "name": operation.name,
+                "description": _tool_operation_description(tool, operation),
+            }
+            for tool in request.currentOwner.tools
+            for operation in tool.operations
+        ],
+    }
+
+
+def load_skills(request: AgentTurnRequest, skill_ids: list[str]) -> list[dict[str, str]]:
     descriptors = {skill.resourceVersionId: skill for skill in request.currentOwner.skills}
     loaded: list[dict[str, str]] = []
-    for resource_version_id in resource_version_ids:
-        descriptor = descriptors.get(resource_version_id)
+    for skill_id in skill_ids:
+        descriptor = descriptors.get(skill_id)
         if descriptor is None:
-            raise ValueError(f"unknown skillResourceVersionId={resource_version_id}")
+            raise ValueError(f"unknown skillId={skill_id}")
         loaded.append(
             {
-                "resourceId": descriptor.resourceId,
-                "resourceVersionId": descriptor.resourceVersionId,
-                "resourceVersion": descriptor.resourceVersion,
+                "skillId": descriptor.resourceVersionId,
                 "skillName": descriptor.skillName,
                 "skillPrompt": descriptor.skillPrompt,
             }
@@ -151,30 +145,37 @@ def load_skills(request: AgentTurnRequest, resource_version_ids: list[str]) -> l
     return loaded
 
 
-def _read_skill_resource_version_ids(arguments: dict[str, Any]) -> list[str]:
-    raw_single = arguments.get("resourceVersionId") or arguments.get("skillResourceVersionId")
-    raw_many = arguments.get("resourceVersionIds") or arguments.get("skillResourceVersionIds")
+def _read_skill_ids(arguments: dict[str, Any]) -> list[str]:
+    raw_single = arguments.get("skillId")
+    raw_many = arguments.get("skillIds")
     values: list[Any]
     if raw_many is not None:
         if not isinstance(raw_many, list):
-            raise ValueError("read_skill.resourceVersionIds must be an array")
+            raise ValueError("read_skill.skillIds must be an array")
         values = raw_many
     else:
         values = [raw_single]
-    resource_version_ids: list[str] = []
+    skill_ids: list[str] = []
     for item in values:
-        resource_version_id = str(item or "").strip()
-        if not resource_version_id:
-            raise ValueError("read_skill requires resourceVersionId")
-        if resource_version_id not in resource_version_ids:
-            resource_version_ids.append(resource_version_id)
-    return resource_version_ids
+        skill_id = str(item or "").strip()
+        if not skill_id:
+            raise ValueError("read_skill requires skillId")
+        if skill_id not in skill_ids:
+            skill_ids.append(skill_id)
+    return skill_ids
 
 
 def resolve_knowledge_binding(agent: AgentConfig) -> KnowledgeBindingDescriptor | None:
     if not agent.knowledgeEnabled:
         return None
     return agent.knowledgeBinding
+
+
+def _allowed_actions_with_security_block(actions: list[str]) -> list[str]:
+    ordered = list(actions or [])
+    if "SECURITY_BLOCK" not in ordered:
+        ordered.append("SECURITY_BLOCK")
+    return ordered
 
 
 def _context_tool_specs(request: AgentTurnRequest) -> list[RuntimeToolSpec]:
@@ -193,9 +194,9 @@ def _context_tool_specs(request: AgentTurnRequest) -> list[RuntimeToolSpec]:
                     "playbookIds": {"type": "array", "items": {"type": "string"}},
                     "skills": {"type": "array", "items": {"type": "object"}},
                     "knowledgeBinding": {"type": ["object", "null"]},
-                    "tools": {"type": "array", "items": {"type": "object"}},
+                    "functions": {"type": "array", "items": {"type": "object"}},
                 },
-                "required": ["ownerAgentId", "allowedActions", "switchableOwnerAgentIds", "playbookIds", "skills", "knowledgeBinding", "tools"],
+                "required": ["ownerAgentId", "allowedActions", "switchableOwnerAgentIds", "playbookIds", "skills", "knowledgeBinding", "functions"],
                 "additionalProperties": False,
             },
         ),
@@ -367,15 +368,8 @@ def _context_tool_specs(request: AgentTurnRequest) -> list[RuntimeToolSpec]:
     definitions.append(
         _semantic_tool(
             "read_skill",
-            "Read mounted skill prompt content by resourceVersionId and continue the model round with the tool result.",
-            {
-                "type": "object",
-                "properties": {
-                    "resourceVersionId": {"type": "string"},
-                    "resourceVersionIds": {"type": "array", "items": {"type": "string"}},
-                },
-                "additionalProperties": False,
-            },
+            "Read mounted skill prompt content by skillId and continue the model round with the tool result.",
+            _read_skill_input_schema(request),
             {
                 "type": "object",
                 "properties": {"skills": {"type": "array", "items": {"type": "object"}}},
@@ -406,7 +400,7 @@ def _context_tool_specs(request: AgentTurnRequest) -> list[RuntimeToolSpec]:
     ]
 
 
-def _outcome_tool_specs() -> list[RuntimeToolSpec]:
+def _outcome_tool_specs(request: AgentTurnRequest) -> list[RuntimeToolSpec]:
     definitions = [
         _semantic_tool(
             "update_shared_state",
@@ -477,57 +471,8 @@ def _outcome_tool_specs() -> list[RuntimeToolSpec]:
             },
             _accepted_block_output_schema(),
         ),
-        _semantic_tool(
-            "switch_owner",
-            "Request a session owner switch. targetAgentId must be in switchableOwnerAgentIds.",
-            {
-                "type": "object",
-                "properties": {"targetAgentId": {"type": "string"}},
-                "required": ["targetAgentId"],
-                "additionalProperties": False,
-            },
-            _accepted_output_schema(),
-        ),
-        _semantic_tool(
-            "run_playbook",
-            "Request a playbook run. playbookId must be enabled for the current owner.",
-            {
-                "type": "object",
-                "properties": {
-                    "playbookId": {"type": "string"},
-                    "playbookInput": {"type": "object"},
-                },
-                "required": ["playbookId", "playbookInput"],
-                "additionalProperties": False,
-            },
-            _accepted_output_schema(),
-        ),
-        _semantic_tool(
-            "human_handoff",
-            "Request session human handoff.",
-            {
-                "type": "object",
-                "properties": {"reason": {"type": "string"}},
-                "additionalProperties": False,
-            },
-            _accepted_output_schema(),
-        ),
-        _semantic_tool(
-            "security_block",
-            "Block a system-harmful current user message. This action has priority over other lifecycle actions.",
-            {
-                "type": "object",
-                "properties": {
-                    "categories": {"type": "array", "items": {"type": "string"}},
-                    "reason": {"type": "string"},
-                    "confidence": {"type": "number"},
-                },
-                "required": ["categories", "reason", "confidence"],
-                "additionalProperties": False,
-            },
-            _accepted_output_schema(),
-        ),
     ]
+    definitions.extend(_lifecycle_action_tool_definitions(request))
     kinds = {
         "update_shared_state": RuntimeToolKind.STATE_TOOL,
         "append_text_block": RuntimeToolKind.MESSAGE_BLOCK_TOOL,
@@ -547,6 +492,148 @@ def _outcome_tool_specs() -> list[RuntimeToolSpec]:
         )
         for definition in definitions
     ]
+
+
+def _read_skill_input_schema(request: AgentTurnRequest) -> dict[str, Any]:
+    skill_ids = [skill.resourceVersionId for skill in request.currentOwner.skills]
+    description = _mounted_skill_id_description(request)
+    return {
+        "type": "object",
+        "properties": {
+            "skillId": _string_id_schema(skill_ids, description),
+            "skillIds": {
+                "type": "array",
+                "description": description,
+                "items": _string_id_schema(skill_ids, description),
+            },
+        },
+        "additionalProperties": False,
+    }
+
+
+def _lifecycle_action_tool_definitions(request: AgentTurnRequest) -> list[SemanticToolDefinition]:
+    definitions: list[SemanticToolDefinition] = []
+    allowed_actions = set(request.currentOwner.allowedActions)
+    if "SWITCH_OWNER" in allowed_actions and request.currentOwner.switchableOwnerAgentIds:
+        definitions.append(
+            _semantic_tool(
+                "switch_owner",
+                "Request a session owner switch.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "targetAgentId": _string_id_schema(
+                            request.currentOwner.switchableOwnerAgentIds,
+                            _switchable_owner_id_description(request),
+                        )
+                    },
+                    "required": ["targetAgentId"],
+                    "additionalProperties": False,
+                },
+                _accepted_output_schema(),
+            )
+        )
+    if "RUN_PLAYBOOK" in allowed_actions and request.currentOwner.playbookIds:
+        definitions.append(
+            _semantic_tool(
+                "run_playbook",
+                "Request a playbook run.",
+                {
+                    "type": "object",
+                    "properties": {
+                        "playbookId": _string_id_schema(
+                            request.currentOwner.playbookIds,
+                            _enabled_playbook_id_description(request),
+                        ),
+                        "playbookInput": {"type": "object"},
+                    },
+                    "required": ["playbookId", "playbookInput"],
+                    "additionalProperties": False,
+                },
+                _accepted_output_schema(),
+            )
+        )
+    if "SESSION_HUMAN_HANDOFF" in allowed_actions:
+        definitions.append(
+            _semantic_tool(
+                "human_handoff",
+                "Request session human handoff.",
+                {
+                    "type": "object",
+                    "properties": {"reason": {"type": "string"}},
+                    "additionalProperties": False,
+                },
+                _accepted_output_schema(),
+            )
+        )
+    definitions.append(
+        _semantic_tool(
+            "security_block",
+            "Block a system-harmful current user message. This action has priority over other lifecycle actions.",
+            {
+                "type": "object",
+                "properties": {
+                    "categories": {"type": "array", "items": {"type": "string"}},
+                    "reason": {"type": "string"},
+                    "confidence": {"type": "number"},
+                },
+                "required": ["categories", "reason", "confidence"],
+                "additionalProperties": False,
+            },
+            _accepted_output_schema(),
+        )
+    )
+    return definitions
+
+
+def _string_id_schema(values: list[str], description: str) -> dict[str, Any]:
+    schema: dict[str, Any] = {"type": "string", "description": description}
+    if values:
+        schema["enum"] = values
+    return schema
+
+
+def _mounted_skill_id_description(request: AgentTurnRequest) -> str:
+    if not request.currentOwner.skills:
+        return "No mounted skills are available."
+    return "Mounted skills: " + "; ".join(
+        _target_description(skill.resourceVersionId, skill.skillName, skill.skillDesc)
+        for skill in request.currentOwner.skills
+    )
+
+
+def _switchable_owner_id_description(request: AgentTurnRequest) -> str:
+    agents_by_id = {agent.agentId: agent for agent in request.availableAgents}
+    return "Allowed target owners: " + "; ".join(
+        _agent_target_description(agent_id, agents_by_id.get(agent_id))
+        for agent_id in request.currentOwner.switchableOwnerAgentIds
+    )
+
+
+def _enabled_playbook_id_description(request: AgentTurnRequest) -> str:
+    playbooks_by_id = {playbook.playbookId: playbook for playbook in request.availablePlaybooks}
+    return "Allowed playbooks: " + "; ".join(
+        _playbook_target_description(playbook_id, playbooks_by_id.get(playbook_id))
+        for playbook_id in request.currentOwner.playbookIds
+    )
+
+
+def _agent_target_description(agent_id: str, agent: AgentConfig | None) -> str:
+    if agent is None:
+        return agent_id
+    return _target_description(agent_id, f"{agent.name}, {agent.role}", agent.responsibility)
+
+
+def _playbook_target_description(playbook_id: str, playbook: PlaybookConfig | None) -> str:
+    if playbook is None:
+        return playbook_id
+    return _target_description(playbook_id, playbook.name, playbook.description)
+
+
+def _target_description(identifier: str, label: str, description: str) -> str:
+    value = f"{identifier} = {label}"
+    cleaned_description = description.strip()
+    return f"{value} - {cleaned_description}" if cleaned_description else value
 
 
 def _accepted_output_schema() -> dict[str, Any]:
@@ -569,9 +656,8 @@ def _resource_tool_specs(request: AgentTurnRequest) -> list[RuntimeToolSpec]:
     for tool in request.currentOwner.tools:
         for operation in tool.operations:
             definition = _semantic_tool(
-                resource_tool_function_name(tool, operation),
-                operation.description
-                or f"Invoke {tool.resourceName}.{operation.name} via {None if tool.connector is None else tool.connector.connectorType} connector.",
+                operation.name,
+                _tool_operation_description(tool, operation),
                 _parse_json_schema(operation.inputSchema),
                 _parse_json_schema(operation.outputSchema),
             )
@@ -586,6 +672,10 @@ def _resource_tool_specs(request: AgentTurnRequest) -> list[RuntimeToolSpec]:
     return specs
 
 
+def _tool_operation_description(tool: ToolDescriptor, operation: ToolOperationDescriptor) -> str:
+    return operation.description or f"Invoke {tool.resourceName}.{operation.name}."
+
+
 def _require_unique_tool_specs(specs: list[RuntimeToolSpec]) -> None:
     seen: set[str] = set()
     for spec in specs:
@@ -595,31 +685,7 @@ def _require_unique_tool_specs(specs: list[RuntimeToolSpec]) -> None:
 
 
 def _get_owner_capabilities(request: AgentTurnRequest, arguments: dict[str, Any]) -> dict[str, Any]:
-    knowledge_binding = resolve_knowledge_binding(request.currentOwner)
-    return {
-        "ownerAgentId": request.currentOwner.agentId,
-        "allowedActions": request.currentOwner.allowedActions,
-        "switchableOwnerAgentIds": request.currentOwner.switchableOwnerAgentIds,
-        "playbookIds": request.currentOwner.playbookIds,
-        "skills": [
-            {
-                "resourceVersionId": skill.resourceVersionId,
-                "skillName": skill.skillName,
-                "skillDesc": skill.skillDesc,
-            }
-            for skill in request.currentOwner.skills
-        ],
-        "knowledgeBinding": None if knowledge_binding is None else knowledge_binding.model_dump(mode="json"),
-        "tools": [
-            {
-                "resourceVersionId": tool.resourceVersionId,
-                "resourceName": tool.resourceName,
-                "connectorType": None if tool.connector is None else tool.connector.connectorType,
-                "operations": [operation.name for operation in tool.operations],
-            }
-            for tool in request.currentOwner.tools
-        ],
-    }
+    return owner_capability_directory(request)
 
 
 def _get_active_playbook(request: AgentTurnRequest, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -629,7 +695,7 @@ def _get_active_playbook(request: AgentTurnRequest, arguments: dict[str, Any]) -
 
 
 def _read_skill_context(request: AgentTurnRequest, arguments: dict[str, Any]) -> dict[str, Any]:
-    return {"skills": load_skills(request, _read_skill_resource_version_ids(arguments))}
+    return {"skills": load_skills(request, _read_skill_ids(arguments))}
 
 
 def _knowledge_search_context(request: AgentTurnRequest, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -977,11 +1043,6 @@ def _parse_json_schema(raw_schema: str) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise ValueError("tool schema must decode to a JSON object")
     return parsed
-
-
-def _sanitize_identifier(value: str) -> str:
-    normalized = re.sub(r"[^a-zA-Z0-9_]+", "_", value or "").strip("_")
-    return normalized or "anonymous"
 
 
 def _semantic_tool(
