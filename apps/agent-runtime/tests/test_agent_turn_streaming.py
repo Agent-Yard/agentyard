@@ -17,7 +17,7 @@ from lynxus_agent_runtime.transcript_store import (
     provider_message_from_transcript_entry,
 )
 
-from test_decisioning_loop import _request_payload
+from runtime_fixtures import request_payload
 
 
 class FakeRedisClient:
@@ -112,7 +112,7 @@ def agent_runtime_client(transcript_store: FakeTranscriptStore | None = None):
 class AgentTurnStreamingTest(unittest.TestCase):
     def test_should_fail_execute_stream_when_provider_streaming_is_unavailable(self) -> None:
         os.environ.pop("TEST_OPENAI_COMPATIBLE_API_KEY", None)
-        request = _request_payload()
+        request = request_payload()
         request["turnId"] = "turn-1"
         request["turnExecutionId"] = "exec-1"
         request["ownershipEpoch"] = 3
@@ -147,7 +147,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual(1, len(transcript_store.failed))
 
     def test_should_stream_provider_text_delta_before_final_outcome(self) -> None:
-        request = _request_payload()
+        request = request_payload()
         request["turnId"] = "turn-1"
         request["turnExecutionId"] = "exec-1"
         transcript_store = FakeTranscriptStore()
@@ -191,7 +191,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual("已查到订单。", committed_entries[-1].content_json["blocks"][0]["text"])
 
     def test_should_return_cached_successful_final_outcome_without_calling_provider(self) -> None:
-        request = _request_payload()
+        request = request_payload()
         request["turnId"] = "turn-1"
         request["turnExecutionId"] = "exec-1"
         reply = SessionMessageInput.model_validate({"blocks": [{"type": "TEXT", "text": "cached"}], "metadata": {}})
@@ -223,7 +223,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual([], transcript_store.committed_successes)
 
     def test_should_not_call_provider_when_turn_execution_is_already_running(self) -> None:
-        request = _request_payload()
+        request = request_payload()
         request["turnId"] = "turn-1"
         request["turnExecutionId"] = "exec-1"
         running_conflict = AgentTurnExecutionOutcome(
@@ -250,7 +250,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual([], transcript_store.pending_entries)
 
     def test_should_not_reuse_failed_execution_as_success_cache(self) -> None:
-        request = _request_payload()
+        request = request_payload()
         request["turnId"] = "turn-1"
         request["turnExecutionId"] = "exec-1"
         transcript_store = FakeTranscriptStore()
@@ -281,7 +281,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual("fresh", frames[-1]["payload"]["outcome"]["result"]["decision"]["replyMessage"]["blocks"][0]["text"])
 
     def test_should_stream_provider_when_privacy_mapping_is_enabled(self) -> None:
-        request = _request_payload()
+        request = request_payload()
         request["turnId"] = "turn-privacy"
         request["turnExecutionId"] = "exec-privacy"
         request["effectivePrivacyMappingEnabled"] = True
@@ -316,7 +316,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual(1, len(transcript_store.committed_successes))
 
     def test_should_include_committed_same_owner_epoch_transcript_in_provider_payload(self) -> None:
-        request = _request_payload()
+        request = request_payload()
         request["turnId"] = "turn-2"
         request["turnExecutionId"] = "exec-2"
         transcript_store = FakeTranscriptStore(
@@ -358,7 +358,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         )
 
     def test_should_replay_prior_tool_call_tool_result_and_thinking_without_prompt_duplication(self) -> None:
-        request = _request_payload()
+        request = request_payload()
         request["turnId"] = "turn-2"
         request["turnExecutionId"] = "exec-2"
         transcript_store = FakeTranscriptStore(
@@ -429,7 +429,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual("call-previous", replayed_tool["tool_call_id"])
 
     def test_should_not_include_committed_transcript_from_different_owner_or_epoch(self) -> None:
-        request = _request_payload()
+        request = request_payload()
         request["turnId"] = "turn-2"
         request["turnExecutionId"] = "exec-2"
         transcript_store = FakeTranscriptStore(
@@ -477,7 +477,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertNotIn("wrong epoch", rendered)
 
     def test_should_not_stream_or_persist_legacy_json_decision_as_reply(self) -> None:
-        request = _request_payload()
+        request = request_payload()
         request["turnId"] = "turn-1"
         request["turnExecutionId"] = "exec-1"
 
@@ -522,7 +522,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertIn("legacy JSON", outcome["failureReason"])
 
     def test_should_build_streaming_provider_prompt_without_legacy_response_contract(self) -> None:
-        request = _request_payload()
+        request = request_payload()
         captured_payloads: list[dict] = []
 
         def fake_stream(_settings, payload, *, idle_timeout_seconds):  # noqa: ANN001
@@ -552,7 +552,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertIn("write user-visible assistant text as normal assistant content", rendered_prompt)
 
     def test_should_not_create_successful_final_message_for_malformed_provider_stream(self) -> None:
-        request = _request_payload()
+        request = request_payload()
         request["turnId"] = "turn-1"
         request["turnExecutionId"] = "exec-1"
 
@@ -579,7 +579,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertIsNone(outcome["result"])
 
     def test_should_accumulate_text_message_block_state_and_run_playbook_action(self) -> None:
-        request = _request_payload()
+        request = request_payload()
         request["turnId"] = "turn-1"
         request["turnExecutionId"] = "exec-1"
         captured_payloads: list[dict] = []
@@ -680,7 +680,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual("call-3", committed_entries[4].content_json["blocks"][0]["tool_call_id"])
 
     def test_should_replay_same_turn_thinking_with_tool_call_as_reasoning_content(self) -> None:
-        request = _request_payload()
+        request = request_payload()
         request["turnId"] = "turn-thinking-tool"
         request["turnExecutionId"] = "exec-thinking-tool"
         captured_payloads: list[dict] = []
@@ -726,7 +726,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertNotIn("internal lookup plan", replayed_assistant.get("content") or "")
 
     def test_should_fail_tool_call_with_missing_id_before_executing_tool_or_committing(self) -> None:
-        request = _request_payload()
+        request = request_payload()
         request["turnId"] = "turn-missing-tool-id"
         request["turnExecutionId"] = "exec-missing-tool-id"
         transcript_store = FakeTranscriptStore()
@@ -766,7 +766,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual(1, len(transcript_store.failed))
 
     def test_should_not_persist_current_system_or_runtime_prompt_as_transcript(self) -> None:
-        request = _request_payload()
+        request = request_payload()
         request["turnId"] = "turn-hygiene"
         request["turnExecutionId"] = "exec-hygiene"
         transcript_store = FakeTranscriptStore()
@@ -802,7 +802,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertNotIn("model", committed_entries[0].content_json)
 
     def test_should_accumulate_action_only_switch_owner_without_reply_message(self) -> None:
-        request = _request_payload()
+        request = request_payload()
         request["turnId"] = "turn-switch"
         request["turnExecutionId"] = "exec-switch"
         request["currentOwner"]["allowedActions"] = ["SWITCH_OWNER"]
@@ -840,7 +840,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertIsNone(outcome["result"]["decision"]["replyMessage"])
 
     def test_should_fail_multiple_non_security_lifecycle_actions(self) -> None:
-        request = _request_payload()
+        request = request_payload()
         request["turnId"] = "turn-conflict"
         request["turnExecutionId"] = "exec-conflict"
         request["currentOwner"]["allowedActions"] = ["SWITCH_OWNER", "RUN_PLAYBOOK"]
@@ -885,7 +885,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual(1, len(transcript_store.failed))
 
     def test_should_emit_error_before_failed_final_outcome_after_customer_draft(self) -> None:
-        request = _request_payload()
+        request = request_payload()
         request["turnId"] = "turn-conflict-draft"
         request["turnExecutionId"] = "exec-conflict-draft"
         request["currentOwner"]["allowedActions"] = ["SWITCH_OWNER", "RUN_PLAYBOOK"]
@@ -937,7 +937,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual(1, len(transcript_store.failed))
 
     def test_should_prioritize_security_block_over_other_lifecycle_actions_with_reply(self) -> None:
-        request = _request_payload()
+        request = request_payload()
         request["turnId"] = "turn-security"
         request["turnExecutionId"] = "exec-security"
         request["currentOwner"]["allowedActions"] = ["SWITCH_OWNER"]
@@ -993,7 +993,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         ]
 
         for index, (tool_name, arguments) in enumerate(cases, start=1):
-            request = _request_payload()
+            request = request_payload()
             request["turnId"] = f"turn-security-invalid-{index}"
             request["turnExecutionId"] = f"exec-security-invalid-{index}"
             request["currentOwner"]["allowedActions"] = ["SWITCH_OWNER", "RUN_PLAYBOOK"]
@@ -1056,7 +1056,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         ]
 
         for index, (tool_calls, expected_reason) in enumerate(cases, start=1):
-            request = _request_payload()
+            request = request_payload()
             request["turnId"] = f"turn-same-action-{index}"
             request["turnExecutionId"] = f"exec-same-action-{index}"
             request["currentOwner"]["allowedActions"] = ["SWITCH_OWNER", "RUN_PLAYBOOK"]
@@ -1093,7 +1093,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
             self.assertIn(expected_reason, outcome["failureReason"])
 
     def test_should_merge_update_shared_state_patch_into_final_snapshot(self) -> None:
-        request = _request_payload()
+        request = request_payload()
         request["turnId"] = "turn-state"
         request["turnExecutionId"] = "exec-state"
         request["currentOwner"]["allowedActions"] = ["NO_OP"]
@@ -1139,7 +1139,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual({"knownPreference": "email", "nested": {"value": 1}}, outcome["result"]["sharedState"])
 
     def test_should_return_read_skill_result_to_next_streaming_model_round(self) -> None:
-        request = _request_payload()
+        request = request_payload()
         request["turnId"] = "turn-skill"
         request["turnExecutionId"] = "exec-skill"
         captured_payloads: list[dict] = []
@@ -1213,7 +1213,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         ]
 
         for index, (tool_name, arguments, expected_reason) in enumerate(cases, start=1):
-            request = _request_payload()
+            request = request_payload()
             request["turnId"] = f"turn-invalid-{index}"
             request["turnExecutionId"] = f"exec-invalid-{index}"
             request["currentOwner"]["allowedActions"] = ["SWITCH_OWNER", "RUN_PLAYBOOK"]

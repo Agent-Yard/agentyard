@@ -9,7 +9,6 @@ from typing import Any
 
 from starlette.concurrency import run_in_threadpool
 
-from .decisioning import _resolve_provider_settings
 from .models import (
     AgentDecision,
     AgentTurnExecutionOutcome,
@@ -32,6 +31,7 @@ from .openai_compatible import (
 )
 from .openai_adapter import render_openai_tool_definitions
 from .privacy_pipeline import build_privacy_pipeline
+from .provider_settings import resolve_provider_settings
 from .prompting import build_streaming_prompt_bundle, render_openai_streaming_messages
 from .tooling import execute_tool_call, streaming_semantic_tool_definitions, tool_kind
 from .transcript_store import (
@@ -99,7 +99,7 @@ async def stream_agent_turn(
     writer = _FrameWriter(request)
     turn_context = _turn_execution_context(request, writer)
     replay_messages: list[dict[str, Any]] = []
-    provider_settings = _resolve_provider_settings(request)
+    provider_settings = resolve_provider_settings(request)
     provider_type = _request_provider_type(request, provider_settings.provider_type if provider_settings is not None else None)
     if transcript_store is not None:
         cached_outcome = await run_in_threadpool(transcript_store.begin_execution, turn_context)
@@ -183,7 +183,7 @@ async def _stream_via_openai_compatible(
     block_id = "reply-block-1"
     privacy_pipeline = build_privacy_pipeline(request, usage_tracker)
     try:
-        settings = _resolve_provider_settings(request)
+        settings = resolve_provider_settings(request)
         if settings is None:
             raise RuntimeError("no supported model provider configured for current owner")
         prompt_bundle = build_streaming_prompt_bundle(request)

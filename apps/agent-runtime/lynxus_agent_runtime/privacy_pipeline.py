@@ -53,15 +53,8 @@ class PrivacyPipeline:
                 bundle.capabilities_privacy_strategy,
                 source="prompt.capabilities",
             ),
-            response_contract=self.sanitize_fragment(
-                "PROMPT_RESPONSE_CONTRACT",
-                bundle.response_contract,
-                bundle.response_contract_privacy_strategy,
-                source="prompt.response_contract",
-            ),
             instruction_privacy_strategy=bundle.instruction_privacy_strategy,
             capabilities_privacy_strategy=bundle.capabilities_privacy_strategy,
-            response_contract_privacy_strategy=bundle.response_contract_privacy_strategy,
         )
 
     def sanitize_semantic_message(self, message: SemanticMessage) -> SemanticMessage:

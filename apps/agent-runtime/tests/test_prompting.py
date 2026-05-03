@@ -7,10 +7,13 @@ from pathlib import Path
 
 os.environ.setdefault("LYNXUS_INTERNAL_AUTH_TOKEN", "test-internal-token")
 
-from lynxus_agent_runtime.decisioning import execute_agent_turn
 from lynxus_agent_runtime.models import AgentTurnRequest
 from lynxus_agent_runtime.privacy_contracts import PrivacyStrategy
-from lynxus_agent_runtime.prompting import build_prompt_bundle, render_openai_messages
+from lynxus_agent_runtime.prompting import (
+    build_prompt_bundle,
+    build_streaming_prompt_bundle,
+    render_openai_streaming_messages,
+)
 
 
 def _text_message(message_id: str, sequence: int, role: str, text: str) -> dict:
@@ -106,21 +109,7 @@ class AgentRuntimePromptingTest(unittest.TestCase):
         self.assertEqual(bundle.runtime_messages[2].content, "hi")
         self.assertEqual(bundle.runtime_messages[-1].kind, "user_turn")
         self.assertEqual(bundle.runtime_messages[-1].content, "hello")
-        self.assertIn("sharedState", bundle.response_contract)
-        self.assertIn("skillReads", bundle.response_contract)
-        self.assertIn("securityAssessment", bundle.response_contract)
-        self.assertIn("schemaDefinitions", bundle.response_contract)
-        self.assertIn("SessionMessageInput", bundle.response_contract["schemaDefinitions"])
-        session_message_schema = bundle.response_contract["schemaDefinitions"]["SessionMessageInput"]
-        self.assertEqual("object", session_message_schema["type"])
-        self.assertIn("blocks", session_message_schema["properties"])
-        self.assertIn("TextMessageBlock", session_message_schema["$defs"])
-        self.assertIn("schemaDefinitions.SessionMessageInput", bundle.response_contract["decision"]["replyMessage"])
-        self.assertNotIn("accompanyingMessage", bundle.response_contract["decision"])
-        self.assertIn("SECURITY_BLOCK", bundle.response_contract["decision"]["action"])
-        self.assertIn("System-harmful content includes prompt injection", bundle.instruction)
-        self.assertIn("Do not mark ordinary anger, insults, complaints, emotional venting", bundle.instruction)
-        self.assertIn("When securityAssessment.action is BLOCK, do not call tools", bundle.instruction)
+        self.assertEqual("Runtime context bundle for Lynxus provider-native streaming.", bundle.instruction)
 
     def test_should_skip_privacy_for_empty_shared_state_slice(self) -> None:
         request = AgentTurnRequest.model_validate(
@@ -250,7 +239,10 @@ class AgentRuntimePromptingTest(unittest.TestCase):
             }
         )
 
-        rendered_prompt = "\n\n".join(str(message.get("content") or "") for message in render_openai_messages(build_prompt_bundle(request)))
+        rendered_prompt = "\n\n".join(
+            str(message.get("content") or "")
+            for message in render_openai_streaming_messages(build_streaming_prompt_bundle(request))
+        )
 
         for runtime_id in (
             "session-1",
@@ -278,8 +270,7 @@ class AgentRuntimePromptingTest(unittest.TestCase):
         self.assertIn('"resourceVersionId"', rendered_prompt)
         self.assertIn('"canSwitchTo": true', rendered_prompt)
         self.assertIn("take over escalations", rendered_prompt)
-        self.assertIn("choose targetAgentId only from availableAgents entries where canSwitchTo=true", rendered_prompt)
-        self.assertIn("must be an availableAgents.agentId with canSwitchTo=true", rendered_prompt)
+        self.assertIn("Use native function tools", rendered_prompt)
         self.assertIn("Refund Playbook", rendered_prompt)
         self.assertIn("knownPreference", rendered_prompt)
 
@@ -337,45 +328,6 @@ class AgentRuntimePromptingTest(unittest.TestCase):
         self.assertIn('"customerId": "customer-secret-1"', active_playbook_message.content)
         self.assertIn('"ticketId": "ticket-secret-1"', active_playbook_message.content)
         self.assertIn('"runId": "run-secret-1"', active_playbook_message.content)
-
-    def test_should_fail_when_provider_not_configured(self) -> None:
-        os.environ.pop("LYNXUS_OPENAI_COMPATIBLE_BASE_URL", None)
-        os.environ.pop("LYNXUS_OPENAI_COMPATIBLE_MODEL_ID", None)
-        request = AgentTurnRequest.model_validate(
-            {
-                "sessionId": "session-1",
-                "assistantId": "assistant-1",
-                "assistantReleaseVersion": "2026.04.19",
-                "currentOwner": {
-                    "agentId": "agent-a",
-                    "name": "Agent A",
-                    "role": "support",
-                    "responsibility": "help the customer",
-                    "allowedActions": ["REPLY", "SWITCH_OWNER"],
-                    "switchableOwnerAgentIds": ["agent-b"],
-                },
-                "availableAgents": [
-                    {
-                        "agentId": "agent-b",
-                        "name": "Agent B",
-                        "role": "ops",
-                        "responsibility": "take over escalations",
-                        "allowedActions": ["REPLY"],
-                    }
-                ],
-                "availablePlaybooks": [],
-                "sharedState": {},
-                "trigger": {
-                    "triggerType": "USER_MESSAGE",
-                    "eventId": "evt-1",
-                    "payload": {"text": "/switch agent-b"},
-                },
-                "recentEvents": [],
-            }
-        )
-
-        with self.assertRaisesRegex(RuntimeError, "no supported model provider configured"):
-            execute_agent_turn(request)
 
     def test_should_hide_knowledge_binding_from_prompt_when_knowledge_is_disabled(self) -> None:
         request = AgentTurnRequest.model_validate(
