@@ -108,8 +108,9 @@ class AgentRuntimePromptingTest(unittest.TestCase):
         self.assertNotIn("Knowledge binding:", instruction)
         self.assertNotIn("For factual questions about enterprises, products", instruction)
         self.assertIn("Use function tool names, parameter schemas, and parameter descriptions", instruction)
-        self.assertEqual(runtime_messages[2].kind, "user_turn")
-        self.assertEqual(runtime_messages[2].content, "hi")
+        self.assertFalse(any(message.content.startswith("Session trigger:") for message in runtime_messages))
+        self.assertEqual(runtime_messages[1].kind, "user_turn")
+        self.assertEqual(runtime_messages[1].content, "hi")
         self.assertEqual(runtime_messages[-1].kind, "user_turn")
         self.assertEqual(runtime_messages[-1].content, "hello")
         self.assertIn("You are the current session owner agent.", instruction)
@@ -258,6 +259,19 @@ class AgentRuntimePromptingTest(unittest.TestCase):
         self.assertEqual(
             "<system-reminder>Check refund eligibility before answering.</system-reminder>",
             rendered_messages[1]["content"],
+        )
+        self.assertFalse(any(message["role"] == "system" for message in rendered_messages[1:]))
+        system_reminder_messages = [
+            message
+            for message in rendered_messages[1:]
+            if str(message.get("content") or "").startswith("<system-reminder>")
+        ]
+        self.assertGreaterEqual(len(system_reminder_messages), 4)
+        self.assertTrue(
+            all(
+                str(message.get("content") or "").endswith("</system-reminder>")
+                for message in system_reminder_messages
+            )
         )
         for runtime_id in (
             "session-1",
@@ -462,10 +476,10 @@ class AgentRuntimePromptingTest(unittest.TestCase):
 
         runtime_messages = build_initial_runtime_messages(request)
 
-        shared_state_payload = json.loads(runtime_messages[1].content.split(":\n", 1)[1])
+        shared_state_payload = json.loads(runtime_messages[0].content.split(":\n", 1)[1])
         self.assertTrue(shared_state_payload["truncated"])
-        self.assertEqual([message.kind for message in runtime_messages[2:4]], ["user_turn", "user_turn"])
-        self.assertEqual([message.content for message in runtime_messages[2:4]], ["msg-3", "msg-4"])
+        self.assertEqual([message.kind for message in runtime_messages[1:3]], ["user_turn", "user_turn"])
+        self.assertEqual([message.content for message in runtime_messages[1:3]], ["msg-3", "msg-4"])
 
     def test_should_render_recent_events_as_native_messages(self) -> None:
         request = AgentTurnRequest.model_validate(
@@ -516,11 +530,14 @@ class AgentRuntimePromptingTest(unittest.TestCase):
 
         runtime_messages = build_initial_runtime_messages(request)
 
-        self.assertEqual(runtime_messages[2].kind, "user_turn")
-        self.assertEqual(runtime_messages[2].content, "我想退款")
-        self.assertEqual(runtime_messages[3].kind, "assistant_turn")
-        self.assertEqual(runtime_messages[3].content, "我来帮你处理")
-        self.assertEqual(runtime_messages[4].kind, "system_event")
-        self.assertIn("PLAYBOOK_STARTED", runtime_messages[4].content)
+        self.assertEqual(runtime_messages[1].kind, "user_turn")
+        self.assertEqual(runtime_messages[1].content, "我想退款")
+        self.assertEqual(runtime_messages[2].kind, "assistant_turn")
+        self.assertEqual(runtime_messages[2].content, "我来帮你处理")
+        self.assertEqual(runtime_messages[3].kind, "system_event")
+        self.assertIn("PLAYBOOK_STARTED", runtime_messages[3].content)
+        self.assertEqual(runtime_messages[-2].kind, "system_event")
+        self.assertIn('"status": "SUCCEEDED"', runtime_messages[-2].content)
         self.assertEqual(runtime_messages[-1].kind, "system_event")
-        self.assertIn('"status": "SUCCEEDED"', runtime_messages[-1].content)
+        self.assertTrue(runtime_messages[-1].content.startswith("Session trigger:"))
+        self.assertIn('"triggerType": "PLAYBOOK_COMPLETED"', runtime_messages[-1].content)

@@ -4,7 +4,7 @@ import json
 from typing import Any
 
 from .models import AgentTurnRequest
-from .openai_adapter import render_openai_runtime_message
+from .openai_adapter import render_openai_runtime_message, render_system_reminder
 from .privacy_contracts import PrivacyStrategy
 from .semantic import SemanticMessage
 from .tooling import resolve_knowledge_binding
@@ -19,16 +19,16 @@ ASSISTANT_HISTORY_PRIVACY_SOURCE = "assistant_history_message:v1"
 def build_turn_input_messages(request: AgentTurnRequest) -> list[SemanticMessage]:
     event_window = _event_window_size(request)
     return [
-        _trigger_context_message(request),
         _shared_state_context_message(request, event_window),
         *_active_playbook_context_messages(request),
         *_current_trigger_messages(request),
+        *_trigger_context_messages(request),
     ]
 
 
 def build_system_instruction(request: AgentTurnRequest) -> str:
     owner_instructions = [
-        "You are the current session owner agent. Do not tell the user who you are unless asked.",
+        "You are the current session owner agent. Do not tell the user who you are.",
         f"Owner identity: {request.currentOwner.name}",
         f"Role: {request.currentOwner.role}",
         f"Responsibility: {request.currentOwner.responsibility}",
@@ -56,14 +56,20 @@ def build_system_instruction(request: AgentTurnRequest) -> str:
 def build_initial_runtime_messages(request: AgentTurnRequest) -> list[SemanticMessage]:
     event_window = _event_window_size(request)
     runtime_messages = [
-        _trigger_context_message(request),
         _shared_state_context_message(request, event_window),
         *_active_playbook_context_messages(request),
     ]
     runtime_messages.extend(_recent_message_messages(request, event_window))
     runtime_messages.extend(_recent_event_messages(request, event_window))
     runtime_messages.extend(_current_trigger_messages(request))
+    runtime_messages.extend(_trigger_context_messages(request))
     return runtime_messages
+
+
+def _trigger_context_messages(request: AgentTurnRequest) -> list[SemanticMessage]:
+    if request.trigger.triggerType == "USER_MESSAGE":
+        return []
+    return [_trigger_context_message(request)]
 
 
 def _trigger_context_message(request: AgentTurnRequest) -> SemanticMessage:
@@ -137,7 +143,7 @@ def render_openai_streaming_messages(
 ) -> list[dict[str, Any]]:
     messages: list[dict[str, Any]] = [{"role": "system", "content": system_instruction}]
     if owner_instruction:
-        messages.append({"role": "user", "content": f"<system-reminder>{owner_instruction}</system-reminder>"})
+        messages.append({"role": "user", "content": render_system_reminder(owner_instruction)})
     messages.extend(render_openai_runtime_message(message) for message in runtime_messages)
     return messages
 

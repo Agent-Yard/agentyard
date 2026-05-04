@@ -5,6 +5,9 @@ from typing import Any
 
 from .semantic import SemanticMessage, SemanticToolDefinition
 
+SYSTEM_REMINDER_OPEN_TAG = "<system-reminder>"
+SYSTEM_REMINDER_CLOSE_TAG = "</system-reminder>"
+
 
 def render_openai_tool_definitions(definitions: list[SemanticToolDefinition]) -> list[dict[str, Any]]:
     return [
@@ -44,7 +47,13 @@ def render_openai_runtime_message(message: SemanticMessage) -> dict[str, Any]:
             "tool_call_id": message.tool_call_id,
             "content": message.content,
         }
-    return {"role": "system", "content": message.content}
+    if message.kind == "system_event":
+        return {"role": "user", "content": render_system_reminder(message.content)}
+    raise ValueError(f"Unsupported semantic message kind: {message.kind}")
+
+
+def render_system_reminder(content: str) -> str:
+    return f"{SYSTEM_REMINDER_OPEN_TAG}{content}{SYSTEM_REMINDER_CLOSE_TAG}"
 
 
 def _render_openai_tool_description(definition: SemanticToolDefinition) -> str:

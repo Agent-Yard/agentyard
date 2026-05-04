@@ -654,9 +654,10 @@ class AgentTurnStreamingTest(unittest.TestCase):
             any("You are the current session owner agent." in str(message.get("content") or "") for message in appended_messages)
         )
         self.assertFalse(any("Capabilities:" in str(message.get("content") or "") for message in appended_messages))
-        self.assertEqual(["system", "system", "user"], [message["role"] for message in appended_messages[:3]])
-        self.assertIn("Session trigger:", appended_messages[0]["content"])
-        self.assertIn("Visible sharedState slice", appended_messages[1]["content"])
+        self.assertEqual(["user", "user"], [message["role"] for message in appended_messages[:2]])
+        self.assertTrue(appended_messages[0]["content"].startswith("<system-reminder>"))
+        self.assertIn("Visible sharedState slice", appended_messages[0]["content"])
+        self.assertNotIn("Session trigger:", "\n".join(str(message.get("content") or "") for message in appended_messages))
         replayed_assistant = messages[0]
         self.assertEqual("", replayed_assistant["content"])
         self.assertEqual("look up order", replayed_assistant["reasoning_content"])
@@ -664,8 +665,8 @@ class AgentTurnStreamingTest(unittest.TestCase):
         replayed_tool = messages[1]
         self.assertEqual("call-previous", replayed_tool["tool_call_id"])
         committed_entries = transcript_store.committed_successes[0][2]
-        self.assertEqual(["system", "system", "user", "assistant"], [entry.role for entry in committed_entries])
-        self.assertEqual(appended_messages[:3], [entry.content_json for entry in committed_entries[:3]])
+        self.assertEqual(["user", "user", "assistant"], [entry.role for entry in committed_entries])
+        self.assertEqual(appended_messages[:2], [entry.content_json for entry in committed_entries[:2]])
 
     def test_should_not_include_committed_transcript_from_different_owner_or_epoch(self) -> None:
         request = request_payload()
@@ -902,8 +903,11 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual(1, len([frame for frame in frames if frame["kind"] == "FINAL_OUTCOME"]))
         self.assertEqual(1, len(transcript_store.committed_successes))
         committed_entries = transcript_store.committed_successes[0][2]
-        self.assertEqual(["system", "system", "system", "user"], [entry.role for entry in committed_entries[:4]])
-        interaction_entries = committed_entries[4:]
+        self.assertEqual(["system", "user", "user"], [entry.role for entry in committed_entries[:3]])
+        self.assertTrue(committed_entries[1].content_json["content"].startswith("<system-reminder>"))
+        self.assertIn("Visible sharedState slice", committed_entries[1].content_json["content"])
+        self.assertEqual({"role": "user", "content": "帮我发起退款"}, committed_entries[2].content_json)
+        interaction_entries = committed_entries[3:]
         self.assertEqual(["assistant", "tool", "assistant", "tool"], [entry.role for entry in interaction_entries])
         self.assertTrue(all(entry.provider_type == "OPENAI_COMPATIBLE" for entry in committed_entries))
         self.assertEqual("call-2", interaction_entries[0].content_json["tool_calls"][0]["id"])
@@ -1027,16 +1031,16 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         committed_entries = transcript_store.committed_successes[0][2]
         self.assertEqual([], transcript_store.pending_entries)
-        self.assertEqual(["system", "system", "system", "user", "assistant"], [entry.role for entry in committed_entries])
+        self.assertEqual(["system", "user", "user", "assistant"], [entry.role for entry in committed_entries])
         self.assertTrue(all(entry.provider_type == "OPENAI_COMPATIBLE" for entry in committed_entries))
         self.assertIn("You are the current session owner agent.", committed_entries[0].content_json["content"])
-        self.assertIn("Session trigger:", committed_entries[1].content_json["content"])
-        self.assertIn("Visible sharedState slice", committed_entries[2].content_json["content"])
-        self.assertEqual({"role": "user", "content": "帮我发起退款"}, committed_entries[3].content_json)
-        self.assertEqual({"role": "assistant", "content": "final answer"}, committed_entries[4].content_json)
-        self.assertNotIn("usage", committed_entries[4].content_json)
-        self.assertNotIn("finish_reason", committed_entries[4].content_json)
-        self.assertNotIn("model", committed_entries[4].content_json)
+        self.assertIn("Visible sharedState slice", committed_entries[1].content_json["content"])
+        self.assertNotIn("Session trigger:", "\n".join(str(entry.content_json.get("content") or "") for entry in committed_entries))
+        self.assertEqual({"role": "user", "content": "帮我发起退款"}, committed_entries[2].content_json)
+        self.assertEqual({"role": "assistant", "content": "final answer"}, committed_entries[3].content_json)
+        self.assertNotIn("usage", committed_entries[3].content_json)
+        self.assertNotIn("finish_reason", committed_entries[3].content_json)
+        self.assertNotIn("model", committed_entries[3].content_json)
 
     def test_should_accumulate_action_only_switch_owner_without_reply_message(self) -> None:
         request = request_payload()
