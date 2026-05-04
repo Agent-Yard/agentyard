@@ -17,8 +17,8 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sess
 from .models import AgentTurnExecutionOutcome
 from .redis_support import RedisSettings, create_sync_redis_client
 
-DEFAULT_DATABASE_URL = "postgresql+psycopg://lynxus:lynxus@127.0.0.1:5432/lynxus_core"
-SCHEMA_NAME = "agent_runtime"
+DEFAULT_DATABASE_URL = "postgresql+psycopg://lynxus:lynxus@127.0.0.1:5432/lynxus_agent_runtime"
+DEFAULT_SCHEMA_NAME = "public"
 DEFAULT_TURN_EXECUTION_RETENTION_SECONDS = 30 * 24 * 60 * 60
 DEFAULT_TRANSCRIPT_ENTRY_RETENTION_SECONDS = 30 * 24 * 60 * 60
 DEFAULT_RETENTION_SWEEP_LIMIT = 500
@@ -204,7 +204,7 @@ class TranscriptStore(Protocol):
 
 
 class Base(DeclarativeBase):
-    metadata = MetaData(schema=SCHEMA_NAME)
+    metadata = MetaData()
 
 
 class TurnExecutionRecord(Base):
@@ -232,7 +232,7 @@ class TranscriptEntryRecord(Base):
             "owner_agent_id",
             "ownership_epoch",
             "transcript_seq",
-            name="uq_agent_runtime_transcript_context_seq",
+            name="uq_transcript_context_seq",
         ),
     )
 
@@ -279,44 +279,43 @@ class PostgresTranscriptStore:
     def initialize(self) -> None:
         ensure_postgres_configuration(self.settings.database_url)
         with self.engine.begin() as connection:
-            connection.execute(text(f"create schema if not exists {SCHEMA_NAME}"))
             Base.metadata.create_all(bind=connection)
             connection.execute(
                 text(
-                    "alter table agent_runtime.turn_execution "
+                    "alter table turn_execution "
                     "add column if not exists current_execution_attempt_id varchar(128)"
                 )
             )
             connection.execute(
                 text(
-                    "alter table agent_runtime.transcript_entry "
+                    "alter table transcript_entry "
                     "add column if not exists execution_attempt_id varchar(128)"
                 )
             )
             connection.execute(
                 text(
-                    "alter table agent_runtime.transcript_entry "
+                    "alter table transcript_entry "
                     "add column if not exists provider_type varchar(64)"
                 )
             )
             connection.execute(
                 text(
-                    "update agent_runtime.transcript_entry "
+                    "update transcript_entry "
                     "set provider_type = 'OPENAI_COMPATIBLE' "
                     "where provider_type is null"
                 )
             )
             connection.execute(
                 text(
-                    "create index if not exists idx_agent_runtime_transcript_context_committed "
-                    "on agent_runtime.transcript_entry "
+                    "create index if not exists idx_transcript_context_committed "
+                    "on transcript_entry "
                     "(session_id, owner_agent_id, ownership_epoch, status, transcript_seq)"
                 )
             )
             connection.execute(
                 text(
-                    "create unique index if not exists uq_agent_runtime_transcript_context_seq "
-                    "on agent_runtime.transcript_entry "
+                    "create unique index if not exists uq_transcript_context_seq "
+                    "on transcript_entry "
                     "(session_id, owner_agent_id, ownership_epoch, transcript_seq)"
                 )
             )
@@ -577,10 +576,10 @@ class PostgresTranscriptStore:
             result = connection.execute(text("select 1")).scalar_one()
             if result != 1:
                 raise RuntimeError("postgres readiness probe returned unexpected result")
-            connection.execute(text("select count(*) from agent_runtime.turn_execution")).scalar_one()
-            connection.execute(text("select count(*) from agent_runtime.transcript_entry")).scalar_one()
-            connection.execute(text("select count(*) from agent_runtime.owner_context_sequence")).scalar_one()
-        return {"backend": "postgresql", "schema": SCHEMA_NAME}
+            connection.execute(text("select count(*) from turn_execution")).scalar_one()
+            connection.execute(text("select count(*) from transcript_entry")).scalar_one()
+            connection.execute(text("select count(*) from owner_context_sequence")).scalar_one()
+        return {"backend": "postgresql", "schema": DEFAULT_SCHEMA_NAME}
 
     def close(self) -> None:
         self.engine.dispose()

@@ -3,6 +3,34 @@ from __future__ import annotations
 import json
 
 
+class FakeLifespanTranscriptStore:
+    settings = type(
+        "Settings",
+        (),
+        {
+            "database_url": "postgresql+psycopg://test",
+            "turn_execution_retention_seconds": 60,
+            "transcript_entry_retention_seconds": 60,
+            "retention_sweep_limit": 50,
+            "transcript_cache_ttl_seconds": 60,
+        },
+    )()
+
+    def initialize(self) -> None:
+        return None
+
+    def sweep_expired(self) -> dict[str, int]:
+        return {
+            "turnExecutionsAborted": 0,
+            "turnExecutionsDeleted": 0,
+            "transcriptEntriesAborted": 0,
+            "transcriptEntriesDeleted": 0,
+        }
+
+    def close(self) -> None:
+        return None
+
+
 def request_payload() -> dict:
     return {
         "sessionId": "session-1",

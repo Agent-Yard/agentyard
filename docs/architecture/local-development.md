@@ -13,8 +13,8 @@
 
 这些依赖服务于当前“控制面 + Temporal + Python runtime + 前端控制台”的本地联调链路。
 其中当前主链路最依赖的是 PostgreSQL、Temporal、MinIO、Redis 和知识服务；知识服务通过 S3-compatible object storage 配置访问对象存储，本地默认指向 MinIO。知识快照构建与检索默认依赖 PostgreSQL 内的 `pgvector + pg_trgm + tsvector`。
-本地 PostgreSQL 默认会准备 `lynxus_core`、`lynxus_channel_gateway` 和 `lynxus_knowledge` 三个数据库，避免 API/worker、channel-gateway 与 knowledge service 的运行表共享同一个 `public` schema。
-JVM 服务的数据源 URL 使用服务域变量配置：API/worker 使用 `LYNXUS_CORE_DATASOURCE_URL`，channel-gateway 使用 `LYNXUS_CHANNEL_GATEWAY_DATASOURCE_URL`。不要在根目录 `.env*` 中配置通用 `SPRING_DATASOURCE_URL`，否则它会覆盖所有 Spring Boot 服务的 `spring.datasource.url`。
+本地 PostgreSQL 默认会准备 `lynxus_core`、`lynxus_channel_gateway`、`lynxus_knowledge` 和 `lynxus_agent_runtime` 四个数据库，按服务边界隔离运行表。
+数据源 URL 使用服务域变量配置：API/worker 使用 `LYNXUS_CORE_DATASOURCE_URL`，channel-gateway 使用 `LYNXUS_CHANNEL_GATEWAY_DATASOURCE_URL`，agent-runtime 使用 `LYNXUS_AGENT_RUNTIME_DATABASE_URL`。不要在根目录 `.env*` 中配置通用 `SPRING_DATASOURCE_URL`，否则它会覆盖所有 Spring Boot 服务的 `spring.datasource.url`。
 
 ## 本机前置条件
 

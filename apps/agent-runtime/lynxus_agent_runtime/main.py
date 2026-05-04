@@ -27,7 +27,7 @@ from .redis_support import RedisSettings, create_redis_client
 from .streaming import stream_agent_turn
 from .tool_connectors import reset_default_tool_connector_registry, set_default_tool_connector_registry
 from .tooling import execute_playbook_tool_task
-from .transcript_store import TranscriptStoreSettings, create_transcript_cache, create_transcript_store
+from .transcript_store import DEFAULT_SCHEMA_NAME, TranscriptStoreSettings, create_transcript_cache, create_transcript_store
 
 LOGGER = logging.getLogger("lynxus-agent-runtime")
 INSTANCE_ID = (os.getenv("LYNXUS_INSTANCE_ID") or "lynxus-agent-runtime").strip() or "lynxus-agent-runtime"
@@ -95,7 +95,7 @@ async def lifespan(app: FastAPI):
         "agent-runtime postgres connectivity verified",
         extra={
             "instanceId": INSTANCE_ID,
-            "databaseSchema": "agent_runtime",
+            "databaseSchema": DEFAULT_SCHEMA_NAME,
             "retentionSweepResult": retention_sweep_result,
             "turnExecutionRetentionSeconds": transcript_store.settings.turn_execution_retention_seconds,
             "transcriptEntryRetentionSeconds": transcript_store.settings.transcript_entry_retention_seconds,

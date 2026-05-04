@@ -103,7 +103,7 @@ PostgreSQL 可以使用已有/托管服务，也可以作为独立模块发布�
    docker compose --env-file test/.env -f test/compose/postgres.yml up -d
    ```
 
-   需要等待 `postgres-bootstrap` 成功退出。它负责创建 `lynxus_core`、`lynxus_channel_gateway`、`lynxus_knowledge`、`temporal`、`temporal_visibility`，并启用知识库扩展。
+   需要等待 `postgres-bootstrap` 成功退出。它负责创建 `lynxus_core`、`lynxus_channel_gateway`、`lynxus_knowledge`、`lynxus_agent_runtime`、`temporal`、`temporal_visibility`，并启用知识库扩展。
 
 2. Temporal
 
@@ -139,7 +139,7 @@ PostgreSQL 可以使用已有/托管服务，也可以作为独立模块发布�
 
 7. Web 静态资源与 Nginx
 
-如果使用已有或托管 PostgreSQL，则部署侧必须提前准备好 `lynxus_core`、`lynxus_channel_gateway`、`lynxus_knowledge`、`temporal`、`temporal_visibility`，并在 `lynxus_knowledge` 中启用 `vector` 和 `pg_trgm`。
+如果使用已有或托管 PostgreSQL，则部署侧必须提前准备好 `lynxus_core`、`lynxus_channel_gateway`、`lynxus_knowledge`、`lynxus_agent_runtime`、`temporal`、`temporal_visibility`，并在 `lynxus_knowledge` 中启用 `vector` 和 `pg_trgm`。
 
 ## 依赖矩阵
 
@@ -150,7 +150,7 @@ PostgreSQL 可以使用已有/托管服务，也可以作为独立模块发布�
 | sandbox | 无 Lynxus 服务依赖 |
 | channel-gateway | PostgreSQL `lynxus_channel_gateway` |
 | knowledge-service | PostgreSQL `lynxus_knowledge`、S3-compatible object storage、embedding provider |
-| agent-runtime | Redis、API URL、Knowledge Service URL、按需配置模型供应商密钥 |
+| agent-runtime | PostgreSQL `lynxus_agent_runtime`、Redis、API URL、Knowledge Service URL、按需配置模型供应商密钥 |
 | worker | PostgreSQL `lynxus_core`、Redis、Temporal、Agent Runtime、Knowledge Service、Sandbox |
 | api | PostgreSQL `lynxus_core`、Redis、Temporal、Knowledge Service、Channel Gateway、OIDC |
 | web | Nginx 下的 `/api`、`/oauth2`、`/login/oauth2` 反向代理 |
@@ -158,7 +158,7 @@ PostgreSQL 可以使用已有/托管服务，也可以作为独立模块发布�
 ## PostgreSQL 要求
 
 使用 PostgreSQL 16+，推荐 PostgreSQL 17。
-运行态数据源 URL 按服务域配置：`api` 和 `worker` 使用 `LYNXUS_CORE_DATASOURCE_URL`，`channel-gateway` 使用 `LYNXUS_CHANNEL_GATEWAY_DATASOURCE_URL`。不要在部署 env 文件中设置共享的 `SPRING_DATASOURCE_URL`，否则它会覆盖所有 Spring Boot 服务的数据源。
+运行态数据源 URL 按服务域配置：`api` 和 `worker` 使用 `LYNXUS_CORE_DATASOURCE_URL`，`channel-gateway` 使用 `LYNXUS_CHANNEL_GATEWAY_DATASOURCE_URL`，`agent-runtime` 使用 `LYNXUS_AGENT_RUNTIME_DATABASE_URL`。不要在部署 env 文件中设置共享的 `SPRING_DATASOURCE_URL`，否则它会覆盖所有 Spring Boot 服务的数据源。
 
 Knowledge database 必须具备：
 
@@ -172,6 +172,7 @@ Knowledge database 必须具备：
 - `lynxus_core`
 - `lynxus_channel_gateway`
 - `lynxus_knowledge`
+- `lynxus_agent_runtime`
 - `temporal`
 - `temporal_visibility`
 

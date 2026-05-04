@@ -1,5 +1,7 @@
+import os
 import unittest
 from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
 
 from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError, OperationalError
@@ -9,6 +11,8 @@ from sqlalchemy.pool import StaticPool
 from lynxus_agent_runtime.models import AgentDecision, AgentTurnExecutionOutcome, AgentTurnResult
 from lynxus_agent_runtime.transcript_store import (
     Base,
+    DEFAULT_SCHEMA_NAME,
+    OwnerContextSequenceRecord,
     PostgresTranscriptStore,
     TranscriptCachePayload,
     TranscriptEntry,
@@ -25,6 +29,22 @@ from lynxus_agent_runtime.transcript_store import (
 
 
 class TranscriptStoreSerializationTest(unittest.TestCase):
+    def test_settings_should_default_to_agent_runtime_database(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            settings = TranscriptStoreSettings.from_env()
+
+        self.assertEqual(
+            "postgresql+psycopg://lynxus:lynxus@127.0.0.1:5432/lynxus_agent_runtime",
+            settings.database_url,
+        )
+
+    def test_tables_should_use_default_public_schema_without_explicit_qualification(self) -> None:
+        self.assertEqual("public", DEFAULT_SCHEMA_NAME)
+        self.assertIsNone(Base.metadata.schema)
+        self.assertIsNone(TurnExecutionRecord.__table__.schema)
+        self.assertIsNone(TranscriptEntryRecord.__table__.schema)
+        self.assertIsNone(OwnerContextSequenceRecord.__table__.schema)
+
     def test_should_store_provider_message_without_normalizing_content(self) -> None:
         provider_message = {
             "role": "assistant",
@@ -102,7 +122,7 @@ class TranscriptStoreSerializationTest(unittest.TestCase):
         unique_constraints = [
             constraint
             for constraint in TranscriptEntryRecord.__table__.constraints
-            if getattr(constraint, "name", "") == "uq_agent_runtime_transcript_context_seq"
+            if getattr(constraint, "name", "") == "uq_transcript_context_seq"
         ]
 
         self.assertEqual(1, len(unique_constraints))
@@ -347,7 +367,7 @@ class TranscriptStoreSerializationTest(unittest.TestCase):
         engine = _sqlite_agent_runtime_engine()
         with engine.begin() as connection:
             Base.metadata.create_all(bind=connection)
-            connection.exec_driver_sql("drop table agent_runtime.owner_context_sequence")
+            connection.exec_driver_sql("drop table owner_context_sequence")
         store = PostgresTranscriptStore.__new__(PostgresTranscriptStore)
         store.engine = engine
 
@@ -419,12 +439,9 @@ def _sqlite_transcript_store(
 
 
 def _sqlite_agent_runtime_engine():  # noqa: ANN201
-    engine = create_engine(
+    return create_engine(
         "sqlite+pysqlite://",
         future=True,
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    with engine.begin() as connection:
-        connection.exec_driver_sql("attach database ':memory:' as agent_runtime")
-    return engine

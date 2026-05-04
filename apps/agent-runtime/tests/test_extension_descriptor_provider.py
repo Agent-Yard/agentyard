@@ -18,6 +18,8 @@ from lynxus_extension_sdk.registration import (
 )
 from lynxus_extension_sdk.tool import tool_connector_definition_digest
 
+from runtime_fixtures import FakeLifespanTranscriptStore
+
 os.environ.setdefault("LYNXUS_INTERNAL_AUTH_TOKEN", "test-internal-token")
 
 from lynxus_agent_runtime.descriptor_provider import (  # noqa: E402
@@ -41,8 +43,9 @@ class FakeRedisClient:
 @contextmanager
 def agent_runtime_client():
     with patch("lynxus_agent_runtime.main.create_redis_client", return_value=FakeRedisClient()):
-        with TestClient(app) as client:
-            yield client
+        with patch("lynxus_agent_runtime.main.create_transcript_store", return_value=FakeLifespanTranscriptStore()):
+            with TestClient(app) as client:
+                yield client
 
 
 def test_internal_provider_manifest_is_valid_and_canonical() -> None:

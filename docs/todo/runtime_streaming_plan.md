@@ -148,7 +148,7 @@ LLM transcript 是 agent-runtime 的模型上下文账本，不是 Web/Channel �
 
 #### 4.2.1 持久化责任
 
-Owner-context transcript 由 agent-runtime 直接持久化到 Postgres，不经过 API 中转，并使用独立 Postgres schema：`agent_runtime`。
+Owner-context transcript 由 agent-runtime 直接持久化到独立 Postgres database：`lynxus_agent_runtime`，不经过 API 中转；表使用默认 `public` schema。
 
 原因：
 
@@ -156,11 +156,11 @@ Owner-context transcript 由 agent-runtime 直接持久化到 Postgres，不经�
 2. API 不应该理解 provider-native thinking / tool use / tool result 细节。
 3. Worker / Temporal 只依赖最终 `AgentTurnExecutionOutcome`，不读取 transcript。
 
-schema 边界：
+database 边界：
 
-1. `agent_runtime` schema 由 agent-runtime 拥有，API / worker 不直接读写其中的 transcript 表。
+1. `lynxus_agent_runtime` database 由 agent-runtime 拥有，API / worker 不直接读写其中的 transcript 表。
 2. migration 随 agent-runtime 部署执行，表名和 provider-native replay 结构不进入公共 contracts。
-3. DB 权限按 schema 收口：agent-runtime 只需要 `agent_runtime` schema 的 DDL / DML 权限，以及读取业务上下文所需的最小权限。
+3. DB 权限按 database 收口：agent-runtime 只需要 `lynxus_agent_runtime` 的 DDL / DML 权限，以及读取业务上下文所需的最小权限。
 4. 运行事务也在 agent-runtime 内闭合，避免把 provider-native transcript 细节泄漏给 API 层。
 
 Worker 调用 agent-runtime 时必须提供稳定幂等键：
@@ -186,7 +186,7 @@ agent-runtime 以 `turnExecutionId` 做幂等：
 建议表：
 
 ```text
-agent_runtime.turn_execution
+turn_execution
   turnExecutionId
   sessionId
   ownerAgentId
@@ -199,7 +199,7 @@ agent_runtime.turn_execution
   completedAt
   expiresAt
 
-agent_runtime.transcript_entry
+transcript_entry
   entryId
   sessionId
   ownerAgentId
@@ -1148,7 +1148,7 @@ Progress 规则：
 
 ### Phase 5B: Owner-context transcript persistence
 
-- [ ] 增加 agent-runtime owner-context transcript Postgres store，使用独立 `agent_runtime` schema，以 `sessionId + ownerAgentId + ownershipEpoch + transcriptSeq` 保存 provider-native messages、thinking、tool use、tool result。
+- [ ] 增加 agent-runtime owner-context transcript Postgres store，使用独立 `lynxus_agent_runtime` database 和默认 `public` schema，以 `sessionId + ownerAgentId + ownershipEpoch + transcriptSeq` 保存 provider-native messages、thinking、tool use、tool result。
 - [ ] 增加 `turnExecutionId` 幂等：已 `SUCCEEDED` 的 execution 直接返回 final outcome snapshot，不重复调用 LLM。
 - [ ] 增加 Redis read-through hot cache，只缓存 `COMMITTED` transcript 的 hydrated provider messages。
 - [ ] 增加 transcript cleanup sweeper，按 `expiresAt` 清理 expired transcript / turn execution。

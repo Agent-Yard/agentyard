@@ -102,7 +102,7 @@ class FakeTranscriptStore:
         self.failed.append((context, reason))
 
     def check_database(self) -> dict[str, object]:
-        return {"backend": "postgresql", "schema": "agent_runtime"}
+        return {"backend": "postgresql", "schema": "public"}
 
     def close(self) -> None:
         return None

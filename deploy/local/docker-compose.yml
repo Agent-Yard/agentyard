@@ -22,6 +22,7 @@ services:
       LYNXUS_CORE_DATABASE: lynxus_core
       LYNXUS_CHANNEL_GATEWAY_DATABASE: lynxus_channel_gateway
       LYNXUS_KNOWLEDGE_DATABASE: lynxus_knowledge
+      LYNXUS_AGENT_RUNTIME_DATABASE: lynxus_agent_runtime
     depends_on:
       - postgres
     volumes:

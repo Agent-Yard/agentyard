@@ -68,7 +68,7 @@ class FakeTranscriptStore:
 class AgentRuntimeHealthTest(unittest.TestCase):
     def test_should_return_up_when_redis_and_database_are_ready(self) -> None:
         fake_redis_client = FakeRedisClient([True, True])
-        fake_transcript_store = FakeTranscriptStore([{"backend": "postgresql", "schema": "agent_runtime"}])
+        fake_transcript_store = FakeTranscriptStore([{"backend": "postgresql", "schema": "public"}])
 
         with patch("lynxus_agent_runtime.main.create_redis_client", return_value=fake_redis_client):
             with patch("lynxus_agent_runtime.main.create_transcript_store", return_value=fake_transcript_store):
@@ -82,11 +82,11 @@ class AgentRuntimeHealthTest(unittest.TestCase):
         self.assertEqual(payload["dependencies"]["redis"]["status"], "UP")
         self.assertEqual(payload["dependencies"]["redis"]["host"], "127.0.0.1")
         self.assertEqual(payload["dependencies"]["database"]["status"], "UP")
-        self.assertEqual(payload["dependencies"]["database"]["schema"], "agent_runtime")
+        self.assertEqual(payload["dependencies"]["database"]["schema"], "public")
 
     def test_should_return_down_and_503_when_redis_probe_raises(self) -> None:
         fake_redis_client = FakeRedisClient([True, RuntimeError("redis unavailable")])
-        fake_transcript_store = FakeTranscriptStore([{"backend": "postgresql", "schema": "agent_runtime"}])
+        fake_transcript_store = FakeTranscriptStore([{"backend": "postgresql", "schema": "public"}])
 
         with patch("lynxus_agent_runtime.main.create_redis_client", return_value=fake_redis_client):
             with patch("lynxus_agent_runtime.main.create_transcript_store", return_value=fake_transcript_store):
@@ -119,7 +119,7 @@ class AgentRuntimeHealthTest(unittest.TestCase):
     def test_should_return_down_when_owner_context_sequence_table_is_unreadable(self) -> None:
         fake_redis_client = FakeRedisClient([True, True])
         fake_transcript_store = FakeTranscriptStore(
-            [RuntimeError("relation agent_runtime.owner_context_sequence does not exist")]
+            [RuntimeError("relation owner_context_sequence does not exist")]
         )
 
         with patch("lynxus_agent_runtime.main.create_redis_client", return_value=fake_redis_client):
