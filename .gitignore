@@ -43,3 +43,5 @@ data/
 output/
 
 coverage/
+
+demo/seed_local/
