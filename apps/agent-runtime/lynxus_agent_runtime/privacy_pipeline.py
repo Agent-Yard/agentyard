@@ -16,7 +16,6 @@ from .privacy_contracts import (
     PrivacyPolicy,
     PrivacyStrategy,
 )
-from .prompt_bundle import PromptBundle
 from .semantic import SemanticMessage
 
 
@@ -36,25 +35,16 @@ class PrivacyPipeline:
             return payload
         return self._mapper.sanitize(payload, channel)
 
-    def sanitize_prompt_bundle(self, bundle: PromptBundle) -> PromptBundle:
+    def sanitize_prompt_instruction(self, instruction: str) -> str:
         if self._mapper is None:
-            return bundle
-        return PromptBundle(
-            instruction=self.sanitize_fragment(
+            return instruction
+        return str(
+            self.sanitize_fragment(
                 "PROMPT_INSTRUCTION",
-                bundle.instruction,
-                bundle.instruction_privacy_strategy,
+                instruction,
+                PrivacyStrategy.RULES_ONLY,
                 source="prompt.instruction",
-            ),
-            runtime_messages=self.sanitize_semantic_messages(bundle.runtime_messages),
-            capability_summary=self.sanitize_fragment(
-                "PROMPT_CAPABILITY_SUMMARY",
-                bundle.capability_summary,
-                bundle.capability_summary_privacy_strategy,
-                source="prompt.capability_summary",
-            ),
-            instruction_privacy_strategy=bundle.instruction_privacy_strategy,
-            capability_summary_privacy_strategy=bundle.capability_summary_privacy_strategy,
+            )
         )
 
     def sanitize_semantic_message(self, message: SemanticMessage) -> SemanticMessage:

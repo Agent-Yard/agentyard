@@ -464,8 +464,11 @@ class AgentTurnStreamingTest(unittest.TestCase):
             def __init__(self) -> None:
                 self.restore_count = 0
 
-            def sanitize_prompt_bundle(self, bundle):  # noqa: ANN001
-                return bundle
+            def sanitize_prompt_instruction(self, instruction):  # noqa: ANN001
+                return instruction
+
+            def sanitize_semantic_messages(self, messages):  # noqa: ANN001
+                return messages
 
             def restore_inbound(self, channel, payload):  # noqa: ANN001
                 self.restore_count += 1
@@ -994,7 +997,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual([], transcript_store.pending_entries)
         self.assertEqual(1, len(transcript_store.failed))
 
-    def test_should_persist_current_prompt_bundle_as_provider_transcript(self) -> None:
+    def test_should_persist_current_prompt_as_provider_transcript(self) -> None:
         request = request_payload()
         request["turnId"] = "turn-hygiene"
         request["turnExecutionId"] = "exec-hygiene"
@@ -1450,8 +1453,11 @@ class AgentTurnStreamingTest(unittest.TestCase):
             def __init__(self) -> None:
                 self.sanitized_payloads: list[tuple[str, dict]] = []
 
-            def sanitize_prompt_bundle(self, bundle):  # noqa: ANN001
-                return bundle
+            def sanitize_prompt_instruction(self, instruction):  # noqa: ANN001
+                return instruction
+
+            def sanitize_semantic_messages(self, messages):  # noqa: ANN001
+                return messages
 
             def sanitize_outbound(self, channel, payload):  # noqa: ANN001
                 self.sanitized_payloads.append((channel, payload))

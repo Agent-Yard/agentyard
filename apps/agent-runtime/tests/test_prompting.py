@@ -10,7 +10,8 @@ os.environ.setdefault("LYNXUS_INTERNAL_AUTH_TOKEN", "test-internal-token")
 from lynxus_agent_runtime.models import AgentTurnRequest
 from lynxus_agent_runtime.privacy_contracts import PrivacyStrategy
 from lynxus_agent_runtime.prompting import (
-    build_prompt_bundle,
+    build_initial_runtime_messages,
+    build_system_instruction,
     render_openai_streaming_messages,
 )
 
@@ -62,7 +63,7 @@ class AgentRuntimePromptingTest(unittest.TestCase):
         self.assertEqual("ok", result.stdout.strip(), result.stderr)
         self.assertEqual(0, result.returncode, result.stderr)
 
-    def test_should_build_prompt_bundle_with_runtime_context(self) -> None:
+    def test_should_build_prompt_instruction_and_runtime_context(self) -> None:
         request = AgentTurnRequest.model_validate(
             {
                 "sessionId": "session-1",
@@ -100,18 +101,19 @@ class AgentRuntimePromptingTest(unittest.TestCase):
             }
         )
 
-        bundle = build_prompt_bundle(request)
+        instruction = build_system_instruction(request)
+        runtime_messages = build_initial_runtime_messages(request)
 
-        self.assertIn("Function tools define the current owner capability boundary", bundle.capability_summary)
-        self.assertNotIn("Knowledge binding:", bundle.capability_summary)
-        self.assertNotIn("For factual questions about enterprises, products", bundle.capability_summary)
-        self.assertIn("Use function tool names, parameter schemas, and parameter descriptions", bundle.capability_summary)
-        self.assertEqual(bundle.runtime_messages[2].kind, "user_turn")
-        self.assertEqual(bundle.runtime_messages[2].content, "hi")
-        self.assertEqual(bundle.runtime_messages[-1].kind, "user_turn")
-        self.assertEqual(bundle.runtime_messages[-1].content, "hello")
-        self.assertIn("You are the current session owner agent.", bundle.instruction)
-        self.assertIn("Owner identity: Agent A", bundle.instruction)
+        self.assertIn("Function tools define the current owner capability boundary", instruction)
+        self.assertNotIn("Knowledge binding:", instruction)
+        self.assertNotIn("For factual questions about enterprises, products", instruction)
+        self.assertIn("Use function tool names, parameter schemas, and parameter descriptions", instruction)
+        self.assertEqual(runtime_messages[2].kind, "user_turn")
+        self.assertEqual(runtime_messages[2].content, "hi")
+        self.assertEqual(runtime_messages[-1].kind, "user_turn")
+        self.assertEqual(runtime_messages[-1].content, "hello")
+        self.assertIn("You are the current session owner agent.", instruction)
+        self.assertIn("Owner identity: Agent A", instruction)
 
     def test_should_skip_privacy_for_empty_shared_state_slice(self) -> None:
         request = AgentTurnRequest.model_validate(
@@ -141,9 +143,9 @@ class AgentRuntimePromptingTest(unittest.TestCase):
             }
         )
 
-        bundle = build_prompt_bundle(request)
+        runtime_messages = build_initial_runtime_messages(request)
         shared_state_message = next(
-            message for message in bundle.runtime_messages if message.privacy_source == "shared_state_slice"
+            message for message in runtime_messages if message.privacy_source == "shared_state_slice"
         )
 
         self.assertIn('"sharedState": {}', shared_state_message.content)
@@ -161,6 +163,7 @@ class AgentRuntimePromptingTest(unittest.TestCase):
                     "name": "Agent A",
                     "role": "support",
                     "responsibility": "help the customer",
+                    "systemPrompt": "Check refund eligibility before answering.",
                     "allowedActions": ["REPLY", "RUN_PLAYBOOK"],
                     "switchableOwnerAgentIds": ["agent-b"],
                     "playbookIds": ["pb-1"],
@@ -243,11 +246,19 @@ class AgentRuntimePromptingTest(unittest.TestCase):
             }
         )
 
-        rendered_prompt = "\n\n".join(
-            str(message.get("content") or "")
-            for message in render_openai_streaming_messages(build_prompt_bundle(request))
+        rendered_messages = render_openai_streaming_messages(
+            build_system_instruction(request),
+            request.currentOwner.systemPrompt.strip(),
+            build_initial_runtime_messages(request),
         )
+        rendered_prompt = "\n\n".join(str(message.get("content") or "") for message in rendered_messages)
 
+        self.assertEqual("system", rendered_messages[0]["role"])
+        self.assertEqual("user", rendered_messages[1]["role"])
+        self.assertEqual(
+            "<system-reminder>Check refund eligibility before answering.</system-reminder>",
+            rendered_messages[1]["content"],
+        )
         for runtime_id in (
             "session-1",
             "assistant-1",
@@ -315,9 +326,9 @@ class AgentRuntimePromptingTest(unittest.TestCase):
             }
         )
 
-        bundle = build_prompt_bundle(request)
+        runtime_messages = build_initial_runtime_messages(request)
         active_playbook_message = next(
-            message for message in bundle.runtime_messages if message.content.startswith("Active playbook summary:")
+            message for message in runtime_messages if message.content.startswith("Active playbook summary:")
         )
 
         self.assertIn('"playbookId": "pb-active"', active_playbook_message.content)
@@ -366,13 +377,13 @@ class AgentRuntimePromptingTest(unittest.TestCase):
             }
         )
 
-        bundle = build_prompt_bundle(request)
+        instruction = build_system_instruction(request)
 
-        self.assertNotIn("Knowledge binding:", bundle.capability_summary)
-        self.assertNotIn("Refund Knowledge", bundle.capability_summary)
+        self.assertNotIn("Knowledge binding:", instruction)
+        self.assertNotIn("Refund Knowledge", instruction)
         self.assertIn(
             "For factual questions about enterprises, products, policies, or other domain facts, query the knowledge base first; do not answer from pretrained knowledge.",
-            bundle.capability_summary,
+            instruction,
         )
 
     def test_should_not_add_knowledge_lookup_instruction_when_knowledge_is_disabled(self) -> None:
@@ -415,10 +426,10 @@ class AgentRuntimePromptingTest(unittest.TestCase):
             }
         )
 
-        bundle = build_prompt_bundle(request)
+        instruction = build_system_instruction(request)
 
-        self.assertNotIn("Knowledge binding:", bundle.capability_summary)
-        self.assertNotIn("For factual questions about enterprises, products", bundle.capability_summary)
+        self.assertNotIn("Knowledge binding:", instruction)
+        self.assertNotIn("For factual questions about enterprises, products", instruction)
 
     def test_should_apply_memory_window_and_truncate_shared_state_view(self) -> None:
         request = AgentTurnRequest.model_validate(
@@ -449,12 +460,12 @@ class AgentRuntimePromptingTest(unittest.TestCase):
             }
         )
 
-        bundle = build_prompt_bundle(request)
+        runtime_messages = build_initial_runtime_messages(request)
 
-        shared_state_payload = json.loads(bundle.runtime_messages[1].content.split(":\n", 1)[1])
+        shared_state_payload = json.loads(runtime_messages[1].content.split(":\n", 1)[1])
         self.assertTrue(shared_state_payload["truncated"])
-        self.assertEqual([message.kind for message in bundle.runtime_messages[2:4]], ["user_turn", "user_turn"])
-        self.assertEqual([message.content for message in bundle.runtime_messages[2:4]], ["msg-3", "msg-4"])
+        self.assertEqual([message.kind for message in runtime_messages[2:4]], ["user_turn", "user_turn"])
+        self.assertEqual([message.content for message in runtime_messages[2:4]], ["msg-3", "msg-4"])
 
     def test_should_render_recent_events_as_native_messages(self) -> None:
         request = AgentTurnRequest.model_validate(
@@ -503,13 +514,13 @@ class AgentRuntimePromptingTest(unittest.TestCase):
             }
         )
 
-        bundle = build_prompt_bundle(request)
+        runtime_messages = build_initial_runtime_messages(request)
 
-        self.assertEqual(bundle.runtime_messages[2].kind, "user_turn")
-        self.assertEqual(bundle.runtime_messages[2].content, "我想退款")
-        self.assertEqual(bundle.runtime_messages[3].kind, "assistant_turn")
-        self.assertEqual(bundle.runtime_messages[3].content, "我来帮你处理")
-        self.assertEqual(bundle.runtime_messages[4].kind, "system_event")
-        self.assertIn("PLAYBOOK_STARTED", bundle.runtime_messages[4].content)
-        self.assertEqual(bundle.runtime_messages[-1].kind, "system_event")
-        self.assertIn('"status": "SUCCEEDED"', bundle.runtime_messages[-1].content)
+        self.assertEqual(runtime_messages[2].kind, "user_turn")
+        self.assertEqual(runtime_messages[2].content, "我想退款")
+        self.assertEqual(runtime_messages[3].kind, "assistant_turn")
+        self.assertEqual(runtime_messages[3].content, "我来帮你处理")
+        self.assertEqual(runtime_messages[4].kind, "system_event")
+        self.assertIn("PLAYBOOK_STARTED", runtime_messages[4].content)
+        self.assertEqual(runtime_messages[-1].kind, "system_event")
+        self.assertIn('"status": "SUCCEEDED"', runtime_messages[-1].content)

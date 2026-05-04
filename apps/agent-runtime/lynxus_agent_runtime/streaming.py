@@ -37,7 +37,8 @@ from .openai_adapter import render_openai_tool_definitions
 from .privacy_pipeline import PrivacyPipeline, build_privacy_pipeline
 from .provider_settings import resolve_provider_settings
 from .prompting import (
-    build_prompt_bundle,
+    build_initial_runtime_messages,
+    build_system_instruction,
     build_turn_input_messages,
     render_openai_runtime_messages,
     render_openai_streaming_messages,
@@ -244,9 +245,10 @@ async def _stream_via_openai_compatible(
             current_messages = render_openai_runtime_messages(turn_input_messages)
             current_messages_round_id = f"{writer.turn_execution_id}:turn-input"
         else:
-            prompt_bundle = build_prompt_bundle(request)
-            sanitized_bundle = privacy_pipeline.sanitize_prompt_bundle(prompt_bundle)
-            current_messages = render_openai_streaming_messages(sanitized_bundle)
+            system_instruction = build_system_instruction(request)
+            owner_instruction = privacy_pipeline.sanitize_prompt_instruction(request.currentOwner.systemPrompt.strip())
+            runtime_messages = privacy_pipeline.sanitize_semantic_messages(build_initial_runtime_messages(request))
+            current_messages = render_openai_streaming_messages(system_instruction, owner_instruction, runtime_messages)
             current_messages_round_id = f"{writer.turn_execution_id}:prompt"
         provider_messages = _merge_replay_messages(current_messages, replay_messages)
         completed_transcript_entries: list[TranscriptEntry] = transcript_entries_from_provider_messages(
@@ -1011,11 +1013,11 @@ def _max_streaming_tool_steps() -> int:
     except Exception:  # pragma: no cover
         raw_value = ""
     if not raw_value:
-        return 4
+        return 6
     try:
-        return max(1, min(int(raw_value), 8))
+        return max(1, min(int(raw_value), 20))
     except ValueError:
-        return 4
+        return 6
 
 
 def _is_legacy_json_contract_text(text: str) -> bool:
