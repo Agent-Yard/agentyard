@@ -657,9 +657,9 @@ class AgentTurnStreamingTest(unittest.TestCase):
             any("You are the current session owner agent." in str(message.get("content") or "") for message in appended_messages)
         )
         self.assertFalse(any("Capabilities:" in str(message.get("content") or "") for message in appended_messages))
-        self.assertEqual(["user", "user"], [message["role"] for message in appended_messages[:2]])
-        self.assertTrue(appended_messages[0]["content"].startswith("<system-reminder>"))
-        self.assertIn("Visible sharedState slice", appended_messages[0]["content"])
+        self.assertEqual(["user"], [message["role"] for message in appended_messages])
+        self.assertEqual("帮我发起退款", appended_messages[0]["content"])
+        self.assertNotIn("Visible sharedState slice", "\n".join(str(message.get("content") or "") for message in appended_messages))
         self.assertNotIn("Session trigger:", "\n".join(str(message.get("content") or "") for message in appended_messages))
         replayed_assistant = messages[0]
         self.assertEqual("", replayed_assistant["content"])
@@ -668,8 +668,8 @@ class AgentTurnStreamingTest(unittest.TestCase):
         replayed_tool = messages[1]
         self.assertEqual("call-previous", replayed_tool["tool_call_id"])
         committed_entries = transcript_store.committed_successes[0][2]
-        self.assertEqual(["user", "user", "assistant"], [entry.role for entry in committed_entries])
-        self.assertEqual(appended_messages[:2], [entry.content_json for entry in committed_entries[:2]])
+        self.assertEqual(["user", "assistant"], [entry.role for entry in committed_entries])
+        self.assertEqual(appended_messages[:1], [entry.content_json for entry in committed_entries[:1]])
 
     def test_should_not_include_committed_transcript_from_different_owner_or_epoch(self) -> None:
         request = request_payload()

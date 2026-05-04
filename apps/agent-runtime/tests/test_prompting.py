@@ -12,6 +12,7 @@ from lynxus_agent_runtime.privacy_contracts import PrivacyStrategy
 from lynxus_agent_runtime.prompting import (
     build_initial_runtime_messages,
     build_system_instruction,
+    build_turn_input_messages,
     render_openai_streaming_messages,
 )
 
@@ -113,8 +114,9 @@ class AgentRuntimePromptingTest(unittest.TestCase):
         self.assertIn("Never describe tool calls, accepted tool results, state updates, message block writes", instruction)
         self.assertIn("If a message block tool already wrote the complete customer reply", instruction)
         self.assertFalse(any(message.content.startswith("Session trigger:") for message in runtime_messages))
-        self.assertEqual(runtime_messages[1].kind, "user_turn")
-        self.assertEqual(runtime_messages[1].content, "hi")
+        self.assertEqual(runtime_messages[0].kind, "user_turn")
+        self.assertEqual(runtime_messages[0].content, "hi")
+        self.assertEqual(runtime_messages[1].privacy_source, "shared_state_slice")
         self.assertEqual(runtime_messages[-1].kind, "user_turn")
         self.assertEqual(runtime_messages[-1].content, "hello")
         self.assertIn("You are the current session owner agent.", instruction)
@@ -155,6 +157,82 @@ class AgentRuntimePromptingTest(unittest.TestCase):
 
         self.assertIn('"sharedState": {}', shared_state_message.content)
         self.assertEqual(PrivacyStrategy.SKIP, shared_state_message.privacy_strategy)
+
+    def test_should_not_repeat_shared_state_in_turn_input_messages(self) -> None:
+        request = AgentTurnRequest.model_validate(
+            {
+                "sessionId": "session-1",
+                "replyMessageId": "session-message-reply-1",
+                "assistantId": "assistant-1",
+                "assistantReleaseVersion": "2026.04.19",
+                "currentOwner": {
+                    "agentId": "agent-a",
+                    "name": "Agent A",
+                    "role": "support",
+                    "responsibility": "help the customer",
+                    "allowedActions": ["REPLY"],
+                },
+                "availableAgents": [],
+                "availablePlaybooks": [],
+                "sharedState": {"knownPreference": "email"},
+                "trigger": {
+                    "triggerType": "USER_MESSAGE",
+                    "eventId": "evt-1",
+                    "triggerMessageId": "msg-1",
+                    "payload": {"text": "hello"},
+                },
+                "recentMessages": [_text_message("msg-1", 1, "USER", "hello")],
+                "recentEvents": [],
+            }
+        )
+
+        turn_input_messages = build_turn_input_messages(request)
+
+        self.assertFalse(any(message.privacy_source == "shared_state_slice" for message in turn_input_messages))
+        self.assertEqual(["user_turn"], [message.kind for message in turn_input_messages])
+        self.assertEqual("hello", turn_input_messages[0].content)
+
+    def test_should_reject_user_trigger_without_resolved_message(self) -> None:
+        base_payload = {
+            "sessionId": "session-1",
+            "replyMessageId": "session-message-reply-1",
+            "assistantId": "assistant-1",
+            "assistantReleaseVersion": "2026.04.19",
+            "currentOwner": {
+                "agentId": "agent-a",
+                "name": "Agent A",
+                "role": "support",
+                "responsibility": "help the customer",
+                "allowedActions": ["REPLY"],
+            },
+            "availableAgents": [],
+            "availablePlaybooks": [],
+            "sharedState": {},
+            "trigger": {
+                "triggerType": "USER_MESSAGE",
+                "eventId": "evt-1",
+                "triggerMessageId": "msg-missing",
+                "payload": {"text": "hello"},
+            },
+            "recentMessages": [_text_message("msg-1", 1, "USER", "hello")],
+            "recentEvents": [],
+        }
+
+        request = AgentTurnRequest.model_validate(base_payload)
+        with self.assertRaisesRegex(ValueError, "USER_MESSAGE triggerMessageId does not resolve"):
+            build_initial_runtime_messages(request)
+
+        payload_without_trigger_message_id = {
+            **base_payload,
+            "trigger": {
+                "triggerType": "USER_MESSAGE",
+                "eventId": "evt-1",
+                "payload": {"text": "hello"},
+            },
+        }
+        request_without_trigger_message_id = AgentTurnRequest.model_validate(payload_without_trigger_message_id)
+        with self.assertRaisesRegex(ValueError, "USER_MESSAGE trigger requires triggerMessageId"):
+            build_initial_runtime_messages(request_without_trigger_message_id)
 
     def test_should_keep_action_handles_and_structured_runtime_context_in_rendered_prompt(self) -> None:
         request = AgentTurnRequest.model_validate(
@@ -480,10 +558,14 @@ class AgentRuntimePromptingTest(unittest.TestCase):
 
         runtime_messages = build_initial_runtime_messages(request)
 
-        shared_state_payload = json.loads(runtime_messages[0].content.split(":\n", 1)[1])
+        shared_state_message = next(
+            message for message in runtime_messages if message.privacy_source == "shared_state_slice"
+        )
+        shared_state_payload = json.loads(shared_state_message.content.split(":\n", 1)[1])
         self.assertTrue(shared_state_payload["truncated"])
-        self.assertEqual([message.kind for message in runtime_messages[1:3]], ["user_turn", "user_turn"])
-        self.assertEqual([message.content for message in runtime_messages[1:3]], ["msg-3", "msg-4"])
+        self.assertEqual([message.kind for message in runtime_messages[0:2]], ["user_turn", "user_turn"])
+        self.assertEqual([message.content for message in runtime_messages[0:2]], ["msg-3", "msg-4"])
+        self.assertEqual(runtime_messages[2].privacy_source, "shared_state_slice")
 
     def test_should_render_recent_events_as_native_messages(self) -> None:
         request = AgentTurnRequest.model_validate(
@@ -534,14 +616,18 @@ class AgentRuntimePromptingTest(unittest.TestCase):
 
         runtime_messages = build_initial_runtime_messages(request)
 
-        self.assertEqual(runtime_messages[1].kind, "user_turn")
-        self.assertEqual(runtime_messages[1].content, "我想退款")
-        self.assertEqual(runtime_messages[2].kind, "assistant_turn")
-        self.assertEqual(runtime_messages[2].content, "我来帮你处理")
-        self.assertEqual(runtime_messages[3].kind, "system_event")
-        self.assertIn("PLAYBOOK_STARTED", runtime_messages[3].content)
-        self.assertEqual(runtime_messages[-2].kind, "system_event")
-        self.assertIn('"status": "SUCCEEDED"', runtime_messages[-2].content)
+        self.assertEqual(runtime_messages[0].kind, "user_turn")
+        self.assertEqual(runtime_messages[0].content, "我想退款")
+        self.assertEqual(runtime_messages[1].kind, "assistant_turn")
+        self.assertEqual(runtime_messages[1].content, "我来帮你处理")
+        self.assertEqual(runtime_messages[2].kind, "system_event")
+        self.assertIn("PLAYBOOK_STARTED", runtime_messages[2].content)
+        self.assertEqual(runtime_messages[3].privacy_source, "shared_state_slice")
         self.assertEqual(runtime_messages[-1].kind, "system_event")
-        self.assertTrue(runtime_messages[-1].content.startswith("Session trigger:"))
+        self.assertTrue(runtime_messages[-1].content.startswith("Session trigger event:"))
         self.assertIn('"triggerType": "PLAYBOOK_COMPLETED"', runtime_messages[-1].content)
+        self.assertIn('"status": "SUCCEEDED"', runtime_messages[-1].content)
+        self.assertEqual(
+            1,
+            sum(1 for message in runtime_messages if '"triggerType": "PLAYBOOK_COMPLETED"' in message.content),
+        )

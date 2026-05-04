@@ -17,12 +17,9 @@ ASSISTANT_HISTORY_PRIVACY_SOURCE = "assistant_history_message:v1"
 
 
 def build_turn_input_messages(request: AgentTurnRequest) -> list[SemanticMessage]:
-    event_window = _event_window_size(request)
     return [
-        _shared_state_context_message(request, event_window),
         *_active_playbook_context_messages(request),
-        *_current_trigger_messages(request),
-        *_trigger_context_messages(request),
+        _trigger_message(request),
     ]
 
 
@@ -60,35 +57,13 @@ def build_system_instruction(request: AgentTurnRequest) -> str:
 
 def build_initial_runtime_messages(request: AgentTurnRequest) -> list[SemanticMessage]:
     event_window = _event_window_size(request)
-    runtime_messages = [
-        _shared_state_context_message(request, event_window),
-        *_active_playbook_context_messages(request),
-    ]
+    runtime_messages: list[SemanticMessage] = []
     runtime_messages.extend(_recent_message_messages(request, event_window))
     runtime_messages.extend(_recent_event_messages(request, event_window))
-    runtime_messages.extend(_current_trigger_messages(request))
-    runtime_messages.extend(_trigger_context_messages(request))
+    runtime_messages.append(_shared_state_context_message(request, event_window))
+    runtime_messages.extend(_active_playbook_context_messages(request))
+    runtime_messages.append(_trigger_message(request))
     return runtime_messages
-
-
-def _trigger_context_messages(request: AgentTurnRequest) -> list[SemanticMessage]:
-    if request.trigger.triggerType == "USER_MESSAGE":
-        return []
-    return [_trigger_context_message(request)]
-
-
-def _trigger_context_message(request: AgentTurnRequest) -> SemanticMessage:
-    return SemanticMessage(
-        kind="system_event",
-        content="Session trigger:\n" + json.dumps(
-            {
-                "triggerType": request.trigger.triggerType,
-                "payload": request.trigger.payload,
-            },
-            ensure_ascii=False,
-        ),
-        privacy_source=f"trigger:{request.trigger.eventId or request.trigger.triggerType}",
-    )
 
 
 def _shared_state_context_message(request: AgentTurnRequest, event_window: int) -> SemanticMessage:
@@ -119,26 +94,22 @@ def _active_playbook_context_messages(request: AgentTurnRequest) -> list[Semanti
     ]
 
 
-def _current_trigger_messages(request: AgentTurnRequest) -> list[SemanticMessage]:
+def _trigger_message(request: AgentTurnRequest) -> SemanticMessage:
     if request.trigger.triggerType == "USER_MESSAGE":
         trigger_message = _find_trigger_message(request)
-        if trigger_message is not None:
-            return [_message_to_runtime_message(trigger_message)]
-        return [
-            SemanticMessage(
-                kind="system_event",
-                content="Session trigger references a missing message",
-                privacy_strategy=PrivacyStrategy.RULES_ONLY,
-                privacy_source=f"missing_trigger_message:{request.trigger.triggerMessageId or 'unknown'}",
-            )
-        ]
-    return [
-        SemanticMessage(
-            kind="system_event",
-            content="System event result:\n" + json.dumps(request.trigger.payload, ensure_ascii=False),
-            privacy_source=f"system_event_result:{request.trigger.eventId or request.trigger.triggerType}",
-        )
-    ]
+        return _message_to_runtime_message(trigger_message)
+    return SemanticMessage(
+        kind="system_event",
+        content="Session trigger event:\n"
+        + json.dumps(
+            {
+                "triggerType": request.trigger.triggerType,
+                "payload": request.trigger.payload,
+            },
+            ensure_ascii=False,
+        ),
+        privacy_source=f"trigger:{request.trigger.eventId or request.trigger.triggerType}",
+    )
 
 
 def render_openai_streaming_messages(
@@ -210,13 +181,13 @@ def _message_to_runtime_message(message: Any) -> SemanticMessage:
     )
 
 
-def _find_trigger_message(request: AgentTurnRequest) -> Any | None:
+def _find_trigger_message(request: AgentTurnRequest) -> Any:
     if not request.trigger.triggerMessageId:
-        return None
+        raise ValueError("USER_MESSAGE trigger requires triggerMessageId")
     for message in request.recentMessages:
         if message.messageId == request.trigger.triggerMessageId:
             return message
-    return None
+    raise ValueError(f"USER_MESSAGE triggerMessageId does not resolve: {request.trigger.triggerMessageId}")
 
 
 def _message_to_semantic_text(message: Any) -> str:
