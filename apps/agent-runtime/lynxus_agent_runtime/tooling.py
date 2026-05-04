@@ -428,7 +428,7 @@ def _outcome_tool_specs(request: AgentTurnRequest) -> list[RuntimeToolSpec]:
                 "required": ["url"],
                 "additionalProperties": False,
             },
-            _accepted_block_output_schema(),
+            _accepted_output_schema(),
         ),
         _semantic_tool(
             "append_rich_text_block",
@@ -442,7 +442,7 @@ def _outcome_tool_specs(request: AgentTurnRequest) -> list[RuntimeToolSpec]:
                 "required": ["content"],
                 "additionalProperties": False,
             },
-            _accepted_block_output_schema(),
+            _accepted_output_schema(),
         ),
         _semantic_tool(
             "append_card_block",
@@ -458,7 +458,7 @@ def _outcome_tool_specs(request: AgentTurnRequest) -> list[RuntimeToolSpec]:
                 "required": ["cardType", "version"],
                 "additionalProperties": False,
             },
-            _accepted_block_output_schema(),
+            _accepted_output_schema(),
         ),
     ]
     definitions.extend(_lifecycle_action_tool_definitions(request))
@@ -631,12 +631,6 @@ def _accepted_output_schema() -> dict[str, Any]:
         "required": ["accepted"],
         "additionalProperties": True,
     }
-
-
-def _accepted_block_output_schema() -> dict[str, Any]:
-    schema = _accepted_output_schema()
-    schema["properties"]["blockId"] = {"type": "string"}
-    return schema
 
 
 def _resource_tool_specs(request: AgentTurnRequest) -> list[RuntimeToolSpec]:

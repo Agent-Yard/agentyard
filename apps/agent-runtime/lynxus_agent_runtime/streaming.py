@@ -384,7 +384,8 @@ async def _stream_via_openai_compatible(
                         visibility="OPERATOR",
                         payload=completed_payload,
                     )
-                    provider_tool_result = privacy_pipeline.sanitize_outbound("TOOL_RESULT", tool_result)
+                    llm_tool_result = _llm_visible_tool_result(kind, tool_result)
+                    provider_tool_result = privacy_pipeline.sanitize_outbound("TOOL_RESULT", llm_tool_result)
                     tool_provider_message = _provider_tool_result_message(tool_call, provider_tool_result)
                     provider_messages.append(tool_provider_message)
                     completed_transcript_entries.append(
@@ -956,6 +957,14 @@ def _tool_acceptance(error: str | None) -> dict[str, Any]:
 
 def _tool_completion_status(result: dict[str, Any]) -> str:
     return "ACCEPTED" if bool(result.get("accepted", True)) else "REJECTED"
+
+
+def _llm_visible_tool_result(kind: RuntimeToolKind, result: dict[str, Any]) -> dict[str, Any]:
+    if kind != RuntimeToolKind.MESSAGE_BLOCK_TOOL:
+        return result
+    visible_result = dict(result)
+    visible_result.pop("blockId", None)
+    return visible_result
 
 
 def _tool_produced_payload(

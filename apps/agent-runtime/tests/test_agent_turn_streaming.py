@@ -142,6 +142,9 @@ class AgentTurnStreamingTest(unittest.TestCase):
         run_playbook_schema = definitions_by_name["run_playbook"].input_schema
         self.assertEqual(["pb-1"], run_playbook_schema["properties"]["playbookId"]["enum"])
         self.assertIn("pb-1 = Playbook 1 - refund flow", run_playbook_schema["properties"]["playbookId"]["description"])
+        self.assertNotIn("blockId", definitions_by_name["append_image_block"].output_schema["properties"])
+        self.assertNotIn("blockId", definitions_by_name["append_rich_text_block"].output_schema["properties"])
+        self.assertNotIn("blockId", definitions_by_name["append_card_block"].output_schema["properties"])
         specs_by_name = {spec.name: spec for spec in runtime_tool_specs(request)}
         self.assertEqual(RuntimeToolKind.CONTEXT_TOOL, specs_by_name["knowledge_search"].kind)
         self.assertEqual(RuntimeToolKind.CONTEXT_TOOL, specs_by_name["read_skill"].kind)
@@ -791,7 +794,8 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertNotIn("Response contract", rendered_prompt)
         self.assertNotIn("Final output must be JSON only", rendered_prompt)
         self.assertNotIn("decision.replyMessage", rendered_prompt)
-        self.assertIn("write user-visible assistant text as normal assistant content", rendered_prompt)
+        self.assertIn("For ordinary text or Markdown replies, write the reply directly as assistant content", rendered_prompt)
+        self.assertIn("Never describe tool calls, accepted tool results, state updates, message block writes", rendered_prompt)
 
     def test_should_not_create_successful_final_message_for_malformed_provider_stream(self) -> None:
         request = request_payload()
@@ -1377,6 +1381,69 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertTrue(outcome["success"])
         self.assertEqual("NO_OP", outcome["result"]["decision"]["action"])
         self.assertEqual({"knownPreference": "email", "nested": {"value": 1}}, outcome["result"]["sharedState"])
+
+    def test_should_hide_message_block_tool_block_id_from_model_context(self) -> None:
+        request = request_payload()
+        request["turnId"] = "turn-message-block"
+        request["turnExecutionId"] = "exec-message-block"
+        captured_payloads: list[dict] = []
+
+        def fake_stream(_settings, payload, *, idle_timeout_seconds):  # noqa: ANN001
+            captured_payloads.append(payload)
+            if len(captured_payloads) == 1:
+                return iter(
+                    [
+                        OpenAiCompatibleStreamEvent(
+                            event_type="tool_call_delta",
+                            tool_call_index=0,
+                            tool_call_id="call-block",
+                            tool_name="append_rich_text_block",
+                            arguments_delta=json.dumps(
+                                {"format": "MARKDOWN", "content": "**refund details**"},
+                                ensure_ascii=False,
+                            ),
+                        ),
+                        OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
+                        OpenAiCompatibleStreamEvent(event_type="done"),
+                    ]
+                )
+            return iter(
+                [
+                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
+                    OpenAiCompatibleStreamEvent(event_type="done"),
+                ]
+            )
+
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
+            with agent_runtime_client() as client:
+                response = client.post(
+                    "/agent-turns/execute-stream",
+                    json=request,
+                    headers={"Authorization": "Bearer test-internal-token"},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        append_tool = next(
+            tool
+            for tool in captured_payloads[0]["tools"]
+            if tool["function"]["name"] == "append_rich_text_block"
+        )
+        self.assertNotIn("blockId", append_tool["function"]["description"])
+        tool_result_messages = [
+            message for message in captured_payloads[1]["messages"] if message.get("role") == "tool"
+        ]
+        self.assertEqual(1, len(tool_result_messages))
+        self.assertIn('"accepted": true', tool_result_messages[0]["content"])
+        self.assertNotIn("blockId", tool_result_messages[0]["content"])
+        frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
+        completed_frame = next(
+            frame
+            for frame in frames
+            if frame["kind"] == "ACTION_TOOL_COMPLETED"
+            and frame["payload"]["toolName"] == "append_rich_text_block"
+        )
+        self.assertEqual({"messageBlockId": "tool-block-1"}, completed_frame["payload"]["produced"])
 
     def test_should_return_read_skill_result_to_next_streaming_model_round(self) -> None:
         request = request_payload()
