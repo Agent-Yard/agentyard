@@ -1,7 +1,7 @@
 package com.lynxus.platform.session;
 
-import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamFrame;
-import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamFrameKind;
+import com.lynxus.contracts.session.SessionContracts.AgentTurnTransientFrame;
+import com.lynxus.contracts.session.SessionContracts.AgentTurnTransientFrameKind;
 import com.lynxus.contracts.session.SessionContracts.ErrorPayload;
 import com.lynxus.contracts.session.SessionContracts.ModelCompletedPayload;
 import com.lynxus.contracts.session.SessionContracts.ReplyBlockCompletedPayload;
@@ -12,6 +12,8 @@ import com.lynxus.contracts.session.SessionContracts.StreamVisibility;
 import com.lynxus.contracts.session.SessionContracts.TextMessageBlock;
 import com.lynxus.contracts.session.SessionContracts.ToolCompletedPayload;
 import com.lynxus.contracts.session.SessionContracts.ToolStartedPayload;
+import com.lynxus.contracts.session.SessionContracts.TurnCompletedPayload;
+import com.lynxus.contracts.session.SessionContracts.TurnCompletionStatus;
 import com.lynxus.contracts.session.SessionContracts.TurnStartedPayload;
 import com.lynxus.contracts.session.SessionRuntimeChangeNotice;
 import com.lynxus.platform.session.SessionRuntimeDtos.SessionRuntimeDetailDto;
@@ -49,9 +51,9 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @Service
 public class SessionRuntimeStreamService {
     private static final Logger LOGGER = LoggerFactory.getLogger(SessionRuntimeStreamService.class);
-    private static final Set<AgentTurnStreamFrameKind> CUSTOMER_VISIBLE_FRAME_KINDS = EnumSet.of(
-        AgentTurnStreamFrameKind.REPLY_BLOCK_DELTA,
-        AgentTurnStreamFrameKind.REPLY_BLOCK_COMPLETED
+    private static final Set<AgentTurnTransientFrameKind> CUSTOMER_VISIBLE_FRAME_KINDS = EnumSet.of(
+        AgentTurnTransientFrameKind.REPLY_BLOCK_DELTA,
+        AgentTurnTransientFrameKind.REPLY_BLOCK_COMPLETED
     );
     private static final Set<String> CUSTOMER_TEXT_BLOCK_KEYS = Set.of("type", "text");
     private static final Set<String> INTERNAL_TEXT_TOKENS = Set.of(
@@ -216,7 +218,7 @@ public class SessionRuntimeStreamService {
         return emitter;
     }
 
-    public boolean acceptStreamFrame(AgentTurnStreamFrame frame) {
+    public boolean acceptStreamFrame(AgentTurnTransientFrame frame) {
         try {
             validateFrame(frame);
         } catch (ResponseStatusException error) {
@@ -337,9 +339,8 @@ public class SessionRuntimeStreamService {
         return emitters != null && !emitters.isEmpty();
     }
 
-    private List<SessionRuntimeStreamEvent> projectFrame(AgentTurnStreamFrame frame) {
-        if (frame.kind() == AgentTurnStreamFrameKind.FINAL_OUTCOME
-            || frame.visibility() == StreamVisibility.INTERNAL) {
+    private List<SessionRuntimeStreamEvent> projectFrame(AgentTurnTransientFrame frame) {
+        if (frame.visibility() == StreamVisibility.INTERNAL) {
             return List.of();
         }
         return switch (frame.kind()) {
@@ -350,12 +351,12 @@ public class SessionRuntimeStreamService {
             case ACTION_TOOL_COMPLETED -> List.of(toolCompletedProgressEvent(frame));
             case REPLY_BLOCK_DELTA -> List.of(draftEvent(frame, SessionReplyDraftOperation.DELTA));
             case REPLY_BLOCK_COMPLETED -> List.of(draftEvent(frame, SessionReplyDraftOperation.COMPLETED));
+            case TURN_COMPLETED -> List.of(turnCompletedProgressEvent(frame));
             case ERROR -> errorEvents(frame);
-            case FINAL_OUTCOME -> List.of();
         };
     }
 
-    private SessionRuntimeStreamEvent turnStartedProgressEvent(AgentTurnStreamFrame frame) {
+    private SessionRuntimeStreamEvent turnStartedProgressEvent(AgentTurnTransientFrame frame) {
         TurnStartedPayload payload = (TurnStartedPayload) frame.payload();
         return progressEvent(
             frame,
@@ -366,22 +367,33 @@ public class SessionRuntimeStreamService {
         );
     }
 
-    private SessionRuntimeStreamEvent modelCompletedProgressEvent(AgentTurnStreamFrame frame) {
+    private SessionRuntimeStreamEvent turnCompletedProgressEvent(AgentTurnTransientFrame frame) {
+        TurnCompletedPayload payload = (TurnCompletedPayload) frame.payload();
+        return progressEvent(
+            frame,
+            "TURN_COMPLETED",
+            payload.status().name(),
+            payload.status() == TurnCompletionStatus.SUCCEEDED ? "处理完成" : "处理失败",
+            Map.of("messageId", payload.messageId())
+        );
+    }
+
+    private SessionRuntimeStreamEvent modelCompletedProgressEvent(AgentTurnTransientFrame frame) {
         ModelCompletedPayload payload = (ModelCompletedPayload) frame.payload();
         return progressEvent(frame, "MODEL_COMPLETED", payload.status().name(), "模型处理完成");
     }
 
-    private SessionRuntimeStreamEvent toolStartedProgressEvent(AgentTurnStreamFrame frame) {
+    private SessionRuntimeStreamEvent toolStartedProgressEvent(AgentTurnTransientFrame frame) {
         ToolStartedPayload payload = (ToolStartedPayload) frame.payload();
         return progressEvent(frame, "ACTION_TOOL_STARTED", "RUNNING", payload.toolName());
     }
 
-    private SessionRuntimeStreamEvent toolCompletedProgressEvent(AgentTurnStreamFrame frame) {
+    private SessionRuntimeStreamEvent toolCompletedProgressEvent(AgentTurnTransientFrame frame) {
         ToolCompletedPayload payload = (ToolCompletedPayload) frame.payload();
         return progressEvent(frame, "ACTION_TOOL_COMPLETED", payload.status().name(), payload.toolName());
     }
 
-    private List<SessionRuntimeStreamEvent> errorEvents(AgentTurnStreamFrame frame) {
+    private List<SessionRuntimeStreamEvent> errorEvents(AgentTurnTransientFrame frame) {
         ErrorPayload payload = (ErrorPayload) frame.payload();
         List<SessionRuntimeStreamEvent> events = new ArrayList<>();
         events.add(draftEvent(frame, SessionReplyDraftOperation.DISCARD));
@@ -399,7 +411,7 @@ public class SessionRuntimeStreamService {
     }
 
     private SessionRuntimeStreamEvent progressEvent(
-        AgentTurnStreamFrame frame,
+        AgentTurnTransientFrame frame,
         String phase,
         String status,
         String title
@@ -408,7 +420,7 @@ public class SessionRuntimeStreamService {
     }
 
     private SessionRuntimeStreamEvent progressEvent(
-        AgentTurnStreamFrame frame,
+        AgentTurnTransientFrame frame,
         String phase,
         String status,
         String title,
@@ -427,7 +439,7 @@ public class SessionRuntimeStreamService {
         );
     }
 
-    private SessionRuntimeStreamEvent draftEvent(AgentTurnStreamFrame frame, SessionReplyDraftOperation operation) {
+    private SessionRuntimeStreamEvent draftEvent(AgentTurnTransientFrame frame, SessionReplyDraftOperation operation) {
         return SessionRuntimeStreamEvent.draft(
             "draft:" + frame.sessionId() + ":" + frame.turnId() + ":" + frame.seq(),
             frame.occurredAt(),
@@ -442,7 +454,7 @@ public class SessionRuntimeStreamService {
         );
     }
 
-    private void recordAcceptedFrame(AgentTurnStreamFrame frame) {
+    private void recordAcceptedFrame(AgentTurnTransientFrame frame) {
         LOGGER.info(
             "session runtime stream frame accepted sessionId={} turnId={} turnExecutionId={} streamSeq={} frameKind={} visibility={}",
             frame.sessionId(),
@@ -458,7 +470,7 @@ public class SessionRuntimeStreamService {
             case REPLY_BLOCK_DELTA -> recordAssistantTextDelta(frame, key);
             case REPLY_BLOCK_COMPLETED -> recordAssistantTextCompleted(frame, key);
             case ACTION_TOOL_STARTED -> actionToolStartedCounter.increment();
-            case ERROR, FINAL_OUTCOME -> cleanupStreamObservation(key);
+            case ERROR, TURN_COMPLETED -> cleanupStreamObservation(key);
             case MODEL_STARTED,
                 MODEL_COMPLETED,
                 ACTION_TOOL_COMPLETED -> {
@@ -466,7 +478,7 @@ public class SessionRuntimeStreamService {
         }
     }
 
-    private void recordAssistantTextDelta(AgentTurnStreamFrame frame, String key) {
+    private void recordAssistantTextDelta(AgentTurnTransientFrame frame, String key) {
         assistantTextStartedAtByExecution.putIfAbsent(key, frame.occurredAt());
         if (ttftRecordedExecutions.add(key)) {
             Instant startedAt = turnStartedAtByExecution.get(key);
@@ -476,7 +488,7 @@ public class SessionRuntimeStreamService {
         }
     }
 
-    private void recordAssistantTextCompleted(AgentTurnStreamFrame frame, String key) {
+    private void recordAssistantTextCompleted(AgentTurnTransientFrame frame, String key) {
         Instant startedAt = assistantTextStartedAtByExecution.remove(key);
         if (startedAt != null) {
             assistantTextStreamDurationTimer.record(nonNegativeDuration(startedAt, frame.occurredAt()));
@@ -491,7 +503,7 @@ public class SessionRuntimeStreamService {
         ttftRecordedExecutions.remove(turnExecutionId);
     }
 
-    private void recordRejectedFrame(AgentTurnStreamFrame frame, ResponseStatusException error) {
+    private void recordRejectedFrame(AgentTurnTransientFrame frame, ResponseStatusException error) {
         rejectedCustomerFrameCounter.increment();
         LOGGER.warn(
             "session runtime stream frame rejected sessionId={} turnId={} turnExecutionId={} streamSeq={} frameKind={} visibility={} reason={}",
@@ -510,12 +522,12 @@ public class SessionRuntimeStreamService {
         return duration.isNegative() ? Duration.ZERO : duration;
     }
 
-    private void validateFrame(AgentTurnStreamFrame frame) {
+    private void validateFrame(AgentTurnTransientFrame frame) {
         if (frame == null) {
             throw badFrame("frame is required");
         }
-        if (!AgentTurnStreamFrame.PROTOCOL.equals(frame.protocol())) {
-            throw badFrame("unsupported stream protocol");
+        if (!AgentTurnTransientFrame.PROTOCOL.equals(frame.protocol())) {
+            throw badFrame("unsupported transient stream protocol");
         }
         if (isBlank(frame.sessionId()) || isBlank(frame.turnId()) || isBlank(frame.turnExecutionId())) {
             throw badFrame("sessionId, turnId, and turnExecutionId are required");
@@ -537,7 +549,7 @@ public class SessionRuntimeStreamService {
         return new ResponseStatusException(HttpStatus.BAD_REQUEST, reason);
     }
 
-    private static void validateCustomerFrame(AgentTurnStreamFrame frame) {
+    private static void validateCustomerFrame(AgentTurnTransientFrame frame) {
         if (frame.visibility() != StreamVisibility.CUSTOMER) {
             return;
         }
@@ -547,7 +559,7 @@ public class SessionRuntimeStreamService {
         validateCustomerReplyDraft(frame);
     }
 
-    private static void validateCustomerReplyDraft(AgentTurnStreamFrame frame) {
+    private static void validateCustomerReplyDraft(AgentTurnTransientFrame frame) {
         if (frame.payload() instanceof ReplyBlockDeltaPayload payload) {
             if (isBlank(payload.messageId()) || isBlank(payload.blockId())) {
                 throw badFrame("customer reply draft messageId and blockId are required");
@@ -567,7 +579,7 @@ public class SessionRuntimeStreamService {
         throw badFrame("customer reply draft payload type is not allowed");
     }
 
-    private static void validateCustomerReplyCompleted(AgentTurnStreamFrame frame) {
+    private static void validateCustomerReplyCompleted(AgentTurnTransientFrame frame) {
         if (!(frame.payload() instanceof ReplyBlockCompletedPayload payload)) {
             throw badFrame("customer reply completed payload type is required");
         }
@@ -615,7 +627,7 @@ public class SessionRuntimeStreamService {
         );
     }
 
-    private static SessionMessageBlockType blockTypePayload(AgentTurnStreamFrame frame) {
+    private static SessionMessageBlockType blockTypePayload(AgentTurnTransientFrame frame) {
         if (frame.payload() instanceof ReplyBlockDeltaPayload payload) {
             return payload.blockType();
         }
@@ -627,15 +639,15 @@ public class SessionRuntimeStreamService {
         }
     }
 
-    private static String replyDeltaPayload(AgentTurnStreamFrame frame) {
+    private static String replyDeltaPayload(AgentTurnTransientFrame frame) {
         return frame.payload() instanceof ReplyBlockDeltaPayload payload ? payload.delta() : null;
     }
 
-    private static String replyDraftTextPayload(AgentTurnStreamFrame frame) {
+    private static String replyDraftTextPayload(AgentTurnTransientFrame frame) {
         return replyBlockPayload(frame, "text", null);
     }
 
-    private static String replyMessageIdPayload(AgentTurnStreamFrame frame) {
+    private static String replyMessageIdPayload(AgentTurnTransientFrame frame) {
         if (frame.payload() instanceof ReplyBlockDeltaPayload payload) {
             return payload.messageId();
         }
@@ -648,7 +660,7 @@ public class SessionRuntimeStreamService {
         return "draft:" + frame.turnId();
     }
 
-    private static String replyBlockIdPayload(AgentTurnStreamFrame frame) {
+    private static String replyBlockIdPayload(AgentTurnTransientFrame frame) {
         if (frame.payload() instanceof ReplyBlockDeltaPayload payload) {
             return payload.blockId();
         }
@@ -658,7 +670,7 @@ public class SessionRuntimeStreamService {
         return "block-1";
     }
 
-    private static String replyBlockPayload(AgentTurnStreamFrame frame, String key, String defaultValue) {
+    private static String replyBlockPayload(AgentTurnTransientFrame frame, String key, String defaultValue) {
         if (!(frame.payload() instanceof ReplyBlockCompletedPayload payload)) {
             return defaultValue;
         }

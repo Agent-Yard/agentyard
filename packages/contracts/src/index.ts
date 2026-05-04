@@ -1303,7 +1303,19 @@ export type AgentTurnStreamFrameKind =
   | 'FINAL_OUTCOME'
   | 'ERROR';
 
+export type AgentTurnTransientFrameKind =
+  | 'TURN_STARTED'
+  | 'MODEL_STARTED'
+  | 'MODEL_COMPLETED'
+  | 'ACTION_TOOL_STARTED'
+  | 'ACTION_TOOL_COMPLETED'
+  | 'REPLY_BLOCK_DELTA'
+  | 'REPLY_BLOCK_COMPLETED'
+  | 'TURN_COMPLETED'
+  | 'ERROR';
+
 export type ModelStreamStatus = 'SUCCEEDED' | 'FAILED' | 'ABORTED';
+export type TurnCompletionStatus = 'SUCCEEDED' | 'FAILED';
 export type RuntimeToolKind = 'CONTEXT_TOOL' | 'STATE_TOOL' | 'MESSAGE_BLOCK_TOOL' | 'LIFECYCLE_ACTION_TOOL';
 export type ToolCompletionStatus = 'ACCEPTED' | 'REJECTED' | 'FAILED';
 export type StreamErrorStage =
@@ -1315,6 +1327,22 @@ export type StreamErrorStage =
 
 export interface AgentTurnStreamFrame<K extends AgentTurnStreamFrameKind, P> {
   protocol: 'lynxus.agent-turn-stream.v1';
+  frameId: string;
+  streamId: string;
+  sessionId: string;
+  turnId: string;
+  turnExecutionId: string;
+  ownerAgentId: string;
+  ownershipEpoch: number;
+  seq: number;
+  kind: K;
+  visibility: StreamVisibility;
+  occurredAt: string;
+  payload: P;
+}
+
+export interface AgentTurnTransientFrame<K extends AgentTurnTransientFrameKind, P> {
+  protocol: 'lynxus.agent-turn-transient.v1';
   frameId: string;
   streamId: string;
   sessionId: string;
@@ -1380,6 +1408,11 @@ export interface FinalOutcomePayload {
   outcome: AgentTurnExecutionOutcome;
 }
 
+export interface TurnCompletedPayload {
+  messageId: string;
+  status: TurnCompletionStatus;
+}
+
 export interface ErrorPayload {
   code: string;
   messageId: string;
@@ -1399,6 +1432,17 @@ export type AgentTurnFrame =
   | AgentTurnStreamFrame<'REPLY_BLOCK_COMPLETED', ReplyBlockCompletedPayload>
   | AgentTurnStreamFrame<'FINAL_OUTCOME', FinalOutcomePayload>
   | AgentTurnStreamFrame<'ERROR', ErrorPayload>;
+
+export type AgentTurnTransientIngressFrame =
+  | AgentTurnTransientFrame<'TURN_STARTED', TurnStartedPayload>
+  | AgentTurnTransientFrame<'MODEL_STARTED', ModelStartedPayload>
+  | AgentTurnTransientFrame<'MODEL_COMPLETED', ModelCompletedPayload>
+  | AgentTurnTransientFrame<'ACTION_TOOL_STARTED', ToolStartedPayload>
+  | AgentTurnTransientFrame<'ACTION_TOOL_COMPLETED', ToolCompletedPayload>
+  | AgentTurnTransientFrame<'REPLY_BLOCK_DELTA', ReplyBlockDeltaPayload>
+  | AgentTurnTransientFrame<'REPLY_BLOCK_COMPLETED', ReplyBlockCompletedPayload>
+  | AgentTurnTransientFrame<'TURN_COMPLETED', TurnCompletedPayload>
+  | AgentTurnTransientFrame<'ERROR', ErrorPayload>;
 
 export interface SessionUserMessageUpdateResult {
   status: SessionMessageDeliveryStatus;

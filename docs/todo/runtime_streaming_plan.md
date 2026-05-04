@@ -325,7 +325,7 @@ Content-Type: application/json
 
 ### 5.2 Frame schema contract
 
-Agent-runtime 到 worker 的 NDJSON 使用 `AgentTurnStreamFrame`，这是内部权威 stream frame。API/Web/Channel 不直接消费完整内部 frame。
+Agent-runtime 到 worker 的 NDJSON 使用 `AgentTurnStreamFrame`，这是内部权威 stream frame。Worker 到 API internal ingress 使用单独的 `AgentTurnTransientFrame`，它是实时投影边界，不包含 `FINAL_OUTCOME`，并使用独立 protocol。API/Web/Channel 不直接消费完整内部 frame。
 
 Base envelope：
 
@@ -334,6 +334,22 @@ type StreamVisibility = 'CUSTOMER' | 'OPERATOR' | 'DEVELOPER' | 'INTERNAL'
 
 interface AgentTurnStreamFrame<K extends string, P> {
   protocol: 'lynxus.agent-turn-stream.v1'
+  frameId: string
+  streamId: string
+  sessionId: string
+  turnId: string
+  turnExecutionId: string
+  ownerAgentId: string
+  ownershipEpoch: number
+  seq: number
+  kind: K
+  visibility: StreamVisibility
+  occurredAt: string
+  payload: P
+}
+
+interface AgentTurnTransientFrame<K extends string, P> {
+  protocol: 'lynxus.agent-turn-transient.v1'
   frameId: string
   streamId: string
   sessionId: string
@@ -365,11 +381,11 @@ Frame id / ordering 规则：
 2. `FINAL_OUTCOME` 必须出现一次且只出现一次；没有 final outcome 时 worker activity 视为失败。
 3. `visibility=CUSTOMER` 的 frame 必须已经过 agent-runtime 过滤，不包含内部细节。
 4. `INTERNAL` frame 不进入 Web/Channel。
-5. `FINAL_OUTCOME` 不进入 Web/Channel。
+5. `FINAL_OUTCOME` 不进入 API transient ingress / Web / Channel；worker 校验 final outcome 后只额外发送 `TURN_COMPLETED` transient frame 收尾实时观察。
 6. Web replay 优先使用 coalesced `REPLY_BLOCK_DELTA` 和 `REPLY_BLOCK_COMPLETED`，避免 reconnect 后依赖完整 token 历史。
 7. provider raw event 不作为正式 payload；如需 debug，写 trace，不进入正式 stream frame。
 
-frame kind 首批只保留必要集合：
+agent-runtime -> worker stream kind 首批只保留必要集合：
 
 - `TURN_STARTED`
 - `MODEL_STARTED`
@@ -379,6 +395,18 @@ frame kind 首批只保留必要集合：
 - `REPLY_BLOCK_DELTA`
 - `REPLY_BLOCK_COMPLETED`
 - `FINAL_OUTCOME`
+- `ERROR`
+
+worker -> API transient kind 首批只保留必要集合：
+
+- `TURN_STARTED`
+- `MODEL_STARTED`
+- `MODEL_COMPLETED`
+- `ACTION_TOOL_STARTED`
+- `ACTION_TOOL_COMPLETED`
+- `REPLY_BLOCK_DELTA`
+- `REPLY_BLOCK_COMPLETED`
+- `TURN_COMPLETED`
 - `ERROR`
 
 Payload union：
@@ -394,6 +422,17 @@ type AgentTurnFrame =
   | AgentTurnStreamFrame<'REPLY_BLOCK_COMPLETED', ReplyBlockCompletedPayload>
   | AgentTurnStreamFrame<'FINAL_OUTCOME', FinalOutcomePayload>
   | AgentTurnStreamFrame<'ERROR', ErrorPayload>
+
+type AgentTurnTransientIngressFrame =
+  | AgentTurnTransientFrame<'TURN_STARTED', TurnStartedPayload>
+  | AgentTurnTransientFrame<'MODEL_STARTED', ModelStartedPayload>
+  | AgentTurnTransientFrame<'MODEL_COMPLETED', ModelCompletedPayload>
+  | AgentTurnTransientFrame<'ACTION_TOOL_STARTED', ToolStartedPayload>
+  | AgentTurnTransientFrame<'ACTION_TOOL_COMPLETED', ToolCompletedPayload>
+  | AgentTurnTransientFrame<'REPLY_BLOCK_DELTA', ReplyBlockDeltaPayload>
+  | AgentTurnTransientFrame<'REPLY_BLOCK_COMPLETED', ReplyBlockCompletedPayload>
+  | AgentTurnTransientFrame<'TURN_COMPLETED', TurnCompletedPayload>
+  | AgentTurnTransientFrame<'ERROR', ErrorPayload>
 
 type TurnStartedPayload = {
   messageId: string
@@ -444,6 +483,11 @@ type ReplyBlockCompletedPayload = {
 type FinalOutcomePayload = {
   messageId: string
   outcome: AgentTurnExecutionOutcome
+}
+
+type TurnCompletedPayload = {
+  messageId: string
+  status: 'SUCCEEDED' | 'FAILED'
 }
 
 type ErrorPayload = {
@@ -505,9 +549,11 @@ message block 预留：
 
 worker activity 读取 `/agent-turns/execute-stream` 时：
 
-1. 对每个非 `FINAL_OUTCOME` frame 调用 API internal stream ingress。
-2. 累计并校验 `FINAL_OUTCOME`。
-3. activity 返回最终 `AgentTurnExecutionOutcome` 给 Temporal workflow。
+1. 对每个非 `FINAL_OUTCOME` 的 `AgentTurnStreamFrame` 转换成 `AgentTurnTransientFrame` 后调用 API internal stream ingress。
+2. 累计并校验 `FINAL_OUTCOME`，它只留在 worker 内部，绝不转发 API。
+3. `FINAL_OUTCOME` 校验完成后，worker 发送一个 `TURN_COMPLETED` transient frame，用于 SSE replay 清理、channel typing stop 和观察闭环。
+4. transient frame relay 失败只记录日志和 metric，不让 workflow 失败；workflow 只依赖最终 `AgentTurnExecutionOutcome`。
+5. activity 返回最终 `AgentTurnExecutionOutcome` 给 Temporal workflow。
 
 新增 API internal endpoint：
 
@@ -515,11 +561,11 @@ worker activity 读取 `/agent-turns/execute-stream` 时：
 POST /api/internal/session-runtime/stream-frames
 ```
 
-请求 body 直接使用完整 `AgentTurnStreamFrame`，不再传简化 frame 子集：
+请求 body 使用 `AgentTurnTransientFrame`，不接收完整 `AgentTurnStreamFrame`：
 
 ```json
 {
-  "protocol": "lynxus.agent-turn-stream.v1",
+  "protocol": "lynxus.agent-turn-transient.v1",
   "frameId": "exec-1:5",
   "streamId": "stream-1",
   "sessionId": "session-1",
@@ -532,6 +578,7 @@ POST /api/internal/session-runtime/stream-frames
   "visibility": "CUSTOMER",
   "occurredAt": "2026-05-02T00:00:02Z",
   "payload": {
+    "messageId": "session-message-reply-1",
     "blockId": "block-1",
     "blockType": "TEXT",
     "delta": "我查到这笔订单"
@@ -1024,12 +1071,12 @@ Progress 规则：
 
 ### Phase 1: Stream contract foundation
 
-- [ ] 在 `packages/contracts-jvm` 增加 `SessionRuntimeStreamFrame`、`AgentTurnStreamFrame`、`SessionReplyDraftEvent`、`SessionProgressEvent`。
-- [ ] 在 `packages/contracts/src` 增加对应 TypeScript 类型。
-- [ ] 更新 OpenAPI：session SSE 新增事件 schema，internal stream ingress 新增 endpoint。
+- [x] 在 `packages/contracts-jvm` 增加 `SessionRuntimeStreamFrame`、`AgentTurnStreamFrame`、`AgentTurnTransientFrame`、`SessionReplyDraftEvent`、`SessionProgressEvent`。
+- [x] 在 `packages/contracts/src` 增加对应 TypeScript 类型。
+- [x] 更新 OpenAPI：session SSE 新增事件 schema，internal stream ingress endpoint 使用 `AgentTurnTransientFrame`。
 - [ ] 明确 visibility enum：`CUSTOMER / OPERATOR / DEVELOPER / INTERNAL`。
 - [ ] 明确 frame id 规则：`streamId` 仅表示一次 HTTP stream，`seq` 是 `turnExecutionId` 内逻辑顺序，`frameId = ${turnExecutionId}:${seq}`，并定义 `modelRoundId`、`toolCallId`、`blockId`。
-- [ ] 把 `FINAL_OUTCOME` 标记为 internal-only，不进入 Web/Channel projection。
+- [x] 把 `FINAL_OUTCOME` 标记为 internal-only，不进入 API transient ingress / Web / Channel projection。
 - [ ] 增加 progress label / projection contract，禁止 customer 直接消费内部 frame kind。
 
 验收：
@@ -1043,7 +1090,7 @@ Progress 规则：
 
 - [ ] 扩展 `SessionRuntimeStreamService`，支持 `SESSION_PROGRESS / SESSION_REPLY_DRAFT / SESSION_STREAM_ERROR`。
 - [ ] 扩展 `SessionRuntimeReplayStore`，支持 transient event replay 和 dedup。
-- [ ] 新增 internal endpoint `/api/internal/session-runtime/stream-frames`，request body 接收完整 `AgentTurnStreamFrame`。
+- [x] 新增 internal endpoint `/api/internal/session-runtime/stream-frames`，request body 接收 `AgentTurnTransientFrame`，拒绝 `FINAL_OUTCOME`。
 - [ ] 增加按 role / runtime access 的 visibility 过滤。
 - [ ] 增加 customer progress projection：内部 progress frame 映射为白名单业务 label。
 
@@ -1057,8 +1104,10 @@ Progress 规则：
 
 - [ ] `SessionAgentRuntimeGateway` 新增 `executeTurnStream`。
 - [ ] `AgentTurnActivitiesImpl` 读取 NDJSON frame。
-- [ ] 非 final frame 转发 API internal stream ingress。
+- [ ] 非 final frame 转换为 transient frame 后转发 API internal stream ingress。
+- [ ] transient relay 失败不影响 final outcome 返回。
 - [ ] `FINAL_OUTCOME` 校验后返回 workflow。
+- [ ] `FINAL_OUTCOME` 校验后发送 `TURN_COMPLETED` transient frame 收尾实时观察。
 - [ ] Worker 按 `frameId` 转发幂等，缺失或重复 `FINAL_OUTCOME` 视为失败。
 - [ ] stream 中断、超时、缺 final outcome 时产生明确失败 outcome。
 

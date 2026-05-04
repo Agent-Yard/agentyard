@@ -1410,7 +1410,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AgentTurnStreamFrame'
+              $ref: '#/components/schemas/AgentTurnTransientFrame'
       responses:
         '200':
           description: Frame accepted
@@ -4168,6 +4168,182 @@ components:
           REPLY_BLOCK_COMPLETED: '#/components/schemas/ReplyBlockCompletedFrame'
           FINAL_OUTCOME: '#/components/schemas/FinalOutcomeFrame'
           ERROR: '#/components/schemas/ErrorFrame'
+    AgentTurnTransientFrameKind:
+      type: string
+      enum:
+        - TURN_STARTED
+        - MODEL_STARTED
+        - MODEL_COMPLETED
+        - ACTION_TOOL_STARTED
+        - ACTION_TOOL_COMPLETED
+        - REPLY_BLOCK_DELTA
+        - REPLY_BLOCK_COMPLETED
+        - TURN_COMPLETED
+        - ERROR
+    AgentTurnTransientFrame:
+      oneOf:
+        - $ref: '#/components/schemas/TransientTurnStartedFrame'
+        - $ref: '#/components/schemas/TransientModelStartedFrame'
+        - $ref: '#/components/schemas/TransientModelCompletedFrame'
+        - $ref: '#/components/schemas/TransientToolStartedFrame'
+        - $ref: '#/components/schemas/TransientToolCompletedFrame'
+        - $ref: '#/components/schemas/TransientReplyBlockDeltaFrame'
+        - $ref: '#/components/schemas/TransientReplyBlockCompletedFrame'
+        - $ref: '#/components/schemas/TransientTurnCompletedFrame'
+        - $ref: '#/components/schemas/TransientErrorFrame'
+      discriminator:
+        propertyName: kind
+        mapping:
+          TURN_STARTED: '#/components/schemas/TransientTurnStartedFrame'
+          MODEL_STARTED: '#/components/schemas/TransientModelStartedFrame'
+          MODEL_COMPLETED: '#/components/schemas/TransientModelCompletedFrame'
+          ACTION_TOOL_STARTED: '#/components/schemas/TransientToolStartedFrame'
+          ACTION_TOOL_COMPLETED: '#/components/schemas/TransientToolCompletedFrame'
+          REPLY_BLOCK_DELTA: '#/components/schemas/TransientReplyBlockDeltaFrame'
+          REPLY_BLOCK_COMPLETED: '#/components/schemas/TransientReplyBlockCompletedFrame'
+          TURN_COMPLETED: '#/components/schemas/TransientTurnCompletedFrame'
+          ERROR: '#/components/schemas/TransientErrorFrame'
+    AgentTurnTransientFrameBase:
+      type: object
+      required:
+        - protocol
+        - frameId
+        - streamId
+        - sessionId
+        - turnId
+        - turnExecutionId
+        - ownerAgentId
+        - ownershipEpoch
+        - seq
+        - visibility
+        - occurredAt
+      properties:
+        protocol:
+          type: string
+          enum: [lynxus.agent-turn-transient.v1]
+        frameId:
+          type: string
+          description: Stable dedup key. Must be `${turnExecutionId}:${seq}`.
+        streamId:
+          type: string
+        sessionId:
+          type: string
+        turnId:
+          type: string
+        turnExecutionId:
+          type: string
+        ownerAgentId:
+          type: string
+        ownershipEpoch:
+          type: integer
+          format: int64
+        seq:
+          type: integer
+          format: int64
+        visibility:
+          $ref: '#/components/schemas/StreamVisibility'
+        occurredAt:
+          type: string
+          format: date-time
+    TransientTurnStartedFrame:
+      allOf:
+        - $ref: '#/components/schemas/AgentTurnTransientFrameBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind:
+              type: string
+              enum: [TURN_STARTED]
+            payload:
+              $ref: '#/components/schemas/TurnStartedPayload'
+    TransientModelStartedFrame:
+      allOf:
+        - $ref: '#/components/schemas/AgentTurnTransientFrameBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind:
+              type: string
+              enum: [MODEL_STARTED]
+            payload:
+              $ref: '#/components/schemas/ModelStartedPayload'
+    TransientModelCompletedFrame:
+      allOf:
+        - $ref: '#/components/schemas/AgentTurnTransientFrameBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind:
+              type: string
+              enum: [MODEL_COMPLETED]
+            payload:
+              $ref: '#/components/schemas/ModelCompletedPayload'
+    TransientToolStartedFrame:
+      allOf:
+        - $ref: '#/components/schemas/AgentTurnTransientFrameBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind:
+              type: string
+              enum: [ACTION_TOOL_STARTED]
+            payload:
+              $ref: '#/components/schemas/ToolStartedPayload'
+    TransientToolCompletedFrame:
+      allOf:
+        - $ref: '#/components/schemas/AgentTurnTransientFrameBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind:
+              type: string
+              enum: [ACTION_TOOL_COMPLETED]
+            payload:
+              $ref: '#/components/schemas/ToolCompletedPayload'
+    TransientReplyBlockDeltaFrame:
+      allOf:
+        - $ref: '#/components/schemas/AgentTurnTransientFrameBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind:
+              type: string
+              enum: [REPLY_BLOCK_DELTA]
+            payload:
+              $ref: '#/components/schemas/ReplyBlockDeltaPayload'
+    TransientReplyBlockCompletedFrame:
+      allOf:
+        - $ref: '#/components/schemas/AgentTurnTransientFrameBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind:
+              type: string
+              enum: [REPLY_BLOCK_COMPLETED]
+            payload:
+              $ref: '#/components/schemas/ReplyBlockCompletedPayload'
+    TransientTurnCompletedFrame:
+      allOf:
+        - $ref: '#/components/schemas/AgentTurnTransientFrameBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind:
+              type: string
+              enum: [TURN_COMPLETED]
+            payload:
+              $ref: '#/components/schemas/TurnCompletedPayload'
+    TransientErrorFrame:
+      allOf:
+        - $ref: '#/components/schemas/AgentTurnTransientFrameBase'
+        - type: object
+          required: [kind, payload]
+          properties:
+            kind:
+              type: string
+              enum: [ERROR]
+            payload:
+              $ref: '#/components/schemas/ErrorPayload'
     AgentTurnStreamFrameBase:
       type: object
       required:
@@ -4409,6 +4585,18 @@ components:
           type: string
         outcome:
           $ref: '#/components/schemas/AgentTurnExecutionOutcome'
+    TurnCompletionStatus:
+      type: string
+      enum: [SUCCEEDED, FAILED]
+    TurnCompletedPayload:
+      type: object
+      additionalProperties: false
+      required: [messageId, status]
+      properties:
+        messageId:
+          type: string
+        status:
+          $ref: '#/components/schemas/TurnCompletionStatus'
     ErrorPayload:
       type: object
       additionalProperties: false

@@ -1,9 +1,9 @@
 package com.lynxus.platform.session;
 
-import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamFrame;
+import com.lynxus.contracts.session.SessionContracts.AgentTurnTransientFrame;
 
 interface SessionChannelActivityRelay {
-    void relay(AgentTurnStreamFrame frame);
+    void relay(AgentTurnTransientFrame frame);
 
     static SessionChannelActivityRelay noop() {
         return ignored -> {

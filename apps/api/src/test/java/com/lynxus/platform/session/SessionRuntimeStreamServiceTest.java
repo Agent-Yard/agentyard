@@ -10,11 +10,10 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.lynxus.contracts.session.SessionContracts.AgentTurnTransientFrame;
+import com.lynxus.contracts.session.SessionContracts.AgentTurnTransientFrameKind;
+import com.lynxus.contracts.session.SessionContracts.AgentTurnTransientPayload;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamFrame;
-import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamFrameKind;
-import com.lynxus.contracts.session.SessionContracts.AgentTurnExecutionOutcome;
-import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamPayload;
-import com.lynxus.contracts.session.SessionContracts.FinalOutcomePayload;
 import com.lynxus.contracts.session.SessionContracts.StreamVisibility;
 import com.lynxus.platform.channel.ChannelGatewayClient;
 import com.lynxus.contracts.session.SessionRuntimeChangeNotice;
@@ -148,7 +147,7 @@ class SessionRuntimeStreamServiceTest {
     }
 
     @Test
-    void shouldIgnoreInternalAndFinalOutcomeFrames() {
+    void shouldIgnoreInternalFrames() {
         SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
         SessionRuntimeReplayStore replayStore = mock(SessionRuntimeReplayStore.class);
         RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);
@@ -163,18 +162,54 @@ class SessionRuntimeStreamServiceTest {
         );
 
         service.acceptStreamFrame(frame(
-            AgentTurnStreamFrameKind.MODEL_STARTED,
+            AgentTurnTransientFrameKind.MODEL_STARTED,
             StreamVisibility.INTERNAL,
             2,
             Map.of("modelRoundId", "round-1")
         ));
-        service.acceptStreamFrame(frame(
-            AgentTurnStreamFrameKind.FINAL_OUTCOME,
-            StreamVisibility.INTERNAL,
-            3,
-            finalOutcomePayload()
-        ));
+        verify(replayStore, org.mockito.Mockito.never()).append(any());
+        verify(pubSubBus, org.mockito.Mockito.never()).publish(any(), any());
+    }
 
+    @Test
+    void shouldRejectFinalOutcomeAsTransientFrameAtContractBoundary() {
+        String finalOutcomeFrame = (
+            "{\"protocol\":\"%s\",\"frameId\":\"exec-1:2\",\"streamId\":\"stream-1\",\"sessionId\":\"session-1\","
+                + "\"turnId\":\"turn-1\",\"turnExecutionId\":\"exec-1\",\"ownerAgentId\":\"agent-1\","
+                + "\"ownershipEpoch\":1,\"seq\":2,\"kind\":\"FINAL_OUTCOME\",\"visibility\":\"INTERNAL\","
+                + "\"occurredAt\":\"2026-05-02T00:00:00Z\","
+                + "\"payload\":{\"messageId\":\"session-message-reply-1\","
+                + "\"outcome\":{\"success\":false,\"failureReason\":\"done\",\"llmUsage\":[]}}}"
+        ).formatted(AgentTurnTransientFrame.PROTOCOL);
+
+        assertThrows(
+            Exception.class,
+            () -> new ObjectMapper().readValue(finalOutcomeFrame, AgentTurnTransientFrame.class)
+        );
+    }
+
+    @Test
+    void shouldRejectRuntimeStreamProtocolAtTransientIngress() {
+        SessionRuntimeReplayStore replayStore = mock(SessionRuntimeReplayStore.class);
+        RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);
+        SessionRuntimeStreamService service = serviceWith(replayStore, pubSubBus);
+        AgentTurnTransientFrame frame = new AgentTurnTransientFrame(
+            AgentTurnStreamFrame.PROTOCOL,
+            "exec-1:1",
+            "stream-1",
+            "session-1",
+            "turn-1",
+            "exec-1",
+            "agent-1",
+            1,
+            1,
+            AgentTurnTransientFrameKind.TURN_STARTED,
+            StreamVisibility.OPERATOR,
+            Instant.parse("2026-05-02T00:00:00Z"),
+            Map.of("messageId", "session-message-reply-1", "triggerType", "USER_MESSAGE")
+        );
+
+        assertThrows(ResponseStatusException.class, () -> service.acceptStreamFrame(frame));
         verify(replayStore, org.mockito.Mockito.never()).append(any());
         verify(pubSubBus, org.mockito.Mockito.never()).publish(any(), any());
     }
@@ -195,8 +230,8 @@ class SessionRuntimeStreamServiceTest {
             new io.micrometer.core.instrument.simple.SimpleMeterRegistry()
         );
 
-        AgentTurnStreamFrame frame = frame(
-            AgentTurnStreamFrameKind.TURN_STARTED,
+        AgentTurnTransientFrame frame = frame(
+            AgentTurnTransientFrameKind.TURN_STARTED,
             StreamVisibility.OPERATOR,
             2,
             Map.of("messageId", "session-message-reply-1", "triggerType", "USER_MESSAGE")
@@ -226,7 +261,7 @@ class SessionRuntimeStreamServiceTest {
         );
 
         assertDoesNotThrow(() -> service.acceptStreamFrame(frame(
-            AgentTurnStreamFrameKind.TURN_STARTED,
+            AgentTurnTransientFrameKind.TURN_STARTED,
             StreamVisibility.OPERATOR,
             2,
             Map.of("messageId", "session-message-reply-1", "triggerType", "USER_MESSAGE")
@@ -253,20 +288,20 @@ class SessionRuntimeStreamServiceTest {
         );
 
         service.acceptStreamFrame(frameAt(
-            AgentTurnStreamFrameKind.TURN_STARTED,
+            AgentTurnTransientFrameKind.TURN_STARTED,
             StreamVisibility.OPERATOR,
             1,
             Map.of("messageId", "session-message-reply-1", "triggerType", "USER_MESSAGE"),
             Instant.parse("2026-05-02T00:00:00Z")
         ));
         service.acceptStreamFrame(frameAt(
-            AgentTurnStreamFrameKind.ACTION_TOOL_STARTED,
+            AgentTurnTransientFrameKind.ACTION_TOOL_STARTED,
             StreamVisibility.OPERATOR,
             2,
             Map.of("modelRoundId", "round-1", "toolCallId", "tool-1", "toolName", "lookup", "toolKind", "CONTEXT_TOOL"),
             Instant.parse("2026-05-02T00:00:01Z")
         ));
-        service.acceptStreamFrame(frameAt(AgentTurnStreamFrameKind.REPLY_BLOCK_DELTA, StreamVisibility.CUSTOMER, 3, Map.of(
+        service.acceptStreamFrame(frameAt(AgentTurnTransientFrameKind.REPLY_BLOCK_DELTA, StreamVisibility.CUSTOMER, 3, Map.of(
             "messageId",
             "session-message-reply-1",
             "blockId",
@@ -276,7 +311,7 @@ class SessionRuntimeStreamServiceTest {
             "delta",
             "hi"
         ), Instant.parse("2026-05-02T00:00:02Z")));
-        service.acceptStreamFrame(frameAt(AgentTurnStreamFrameKind.REPLY_BLOCK_COMPLETED, StreamVisibility.CUSTOMER, 4, Map.of(
+        service.acceptStreamFrame(frameAt(AgentTurnTransientFrameKind.REPLY_BLOCK_COMPLETED, StreamVisibility.CUSTOMER, 4, Map.of(
             "messageId",
             "session-message-reply-1",
             "blockId",
@@ -298,7 +333,7 @@ class SessionRuntimeStreamServiceTest {
         SessionRuntimeStreamService service = serviceWith(replayStore, pubSubBus, keyspace);
         when(replayStore.append(any())).thenReturn(true);
 
-        service.acceptStreamFrame(frame(AgentTurnStreamFrameKind.ERROR, StreamVisibility.OPERATOR, 5, Map.of(
+        service.acceptStreamFrame(frame(AgentTurnTransientFrameKind.ERROR, StreamVisibility.OPERATOR, 5, Map.of(
             "code",
             "PROVIDER_STREAM_MALFORMED",
             "messageId",
@@ -329,7 +364,7 @@ class SessionRuntimeStreamServiceTest {
         SessionRuntimeStreamService service = serviceWith(replayStore, pubSubBus, keyspace);
         when(replayStore.append(any())).thenReturn(true);
 
-        service.acceptStreamFrame(frame(AgentTurnStreamFrameKind.REPLY_BLOCK_DELTA, StreamVisibility.CUSTOMER, 2, Map.of(
+        service.acceptStreamFrame(frame(AgentTurnTransientFrameKind.REPLY_BLOCK_DELTA, StreamVisibility.CUSTOMER, 2, Map.of(
             "messageId",
             "session-message-reply-1",
             "blockId",
@@ -355,7 +390,7 @@ class SessionRuntimeStreamServiceTest {
         SessionRuntimeStreamService service = serviceWith(replayStore, pubSubBus);
 
         assertThrows(ResponseStatusException.class, () -> service.acceptStreamFrame(frame(
-            AgentTurnStreamFrameKind.ACTION_TOOL_STARTED,
+            AgentTurnTransientFrameKind.ACTION_TOOL_STARTED,
             StreamVisibility.CUSTOMER,
             2,
             Map.of(
@@ -392,7 +427,7 @@ class SessionRuntimeStreamServiceTest {
             Map<String, Object> payload = sensitivePayloads.get(index);
             int seq = index + 10;
             assertThrows(IllegalArgumentException.class, () -> frame(
-                AgentTurnStreamFrameKind.REPLY_BLOCK_DELTA,
+                AgentTurnTransientFrameKind.REPLY_BLOCK_DELTA,
                 StreamVisibility.CUSTOMER,
                 seq,
                 payload
@@ -410,7 +445,7 @@ class SessionRuntimeStreamServiceTest {
         SessionRuntimeStreamService service = serviceWith(replayStore, pubSubBus);
 
         service.acceptStreamFrame(frame(
-            AgentTurnStreamFrameKind.MODEL_STARTED,
+            AgentTurnTransientFrameKind.MODEL_STARTED,
             StreamVisibility.INTERNAL,
             2,
             Map.of("modelRoundId", "round-1")
@@ -428,7 +463,7 @@ class SessionRuntimeStreamServiceTest {
         SessionRuntimeStreamService service = serviceWith(replayStore, pubSubBus, keyspace);
         when(replayStore.append(any())).thenReturn(true);
 
-        service.acceptStreamFrame(frame(AgentTurnStreamFrameKind.REPLY_BLOCK_COMPLETED, StreamVisibility.CUSTOMER, 2, Map.of(
+        service.acceptStreamFrame(frame(AgentTurnTransientFrameKind.REPLY_BLOCK_COMPLETED, StreamVisibility.CUSTOMER, 2, Map.of(
             "messageId",
             "session-message-reply-1",
             "blockId",
@@ -454,7 +489,7 @@ class SessionRuntimeStreamServiceTest {
         SessionRuntimeStreamService service = serviceWith(replayStore, pubSubBus);
 
         assertThrows(ResponseStatusException.class, () -> service.acceptStreamFrame(frame(
-            AgentTurnStreamFrameKind.REPLY_BLOCK_COMPLETED,
+            AgentTurnTransientFrameKind.REPLY_BLOCK_COMPLETED,
             StreamVisibility.CUSTOMER,
             2,
             Map.of(
@@ -520,8 +555,8 @@ class SessionRuntimeStreamServiceTest {
         );
     }
 
-    private static AgentTurnStreamFrame frame(
-        AgentTurnStreamFrameKind kind,
+    private static AgentTurnTransientFrame frame(
+        AgentTurnTransientFrameKind kind,
         StreamVisibility visibility,
         long seq,
         Map<String, Object> payload
@@ -529,24 +564,24 @@ class SessionRuntimeStreamServiceTest {
         return frameAt(kind, visibility, seq, payload, Instant.parse("2026-05-02T00:00:00Z"));
     }
 
-    private static AgentTurnStreamFrame frame(
-        AgentTurnStreamFrameKind kind,
+    private static AgentTurnTransientFrame frame(
+        AgentTurnTransientFrameKind kind,
         StreamVisibility visibility,
         long seq,
-        AgentTurnStreamPayload payload
+        AgentTurnTransientPayload payload
     ) {
         return frameAt(kind, visibility, seq, payload, Instant.parse("2026-05-02T00:00:00Z"));
     }
 
-    private static AgentTurnStreamFrame frameAt(
-        AgentTurnStreamFrameKind kind,
+    private static AgentTurnTransientFrame frameAt(
+        AgentTurnTransientFrameKind kind,
         StreamVisibility visibility,
         long seq,
         Map<String, Object> payload,
         Instant occurredAt
     ) {
-        return new AgentTurnStreamFrame(
-            AgentTurnStreamFrame.PROTOCOL,
+        return new AgentTurnTransientFrame(
+            AgentTurnTransientFrame.PROTOCOL,
             "exec-1:" + seq,
             "stream-1",
             "session-1",
@@ -562,15 +597,15 @@ class SessionRuntimeStreamServiceTest {
         );
     }
 
-    private static AgentTurnStreamFrame frameAt(
-        AgentTurnStreamFrameKind kind,
+    private static AgentTurnTransientFrame frameAt(
+        AgentTurnTransientFrameKind kind,
         StreamVisibility visibility,
         long seq,
-        AgentTurnStreamPayload payload,
+        AgentTurnTransientPayload payload,
         Instant occurredAt
     ) {
-        return new AgentTurnStreamFrame(
-            AgentTurnStreamFrame.PROTOCOL,
+        return new AgentTurnTransientFrame(
+            AgentTurnTransientFrame.PROTOCOL,
             "exec-1:" + seq,
             "stream-1",
             "session-1",
@@ -586,10 +621,4 @@ class SessionRuntimeStreamServiceTest {
         );
     }
 
-    private static FinalOutcomePayload finalOutcomePayload() {
-        return new FinalOutcomePayload(
-            "session-message-reply-1",
-            new AgentTurnExecutionOutcome(false, null, "done", List.of())
-        );
-    }
 }

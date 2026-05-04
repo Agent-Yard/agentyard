@@ -1,6 +1,6 @@
 package com.lynxus.platform.session;
 
-import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamFrame;
+import com.lynxus.contracts.session.SessionContracts.AgentTurnTransientFrame;
 import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionMessageRequest;
 import com.lynxus.platform.integration.InternalRuntimeAuth;
 import com.lynxus.platform.shared.ApiResponse;
@@ -52,7 +52,7 @@ public class InternalSessionRuntimeController {
 
     @PostMapping("/api/internal/session-runtime/stream-frames")
     public ApiResponse<?> acceptStreamFrame(
-        @RequestBody AgentTurnStreamFrame frame,
+        @RequestBody AgentTurnTransientFrame frame,
         @RequestHeader(name = "Authorization", required = false) String authorization
     ) {
         internalRuntimeAuth.requireBearer(authorization);

@@ -3,13 +3,12 @@ package com.lynxus.platform.session;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundActivityRequest;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundActivityType;
-import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamFrame;
-import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamFrameKind;
+import com.lynxus.contracts.session.SessionContracts.AgentTurnTransientFrame;
 import com.lynxus.contracts.session.SessionContracts.ErrorPayload;
-import com.lynxus.contracts.session.SessionContracts.FinalOutcomePayload;
 import com.lynxus.contracts.session.SessionContracts.ReplyBlockCompletedPayload;
 import com.lynxus.contracts.session.SessionContracts.ReplyBlockDeltaPayload;
 import com.lynxus.contracts.session.SessionContracts.StreamVisibility;
+import com.lynxus.contracts.session.SessionContracts.TurnCompletedPayload;
 import com.lynxus.contracts.session.SessionContracts.TurnStartedPayload;
 import com.lynxus.platform.channel.ChannelGatewayClient;
 import java.util.LinkedHashMap;
@@ -31,7 +30,7 @@ final class DefaultSessionChannelActivityRelay implements SessionChannelActivity
     }
 
     @Override
-    public void relay(AgentTurnStreamFrame frame) {
+    public void relay(AgentTurnTransientFrame frame) {
         List<ChannelOutboundActivityType> activityTypes = activityTypes(frame);
         if (activityTypes.isEmpty()) {
             return;
@@ -82,12 +81,9 @@ final class DefaultSessionChannelActivityRelay implements SessionChannelActivity
         }
     }
 
-    private static List<ChannelOutboundActivityType> activityTypes(AgentTurnStreamFrame frame) {
+    private static List<ChannelOutboundActivityType> activityTypes(AgentTurnTransientFrame frame) {
         if (frame == null || frame.kind() == null) {
             return List.of();
-        }
-        if (frame.kind() == AgentTurnStreamFrameKind.FINAL_OUTCOME) {
-            return List.of(ChannelOutboundActivityType.TYPING_STOP);
         }
         if (frame.visibility() == StreamVisibility.INTERNAL || frame.visibility() == StreamVisibility.DEVELOPER) {
             return List.of();
@@ -96,24 +92,24 @@ final class DefaultSessionChannelActivityRelay implements SessionChannelActivity
             case TURN_STARTED -> List.of(ChannelOutboundActivityType.TYPING_START);
             case REPLY_BLOCK_DELTA -> customerOnly(frame, ChannelOutboundActivityType.DRAFT_UPDATE);
             case REPLY_BLOCK_COMPLETED -> List.of(ChannelOutboundActivityType.DRAFT_COMPLETE, ChannelOutboundActivityType.TYPING_STOP);
+            case TURN_COMPLETED -> List.of(ChannelOutboundActivityType.TYPING_STOP);
             case ERROR -> List.of(ChannelOutboundActivityType.DRAFT_DISCARD, ChannelOutboundActivityType.TYPING_STOP);
             case MODEL_STARTED,
                 MODEL_COMPLETED,
                 ACTION_TOOL_STARTED,
-                ACTION_TOOL_COMPLETED,
-                FINAL_OUTCOME -> List.of();
+                ACTION_TOOL_COMPLETED -> List.of();
         };
     }
 
     private static List<ChannelOutboundActivityType> customerOnly(
-        AgentTurnStreamFrame frame,
+        AgentTurnTransientFrame frame,
         ChannelOutboundActivityType activityType
     ) {
         return frame.visibility() == StreamVisibility.CUSTOMER ? List.of(activityType) : List.of();
     }
 
     private static Map<String, Object> activityPayload(
-        AgentTurnStreamFrame frame,
+        AgentTurnTransientFrame frame,
         ChannelOutboundActivityType activityType
     ) {
         Map<String, Object> payload = new LinkedHashMap<>();
@@ -141,7 +137,7 @@ final class DefaultSessionChannelActivityRelay implements SessionChannelActivity
         return Map.copyOf(payload);
     }
 
-    private static String messageId(AgentTurnStreamFrame frame) {
+    private static String messageId(AgentTurnTransientFrame frame) {
         if (frame.payload() instanceof ReplyBlockDeltaPayload payload) {
             return payload.messageId();
         }
@@ -154,13 +150,13 @@ final class DefaultSessionChannelActivityRelay implements SessionChannelActivity
         if (frame.payload() instanceof TurnStartedPayload payload) {
             return payload.messageId();
         }
-        if (frame.payload() instanceof FinalOutcomePayload payload) {
+        if (frame.payload() instanceof TurnCompletedPayload payload) {
             return payload.messageId();
         }
         return null;
     }
 
-    private static String blockId(AgentTurnStreamFrame frame) {
+    private static String blockId(AgentTurnTransientFrame frame) {
         if (frame.payload() instanceof ReplyBlockDeltaPayload payload) {
             return payload.blockId();
         }
@@ -170,18 +166,18 @@ final class DefaultSessionChannelActivityRelay implements SessionChannelActivity
         return null;
     }
 
-    private static String blockType(AgentTurnStreamFrame frame) {
+    private static String blockType(AgentTurnTransientFrame frame) {
         if (frame.payload() instanceof ReplyBlockDeltaPayload payload && payload.blockType() != null) {
             return payload.blockType().name();
         }
         return null;
     }
 
-    private static String delta(AgentTurnStreamFrame frame) {
+    private static String delta(AgentTurnTransientFrame frame) {
         return frame.payload() instanceof ReplyBlockDeltaPayload payload ? payload.delta() : null;
     }
 
-    private static Object block(AgentTurnStreamFrame frame) {
+    private static Object block(AgentTurnTransientFrame frame) {
         return frame.payload() instanceof ReplyBlockCompletedPayload payload ? payload.block() : null;
     }
 

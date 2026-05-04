@@ -4,10 +4,13 @@ import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamFrame;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamFrameKind;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnRequest;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnExecutionOutcome;
+import com.lynxus.contracts.session.SessionContracts.AgentTurnTransientFrame;
+import com.lynxus.contracts.session.SessionContracts.AgentTurnTransientFrameKind;
 import com.lynxus.contracts.session.SessionContracts.FinalOutcomePayload;
 import com.lynxus.contracts.session.SessionContracts.PlaybookToolTaskRequest;
 import com.lynxus.contracts.session.SessionContracts.PlaybookToolTaskResult;
 import com.lynxus.contracts.session.SessionContracts.StreamVisibility;
+import com.lynxus.contracts.session.SessionContracts.TurnCompletionStatus;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.io.BufferedReader;
@@ -57,6 +60,7 @@ public interface SessionAgentRuntimeGateway {
         private final Duration streamIdleTimeout;
         private final Counter streamStallCounter;
         private final Counter missingFinalOutcomeCounter;
+        private final Counter streamRelayFailureCounter;
 
         public HttpSessionAgentRuntimeGateway(
             @Value("${lynxus.agent-runtime.base-url}") String agentRuntimeBaseUrl,
@@ -79,6 +83,9 @@ public interface SessionAgentRuntimeGateway {
                 .register(meterRegistry);
             this.missingFinalOutcomeCounter = Counter.builder("lynxus.runtime_stream.missing_final_outcome")
                 .description("Number of agent-runtime streams that ended without FINAL_OUTCOME")
+                .register(meterRegistry);
+            this.streamRelayFailureCounter = Counter.builder("lynxus.runtime_stream.relay_failure")
+                .description("Number of transient stream frames the worker could not relay to the API")
                 .register(meterRegistry);
         }
 
@@ -201,12 +208,12 @@ public interface SessionAgentRuntimeGateway {
                                 error
                             );
                         }
-                        relayRuntimeFrame(frame, context);
+                        continue;
                     } else {
-                        relayRuntimeFrame(frame, context);
+                        relayRuntimeFrame(AgentTurnTransientFrame.fromStreamFrame(frame));
                     }
                 }
-            } catch (StreamProtocolFailureException | StreamRelayFailureException error) {
+            } catch (StreamProtocolFailureException error) {
                 throw error;
             } catch (StreamIdleTimeoutException error) {
                 relaySyntheticError(context, lastSeq + 1, "WORKER_STREAM_STALL", "agent-runtime stream stalled while reading", false);
@@ -229,6 +236,7 @@ public interface SessionAgentRuntimeGateway {
                 relaySyntheticError(context, lastSeq + 1, "MISSING_FINAL_OUTCOME", "agent-runtime stream ended without FINAL_OUTCOME", false);
                 throw new IllegalStateException("agent-runtime stream ended without FINAL_OUTCOME");
             }
+            relayTurnCompleted(context, lastSeq + 1, finalOutcome.success());
             return finalOutcome;
         }
 
@@ -271,24 +279,18 @@ public interface SessionAgentRuntimeGateway {
             return payload.outcome();
         }
 
-        private void relayRuntimeFrame(AgentTurnStreamFrame frame, StreamReadContext context) throws IOException, InterruptedException {
+        private void relayRuntimeFrame(AgentTurnTransientFrame frame) throws InterruptedException {
             try {
                 relayFrame(frame);
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw error;
             } catch (IOException | RuntimeException error) {
-                if (frame.kind() != AgentTurnStreamFrameKind.ERROR) {
-                    relaySyntheticError(
-                        context,
-                        frame.seq() + 1,
-                        "STREAM_RELAY_FAILED",
-                        "session stream frame relay failed",
-                        false
-                    );
-                }
-                throw new StreamRelayFailureException("session stream frame relay failed", error);
+                recordStreamRelayFailure(frame, error);
             }
         }
 
-        private void relayFrame(AgentTurnStreamFrame frame) throws IOException, InterruptedException {
+        private void relayFrame(AgentTurnTransientFrame frame) throws IOException, InterruptedException {
             String requestBody = objectMapper.writeValueAsString(frame);
             HttpRequest httpRequest = HttpRequest.newBuilder()
                 .uri(URI.create(apiBaseUrl + "/api/internal/session-runtime/stream-frames"))
@@ -331,6 +333,30 @@ public interface SessionAgentRuntimeGateway {
             }
         }
 
+        private void relayTurnCompleted(StreamReadContext context, long seq, boolean success) throws InterruptedException {
+            long completedSeq = Math.max(1, seq);
+            relayRuntimeFrame(new AgentTurnTransientFrame(
+                AgentTurnTransientFrame.PROTOCOL,
+                context.turnExecutionId() + ":" + completedSeq,
+                "worker:" + context.turnExecutionId(),
+                context.sessionId(),
+                context.turnId(),
+                context.turnExecutionId(),
+                context.ownerAgentId(),
+                context.ownershipEpoch(),
+                completedSeq,
+                AgentTurnTransientFrameKind.TURN_COMPLETED,
+                StreamVisibility.OPERATOR,
+                Instant.now(),
+                Map.of(
+                    "messageId",
+                    context.replyMessageId(),
+                    "status",
+                    success ? TurnCompletionStatus.SUCCEEDED : TurnCompletionStatus.FAILED
+                )
+            ));
+        }
+
         private void relaySyntheticError(
             StreamReadContext context,
             long seq,
@@ -339,8 +365,8 @@ public interface SessionAgentRuntimeGateway {
             boolean retryable
         ) {
             long errorSeq = Math.max(1, seq);
-            AgentTurnStreamFrame frame = new AgentTurnStreamFrame(
-                AgentTurnStreamFrame.PROTOCOL,
+            AgentTurnTransientFrame frame = new AgentTurnTransientFrame(
+                AgentTurnTransientFrame.PROTOCOL,
                 context.turnExecutionId() + ":" + errorSeq,
                 "worker:" + context.turnExecutionId(),
                 context.sessionId(),
@@ -349,7 +375,7 @@ public interface SessionAgentRuntimeGateway {
                 context.ownerAgentId(),
                 context.ownershipEpoch(),
                 errorSeq,
-                AgentTurnStreamFrameKind.ERROR,
+                AgentTurnTransientFrameKind.ERROR,
                 StreamVisibility.OPERATOR,
                 Instant.now(),
                 Map.of(
@@ -413,6 +439,21 @@ public interface SessionAgentRuntimeGateway {
             );
         }
 
+        private void recordStreamRelayFailure(AgentTurnTransientFrame frame, Exception error) {
+            streamRelayFailureCounter.increment();
+            log.warn(
+                "transient stream frame relay failed provider=api worker=temporal sessionId={} turnId={} turnExecutionId={} streamSeq={} frameKind={} visibility={} frameId={} reason={}",
+                frame.sessionId(),
+                frame.turnId(),
+                frame.turnExecutionId(),
+                frame.seq(),
+                frame.kind(),
+                frame.visibility(),
+                frame.frameId(),
+                error == null ? "" : error.toString()
+            );
+        }
+
         private static Duration normalizedTimeout(Duration timeout) {
             if (timeout == null || timeout.isZero() || timeout.isNegative()) {
                 return Duration.ofSeconds(30);
@@ -468,10 +509,5 @@ public interface SessionAgentRuntimeGateway {
             }
         }
 
-        private static final class StreamRelayFailureException extends IOException {
-            private StreamRelayFailureException(String message, Exception cause) {
-                super(message, cause);
-            }
-        }
     }
 }
