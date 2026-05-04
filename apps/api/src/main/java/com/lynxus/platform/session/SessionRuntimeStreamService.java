@@ -35,13 +35,17 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.event.ContextClosedEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -81,6 +85,7 @@ public class SessionRuntimeStreamService {
     private final RedisJsonCodec codec;
     private final RedisSharedStateProperties properties;
     private final SessionChannelActivityRelay channelActivityRelay;
+    private final Function<Long, SseEmitter> emitterFactory;
     private final Counter noticeMaterializedCounter;
     private final Counter fallbackPollCounter;
     private final Counter actionToolStartedCounter;
@@ -114,6 +119,52 @@ public class SessionRuntimeStreamService {
         SessionChannelActivityRelay channelActivityRelay,
         MeterRegistry meterRegistry
     ) {
+        this(
+            repository,
+            replayStore,
+            pubSubBus,
+            keyspace,
+            codec,
+            properties,
+            channelActivityRelay,
+            meterRegistry,
+            SseEmitter::new
+        );
+    }
+
+    SessionRuntimeStreamService(
+        SessionRuntimeRepository repository,
+        SessionRuntimeReplayStore replayStore,
+        RedisPubSubBus pubSubBus,
+        RedisKeyspace keyspace,
+        RedisJsonCodec codec,
+        RedisSharedStateProperties properties,
+        Function<Long, SseEmitter> emitterFactory
+    ) {
+        this(
+            repository,
+            replayStore,
+            pubSubBus,
+            keyspace,
+            codec,
+            properties,
+            SessionChannelActivityRelay.noop(),
+            new io.micrometer.core.instrument.simple.SimpleMeterRegistry(),
+            emitterFactory
+        );
+    }
+
+    private SessionRuntimeStreamService(
+        SessionRuntimeRepository repository,
+        SessionRuntimeReplayStore replayStore,
+        RedisPubSubBus pubSubBus,
+        RedisKeyspace keyspace,
+        RedisJsonCodec codec,
+        RedisSharedStateProperties properties,
+        SessionChannelActivityRelay channelActivityRelay,
+        MeterRegistry meterRegistry,
+        Function<Long, SseEmitter> emitterFactory
+    ) {
         this.repository = repository;
         this.replayStore = replayStore;
         this.pubSubBus = pubSubBus;
@@ -121,6 +172,7 @@ public class SessionRuntimeStreamService {
         this.codec = codec;
         this.properties = properties;
         this.channelActivityRelay = channelActivityRelay == null ? SessionChannelActivityRelay.noop() : channelActivityRelay;
+        this.emitterFactory = Objects.requireNonNull(emitterFactory, "emitterFactory");
         this.noticeMaterializedCounter = Counter.builder("lynxus.shared_state.runtime.notice.materialized")
             .description("Number of runtime change notices materialized into SSE update events")
             .register(meterRegistry);
@@ -164,13 +216,30 @@ public class SessionRuntimeStreamService {
         );
     }
 
+    @EventListener(ContextClosedEvent.class)
+    void onContextClosed() {
+        try {
+            close();
+        } catch (Exception error) {
+            LOGGER.warn("failed to close session runtime stream service before context shutdown", error);
+        }
+    }
+
     @PreDestroy
     void close() throws Exception {
-        if (updatedSubscription != null) {
-            updatedSubscription.close();
-        }
-        if (changeSubscription != null) {
-            changeSubscription.close();
+        Exception failure = null;
+        AutoCloseable subscription = updatedSubscription;
+        updatedSubscription = null;
+        failure = closeSubscription(subscription, failure);
+
+        subscription = changeSubscription;
+        changeSubscription = null;
+        failure = closeSubscription(subscription, failure);
+
+        completeLocalEmitters();
+
+        if (failure != null) {
+            throw failure;
         }
     }
 
@@ -189,7 +258,7 @@ public class SessionRuntimeStreamService {
         String principalName,
         Set<StreamVisibility> visibility
     ) {
-        SseEmitter emitter = new SseEmitter(0L);
+        SseEmitter emitter = Objects.requireNonNull(emitterFactory.apply(0L), "emitter");
         Subscriber subscriber = new Subscriber(emitter, visibility);
         emittersBySession.computeIfAbsent(sessionId, ignored -> new CopyOnWriteArraySet<>()).add(subscriber);
         Runnable cleanup = () -> unregister(sessionId, subscriber);
@@ -712,5 +781,38 @@ public class SessionRuntimeStreamService {
             emittersBySession.remove(sessionId);
             observedFingerprints.remove(sessionId);
         }
+    }
+
+    private Exception closeSubscription(AutoCloseable subscription, Exception failure) {
+        if (subscription == null) {
+            return failure;
+        }
+        try {
+            subscription.close();
+            return failure;
+        } catch (Exception error) {
+            if (failure == null) {
+                return error;
+            }
+            failure.addSuppressed(error);
+            return failure;
+        }
+    }
+
+    private void completeLocalEmitters() {
+        for (Map.Entry<String, CopyOnWriteArraySet<Subscriber>> entry : emittersBySession.entrySet()) {
+            for (Subscriber subscriber : entry.getValue()) {
+                try {
+                    subscriber.emitter().complete();
+                } catch (RuntimeException error) {
+                    LOGGER.warn("failed to complete session runtime stream emitter sessionId={}", entry.getKey(), error);
+                }
+            }
+        }
+        emittersBySession.clear();
+        observedFingerprints.clear();
+        turnStartedAtByExecution.clear();
+        assistantTextStartedAtByExecution.clear();
+        ttftRecordedExecutions.clear();
     }
 }

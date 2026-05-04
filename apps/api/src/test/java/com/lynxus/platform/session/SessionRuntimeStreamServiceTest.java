@@ -32,9 +32,46 @@ import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import tools.jackson.databind.ObjectMapper;
 
 class SessionRuntimeStreamServiceTest {
+    @Test
+    void shouldCompleteLocalSseEmittersOnContextClose() throws Exception {
+        SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
+        SessionRuntimeReplayStore replayStore = mock(SessionRuntimeReplayStore.class);
+        RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);
+        RedisKeyspace keyspace = new RedisKeyspace();
+        TrackingSseEmitter emitter = new TrackingSseEmitter();
+        SessionRuntimeStreamService service = new SessionRuntimeStreamService(
+            repository,
+            replayStore,
+            pubSubBus,
+            keyspace,
+            new RedisJsonCodec(new ObjectMapper()),
+            new RedisSharedStateProperties("instance-a", Duration.ofSeconds(10), Duration.ofSeconds(3), Duration.ofHours(24), Duration.ofMinutes(15), 128, Duration.ofSeconds(1)),
+            timeout -> {
+                assertEquals(0L, timeout);
+                return emitter;
+            }
+        );
+        SessionRuntimeSessionDto session = session("session-1", Instant.parse("2026-04-21T00:00:00Z"), 1L);
+
+        when(replayStore.replayAfter("session-1", null)).thenReturn(new SessionRuntimeStreamDtos.SessionRuntimeStreamReplayResult(false, List.of()));
+        when(repository.findSession("session-1")).thenReturn(Optional.of(session));
+        when(repository.listMessages("session-1")).thenReturn(List.of());
+        when(repository.listEvents("session-1")).thenReturn(List.of());
+        when(repository.listPlaybookRuns("session-1")).thenReturn(List.of());
+        when(repository.findSessionChangeStamp("session-1")).thenReturn(Optional.empty());
+        when(replayStore.append(any())).thenReturn(true);
+
+        service.connect("session-1", null, "tester");
+        service.onContextClosed();
+        service.close();
+
+        assertEquals(1, emitter.completeCalls());
+    }
+
     @Test
     void shouldPublishSessionUpdatedEventWhenObservedFingerprintChanges() {
         SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
@@ -621,4 +658,21 @@ class SessionRuntimeStreamServiceTest {
         );
     }
 
+    private static final class TrackingSseEmitter extends SseEmitter {
+        private int completeCalls;
+
+        private TrackingSseEmitter() {
+            super(0L);
+        }
+
+        @Override
+        public void complete() {
+            completeCalls += 1;
+            super.complete();
+        }
+
+        private int completeCalls() {
+            return completeCalls;
+        }
+    }
 }
