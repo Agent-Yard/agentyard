@@ -1,7 +1,6 @@
 package com.lynxus.channel.gateway.channel;
 
 import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_PROFILE_JOB;
-import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_PROFILE_JOB_RUN;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -15,7 +14,6 @@ import com.lynxus.channel.gateway.extension.ExtensionManifestFetcher;
 import com.lynxus.channel.gateway.extension.ExtensionRegistrationProperties;
 import com.lynxus.channel.gateway.extension.ExtensionRegistrationService;
 import com.lynxus.channel.gateway.extension.RuntimeChannelProviderRegistry;
-import com.lynxus.channel.gateway.jooqsupport.JooqJsonbSupport;
 import com.lynxus.channel.gateway.jooqsupport.JooqTimeSupport;
 import com.lynxus.channel.gateway.shared.ConflictException;
 import com.lynxus.channel.gateway.testing.EmbeddedPostgresTestDatabase;

@@ -23,8 +23,8 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(UnprocessableEntityException.class)
     public ResponseEntity<ProblemDetail> handleUnprocessableEntity(UnprocessableEntityException error) {
-        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
-            .body(problem(HttpStatus.UNPROCESSABLE_ENTITY, error.getMessage()));
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_CONTENT)
+            .body(problem(HttpStatus.UNPROCESSABLE_CONTENT, error.getMessage()));
     }
 
     @ExceptionHandler({IllegalArgumentException.class, IllegalStateException.class})

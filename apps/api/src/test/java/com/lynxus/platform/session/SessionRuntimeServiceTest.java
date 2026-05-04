@@ -561,7 +561,6 @@ class SessionRuntimeServiceTest {
         ));
         when(gateway.isWorkflowOpen(any())).thenReturn(true);
         when(idempotencyService.execute(any(), eq(ChannelInboundSessionMessageResponse.class), any())).thenAnswer(invocation -> {
-            @SuppressWarnings("unchecked")
             java.util.function.Supplier<ChannelInboundSessionMessageResponse> action = invocation.getArgument(2);
             return action.get();
         });

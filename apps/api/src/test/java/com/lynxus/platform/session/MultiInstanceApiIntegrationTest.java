@@ -21,8 +21,6 @@ import com.lynxus.contracts.session.SessionContracts.SessionMessageSenderType;
 import com.lynxus.contracts.session.SessionContracts.SessionMessageStatus;
 import com.lynxus.contracts.session.SessionContracts.SessionSnapshot;
 import com.lynxus.contracts.session.SessionContracts.SessionStartRequest;
-import com.lynxus.contracts.session.SessionContracts.SessionUserMessageUpdateResult;
-import com.lynxus.contracts.session.SessionContracts.SessionMessageDeliveryStatus;
 import com.lynxus.contracts.session.SessionContracts.UserMessage;
 import com.lynxus.platform.LynxusApiApplication;
 import com.lynxus.platform.auth.AuthModels;

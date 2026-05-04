@@ -656,10 +656,6 @@ public class KnowledgeService {
         return resolveSourceName(catalogState, sourceKey.substring(0, separatorIndex), sourceKey.substring(separatorIndex + 1));
     }
 
-    private String resolveSourceName(String sourceKey) {
-        return resolveSourceName(catalogRepository, sourceKey);
-    }
-
     private AssistantReleaseDto findAssistantReleaseById(String releaseId) {
         return catalogRepository.findAssistantReleaseById(releaseId).orElse(null);
     }

@@ -1591,7 +1591,7 @@ class CatalogServiceTest {
     void shouldHardBlockAssistantReleaseWhenSelectedToolConnectorAccountIsUnavailable() {
         RecordingIntegrationAccountService accountService = new RecordingIntegrationAccountService();
         accountService.error = new ApiProblemException(
-            HttpStatus.UNPROCESSABLE_ENTITY,
+            HttpStatus.UNPROCESSABLE_CONTENT,
             "INTEGRATION_ACCOUNT_AVAILABILITY_BLOCKED",
             "INTEGRATION_ACCOUNT_AVAILABILITY_BLOCKED: blocked"
         );

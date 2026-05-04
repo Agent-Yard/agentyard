@@ -181,7 +181,6 @@ public final class ChannelProviderRegistryLoader {
         );
     }
 
-    @SuppressWarnings("unchecked")
     private static String sendOutboundPath(Map<String, Object> descriptor) {
         return endpointPath(descriptor, "sendOutbound");
     }
@@ -194,7 +193,6 @@ public final class ChannelProviderRegistryLoader {
         return endpointPath(descriptor, "runJob");
     }
 
-    @SuppressWarnings("unchecked")
     private static String endpointPath(Map<String, Object> descriptor, String endpointName) {
         Object endpoints = descriptor.get("endpoints");
         if (!(endpoints instanceof Map<?, ?> rawEndpoints)) {
@@ -204,7 +202,6 @@ public final class ChannelProviderRegistryLoader {
         return value instanceof String path && !path.isBlank() ? path.trim() : null;
     }
 
-    @SuppressWarnings("unchecked")
     private static ChannelProviderDescriptor.ChannelProviderCapabilities capabilities(Map<String, Object> descriptor) {
         Object rawCapabilities = descriptor.get("capabilities");
         if (!(rawCapabilities instanceof Map<?, ?> capabilities)) {

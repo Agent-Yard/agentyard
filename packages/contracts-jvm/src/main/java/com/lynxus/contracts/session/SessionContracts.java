@@ -25,13 +25,6 @@ public final class SessionContracts {
         return Collections.unmodifiableMap(new LinkedHashMap<>(source));
     }
 
-    private static Map<String, String> immutableStringMap(Map<String, String> source) {
-        if (source == null || source.isEmpty()) {
-            return Map.of();
-        }
-        return Collections.unmodifiableMap(new LinkedHashMap<>(source));
-    }
-
     private static Map<String, Integer> immutableIntegerMap(Map<String, Integer> source) {
         if (source == null || source.isEmpty()) {
             return Map.of();

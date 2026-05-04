@@ -12,19 +12,15 @@ import static org.mockito.Mockito.when;
 
 import com.lynxus.contracts.session.SessionContracts.AgentTurnTransientFrame;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnTransientFrameKind;
-import com.lynxus.contracts.session.SessionContracts.AgentTurnTransientPayload;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamFrame;
 import com.lynxus.contracts.session.SessionContracts.StreamVisibility;
 import com.lynxus.platform.channel.ChannelGatewayClient;
 import com.lynxus.contracts.session.SessionRuntimeChangeNotice;
-import com.lynxus.platform.session.SessionRuntimeDtos.SessionRuntimeDetailDto;
 import com.lynxus.platform.session.SessionRuntimeDtos.SessionRuntimeSessionDto;
 import com.lynxus.platform.session.SessionRuntimeStreamDtos.SessionRuntimeStreamEvent;
-import com.lynxus.platform.shared.redis.RedisSharedStateProperties;
 import com.lynxus.shared.redis.RedisJsonCodec;
 import com.lynxus.shared.redis.RedisKeyspace;
 import com.lynxus.shared.redis.RedisPubSubBus;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -49,7 +45,6 @@ class SessionRuntimeStreamServiceTest {
             pubSubBus,
             keyspace,
             new RedisJsonCodec(new ObjectMapper()),
-            new RedisSharedStateProperties("instance-a", Duration.ofSeconds(10), Duration.ofSeconds(3), Duration.ofHours(24), Duration.ofMinutes(15), 128, Duration.ofSeconds(1)),
             timeout -> {
                 assertEquals(0L, timeout);
                 return emitter;
@@ -83,8 +78,7 @@ class SessionRuntimeStreamServiceTest {
             replayStore,
             pubSubBus,
             keyspace,
-            new RedisJsonCodec(new ObjectMapper()),
-            new RedisSharedStateProperties("instance-a", Duration.ofSeconds(10), Duration.ofSeconds(3), Duration.ofHours(24), Duration.ofMinutes(15), 128, Duration.ofSeconds(1))
+            new RedisJsonCodec(new ObjectMapper())
         );
         SessionRuntimeSessionDto session = session("session-1", Instant.parse("2026-04-21T00:00:00Z"), 1L);
         SessionRuntimeRepository.SessionRuntimeChangeStamp initial = new SessionRuntimeRepository.SessionRuntimeChangeStamp(
@@ -131,11 +125,9 @@ class SessionRuntimeStreamServiceTest {
             replayStore,
             pubSubBus,
             keyspace,
-            new RedisJsonCodec(new ObjectMapper()),
-            new RedisSharedStateProperties("instance-a", Duration.ofSeconds(10), Duration.ofSeconds(3), Duration.ofHours(24), Duration.ofMinutes(15), 128, Duration.ofSeconds(1))
+            new RedisJsonCodec(new ObjectMapper())
         );
         SessionRuntimeSessionDto session = session("session-1", Instant.parse("2026-04-21T00:00:00Z"), 1L);
-        String initialFingerprint = "session-1:0:0:0:0";
         String updatedFingerprint = "session-1:1713657605000:2:2:0";
 
         when(replayStore.replayAfter("session-1", null)).thenReturn(new SessionRuntimeStreamDtos.SessionRuntimeStreamReplayResult(false, List.of()));
@@ -165,8 +157,7 @@ class SessionRuntimeStreamServiceTest {
             replayStore,
             pubSubBus,
             keyspace,
-            new RedisJsonCodec(new ObjectMapper()),
-            new RedisSharedStateProperties("instance-a", Duration.ofSeconds(10), Duration.ofSeconds(3), Duration.ofHours(24), Duration.ofMinutes(15), 128, Duration.ofSeconds(1))
+            new RedisJsonCodec(new ObjectMapper())
         );
         SessionRuntimeSessionDto session = session("session-1", Instant.parse("2026-04-21T00:00:00Z"), 2L);
         String updatedFingerprint = "session-1:1713657605000:2:2:0";
@@ -194,8 +185,7 @@ class SessionRuntimeStreamServiceTest {
             replayStore,
             pubSubBus,
             keyspace,
-            new RedisJsonCodec(new ObjectMapper()),
-            new RedisSharedStateProperties("instance-a", Duration.ofSeconds(10), Duration.ofSeconds(3), Duration.ofHours(24), Duration.ofMinutes(15), 128, Duration.ofSeconds(1))
+            new RedisJsonCodec(new ObjectMapper())
         );
 
         service.acceptStreamFrame(frame(
@@ -262,7 +252,6 @@ class SessionRuntimeStreamServiceTest {
             pubSubBus,
             new RedisKeyspace(),
             new RedisJsonCodec(new ObjectMapper()),
-            new RedisSharedStateProperties("instance-a", Duration.ofSeconds(10), Duration.ofSeconds(3), Duration.ofHours(24), Duration.ofMinutes(15), 128, Duration.ofSeconds(1)),
             activityRelay,
             new io.micrometer.core.instrument.simple.SimpleMeterRegistry()
         );
@@ -292,7 +281,6 @@ class SessionRuntimeStreamServiceTest {
             pubSubBus,
             keyspace,
             new RedisJsonCodec(new ObjectMapper()),
-            new RedisSharedStateProperties("instance-a", Duration.ofSeconds(10), Duration.ofSeconds(3), Duration.ofHours(24), Duration.ofMinutes(15), 128, Duration.ofSeconds(1)),
             new DefaultSessionChannelActivityRelay(channelGatewayClient),
             new io.micrometer.core.instrument.simple.SimpleMeterRegistry()
         );
@@ -319,7 +307,6 @@ class SessionRuntimeStreamServiceTest {
             pubSubBus,
             new RedisKeyspace(),
             new RedisJsonCodec(new ObjectMapper()),
-            new RedisSharedStateProperties("instance-a", Duration.ofSeconds(10), Duration.ofSeconds(3), Duration.ofHours(24), Duration.ofMinutes(15), 128, Duration.ofSeconds(1)),
             SessionChannelActivityRelay.noop(),
             meterRegistry
         );
@@ -450,7 +437,6 @@ class SessionRuntimeStreamServiceTest {
     void shouldRejectCustomerFramesWithSensitiveInternalFields() {
         SessionRuntimeReplayStore replayStore = mock(SessionRuntimeReplayStore.class);
         RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);
-        SessionRuntimeStreamService service = serviceWith(replayStore, pubSubBus);
         List<Map<String, Object>> sensitivePayloads = List.of(
             Map.of("messageId", "session-message-reply-1", "blockId", "block-1", "blockType", "TEXT", "delta", "ok", "model", "gpt"),
             Map.of("messageId", "session-message-reply-1", "blockId", "block-1", "blockType", "TEXT", "delta", "ok", "toolName", "lookup"),
@@ -560,8 +546,7 @@ class SessionRuntimeStreamServiceTest {
             replayStore,
             pubSubBus,
             keyspace,
-            new RedisJsonCodec(new ObjectMapper()),
-            new RedisSharedStateProperties("instance-a", Duration.ofSeconds(10), Duration.ofSeconds(3), Duration.ofHours(24), Duration.ofMinutes(15), 128, Duration.ofSeconds(1))
+            new RedisJsonCodec(new ObjectMapper())
         );
     }
 
@@ -601,44 +586,11 @@ class SessionRuntimeStreamServiceTest {
         return frameAt(kind, visibility, seq, payload, Instant.parse("2026-05-02T00:00:00Z"));
     }
 
-    private static AgentTurnTransientFrame frame(
-        AgentTurnTransientFrameKind kind,
-        StreamVisibility visibility,
-        long seq,
-        AgentTurnTransientPayload payload
-    ) {
-        return frameAt(kind, visibility, seq, payload, Instant.parse("2026-05-02T00:00:00Z"));
-    }
-
     private static AgentTurnTransientFrame frameAt(
         AgentTurnTransientFrameKind kind,
         StreamVisibility visibility,
         long seq,
         Map<String, Object> payload,
-        Instant occurredAt
-    ) {
-        return new AgentTurnTransientFrame(
-            AgentTurnTransientFrame.PROTOCOL,
-            "exec-1:" + seq,
-            "stream-1",
-            "session-1",
-            "turn-1",
-            "exec-1",
-            "agent-1",
-            1,
-            seq,
-            kind,
-            visibility,
-            occurredAt,
-            payload
-        );
-    }
-
-    private static AgentTurnTransientFrame frameAt(
-        AgentTurnTransientFrameKind kind,
-        StreamVisibility visibility,
-        long seq,
-        AgentTurnTransientPayload payload,
         Instant occurredAt
     ) {
         return new AgentTurnTransientFrame(

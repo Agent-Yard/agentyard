@@ -2,7 +2,6 @@ package com.lynxus.platform.event;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 
 import static com.lynxus.platform.event.PlatformEventDtos.*;
 

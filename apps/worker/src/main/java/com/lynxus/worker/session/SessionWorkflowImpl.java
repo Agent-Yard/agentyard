@@ -913,17 +913,6 @@ public class SessionWorkflowImpl implements SessionWorkflow {
     }
 
     private void emitOwnerReply(
-        SessionMessageInput reply,
-        SessionActorType actorType,
-        String actorId,
-        String activePlaybookRunId,
-        String currentOwnerAgentId,
-        String sourceEventId
-    ) {
-        emitOwnerReply(null, reply, actorType, actorId, activePlaybookRunId, currentOwnerAgentId, sourceEventId);
-    }
-
-    private void emitOwnerReply(
         String messageId,
         SessionMessageInput reply,
         SessionActorType actorType,

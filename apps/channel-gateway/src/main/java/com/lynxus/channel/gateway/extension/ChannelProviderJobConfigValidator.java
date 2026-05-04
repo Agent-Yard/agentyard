@@ -34,7 +34,6 @@ public final class ChannelProviderJobConfigValidator {
         }
     }
 
-    @SuppressWarnings("unchecked")
     private static void rejectSecretMaterial(Object value, String path) {
         if (value instanceof Map<?, ?> map) {
             for (Map.Entry<?, ?> entry : map.entrySet()) {

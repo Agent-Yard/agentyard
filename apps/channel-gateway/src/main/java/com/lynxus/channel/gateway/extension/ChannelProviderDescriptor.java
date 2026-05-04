@@ -67,7 +67,6 @@ public record ChannelProviderDescriptor(
         return Collections.unmodifiableMap(new LinkedHashMap<>(value));
     }
 
-    @SuppressWarnings("unchecked")
     static Map<String, ChannelProviderJobDefinition> jobDefinitions(Map<String, Object> descriptor) {
         Object rawJobs = descriptor.get("jobDefinitions");
         if (!(rawJobs instanceof List<?> jobs) || jobs.isEmpty()) {
@@ -99,7 +98,6 @@ public record ChannelProviderDescriptor(
         return result;
     }
 
-    @SuppressWarnings("unchecked")
     private static Map<String, Object> objectValue(Object value) {
         if (value == null) {
             return Map.of();

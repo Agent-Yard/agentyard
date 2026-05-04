@@ -91,7 +91,6 @@ public final class DescriptorDefinitionDigests {
         return result;
     }
 
-    @SuppressWarnings("unchecked")
     private static Map<String, Object> channelProviderEndpoints(Map<String, Object> descriptor) {
         Map<String, Object> descriptorEndpoints = endpoints(descriptor);
         Map<String, Object> endpoints = new LinkedHashMap<>();
@@ -133,7 +132,6 @@ public final class DescriptorDefinitionDigests {
         return (List<Map<String, Object>>) list;
     }
 
-    @SuppressWarnings("unchecked")
     private static Object validationOnlySchema(Object value) {
         return validationOnlySchema(value, false);
     }

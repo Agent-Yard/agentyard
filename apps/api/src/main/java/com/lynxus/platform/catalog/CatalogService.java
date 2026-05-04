@@ -2080,40 +2080,6 @@ public class CatalogService {
         };
     }
 
-    private AgentDto normalizeLoadedAgent(CatalogRepository state, AgentDto agent) {
-        AgentExecutionPolicyDto normalizedPolicy = normalizeAgentExecutionPolicy(agent.executionPolicy());
-        List<String> enabledSkillResourceIds = normalizedPolicy.skillResourceIds().stream()
-            .filter(resourceId -> resources(state).stream().anyMatch(item -> item.id().equals(resourceId) && item.type() == ResourceType.SKILL))
-            .toList();
-        List<String> enabledToolResourceIds = normalizedPolicy.toolResourceIds().stream()
-            .filter(resourceId -> resources(state).stream().anyMatch(item -> item.id().equals(resourceId) && item.type() == ResourceType.TOOL))
-            .toList();
-        return new AgentDto(
-            agent.id(),
-            agent.assistantId(),
-            agent.name(),
-            agent.role(),
-            agent.responsibility(),
-            new AgentExecutionPolicyDto(
-                normalizedPolicy.inheritAssistantDefaults(),
-                normalizedPolicy.modelResourceId(),
-                normalizedPolicy.privacyModelResourceId(),
-                normalizedPolicy.privacyMappingEnabled(),
-                normalizedPolicy.systemPrompt(),
-                normalizedPolicy.knowledgeEnabled(),
-                normalizedPolicy.inheritAssistantKnowledge(),
-                normalizedPolicy.knowledgeBaseId(),
-                normalizedPolicy.memoryWindowSize(),
-                List.copyOf(enabledSkillResourceIds),
-                List.copyOf(enabledToolResourceIds)
-            ),
-            agent.canOwnSession(),
-            normalizeAllowedActions(agent.allowedActions()),
-            agent.switchableOwnerAgentIds(),
-            agent.playbookIds()
-        );
-    }
-
     private List<PlaybookDto> playbooksForAssistant(CatalogRepository state, String assistantId) {
         return playbooks(state).stream()
             .filter(item -> item.assistantId().equals(assistantId))
@@ -2952,36 +2918,6 @@ public class CatalogService {
             version.version(),
             modelConfig == null ? null : modelConfig.providerType(),
             modelConfig == null ? null : modelConfig.modelId()
-        );
-    }
-
-    private DefaultModelBindingDto normalizeDefaultModelBinding(DefaultModelBindingDto binding) {
-        if (binding == null) {
-            return null;
-        }
-        return new DefaultModelBindingDto(
-            normalizeOptionalText(binding.resourceId()),
-            normalizeOptionalText(binding.resourceName()),
-            normalizeOptionalText(binding.resourceVersionId()),
-            normalizeOptionalText(binding.resourceVersion()),
-            normalizeOptionalText(binding.providerType()),
-            normalizeOptionalText(binding.modelId())
-        );
-    }
-
-    private KnowledgeBindingSnapshotDto normalizeKnowledgeBindingSnapshot(KnowledgeBindingSnapshotDto binding) {
-        if (binding == null) {
-            return null;
-        }
-        return new KnowledgeBindingSnapshotDto(
-            binding.knowledgeBaseId(),
-            binding.knowledgeBaseName(),
-            binding.knowledgeReleaseId(),
-            binding.knowledgeReleaseVersion(),
-            binding.snapshotId(),
-            binding.defaultTopK(),
-            binding.retrievalMode(),
-            binding.minScore()
         );
     }
 

@@ -3,7 +3,6 @@ package com.lynxus.platform.catalog;
 import static com.lynxus.platform.catalog.CatalogDtos.*;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
 

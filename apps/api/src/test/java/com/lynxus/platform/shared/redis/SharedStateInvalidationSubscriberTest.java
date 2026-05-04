@@ -20,9 +20,7 @@ class SharedStateInvalidationSubscriberTest {
         RedisInvalidationBus invalidationBus = mock(RedisInvalidationBus.class);
         CatalogRepository catalogRepository = mock(CatalogRepository.class);
         KnowledgeRepository knowledgeRepository = mock(KnowledgeRepository.class);
-        @SuppressWarnings("unchecked")
         AtomicReference<Consumer<RedisInvalidationBus.InvalidationNotice>> catalogConsumer = new AtomicReference<>();
-        @SuppressWarnings("unchecked")
         AtomicReference<Consumer<RedisInvalidationBus.InvalidationNotice>> knowledgeConsumer = new AtomicReference<>();
         doAnswer(invocation -> {
             catalogConsumer.set(invocation.getArgument(0));

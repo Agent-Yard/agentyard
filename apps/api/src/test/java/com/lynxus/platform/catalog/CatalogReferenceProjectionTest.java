@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lynxus.contracts.session.SessionContracts.AgentDecisionAction;
 import com.lynxus.contracts.runtime.WorkflowContracts.ResourceType;
-import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
 import com.lynxus.contracts.runtime.WorkflowContracts.VersionStatus;
 import com.lynxus.platform.catalog.CatalogDtos.*;
 import com.lynxus.platform.catalog.CatalogRepository.*;

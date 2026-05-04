@@ -9,7 +9,6 @@ import com.lynxus.platform.catalog.CatalogRepository.ResourceBindingRef;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import java.util.function.Function;
 
 public final class ObjectReferenceAnalyzer {

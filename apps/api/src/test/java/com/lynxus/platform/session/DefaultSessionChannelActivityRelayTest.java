@@ -15,7 +15,6 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundActivityResp
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundActivityType;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnTransientFrame;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnTransientFrameKind;
-import com.lynxus.contracts.session.SessionContracts.AgentTurnTransientPayload;
 import com.lynxus.contracts.session.SessionContracts.StreamVisibility;
 import com.lynxus.platform.channel.ChannelGatewayClient;
 import java.time.Instant;
@@ -202,29 +201,6 @@ class DefaultSessionChannelActivityRelayTest {
         StreamVisibility visibility,
         long seq,
         Map<String, Object> payload
-    ) {
-        return new AgentTurnTransientFrame(
-            AgentTurnTransientFrame.PROTOCOL,
-            "exec-1:" + seq,
-            "stream-1",
-            "session-1",
-            "turn-1",
-            "exec-1",
-            "agent-1",
-            1,
-            seq,
-            kind,
-            visibility,
-            Instant.parse("2026-05-02T00:00:00Z"),
-            payload
-        );
-    }
-
-    private static AgentTurnTransientFrame frame(
-        AgentTurnTransientFrameKind kind,
-        StreamVisibility visibility,
-        long seq,
-        AgentTurnTransientPayload payload
     ) {
         return new AgentTurnTransientFrame(
             AgentTurnTransientFrame.PROTOCOL,

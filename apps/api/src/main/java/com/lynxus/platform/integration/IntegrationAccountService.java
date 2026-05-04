@@ -711,7 +711,7 @@ public class IntegrationAccountService {
 
     private static ApiProblemException subjectNotFound(IntegrationAccountSubjectType subjectType, String subjectId) {
         return new ApiProblemException(
-            HttpStatus.UNPROCESSABLE_ENTITY,
+            HttpStatus.UNPROCESSABLE_CONTENT,
             "INTEGRATION_ACCOUNT_SUBJECT_NOT_FOUND",
             "INTEGRATION_ACCOUNT_SUBJECT_NOT_FOUND: integration account subject does not exist: " + subjectType + "/" + subjectId
         );
@@ -719,7 +719,7 @@ public class IntegrationAccountService {
 
     private static ApiProblemException configInvalid() {
         return new ApiProblemException(
-            HttpStatus.UNPROCESSABLE_ENTITY,
+            HttpStatus.UNPROCESSABLE_CONTENT,
             "INTEGRATION_ACCOUNT_CONFIG_INVALID",
             "INTEGRATION_ACCOUNT_CONFIG_INVALID: integration account config does not satisfy accountConfigSchema"
         );
@@ -727,7 +727,7 @@ public class IntegrationAccountService {
 
     private static ApiProblemException credentialUnsupported() {
         return new ApiProblemException(
-            HttpStatus.UNPROCESSABLE_ENTITY,
+            HttpStatus.UNPROCESSABLE_CONTENT,
             "INTEGRATION_ACCOUNT_CREDENTIAL_UNSUPPORTED",
             "INTEGRATION_ACCOUNT_CREDENTIAL_UNSUPPORTED: descriptor does not support Core-managed credential lifecycle"
         );
@@ -735,7 +735,7 @@ public class IntegrationAccountService {
 
     private static ApiProblemException credentialInvalid() {
         return new ApiProblemException(
-            HttpStatus.UNPROCESSABLE_ENTITY,
+            HttpStatus.UNPROCESSABLE_CONTENT,
             "INTEGRATION_ACCOUNT_CREDENTIAL_INVALID",
             "INTEGRATION_ACCOUNT_CREDENTIAL_INVALID: integration account credential does not satisfy credentialSchema"
         );
@@ -743,7 +743,7 @@ public class IntegrationAccountService {
 
     private static ApiProblemException credentialStateInvalid() {
         return new ApiProblemException(
-            HttpStatus.UNPROCESSABLE_ENTITY,
+            HttpStatus.UNPROCESSABLE_CONTENT,
             "INTEGRATION_ACCOUNT_CREDENTIAL_STATE_INVALID",
             "INTEGRATION_ACCOUNT_CREDENTIAL_STATE_INVALID: credential lifecycle action is not allowed for the current account state"
         );
@@ -759,7 +759,7 @@ public class IntegrationAccountService {
 
     private static ApiProblemException accountAvailabilityBlocked(IntegrationAccountAvailabilityDecision decision) {
         return new ApiProblemException(
-            HttpStatus.UNPROCESSABLE_ENTITY,
+            HttpStatus.UNPROCESSABLE_CONTENT,
             "INTEGRATION_ACCOUNT_AVAILABILITY_BLOCKED",
             "INTEGRATION_ACCOUNT_AVAILABILITY_BLOCKED: integration account cannot be used for runtime snapshot: "
                 + decision.accountId() + " " + decision.hardBlock()

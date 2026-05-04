@@ -576,7 +576,6 @@ public class ChannelAdminService {
         return value instanceof String string ? string : null;
     }
 
-    @SuppressWarnings("unchecked")
     private static Map<String, Object> objectValue(Object value) {
         if (value instanceof Map<?, ?> rawMap) {
             java.util.LinkedHashMap<String, Object> result = new java.util.LinkedHashMap<>();

@@ -375,7 +375,6 @@ public class OutboundDeliveryExecutionService {
         return Collections.unmodifiableMap(result);
     }
 
-    @SuppressWarnings("unchecked")
     private static Object copyValue(Object value) {
         if (value instanceof Map<?, ?> map) {
             Map<String, Object> result = new LinkedHashMap<>();

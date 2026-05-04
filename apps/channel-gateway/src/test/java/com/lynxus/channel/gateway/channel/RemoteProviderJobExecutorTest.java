@@ -6,7 +6,6 @@ import static org.mockito.Mockito.mock;
 
 import com.lynxus.channel.gateway.extension.ChannelGatewayDescriptorProvider;
 import com.lynxus.channel.gateway.extension.ChannelProviderRegistryLoader;
-import com.lynxus.channel.gateway.extension.ExtensionManifestFetcher;
 import com.lynxus.channel.gateway.extension.ExtensionRegistrationProperties;
 import com.lynxus.channel.gateway.extension.ExtensionRegistrationService;
 import com.lynxus.channel.gateway.extension.RuntimeChannelProviderRegistry;

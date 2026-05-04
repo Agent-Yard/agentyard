@@ -19,7 +19,6 @@ import com.lynxus.contracts.session.SessionRuntimeChangeNotice;
 import com.lynxus.platform.session.SessionRuntimeDtos.SessionRuntimeDetailDto;
 import com.lynxus.platform.session.SessionRuntimeStreamDtos.SessionRuntimeStreamEvent;
 import com.lynxus.platform.session.SessionRuntimeStreamDtos.SessionRuntimeStreamReplayResult;
-import com.lynxus.platform.shared.redis.RedisSharedStateProperties;
 import com.lynxus.shared.redis.RedisJsonCodec;
 import com.lynxus.shared.redis.RedisKeyspace;
 import com.lynxus.shared.redis.RedisPubSubBus;
@@ -83,7 +82,6 @@ public class SessionRuntimeStreamService {
     private final RedisPubSubBus pubSubBus;
     private final RedisKeyspace keyspace;
     private final RedisJsonCodec codec;
-    private final RedisSharedStateProperties properties;
     private final SessionChannelActivityRelay channelActivityRelay;
     private final Function<Long, SseEmitter> emitterFactory;
     private final Counter noticeMaterializedCounter;
@@ -115,7 +113,6 @@ public class SessionRuntimeStreamService {
         RedisPubSubBus pubSubBus,
         RedisKeyspace keyspace,
         RedisJsonCodec codec,
-        RedisSharedStateProperties properties,
         SessionChannelActivityRelay channelActivityRelay,
         MeterRegistry meterRegistry
     ) {
@@ -125,7 +122,6 @@ public class SessionRuntimeStreamService {
             pubSubBus,
             keyspace,
             codec,
-            properties,
             channelActivityRelay,
             meterRegistry,
             SseEmitter::new
@@ -138,7 +134,6 @@ public class SessionRuntimeStreamService {
         RedisPubSubBus pubSubBus,
         RedisKeyspace keyspace,
         RedisJsonCodec codec,
-        RedisSharedStateProperties properties,
         Function<Long, SseEmitter> emitterFactory
     ) {
         this(
@@ -147,7 +142,6 @@ public class SessionRuntimeStreamService {
             pubSubBus,
             keyspace,
             codec,
-            properties,
             SessionChannelActivityRelay.noop(),
             new io.micrometer.core.instrument.simple.SimpleMeterRegistry(),
             emitterFactory
@@ -160,7 +154,6 @@ public class SessionRuntimeStreamService {
         RedisPubSubBus pubSubBus,
         RedisKeyspace keyspace,
         RedisJsonCodec codec,
-        RedisSharedStateProperties properties,
         SessionChannelActivityRelay channelActivityRelay,
         MeterRegistry meterRegistry,
         Function<Long, SseEmitter> emitterFactory
@@ -170,7 +163,6 @@ public class SessionRuntimeStreamService {
         this.pubSubBus = pubSubBus;
         this.keyspace = keyspace;
         this.codec = codec;
-        this.properties = properties;
         this.channelActivityRelay = channelActivityRelay == null ? SessionChannelActivityRelay.noop() : channelActivityRelay;
         this.emitterFactory = Objects.requireNonNull(emitterFactory, "emitterFactory");
         this.noticeMaterializedCounter = Counter.builder("lynxus.shared_state.runtime.notice.materialized")
@@ -198,10 +190,9 @@ public class SessionRuntimeStreamService {
         SessionRuntimeReplayStore replayStore,
         RedisPubSubBus pubSubBus,
         RedisKeyspace keyspace,
-        RedisJsonCodec codec,
-        RedisSharedStateProperties properties
+        RedisJsonCodec codec
     ) {
-        this(repository, replayStore, pubSubBus, keyspace, codec, properties, SessionChannelActivityRelay.noop(), new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+        this(repository, replayStore, pubSubBus, keyspace, codec, SessionChannelActivityRelay.noop(), new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
     }
 
     @PostConstruct
