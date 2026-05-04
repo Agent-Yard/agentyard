@@ -268,6 +268,40 @@ class SessionRuntimeStreamServiceTest {
     }
 
     @Test
+    void shouldDeduplicateFrameBeforeChannelActivityAndProjectionSideEffects() {
+        SessionRuntimeReplayStore replayStore = mock(SessionRuntimeReplayStore.class);
+        RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);
+        RedisKeyspace keyspace = new RedisKeyspace();
+        SessionChannelActivityRelay activityRelay = mock(SessionChannelActivityRelay.class);
+        SessionRuntimeStreamFrameDeduplicator frameDeduplicator = mock(SessionRuntimeStreamFrameDeduplicator.class);
+        SessionRuntimeStreamService service = new SessionRuntimeStreamService(
+            mock(SessionRuntimeRepository.class),
+            replayStore,
+            pubSubBus,
+            keyspace,
+            new RedisJsonCodec(new ObjectMapper()),
+            activityRelay,
+            new io.micrometer.core.instrument.simple.SimpleMeterRegistry(),
+            frameDeduplicator
+        );
+        AgentTurnTransientFrame frame = frame(
+            AgentTurnTransientFrameKind.TURN_STARTED,
+            StreamVisibility.OPERATOR,
+            2,
+            Map.of("messageId", "session-message-reply-1", "triggerType", "USER_MESSAGE")
+        );
+        when(frameDeduplicator.claim(frame)).thenReturn(true, false);
+        when(replayStore.append(any())).thenReturn(true);
+
+        assertEquals(true, service.acceptStreamFrame(frame));
+        assertEquals(false, service.acceptStreamFrame(frame));
+
+        verify(activityRelay, org.mockito.Mockito.times(1)).relay(frame);
+        verify(replayStore, org.mockito.Mockito.times(1)).append(any());
+        verify(pubSubBus, org.mockito.Mockito.times(1)).publish(eq(keyspace.sseChannelSessionUpdated()), any());
+    }
+
+    @Test
     void shouldStillAcceptAndPublishFrameWhenChannelBindingLookupFails() {
         SessionRuntimeReplayStore replayStore = mock(SessionRuntimeReplayStore.class);
         RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);

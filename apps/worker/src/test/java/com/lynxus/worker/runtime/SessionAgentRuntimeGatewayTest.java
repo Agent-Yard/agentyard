@@ -58,7 +58,7 @@ class SessionAgentRuntimeGatewayTest {
         CopyOnWriteArrayList<String> relayedFrames = new CopyOnWriteArrayList<>();
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
         server.createContext("/agent-turns/execute-stream", exchange -> writeNdjson(exchange, turnStartedFrame()));
-        server.createContext("/api/internal/session-runtime/stream-frames", exchange -> {
+        server.createContext("/api/internal/session-runtime/stream-frame-ingest", exchange -> {
             relayedFrames.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             writeJson(exchange, "{\"success\":true}");
         });
@@ -74,12 +74,14 @@ class SessionAgentRuntimeGatewayTest {
             );
 
             assertEquals("agent-runtime stream ended without FINAL_OUTCOME", error.getMessage());
-            assertEquals(2, relayedFrames.size());
+            assertEquals(1, relayedFrames.size());
+            List<String> relayedLines = relayedFrameLines(relayedFrames);
+            assertEquals(2, relayedLines.size());
             assertEquals(1.0, meterRegistry.get("lynxus.runtime_stream.missing_final_outcome").counter().count());
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"kind\":\"ERROR\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"code\":\"MISSING_FINAL_OUTCOME\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"messageId\":\"session-message-reply-1\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"stage\":\"FINAL_OUTCOME_BUILD\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"kind\":\"ERROR\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"code\":\"MISSING_FINAL_OUTCOME\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"messageId\":\"session-message-reply-1\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"stage\":\"FINAL_OUTCOME_BUILD\"");
         } finally {
             server.stop(0);
         }
@@ -102,7 +104,7 @@ class SessionAgentRuntimeGatewayTest {
             }
             exchange.close();
         });
-        server.createContext("/api/internal/session-runtime/stream-frames", exchange -> {
+        server.createContext("/api/internal/session-runtime/stream-frame-ingest", exchange -> {
             relayedFrames.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             writeJson(exchange, "{\"success\":true}");
         });
@@ -121,8 +123,10 @@ class SessionAgentRuntimeGatewayTest {
                 .hasRootCauseMessage("agent-runtime stream stalled for PT0.1S");
             assertEquals(1.0, meterRegistry.get("lynxus.runtime_stream.stream_stall").counter().count());
             assertEquals(1, relayedFrames.size());
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.getFirst()).contains("\"code\":\"WORKER_STREAM_STALL\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.getFirst()).contains("\"stage\":\"PROVIDER_STREAM\"");
+            List<String> relayedLines = relayedFrameLines(relayedFrames);
+            assertEquals(1, relayedLines.size());
+            org.assertj.core.api.Assertions.assertThat(relayedLines.getFirst()).contains("\"code\":\"WORKER_STREAM_STALL\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.getFirst()).contains("\"stage\":\"PROVIDER_STREAM\"");
         } finally {
             server.stop(0);
             serverExecutor.shutdownNow();
@@ -134,7 +138,7 @@ class SessionAgentRuntimeGatewayTest {
         CopyOnWriteArrayList<String> relayedFrames = new CopyOnWriteArrayList<>();
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
         server.createContext("/agent-turns/execute-stream", exchange -> writeNdjson(exchange, "{malformed-json}\n"));
-        server.createContext("/api/internal/session-runtime/stream-frames", exchange -> {
+        server.createContext("/api/internal/session-runtime/stream-frame-ingest", exchange -> {
             relayedFrames.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             writeJson(exchange, "{\"success\":true}");
         });
@@ -147,9 +151,11 @@ class SessionAgentRuntimeGatewayTest {
             assertThrows(IllegalStateException.class, () -> gateway.executeTurnStream(request()));
 
             assertEquals(1, relayedFrames.size());
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.getFirst()).contains("\"kind\":\"ERROR\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.getFirst()).contains("\"code\":\"WORKER_STREAM_ABORTED\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.getFirst()).contains("\"stage\":\"PROVIDER_STREAM\"");
+            List<String> relayedLines = relayedFrameLines(relayedFrames);
+            assertEquals(1, relayedLines.size());
+            org.assertj.core.api.Assertions.assertThat(relayedLines.getFirst()).contains("\"kind\":\"ERROR\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.getFirst()).contains("\"code\":\"WORKER_STREAM_ABORTED\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.getFirst()).contains("\"stage\":\"PROVIDER_STREAM\"");
         } finally {
             server.stop(0);
         }
@@ -163,7 +169,9 @@ class SessionAgentRuntimeGatewayTest {
             "/agent-turns/execute-stream",
             exchange -> writeNdjson(exchange, turnStartedFrame() + "\n" + finalOutcomeFrame(2, true))
         );
-        server.createContext("/api/internal/session-runtime/stream-frames", exchange -> {
+        server.createContext("/api/internal/session-runtime/stream-frame-ingest", exchange -> {
+            org.assertj.core.api.Assertions.assertThat(exchange.getRequestHeaders().getFirst("Content-Type"))
+                .contains("application/x-ndjson");
             relayedFrames.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             writeJson(exchange, "{\"success\":true}");
         });
@@ -175,13 +183,15 @@ class SessionAgentRuntimeGatewayTest {
 
             gateway.executeTurnStream(request());
 
-            assertEquals(2, relayedFrames.size());
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(0)).contains("\"kind\":\"TURN_STARTED\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(0)).contains("\"protocol\":\"" + AgentTurnTransientFrame.PROTOCOL + "\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"kind\":\"TURN_COMPLETED\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"protocol\":\"" + AgentTurnTransientFrame.PROTOCOL + "\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"status\":\"FAILED\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).doesNotContain("\"outcome\"");
+            assertEquals(1, relayedFrames.size());
+            List<String> relayedLines = relayedFrameLines(relayedFrames);
+            assertEquals(2, relayedLines.size());
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(0)).contains("\"kind\":\"TURN_STARTED\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(0)).contains("\"protocol\":\"" + AgentTurnTransientFrame.PROTOCOL + "\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"kind\":\"TURN_COMPLETED\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"protocol\":\"" + AgentTurnTransientFrame.PROTOCOL + "\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"status\":\"FAILED\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).doesNotContain("\"outcome\"");
         } finally {
             server.stop(0);
         }
@@ -195,7 +205,7 @@ class SessionAgentRuntimeGatewayTest {
             "/agent-turns/execute-stream",
             exchange -> writeNdjson(exchange, turnStartedFrame() + "\n" + finalOutcomeFrame(2, true))
         );
-        server.createContext("/api/internal/session-runtime/stream-frames", exchange -> {
+        server.createContext("/api/internal/session-runtime/stream-frame-ingest", exchange -> {
             relayedFrames.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             writeJson(exchange, "{\"success\":true}");
         });
@@ -207,9 +217,11 @@ class SessionAgentRuntimeGatewayTest {
 
             gateway.executeTurnStream(request());
 
-            assertEquals(2, relayedFrames.size());
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(0)).contains("\"kind\":\"TURN_STARTED\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"kind\":\"TURN_COMPLETED\"");
+            assertEquals(1, relayedFrames.size());
+            List<String> relayedLines = relayedFrameLines(relayedFrames);
+            assertEquals(2, relayedLines.size());
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(0)).contains("\"kind\":\"TURN_STARTED\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"kind\":\"TURN_COMPLETED\"");
         } finally {
             server.stop(0);
         }
@@ -223,7 +235,7 @@ class SessionAgentRuntimeGatewayTest {
             "/agent-turns/execute-stream",
             exchange -> writeNdjson(exchange, turnStartedFrame() + "\n" + finalOutcomeFrame(2, true, "different-message-id"))
         );
-        server.createContext("/api/internal/session-runtime/stream-frames", exchange -> {
+        server.createContext("/api/internal/session-runtime/stream-frame-ingest", exchange -> {
             relayedFrames.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             writeJson(exchange, "{\"success\":true}");
         });
@@ -235,12 +247,14 @@ class SessionAgentRuntimeGatewayTest {
 
             assertThrows(IllegalStateException.class, () -> gateway.executeTurnStream(request()));
 
-            assertEquals(2, relayedFrames.size());
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(0)).contains("\"kind\":\"TURN_STARTED\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"kind\":\"ERROR\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"code\":\"INVALID_FINAL_OUTCOME\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"messageId\":\"session-message-reply-1\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"frameId\":\"exec-1:3\"");
+            assertEquals(1, relayedFrames.size());
+            List<String> relayedLines = relayedFrameLines(relayedFrames);
+            assertEquals(2, relayedLines.size());
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(0)).contains("\"kind\":\"TURN_STARTED\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"kind\":\"ERROR\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"code\":\"INVALID_FINAL_OUTCOME\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"messageId\":\"session-message-reply-1\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"frameId\":\"exec-1:3\"");
         } finally {
             server.stop(0);
         }
@@ -254,7 +268,7 @@ class SessionAgentRuntimeGatewayTest {
             "/agent-turns/execute-stream",
             exchange -> writeNdjson(exchange, turnStartedFrame() + "\n" + finalOutcomeFrame(2, true))
         );
-        server.createContext("/api/internal/session-runtime/stream-frames", exchange -> {
+        server.createContext("/api/internal/session-runtime/stream-frame-ingest", exchange -> {
             String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
             relayedFrames.add(body);
             if (body.contains("\"kind\":\"FINAL_OUTCOME\"")) {
@@ -271,9 +285,11 @@ class SessionAgentRuntimeGatewayTest {
 
             gateway.executeTurnStream(request());
 
-            assertEquals(2, relayedFrames.size());
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(0)).contains("\"kind\":\"TURN_STARTED\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"kind\":\"TURN_COMPLETED\"");
+            assertEquals(1, relayedFrames.size());
+            List<String> relayedLines = relayedFrameLines(relayedFrames);
+            assertEquals(2, relayedLines.size());
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(0)).contains("\"kind\":\"TURN_STARTED\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"kind\":\"TURN_COMPLETED\"");
             org.assertj.core.api.Assertions.assertThat(String.join("\n", relayedFrames)).doesNotContain("\"kind\":\"FINAL_OUTCOME\"");
         } finally {
             server.stop(0);
@@ -291,36 +307,7 @@ class SessionAgentRuntimeGatewayTest {
                 turnStartedFrame() + "\n" + finalOutcomeFrame(2, true) + "\n" + finalOutcomeFrame(3, true)
             )
         );
-        server.createContext("/api/internal/session-runtime/stream-frames", exchange -> {
-            relayedFrames.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-            writeJson(exchange, "{\"success\":true}");
-        });
-        server.start();
-        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
-
-        try {
-            SessionAgentRuntimeGateway gateway = gateway(server, meterRegistry, Duration.ofMillis(500));
-
-            assertThrows(IllegalStateException.class, () -> gateway.executeTurnStream(request()));
-
-            assertEquals(2, relayedFrames.size());
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(0)).contains("\"kind\":\"TURN_STARTED\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"kind\":\"ERROR\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"code\":\"DUPLICATE_FINAL_OUTCOME\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"stage\":\"FINAL_OUTCOME_BUILD\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"frameId\":\"exec-1:4\"");
-            org.assertj.core.api.Assertions.assertThat(String.join("\n", relayedFrames)).doesNotContain("\"kind\":\"FINAL_OUTCOME\"");
-        } finally {
-            server.stop(0);
-        }
-    }
-
-    @Test
-    void shouldRelaySyntheticErrorWhenFinalOutcomePayloadIsMissing() throws Exception {
-        CopyOnWriteArrayList<String> relayedFrames = new CopyOnWriteArrayList<>();
-        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
-        server.createContext("/agent-turns/execute-stream", exchange -> writeNdjson(exchange, finalOutcomeFrame(1, false)));
-        server.createContext("/api/internal/session-runtime/stream-frames", exchange -> {
+        server.createContext("/api/internal/session-runtime/stream-frame-ingest", exchange -> {
             relayedFrames.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             writeJson(exchange, "{\"success\":true}");
         });
@@ -333,10 +320,43 @@ class SessionAgentRuntimeGatewayTest {
             assertThrows(IllegalStateException.class, () -> gateway.executeTurnStream(request()));
 
             assertEquals(1, relayedFrames.size());
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.getFirst()).contains("\"kind\":\"ERROR\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.getFirst()).contains("\"code\":\"WORKER_STREAM_ABORTED\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.getFirst()).contains("\"stage\":\"PROVIDER_STREAM\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.getFirst()).contains("\"frameId\":\"exec-1:1\"");
+            List<String> relayedLines = relayedFrameLines(relayedFrames);
+            assertEquals(2, relayedLines.size());
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(0)).contains("\"kind\":\"TURN_STARTED\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"kind\":\"ERROR\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"code\":\"DUPLICATE_FINAL_OUTCOME\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"stage\":\"FINAL_OUTCOME_BUILD\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"frameId\":\"exec-1:4\"");
+            org.assertj.core.api.Assertions.assertThat(String.join("\n", relayedFrames)).doesNotContain("\"kind\":\"FINAL_OUTCOME\"");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void shouldRelaySyntheticErrorWhenFinalOutcomePayloadIsMissing() throws Exception {
+        CopyOnWriteArrayList<String> relayedFrames = new CopyOnWriteArrayList<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/agent-turns/execute-stream", exchange -> writeNdjson(exchange, finalOutcomeFrame(1, false)));
+        server.createContext("/api/internal/session-runtime/stream-frame-ingest", exchange -> {
+            relayedFrames.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            writeJson(exchange, "{\"success\":true}");
+        });
+        server.start();
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+
+        try {
+            SessionAgentRuntimeGateway gateway = gateway(server, meterRegistry, Duration.ofMillis(500));
+
+            assertThrows(IllegalStateException.class, () -> gateway.executeTurnStream(request()));
+
+            assertEquals(1, relayedFrames.size());
+            List<String> relayedLines = relayedFrameLines(relayedFrames);
+            assertEquals(1, relayedLines.size());
+            org.assertj.core.api.Assertions.assertThat(relayedLines.getFirst()).contains("\"kind\":\"ERROR\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.getFirst()).contains("\"code\":\"WORKER_STREAM_ABORTED\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.getFirst()).contains("\"stage\":\"PROVIDER_STREAM\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.getFirst()).contains("\"frameId\":\"exec-1:1\"");
         } finally {
             server.stop(0);
         }
@@ -350,7 +370,7 @@ class SessionAgentRuntimeGatewayTest {
             "/agent-turns/execute-stream",
             exchange -> writeNdjson(exchange, customerDraftDeltaFrame() + "\n" + finalOutcomeFrame(2, true))
         );
-        server.createContext("/api/internal/session-runtime/stream-frames", exchange -> {
+        server.createContext("/api/internal/session-runtime/stream-frame-ingest", exchange -> {
             String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
             relayedFrames.add(body);
             if (body.contains("\"visibility\":\"CUSTOMER\"")) {
@@ -367,11 +387,14 @@ class SessionAgentRuntimeGatewayTest {
 
             assertEquals(false, gateway.executeTurnStream(request()).success());
 
-            assertEquals(2, relayedFrames.size());
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(0)).contains("\"visibility\":\"CUSTOMER\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"kind\":\"TURN_COMPLETED\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"visibility\":\"OPERATOR\"");
+            assertEquals(1, relayedFrames.size());
+            List<String> relayedLines = relayedFrameLines(relayedFrames);
+            assertEquals(2, relayedLines.size());
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(0)).contains("\"visibility\":\"CUSTOMER\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"kind\":\"TURN_COMPLETED\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"visibility\":\"OPERATOR\"");
             org.assertj.core.api.Assertions.assertThat(String.join("\n", relayedFrames)).doesNotContain("STREAM_RELAY_FAILED");
+            assertEquals(1.0, meterRegistry.get("lynxus.runtime_stream.relay_failure").counter().count());
         } finally {
             server.stop(0);
         }
@@ -385,7 +408,7 @@ class SessionAgentRuntimeGatewayTest {
             "/agent-turns/execute-stream",
             exchange -> writeNdjson(exchange, turnStartedFrame() + "\n" + finalOutcomeFrame(2, true))
         );
-        server.createContext("/api/internal/session-runtime/stream-frames", exchange -> {
+        server.createContext("/api/internal/session-runtime/stream-frame-ingest", exchange -> {
             relayedFrames.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             writeJson(exchange, 503, "{\"error\":\"transient relay unavailable\"}");
         });
@@ -397,9 +420,12 @@ class SessionAgentRuntimeGatewayTest {
 
             assertEquals(false, gateway.executeTurnStream(request()).success());
 
-            assertEquals(2, relayedFrames.size());
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(0)).contains("\"kind\":\"TURN_STARTED\"");
-            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"kind\":\"TURN_COMPLETED\"");
+            assertEquals(1, relayedFrames.size());
+            List<String> relayedLines = relayedFrameLines(relayedFrames);
+            assertEquals(2, relayedLines.size());
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(0)).contains("\"kind\":\"TURN_STARTED\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"kind\":\"TURN_COMPLETED\"");
+            assertEquals(1.0, meterRegistry.get("lynxus.runtime_stream.relay_failure").counter().count());
         } finally {
             server.stop(0);
         }
@@ -509,6 +535,12 @@ class SessionAgentRuntimeGatewayTest {
 
     private static String serverUrl(HttpServer server) {
         return "http://localhost:" + server.getAddress().getPort();
+    }
+
+    private static List<String> relayedFrameLines(List<String> relayedUploads) {
+        return relayedUploads.stream()
+            .flatMap(upload -> upload.lines().filter(line -> !line.isBlank()))
+            .toList();
     }
 
     private static void writeNdjson(HttpExchange exchange, String payload) throws IOException {

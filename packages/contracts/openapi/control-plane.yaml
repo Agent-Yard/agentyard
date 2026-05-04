@@ -1400,20 +1400,21 @@ paths:
             text/event-stream:
               schema:
                 $ref: '#/components/schemas/SessionRuntimeStreamEvent'
-  /internal/session-runtime/stream-frames:
+  /internal/session-runtime/stream-frame-ingest:
     post:
-      summary: Accept an internal agent-turn stream frame for transient SSE relay
+      summary: Accept an internal agent-turn transient frame NDJSON upload for transient SSE relay
       security:
         - bearerAuth: []
       requestBody:
         required: true
         content:
-          application/json:
+          application/x-ndjson:
             schema:
-              $ref: '#/components/schemas/AgentTurnTransientFrame'
+              type: string
+              description: Newline-delimited AgentTurnTransientFrame JSON objects for one turnExecutionId.
       responses:
         '200':
-          description: Frame accepted
+          description: Frame upload accepted
           content:
             application/json:
               schema:

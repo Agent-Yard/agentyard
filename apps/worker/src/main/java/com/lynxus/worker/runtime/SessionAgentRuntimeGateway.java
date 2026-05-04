@@ -18,6 +18,8 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.PipedInputStream;
+import java.io.PipedOutputStream;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -25,13 +27,17 @@ import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.slf4j.Logger;
@@ -61,10 +67,11 @@ public interface SessionAgentRuntimeGateway {
         private final Counter streamStallCounter;
         private final Counter missingFinalOutcomeCounter;
         private final Counter streamRelayFailureCounter;
+        private static final int INGEST_PIPE_BUFFER_BYTES = 64 * 1024;
 
         public HttpSessionAgentRuntimeGateway(
             @Value("${lynxus.agent-runtime.base-url}") String agentRuntimeBaseUrl,
-            @Value("${lynxus.api.base-url:http://127.0.0.1:8080}") String apiBaseUrl,
+            @Value("${lynxus.api.base-url:http://127.0.0.1:8080/api}") String apiBaseUrl,
             @Value("${lynxus.internal-auth.token}") String internalAuthToken,
             ObjectMapper objectMapper,
             MeterRegistry meterRegistry,
@@ -107,17 +114,29 @@ public interface SessionAgentRuntimeGateway {
                     .timeout(streamIdleTimeout)
                     .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                     .build();
-                HttpResponse<InputStream> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofInputStream());
+                HttpResponse<InputStream> response;
+                try {
+                    response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofInputStream());
+                } catch (HttpTimeoutException error) {
+                    recordStreamStall(context, "request", error);
+                    try (TransientFrameIngestSession frameIngest = startTransientFrameIngest(context)) {
+                        relaySyntheticError(frameIngest, context, 1, "WORKER_STREAM_STALL", "agent-runtime stream request timed out", false);
+                    }
+                    throw new IllegalStateException("agent-runtime stream stalled before response", error);
+                } catch (IOException error) {
+                    try (TransientFrameIngestSession frameIngest = startTransientFrameIngest(context)) {
+                        relaySyntheticError(frameIngest, context, 1, "WORKER_STREAM_ABORTED", "agent-runtime stream request failed", false);
+                    }
+                    throw error;
+                }
                 if (response.statusCode() >= 400) {
                     String body = readBody(response.body());
                     log.error("agent-turn streaming execution failed status={} body={}", response.statusCode(), body);
                     throw new IllegalStateException("agent-turn streaming execution failed: " + response.statusCode() + " " + body);
                 }
-                return readTurnStream(response.body(), request, context);
-            } catch (HttpTimeoutException error) {
-                recordStreamStall(context, "request", error);
-                relaySyntheticError(context, 1, "WORKER_STREAM_STALL", "agent-runtime stream request timed out", false);
-                throw new IllegalStateException("agent-runtime stream stalled before response", error);
+                try (TransientFrameIngestSession frameIngest = startTransientFrameIngest(context)) {
+                    return readTurnStream(response.body(), request, context, frameIngest);
+                }
             } catch (IOException | InterruptedException error) {
                 if (error instanceof InterruptedException) {
                     Thread.currentThread().interrupt();
@@ -159,16 +178,15 @@ public interface SessionAgentRuntimeGateway {
         private AgentTurnExecutionOutcome readTurnStream(
             InputStream body,
             AgentTurnRequest request,
-            StreamReadContext context
+            StreamReadContext context,
+            TransientFrameIngestSession frameIngest
         ) throws IOException, InterruptedException {
             AgentTurnExecutionOutcome finalOutcome = null;
             int finalOutcomeCount = 0;
             long lastSeq = 0;
-            ExecutorService readExecutor = Executors.newSingleThreadExecutor(task -> {
-                Thread thread = new Thread(task, "agent-runtime-stream-reader-" + context.turnExecutionId());
-                thread.setDaemon(true);
-                return thread;
-            });
+            ExecutorService readExecutor = newDaemonBoundedSingleThreadExecutor(
+                "agent-runtime-stream-reader-" + context.turnExecutionId()
+            );
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(body, StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = readLineWithIdleDeadline(reader, readExecutor, context)) != null) {
@@ -190,6 +208,7 @@ public interface SessionAgentRuntimeGateway {
                         finalOutcomeCount += 1;
                         if (finalOutcomeCount > 1) {
                             throw streamProtocolFailure(
+                                frameIngest,
                                 context,
                                 lastSeq + 1,
                                 "DUPLICATE_FINAL_OUTCOME",
@@ -201,6 +220,7 @@ public interface SessionAgentRuntimeGateway {
                             finalOutcome = readFinalOutcome(frame, context);
                         } catch (RuntimeException error) {
                             throw streamProtocolFailure(
+                                frameIngest,
                                 context,
                                 lastSeq + 1,
                                 "INVALID_FINAL_OUTCOME",
@@ -210,16 +230,16 @@ public interface SessionAgentRuntimeGateway {
                         }
                         continue;
                     } else {
-                        relayRuntimeFrame(AgentTurnTransientFrame.fromStreamFrame(frame));
+                        relayRuntimeFrame(frameIngest, AgentTurnTransientFrame.fromStreamFrame(frame));
                     }
                 }
             } catch (StreamProtocolFailureException error) {
                 throw error;
             } catch (StreamIdleTimeoutException error) {
-                relaySyntheticError(context, lastSeq + 1, "WORKER_STREAM_STALL", "agent-runtime stream stalled while reading", false);
+                relaySyntheticError(frameIngest, context, lastSeq + 1, "WORKER_STREAM_STALL", "agent-runtime stream stalled while reading", false);
                 throw error;
             } catch (IOException error) {
-                relaySyntheticError(context, lastSeq + 1, "WORKER_STREAM_ABORTED", "agent-runtime stream aborted or emitted malformed NDJSON", false);
+                relaySyntheticError(frameIngest, context, lastSeq + 1, "WORKER_STREAM_ABORTED", "agent-runtime stream aborted or emitted malformed NDJSON", false);
                 throw error;
             } finally {
                 readExecutor.shutdownNow();
@@ -233,10 +253,10 @@ public interface SessionAgentRuntimeGateway {
                     context.turnExecutionId(),
                     lastSeq
                 );
-                relaySyntheticError(context, lastSeq + 1, "MISSING_FINAL_OUTCOME", "agent-runtime stream ended without FINAL_OUTCOME", false);
+                relaySyntheticError(frameIngest, context, lastSeq + 1, "MISSING_FINAL_OUTCOME", "agent-runtime stream ended without FINAL_OUTCOME", false);
                 throw new IllegalStateException("agent-runtime stream ended without FINAL_OUTCOME");
             }
-            relayTurnCompleted(context, lastSeq + 1, finalOutcome.success());
+            relayTurnCompleted(frameIngest, context, lastSeq + 1, finalOutcome.success());
             return finalOutcome;
         }
 
@@ -279,63 +299,18 @@ public interface SessionAgentRuntimeGateway {
             return payload.outcome();
         }
 
-        private void relayRuntimeFrame(AgentTurnTransientFrame frame) throws InterruptedException {
-            try {
-                relayFrame(frame);
-            } catch (InterruptedException error) {
-                Thread.currentThread().interrupt();
-                throw error;
-            } catch (IOException | RuntimeException error) {
-                recordStreamRelayFailure(frame, error);
-            }
+        private void relayRuntimeFrame(TransientFrameIngestSession frameIngest, AgentTurnTransientFrame frame) throws InterruptedException {
+            frameIngest.writeFrame(frame);
         }
 
-        private void relayFrame(AgentTurnTransientFrame frame) throws IOException, InterruptedException {
-            String requestBody = objectMapper.writeValueAsString(frame);
-            HttpRequest httpRequest = HttpRequest.newBuilder()
-                .uri(HttpUrls.join(apiBaseUrl, "/internal/session-runtime/stream-frames"))
-                .header("Content-Type", "application/json")
-                .header("Authorization", authorizationHeaderValue)
-                .timeout(streamIdleTimeout)
-                .POST(HttpRequest.BodyPublishers.ofString(requestBody))
-                .build();
-            HttpResponse<String> response;
-            try {
-                response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
-            } catch (HttpTimeoutException error) {
-                streamStallCounter.increment();
-                log.error(
-                    "session stream frame relay timed out provider=api worker=temporal sessionId={} turnId={} turnExecutionId={} streamSeq={} frameKind={} visibility={} idleTimeoutMs={}",
-                    frame.sessionId(),
-                    frame.turnId(),
-                    frame.turnExecutionId(),
-                    frame.seq(),
-                    frame.kind(),
-                    frame.visibility(),
-                    streamIdleTimeout.toMillis()
-                );
-                throw error;
-            }
-            if (response.statusCode() >= 400) {
-                log.error(
-                    "session stream frame relay failed provider=api worker=temporal sessionId={} turnId={} turnExecutionId={} streamSeq={} frameKind={} visibility={} frameId={} status={} body={}",
-                    frame.sessionId(),
-                    frame.turnId(),
-                    frame.turnExecutionId(),
-                    frame.seq(),
-                    frame.kind(),
-                    frame.visibility(),
-                    frame.frameId(),
-                    response.statusCode(),
-                    response.body()
-                );
-                throw new IllegalStateException("session stream frame relay failed: " + response.statusCode() + " " + response.body());
-            }
-        }
-
-        private void relayTurnCompleted(StreamReadContext context, long seq, boolean success) throws InterruptedException {
+        private void relayTurnCompleted(
+            TransientFrameIngestSession frameIngest,
+            StreamReadContext context,
+            long seq,
+            boolean success
+        ) throws InterruptedException {
             long completedSeq = Math.max(1, seq);
-            relayRuntimeFrame(new AgentTurnTransientFrame(
+            relayRuntimeFrame(frameIngest, new AgentTurnTransientFrame(
                 AgentTurnTransientFrame.PROTOCOL,
                 context.turnExecutionId() + ":" + completedSeq,
                 "worker:" + context.turnExecutionId(),
@@ -358,6 +333,7 @@ public interface SessionAgentRuntimeGateway {
         }
 
         private void relaySyntheticError(
+            TransientFrameIngestSession frameIngest,
             StreamReadContext context,
             long seq,
             String code,
@@ -394,8 +370,9 @@ public interface SessionAgentRuntimeGateway {
                 )
             );
             try {
-                relayFrame(frame);
-            } catch (Exception error) {
+                frameIngest.writeFrame(frame);
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
                 log.warn(
                     "failed to relay synthetic stream error provider=api worker=temporal sessionId={} turnId={} turnExecutionId={} streamSeq={} code={} reason={}",
                     context.sessionId(),
@@ -416,14 +393,170 @@ public interface SessionAgentRuntimeGateway {
         }
 
         private StreamProtocolFailureException streamProtocolFailure(
+            TransientFrameIngestSession frameIngest,
             StreamReadContext context,
             long seq,
             String code,
             String message,
             Exception cause
         ) {
-            relaySyntheticError(context, seq, code, message, false);
+            relaySyntheticError(frameIngest, context, seq, code, message, false);
             return new StreamProtocolFailureException(message, cause);
+        }
+
+        private TransientFrameIngestSession startTransientFrameIngest(StreamReadContext context) {
+            try {
+                PipedInputStream input = new PipedInputStream(INGEST_PIPE_BUFFER_BYTES);
+                PipedOutputStream output = new PipedOutputStream(input);
+                HttpRequest request = HttpRequest.newBuilder()
+                    .uri(HttpUrls.join(apiBaseUrl, "/internal/session-runtime/stream-frame-ingest"))
+                    .header("Content-Type", "application/x-ndjson")
+                    .header("Accept", "application/json")
+                    .header("Authorization", authorizationHeaderValue)
+                    .POST(HttpRequest.BodyPublishers.ofInputStream(() -> input))
+                    .build();
+                CompletableFuture<HttpResponse<String>> responseFuture = httpClient.sendAsync(
+                    request,
+                    HttpResponse.BodyHandlers.ofString()
+                );
+                return new TransientFrameIngestSession(context, output, responseFuture);
+            } catch (IOException | RuntimeException error) {
+                recordStreamRelayFailure(context, asException(error));
+                return new TransientFrameIngestSession(context);
+            }
+        }
+
+        private final class TransientFrameIngestSession implements AutoCloseable {
+            private final StreamReadContext context;
+            private final PipedOutputStream output;
+            private final CompletableFuture<HttpResponse<String>> responseFuture;
+            private final ExecutorService writeExecutor;
+            private final AtomicBoolean failureRecorded = new AtomicBoolean(false);
+            private final AtomicBoolean closed = new AtomicBoolean(false);
+
+            private TransientFrameIngestSession(
+                StreamReadContext context,
+                PipedOutputStream output,
+                CompletableFuture<HttpResponse<String>> responseFuture
+            ) {
+                this.context = context;
+                this.output = output;
+                this.responseFuture = responseFuture;
+                this.writeExecutor = newDaemonBoundedSingleThreadExecutor(
+                    "api-stream-frame-ingest-writer-" + context.turnExecutionId()
+                );
+            }
+
+            private TransientFrameIngestSession(StreamReadContext context) {
+                this.context = context;
+                this.output = null;
+                this.responseFuture = null;
+                this.writeExecutor = null;
+                this.failureRecorded.set(true);
+                this.closed.set(true);
+            }
+
+            private void writeFrame(AgentTurnTransientFrame frame) throws InterruptedException {
+                if (output == null || failureRecorded.get() || closed.get()) {
+                    return;
+                }
+                byte[] body;
+                try {
+                    body = (objectMapper.writeValueAsString(frame) + "\n").getBytes(StandardCharsets.UTF_8);
+                } catch (RuntimeException error) {
+                    markFailure(frame, asException(error));
+                    return;
+                }
+                Future<?> writeFuture;
+                try {
+                    writeFuture = writeExecutor.submit(() -> {
+                        output.write(body);
+                        output.flush();
+                        return null;
+                    });
+                } catch (RejectedExecutionException error) {
+                    markFailure(frame, error);
+                    return;
+                }
+                try {
+                    writeFuture.get(Math.max(1, streamIdleTimeout.toMillis()), TimeUnit.MILLISECONDS);
+                } catch (TimeoutException error) {
+                    writeFuture.cancel(true);
+                    markFailure(frame, new HttpTimeoutException("session stream frame ingest write timed out"));
+                    closeOutputQuietly();
+                    responseFuture.cancel(true);
+                } catch (ExecutionException error) {
+                    markFailure(frame, asException(error.getCause()));
+                    closeOutputQuietly();
+                } catch (InterruptedException error) {
+                    writeFuture.cancel(true);
+                    throw error;
+                }
+            }
+
+            @Override
+            public void close() {
+                if (!closed.compareAndSet(false, true)) {
+                    return;
+                }
+                closeOutputQuietly();
+                if (writeExecutor != null) {
+                    writeExecutor.shutdownNow();
+                }
+                observeIngestResponse();
+            }
+
+            private void observeIngestResponse() {
+                if (responseFuture == null || failureRecorded.get()) {
+                    return;
+                }
+                try {
+                    HttpResponse<String> response = responseFuture.get(
+                        Math.max(1, streamIdleTimeout.toMillis()),
+                        TimeUnit.MILLISECONDS
+                    );
+                    if (response.statusCode() >= 400) {
+                        markFailure(
+                            context,
+                            new IllegalStateException(
+                                "session stream frame ingest failed: " + response.statusCode() + " " + response.body()
+                            )
+                        );
+                    }
+                } catch (TimeoutException error) {
+                    responseFuture.cancel(true);
+                    markFailure(context, new HttpTimeoutException("session stream frame ingest response timed out"));
+                } catch (ExecutionException error) {
+                    markFailure(context, asException(error.getCause()));
+                } catch (InterruptedException error) {
+                    Thread.currentThread().interrupt();
+                    markFailure(context, error);
+                } catch (RuntimeException error) {
+                    markFailure(context, error);
+                }
+            }
+
+            private void markFailure(AgentTurnTransientFrame frame, Exception error) {
+                if (failureRecorded.compareAndSet(false, true)) {
+                    recordStreamRelayFailure(frame, error);
+                }
+            }
+
+            private void markFailure(StreamReadContext context, Exception error) {
+                if (failureRecorded.compareAndSet(false, true)) {
+                    recordStreamRelayFailure(context, error);
+                }
+            }
+
+            private void closeOutputQuietly() {
+                if (output == null) {
+                    return;
+                }
+                try {
+                    output.close();
+                } catch (IOException ignored) {
+                }
+            }
         }
 
         private void recordStreamStall(StreamReadContext context, String stage, Exception error) {
@@ -452,6 +585,40 @@ public interface SessionAgentRuntimeGateway {
                 frame.frameId(),
                 error == null ? "" : error.toString()
             );
+        }
+
+        private void recordStreamRelayFailure(StreamReadContext context, Exception error) {
+            streamRelayFailureCounter.increment();
+            log.warn(
+                "transient stream frame ingest failed provider=api worker=temporal sessionId={} turnId={} turnExecutionId={} reason={}",
+                context.sessionId(),
+                context.turnId(),
+                context.turnExecutionId(),
+                error == null ? "" : error.toString()
+            );
+        }
+
+        private ExecutorService newDaemonBoundedSingleThreadExecutor(String threadName) {
+            return new ThreadPoolExecutor(
+                1,
+                1,
+                0L,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(1),
+                task -> {
+                    Thread thread = new Thread(task, threadName);
+                    thread.setDaemon(true);
+                    return thread;
+                },
+                new ThreadPoolExecutor.AbortPolicy()
+            );
+        }
+
+        private static Exception asException(Throwable error) {
+            if (error instanceof Exception exception) {
+                return exception;
+            }
+            return new RuntimeException(error);
         }
 
         private static Duration normalizedTimeout(Duration timeout) {

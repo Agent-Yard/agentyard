@@ -83,6 +83,7 @@ public class SessionRuntimeStreamService {
     private final RedisKeyspace keyspace;
     private final RedisJsonCodec codec;
     private final SessionChannelActivityRelay channelActivityRelay;
+    private final SessionRuntimeStreamFrameDeduplicator frameDeduplicator;
     private final Function<Long, SseEmitter> emitterFactory;
     private final Counter noticeMaterializedCounter;
     private final Counter fallbackPollCounter;
@@ -114,6 +115,29 @@ public class SessionRuntimeStreamService {
         RedisKeyspace keyspace,
         RedisJsonCodec codec,
         SessionChannelActivityRelay channelActivityRelay,
+        MeterRegistry meterRegistry,
+        SessionRuntimeStreamFrameDeduplicator frameDeduplicator
+    ) {
+        this(
+            repository,
+            replayStore,
+            pubSubBus,
+            keyspace,
+            codec,
+            channelActivityRelay,
+            meterRegistry,
+            SseEmitter::new,
+            frameDeduplicator
+        );
+    }
+
+    SessionRuntimeStreamService(
+        SessionRuntimeRepository repository,
+        SessionRuntimeReplayStore replayStore,
+        RedisPubSubBus pubSubBus,
+        RedisKeyspace keyspace,
+        RedisJsonCodec codec,
+        SessionChannelActivityRelay channelActivityRelay,
         MeterRegistry meterRegistry
     ) {
         this(
@@ -124,7 +148,8 @@ public class SessionRuntimeStreamService {
             codec,
             channelActivityRelay,
             meterRegistry,
-            SseEmitter::new
+            SseEmitter::new,
+            SessionRuntimeStreamFrameDeduplicator.noop()
         );
     }
 
@@ -144,7 +169,8 @@ public class SessionRuntimeStreamService {
             codec,
             SessionChannelActivityRelay.noop(),
             new io.micrometer.core.instrument.simple.SimpleMeterRegistry(),
-            emitterFactory
+            emitterFactory,
+            SessionRuntimeStreamFrameDeduplicator.noop()
         );
     }
 
@@ -156,7 +182,8 @@ public class SessionRuntimeStreamService {
         RedisJsonCodec codec,
         SessionChannelActivityRelay channelActivityRelay,
         MeterRegistry meterRegistry,
-        Function<Long, SseEmitter> emitterFactory
+        Function<Long, SseEmitter> emitterFactory,
+        SessionRuntimeStreamFrameDeduplicator frameDeduplicator
     ) {
         this.repository = repository;
         this.replayStore = replayStore;
@@ -164,6 +191,9 @@ public class SessionRuntimeStreamService {
         this.keyspace = keyspace;
         this.codec = codec;
         this.channelActivityRelay = channelActivityRelay == null ? SessionChannelActivityRelay.noop() : channelActivityRelay;
+        this.frameDeduplicator = frameDeduplicator == null
+            ? SessionRuntimeStreamFrameDeduplicator.noop()
+            : frameDeduplicator;
         this.emitterFactory = Objects.requireNonNull(emitterFactory, "emitterFactory");
         this.noticeMaterializedCounter = Counter.builder("lynxus.shared_state.runtime.notice.materialized")
             .description("Number of runtime change notices materialized into SSE update events")
@@ -284,6 +314,10 @@ public class SessionRuntimeStreamService {
         } catch (ResponseStatusException error) {
             recordRejectedFrame(frame, error);
             throw error;
+        }
+        if (!frameDeduplicator.claim(frame)) {
+            recordDuplicateFrame(frame);
+            return false;
         }
         recordAcceptedFrame(frame);
         channelActivityRelay.relay(frame);
@@ -574,6 +608,19 @@ public class SessionRuntimeStreamService {
             frame == null ? null : frame.kind(),
             frame == null ? null : frame.visibility(),
             error.getReason()
+        );
+    }
+
+    private void recordDuplicateFrame(AgentTurnTransientFrame frame) {
+        LOGGER.info(
+            "session runtime stream frame deduped sessionId={} turnId={} turnExecutionId={} streamSeq={} frameKind={} visibility={} frameId={}",
+            frame.sessionId(),
+            frame.turnId(),
+            frame.turnExecutionId(),
+            frame.seq(),
+            frame.kind(),
+            frame.visibility(),
+            frame.frameId()
         );
     }
 
