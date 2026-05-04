@@ -9,16 +9,20 @@
 - 知识检索服务：Python + FastAPI + PostgreSQL `pgvector + pg_trgm + tsvector`
 - 目录与运行态持久化：PostgreSQL typed schema + JSONB 嵌套配置
 - 契约层：`packages/contracts` + `packages/contracts-jvm`
+- 扩展面协议：`packages/extension-protocol` + `packages/extension-sdk-jvm` + `packages/extension-sdk-python`
 - 持久化与共享状态层：`packages/persistence-jvm` + `packages/shared-redis-jvm`
 - 启动脚本：根目录 `scripts/*.sh` 统一装载环境变量并拉起各应用
 
 ## 当前运行架构
 
 - `apps/api`：控制面接口、目录治理、发布快照组装、`session-runtime` 聚合与查询
+- `apps/channel-gateway`：Channel Provider 运行时，承载入站事件归一化、出站投递与 provider 注册（飞书等）
 - `apps/worker`：Temporal worker，承载 `SessionWorkflow` 主状态机和 `PlaybookWorkflow` child workflow
-- `apps/agent-runtime`：无状态 owner agent 单轮推理服务，执行 `AgentTurnRequest -> AgentTurnResult`
+- `apps/agent-runtime`：无状态 owner agent 单轮推理服务，执行 `AgentTurnRequest -> AgentTurnResult`，并承担 playbook `TOOL_TASK` 执行
 - `apps/knowledge-service`：知识导入、索引构建、检索与按快照读取
 - `apps/web`：配置态与运行态控制台，运行页围绕 session event / owner / playbook / handoff 组织
+
+Tool Connector 与 Channel Provider 通过 `packages/extension-protocol` 定义的 *Extension Plane* 协议接入；核心服务自动注册由 `LYNXUS_CHANNEL_GATEWAY_BASE_URL` / `LYNXUS_AGENT_RUNTIME_BASE_URL` 提供，运营方扩展通过 `LYNXUS_EXTENSION_REGISTRATION_FILE` 加载。
 
 当前执行核心已经不是旧的图编排 runtime，而是一条：
 

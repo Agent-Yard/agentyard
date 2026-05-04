@@ -22,10 +22,13 @@
 
 - `apps/web`：Vue 控制台，承接配置态页面、知识与资源工作台、运行态页面
 - `apps/api`：Spring Boot 控制面 API，负责目录治理、发布、认证与 `session-runtime` 聚合查询
+- `apps/channel-gateway`：Spring Boot Channel Provider 运行时，承载入站事件归一化、出站投递与 provider 注册（飞书等）
 - `apps/worker`：Temporal worker，负责 `SessionWorkflow`、`PlaybookWorkflow` 与知识相关 workflow / activity
 - `apps/agent-runtime`：Python 执行运行时，负责单个 owner agent 的单轮推理与 playbook tool task 执行
 - `apps/knowledge-service`：Python 知识服务，负责知识源对象、导入任务、文档切片、索引快照与检索数据
 - `packages/contracts-jvm`：JVM 侧共享 session / playbook / runtime 契约
+- `packages/extension-protocol`：Extension Plane 协议（Tool Connector / Channel Provider 注册、契约样例与 JSON Schema）
+- `packages/extension-sdk-jvm` / `packages/extension-sdk-python`：扩展面 SDK 骨架
 - `packages/persistence-jvm`：JVM 侧共享 PostgreSQL persistence 基座，承载 jOOQ generated schema、shared store 与 JSONB helper
 - `packages/shared-redis-jvm`：JVM 侧共享 Redis keyspace、JSON codec、Pub/Sub bus 与分布式锁
 - `packages/contracts`：TypeScript 合同类型与 OpenAPI 文档
@@ -38,9 +41,9 @@
 
 当前仓库的构建方式是混合式的：
 
-- `apps/api`、`apps/worker`、`packages/contracts-jvm`、`packages/persistence-jvm`、`packages/shared-redis-jvm` 由根目录 Gradle 多项目管理
+- `apps/api`、`apps/channel-gateway`、`apps/worker`、`packages/contracts-jvm`、`packages/persistence-jvm`、`packages/shared-redis-jvm`、`packages/extension-sdk-jvm` 由根目录 Gradle 多项目管理
 - `apps/web`、`packages/contracts` 由 pnpm workspace 管理
-- `apps/agent-runtime`、`apps/knowledge-service`、`packages/python-common` 通过根目录 `uv` workspace 管理
+- `apps/agent-runtime`、`apps/knowledge-service`、`packages/python-common`、`packages/extension-sdk-python` 通过根目录 `uv` workspace 管理
 
 ## 前端导航
 

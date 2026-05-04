@@ -40,6 +40,7 @@
 也可以拆开启动：
 
 - `pnpm local:api`
+- `pnpm local:channel-gateway`
 - `pnpm local:worker`
 - `pnpm local:knowledge-service`
 - `pnpm local:agent-runtime`

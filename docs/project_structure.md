@@ -4,17 +4,21 @@
 
 ```text
 apps/
-  api/                Spring Boot 控制面 API
-  worker/             Temporal workflow worker
-  web/                Vue + Ant Design Vue 控制台
-  agent-runtime/      Python owner agent / playbook tool task 执行运行时
-  knowledge-service/  Python 知识导入、快照构建与检索服务
+  api/                  Spring Boot 控制面 API
+  channel-gateway/      Channel Provider 运行时（飞书等渠道接入）
+  worker/               Temporal workflow worker
+  web/                  Vue + Ant Design Vue 控制台
+  agent-runtime/        Python owner agent / playbook tool task 执行运行时
+  knowledge-service/    Python 知识导入、快照构建与检索服务
 packages/
-  contracts/          OpenAPI 与 TypeScript 合同
-  contracts-jvm/      JVM 侧 session / playbook / runtime 契约
-  persistence-jvm/    JVM 侧 PostgreSQL 持久化基座与 jOOQ schema
-  python-common/      Python 服务共享工具库
-  shared-redis-jvm/   JVM 侧共享 Redis keyspace / lock / pubsub / codec
+  contracts/             OpenAPI 与 TypeScript 合同
+  contracts-jvm/         JVM 侧 session / playbook / runtime 契约
+  extension-protocol/    Extension Plane 协议（OpenAPI + JSON Schema + 契约样例）
+  extension-sdk-jvm/     JVM SDK 骨架
+  extension-sdk-python/  Python SDK 骨架
+  persistence-jvm/       JVM 侧 PostgreSQL 持久化基座与 jOOQ schema
+  python-common/         Python 服务共享工具库
+  shared-redis-jvm/      JVM 侧共享 Redis keyspace / lock / pubsub / codec
 deploy/
   common/             local / dev / test / prd 可共享的无密钥运行材料
   local/              本机联调 Docker Compose
@@ -26,6 +30,7 @@ scripts/
   common/             环境变量装载与进程管理脚本
 docs/
   architecture/       当前架构与环境说明
+  briefing/           项目背景资料
   todo/               仍然有效的待办分解
   develop_record/     历史留档，不作为当前实现基准
 demo/                 演示素材目录，不参与当前主实现说明
@@ -33,10 +38,11 @@ demo/                 演示素材目录，不参与当前主实现说明
 
 ## 2. 构建与运行基座
 
-- Gradle 多项目：`apps/api`、`apps/worker`、`packages/contracts-jvm`、`packages/persistence-jvm`、`packages/shared-redis-jvm`
+- Gradle 多项目：`apps/api`、`apps/channel-gateway`、`apps/worker`、`packages/contracts-jvm`、`packages/persistence-jvm`、`packages/shared-redis-jvm`、`packages/extension-sdk-jvm`
 - pnpm workspace：`apps/web`、`packages/contracts`
-- uv workspace：`apps/agent-runtime`、`apps/knowledge-service`、`packages/python-common`
+- uv workspace：`apps/agent-runtime`、`apps/knowledge-service`、`packages/python-common`、`packages/extension-sdk-python`
 - 本地依赖：PostgreSQL、MinIO（S3-compatible object storage 本地实现）、Redis、Temporal、sandbox
+- PostgreSQL 启动时会自动准备 `lynxus_core`、`lynxus_channel_gateway`、`lynxus_knowledge`、`lynxus_agent_runtime` 四个库，按服务边界隔离
 
 ## 3. 治理主树
 
@@ -162,10 +168,12 @@ demo/                 演示素材目录，不参与当前主实现说明
 ## 6. 代码与对象的一句话对应
 
 - `apps/api` 负责治理与 session-runtime 聚合 API
+- `apps/channel-gateway` 负责 Channel Provider 入站 / 出站 / 注册（飞书等）
 - `apps/worker` 负责 `SessionWorkflow`、`PlaybookWorkflow` 和跨服务编排
 - `apps/agent-runtime` 负责 owner 单轮推理与 playbook tool task 执行
 - `apps/knowledge-service` 负责 source/job/document/snapshot 检索链路
 - `apps/web` 负责治理控制台与运行观测
+- `packages/extension-protocol` 定义 Extension Plane 协议（Tool Connector / Channel Provider 注册与契约）
 
 ## 7. 一句话总结
 
