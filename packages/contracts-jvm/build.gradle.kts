@@ -14,4 +14,8 @@ dependencies {
     implementation(platform("org.springframework.boot:spring-boot-dependencies:4.0.1"))
     implementation("tools.jackson.core:jackson-databind")
     compileOnly("io.temporal:temporal-sdk:$temporalVersion")
+
+    testImplementation(platform("org.junit:junit-bom:5.11.4"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }

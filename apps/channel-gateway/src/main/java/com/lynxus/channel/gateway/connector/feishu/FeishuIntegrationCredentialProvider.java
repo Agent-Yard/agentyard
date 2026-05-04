@@ -1,6 +1,6 @@
 package com.lynxus.channel.gateway.connector.feishu;
 
-import java.net.URI;
+import com.lynxus.contracts.http.HttpUrls;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -80,7 +80,7 @@ final class FeishuIntegrationCredentialProvider implements FeishuCredentialProvi
     private RuntimeCredential fetchRuntimeCredential(String accountId) {
         try {
             HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(joinUrl(apiBaseUrl, runtimeCredentialPath(accountId))))
+                .uri(HttpUrls.join(apiBaseUrl, runtimeCredentialPath(accountId)))
                 .timeout(REQUEST_TIMEOUT)
                 .GET()
                 .header("Authorization", "Bearer " + internalAuthToken)
@@ -107,16 +107,7 @@ final class FeishuIntegrationCredentialProvider implements FeishuCredentialProvi
 
     private static String runtimeCredentialPath(String accountId) {
         String encoded = URLEncoder.encode(accountId, StandardCharsets.UTF_8);
-        return "/api/internal/integration/accounts/" + encoded + "/credential";
-    }
-
-    private static String joinUrl(String baseUrl, String path) {
-        String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
-        String suffix = path.startsWith("/") ? path : "/" + path;
-        if (base.endsWith("/api") && suffix.startsWith("/api/")) {
-            suffix = suffix.substring("/api".length());
-        }
-        return base + suffix;
+        return "/internal/integration/accounts/" + encoded + "/credential";
     }
 
     private static Map<String, Object> objectValue(Object value) {

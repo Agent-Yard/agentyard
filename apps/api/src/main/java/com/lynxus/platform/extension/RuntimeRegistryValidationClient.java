@@ -1,5 +1,6 @@
 package com.lynxus.platform.extension;
 
+import com.lynxus.contracts.http.HttpUrls;
 import com.lynxus.extension.sdk.protocol.LynxusExtensionHeaders;
 import com.lynxus.platform.extension.ExtensionRegistryValidation.RuntimeRegistryValidation;
 import java.io.IOException;
@@ -132,8 +133,7 @@ final class JdkRuntimeRegistryValidationClient implements RuntimeRegistryValidat
     }
 
     private static URI validationUri(String baseUrl, String path) {
-        String cleanBaseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
-        return URI.create(cleanBaseUrl + path);
+        return HttpUrls.join(baseUrl, path);
     }
 
     private static String failureReason(IOException exception) {

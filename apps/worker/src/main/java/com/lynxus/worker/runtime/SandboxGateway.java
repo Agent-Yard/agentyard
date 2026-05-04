@@ -1,7 +1,7 @@
 package com.lynxus.worker.runtime;
 
+import com.lynxus.contracts.http.HttpUrls;
 import java.io.IOException;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -95,7 +95,7 @@ public interface SandboxGateway {
         private JsonNode post(String path, JsonNode payload) throws IOException, InterruptedException {
             String body = objectMapper.writeValueAsString(payload);
             HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(sandboxBaseUrl + path))
+                .uri(HttpUrls.join(sandboxBaseUrl, path))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();

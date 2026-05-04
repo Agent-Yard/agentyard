@@ -1,5 +1,6 @@
 package com.lynxus.worker.runtime;
 
+import com.lynxus.contracts.http.HttpUrls;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamFrame;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamFrameKind;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnRequest;
@@ -17,11 +18,10 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.net.http.HttpTimeoutException;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -100,7 +100,7 @@ public interface SessionAgentRuntimeGateway {
             try {
                 String requestBody = objectMapper.writeValueAsString(request);
                 HttpRequest httpRequest = HttpRequest.newBuilder()
-                    .uri(URI.create(agentRuntimeBaseUrl + "/agent-turns/execute-stream"))
+                    .uri(HttpUrls.join(agentRuntimeBaseUrl, "/agent-turns/execute-stream"))
                     .header("Content-Type", "application/json")
                     .header("Accept", "application/x-ndjson")
                     .header("Authorization", authorizationHeaderValue)
@@ -140,7 +140,7 @@ public interface SessionAgentRuntimeGateway {
             try {
                 String requestBody = objectMapper.writeValueAsString(payload);
                 HttpRequest httpRequest = HttpRequest.newBuilder()
-                    .uri(URI.create(agentRuntimeBaseUrl + path))
+                    .uri(HttpUrls.join(agentRuntimeBaseUrl, path))
                     .header("Content-Type", "application/json")
                     .header("Authorization", authorizationHeaderValue)
                     .POST(HttpRequest.BodyPublishers.ofString(requestBody))
@@ -293,7 +293,7 @@ public interface SessionAgentRuntimeGateway {
         private void relayFrame(AgentTurnTransientFrame frame) throws IOException, InterruptedException {
             String requestBody = objectMapper.writeValueAsString(frame);
             HttpRequest httpRequest = HttpRequest.newBuilder()
-                .uri(URI.create(apiBaseUrl + "/api/internal/session-runtime/stream-frames"))
+                .uri(HttpUrls.join(apiBaseUrl, "/internal/session-runtime/stream-frames"))
                 .header("Content-Type", "application/json")
                 .header("Authorization", authorizationHeaderValue)
                 .timeout(streamIdleTimeout)

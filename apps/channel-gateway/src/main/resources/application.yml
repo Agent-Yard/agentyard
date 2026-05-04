@@ -38,7 +38,7 @@ server:
 
 lynxus:
   api:
-    base-url: ${LYNXUS_API_BASE_URL:http://127.0.0.1:8080}
+    base-url: ${LYNXUS_API_BASE_URL:http://127.0.0.1:8080/api}
   channel-gateway:
     base-url: ${LYNXUS_CHANNEL_GATEWAY_BASE_URL:http://127.0.0.1:8082}
     async:

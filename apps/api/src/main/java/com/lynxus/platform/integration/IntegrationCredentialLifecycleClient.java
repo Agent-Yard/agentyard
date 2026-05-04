@@ -1,12 +1,12 @@
 package com.lynxus.platform.integration;
 
+import com.lynxus.contracts.http.HttpUrls;
 import com.lynxus.extension.sdk.protocol.LynxusExtensionHttp;
 import com.lynxus.platform.integration.IntegrationDtos.IntegrationAccountCredentialStatus;
 import com.lynxus.platform.integration.IntegrationDtos.RemoteCredentialLifecycleRequest;
 import com.lynxus.platform.integration.IntegrationDtos.RemoteCredentialLifecycleResponse;
 import com.lynxus.platform.shared.ApiProblemException;
 import java.io.IOException;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -58,7 +58,7 @@ final class JdkIntegrationCredentialLifecycleClient implements IntegrationCreden
             throw remoteFailure();
         }
         try {
-            HttpRequest.Builder httpRequest = HttpRequest.newBuilder(URI.create(joinUrl(baseUrl, path)))
+            HttpRequest.Builder httpRequest = HttpRequest.newBuilder(HttpUrls.join(baseUrl, path))
                 .timeout(CREDENTIAL_LIFECYCLE_TIMEOUT)
                 .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(request.toWireBody())));
             LynxusExtensionHttp.credentialLifecycleHeaders("Bearer " + internalAuthToken, traceId, requestId)
@@ -108,25 +108,6 @@ final class JdkIntegrationCredentialLifecycleClient implements IntegrationCreden
             // The public control-plane error is intentionally sanitized regardless of remote body shape.
         }
         throw remoteFailure();
-    }
-
-    private static String joinUrl(String baseUrl, String path) {
-        String cleanBase = requireText(baseUrl, "baseUrl");
-        String cleanPath = requireText(path, "credential endpoint path");
-        if (!cleanPath.startsWith("/")) {
-            cleanPath = "/" + cleanPath;
-        }
-        if (cleanBase.endsWith("/")) {
-            return cleanBase.substring(0, cleanBase.length() - 1) + cleanPath;
-        }
-        return cleanBase + cleanPath;
-    }
-
-    private static String requireText(String value, String fieldName) {
-        if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException(fieldName + " is required");
-        }
-        return value.trim();
     }
 
     private static ApiProblemException remoteFailure() {

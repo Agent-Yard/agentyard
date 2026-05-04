@@ -1,9 +1,9 @@
 package com.lynxus.channel.gateway.channel;
 
 import com.lynxus.channel.gateway.shared.ApiResponse;
+import com.lynxus.contracts.http.HttpUrls;
 import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionMessageRequest;
 import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionMessageResponse;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -51,7 +51,7 @@ final class DefaultChannelSessionRuntimeClient implements ChannelSessionRuntimeC
     public ChannelInboundSessionMessageResponse dispatchInboundMessage(ChannelInboundSessionMessageRequest request) {
         try {
             HttpRequest httpRequest = HttpRequest.newBuilder()
-                .uri(URI.create(joinUrl(apiBaseUrl, "/api/internal/session-runtime/channel-inbound")))
+                .uri(HttpUrls.join(apiBaseUrl, "/internal/session-runtime/channel-inbound"))
                 .timeout(REQUEST_TIMEOUT)
                 .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(request)))
                 .header("Content-Type", "application/json")
@@ -78,10 +78,10 @@ final class DefaultChannelSessionRuntimeClient implements ChannelSessionRuntimeC
     public void replayChannelOutbound(String sessionId) {
         try {
             HttpRequest httpRequest = HttpRequest.newBuilder()
-                .uri(URI.create(joinUrl(
+                .uri(HttpUrls.join(
                     apiBaseUrl,
-                    "/api/internal/session-runtime/sessions/" + requireText(sessionId, "sessionId") + "/channel-outbound/replay"
-                )))
+                    "/internal/session-runtime/sessions/" + requireText(sessionId, "sessionId") + "/channel-outbound/replay"
+                ))
                 .timeout(REQUEST_TIMEOUT)
                 .POST(HttpRequest.BodyPublishers.noBody())
                 .header("Authorization", "Bearer " + internalAuthToken)
@@ -95,15 +95,6 @@ final class DefaultChannelSessionRuntimeClient implements ChannelSessionRuntimeC
         } catch (Exception error) {
             throw new IllegalStateException("failed to replay channel outbound messages", error);
         }
-    }
-
-    private static String joinUrl(String baseUrl, String path) {
-        String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
-        String suffix = path.startsWith("/") ? path : "/" + path;
-        if (base.endsWith("/api") && suffix.startsWith("/api/")) {
-            suffix = suffix.substring("/api".length());
-        }
-        return base + suffix;
     }
 
     private static String requireText(String value, String field) {

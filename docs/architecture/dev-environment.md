@@ -84,6 +84,7 @@
 - Python 服务默认日志切到 JSON
 - Python 内部服务默认监听 `0.0.0.0`
 - Web 开发代理目标改为可配置变量 `LYNXUS_WEB_DEV_PROXY_TARGET`
+- API / Worker / Channel Gateway / Agent Runtime 之间的控制面调用统一读取 `LYNXUS_API_BASE_URL`，取值必须包含 `/api`，例如 `http://<host>:8080/api`
 
 如果你通过 `https` 域名并经由 LB / Nginx 反代访问 `pnpm dev:source`，还需要在 `.env.dev` 中补这些 Vite 变量：
 

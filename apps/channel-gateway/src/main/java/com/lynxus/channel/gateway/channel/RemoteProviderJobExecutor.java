@@ -2,13 +2,13 @@ package com.lynxus.channel.gateway.channel;
 
 import com.lynxus.channel.gateway.extension.ChannelProviderDescriptor;
 import com.lynxus.channel.gateway.extension.ChannelProviderRegistry;
+import com.lynxus.contracts.http.HttpUrls;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelRunJobPayload;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelRunJobRequest;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelRunJobResponse;
 import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelInboundEvent;
 import com.lynxus.extension.sdk.protocol.DescriptorType;
 import com.lynxus.extension.sdk.protocol.LynxusExtensionHttp;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -77,7 +77,7 @@ public class RemoteProviderJobExecutor implements ProviderJobExecutor {
             )
         );
         HttpRequest.Builder request = HttpRequest.newBuilder()
-            .uri(URI.create(joinUrl(descriptor.baseUrl(), descriptor.runJobPath())))
+            .uri(HttpUrls.join(descriptor.baseUrl(), descriptor.runJobPath()))
             .timeout(Duration.ofSeconds(claim.jobTimeoutSeconds()))
             .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(requestBody)));
         request.header("Content-Type", "application/json");
@@ -112,12 +112,6 @@ public class RemoteProviderJobExecutor implements ProviderJobExecutor {
             }
         }
         return new ProviderJobExecutionResult(ingested, body.nextCursor(), body.metadata());
-    }
-
-    private static String joinUrl(String baseUrl, String path) {
-        String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
-        String suffix = path.startsWith("/") ? path : "/" + path;
-        return base + suffix;
     }
 
     private static String blankToNull(String value) {

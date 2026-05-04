@@ -1,12 +1,12 @@
 package com.lynxus.channel.gateway.channel;
 
 import com.lynxus.channel.gateway.extension.GatewayNativeChannelProviderAdapters;
+import com.lynxus.contracts.http.HttpUrls;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundActivityResponse;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderActivityPayload;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderActivityRequest;
 import com.lynxus.extension.sdk.protocol.DescriptorType;
 import com.lynxus.extension.sdk.protocol.LynxusExtensionHttp;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -77,7 +77,7 @@ final class DefaultChannelProviderActivitySender implements ChannelProviderActiv
             throw new IllegalStateException("channel provider sendActivity endpoint is not configured");
         }
         HttpRequest.Builder request = HttpRequest.newBuilder()
-            .uri(URI.create(joinUrl(invocation.descriptor().baseUrl(), invocation.descriptor().sendActivityPath())))
+            .uri(HttpUrls.join(invocation.descriptor().baseUrl(), invocation.descriptor().sendActivityPath()))
             .timeout(REMOTE_TIMEOUT)
             .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(requestBodyJson(requestBody))));
         request.header("Content-Type", "application/json");
@@ -140,9 +140,4 @@ final class DefaultChannelProviderActivitySender implements ChannelProviderActiv
         return result;
     }
 
-    private static String joinUrl(String baseUrl, String path) {
-        String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
-        String suffix = path.startsWith("/") ? path : "/" + path;
-        return base + suffix;
-    }
 }

@@ -188,6 +188,34 @@ class SessionAgentRuntimeGatewayTest {
     }
 
     @Test
+    void shouldRelayFramesWhenApiBaseUrlAlreadyIncludesApiPath() throws Exception {
+        CopyOnWriteArrayList<String> relayedFrames = new CopyOnWriteArrayList<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext(
+            "/agent-turns/execute-stream",
+            exchange -> writeNdjson(exchange, turnStartedFrame() + "\n" + finalOutcomeFrame(2, true))
+        );
+        server.createContext("/api/internal/session-runtime/stream-frames", exchange -> {
+            relayedFrames.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            writeJson(exchange, "{\"success\":true}");
+        });
+        server.start();
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+
+        try {
+            SessionAgentRuntimeGateway gateway = gateway(server, serverUrl(server) + "/api", meterRegistry, Duration.ofMillis(500));
+
+            gateway.executeTurnStream(request());
+
+            assertEquals(2, relayedFrames.size());
+            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(0)).contains("\"kind\":\"TURN_STARTED\"");
+            org.assertj.core.api.Assertions.assertThat(relayedFrames.get(1)).contains("\"kind\":\"TURN_COMPLETED\"");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void shouldRejectFinalOutcomeWhenMessageIdDiffersFromRequest() throws Exception {
         CopyOnWriteArrayList<String> relayedFrames = new CopyOnWriteArrayList<>();
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
@@ -382,9 +410,18 @@ class SessionAgentRuntimeGatewayTest {
         SimpleMeterRegistry meterRegistry,
         Duration streamIdleTimeout
     ) {
+        return gateway(server, serverUrl(server) + "/api", meterRegistry, streamIdleTimeout);
+    }
+
+    private static SessionAgentRuntimeGateway gateway(
+        HttpServer server,
+        String apiBaseUrl,
+        SimpleMeterRegistry meterRegistry,
+        Duration streamIdleTimeout
+    ) {
         return new SessionAgentRuntimeGateway.HttpSessionAgentRuntimeGateway(
             serverUrl(server),
-            serverUrl(server),
+            apiBaseUrl,
             "internal-token",
             new ObjectMapper(),
             meterRegistry,

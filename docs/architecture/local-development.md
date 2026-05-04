@@ -137,6 +137,7 @@ SPRING_PROFILES_ACTIVE=default pnpm local:worker
 ## 默认开发约定
 
 - 后端 API：`http://127.0.0.1:8080/api`
+- 服务间控制面调用统一使用 `LYNXUS_API_BASE_URL`，取值必须包含 `/api`，例如 `http://127.0.0.1:8080/api`
 - 前端开发服务：`http://127.0.0.1:5173`
 - Agent Runtime：`http://127.0.0.1:8090`
 - Knowledge Service：`http://127.0.0.1:8091`
