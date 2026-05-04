@@ -6,7 +6,7 @@ import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 from starlette.concurrency import run_in_threadpool
 
@@ -43,7 +43,20 @@ from .prompting import (
     render_openai_runtime_messages,
     render_openai_streaming_messages,
 )
-from .tooling import RuntimeToolKind, execute_tool_call, runtime_tool_registry
+from .tooling import (
+    APPEND_CARD_BLOCK_TOOL,
+    APPEND_IMAGE_BLOCK_TOOL,
+    APPEND_RICH_TEXT_BLOCK_TOOL,
+    HUMAN_HANDOFF_TOOL,
+    OUTCOME_TOOL_KINDS,
+    RUN_PLAYBOOK_TOOL,
+    SECURITY_BLOCK_TOOL,
+    SWITCH_OWNER_TOOL,
+    UPDATE_SHARED_STATE_TOOL,
+    RuntimeToolKind,
+    execute_tool_call,
+    runtime_tool_registry,
+)
 from .transcript_store import (
     TranscriptEntry,
     TranscriptStore,
@@ -554,6 +567,9 @@ class _LifecycleActionCandidate:
     error: str | None = None
 
 
+_OutcomeToolHandler = Callable[[OpenAiCompatibleStreamToolCall], dict[str, Any]]
+
+
 class _StreamingOutcomeAccumulator:
     def __init__(self, request: AgentTurnRequest) -> None:
         self._request = request
@@ -561,23 +577,61 @@ class _StreamingOutcomeAccumulator:
         self._shared_state: dict[str, Any] = dict(request.sharedState)
         self._lifecycle_actions: list[_LifecycleActionCandidate] = []
         self._security_assessment: dict[str, Any] | None = None
+        self._outcome_tool_handlers = self._build_outcome_tool_handlers()
+        self._require_outcome_tool_handler_contract()
 
     def append_assistant_text(self, text: str) -> None:
         if text.strip():
             self._reply_blocks.append({"type": "TEXT", "text": text})
+
+    def handled_outcome_tool_kinds(self) -> dict[str, RuntimeToolKind]:
+        return {
+            name: kind
+            for name, (kind, _handler) in self._outcome_tool_handlers.items()
+        }
 
     def apply_tool_call(
         self,
         tool_call: OpenAiCompatibleStreamToolCall,
         kind: RuntimeToolKind,
     ) -> dict[str, Any]:
-        if kind == RuntimeToolKind.STATE_TOOL:
-            return self._apply_state_tool(tool_call)
-        if kind == RuntimeToolKind.MESSAGE_BLOCK_TOOL:
-            return self._apply_message_block_tool(tool_call)
-        if kind == RuntimeToolKind.LIFECYCLE_ACTION_TOOL:
-            return self._apply_lifecycle_action_tool(tool_call)
-        return {"accepted": True}
+        handler_entry = self._outcome_tool_handlers.get(tool_call.tool_name)
+        if handler_entry is None:
+            raise ValueError(f"unsupported outcome tool: {tool_call.tool_name}")
+        expected_kind, handler = handler_entry
+        if kind != expected_kind:
+            raise ValueError(
+                f"outcome tool {tool_call.tool_name} kind mismatch: expected {expected_kind.value}, got {kind.value}"
+            )
+        return handler(tool_call)
+
+    def _build_outcome_tool_handlers(self) -> dict[str, tuple[RuntimeToolKind, _OutcomeToolHandler]]:
+        return {
+            UPDATE_SHARED_STATE_TOOL: (RuntimeToolKind.STATE_TOOL, self._apply_update_shared_state_tool),
+            APPEND_IMAGE_BLOCK_TOOL: (RuntimeToolKind.MESSAGE_BLOCK_TOOL, self._apply_message_block_tool),
+            APPEND_RICH_TEXT_BLOCK_TOOL: (RuntimeToolKind.MESSAGE_BLOCK_TOOL, self._apply_message_block_tool),
+            APPEND_CARD_BLOCK_TOOL: (RuntimeToolKind.MESSAGE_BLOCK_TOOL, self._apply_message_block_tool),
+            SWITCH_OWNER_TOOL: (RuntimeToolKind.LIFECYCLE_ACTION_TOOL, self._apply_lifecycle_action_tool),
+            RUN_PLAYBOOK_TOOL: (RuntimeToolKind.LIFECYCLE_ACTION_TOOL, self._apply_lifecycle_action_tool),
+            HUMAN_HANDOFF_TOOL: (RuntimeToolKind.LIFECYCLE_ACTION_TOOL, self._apply_lifecycle_action_tool),
+            SECURITY_BLOCK_TOOL: (RuntimeToolKind.LIFECYCLE_ACTION_TOOL, self._apply_lifecycle_action_tool),
+        }
+
+    def _require_outcome_tool_handler_contract(self) -> None:
+        handled_kinds = self.handled_outcome_tool_kinds()
+        if handled_kinds == OUTCOME_TOOL_KINDS:
+            return
+        missing = sorted(set(OUTCOME_TOOL_KINDS) - set(handled_kinds))
+        extra = sorted(set(handled_kinds) - set(OUTCOME_TOOL_KINDS))
+        mismatched = sorted(
+            name
+            for name in set(handled_kinds) & set(OUTCOME_TOOL_KINDS)
+            if handled_kinds[name] != OUTCOME_TOOL_KINDS[name]
+        )
+        raise ValueError(
+            "outcome tool handler contract mismatch"
+            f": missing={missing}, extra={extra}, mismatched={mismatched}"
+        )
 
     def build_outcome(self, usage_tracker: LlmUsageTracker) -> AgentTurnExecutionOutcome:
         try:
@@ -599,9 +653,7 @@ class _StreamingOutcomeAccumulator:
                 llmUsage=usage_tracker.entries(),
             )
 
-    def _apply_state_tool(self, tool_call: OpenAiCompatibleStreamToolCall) -> dict[str, Any]:
-        if tool_call.tool_name != "update_shared_state":
-            raise ValueError(f"unsupported state tool: {tool_call.tool_name}")
+    def _apply_update_shared_state_tool(self, tool_call: OpenAiCompatibleStreamToolCall) -> dict[str, Any]:
         patch = tool_call.arguments.get("patch")
         if not isinstance(patch, dict):
             raise ValueError("update_shared_state.patch must be an object")
@@ -616,7 +668,7 @@ class _StreamingOutcomeAccumulator:
         return {"accepted": True, "blockId": f"tool-block-{len(self._reply_blocks)}"}
 
     def _apply_lifecycle_action_tool(self, tool_call: OpenAiCompatibleStreamToolCall) -> dict[str, Any]:
-        if tool_call.tool_name == "switch_owner":
+        if tool_call.tool_name == SWITCH_OWNER_TOOL:
             action = "SWITCH_OWNER"
             target_agent_id = str(tool_call.arguments.get("targetAgentId") or "").strip()
             error = None
@@ -634,7 +686,7 @@ class _StreamingOutcomeAccumulator:
                 )
             )
             return _tool_acceptance(error)
-        if tool_call.tool_name == "run_playbook":
+        if tool_call.tool_name == RUN_PLAYBOOK_TOOL:
             action = "RUN_PLAYBOOK"
             playbook_id = str(tool_call.arguments.get("playbookId") or "").strip()
             playbook_input = tool_call.arguments.get("playbookInput")
@@ -655,12 +707,12 @@ class _StreamingOutcomeAccumulator:
                 )
             )
             return _tool_acceptance(error)
-        if tool_call.tool_name == "human_handoff":
+        if tool_call.tool_name == HUMAN_HANDOFF_TOOL:
             action = "SESSION_HUMAN_HANDOFF"
             error = None if action in set(self._request.currentOwner.allowedActions) else f"action {action} is not allowed"
             self._lifecycle_actions.append(_LifecycleActionCandidate(action=action, payload={}, error=error))
             return _tool_acceptance(error)
-        if tool_call.tool_name == "security_block":
+        if tool_call.tool_name == SECURITY_BLOCK_TOOL:
             categories = tool_call.arguments.get("categories")
             if not isinstance(categories, list) or not all(isinstance(item, str) and item.strip() for item in categories):
                 raise ValueError("security_block categories must be a non-empty string array")
@@ -901,7 +953,7 @@ def _provider_tool_result_message(
 
 def _message_block_from_tool_call(tool_call: OpenAiCompatibleStreamToolCall) -> dict[str, Any]:
     arguments = tool_call.arguments
-    if tool_call.tool_name == "append_image_block":
+    if tool_call.tool_name == APPEND_IMAGE_BLOCK_TOOL:
         url = str(arguments.get("url") or "").strip()
         if not url:
             raise ValueError("append_image_block.url is required")
@@ -917,12 +969,12 @@ def _message_block_from_tool_call(tool_call: OpenAiCompatibleStreamToolCall) -> 
             }.items()
             if value is not None
         }
-    if tool_call.tool_name == "append_rich_text_block":
+    if tool_call.tool_name == APPEND_RICH_TEXT_BLOCK_TOOL:
         content = str(arguments.get("content") or "")
         if not content.strip():
             raise ValueError("append_rich_text_block.content is required")
         return {"type": "RICH_TEXT", "format": str(arguments.get("format") or "MARKDOWN"), "content": content}
-    if tool_call.tool_name == "append_card_block":
+    if tool_call.tool_name == APPEND_CARD_BLOCK_TOOL:
         card_type = str(arguments.get("cardType") or "").strip()
         version = str(arguments.get("version") or "").strip()
         if not card_type or not version:
@@ -984,10 +1036,10 @@ def _tool_produced_payload(
 
 def _lifecycle_action_name(tool_name: str) -> str:
     return {
-        "switch_owner": "SWITCH_OWNER",
-        "run_playbook": "RUN_PLAYBOOK",
-        "human_handoff": "SESSION_HUMAN_HANDOFF",
-        "security_block": "SECURITY_BLOCK",
+        SWITCH_OWNER_TOOL: "SWITCH_OWNER",
+        RUN_PLAYBOOK_TOOL: "RUN_PLAYBOOK",
+        HUMAN_HANDOFF_TOOL: "SESSION_HUMAN_HANDOFF",
+        SECURITY_BLOCK_TOOL: "SECURITY_BLOCK",
     }.get(tool_name, tool_name)
 
 

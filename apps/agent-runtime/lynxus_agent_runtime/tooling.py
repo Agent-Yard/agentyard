@@ -34,6 +34,27 @@ class RuntimeToolKind(StrEnum):
     LIFECYCLE_ACTION_TOOL = "LIFECYCLE_ACTION_TOOL"
 
 
+UPDATE_SHARED_STATE_TOOL = "update_shared_state"
+APPEND_IMAGE_BLOCK_TOOL = "append_image_block"
+APPEND_RICH_TEXT_BLOCK_TOOL = "append_rich_text_block"
+APPEND_CARD_BLOCK_TOOL = "append_card_block"
+SWITCH_OWNER_TOOL = "switch_owner"
+RUN_PLAYBOOK_TOOL = "run_playbook"
+HUMAN_HANDOFF_TOOL = "human_handoff"
+SECURITY_BLOCK_TOOL = "security_block"
+
+OUTCOME_TOOL_KINDS: dict[str, RuntimeToolKind] = {
+    UPDATE_SHARED_STATE_TOOL: RuntimeToolKind.STATE_TOOL,
+    APPEND_IMAGE_BLOCK_TOOL: RuntimeToolKind.MESSAGE_BLOCK_TOOL,
+    APPEND_RICH_TEXT_BLOCK_TOOL: RuntimeToolKind.MESSAGE_BLOCK_TOOL,
+    APPEND_CARD_BLOCK_TOOL: RuntimeToolKind.MESSAGE_BLOCK_TOOL,
+    SWITCH_OWNER_TOOL: RuntimeToolKind.LIFECYCLE_ACTION_TOOL,
+    RUN_PLAYBOOK_TOOL: RuntimeToolKind.LIFECYCLE_ACTION_TOOL,
+    HUMAN_HANDOFF_TOOL: RuntimeToolKind.LIFECYCLE_ACTION_TOOL,
+    SECURITY_BLOCK_TOOL: RuntimeToolKind.LIFECYCLE_ACTION_TOOL,
+}
+
+
 @dataclass(frozen=True)
 class RuntimeToolSpec:
     name: str
@@ -48,6 +69,7 @@ def runtime_tool_specs(request: AgentTurnRequest, *, include_outcome_tools: bool
         specs.extend(_outcome_tool_specs(request))
     specs.extend(_resource_tool_specs(request))
     _require_unique_tool_specs(specs)
+    _require_runtime_tool_execution_contract(specs)
     return specs
 
 
@@ -403,7 +425,7 @@ def _context_tool_specs(request: AgentTurnRequest) -> list[RuntimeToolSpec]:
 def _outcome_tool_specs(request: AgentTurnRequest) -> list[RuntimeToolSpec]:
     definitions = [
         _semantic_tool(
-            "update_shared_state",
+            UPDATE_SHARED_STATE_TOOL,
             "Merge a patch into the final sharedState snapshot for this turn.",
             {
                 "type": "object",
@@ -414,7 +436,7 @@ def _outcome_tool_specs(request: AgentTurnRequest) -> list[RuntimeToolSpec]:
             _accepted_output_schema(),
         ),
         _semantic_tool(
-            "append_image_block",
+            APPEND_IMAGE_BLOCK_TOOL,
             "Append an IMAGE block to the final replyMessage. Non-text draft streaming is not emitted in this phase.",
             {
                 "type": "object",
@@ -431,7 +453,7 @@ def _outcome_tool_specs(request: AgentTurnRequest) -> list[RuntimeToolSpec]:
             _accepted_output_schema(),
         ),
         _semantic_tool(
-            "append_rich_text_block",
+            APPEND_RICH_TEXT_BLOCK_TOOL,
             "Append a RICH_TEXT Markdown block to the final replyMessage.",
             {
                 "type": "object",
@@ -445,7 +467,7 @@ def _outcome_tool_specs(request: AgentTurnRequest) -> list[RuntimeToolSpec]:
             _accepted_output_schema(),
         ),
         _semantic_tool(
-            "append_card_block",
+            APPEND_CARD_BLOCK_TOOL,
             "Append a CARD block to the final replyMessage.",
             {
                 "type": "object",
@@ -462,20 +484,10 @@ def _outcome_tool_specs(request: AgentTurnRequest) -> list[RuntimeToolSpec]:
         ),
     ]
     definitions.extend(_lifecycle_action_tool_definitions(request))
-    kinds = {
-        "update_shared_state": RuntimeToolKind.STATE_TOOL,
-        "append_image_block": RuntimeToolKind.MESSAGE_BLOCK_TOOL,
-        "append_rich_text_block": RuntimeToolKind.MESSAGE_BLOCK_TOOL,
-        "append_card_block": RuntimeToolKind.MESSAGE_BLOCK_TOOL,
-        "switch_owner": RuntimeToolKind.LIFECYCLE_ACTION_TOOL,
-        "run_playbook": RuntimeToolKind.LIFECYCLE_ACTION_TOOL,
-        "human_handoff": RuntimeToolKind.LIFECYCLE_ACTION_TOOL,
-        "security_block": RuntimeToolKind.LIFECYCLE_ACTION_TOOL,
-    }
     return [
         RuntimeToolSpec(
             name=definition.name,
-            kind=kinds[definition.name],
+            kind=OUTCOME_TOOL_KINDS[definition.name],
             definition=definition,
         )
         for definition in definitions
@@ -505,7 +517,7 @@ def _lifecycle_action_tool_definitions(request: AgentTurnRequest) -> list[Semant
     if "SWITCH_OWNER" in allowed_actions and request.currentOwner.switchableOwnerAgentIds:
         definitions.append(
             _semantic_tool(
-                "switch_owner",
+                SWITCH_OWNER_TOOL,
                 "Request a session owner switch.",
                 {
                     "type": "object",
@@ -524,7 +536,7 @@ def _lifecycle_action_tool_definitions(request: AgentTurnRequest) -> list[Semant
     if "RUN_PLAYBOOK" in allowed_actions and request.currentOwner.playbookIds:
         definitions.append(
             _semantic_tool(
-                "run_playbook",
+                RUN_PLAYBOOK_TOOL,
                 "Request a playbook run.",
                 {
                     "type": "object",
@@ -544,7 +556,7 @@ def _lifecycle_action_tool_definitions(request: AgentTurnRequest) -> list[Semant
     if "SESSION_HUMAN_HANDOFF" in allowed_actions:
         definitions.append(
             _semantic_tool(
-                "human_handoff",
+                HUMAN_HANDOFF_TOOL,
                 "Request session human handoff.",
                 {
                     "type": "object",
@@ -556,7 +568,7 @@ def _lifecycle_action_tool_definitions(request: AgentTurnRequest) -> list[Semant
         )
     definitions.append(
         _semantic_tool(
-            "security_block",
+            SECURITY_BLOCK_TOOL,
             "Block a system-harmful current user message. This action has priority over other lifecycle actions.",
             {
                 "type": "object",
@@ -664,6 +676,21 @@ def _require_unique_tool_specs(specs: list[RuntimeToolSpec]) -> None:
         if spec.name in seen:
             raise ValueError(f"duplicate runtime tool name: {spec.name}")
         seen.add(spec.name)
+
+
+def _require_runtime_tool_execution_contract(specs: list[RuntimeToolSpec]) -> None:
+    for spec in specs:
+        if spec.kind == RuntimeToolKind.CONTEXT_TOOL:
+            if spec.handler is None:
+                raise ValueError(f"context tool {spec.name} is missing handler")
+            continue
+        expected_kind = OUTCOME_TOOL_KINDS.get(spec.name)
+        if expected_kind is None:
+            raise ValueError(f"outcome tool {spec.name} is missing outcome tool registration")
+        if spec.kind != expected_kind:
+            raise ValueError(
+                f"outcome tool {spec.name} kind mismatch: expected {expected_kind.value}, got {spec.kind.value}"
+            )
 
 
 def _get_owner_capabilities(request: AgentTurnRequest, arguments: dict[str, Any]) -> dict[str, Any]:

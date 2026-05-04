@@ -18,7 +18,9 @@ from lynxus_agent_runtime.models import (
 )
 from lynxus_agent_runtime.openai_compatible import OpenAiCompatibleStreamEvent, OpenAiCompatibleStreamMalformedError
 from lynxus_agent_runtime.privacy_contracts import PrivacyMappingTelemetry
+from lynxus_agent_runtime.streaming import _StreamingOutcomeAccumulator
 from lynxus_agent_runtime.tooling import (
+    OUTCOME_TOOL_KINDS,
     RuntimeToolKind,
     execute_tool_call,
     runtime_tool_specs,
@@ -153,6 +155,30 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertNotIn("switch_owner", specs_by_name)
         self.assertNotIn("human_handoff", specs_by_name)
         self.assertEqual(RuntimeToolKind.CONTEXT_TOOL, specs_by_name["create_ticket"].kind)
+
+    def test_should_wire_every_runtime_tool_spec_to_its_executor(self) -> None:
+        payload = request_payload()
+        payload["currentOwner"]["allowedActions"] = ["SWITCH_OWNER", "RUN_PLAYBOOK", "SESSION_HUMAN_HANDOFF"]
+        payload["currentOwner"]["switchableOwnerAgentIds"] = ["agent-b"]
+        request = AgentTurnRequest.model_validate(payload)
+
+        specs = runtime_tool_specs(request)
+
+        context_tools_without_handler = [
+            spec.name
+            for spec in specs
+            if spec.kind == RuntimeToolKind.CONTEXT_TOOL and spec.handler is None
+        ]
+        outcome_tool_kinds = {
+            spec.name: spec.kind
+            for spec in specs
+            if spec.kind != RuntimeToolKind.CONTEXT_TOOL
+        }
+        accumulator = _StreamingOutcomeAccumulator(request)
+
+        self.assertEqual([], context_tools_without_handler)
+        self.assertEqual(OUTCOME_TOOL_KINDS, outcome_tool_kinds)
+        self.assertEqual(outcome_tool_kinds, accumulator.handled_outcome_tool_kinds())
 
     def test_should_describe_switch_owner_targets_in_tool_schema(self) -> None:
         payload = request_payload()
