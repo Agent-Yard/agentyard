@@ -142,9 +142,21 @@ API 侧职责：
 1. `SessionRuntimeStreamService.acceptStreamFrame` 不再直接触发 `ChannelGatewayClient.sendOutboundActivity`。
 2. `SessionChannelActivityRelay` 改为写入 API 的 `ChannelOutboundFramePublisher`。
 3. `SessionChannelOutboundRelay` 不再直接调用 `ChannelGatewayClient.deliverOutbound`，而是发布 `FINAL_DELIVERY` frame。
-4. API 对每个 `channelProfileId` 维护短期 replay buffer，用于 transient frames。
-5. final delivery frame 必须能从 durable session message 重建，不能只依赖短期 replay buffer。
-6. API 多实例下，frame publish 需要通过 Redis Pub/Sub 广播给本实例 SSE subscriber，并使用共享 cursor 保证同 profile 内顺序。
+4. API 维护 channel-gateway binding 的只读 snapshot，用于从 `sessionId` 解析 `channelProfileId / externalConversationId / assistantId / customerId`。
+5. API 对每个 `channelProfileId` 维护短期 replay buffer，用于 transient frames。
+6. final delivery frame 必须能从 durable session message 重建，不能只依赖短期 replay buffer。
+7. API 多实例下，frame publish 需要通过 Redis Pub/Sub 广播给本实例 SSE subscriber，并使用共享 cursor 保证同 profile 内顺序。
+
+binding snapshot 同步规则：
+
+1. channel-gateway 仍是 `ChannelConversationBinding` 的权威存储。
+2. API 启动后全量分页拉取 channel-gateway 的 ACTIVE binding，落到本地 `channel_session_binding_snapshot`。
+3. profile create/update/disable/delete 由 API 中转时，API 对对应 `channelProfileId` 触发 snapshot refresh。
+4. 新增 binding 由 channel-gateway 在 inbound ingest/dispatch 中创建；dispatch 经过 API 后，API 不从 inbound request 手写 upsert 字段，而是触发对应 profile 的 binding snapshot refresh。
+5. API 增加定时同步兜底，按 `updatedAfter` 增量拉取；如果 channel-gateway 暂时不支持增量查询，则先用全量分页 reconcile。
+6. profile disabled/deleted 时，API 删除或标记该 profile 下 snapshot inactive。
+7. binding status 非 ACTIVE 或 `sessionId` 为空时，不参与 outbound frame lookup。
+8. outbound frame 发布前，如果本地 snapshot 缺失，允许触发一次 profile refresh 后再判定；仍缺失则跳过 channel outbound，并记录 structured log。
 
 API cursor 规则：
 
@@ -417,17 +429,21 @@ extension result 丢失：
 ### Phase 2: API frame publisher
 
 1. 新增 `ChannelOutboundFramePublisher`。
-2. `DefaultSessionChannelActivityRelay` 改为发布 activity frame。
-3. `SessionChannelOutboundRelay` 改为发布 `FINAL_DELIVERY` frame。
-4. 删除 API 到 channel-gateway 的逐 frame `sendOutboundActivity` 调用。
-5. 删除 API 到 channel-gateway 的同步 final `deliverOutbound` 调用。
-6. 实现 per-profile SSE emitter、Redis broadcast、replay buffer。
+2. 新增 API 本地 `channel_session_binding_snapshot` 与 repository。
+3. 新增 channel-gateway binding snapshot 拉取 client，支持启动全量、profile 变更触发 refresh、inbound dispatch 后按 profile refresh、定时 reconcile。
+4. `DefaultSessionChannelActivityRelay` 改为基于本地 snapshot 发布 activity frame。
+5. `SessionChannelOutboundRelay` 改为基于本地 snapshot 发布 `FINAL_DELIVERY` frame。
+6. 删除 API 到 channel-gateway 的逐 frame `sendOutboundActivity` 调用。
+7. 删除 API 到 channel-gateway 的同步 final `deliverOutbound` 调用。
+8. 实现 per-profile SSE emitter、Redis broadcast、replay buffer。
 
 验收：
 
 1. `REPLY_BLOCK_DELTA` 不再产生 `POST /internal/channel-outbound/activities`。
 2. `REPLY_BLOCK_COMPLETED` 产生 `DRAFT_COMPLETE` 和最终 durable message 对应的 `FINAL_DELIVERY`。
-3. API 双实例下，gateway 连接任一实例都能收到 profile frame。
+3. API 重启后会从 channel-gateway 重建 binding snapshot。
+4. profile disabled/deleted 后，本地 snapshot 不再用于 outbound frame 发布。
+5. API 双实例下，gateway 连接任一实例都能收到 profile frame。
 
 ### Phase 3: channel-gateway upstream subscriber
 
