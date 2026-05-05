@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundBindingSnapshot;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileStatus;
 import com.lynxus.channel.gateway.shared.ApiExceptionHandler;
 import com.lynxus.channel.gateway.shared.ConflictException;
@@ -47,6 +48,41 @@ class InternalChannelAdminControllerTest {
                     """))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.detail").value("channel profile revision conflict: channel-profile-1"));
+    }
+
+    @Test
+    void shouldExposeBindingSnapshotBySessionAndReturnConflictForDuplicateActiveBindings() throws Exception {
+        ChannelAdminService service = mock(ChannelAdminService.class);
+        when(service.getActiveBindingSnapshotBySession("session-1")).thenReturn(new ChannelOutboundBindingSnapshot(
+            "channel-binding-1",
+            "session-1",
+            "channel-profile-1",
+            "feishu",
+            "chat-1",
+            "user-1",
+            "assistant-1",
+            "customer-1",
+            "ACTIVE",
+            ChannelProfileStatus.ACTIVE,
+            2,
+            Instant.parse("2026-05-04T00:00:00Z"),
+            Instant.parse("2026-05-04T00:00:01Z"),
+            Instant.parse("2026-05-04T00:00:01Z")
+        ));
+        when(service.getActiveBindingSnapshotBySession("session-duplicate"))
+            .thenThrow(new ConflictException("duplicate ACTIVE channel conversation bindings for session: session-duplicate"));
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new InternalChannelBindingSnapshotController(service))
+            .setControllerAdvice(new ApiExceptionHandler())
+            .build();
+
+        mockMvc.perform(get("/internal/channel-admin/bindings/by-session/session-1"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.bindingId").value("channel-binding-1"))
+            .andExpect(jsonPath("$.data.profileRevision").value(2));
+
+        mockMvc.perform(get("/internal/channel-admin/bindings/by-session/session-duplicate"))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.detail").value("duplicate ACTIVE channel conversation bindings for session: session-duplicate"));
     }
 
     @Test

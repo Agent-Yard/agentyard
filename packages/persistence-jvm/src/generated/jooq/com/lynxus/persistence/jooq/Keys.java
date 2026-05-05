@@ -19,6 +19,7 @@ import com.lynxus.persistence.jooq.tables.CatalogRefResourceBinding;
 import com.lynxus.persistence.jooq.tables.CatalogResource;
 import com.lynxus.persistence.jooq.tables.CatalogResourceVersions;
 import com.lynxus.persistence.jooq.tables.CatalogScenario;
+import com.lynxus.persistence.jooq.tables.ChannelSessionBindingSnapshot;
 import com.lynxus.persistence.jooq.tables.ConversationMessage;
 import com.lynxus.persistence.jooq.tables.ConversationSession;
 import com.lynxus.persistence.jooq.tables.ExternalInteractionEvent;
@@ -56,6 +57,7 @@ import com.lynxus.persistence.jooq.tables.records.CatalogRefResourceBindingRecor
 import com.lynxus.persistence.jooq.tables.records.CatalogResourceRecord;
 import com.lynxus.persistence.jooq.tables.records.CatalogResourceVersionsRecord;
 import com.lynxus.persistence.jooq.tables.records.CatalogScenarioRecord;
+import com.lynxus.persistence.jooq.tables.records.ChannelSessionBindingSnapshotRecord;
 import com.lynxus.persistence.jooq.tables.records.ConversationMessageRecord;
 import com.lynxus.persistence.jooq.tables.records.ConversationSessionRecord;
 import com.lynxus.persistence.jooq.tables.records.ExternalInteractionEventRecord;
@@ -111,6 +113,7 @@ public class Keys {
     public static final UniqueKey<CatalogResourceRecord> CATALOG_RESOURCE_PKEY = Internal.createUniqueKey(CatalogResource.CATALOG_RESOURCE, DSL.name("catalog_resource_pkey"), new TableField[] { CatalogResource.CATALOG_RESOURCE.ID }, true);
     public static final UniqueKey<CatalogResourceVersionsRecord> CATALOG_RESOURCE_VERSIONS_PKEY = Internal.createUniqueKey(CatalogResourceVersions.CATALOG_RESOURCE_VERSIONS, DSL.name("catalog_resource_versions_pkey"), new TableField[] { CatalogResourceVersions.CATALOG_RESOURCE_VERSIONS.ID }, true);
     public static final UniqueKey<CatalogScenarioRecord> CATALOG_SCENARIO_PKEY = Internal.createUniqueKey(CatalogScenario.CATALOG_SCENARIO, DSL.name("catalog_scenario_pkey"), new TableField[] { CatalogScenario.CATALOG_SCENARIO.ID }, true);
+    public static final UniqueKey<ChannelSessionBindingSnapshotRecord> CHANNEL_SESSION_BINDING_SNAPSHOT_PKEY = Internal.createUniqueKey(ChannelSessionBindingSnapshot.CHANNEL_SESSION_BINDING_SNAPSHOT, DSL.name("channel_session_binding_snapshot_pkey"), new TableField[] { ChannelSessionBindingSnapshot.CHANNEL_SESSION_BINDING_SNAPSHOT.BINDING_ID }, true);
     public static final UniqueKey<ConversationMessageRecord> CONVERSATION_MESSAGE_PKEY = Internal.createUniqueKey(ConversationMessage.CONVERSATION_MESSAGE, DSL.name("conversation_message_pkey"), new TableField[] { ConversationMessage.CONVERSATION_MESSAGE.ID }, true);
     public static final UniqueKey<ConversationSessionRecord> CONVERSATION_SESSION_PKEY = Internal.createUniqueKey(ConversationSession.CONVERSATION_SESSION, DSL.name("conversation_session_pkey"), new TableField[] { ConversationSession.CONVERSATION_SESSION.ID }, true);
     public static final UniqueKey<ExternalInteractionEventRecord> EXTERNAL_INTERACTION_EVENT_PKEY = Internal.createUniqueKey(ExternalInteractionEvent.EXTERNAL_INTERACTION_EVENT, DSL.name("external_interaction_event_pkey"), new TableField[] { ExternalInteractionEvent.EXTERNAL_INTERACTION_EVENT.ID }, true);

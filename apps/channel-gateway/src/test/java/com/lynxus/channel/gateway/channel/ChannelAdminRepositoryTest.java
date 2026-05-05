@@ -172,4 +172,50 @@ class ChannelAdminRepositoryTest {
             now
         )));
     }
+
+    @Test
+    void shouldEnforceActiveSessionBindingUniqueness() {
+        Instant now = Instant.parse("2026-04-23T00:00:00Z");
+        repository.createProfile(new ChannelGatewayProfile(
+            "channel-profile-1",
+            "feishu",
+            "Feishu",
+            ChannelProfileStatus.ACTIVE,
+            true,
+            Map.of(),
+            null,
+            null,
+            false,
+            1,
+            now,
+            now
+        ), null);
+        repository.saveBinding(new ChannelConversationBinding(
+            "channel-binding-1",
+            "channel-profile-1",
+            "chat-1",
+            "user-1",
+            "assistant-1",
+            "customer-1",
+            "session-1",
+            ChannelConversationBindingStatus.ACTIVE,
+            Map.of(),
+            now,
+            now
+        ));
+
+        assertThrows(DataAccessException.class, () -> repository.saveBinding(new ChannelConversationBinding(
+            "channel-binding-2",
+            "channel-profile-1",
+            "chat-2",
+            "user-2",
+            "assistant-1",
+            "customer-2",
+            "session-1",
+            ChannelConversationBindingStatus.ACTIVE,
+            Map.of(),
+            now,
+            now
+        )));
+    }
 }

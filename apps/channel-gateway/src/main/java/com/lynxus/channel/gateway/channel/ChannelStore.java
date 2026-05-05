@@ -10,6 +10,7 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBindingS
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEventStatus;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundBindingSnapshot;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDeliveryStatus;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfig;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobRun;
@@ -24,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.jooq.DSLContext;
+import org.jooq.Field;
 import org.jooq.Record;
 import org.jooq.impl.DSL;
 
@@ -129,6 +131,76 @@ final class ChannelStore {
             .fetch(this::mapBinding);
     }
 
+    ChannelBindingSnapshotPageData listBindingSnapshots(Instant updatedAfter, String cursor, int limit) {
+        Field<java.time.OffsetDateTime> snapshotUpdatedAt = snapshotUpdatedAtField();
+        Cursor parsedCursor = Cursor.parse(cursor);
+        var condition = DSL.trueCondition();
+        if (updatedAfter != null) {
+            condition = condition.and(snapshotUpdatedAt.gt(JooqTimeSupport.toOffsetDateTime(updatedAfter)));
+        }
+        if (parsedCursor != null) {
+            condition = condition.and(snapshotUpdatedAt.gt(JooqTimeSupport.toOffsetDateTime(parsedCursor.updatedAt()))
+                .or(snapshotUpdatedAt.eq(JooqTimeSupport.toOffsetDateTime(parsedCursor.updatedAt()))
+                    .and(CHANNEL_CONVERSATION_BINDING.ID.gt(parsedCursor.bindingId()))));
+        }
+        int pageSize = Math.max(1, Math.min(limit, 1000));
+        List<ChannelOutboundBindingSnapshot> rows = dsl.select(
+                CHANNEL_CONVERSATION_BINDING.ID,
+                CHANNEL_CONVERSATION_BINDING.SESSION_ID,
+                CHANNEL_CONVERSATION_BINDING.CHANNEL_PROFILE_ID,
+                CHANNEL_PROFILE.PROVIDER_TYPE,
+                CHANNEL_CONVERSATION_BINDING.EXTERNAL_CONVERSATION_ID,
+                CHANNEL_CONVERSATION_BINDING.EXTERNAL_USER_ID,
+                CHANNEL_CONVERSATION_BINDING.ASSISTANT_ID,
+                CHANNEL_CONVERSATION_BINDING.CUSTOMER_ID,
+                CHANNEL_CONVERSATION_BINDING.STATUS,
+                CHANNEL_PROFILE.STATUS,
+                CHANNEL_PROFILE.REVISION,
+                CHANNEL_CONVERSATION_BINDING.UPDATED_AT,
+                CHANNEL_PROFILE.UPDATED_AT,
+                snapshotUpdatedAt
+            )
+            .from(CHANNEL_CONVERSATION_BINDING)
+            .join(CHANNEL_PROFILE)
+            .on(CHANNEL_PROFILE.ID.eq(CHANNEL_CONVERSATION_BINDING.CHANNEL_PROFILE_ID))
+            .where(condition)
+            .orderBy(snapshotUpdatedAt.asc(), CHANNEL_CONVERSATION_BINDING.ID.asc())
+            .limit(pageSize + 1)
+            .fetch(record -> mapBindingSnapshot(record, snapshotUpdatedAt));
+        boolean hasMore = rows.size() > pageSize;
+        List<ChannelOutboundBindingSnapshot> pageItems = hasMore ? rows.subList(0, pageSize) : rows;
+        String nextCursor = hasMore && !pageItems.isEmpty()
+            ? Cursor.from(pageItems.getLast().updatedAt(), pageItems.getLast().bindingId())
+            : null;
+        return new ChannelBindingSnapshotPageData(List.copyOf(pageItems), nextCursor);
+    }
+
+    List<ChannelOutboundBindingSnapshot> listBindingSnapshotsByProfile(String channelProfileId) {
+        Field<java.time.OffsetDateTime> snapshotUpdatedAt = snapshotUpdatedAtField();
+        return dsl.select(
+                CHANNEL_CONVERSATION_BINDING.ID,
+                CHANNEL_CONVERSATION_BINDING.SESSION_ID,
+                CHANNEL_CONVERSATION_BINDING.CHANNEL_PROFILE_ID,
+                CHANNEL_PROFILE.PROVIDER_TYPE,
+                CHANNEL_CONVERSATION_BINDING.EXTERNAL_CONVERSATION_ID,
+                CHANNEL_CONVERSATION_BINDING.EXTERNAL_USER_ID,
+                CHANNEL_CONVERSATION_BINDING.ASSISTANT_ID,
+                CHANNEL_CONVERSATION_BINDING.CUSTOMER_ID,
+                CHANNEL_CONVERSATION_BINDING.STATUS,
+                CHANNEL_PROFILE.STATUS,
+                CHANNEL_PROFILE.REVISION,
+                CHANNEL_CONVERSATION_BINDING.UPDATED_AT,
+                CHANNEL_PROFILE.UPDATED_AT,
+                snapshotUpdatedAt
+            )
+            .from(CHANNEL_CONVERSATION_BINDING)
+            .join(CHANNEL_PROFILE)
+            .on(CHANNEL_PROFILE.ID.eq(CHANNEL_CONVERSATION_BINDING.CHANNEL_PROFILE_ID))
+            .where(CHANNEL_CONVERSATION_BINDING.CHANNEL_PROFILE_ID.eq(channelProfileId))
+            .orderBy(snapshotUpdatedAt.desc(), CHANNEL_CONVERSATION_BINDING.ID.asc())
+            .fetch(record -> mapBindingSnapshot(record, snapshotUpdatedAt));
+    }
+
     Optional<ChannelConversationBinding> findBindingByProfileAndExternalConversation(
         String channelProfileId,
         String externalConversationId
@@ -145,6 +217,35 @@ final class ChannelStore {
             .orderBy(CHANNEL_CONVERSATION_BINDING.UPDATED_AT.desc(), CHANNEL_CONVERSATION_BINDING.ID.asc())
             .limit(1)
             .fetchOptional(this::mapBinding);
+    }
+
+    List<ChannelOutboundBindingSnapshot> listActiveBindingSnapshotsBySessionId(String sessionId) {
+        Field<java.time.OffsetDateTime> snapshotUpdatedAt = snapshotUpdatedAtField();
+        return dsl.select(
+                CHANNEL_CONVERSATION_BINDING.ID,
+                CHANNEL_CONVERSATION_BINDING.SESSION_ID,
+                CHANNEL_CONVERSATION_BINDING.CHANNEL_PROFILE_ID,
+                CHANNEL_PROFILE.PROVIDER_TYPE,
+                CHANNEL_CONVERSATION_BINDING.EXTERNAL_CONVERSATION_ID,
+                CHANNEL_CONVERSATION_BINDING.EXTERNAL_USER_ID,
+                CHANNEL_CONVERSATION_BINDING.ASSISTANT_ID,
+                CHANNEL_CONVERSATION_BINDING.CUSTOMER_ID,
+                CHANNEL_CONVERSATION_BINDING.STATUS,
+                CHANNEL_PROFILE.STATUS,
+                CHANNEL_PROFILE.REVISION,
+                CHANNEL_CONVERSATION_BINDING.UPDATED_AT,
+                CHANNEL_PROFILE.UPDATED_AT,
+                snapshotUpdatedAt
+            )
+            .from(CHANNEL_CONVERSATION_BINDING)
+            .join(CHANNEL_PROFILE)
+            .on(CHANNEL_PROFILE.ID.eq(CHANNEL_CONVERSATION_BINDING.CHANNEL_PROFILE_ID))
+            .where(CHANNEL_CONVERSATION_BINDING.SESSION_ID.eq(sessionId))
+            .and(CHANNEL_CONVERSATION_BINDING.STATUS.eq(ChannelConversationBindingStatus.ACTIVE.name()))
+            .and(CHANNEL_PROFILE.STATUS.eq(ChannelProfileStatus.ACTIVE.name()))
+            .orderBy(snapshotUpdatedAt.desc(), CHANNEL_CONVERSATION_BINDING.ID.asc())
+            .limit(2)
+            .fetch(record -> mapBindingSnapshot(record, snapshotUpdatedAt));
     }
 
     void saveBinding(ChannelConversationBinding binding) {
@@ -681,6 +782,49 @@ final class ChannelStore {
             JooqTimeSupport.toInstant(record.get(CHANNEL_CONVERSATION_BINDING.CREATED_AT)),
             JooqTimeSupport.toInstant(record.get(CHANNEL_CONVERSATION_BINDING.UPDATED_AT))
         );
+    }
+
+    private Field<java.time.OffsetDateTime> snapshotUpdatedAtField() {
+        return DSL.greatest(CHANNEL_CONVERSATION_BINDING.UPDATED_AT, CHANNEL_PROFILE.UPDATED_AT).as("snapshot_updated_at");
+    }
+
+    private ChannelOutboundBindingSnapshot mapBindingSnapshot(Record record, Field<java.time.OffsetDateTime> snapshotUpdatedAt) {
+        return new ChannelOutboundBindingSnapshot(
+            record.get(CHANNEL_CONVERSATION_BINDING.ID),
+            record.get(CHANNEL_CONVERSATION_BINDING.SESSION_ID),
+            record.get(CHANNEL_CONVERSATION_BINDING.CHANNEL_PROFILE_ID),
+            record.get(CHANNEL_PROFILE.PROVIDER_TYPE),
+            record.get(CHANNEL_CONVERSATION_BINDING.EXTERNAL_CONVERSATION_ID),
+            record.get(CHANNEL_CONVERSATION_BINDING.EXTERNAL_USER_ID),
+            record.get(CHANNEL_CONVERSATION_BINDING.ASSISTANT_ID),
+            record.get(CHANNEL_CONVERSATION_BINDING.CUSTOMER_ID),
+            record.get(CHANNEL_CONVERSATION_BINDING.STATUS),
+            ChannelProfileStatus.valueOf(record.get(CHANNEL_PROFILE.STATUS)),
+            record.get(CHANNEL_PROFILE.REVISION),
+            JooqTimeSupport.toInstant(record.get(CHANNEL_CONVERSATION_BINDING.UPDATED_AT)),
+            JooqTimeSupport.toInstant(record.get(CHANNEL_PROFILE.UPDATED_AT)),
+            JooqTimeSupport.toInstant(record.get(snapshotUpdatedAt))
+        );
+    }
+
+    record ChannelBindingSnapshotPageData(List<ChannelOutboundBindingSnapshot> items, String nextCursor) {
+    }
+
+    private record Cursor(Instant updatedAt, String bindingId) {
+        private static Cursor parse(String value) {
+            if (value == null || value.isBlank()) {
+                return null;
+            }
+            String[] parts = value.split("\\|", 2);
+            if (parts.length != 2 || parts[0].isBlank() || parts[1].isBlank()) {
+                throw new IllegalArgumentException("invalid binding snapshot cursor");
+            }
+            return new Cursor(Instant.parse(parts[0]), parts[1]);
+        }
+
+        private static String from(Instant updatedAt, String bindingId) {
+            return updatedAt + "|" + bindingId;
+        }
     }
 
     private ChannelInboundEvent mapInboundEvent(Record record) {

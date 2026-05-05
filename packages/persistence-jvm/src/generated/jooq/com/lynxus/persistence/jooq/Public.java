@@ -19,6 +19,7 @@ import com.lynxus.persistence.jooq.tables.CatalogRefResourceBinding;
 import com.lynxus.persistence.jooq.tables.CatalogResource;
 import com.lynxus.persistence.jooq.tables.CatalogResourceVersions;
 import com.lynxus.persistence.jooq.tables.CatalogScenario;
+import com.lynxus.persistence.jooq.tables.ChannelSessionBindingSnapshot;
 import com.lynxus.persistence.jooq.tables.ConversationMessage;
 import com.lynxus.persistence.jooq.tables.ConversationSession;
 import com.lynxus.persistence.jooq.tables.ExternalInteractionEvent;
@@ -137,6 +138,11 @@ public class Public extends SchemaImpl {
      * The table <code>public.catalog_scenario</code>.
      */
     public final CatalogScenario CATALOG_SCENARIO = CatalogScenario.CATALOG_SCENARIO;
+
+    /**
+     * The table <code>public.channel_session_binding_snapshot</code>.
+     */
+    public final ChannelSessionBindingSnapshot CHANNEL_SESSION_BINDING_SNAPSHOT = ChannelSessionBindingSnapshot.CHANNEL_SESSION_BINDING_SNAPSHOT;
 
     /**
      * The table <code>public.conversation_message</code>.
@@ -279,6 +285,7 @@ public class Public extends SchemaImpl {
             CatalogResource.CATALOG_RESOURCE,
             CatalogResourceVersions.CATALOG_RESOURCE_VERSIONS,
             CatalogScenario.CATALOG_SCENARIO,
+            ChannelSessionBindingSnapshot.CHANNEL_SESSION_BINDING_SNAPSHOT,
             ConversationMessage.CONVERSATION_MESSAGE,
             ConversationSession.CONVERSATION_SESSION,
             ExternalInteractionEvent.EXTERNAL_INTERACTION_EVENT,

@@ -62,12 +62,12 @@ public class InternalChannelAdminController {
 
     @GetMapping("/{channelProfileId}/bindings")
     public ApiResponse<?> bindings(@PathVariable String channelProfileId) {
-        return ApiResponse.ok(channelAdminService.listBindings(channelProfileId));
+        return ApiResponse.ok(channelAdminService.listBindingSnapshotsByProfile(channelProfileId));
     }
 
     @GetMapping("/bindings/by-session/{sessionId}")
     public ApiResponse<?> bindingBySession(@PathVariable String sessionId) {
-        return ApiResponse.ok(channelAdminService.getBindingBySession(sessionId));
+        return ApiResponse.ok(channelAdminService.getActiveBindingSnapshotBySession(sessionId));
     }
 
     @GetMapping("/{channelProfileId}/inbound-events")

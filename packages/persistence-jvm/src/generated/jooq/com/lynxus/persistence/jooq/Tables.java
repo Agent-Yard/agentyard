@@ -19,6 +19,7 @@ import com.lynxus.persistence.jooq.tables.CatalogRefResourceBinding;
 import com.lynxus.persistence.jooq.tables.CatalogResource;
 import com.lynxus.persistence.jooq.tables.CatalogResourceVersions;
 import com.lynxus.persistence.jooq.tables.CatalogScenario;
+import com.lynxus.persistence.jooq.tables.ChannelSessionBindingSnapshot;
 import com.lynxus.persistence.jooq.tables.ConversationMessage;
 import com.lynxus.persistence.jooq.tables.ConversationSession;
 import com.lynxus.persistence.jooq.tables.ExternalInteractionEvent;
@@ -123,6 +124,11 @@ public class Tables {
      * The table <code>public.catalog_scenario</code>.
      */
     public static final CatalogScenario CATALOG_SCENARIO = CatalogScenario.CATALOG_SCENARIO;
+
+    /**
+     * The table <code>public.channel_session_binding_snapshot</code>.
+     */
+    public static final ChannelSessionBindingSnapshot CHANNEL_SESSION_BINDING_SNAPSHOT = ChannelSessionBindingSnapshot.CHANNEL_SESSION_BINDING_SNAPSHOT;
 
     /**
      * The table <code>public.conversation_message</code>.

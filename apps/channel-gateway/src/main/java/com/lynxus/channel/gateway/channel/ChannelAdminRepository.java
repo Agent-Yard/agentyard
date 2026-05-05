@@ -5,6 +5,8 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundBindingSnapshot;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundBindingSnapshotPage;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfig;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobRun;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelTemplateBinding;
@@ -66,6 +68,15 @@ public class ChannelAdminRepository {
         return store.listBindings(channelProfileId);
     }
 
+    public ChannelOutboundBindingSnapshotPage listBindingSnapshots(Instant updatedAfter, String cursor, int limit) {
+        ChannelStore.ChannelBindingSnapshotPageData page = store.listBindingSnapshots(updatedAfter, cursor, limit);
+        return new ChannelOutboundBindingSnapshotPage(page.items(), page.nextCursor());
+    }
+
+    public List<ChannelOutboundBindingSnapshot> listBindingSnapshotsByProfile(String channelProfileId) {
+        return store.listBindingSnapshotsByProfile(channelProfileId);
+    }
+
     public Optional<ChannelConversationBinding> findBindingByProfileAndExternalConversation(
         String channelProfileId,
         String externalConversationId
@@ -75,6 +86,10 @@ public class ChannelAdminRepository {
 
     public Optional<ChannelConversationBinding> findBindingBySessionId(String sessionId) {
         return store.findBindingBySessionId(sessionId);
+    }
+
+    public List<ChannelOutboundBindingSnapshot> listActiveBindingSnapshotsBySessionId(String sessionId) {
+        return store.listActiveBindingSnapshotsBySessionId(sessionId);
     }
 
     public void saveBinding(ChannelConversationBinding binding) {

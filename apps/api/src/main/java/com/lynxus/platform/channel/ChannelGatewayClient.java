@@ -5,6 +5,8 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundActivityRequest;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundActivityResponse;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundBindingSnapshot;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundBindingSnapshotPage;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDeliveryRequest;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfig;
@@ -18,6 +20,7 @@ import com.lynxus.platform.shared.ConflictException;
 import com.lynxus.platform.shared.DownstreamServiceException;
 import com.lynxus.platform.shared.logging.PlatformLogContext;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.function.Supplier;
@@ -35,6 +38,12 @@ public class ChannelGatewayClient {
     private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelGatewayProfile>>> CHANNEL_PROFILE_LIST = new ParameterizedTypeReference<>() {
     };
     private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelConversationBinding>>> CHANNEL_BINDING_LIST = new ParameterizedTypeReference<>() {
+    };
+    private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelOutboundBindingSnapshot>>> CHANNEL_BINDING_SNAPSHOT_LIST = new ParameterizedTypeReference<>() {
+    };
+    private static final ParameterizedTypeReference<ApiEnvelope<ChannelOutboundBindingSnapshotPage>> CHANNEL_BINDING_SNAPSHOT_PAGE = new ParameterizedTypeReference<>() {
+    };
+    private static final ParameterizedTypeReference<ApiEnvelope<ChannelOutboundBindingSnapshot>> CHANNEL_BINDING_SNAPSHOT = new ParameterizedTypeReference<>() {
     };
     private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelInboundEvent>>> CHANNEL_INBOUND_EVENT_LIST = new ParameterizedTypeReference<>() {
     };
@@ -119,17 +128,45 @@ public class ChannelGatewayClient {
     }
 
     public List<ChannelConversationBinding> listBindings(String channelProfileId) {
+        return listBindingSnapshotsByProfile(channelProfileId).stream()
+            .map(ChannelGatewayClient::toConversationBinding)
+            .toList();
+    }
+
+    public ChannelOutboundBindingSnapshotPage listBindingSnapshots(Instant updatedAfter, String cursor, int limit) {
+        return invoke(() -> body(restClient.get()
+            .uri(uriBuilder -> {
+                var builder = uriBuilder
+                    .path("/internal/channel-admin/bindings")
+                    .queryParam("limit", limit);
+                if (updatedAfter != null) {
+                    builder.queryParam("updatedAfter", updatedAfter);
+                }
+                if (cursor != null && !cursor.isBlank()) {
+                    builder.queryParam("cursor", cursor);
+                }
+                return builder.build();
+            })
+            .retrieve()
+            .body(CHANNEL_BINDING_SNAPSHOT_PAGE)));
+    }
+
+    public List<ChannelOutboundBindingSnapshot> listBindingSnapshotsByProfile(String channelProfileId) {
         return invoke(() -> body(restClient.get()
             .uri("/internal/channel-admin/profiles/{channelProfileId}/bindings", channelProfileId)
             .retrieve()
-            .body(CHANNEL_BINDING_LIST)));
+            .body(CHANNEL_BINDING_SNAPSHOT_LIST)));
+    }
+
+    public ChannelOutboundBindingSnapshot getBindingSnapshotBySession(String sessionId) {
+        return invoke(() -> body(restClient.get()
+            .uri("/internal/channel-admin/bindings/by-session/{sessionId}", sessionId)
+            .retrieve()
+            .body(CHANNEL_BINDING_SNAPSHOT)));
     }
 
     public ChannelConversationBinding getBindingBySession(String sessionId) {
-        return invoke(() -> body(restClient.get()
-            .uri("/internal/channel-admin/profiles/bindings/by-session/{sessionId}", sessionId)
-            .retrieve()
-            .body(CHANNEL_BINDING)));
+        return toConversationBinding(getBindingSnapshotBySession(sessionId));
     }
 
     public List<ChannelInboundEvent> listInboundEvents(String channelProfileId) {
@@ -268,6 +305,22 @@ public class ChannelGatewayClient {
             throw new IllegalStateException("channel gateway returned empty response");
         }
         return envelope.data();
+    }
+
+    private static ChannelConversationBinding toConversationBinding(ChannelOutboundBindingSnapshot snapshot) {
+        return new ChannelConversationBinding(
+            snapshot.bindingId(),
+            snapshot.channelProfileId(),
+            snapshot.externalConversationId(),
+            snapshot.externalUserId(),
+            snapshot.assistantId(),
+            snapshot.customerId(),
+            snapshot.sessionId(),
+            com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBindingStatus.valueOf(snapshot.bindingStatus()),
+            java.util.Map.of(),
+            snapshot.bindingUpdatedAt(),
+            snapshot.bindingUpdatedAt()
+        );
     }
 
     private <T> T invoke(Supplier<T> request) {

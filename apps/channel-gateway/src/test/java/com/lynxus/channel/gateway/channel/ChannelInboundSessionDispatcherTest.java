@@ -21,6 +21,7 @@ import com.lynxus.extension.sdk.protocol.DescriptorType;
 import com.lynxus.extension.sdk.registration.ExtensionRegistrationLoader;
 import java.time.Instant;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
@@ -75,6 +76,26 @@ class ChannelInboundSessionDispatcherTest {
         assertEquals("session-v2-abc12345", runtimeClient.replayedSessionId);
         var binding = repository.listBindings("channel-profile-1").getFirst();
         assertEquals("session-v2-abc12345", binding.sessionId());
+    }
+
+    @Test
+    void sendsBindingSnapshotRefreshHintAfterAttachSessionBeforeOutboundReplay() {
+        NormalizedChannelInboundEvent event = messageEvent();
+        var ingestResult = ingestService.ingest(event, headers(event.dedupKey()));
+        List<String> order = new ArrayList<>();
+        CapturingHintClient hintClient = new CapturingHintClient(order);
+        runtimeClient.order = order;
+        ChannelInboundSessionDispatcher dispatcher = new ChannelInboundSessionDispatcher(
+            repository,
+            runtimeClient,
+            hintClient,
+            Runnable::run
+        );
+
+        dispatcher.dispatch(event, ingestResult);
+
+        assertEquals("session-v2-abc12345", hintClient.binding.sessionId());
+        assertEquals(List.of("hint", "replay"), order);
     }
 
     @Test
@@ -171,6 +192,7 @@ class ChannelInboundSessionDispatcherTest {
     private static final class CapturingSessionRuntimeClient implements ChannelSessionRuntimeClient {
         private ChannelInboundSessionMessageRequest request;
         private String replayedSessionId;
+        private List<String> order;
 
         @Override
         public ChannelInboundSessionMessageResponse dispatchInboundMessage(ChannelInboundSessionMessageRequest request) {
@@ -180,7 +202,25 @@ class ChannelInboundSessionDispatcherTest {
 
         @Override
         public void replayChannelOutbound(String sessionId) {
+            if (order != null) {
+                order.add("replay");
+            }
             replayedSessionId = sessionId;
+        }
+    }
+
+    private static final class CapturingHintClient implements ChannelBindingSnapshotRefreshHintClient {
+        private final List<String> order;
+        private com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding binding;
+
+        private CapturingHintClient(List<String> order) {
+            this.order = order;
+        }
+
+        @Override
+        public void bindingSessionAttached(com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding binding) {
+            this.binding = binding;
+            order.add("hint");
         }
     }
 

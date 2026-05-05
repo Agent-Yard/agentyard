@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import org.slf4j.Logger;
@@ -26,17 +27,28 @@ public class ChannelInboundSessionDispatcher {
 
     private final ChannelAdminRepository repository;
     private final ChannelSessionRuntimeClient sessionRuntimeClient;
+    private final ChannelBindingSnapshotRefreshHintClient bindingSnapshotRefreshHintClient;
     private final Executor executor;
 
     @Autowired
     public ChannelInboundSessionDispatcher(
         ChannelAdminRepository repository,
         ChannelSessionRuntimeClient sessionRuntimeClient,
+        ChannelBindingSnapshotRefreshHintClient bindingSnapshotRefreshHintClient,
         @Qualifier(ChannelGatewayAsyncConfiguration.CHANNEL_INBOUND_SESSION_DISPATCH_EXECUTOR) Executor executor
     ) {
         this.repository = repository;
         this.sessionRuntimeClient = sessionRuntimeClient;
+        this.bindingSnapshotRefreshHintClient = bindingSnapshotRefreshHintClient;
         this.executor = executor;
+    }
+
+    ChannelInboundSessionDispatcher(
+        ChannelAdminRepository repository,
+        ChannelSessionRuntimeClient sessionRuntimeClient,
+        Executor executor
+    ) {
+        this(repository, sessionRuntimeClient, null, executor);
     }
 
     public void dispatchAsync(
@@ -99,6 +111,9 @@ public class ChannelInboundSessionDispatcher {
             )
         );
         ChannelConversationBinding updatedBinding = attachSession(binding, response.sessionId());
+        if (!Objects.equals(updatedBinding.sessionId(), binding.sessionId())) {
+            sendBindingSnapshotRefreshHint(updatedBinding);
+        }
         try {
             sessionRuntimeClient.replayChannelOutbound(response.sessionId());
         } catch (RuntimeException error) {
@@ -134,6 +149,22 @@ public class ChannelInboundSessionDispatcher {
         );
         repository.saveBinding(updated);
         return updated;
+    }
+
+    private void sendBindingSnapshotRefreshHint(ChannelConversationBinding binding) {
+        if (bindingSnapshotRefreshHintClient == null) {
+            return;
+        }
+        try {
+            bindingSnapshotRefreshHintClient.bindingSessionAttached(binding);
+        } catch (RuntimeException error) {
+            log.warn(
+                "failed to send channel binding snapshot refresh hint after attachSession: bindingId={}, sessionId={}",
+                binding.id(),
+                binding.sessionId(),
+                error
+            );
+        }
     }
 
     private static SessionMessageInput toSessionMessageInput(NormalizedChannelInboundEvent event) {

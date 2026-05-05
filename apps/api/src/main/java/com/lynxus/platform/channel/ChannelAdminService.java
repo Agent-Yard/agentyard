@@ -34,20 +34,23 @@ public class ChannelAdminService {
     private final ChannelGatewayClient channelGatewayClient;
     private final IntegrationAccountService integrationAccountService;
     private final ExtensionDefinitionService extensionDefinitionService;
+    private final ChannelBindingSnapshotRefreshCoordinator bindingSnapshotRefreshCoordinator;
 
     @Autowired
     public ChannelAdminService(
         ChannelGatewayClient channelGatewayClient,
         IntegrationAccountService integrationAccountService,
-        ExtensionDefinitionService extensionDefinitionService
+        ExtensionDefinitionService extensionDefinitionService,
+        ChannelBindingSnapshotRefreshCoordinator bindingSnapshotRefreshCoordinator
     ) {
         this.channelGatewayClient = channelGatewayClient;
         this.integrationAccountService = integrationAccountService;
         this.extensionDefinitionService = extensionDefinitionService;
+        this.bindingSnapshotRefreshCoordinator = bindingSnapshotRefreshCoordinator;
     }
 
     ChannelAdminService(ChannelGatewayClient channelGatewayClient, IntegrationAccountService integrationAccountService) {
-        this(channelGatewayClient, integrationAccountService, null);
+        this(channelGatewayClient, integrationAccountService, null, null);
     }
 
     public List<ChannelProfile> listProfiles() {
@@ -64,7 +67,9 @@ public class ChannelAdminService {
             request.assistantBinding(),
             materializeAccountSnapshot(request.integrationAccountId(), request.providerType())
         );
-        return toWebProfile(channelGatewayClient.createProfile(internalRequest));
+        ChannelProfile profile = toWebProfile(channelGatewayClient.createProfile(internalRequest));
+        requestBindingSnapshotRefresh(profile.id(), "PROFILE_CREATED");
+        return profile;
     }
 
     public ChannelProfile getProfile(String channelProfileId) {
@@ -82,11 +87,15 @@ public class ChannelAdminService {
             materializeAccountSnapshot(request.integrationAccountId(), request.providerType()),
             request.expectedRevision()
         );
-        return toWebProfile(channelGatewayClient.updateProfile(channelProfileId, internalRequest));
+        ChannelProfile profile = toWebProfile(channelGatewayClient.updateProfile(channelProfileId, internalRequest));
+        requestBindingSnapshotRefresh(profile.id(), "PROFILE_UPDATED");
+        return profile;
     }
 
     public ChannelProfile deleteProfile(String channelProfileId, long expectedRevision) {
-        return toWebProfile(channelGatewayClient.deleteProfile(channelProfileId, expectedRevision));
+        ChannelProfile profile = toWebProfile(channelGatewayClient.deleteProfile(channelProfileId, expectedRevision));
+        requestBindingSnapshotRefresh(profile.id(), "PROFILE_DELETED");
+        return profile;
     }
 
     public List<ChannelConversationBinding> listBindings(String channelProfileId) {
@@ -239,6 +248,12 @@ public class ChannelAdminService {
             .anyMatch(definition -> definition.jobType().equals(jobType));
         if (!found) {
             throw new IllegalArgumentException("unknown channel provider jobType: " + jobType);
+        }
+    }
+
+    private void requestBindingSnapshotRefresh(String channelProfileId, String reason) {
+        if (bindingSnapshotRefreshCoordinator != null) {
+            bindingSnapshotRefreshCoordinator.requestProfileRefresh(channelProfileId, reason);
         }
     }
 

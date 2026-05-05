@@ -38,7 +38,11 @@ public final class ChannelContracts {
 
     public enum ChannelConversationBindingStatus {
         ACTIVE,
-        ARCHIVED
+        ARCHIVED,
+        DISABLED,
+        DELETED,
+        DETACHED,
+        INACTIVE
     }
 
     public enum ChannelInboundEventStatus {
@@ -265,6 +269,48 @@ public final class ChannelContracts {
     ) {
         public ChannelConversationBinding {
             metadata = immutableObjectMap(metadata);
+        }
+    }
+
+    public record ChannelOutboundBindingSnapshot(
+        String bindingId,
+        String sessionId,
+        String channelProfileId,
+        String providerType,
+        String externalConversationId,
+        String externalUserId,
+        String assistantId,
+        String customerId,
+        String bindingStatus,
+        ChannelProfileStatus profileStatus,
+        long profileRevision,
+        Instant bindingUpdatedAt,
+        Instant profileUpdatedAt,
+        Instant updatedAt
+    ) {
+        public ChannelOutboundBindingSnapshot {
+            requireText(bindingId, "bindingId");
+            requireText(channelProfileId, "channelProfileId");
+            requireText(providerType, "providerType");
+            requireText(bindingStatus, "bindingStatus");
+            if (profileStatus == null) {
+                throw new IllegalArgumentException("profileStatus is required");
+            }
+            if (profileRevision <= 0) {
+                throw new IllegalArgumentException("profileRevision must be positive");
+            }
+            if (updatedAt == null) {
+                throw new IllegalArgumentException("updatedAt is required");
+            }
+        }
+    }
+
+    public record ChannelOutboundBindingSnapshotPage(
+        List<ChannelOutboundBindingSnapshot> items,
+        String nextCursor
+    ) {
+        public ChannelOutboundBindingSnapshotPage {
+            items = items == null || items.isEmpty() ? List.of() : List.copyOf(items);
         }
     }
 

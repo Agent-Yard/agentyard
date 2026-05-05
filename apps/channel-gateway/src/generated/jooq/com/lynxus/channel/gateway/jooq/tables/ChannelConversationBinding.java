@@ -152,7 +152,7 @@ public class ChannelConversationBinding extends TableImpl<ChannelConversationBin
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_CHANNEL_BINDING_PROFILE_UPDATED, Indexes.IDX_CHANNEL_BINDING_SESSION, Indexes.UK_CHANNEL_CONVERSATION_BINDING_PROFILE_EXTERNAL_CONVERSATION);
+        return Arrays.asList(Indexes.IDX_CHANNEL_BINDING_PROFILE_UPDATED, Indexes.IDX_CHANNEL_BINDING_SESSION, Indexes.UK_CHANNEL_BINDING_ACTIVE_SESSION, Indexes.UK_CHANNEL_CONVERSATION_BINDING_PROFILE_EXTERNAL_CONVERSATION);
     }
 
     @Override

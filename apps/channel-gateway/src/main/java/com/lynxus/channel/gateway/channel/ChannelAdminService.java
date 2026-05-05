@@ -12,6 +12,8 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileStatus;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundBindingSnapshot;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundBindingSnapshotPage;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfig;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfigWriteRequest;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobRun;
@@ -147,9 +149,29 @@ public class ChannelAdminService {
         return repository.listBindings(channelProfileId);
     }
 
+    public ChannelOutboundBindingSnapshotPage listBindingSnapshots(Instant updatedAfter, String cursor, Integer limit) {
+        return repository.listBindingSnapshots(updatedAfter, cursor, limit == null ? 500 : limit);
+    }
+
+    public List<ChannelOutboundBindingSnapshot> listBindingSnapshotsByProfile(String channelProfileId) {
+        getProfile(channelProfileId);
+        return repository.listBindingSnapshotsByProfile(channelProfileId);
+    }
+
     public ChannelConversationBinding getBindingBySession(String sessionId) {
         String normalizedSessionId = requireText(sessionId, "channelBinding.sessionId");
         return repository.findBindingBySessionId(normalizedSessionId)
+            .orElseThrow(() -> new NoSuchElementException("channel conversation binding not found for session: " + normalizedSessionId));
+    }
+
+    public ChannelOutboundBindingSnapshot getActiveBindingSnapshotBySession(String sessionId) {
+        String normalizedSessionId = requireText(sessionId, "channelBinding.sessionId");
+        List<ChannelOutboundBindingSnapshot> snapshots = repository.listActiveBindingSnapshotsBySessionId(normalizedSessionId);
+        if (snapshots.size() > 1) {
+            throw new ConflictException("duplicate ACTIVE channel conversation bindings for session: " + normalizedSessionId);
+        }
+        return snapshots.stream()
+            .findFirst()
             .orElseThrow(() -> new NoSuchElementException("channel conversation binding not found for session: " + normalizedSessionId));
     }
 

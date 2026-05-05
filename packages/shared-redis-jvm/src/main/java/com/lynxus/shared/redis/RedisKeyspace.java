@@ -56,6 +56,18 @@ public class RedisKeyspace {
         return qualify(SharedStateKeyspace.knowledgeInvalidationChannel());
     }
 
+    public String channelBindingSnapshotRefreshChannel() {
+        return qualify("lynxus:channel-binding-snapshot:refresh");
+    }
+
+    public String channelBindingSnapshotInvalidationChannel() {
+        return qualify("lynxus:channel-binding-snapshot:invalidation");
+    }
+
+    public String channelBindingSnapshotRefreshLock(String key) {
+        return qualify("lynxus:lock:channel-binding-snapshot-refresh:" + key);
+    }
+
     public String httpSessionNamespace() {
         return qualify(SharedStateKeyspace.httpSessionNamespace());
     }
