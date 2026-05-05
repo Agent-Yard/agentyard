@@ -1,6 +1,7 @@
 package com.lynxus.channel.gateway.connector.feishu;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import com.lynxus.contracts.channel.ChannelContracts;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
@@ -33,6 +34,25 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
         assertEquals(frame.frameId(), messageSender.commands.getFirst().uuid());
     }
 
+    @Test
+    void finalDeliverySkipsUnsupportedBlocksWithoutFailingCheckpointPath() {
+        CapturingCredentialProvider credentialProvider = new CapturingCredentialProvider();
+        CapturingMessageSender messageSender = new CapturingMessageSender();
+        FeishuGatewayNativeChannelProviderAdapter adapter = new FeishuGatewayNativeChannelProviderAdapter(
+            credentialProvider,
+            messageSender
+        );
+        ChannelOutboundFrame frame = finalFrameWithBlocks(List.of(
+            Map.of("type", "IMAGE", "url", "https://example.invalid/image.png"),
+            Map.of("type", "FILE", "fileId", "file-1")
+        ));
+
+        adapter.consumeOutboundFrame(profile(), frame);
+
+        assertNull(credentialProvider.accountId);
+        assertEquals(0, messageSender.commands.size());
+    }
+
     private static ChannelGatewayProfile profile() {
         Instant now = Instant.parse("2026-05-05T00:00:00Z");
         return new ChannelGatewayProfile(
@@ -52,6 +72,13 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
     }
 
     private static ChannelOutboundFrame finalFrame() {
+        return finalFrameWithBlocks(List.of(
+            Map.of("type", "TEXT", "text", "hello"),
+            Map.of("type", "TEXT", "text", "world")
+        ));
+    }
+
+    private static ChannelOutboundFrame finalFrameWithBlocks(List<Map<String, Object>> messageBlocks) {
         String frameId = "profile-1:session-1:message-1:FINAL_DELIVERY";
         return new ChannelOutboundFrame(
             ChannelContracts.CHANNEL_OUTBOUND_FRAME_PROTOCOL,
@@ -72,10 +99,7 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
             Map.of(
                 "sessionMessageId", "message-1",
                 "messageSequence", 1,
-                "messageBlocks", List.of(
-                    Map.of("type", "TEXT", "text", "hello"),
-                    Map.of("type", "TEXT", "text", "world")
-                )
+                "messageBlocks", messageBlocks
             ),
             null
         );

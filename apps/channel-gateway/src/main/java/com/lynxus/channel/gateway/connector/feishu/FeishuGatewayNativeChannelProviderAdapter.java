@@ -8,11 +8,15 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 @Component
 public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayNativeChannelProviderAdapter {
+    private static final Logger log = LoggerFactory.getLogger(FeishuGatewayNativeChannelProviderAdapter.class);
     public static final String PROVIDER_TYPE = "feishu";
     private static final String DEFAULT_RECEIVE_ID_TYPE = "chat_id";
 
@@ -68,6 +72,10 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
         if (frame.kind() != ChannelOutboundFrameKind.FINAL_DELIVERY) {
             throw new IllegalArgumentException("Feishu gateway-native provider only supports FINAL_DELIVERY frames");
         }
+        Optional<String> text = finalText(profile, frame);
+        if (text.isEmpty()) {
+            return;
+        }
         if (credentialProvider == null || messageSender == null) {
             throw new IllegalStateException("Feishu gateway-native outbound dependencies are not configured");
         }
@@ -76,7 +84,7 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
             credential,
             receiveIdType(profile.config()),
             frame.externalConversationId(),
-            finalText(frame),
+            text.get(),
             frame.idempotencyKey()
         ));
     }
@@ -166,14 +174,32 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
         return DEFAULT_RECEIVE_ID_TYPE;
     }
 
-    private static String finalText(ChannelOutboundFrame frame) {
+    private static Optional<String> finalText(ChannelGatewayProfile profile, ChannelOutboundFrame frame) {
         Object rawBlocks = frame.payload().get("messageBlocks");
         if (!(rawBlocks instanceof List<?> blocks) || blocks.isEmpty()) {
-            throw new IllegalArgumentException("FINAL_DELIVERY payload.messageBlocks must contain at least one text block for Feishu");
+            log.info(
+                "skipping Feishu native final delivery with no renderable message blocks: channelProfileId={}, frameId={}, sessionId={}, sessionMessageId={}",
+                frame.channelProfileId(),
+                frame.frameId(),
+                frame.sessionId(),
+                frame.payload().get("sessionMessageId")
+            );
+            return Optional.empty();
         }
         List<String> parts = new ArrayList<>();
+        int index = 0;
         for (Object rawBlock : blocks) {
+            int blockIndex = index++;
             if (!(rawBlock instanceof Map<?, ?> block)) {
+                log.info(
+                    "skipping unsupported Feishu native final block: channelProfileId={}, frameId={}, sessionId={}, sessionMessageId={}, blockIndex={}, blockType={}",
+                    frame.channelProfileId(),
+                    frame.frameId(),
+                    frame.sessionId(),
+                    frame.payload().get("sessionMessageId"),
+                    blockIndex,
+                    "UNKNOWN"
+                );
                 continue;
             }
             Object rawType = block.get("type");
@@ -190,11 +216,30 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
                 if (content instanceof String value && !value.isBlank()) {
                     parts.add(value);
                 }
+                continue;
             }
+            log.info(
+                "skipping unsupported Feishu native final block: channelProfileId={}, providerType={}, frameId={}, sessionId={}, sessionMessageId={}, blockIndex={}, blockType={}",
+                profile.id(),
+                profile.providerType(),
+                frame.frameId(),
+                frame.sessionId(),
+                frame.payload().get("sessionMessageId"),
+                blockIndex,
+                type
+            );
         }
         if (parts.isEmpty()) {
-            throw new IllegalArgumentException("FINAL_DELIVERY payload.messageBlocks has no text content Feishu can send");
+            log.info(
+                "skipping Feishu native final delivery with no text content: channelProfileId={}, providerType={}, frameId={}, sessionId={}, sessionMessageId={}",
+                profile.id(),
+                profile.providerType(),
+                frame.frameId(),
+                frame.sessionId(),
+                frame.payload().get("sessionMessageId")
+            );
+            return Optional.empty();
         }
-        return String.join("\n", parts);
+        return Optional.of(String.join("\n", parts));
     }
 }
