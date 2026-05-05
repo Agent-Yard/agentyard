@@ -68,6 +68,10 @@ public class RedisKeyspace {
         return qualify("lynxus:channel-outbound:frames");
     }
 
+    public String channelOutboundApiStreamOwnerLock(String profileConsumerKey) {
+        return qualify("lynxus:lock:channel-outbound-api-stream-owner:" + profileConsumerKey);
+    }
+
     public String channelBindingSnapshotRefreshLock(String key) {
         return qualify("lynxus:lock:channel-binding-snapshot-refresh:" + key);
     }

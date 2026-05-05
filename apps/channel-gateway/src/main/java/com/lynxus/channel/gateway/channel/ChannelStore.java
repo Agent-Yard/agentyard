@@ -9,9 +9,10 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBindingStatus;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEventStatus;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundBindingSnapshot;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDeliveryStatus;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundConsumerKind;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundFrameCheckpoint;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundProfileConsumer;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfig;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobRun;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobRunStatus;
@@ -24,6 +25,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.Record;
@@ -32,7 +34,7 @@ import org.jooq.impl.DSL;
 import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_PROFILE;
 import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_CONVERSATION_BINDING;
 import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_INBOUND_EVENT;
-import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_OUTBOUND_DELIVERY;
+import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_OUTBOUND_FINAL_CHECKPOINT;
 import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_PROFILE_JOB;
 import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_PROFILE_JOB_RUN;
 import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_PROFILE_TEMPLATE_BINDING;
@@ -56,19 +58,6 @@ final class ChannelStore {
         return dsl.selectFrom(CHANNEL_PROFILE)
             .where(CHANNEL_PROFILE.ID.eq(channelProfileId))
             .fetchOptional(this::mapProfile);
-    }
-
-    Optional<ChannelOutboundProfileSnapshot> findOutboundProfileSnapshot(String channelProfileId) {
-        return dsl.selectFrom(CHANNEL_PROFILE)
-            .where(CHANNEL_PROFILE.ID.eq(channelProfileId))
-            .fetchOptional(record -> new ChannelOutboundProfileSnapshot(
-                record.get(CHANNEL_PROFILE.ID),
-                record.get(CHANNEL_PROFILE.PROVIDER_TYPE),
-                ChannelProfileStatus.valueOf(record.get(CHANNEL_PROFILE.STATUS)),
-                jsonbSupport.readObjectMap(record.get(CHANNEL_PROFILE.CONFIG)),
-                readAssistantBinding(record),
-                record.get(CHANNEL_PROFILE.EXTERNAL_SECRET_REF)
-            ));
     }
 
     List<ChannelGatewayProfile> listProfilesByProvider(String providerType) {
@@ -134,7 +123,7 @@ final class ChannelStore {
     ChannelBindingSnapshotPageData listBindingSnapshots(Instant updatedAfter, String cursor, int limit) {
         Field<java.time.OffsetDateTime> snapshotUpdatedAt = snapshotUpdatedAtField();
         Cursor parsedCursor = Cursor.parse(cursor);
-        var condition = DSL.trueCondition();
+        Condition condition = DSL.trueCondition();
         if (updatedAfter != null) {
             condition = condition.and(snapshotUpdatedAt.gt(JooqTimeSupport.toOffsetDateTime(updatedAfter)));
         }
@@ -366,49 +355,86 @@ final class ChannelStore {
         return rows == 1;
     }
 
-    List<ChannelOutboundDelivery> listOutboundDeliveries(String channelProfileId) {
-        return dsl.selectFrom(CHANNEL_OUTBOUND_DELIVERY)
-            .where(CHANNEL_OUTBOUND_DELIVERY.CHANNEL_PROFILE_ID.eq(channelProfileId))
-            .orderBy(CHANNEL_OUTBOUND_DELIVERY.CREATED_AT.desc(), CHANNEL_OUTBOUND_DELIVERY.DELIVERY_ID.asc())
-            .fetch(this::mapOutboundDelivery);
+    List<ChannelOutboundFrameCheckpoint> listOutboundFinalCheckpoints(String channelProfileId) {
+        return dsl.selectFrom(CHANNEL_OUTBOUND_FINAL_CHECKPOINT)
+            .where(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.CHANNEL_PROFILE_ID.eq(channelProfileId))
+            .orderBy(
+                CHANNEL_OUTBOUND_FINAL_CHECKPOINT.PROVIDER_TYPE.asc(),
+                CHANNEL_OUTBOUND_FINAL_CHECKPOINT.CONSUMER_KIND.asc(),
+                CHANNEL_OUTBOUND_FINAL_CHECKPOINT.CONSUMER_ID.asc()
+            )
+            .fetch(this::mapOutboundFinalCheckpoint);
     }
 
-    Optional<ChannelOutboundDelivery> findOutboundDeliveryByIdempotencyKey(String idempotencyKey) {
-        return dsl.selectFrom(CHANNEL_OUTBOUND_DELIVERY)
-            .where(CHANNEL_OUTBOUND_DELIVERY.IDEMPOTENCY_KEY.eq(idempotencyKey))
-            .fetchOptional(this::mapOutboundDelivery);
+    Optional<ChannelOutboundFrameCheckpoint> findOutboundFinalCheckpoint(ChannelOutboundProfileConsumer consumer) {
+        return dsl.selectFrom(CHANNEL_OUTBOUND_FINAL_CHECKPOINT)
+            .where(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.CHANNEL_PROFILE_ID.eq(consumer.channelProfileId()))
+            .and(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.PROVIDER_TYPE.eq(consumer.providerType()))
+            .and(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.CONSUMER_KIND.eq(consumer.consumerKind().name()))
+            .and(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.CONSUMER_ID.eq(consumer.consumerId()))
+            .fetchOptional(this::mapOutboundFinalCheckpoint);
     }
 
-    void saveOutboundDelivery(ChannelOutboundDelivery delivery) {
-        dsl.insertInto(CHANNEL_OUTBOUND_DELIVERY)
-            .set(CHANNEL_OUTBOUND_DELIVERY.DELIVERY_ID, delivery.deliveryId())
-            .set(CHANNEL_OUTBOUND_DELIVERY.CHANNEL_PROFILE_ID, delivery.channelProfileId())
-            .set(CHANNEL_OUTBOUND_DELIVERY.PROVIDER_TYPE, delivery.providerType())
-            .set(CHANNEL_OUTBOUND_DELIVERY.SESSION_ID, delivery.sessionId())
-            .set(CHANNEL_OUTBOUND_DELIVERY.SESSION_MESSAGE_ID, delivery.sessionMessageId())
-            .set(CHANNEL_OUTBOUND_DELIVERY.EXTERNAL_CONVERSATION_ID, delivery.externalConversationId())
-            .set(CHANNEL_OUTBOUND_DELIVERY.IDEMPOTENCY_KEY, delivery.idempotencyKey())
-            .set(CHANNEL_OUTBOUND_DELIVERY.PAYLOAD, jsonbSupport.toJsonb(delivery.payload() == null ? Map.of() : delivery.payload()))
-            .set(CHANNEL_OUTBOUND_DELIVERY.STATUS, delivery.status().name())
-            .set(CHANNEL_OUTBOUND_DELIVERY.ATTEMPT_COUNT, delivery.attemptCount())
-            .set(CHANNEL_OUTBOUND_DELIVERY.LAST_ERROR, delivery.lastError())
-            .set(CHANNEL_OUTBOUND_DELIVERY.CREATED_AT, JooqTimeSupport.toOffsetDateTime(delivery.createdAt()))
-            .set(CHANNEL_OUTBOUND_DELIVERY.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(delivery.updatedAt()))
-            .onConflict(CHANNEL_OUTBOUND_DELIVERY.DELIVERY_ID)
+    void ensureOutboundFinalCheckpoint(ChannelOutboundProfileConsumer consumer, Instant now) {
+        dsl.insertInto(CHANNEL_OUTBOUND_FINAL_CHECKPOINT)
+            .set(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.CHANNEL_PROFILE_ID, consumer.channelProfileId())
+            .set(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.PROVIDER_TYPE, consumer.providerType())
+            .set(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.CONSUMER_KIND, consumer.consumerKind().name())
+            .set(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.CONSUMER_ID, consumer.consumerId())
+            .set(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.REGISTRATION_ID, consumer.registrationId())
+            .set(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.CREATED_AT, JooqTimeSupport.toOffsetDateTime(now))
+            .set(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(now))
+            .onConflict(
+                CHANNEL_OUTBOUND_FINAL_CHECKPOINT.CHANNEL_PROFILE_ID,
+                CHANNEL_OUTBOUND_FINAL_CHECKPOINT.PROVIDER_TYPE,
+                CHANNEL_OUTBOUND_FINAL_CHECKPOINT.CONSUMER_KIND,
+                CHANNEL_OUTBOUND_FINAL_CHECKPOINT.CONSUMER_ID
+            )
             .doUpdate()
-            .set(CHANNEL_OUTBOUND_DELIVERY.CHANNEL_PROFILE_ID, delivery.channelProfileId())
-            .set(CHANNEL_OUTBOUND_DELIVERY.PROVIDER_TYPE, delivery.providerType())
-            .set(CHANNEL_OUTBOUND_DELIVERY.SESSION_ID, delivery.sessionId())
-            .set(CHANNEL_OUTBOUND_DELIVERY.SESSION_MESSAGE_ID, delivery.sessionMessageId())
-            .set(CHANNEL_OUTBOUND_DELIVERY.EXTERNAL_CONVERSATION_ID, delivery.externalConversationId())
-            .set(CHANNEL_OUTBOUND_DELIVERY.IDEMPOTENCY_KEY, delivery.idempotencyKey())
-            .set(CHANNEL_OUTBOUND_DELIVERY.PAYLOAD, jsonbSupport.toJsonb(delivery.payload() == null ? Map.of() : delivery.payload()))
-            .set(CHANNEL_OUTBOUND_DELIVERY.STATUS, delivery.status().name())
-            .set(CHANNEL_OUTBOUND_DELIVERY.ATTEMPT_COUNT, delivery.attemptCount())
-            .set(CHANNEL_OUTBOUND_DELIVERY.LAST_ERROR, delivery.lastError())
-            .set(CHANNEL_OUTBOUND_DELIVERY.CREATED_AT, JooqTimeSupport.toOffsetDateTime(delivery.createdAt()))
-            .set(CHANNEL_OUTBOUND_DELIVERY.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(delivery.updatedAt()))
+            .set(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.REGISTRATION_ID, consumer.registrationId())
+            .set(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(now))
             .execute();
+    }
+
+    boolean advanceOutboundFinalCheckpoint(
+        ChannelOutboundProfileConsumer consumer,
+        long finalSequence,
+        String frameId,
+        String sessionId,
+        String sessionMessageId,
+        Instant ackedAt
+    ) {
+        int rows = dsl.insertInto(CHANNEL_OUTBOUND_FINAL_CHECKPOINT)
+            .set(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.CHANNEL_PROFILE_ID, consumer.channelProfileId())
+            .set(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.PROVIDER_TYPE, consumer.providerType())
+            .set(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.CONSUMER_KIND, consumer.consumerKind().name())
+            .set(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.CONSUMER_ID, consumer.consumerId())
+            .set(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.REGISTRATION_ID, consumer.registrationId())
+            .set(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.LAST_ACKED_FINAL_SEQUENCE, finalSequence)
+            .set(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.LAST_ACKED_FINAL_FRAME_ID, frameId)
+            .set(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.LAST_ACKED_SESSION_ID, sessionId)
+            .set(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.LAST_ACKED_SESSION_MESSAGE_ID, sessionMessageId)
+            .set(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.LAST_ACKED_AT, JooqTimeSupport.toOffsetDateTime(ackedAt))
+            .set(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.CREATED_AT, JooqTimeSupport.toOffsetDateTime(ackedAt))
+            .set(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(ackedAt))
+            .onConflict(
+                CHANNEL_OUTBOUND_FINAL_CHECKPOINT.CHANNEL_PROFILE_ID,
+                CHANNEL_OUTBOUND_FINAL_CHECKPOINT.PROVIDER_TYPE,
+                CHANNEL_OUTBOUND_FINAL_CHECKPOINT.CONSUMER_KIND,
+                CHANNEL_OUTBOUND_FINAL_CHECKPOINT.CONSUMER_ID
+            )
+            .doUpdate()
+            .set(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.REGISTRATION_ID, consumer.registrationId())
+            .set(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.LAST_ACKED_FINAL_SEQUENCE, finalSequence)
+            .set(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.LAST_ACKED_FINAL_FRAME_ID, frameId)
+            .set(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.LAST_ACKED_SESSION_ID, sessionId)
+            .set(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.LAST_ACKED_SESSION_MESSAGE_ID, sessionMessageId)
+            .set(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.LAST_ACKED_AT, JooqTimeSupport.toOffsetDateTime(ackedAt))
+            .set(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(ackedAt))
+            .where(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.LAST_ACKED_FINAL_SEQUENCE.isNull()
+                .or(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.LAST_ACKED_FINAL_SEQUENCE.lt(finalSequence)))
+            .execute();
+        return rows == 1;
     }
 
     List<ChannelTemplateBinding> listTemplateBindings(String channelProfileId) {
@@ -845,21 +871,20 @@ final class ChannelStore {
         );
     }
 
-    private ChannelOutboundDelivery mapOutboundDelivery(Record record) {
-        return new ChannelOutboundDelivery(
-            record.get(CHANNEL_OUTBOUND_DELIVERY.DELIVERY_ID),
-            record.get(CHANNEL_OUTBOUND_DELIVERY.CHANNEL_PROFILE_ID),
-            record.get(CHANNEL_OUTBOUND_DELIVERY.PROVIDER_TYPE),
-            record.get(CHANNEL_OUTBOUND_DELIVERY.SESSION_ID),
-            record.get(CHANNEL_OUTBOUND_DELIVERY.SESSION_MESSAGE_ID),
-            record.get(CHANNEL_OUTBOUND_DELIVERY.EXTERNAL_CONVERSATION_ID),
-            record.get(CHANNEL_OUTBOUND_DELIVERY.IDEMPOTENCY_KEY),
-            jsonbSupport.readObjectMap(record.get(CHANNEL_OUTBOUND_DELIVERY.PAYLOAD)),
-            ChannelOutboundDeliveryStatus.valueOf(record.get(CHANNEL_OUTBOUND_DELIVERY.STATUS)),
-            record.get(CHANNEL_OUTBOUND_DELIVERY.ATTEMPT_COUNT),
-            record.get(CHANNEL_OUTBOUND_DELIVERY.LAST_ERROR),
-            JooqTimeSupport.toInstant(record.get(CHANNEL_OUTBOUND_DELIVERY.CREATED_AT)),
-            JooqTimeSupport.toInstant(record.get(CHANNEL_OUTBOUND_DELIVERY.UPDATED_AT))
+    private ChannelOutboundFrameCheckpoint mapOutboundFinalCheckpoint(Record record) {
+        return new ChannelOutboundFrameCheckpoint(
+            new ChannelOutboundProfileConsumer(
+                record.get(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.CHANNEL_PROFILE_ID),
+                record.get(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.PROVIDER_TYPE),
+                ChannelOutboundConsumerKind.valueOf(record.get(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.CONSUMER_KIND)),
+                record.get(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.CONSUMER_ID),
+                record.get(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.REGISTRATION_ID)
+            ),
+            record.get(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.LAST_ACKED_FINAL_SEQUENCE),
+            record.get(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.LAST_ACKED_FINAL_FRAME_ID),
+            record.get(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.LAST_ACKED_SESSION_ID),
+            record.get(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.LAST_ACKED_SESSION_MESSAGE_ID),
+            JooqTimeSupport.toInstant(record.get(CHANNEL_OUTBOUND_FINAL_CHECKPOINT.LAST_ACKED_AT))
         );
     }
 

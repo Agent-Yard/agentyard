@@ -131,7 +131,7 @@ Java core 数据访问当前以 `Flyway + jOOQ + packages/persistence-jvm` 为�
 - owner agent 的知识检索、tool calling、skill 读取都发生在 `agent-runtime` 内部推理循环
 - Tool 是业务能力契约；Connector 是接入实现；Integration Account/Credential 是账号与密钥状态。Agent / Playbook 只看 Tool operation schema，不接触签名、cookie、secret 等 provider 协议细节
 - Tool v1 内置 `SIMPLE_HTTP`、`BUSINESS_CODE_SECRET_HTTP`、`MCP` connector，执行仍在 `agent-runtime` 内；`agent-runtime` 通过 connector registry 分发执行，控制面通过 `ToolConnectorCatalog` 维护默认配置、账号规则和 operation mapping 默认值，Web 通过 `toolConnectors` 定义渲染表单字段和凭证模板
-- Channel Provider 同样通过 Integration Account 复用账号与凭证治理；`channel-gateway` 内置 Feishu provider 使用飞书 Java SDK 长连接接收入站文本消息，只有 ACTIVE、开启 inbound、已绑定 assistant 且已关联 Integration Account 的 Feishu channel profile 才会初始化长连接 client，出站文本消息由 gateway-native adapter 直接调用 SDK，不请求 manifest 中的示例 `sendOutbound` HTTP path
+- Channel Provider 同样通过 Integration Account 复用账号与凭证治理；`channel-gateway` 内置 Feishu provider 使用飞书 Java SDK 长连接接收入站文本消息，只有 ACTIVE、开启 inbound、已绑定 assistant 且已关联 Integration Account 的 Feishu channel profile 才会初始化长连接 client；出站链路切到 frame-stream relay 和 final checkpoint，不再依赖 manifest 中的同步 outbound HTTP path
 - 新增 connector 时优先补齐三处边界：runtime connector 实现与 registry、API catalog 归一化定义、Web connector definition；Tool operation schema、Session 投影和 Integration Account 存储模型不应为单个厂商协议重复分支。具体开发流程见 `docs/architecture/tool-connector-development.md`
 - playbook 只承担强业务流程，不重复承载 owner 推理
 - `sharedState` 只承载认知性上下文，不承载 owner / handoff / playbook 生命周期这类操作性权威状态

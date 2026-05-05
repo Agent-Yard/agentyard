@@ -4,9 +4,10 @@ import com.lynxus.channel.gateway.jooqsupport.JooqJsonbSupport;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundBindingSnapshot;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundBindingSnapshotPage;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundFrameCheckpoint;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundProfileConsumer;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfig;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobRun;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelTemplateBinding;
@@ -42,10 +43,6 @@ public class ChannelAdminRepository {
 
     public Optional<ChannelGatewayProfile> findProfile(String channelProfileId) {
         return store.findProfile(channelProfileId);
-    }
-
-    Optional<ChannelOutboundProfileSnapshot> findOutboundProfileSnapshot(String channelProfileId) {
-        return store.findOutboundProfileSnapshot(channelProfileId);
     }
 
     public List<ChannelGatewayProfile> listProfilesByProvider(String providerType) {
@@ -116,16 +113,27 @@ public class ChannelAdminRepository {
         return store.saveInboundEventIfAbsent(event);
     }
 
-    public List<ChannelOutboundDelivery> listOutboundDeliveries(String channelProfileId) {
-        return store.listOutboundDeliveries(channelProfileId);
+    public List<ChannelOutboundFrameCheckpoint> listOutboundFinalCheckpoints(String channelProfileId) {
+        return store.listOutboundFinalCheckpoints(channelProfileId);
     }
 
-    public Optional<ChannelOutboundDelivery> findOutboundDeliveryByIdempotencyKey(String idempotencyKey) {
-        return store.findOutboundDeliveryByIdempotencyKey(idempotencyKey);
+    public Optional<ChannelOutboundFrameCheckpoint> findOutboundFinalCheckpoint(ChannelOutboundProfileConsumer consumer) {
+        return store.findOutboundFinalCheckpoint(consumer);
     }
 
-    public void saveOutboundDelivery(ChannelOutboundDelivery delivery) {
-        store.saveOutboundDelivery(delivery);
+    public void ensureOutboundFinalCheckpoint(ChannelOutboundProfileConsumer consumer, Instant now) {
+        store.ensureOutboundFinalCheckpoint(consumer, now);
+    }
+
+    public boolean advanceOutboundFinalCheckpoint(
+        ChannelOutboundProfileConsumer consumer,
+        long finalSequence,
+        String frameId,
+        String sessionId,
+        String sessionMessageId,
+        Instant ackedAt
+    ) {
+        return store.advanceOutboundFinalCheckpoint(consumer, finalSequence, frameId, sessionId, sessionMessageId, ackedAt);
     }
 
     public List<ChannelTemplateBinding> listTemplateBindings(String channelProfileId) {

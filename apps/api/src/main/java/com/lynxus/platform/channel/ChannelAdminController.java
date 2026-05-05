@@ -65,9 +65,9 @@ public class ChannelAdminController {
         return ApiResponse.ok(channelAdminService.listInboundEvents(channelProfileId));
     }
 
-    @GetMapping("/{channelProfileId}/outbound-deliveries")
-    public ApiResponse<?> outboundDeliveries(@PathVariable String channelProfileId) {
-        return ApiResponse.ok(channelAdminService.listOutboundDeliveries(channelProfileId));
+    @GetMapping("/{channelProfileId}/outbound-final-checkpoints")
+    public ApiResponse<?> outboundFinalCheckpoints(@PathVariable String channelProfileId) {
+        return ApiResponse.ok(channelAdminService.listOutboundFinalCheckpoints(channelProfileId));
     }
 
     @GetMapping("/{channelProfileId}/template-bindings")

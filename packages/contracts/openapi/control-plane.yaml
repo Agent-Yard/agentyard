@@ -281,9 +281,9 @@ paths:
                 $ref: '#/components/schemas/ApiResponseChannelInboundEventList'
         '404':
           description: Channel profile not found
-  /channel-admin/profiles/{channelProfileId}/outbound-deliveries:
+  /channel-admin/profiles/{channelProfileId}/outbound-final-checkpoints:
     get:
-      summary: List channel outbound deliveries
+      summary: List channel outbound final checkpoints
       parameters:
         - in: path
           name: channelProfileId
@@ -292,11 +292,11 @@ paths:
             type: string
       responses:
         '200':
-          description: Channel outbound deliveries
+          description: Channel outbound final checkpoints
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiResponseChannelOutboundDeliveryList'
+                $ref: '#/components/schemas/ApiResponseChannelOutboundFrameCheckpointList'
         '404':
           description: Channel profile not found
   /channel-admin/profiles/{channelProfileId}/template-bindings:
@@ -2158,9 +2158,6 @@ components:
     ChannelInboundEventStatus:
       type: string
       enum: [RECEIVED, REJECTED]
-    ChannelOutboundDeliveryStatus:
-      type: string
-      enum: [PENDING, SENDING, SENT, FAILED]
     ChannelProviderJobScheduleType:
       type: string
       enum: [INTERVAL, CRON, MANUAL]
@@ -2532,56 +2529,6 @@ components:
           additionalProperties: true
         status:
           $ref: '#/components/schemas/ChannelInboundEventStatus'
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-    ChannelOutboundDelivery:
-      type: object
-      required:
-        - deliveryId
-        - channelProfileId
-        - providerType
-        - idempotencyKey
-        - payload
-        - status
-        - attemptCount
-        - createdAt
-        - updatedAt
-      properties:
-        deliveryId:
-          type: string
-        channelProfileId:
-          type: string
-        providerType:
-          type: string
-        sessionId:
-          type: string
-          nullable: true
-        sessionMessageId:
-          type: string
-          nullable: true
-        externalConversationId:
-          type: string
-          nullable: true
-        idempotencyKey:
-          type: string
-          minLength: 1
-          maxLength: 128
-          pattern: '^[A-Za-z0-9._:-]+$'
-        payload:
-          type: object
-          additionalProperties: true
-        status:
-          $ref: '#/components/schemas/ChannelOutboundDeliveryStatus'
-        attemptCount:
-          type: integer
-          minimum: 0
-        lastError:
-          type: string
-          nullable: true
         createdAt:
           type: string
           format: date-time
@@ -2991,7 +2938,7 @@ components:
         timestamp:
           type: string
           format: date-time
-    ApiResponseChannelOutboundDeliveryList:
+    ApiResponseChannelOutboundFrameCheckpointList:
       type: object
       properties:
         success:
@@ -2999,7 +2946,7 @@ components:
         data:
           type: array
           items:
-            $ref: '#/components/schemas/ChannelOutboundDelivery'
+            $ref: '#/components/schemas/ChannelOutboundFrameCheckpoint'
         timestamp:
           type: string
           format: date-time

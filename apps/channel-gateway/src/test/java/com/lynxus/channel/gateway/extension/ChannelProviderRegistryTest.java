@@ -61,8 +61,7 @@ final class ChannelProviderRegistryTest {
             objectSchema(Map.of("tenant", Map.of("type", "string")), List.of("tenant")),
             Map.of("tenant", "acme")
         );
-        channelDescriptor.put("capabilities", Map.of("typing", true, "draftUpdate", false));
-        ((Map<String, Object>) channelDescriptor.get("endpoints")).put("sendActivity", "/channel/send-activity");
+        channelDescriptor.put("outbound", outbound(true, false));
         fetcher.responses.put("acme-channel-provider", manifest(channelDescriptor));
 
         RuntimeChannelProviderRegistry registry = registry("""
@@ -88,7 +87,6 @@ final class ChannelProviderRegistryTest {
         assertTrue(registry.snapshot().ready());
         ChannelProviderDescriptor provider = registry.requireProvider("enterprise.acme.internal-im");
         assertEquals("enterprise.acme.internal-im", provider.providerType());
-        assertEquals("/channel/send-activity", provider.sendActivityPath());
         assertTrue(provider.supportsTyping());
         assertFalse(provider.supportsDraftUpdate());
         assertEquals(Map.of("tenant", "custom"), registry.materializeAndValidateProfileConfig(
@@ -248,7 +246,6 @@ final class ChannelProviderRegistryTest {
         Map<String, Object> defaultConfig
     ) {
         Map<String, Object> endpoints = new LinkedHashMap<>();
-        endpoints.put("sendOutbound", "/channel/send-outbound");
         Map<String, Object> descriptor = new LinkedHashMap<>();
         descriptor.put("providerType", providerType);
         descriptor.put("title", "Test Provider");
@@ -257,8 +254,20 @@ final class ChannelProviderRegistryTest {
         descriptor.put("configSchema", configSchema);
         descriptor.put("configUiSchema", List.of());
         descriptor.put("defaultConfig", defaultConfig);
+        descriptor.put("outbound", outbound(false, false));
         descriptor.put("endpoints", endpoints);
         return descriptor;
+    }
+
+    private static Map<String, Object> outbound(boolean supportsTyping, boolean supportsDraftUpdate) {
+        return Map.of(
+            "mode", "FRAME_STREAM",
+            "supportsTyping", supportsTyping,
+            "supportsDraftUpdate", supportsDraftUpdate,
+            "supportsFinalDelivery", true,
+            "supportsCredentialRef", false,
+            "requiresIdempotentFinalDelivery", true
+        );
     }
 
     private static Map<String, Object> objectSchema(Map<String, Object> properties, List<String> required) {

@@ -8,6 +8,7 @@ import com.lynxus.extension.sdk.registration.ExtensionRegistrationLoader;
 import com.lynxus.extension.sdk.validation.ManifestValidationError;
 import com.lynxus.extension.sdk.validation.ManifestValidationResult;
 import com.lynxus.extension.sdk.validation.ManifestValidator;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderOutboundCapability;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -124,15 +125,13 @@ public final class ChannelProviderRegistryLoader {
                         providerType,
                         registration.registrationId(),
                         registration.baseUrl(),
-                        sendOutboundPath(descriptor),
-                        sendActivityPath(descriptor),
                         runJobPath(descriptor),
                         ExtensionRegistrationLoader.CORE_CHANNEL_GATEWAY_REGISTRATION_ID.equals(registration.registrationId()),
                         descriptor,
                         definitionDigest,
                         configSchema,
                         defaultConfig,
-                        capabilities(descriptor),
+                        outboundCapability(descriptor),
                         ChannelProviderDescriptor.jobDefinitions(descriptor)
                     )
                 );
@@ -181,14 +180,6 @@ public final class ChannelProviderRegistryLoader {
         );
     }
 
-    private static String sendOutboundPath(Map<String, Object> descriptor) {
-        return endpointPath(descriptor, "sendOutbound");
-    }
-
-    private static String sendActivityPath(Map<String, Object> descriptor) {
-        return endpointPath(descriptor, "sendActivity");
-    }
-
     private static String runJobPath(Map<String, Object> descriptor) {
         return endpointPath(descriptor, "runJob");
     }
@@ -202,14 +193,18 @@ public final class ChannelProviderRegistryLoader {
         return value instanceof String path && !path.isBlank() ? path.trim() : null;
     }
 
-    private static ChannelProviderDescriptor.ChannelProviderCapabilities capabilities(Map<String, Object> descriptor) {
-        Object rawCapabilities = descriptor.get("capabilities");
-        if (!(rawCapabilities instanceof Map<?, ?> capabilities)) {
-            return ChannelProviderDescriptor.ChannelProviderCapabilities.unsupported();
+    private static ChannelProviderOutboundCapability outboundCapability(Map<String, Object> descriptor) {
+        Object rawOutbound = descriptor.get("outbound");
+        if (!(rawOutbound instanceof Map<?, ?> outbound)) {
+            throw new IllegalArgumentException("channel provider descriptor outbound is required");
         }
-        return new ChannelProviderDescriptor.ChannelProviderCapabilities(
-            Boolean.TRUE.equals(capabilities.get("typing")),
-            Boolean.TRUE.equals(capabilities.get("draftUpdate"))
+        return new ChannelProviderOutboundCapability(
+            outbound.get("mode") instanceof String mode ? mode : null,
+            Boolean.TRUE.equals(outbound.get("supportsTyping")),
+            Boolean.TRUE.equals(outbound.get("supportsDraftUpdate")),
+            Boolean.TRUE.equals(outbound.get("supportsFinalDelivery")),
+            Boolean.TRUE.equals(outbound.get("supportsCredentialRef")),
+            Boolean.TRUE.equals(outbound.get("requiresIdempotentFinalDelivery"))
         );
     }
 

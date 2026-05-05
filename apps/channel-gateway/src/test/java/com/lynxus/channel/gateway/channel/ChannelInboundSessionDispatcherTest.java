@@ -73,18 +73,16 @@ class ChannelInboundSessionDispatcherTest {
         assertEquals("user-1", runtimeClient.request.customerId());
         assertEquals("chat-1", runtimeClient.request.externalConversationId());
         assertEquals("hello", ((Map<?, ?>) runtimeClient.request.message().blocks().getFirst()).get("text"));
-        assertEquals("session-v2-abc12345", runtimeClient.replayedSessionId);
         var binding = repository.listBindings("channel-profile-1").getFirst();
         assertEquals("session-v2-abc12345", binding.sessionId());
     }
 
     @Test
-    void sendsBindingSnapshotRefreshHintAfterAttachSessionBeforeOutboundReplay() {
+    void sendsBindingSnapshotRefreshHintAfterAttachSession() {
         NormalizedChannelInboundEvent event = messageEvent();
         var ingestResult = ingestService.ingest(event, headers(event.dedupKey()));
         List<String> order = new ArrayList<>();
         CapturingHintClient hintClient = new CapturingHintClient(order);
-        runtimeClient.order = order;
         ChannelInboundSessionDispatcher dispatcher = new ChannelInboundSessionDispatcher(
             repository,
             runtimeClient,
@@ -95,7 +93,7 @@ class ChannelInboundSessionDispatcherTest {
         dispatcher.dispatch(event, ingestResult);
 
         assertEquals("session-v2-abc12345", hintClient.binding.sessionId());
-        assertEquals(List.of("hint", "replay"), order);
+        assertEquals(List.of("hint"), order);
     }
 
     @Test
@@ -113,7 +111,6 @@ class ChannelInboundSessionDispatcherTest {
         executor.tasks.remove().run();
 
         assertEquals("chat-1", runtimeClient.request.externalConversationId());
-        assertEquals("session-v2-abc12345", runtimeClient.replayedSessionId);
         assertEquals("session-v2-abc12345", repository.listBindings("channel-profile-1").getFirst().sessionId());
     }
 
@@ -191,21 +188,11 @@ class ChannelInboundSessionDispatcherTest {
 
     private static final class CapturingSessionRuntimeClient implements ChannelSessionRuntimeClient {
         private ChannelInboundSessionMessageRequest request;
-        private String replayedSessionId;
-        private List<String> order;
 
         @Override
         public ChannelInboundSessionMessageResponse dispatchInboundMessage(ChannelInboundSessionMessageRequest request) {
             this.request = request;
             return new ChannelInboundSessionMessageResponse("session-v2-abc12345", "IDLE");
-        }
-
-        @Override
-        public void replayChannelOutbound(String sessionId) {
-            if (order != null) {
-                order.add("replay");
-            }
-            replayedSessionId = sessionId;
         }
     }
 

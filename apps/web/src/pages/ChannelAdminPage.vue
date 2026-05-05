@@ -25,7 +25,7 @@ import type {
   Assistant,
   ChannelConversationBinding,
   ChannelInboundEvent,
-  ChannelOutboundDelivery,
+  ChannelOutboundFrameCheckpoint,
   ChannelProfile,
   ChannelProviderDefinition,
   ChannelProviderJobConfig,
@@ -61,7 +61,7 @@ const profiles = ref<ChannelProfile[]>([]);
 const accounts = ref<IntegrationAccount[]>([]);
 const conversationBindings = ref<ChannelConversationBinding[]>([]);
 const inboundEvents = ref<ChannelInboundEvent[]>([]);
-const outboundDeliveries = ref<ChannelOutboundDelivery[]>([]);
+const outboundFinalCheckpoints = ref<ChannelOutboundFrameCheckpoint[]>([]);
 const templateBindings = ref<ChannelTemplateBinding[]>([]);
 const providerJobs = ref<ChannelProviderJobConfig[]>([]);
 const providerJobRuns = reactive<Record<string, ChannelProviderJobRun[]>>({});
@@ -137,12 +137,13 @@ const inboundColumns = [
   { title: '外部会话', dataIndex: 'externalConversationId', key: 'externalConversationId' },
   { title: '创建时间', dataIndex: 'createdAt', key: 'createdAt' },
 ];
-const outboundColumns = [
-  { title: '外部会话', dataIndex: 'externalConversationId', key: 'externalConversationId' },
-  { title: '状态', dataIndex: 'status', key: 'status' },
-  { title: '尝试', dataIndex: 'attemptCount', key: 'attemptCount' },
-  { title: '错误', dataIndex: 'lastError', key: 'lastError' },
-  { title: '更新时间', dataIndex: 'updatedAt', key: 'updatedAt' },
+const outboundCheckpointColumns = [
+  { title: 'Consumer', key: 'consumer' },
+  { title: '最后 Final Sequence', dataIndex: 'lastAckedFinalSequence', key: 'lastAckedFinalSequence' },
+  { title: 'Frame', dataIndex: 'lastAckedFinalFrameId', key: 'lastAckedFinalFrameId' },
+  { title: 'Session', dataIndex: 'lastAckedSessionId', key: 'lastAckedSessionId' },
+  { title: 'Message', dataIndex: 'lastAckedSessionMessageId', key: 'lastAckedSessionMessageId' },
+  { title: 'ACK 时间', dataIndex: 'lastAckedAt', key: 'lastAckedAt' },
 ];
 
 const statusOptions = [
@@ -210,6 +211,11 @@ function compactJson(value: unknown): string {
   return raw.length > 180 ? `${raw.slice(0, 177)}...` : raw;
 }
 
+function outboundCheckpointRowKey(record: ChannelOutboundFrameCheckpoint): string {
+  const consumer = record.consumer;
+  return `${consumer.channelProfileId}:${consumer.providerType}:${consumer.consumerKind}:${consumer.consumerId}`;
+}
+
 function profileProviderLabel(profile: ChannelProfile): string {
   const definition = definitions.value.find((item) => item.providerType === profile.providerType);
   return definition ? `${definition.title} (${profile.providerType})` : profile.providerType;
@@ -218,7 +224,7 @@ function profileProviderLabel(profile: ChannelProfile): string {
 function clearProfileResources() {
   conversationBindings.value = [];
   inboundEvents.value = [];
-  outboundDeliveries.value = [];
+  outboundFinalCheckpoints.value = [];
   templateBindings.value = [];
   providerJobs.value = [];
   for (const key of Object.keys(providerJobRuns)) {
@@ -269,13 +275,13 @@ async function loadSelectedProfileResources() {
     const [
       bindings,
       inbound,
-      outbound,
+      outboundCheckpoints,
       templates,
       jobs,
     ] = await Promise.all([
       api.listChannelBindings(profileId),
       api.listChannelInboundEvents(profileId),
-      api.listChannelOutboundDeliveries(profileId),
+      api.listChannelOutboundFinalCheckpoints(profileId),
       api.listChannelTemplateBindings(profileId),
       api.listChannelProviderJobs(profileId),
     ]);
@@ -284,7 +290,7 @@ async function loadSelectedProfileResources() {
     }
     conversationBindings.value = bindings;
     inboundEvents.value = inbound;
-    outboundDeliveries.value = outbound;
+    outboundFinalCheckpoints.value = outboundCheckpoints;
     templateBindings.value = templates;
     providerJobs.value = jobs;
     syncJobForms();
@@ -918,16 +924,19 @@ async function deleteTemplateBinding(binding: ChannelTemplateBinding) {
                   </template>
                 </a-table>
 
-                <a-divider orientation="left">Outbound Deliveries</a-divider>
+                <a-divider orientation="left">Outbound Final Checkpoints</a-divider>
                 <a-table
-                  row-key="deliveryId"
+                  :row-key="outboundCheckpointRowKey"
                   size="small"
                   :pagination="{ pageSize: 6 }"
-                  :columns="outboundColumns"
-                  :data-source="outboundDeliveries"
+                  :columns="outboundCheckpointColumns"
+                  :data-source="outboundFinalCheckpoints"
                 >
                   <template #bodyCell="{ column, record }">
-                    <template v-if="column.key === 'updatedAt'">{{ formatTime(record.updatedAt) }}</template>
+                    <template v-if="column.key === 'consumer'">
+                      {{ record.consumer.consumerKind }} / {{ record.consumer.consumerId }}
+                    </template>
+                    <template v-else-if="column.key === 'lastAckedAt'">{{ formatTime(record.lastAckedAt) }}</template>
                   </template>
                 </a-table>
               </a-tab-pane>

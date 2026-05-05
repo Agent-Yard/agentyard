@@ -6,7 +6,7 @@ package com.lynxus.channel.gateway.jooq;
 
 import com.lynxus.channel.gateway.jooq.tables.ChannelConversationBinding;
 import com.lynxus.channel.gateway.jooq.tables.ChannelInboundEvent;
-import com.lynxus.channel.gateway.jooq.tables.ChannelOutboundDelivery;
+import com.lynxus.channel.gateway.jooq.tables.ChannelOutboundFinalCheckpoint;
 import com.lynxus.channel.gateway.jooq.tables.ChannelProfile;
 import com.lynxus.channel.gateway.jooq.tables.ChannelProfileJob;
 import com.lynxus.channel.gateway.jooq.tables.ChannelProfileJobRun;
@@ -44,9 +44,9 @@ public class Public extends SchemaImpl {
     public final ChannelInboundEvent CHANNEL_INBOUND_EVENT = ChannelInboundEvent.CHANNEL_INBOUND_EVENT;
 
     /**
-     * The table <code>public.channel_outbound_delivery</code>.
+     * The table <code>public.channel_outbound_final_checkpoint</code>.
      */
-    public final ChannelOutboundDelivery CHANNEL_OUTBOUND_DELIVERY = ChannelOutboundDelivery.CHANNEL_OUTBOUND_DELIVERY;
+    public final ChannelOutboundFinalCheckpoint CHANNEL_OUTBOUND_FINAL_CHECKPOINT = ChannelOutboundFinalCheckpoint.CHANNEL_OUTBOUND_FINAL_CHECKPOINT;
 
     /**
      * The table <code>public.channel_profile</code>.
@@ -86,7 +86,7 @@ public class Public extends SchemaImpl {
         return Arrays.asList(
             ChannelConversationBinding.CHANNEL_CONVERSATION_BINDING,
             ChannelInboundEvent.CHANNEL_INBOUND_EVENT,
-            ChannelOutboundDelivery.CHANNEL_OUTBOUND_DELIVERY,
+            ChannelOutboundFinalCheckpoint.CHANNEL_OUTBOUND_FINAL_CHECKPOINT,
             ChannelProfile.CHANNEL_PROFILE,
             ChannelProfileJob.CHANNEL_PROFILE_JOB,
             ChannelProfileJobRun.CHANNEL_PROFILE_JOB_RUN,

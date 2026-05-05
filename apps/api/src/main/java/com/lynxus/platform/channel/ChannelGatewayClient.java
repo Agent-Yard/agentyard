@@ -5,7 +5,7 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundBindingSnapshot;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundBindingSnapshotPage;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundFrameCheckpoint;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfig;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfigWriteRequest;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobRun;
@@ -44,7 +44,7 @@ public class ChannelGatewayClient {
     };
     private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelInboundEvent>>> CHANNEL_INBOUND_EVENT_LIST = new ParameterizedTypeReference<>() {
     };
-    private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelOutboundDelivery>>> CHANNEL_OUTBOUND_DELIVERY_LIST = new ParameterizedTypeReference<>() {
+    private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelOutboundFrameCheckpoint>>> CHANNEL_OUTBOUND_FINAL_CHECKPOINT_LIST = new ParameterizedTypeReference<>() {
     };
     private static final ParameterizedTypeReference<ApiEnvelope<ChannelConversationBinding>> CHANNEL_BINDING = new ParameterizedTypeReference<>() {
     };
@@ -169,11 +169,11 @@ public class ChannelGatewayClient {
             .body(CHANNEL_INBOUND_EVENT_LIST)));
     }
 
-    public List<ChannelOutboundDelivery> listOutboundDeliveries(String channelProfileId) {
+    public List<ChannelOutboundFrameCheckpoint> listOutboundFinalCheckpoints(String channelProfileId) {
         return invoke(() -> body(restClient.get()
-            .uri("/internal/channel-admin/profiles/{channelProfileId}/outbound-deliveries", channelProfileId)
+            .uri("/internal/channel-admin/profiles/{channelProfileId}/outbound-final-checkpoints", channelProfileId)
             .retrieve()
-            .body(CHANNEL_OUTBOUND_DELIVERY_LIST)));
+            .body(CHANNEL_OUTBOUND_FINAL_CHECKPOINT_LIST)));
     }
 
     public List<ChannelTemplateBinding> listTemplateBindings(String channelProfileId) {

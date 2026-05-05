@@ -251,7 +251,6 @@ final class ChannelProviderRegistryValidationServiceTest {
 
     private static Map<String, Object> channelDescriptor(String providerType) {
         Map<String, Object> endpoints = new LinkedHashMap<>();
-        endpoints.put("sendOutbound", "/channel/send-outbound");
         Map<String, Object> descriptor = new LinkedHashMap<>();
         descriptor.put("providerType", providerType);
         descriptor.put("title", "Test Provider");
@@ -259,8 +258,20 @@ final class ChannelProviderRegistryValidationServiceTest {
         descriptor.put("accountConfigUiSchema", List.of());
         descriptor.put("configSchema", Map.of());
         descriptor.put("configUiSchema", List.of());
+        descriptor.put("outbound", outbound());
         descriptor.put("endpoints", endpoints);
         return descriptor;
+    }
+
+    private static Map<String, Object> outbound() {
+        return Map.of(
+            "mode", "FRAME_STREAM",
+            "supportsTyping", false,
+            "supportsDraftUpdate", false,
+            "supportsFinalDelivery", true,
+            "supportsCredentialRef", false,
+            "requiresIdempotentFinalDelivery", true
+        );
     }
 
     private static Map<String, Object> invalidChannelDescriptor(String providerType) {

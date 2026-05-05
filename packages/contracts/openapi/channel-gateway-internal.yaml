@@ -34,28 +34,6 @@ paths:
           description: Internal auth is missing or invalid
         '404':
           description: Channel profile not found
-  /internal/channel-outbound/deliveries:
-    post:
-      summary: Execute a channel outbound delivery
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ChannelOutboundDeliveryRequest'
-      responses:
-        '200':
-          description: Created delivery with final single-attempt status
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiResponseChannelOutboundDelivery'
-        '400':
-          description: Outbound delivery payload is invalid
-        '401':
-          description: Internal auth is missing or invalid
-        '404':
-          description: Channel profile not found
   /internal/channel-admin/profiles:
     get:
       summary: List channel profiles
@@ -192,9 +170,9 @@ paths:
                 $ref: '#/components/schemas/ApiResponseChannelInboundEventList'
         '404':
           description: Channel profile not found
-  /internal/channel-admin/profiles/{channelProfileId}/outbound-deliveries:
+  /internal/channel-admin/profiles/{channelProfileId}/outbound-final-checkpoints:
     get:
-      summary: List channel outbound deliveries
+      summary: List channel outbound final checkpoints
       parameters:
         - in: path
           name: channelProfileId
@@ -203,11 +181,11 @@ paths:
             type: string
       responses:
         '200':
-          description: Channel outbound deliveries
+          description: Channel outbound final checkpoints
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiResponseChannelOutboundDeliveryList'
+                $ref: '#/components/schemas/ApiResponseChannelOutboundFrameCheckpointList'
         '404':
           description: Channel profile not found
   /internal/channel-admin/profiles/{channelProfileId}/template-bindings:
@@ -505,9 +483,9 @@ components:
     ChannelInboundEventStatus:
       type: string
       enum: [RECEIVED, REJECTED]
-    ChannelOutboundDeliveryStatus:
+    ChannelOutboundConsumerKind:
       type: string
-      enum: [PENDING, SENDING, SENT, FAILED]
+      enum: [REMOTE_EXTENSION, GATEWAY_NATIVE]
     ChannelProviderJobScheduleType:
       type: string
       enum: [INTERVAL, CRON, MANUAL]
@@ -517,6 +495,50 @@ components:
     ChannelProviderJobRunStatus:
       type: string
       enum: [RUNNING, SUCCEEDED, FAILED, TIMED_OUT]
+    ChannelOutboundProfileConsumer:
+      type: object
+      required:
+        - channelProfileId
+        - providerType
+        - consumerKind
+        - consumerId
+      properties:
+        channelProfileId:
+          type: string
+        providerType:
+          type: string
+        consumerKind:
+          $ref: '#/components/schemas/ChannelOutboundConsumerKind'
+        consumerId:
+          type: string
+        registrationId:
+          type: string
+          nullable: true
+    ChannelOutboundFrameCheckpoint:
+      type: object
+      required:
+        - consumer
+      properties:
+        consumer:
+          $ref: '#/components/schemas/ChannelOutboundProfileConsumer'
+        lastAckedFinalSequence:
+          type: integer
+          format: int64
+          minimum: 1
+          nullable: true
+        lastAckedFinalFrameId:
+          type: string
+          nullable: true
+        lastAckedSessionId:
+          type: string
+          nullable: true
+        lastAckedSessionMessageId:
+          type: string
+          nullable: true
+        lastAckedAt:
+          type: string
+          format: date-time
+          nullable: true
     NormalizedChannelEventType:
       type: string
       enum:
@@ -1044,83 +1066,6 @@ components:
         updatedAt:
           type: string
           format: date-time
-    ChannelOutboundDelivery:
-      type: object
-      required:
-        - deliveryId
-        - channelProfileId
-        - providerType
-        - idempotencyKey
-        - payload
-        - status
-        - attemptCount
-        - createdAt
-        - updatedAt
-      properties:
-        deliveryId:
-          type: string
-        channelProfileId:
-          type: string
-        providerType:
-          type: string
-        sessionId:
-          type: string
-          nullable: true
-        sessionMessageId:
-          type: string
-          nullable: true
-        externalConversationId:
-          type: string
-          nullable: true
-        idempotencyKey:
-          type: string
-          minLength: 1
-          maxLength: 128
-          pattern: '^[A-Za-z0-9._:-]+$'
-        payload:
-          type: object
-          additionalProperties: true
-        status:
-          $ref: '#/components/schemas/ChannelOutboundDeliveryStatus'
-        attemptCount:
-          type: integer
-          minimum: 0
-        lastError:
-          type: string
-          nullable: true
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-    ChannelOutboundDeliveryRequest:
-      type: object
-      additionalProperties: false
-      required:
-        - channelProfileId
-        - assistantId
-        - externalConversationId
-        - messageBlock
-      properties:
-        channelProfileId:
-          type: string
-        assistantId:
-          type: string
-        externalConversationId:
-          type: string
-        sessionId:
-          type: string
-          nullable: true
-        sessionMessageId:
-          type: string
-          nullable: true
-        messageBlock:
-          type: object
-          additionalProperties: true
-        traceContext:
-          $ref: '#/components/schemas/NormalizedChannelTraceContext'
-          nullable: true
     ChannelOutboundResolvedTemplate:
       type: object
       required:
@@ -1409,7 +1354,7 @@ components:
         timestamp:
           type: string
           format: date-time
-    ApiResponseChannelOutboundDeliveryList:
+    ApiResponseChannelOutboundFrameCheckpointList:
       type: object
       properties:
         success:
@@ -1417,17 +1362,7 @@ components:
         data:
           type: array
           items:
-            $ref: '#/components/schemas/ChannelOutboundDelivery'
-        timestamp:
-          type: string
-          format: date-time
-    ApiResponseChannelOutboundDelivery:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: '#/components/schemas/ChannelOutboundDelivery'
+            $ref: '#/components/schemas/ChannelOutboundFrameCheckpoint'
         timestamp:
           type: string
           format: date-time

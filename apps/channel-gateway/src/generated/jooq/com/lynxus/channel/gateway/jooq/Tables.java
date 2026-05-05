@@ -6,7 +6,7 @@ package com.lynxus.channel.gateway.jooq;
 
 import com.lynxus.channel.gateway.jooq.tables.ChannelConversationBinding;
 import com.lynxus.channel.gateway.jooq.tables.ChannelInboundEvent;
-import com.lynxus.channel.gateway.jooq.tables.ChannelOutboundDelivery;
+import com.lynxus.channel.gateway.jooq.tables.ChannelOutboundFinalCheckpoint;
 import com.lynxus.channel.gateway.jooq.tables.ChannelProfile;
 import com.lynxus.channel.gateway.jooq.tables.ChannelProfileJob;
 import com.lynxus.channel.gateway.jooq.tables.ChannelProfileJobRun;
@@ -30,9 +30,9 @@ public class Tables {
     public static final ChannelInboundEvent CHANNEL_INBOUND_EVENT = ChannelInboundEvent.CHANNEL_INBOUND_EVENT;
 
     /**
-     * The table <code>public.channel_outbound_delivery</code>.
+     * The table <code>public.channel_outbound_final_checkpoint</code>.
      */
-    public static final ChannelOutboundDelivery CHANNEL_OUTBOUND_DELIVERY = ChannelOutboundDelivery.CHANNEL_OUTBOUND_DELIVERY;
+    public static final ChannelOutboundFinalCheckpoint CHANNEL_OUTBOUND_FINAL_CHECKPOINT = ChannelOutboundFinalCheckpoint.CHANNEL_OUTBOUND_FINAL_CHECKPOINT;
 
     /**
      * The table <code>public.channel_profile</code>.

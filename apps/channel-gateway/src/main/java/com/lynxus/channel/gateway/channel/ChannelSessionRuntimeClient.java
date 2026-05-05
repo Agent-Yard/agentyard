@@ -5,6 +5,4 @@ import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionMessag
 
 interface ChannelSessionRuntimeClient {
     ChannelInboundSessionMessageResponse dispatchInboundMessage(ChannelInboundSessionMessageRequest request);
-
-    void replayChannelOutbound(String sessionId);
 }

@@ -53,13 +53,6 @@ public final class ChannelContracts {
     public static final String CHANNEL_OUTBOUND_FRAME_PROTOCOL = "lynxus.channel-outbound-frame.v1";
     public static final String CHANNEL_OUTBOUND_FRAME_ACK_PROTOCOL = "lynxus.channel-outbound-frame-ack.v1";
 
-    public enum ChannelOutboundDeliveryStatus {
-        PENDING,
-        SENDING,
-        SENT,
-        FAILED
-    }
-
     public enum ChannelOutboundFrameKind {
         TYPING_START,
         TYPING_STOP,
@@ -332,26 +325,6 @@ public final class ChannelContracts {
         public ChannelInboundEvent {
             rawPayload = immutableObjectMap(rawPayload);
             normalizedPayload = immutableObjectMap(normalizedPayload);
-        }
-    }
-
-    public record ChannelOutboundDelivery(
-        String deliveryId,
-        String channelProfileId,
-        String providerType,
-        String sessionId,
-        String sessionMessageId,
-        String externalConversationId,
-        String idempotencyKey,
-        Map<String, Object> payload,
-        ChannelOutboundDeliveryStatus status,
-        int attemptCount,
-        String lastError,
-        Instant createdAt,
-        Instant updatedAt
-    ) {
-        public ChannelOutboundDelivery {
-            payload = immutableObjectMap(payload);
         }
     }
 

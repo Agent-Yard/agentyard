@@ -1079,8 +1079,20 @@ class IntegrationAccountServiceTest {
         descriptor.put("configUiSchema", List.of());
         descriptor.put("defaultConfig", Map.of());
         descriptor.put("jobDefinitions", List.of());
-        descriptor.put("endpoints", Map.of("sendOutbound", "/channel/send-outbound"));
+        descriptor.put("outbound", channelOutboundCapability());
+        descriptor.put("endpoints", Map.of());
         return descriptor;
+    }
+
+    private static Map<String, Object> channelOutboundCapability() {
+        return Map.of(
+            "mode", "FRAME_STREAM",
+            "supportsTyping", true,
+            "supportsDraftUpdate", true,
+            "supportsFinalDelivery", true,
+            "supportsCredentialRef", false,
+            "requiresIdempotentFinalDelivery", true
+        );
     }
 
     private static Map<String, Object> toolConnectorDescriptor(String connectorType, Map<String, Object> accountConfigSchema) {

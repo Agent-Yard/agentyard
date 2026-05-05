@@ -281,7 +281,6 @@ class ChannelProviderJobServiceTest {
 
     private static Map<String, Object> channelDescriptor() {
         Map<String, Object> endpoints = new LinkedHashMap<>();
-        endpoints.put("sendOutbound", "/channel/send-outbound");
         endpoints.put("runJob", "/channel/run-job");
         Map<String, Object> descriptor = new LinkedHashMap<>();
         descriptor.put("providerType", "enterprise.acme.jobs");
@@ -292,8 +291,20 @@ class ChannelProviderJobServiceTest {
         descriptor.put("configUiSchema", List.of());
         descriptor.put("defaultConfig", Map.of());
         descriptor.put("jobDefinitions", List.of(jobDefinition()));
+        descriptor.put("outbound", outbound());
         descriptor.put("endpoints", endpoints);
         return descriptor;
+    }
+
+    private static Map<String, Object> outbound() {
+        return Map.of(
+            "mode", "FRAME_STREAM",
+            "supportsTyping", false,
+            "supportsDraftUpdate", false,
+            "supportsFinalDelivery", true,
+            "supportsCredentialRef", false,
+            "requiresIdempotentFinalDelivery", true
+        );
     }
 
     private static Map<String, Object> jobDefinition() {

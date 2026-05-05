@@ -6,14 +6,14 @@ package com.lynxus.channel.gateway.jooq;
 
 import com.lynxus.channel.gateway.jooq.tables.ChannelConversationBinding;
 import com.lynxus.channel.gateway.jooq.tables.ChannelInboundEvent;
-import com.lynxus.channel.gateway.jooq.tables.ChannelOutboundDelivery;
+import com.lynxus.channel.gateway.jooq.tables.ChannelOutboundFinalCheckpoint;
 import com.lynxus.channel.gateway.jooq.tables.ChannelProfile;
 import com.lynxus.channel.gateway.jooq.tables.ChannelProfileJob;
 import com.lynxus.channel.gateway.jooq.tables.ChannelProfileJobRun;
 import com.lynxus.channel.gateway.jooq.tables.ChannelProfileTemplateBinding;
 import com.lynxus.channel.gateway.jooq.tables.records.ChannelConversationBindingRecord;
 import com.lynxus.channel.gateway.jooq.tables.records.ChannelInboundEventRecord;
-import com.lynxus.channel.gateway.jooq.tables.records.ChannelOutboundDeliveryRecord;
+import com.lynxus.channel.gateway.jooq.tables.records.ChannelOutboundFinalCheckpointRecord;
 import com.lynxus.channel.gateway.jooq.tables.records.ChannelProfileJobRecord;
 import com.lynxus.channel.gateway.jooq.tables.records.ChannelProfileJobRunRecord;
 import com.lynxus.channel.gateway.jooq.tables.records.ChannelProfileRecord;
@@ -39,7 +39,7 @@ public class Keys {
 
     public static final UniqueKey<ChannelConversationBindingRecord> CHANNEL_CONVERSATION_BINDING_PKEY = Internal.createUniqueKey(ChannelConversationBinding.CHANNEL_CONVERSATION_BINDING, DSL.name("channel_conversation_binding_pkey"), new TableField[] { ChannelConversationBinding.CHANNEL_CONVERSATION_BINDING.ID }, true);
     public static final UniqueKey<ChannelInboundEventRecord> CHANNEL_INBOUND_EVENT_PKEY = Internal.createUniqueKey(ChannelInboundEvent.CHANNEL_INBOUND_EVENT, DSL.name("channel_inbound_event_pkey"), new TableField[] { ChannelInboundEvent.CHANNEL_INBOUND_EVENT.EVENT_ID }, true);
-    public static final UniqueKey<ChannelOutboundDeliveryRecord> CHANNEL_OUTBOUND_DELIVERY_PKEY = Internal.createUniqueKey(ChannelOutboundDelivery.CHANNEL_OUTBOUND_DELIVERY, DSL.name("channel_outbound_delivery_pkey"), new TableField[] { ChannelOutboundDelivery.CHANNEL_OUTBOUND_DELIVERY.DELIVERY_ID }, true);
+    public static final UniqueKey<ChannelOutboundFinalCheckpointRecord> PK_CHANNEL_OUTBOUND_FINAL_CHECKPOINT = Internal.createUniqueKey(ChannelOutboundFinalCheckpoint.CHANNEL_OUTBOUND_FINAL_CHECKPOINT, DSL.name("pk_channel_outbound_final_checkpoint"), new TableField[] { ChannelOutboundFinalCheckpoint.CHANNEL_OUTBOUND_FINAL_CHECKPOINT.CHANNEL_PROFILE_ID, ChannelOutboundFinalCheckpoint.CHANNEL_OUTBOUND_FINAL_CHECKPOINT.PROVIDER_TYPE, ChannelOutboundFinalCheckpoint.CHANNEL_OUTBOUND_FINAL_CHECKPOINT.CONSUMER_KIND, ChannelOutboundFinalCheckpoint.CHANNEL_OUTBOUND_FINAL_CHECKPOINT.CONSUMER_ID }, true);
     public static final UniqueKey<ChannelProfileRecord> CHANNEL_PROFILE_PKEY = Internal.createUniqueKey(ChannelProfile.CHANNEL_PROFILE, DSL.name("channel_profile_pkey"), new TableField[] { ChannelProfile.CHANNEL_PROFILE.ID }, true);
     public static final UniqueKey<ChannelProfileJobRecord> CHANNEL_PROFILE_JOB_PKEY = Internal.createUniqueKey(ChannelProfileJob.CHANNEL_PROFILE_JOB, DSL.name("channel_profile_job_pkey"), new TableField[] { ChannelProfileJob.CHANNEL_PROFILE_JOB.ID }, true);
     public static final UniqueKey<ChannelProfileJobRunRecord> CHANNEL_PROFILE_JOB_RUN_PKEY = Internal.createUniqueKey(ChannelProfileJobRun.CHANNEL_PROFILE_JOB_RUN, DSL.name("channel_profile_job_run_pkey"), new TableField[] { ChannelProfileJobRun.CHANNEL_PROFILE_JOB_RUN.ID }, true);

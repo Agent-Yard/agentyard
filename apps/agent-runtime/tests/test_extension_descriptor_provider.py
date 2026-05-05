@@ -152,7 +152,8 @@ def test_non_core_validation_filters_to_tool_descriptors_and_calculates_digests(
         "accountConfigUiSchema": [],
         "configSchema": _empty_object_schema(),
         "configUiSchema": [],
-        "endpoints": {"sendOutbound": "/channel/send-outbound"},
+        "outbound": _channel_outbound_capability(),
+        "endpoints": {},
     }
     remote_manifest = {
         "extensionApiVersion": 1,
@@ -434,6 +435,17 @@ def _remote_tool_descriptor(connector_type: str) -> dict[str, Any]:
         "operationMappingSchema": _empty_object_schema(),
         "operationMappingUiSchema": [],
         "endpoints": {"invoke": "/tools/invoke"},
+    }
+
+
+def _channel_outbound_capability() -> dict[str, Any]:
+    return {
+        "mode": "FRAME_STREAM",
+        "supportsTyping": True,
+        "supportsDraftUpdate": True,
+        "supportsFinalDelivery": True,
+        "supportsCredentialRef": False,
+        "requiresIdempotentFinalDelivery": True,
     }
 
 

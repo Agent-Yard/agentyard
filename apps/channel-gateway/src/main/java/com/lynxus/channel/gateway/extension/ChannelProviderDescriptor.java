@@ -1,5 +1,6 @@
 package com.lynxus.channel.gateway.extension;
 
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderOutboundCapability;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -11,15 +12,13 @@ public record ChannelProviderDescriptor(
     String providerType,
     String registrationId,
     String baseUrl,
-    String sendOutboundPath,
-    String sendActivityPath,
     String runJobPath,
     boolean gatewayNative,
     Map<String, Object> descriptor,
     String definitionDigest,
     Map<String, Object> configSchema,
     Map<String, Object> defaultConfig,
-    ChannelProviderCapabilities capabilities,
+    ChannelProviderOutboundCapability outboundCapability,
     Map<String, ChannelProviderJobDefinition> jobDefinitionsByType
 ) {
     public ChannelProviderDescriptor {
@@ -29,13 +28,13 @@ public record ChannelProviderDescriptor(
         providerType = providerType.trim();
         registrationId = normalizeOptional(registrationId);
         baseUrl = normalizeOptional(baseUrl);
-        sendOutboundPath = normalizeOptional(sendOutboundPath);
-        sendActivityPath = normalizeOptional(sendActivityPath);
         runJobPath = normalizeOptional(runJobPath);
         descriptor = immutableObject(descriptor);
         configSchema = immutableObject(configSchema);
         defaultConfig = immutableObject(defaultConfig);
-        capabilities = capabilities == null ? ChannelProviderCapabilities.unsupported() : capabilities;
+        if (outboundCapability == null) {
+            throw new IllegalArgumentException("outbound capability is required");
+        }
         jobDefinitionsByType = jobDefinitionsByType == null || jobDefinitionsByType.isEmpty()
             ? Map.of()
             : Collections.unmodifiableMap(new TreeMap<>(jobDefinitionsByType));
@@ -53,11 +52,19 @@ public record ChannelProviderDescriptor(
     }
 
     public boolean supportsTyping() {
-        return capabilities.typing();
+        return outboundCapability.supportsTyping();
     }
 
     public boolean supportsDraftUpdate() {
-        return capabilities.draftUpdate();
+        return outboundCapability.supportsDraftUpdate();
+    }
+
+    public boolean supportsFinalDelivery() {
+        return outboundCapability.supportsFinalDelivery();
+    }
+
+    public boolean supportsCredentialRef() {
+        return outboundCapability.supportsCredentialRef();
     }
 
     private static Map<String, Object> immutableObject(Map<String, Object> value) {
@@ -112,11 +119,5 @@ public record ChannelProviderDescriptor(
             return result;
         }
         return Map.of();
-    }
-
-    public record ChannelProviderCapabilities(boolean typing, boolean draftUpdate) {
-        public static ChannelProviderCapabilities unsupported() {
-            return new ChannelProviderCapabilities(false, false);
-        }
     }
 }

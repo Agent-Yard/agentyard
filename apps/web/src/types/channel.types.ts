@@ -2,7 +2,7 @@ import type {
   ChannelProfile as ContractsChannelProfile,
   ChannelConversationBinding as ContractsChannelConversationBinding,
   ChannelInboundEvent as ContractsChannelInboundEvent,
-  ChannelOutboundDelivery as ContractsChannelOutboundDelivery,
+  ChannelOutboundFrameCheckpoint as ContractsChannelOutboundFrameCheckpoint,
   ChannelProviderJobConfig as ContractsChannelProviderJobConfig,
   ChannelProviderJobConfigWritePayload as ContractsChannelProviderJobConfigWritePayload,
   ChannelProviderJobRun as ContractsChannelProviderJobRun,
@@ -16,7 +16,7 @@ import type {
 export type ChannelProfile = ContractsChannelProfile;
 export type ChannelConversationBinding = ContractsChannelConversationBinding;
 export type ChannelInboundEvent = ContractsChannelInboundEvent;
-export type ChannelOutboundDelivery = ContractsChannelOutboundDelivery;
+export type ChannelOutboundFrameCheckpoint = ContractsChannelOutboundFrameCheckpoint;
 export type ChannelProviderJobConfig = ContractsChannelProviderJobConfig;
 export type ChannelProviderJobConfigWritePayload = ContractsChannelProviderJobConfigWritePayload;
 export type ChannelProviderJobRun = ContractsChannelProviderJobRun;

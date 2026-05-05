@@ -174,8 +174,20 @@ class RemoteProviderJobExecutorTest {
             "defaultEnabled", true,
             "defaultJobTimeoutSeconds", 45
         )));
-        descriptor.put("endpoints", Map.of("sendOutbound", "/channel/send-outbound", "runJob", "/channel/run-job"));
+        descriptor.put("outbound", outbound());
+        descriptor.put("endpoints", Map.of("runJob", "/channel/run-job"));
         return descriptor;
+    }
+
+    private static Map<String, Object> outbound() {
+        return Map.of(
+            "mode", "FRAME_STREAM",
+            "supportsTyping", false,
+            "supportsDraftUpdate", false,
+            "supportsFinalDelivery", true,
+            "supportsCredentialRef", false,
+            "requiresIdempotentFinalDelivery", true
+        );
     }
 
     private static void writeJson(com.sun.net.httpserver.HttpExchange exchange, int status, String body) throws IOException {

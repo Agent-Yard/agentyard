@@ -1,44 +1,15 @@
 package com.lynxus.channel.gateway.connector.feishu;
 
-import com.lynxus.channel.gateway.channel.ChannelAdminRepository;
 import com.lynxus.channel.gateway.extension.GatewayNativeChannelProviderAdapter;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundRequest;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundResponse;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundResponseStatus;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileStatus;
-import com.lynxus.extension.sdk.protocol.LynxusExtensionProtocol;
-import java.util.Locale;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.NoSuchElementException;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
 public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayNativeChannelProviderAdapter {
     public static final String PROVIDER_TYPE = "feishu";
     private static final String DEFAULT_RECEIVE_ID_TYPE = "chat_id";
-
-    private final ChannelAdminRepository repository;
-    private final FeishuCredentialProvider credentialProvider;
-    private final FeishuMessageSender messageSender;
-
-    public FeishuGatewayNativeChannelProviderAdapter() {
-        this(null, null, null);
-    }
-
-    @Autowired
-    public FeishuGatewayNativeChannelProviderAdapter(
-        ChannelAdminRepository repository,
-        FeishuCredentialProvider credentialProvider,
-        FeishuMessageSender messageSender
-    ) {
-        this.repository = repository;
-        this.credentialProvider = credentialProvider;
-        this.messageSender = messageSender;
-    }
 
     @Override
     public String providerType() {
@@ -47,9 +18,6 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
 
     @Override
     public Map<String, Object> descriptor() {
-        Map<String, Object> endpoints = new LinkedHashMap<>();
-        endpoints.put(LynxusExtensionProtocol.CHANNEL_PROVIDER_SEND_OUTBOUND_ENDPOINT, "/connectors/feishu/send-outbound");
-
         Map<String, Object> descriptor = new LinkedHashMap<>();
         descriptor.put("providerType", PROVIDER_TYPE);
         descriptor.put("title", "Feishu");
@@ -61,67 +29,17 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
         descriptor.put("configSchema", configSchema());
         descriptor.put("configUiSchema", configUiSchema());
         descriptor.put("defaultConfig", Map.of("receiveIdType", DEFAULT_RECEIVE_ID_TYPE));
-        descriptor.put("capabilities", Map.of("typing", false, "draftUpdate", false));
-        descriptor.put("jobDefinitions", List.of());
-        descriptor.put("endpoints", endpoints);
-        return Map.copyOf(descriptor);
-    }
-
-    @Override
-    public ChannelOutboundResponse sendOutbound(ChannelOutboundRequest request) {
-        ensureRuntimeConfigured();
-        if (!PROVIDER_TYPE.equals(request.providerType())) {
-            throw new IllegalArgumentException("channel outbound providerType must be feishu");
-        }
-        ChannelGatewayProfile profile = repository.findProfile(requireText(request.channelProfileId(), "channelProfileId"))
-            .orElseThrow(() -> new NoSuchElementException("channel profile not found: " + request.channelProfileId()));
-        if (!PROVIDER_TYPE.equals(profile.providerType())) {
-            throw new IllegalArgumentException("channel profile providerType must be feishu");
-        }
-        if (profile.status() != ChannelProfileStatus.ACTIVE) {
-            throw new IllegalArgumentException("channel profile is not ACTIVE: " + profile.id());
-        }
-        String accountId = requireText(profile.accountId(), "channel profile integration account");
-        Map<String, Object> messageBlock = request.payload().messageBlock();
-        String messageType = requireText(readString(messageBlock.get("type")), "messageBlock.type").toUpperCase(Locale.ROOT);
-        if (!"TEXT".equals(messageType)) {
-            throw new IllegalArgumentException("feishu gateway-native outbound currently supports TEXT messageBlock only");
-        }
-        String text = requireText(readString(messageBlock.get("text")), "messageBlock.text");
-        String receiveId = requireText(request.payload().externalConversationId(), "payload.externalConversationId");
-        String receiveIdType = receiveIdType(request.config());
-        FeishuAppCredential credential = credentialProvider.resolve(accountId, profile.config());
-        FeishuMessageSender.FeishuSendTextResult result = messageSender.sendText(new FeishuMessageSender.FeishuSendTextCommand(
-            credential,
-            receiveIdType,
-            receiveId,
-            text,
-            requireText(request.idempotencyKey(), "idempotencyKey")
+        descriptor.put("outbound", Map.of(
+            "mode", "FRAME_STREAM",
+            "supportsTyping", false,
+            "supportsDraftUpdate", false,
+            "supportsFinalDelivery", true,
+            "supportsCredentialRef", false,
+            "requiresIdempotentFinalDelivery", true
         ));
-        Map<String, Object> metadata = new LinkedHashMap<>(result.metadata());
-        metadata.put("providerType", PROVIDER_TYPE);
-        metadata.put("channelProfileId", profile.id());
-        return new ChannelOutboundResponse(
-            ChannelOutboundResponseStatus.SENT,
-            result.externalMessageId(),
-            false,
-            metadata
-        );
-    }
-
-    private void ensureRuntimeConfigured() {
-        if (repository == null || credentialProvider == null || messageSender == null) {
-            throw new UnsupportedOperationException("gateway-native feishu sendOutbound is not configured");
-        }
-    }
-
-    private static String receiveIdType(Map<String, Object> config) {
-        String configured = readString(config == null ? null : config.get("receiveIdType"));
-        String receiveIdType = configured == null ? DEFAULT_RECEIVE_ID_TYPE : configured;
-        return switch (receiveIdType) {
-            case "chat_id", "open_id", "user_id", "union_id", "email" -> receiveIdType;
-            default -> throw new IllegalArgumentException("unsupported feishu receiveIdType: " + receiveIdType);
-        };
+        descriptor.put("jobDefinitions", List.of());
+        descriptor.put("endpoints", Map.of());
+        return Map.copyOf(descriptor);
     }
 
     private static Map<String, Object> accountConfigSchema() {
@@ -201,18 +119,4 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
         ));
     }
 
-    private static String requireText(String value, String field) {
-        if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException(field + " is required");
-        }
-        return value.trim();
-    }
-
-    private static String readString(Object value) {
-        if (value == null) {
-            return null;
-        }
-        String text = String.valueOf(value).trim();
-        return text.isEmpty() ? null : text;
-    }
 }

@@ -114,11 +114,6 @@ public class ChannelInboundSessionDispatcher {
         if (!Objects.equals(updatedBinding.sessionId(), binding.sessionId())) {
             sendBindingSnapshotRefreshHint(updatedBinding);
         }
-        try {
-            sessionRuntimeClient.replayChannelOutbound(response.sessionId());
-        } catch (RuntimeException error) {
-            log.warn("failed to replay channel outbound messages after inbound dispatch: sessionId={}", response.sessionId(), error);
-        }
         log.info(
             "dispatched channel inbound event to session runtime: channelProfileId={}, externalConversationId={}, inboundEventId={}, duplicate={}, sessionId={}",
             event.channelProfileId(),

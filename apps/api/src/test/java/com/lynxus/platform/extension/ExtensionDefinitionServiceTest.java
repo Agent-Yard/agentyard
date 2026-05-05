@@ -359,9 +359,6 @@ final class ExtensionDefinitionServiceTest {
     }
 
     private static Map<String, Object> channelProviderDescriptor(String providerType) {
-        Map<String, Object> endpoints = new LinkedHashMap<>();
-        endpoints.put("sendOutbound", "/channel/send-outbound");
-
         Map<String, Object> descriptor = new LinkedHashMap<>();
         descriptor.put("providerType", providerType);
         descriptor.put("title", "Test Provider");
@@ -372,8 +369,20 @@ final class ExtensionDefinitionServiceTest {
         descriptor.put("configUiSchema", List.of());
         descriptor.put("defaultConfig", Map.of());
         descriptor.put("jobDefinitions", List.of());
-        descriptor.put("endpoints", endpoints);
+        descriptor.put("outbound", channelOutboundCapability());
+        descriptor.put("endpoints", Map.of());
         return descriptor;
+    }
+
+    private static Map<String, Object> channelOutboundCapability() {
+        return Map.of(
+            "mode", "FRAME_STREAM",
+            "supportsTyping", true,
+            "supportsDraftUpdate", true,
+            "supportsFinalDelivery", true,
+            "supportsCredentialRef", false,
+            "requiresIdempotentFinalDelivery", true
+        );
     }
 
     private static Map<String, Object> invalidChannelProviderDescriptor(String providerType) {

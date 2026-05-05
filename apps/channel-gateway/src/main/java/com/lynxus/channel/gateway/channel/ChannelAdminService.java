@@ -11,9 +11,9 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileAccountSnapsh
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileStatus;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundBindingSnapshot;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundBindingSnapshotPage;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundFrameCheckpoint;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfig;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfigWriteRequest;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobRun;
@@ -180,9 +180,9 @@ public class ChannelAdminService {
         return repository.listInboundEvents(channelProfileId);
     }
 
-    public List<ChannelOutboundDelivery> listOutboundDeliveries(String channelProfileId) {
+    public List<ChannelOutboundFrameCheckpoint> listOutboundFinalCheckpoints(String channelProfileId) {
         getProfile(channelProfileId);
-        return repository.listOutboundDeliveries(channelProfileId);
+        return repository.listOutboundFinalCheckpoints(channelProfileId);
     }
 
     public List<ChannelTemplateBinding> listTemplateBindings(String channelProfileId) {

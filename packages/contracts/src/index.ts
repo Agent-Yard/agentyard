@@ -34,7 +34,6 @@ export type IntegrationAccountCredentialStatus =
 export type ChannelProfileStatus = 'ACTIVE' | 'INACTIVE';
 export type ChannelConversationBindingStatus = 'ACTIVE' | 'ARCHIVED';
 export type ChannelInboundEventStatus = 'RECEIVED' | 'REJECTED';
-export type ChannelOutboundDeliveryStatus = 'PENDING' | 'SENDING' | 'SENT' | 'FAILED';
 export type ChannelOutboundFrameKind =
   | 'TYPING_START'
   | 'TYPING_STOP'
@@ -460,22 +459,6 @@ export interface ChannelInboundEvent {
   rawPayload: Record<string, unknown>;
   normalizedPayload: Record<string, unknown>;
   status: ChannelInboundEventStatus;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface ChannelOutboundDelivery {
-  deliveryId: string;
-  channelProfileId: string;
-  providerType: string;
-  sessionId: string | null;
-  sessionMessageId: string | null;
-  externalConversationId: string | null;
-  idempotencyKey: string;
-  payload: Record<string, unknown>;
-  status: ChannelOutboundDeliveryStatus;
-  attemptCount: number;
-  lastError: string | null;
   createdAt: string;
   updatedAt: string;
 }

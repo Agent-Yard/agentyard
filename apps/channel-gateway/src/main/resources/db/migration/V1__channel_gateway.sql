@@ -43,19 +43,21 @@ create table channel_inbound_event (
     updated_at timestamp with time zone not null
 );
 
-create table channel_outbound_delivery (
-    delivery_id varchar(64) primary key,
+create table channel_outbound_final_checkpoint (
     channel_profile_id varchar(64) not null,
     provider_type varchar(64) not null,
-    session_id varchar(64),
-    session_message_id varchar(64),
-    external_conversation_id varchar(255),
-    payload jsonb not null,
-    status varchar(32) not null,
-    attempt_count integer not null,
-    last_error text,
+    consumer_kind varchar(32) not null,
+    consumer_id varchar(255) not null,
+    registration_id varchar(128),
+    last_acked_final_sequence bigint,
+    last_acked_final_frame_id varchar(512),
+    last_acked_session_id varchar(64),
+    last_acked_session_message_id varchar(64),
+    last_acked_at timestamp with time zone,
     created_at timestamp with time zone not null,
-    updated_at timestamp with time zone not null
+    updated_at timestamp with time zone not null,
+    constraint pk_channel_outbound_final_checkpoint
+        primary key (channel_profile_id, provider_type, consumer_kind, consumer_id)
 );
 
 create unique index uk_channel_conversation_binding_profile_external_conversation
@@ -64,4 +66,3 @@ create unique index uk_channel_inbound_event_dedup_key on channel_inbound_event 
 create index idx_channel_profile_updated on channel_profile (updated_at desc);
 create index idx_channel_binding_profile_updated on channel_conversation_binding (channel_profile_id, updated_at desc);
 create index idx_channel_inbound_profile_created on channel_inbound_event (channel_profile_id, created_at desc);
-create index idx_channel_outbound_profile_created on channel_outbound_delivery (channel_profile_id, created_at desc);

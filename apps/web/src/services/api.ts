@@ -6,7 +6,7 @@ import type {
   ChannelProfile,
   ChannelConversationBinding,
   ChannelInboundEvent,
-  ChannelOutboundDelivery,
+  ChannelOutboundFrameCheckpoint,
   ChannelProviderDefinition,
   ChannelProviderJobConfig,
   ChannelProviderJobConfigWritePayload,
@@ -208,8 +208,8 @@ export const api = {
     request<ChannelConversationBinding[]>(`/channel-admin/profiles/${channelProfileId}/bindings`),
   listChannelInboundEvents: (channelProfileId: string) =>
     request<ChannelInboundEvent[]>(`/channel-admin/profiles/${channelProfileId}/inbound-events`),
-  listChannelOutboundDeliveries: (channelProfileId: string) =>
-    request<ChannelOutboundDelivery[]>(`/channel-admin/profiles/${channelProfileId}/outbound-deliveries`),
+  listChannelOutboundFinalCheckpoints: (channelProfileId: string) =>
+    request<ChannelOutboundFrameCheckpoint[]>(`/channel-admin/profiles/${channelProfileId}/outbound-final-checkpoints`),
   listChannelTemplateBindings: (channelProfileId: string) =>
     request<ChannelTemplateBinding[]>(`/channel-admin/profiles/${channelProfileId}/template-bindings`),
   upsertChannelTemplateBinding: (

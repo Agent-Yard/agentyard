@@ -74,29 +74,6 @@ final class DefaultChannelSessionRuntimeClient implements ChannelSessionRuntimeC
         }
     }
 
-    @Override
-    public void replayChannelOutbound(String sessionId) {
-        try {
-            HttpRequest httpRequest = HttpRequest.newBuilder()
-                .uri(HttpUrls.join(
-                    apiBaseUrl,
-                    "/internal/session-runtime/sessions/" + requireText(sessionId, "sessionId") + "/channel-outbound/replay"
-                ))
-                .timeout(REQUEST_TIMEOUT)
-                .POST(HttpRequest.BodyPublishers.noBody())
-                .header("Authorization", "Bearer " + internalAuthToken)
-                .build();
-            HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() < 200 || response.statusCode() > 299) {
-                throw new IllegalStateException("session runtime channel outbound replay failed with HTTP " + response.statusCode());
-            }
-        } catch (IllegalStateException error) {
-            throw error;
-        } catch (Exception error) {
-            throw new IllegalStateException("failed to replay channel outbound messages", error);
-        }
-    }
-
     private static String requireText(String value, String field) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(field + " is required");

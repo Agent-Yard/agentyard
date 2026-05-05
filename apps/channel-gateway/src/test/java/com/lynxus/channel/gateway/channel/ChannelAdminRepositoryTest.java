@@ -13,8 +13,8 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBindingStatus;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEventStatus;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDeliveryStatus;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundConsumerKind;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundProfileConsumer;
 import java.time.Instant;
 import java.util.Map;
 import org.jooq.exception.DataAccessException;
@@ -46,7 +46,7 @@ class ChannelAdminRepositoryTest {
     }
 
     @Test
-    void shouldPersistProfilesBindingsInboundEventsAndOutboundDeliveries() {
+    void shouldPersistProfilesBindingsInboundEventsAndOutboundFinalCheckpoints() {
         Instant now = Instant.parse("2026-04-23T00:00:00Z");
         ChannelGatewayProfile profile = new ChannelGatewayProfile(
             "channel-profile-1",
@@ -90,26 +90,19 @@ class ChannelAdminRepositoryTest {
             now,
             now
         );
-        ChannelOutboundDelivery outboundDelivery = new ChannelOutboundDelivery(
-            "channel-outbound-delivery-1",
+        ChannelOutboundProfileConsumer consumer = new ChannelOutboundProfileConsumer(
             profile.id(),
             "feishu",
-            "session-1",
-            "message-1",
-            "chat-1",
-            "channel-outbound-delivery-1",
-            Map.of("text", "hello"),
-            ChannelOutboundDeliveryStatus.PENDING,
-            1,
-            null,
-            now,
-            now
+            ChannelOutboundConsumerKind.GATEWAY_NATIVE,
+            "native:feishu",
+            null
         );
 
         repository.createProfile(profile, "vault://opaque-ref");
         repository.saveBinding(binding);
         repository.saveInboundEvent(inboundEvent);
-        repository.saveOutboundDelivery(outboundDelivery);
+        repository.ensureOutboundFinalCheckpoint(consumer, now);
+        repository.advanceOutboundFinalCheckpoint(consumer, 42, "frame-42", "session-1", "message-1", now);
 
         assertEquals(1, repository.listProfiles().size());
         ChannelGatewayProfile persisted = repository.findProfile(profile.id()).orElseThrow();
@@ -119,8 +112,58 @@ class ChannelAdminRepositoryTest {
         assertEquals(1, persisted.revision());
         assertEquals(1, repository.listBindings(profile.id()).size());
         assertEquals(1, repository.listInboundEvents(profile.id()).size());
-        assertEquals(1, repository.listOutboundDeliveries(profile.id()).size());
+        assertEquals(1, repository.listOutboundFinalCheckpoints(profile.id()).size());
+        assertEquals(42, repository.findOutboundFinalCheckpoint(consumer).orElseThrow().lastAckedFinalSequence());
         assertNotNull(repository.findInboundEventByDedupKey("feishu:event:evt-1").orElse(null));
+    }
+
+    @Test
+    void shouldAdvanceOutboundFinalCheckpointMonotonically() {
+        Instant now = Instant.parse("2026-04-23T00:00:00Z");
+        ChannelOutboundProfileConsumer consumer = new ChannelOutboundProfileConsumer(
+            "channel-profile-1",
+            "feishu",
+            ChannelOutboundConsumerKind.REMOTE_EXTENSION,
+            "registration-1",
+            "registration-1"
+        );
+        repository.createProfile(new ChannelGatewayProfile(
+            "channel-profile-1",
+            "feishu",
+            "飞书客服机器人",
+            ChannelProfileStatus.ACTIVE,
+            true,
+            Map.of("appId", "cli_xxx"),
+            null,
+            null,
+            false,
+            1,
+            now,
+            now
+        ), null);
+
+        assertTrue(repository.advanceOutboundFinalCheckpoint(consumer, 100, "frame-100", "session-1", "message-100", now));
+        assertEquals(100, repository.findOutboundFinalCheckpoint(consumer).orElseThrow().lastAckedFinalSequence());
+        assertEquals(false, repository.advanceOutboundFinalCheckpoint(
+            consumer,
+            99,
+            "frame-99",
+            "session-1",
+            "message-99",
+            now.plusSeconds(1)
+        ));
+        assertEquals(100, repository.findOutboundFinalCheckpoint(consumer).orElseThrow().lastAckedFinalSequence());
+        assertEquals(false, repository.advanceOutboundFinalCheckpoint(
+            consumer,
+            100,
+            "frame-100-duplicate",
+            "session-1",
+            "message-100",
+            now.plusSeconds(2)
+        ));
+        assertEquals("frame-100", repository.findOutboundFinalCheckpoint(consumer).orElseThrow().lastAckedFinalFrameId());
+        assertTrue(repository.advanceOutboundFinalCheckpoint(consumer, 101, "frame-101", "session-1", "message-101", now.plusSeconds(3)));
+        assertEquals(101, repository.findOutboundFinalCheckpoint(consumer).orElseThrow().lastAckedFinalSequence());
     }
 
     @Test
