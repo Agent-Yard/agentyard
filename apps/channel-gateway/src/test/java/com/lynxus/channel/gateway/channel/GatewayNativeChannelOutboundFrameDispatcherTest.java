@@ -2,6 +2,7 @@ package com.lynxus.channel.gateway.channel;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -26,10 +27,13 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundProfileConsu
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileStatus;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderOutboundCapability;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 class GatewayNativeChannelOutboundFrameDispatcherTest {
@@ -141,6 +145,70 @@ class GatewayNativeChannelOutboundFrameDispatcherTest {
         assertEquals(List.of(remoteFinalFrame(201)), fixture.handoff.drain(remoteConsumer, 1));
     }
 
+    @Test
+    void offerTriggersNativeDispatchWithoutWaitingForScheduledScan() throws Exception {
+        Fixture fixture = new Fixture();
+        ChannelOutboundFrame frame = finalFrame(104);
+        when(fixture.repository.findOutboundFinalCheckpoint(fixture.consumer)).thenReturn(Optional.empty());
+        when(fixture.repository.advanceOutboundFinalCheckpoint(
+            eq(fixture.consumer),
+            eq(104L),
+            eq(frame.frameId()),
+            eq("session-1"),
+            eq("message-104"),
+            any(Instant.class)
+        )).thenReturn(true);
+
+        fixture.dispatcher.start();
+        try {
+            fixture.handoff.offer(fixture.consumer, frame, 1, 0);
+
+            assertEquals(frame, fixture.adapter.awaitFrame(500));
+            verify(fixture.repository).advanceOutboundFinalCheckpoint(
+                eq(fixture.consumer),
+                eq(104L),
+                eq(frame.frameId()),
+                eq("session-1"),
+                eq("message-104"),
+                any(Instant.class)
+            );
+        } finally {
+            fixture.dispatcher.shutdown();
+        }
+    }
+
+    @Test
+    void immediateNativeDispatchRemainsSerialForSameConsumer() throws Exception {
+        Fixture fixture = new Fixture();
+        ChannelOutboundFrame first = finalFrame(105);
+        ChannelOutboundFrame second = finalFrame(106);
+        fixture.adapter.blockFirstFrame = true;
+        when(fixture.repository.findOutboundFinalCheckpoint(fixture.consumer)).thenReturn(Optional.empty());
+        when(fixture.repository.advanceOutboundFinalCheckpoint(
+            eq(fixture.consumer),
+            anyLong(),
+            any(),
+            eq("session-1"),
+            any(),
+            any(Instant.class)
+        )).thenReturn(true);
+
+        fixture.dispatcher.start();
+        try {
+            fixture.handoff.offer(fixture.consumer, first, 1, 0);
+            assertTrue(fixture.adapter.firstFrameStarted.await(500, TimeUnit.MILLISECONDS));
+
+            fixture.handoff.offer(fixture.consumer, second, 1, 0);
+            fixture.adapter.releaseFirstFrame.countDown();
+
+            assertTrue(fixture.adapter.twoFramesConsumed.await(1, TimeUnit.SECONDS));
+            assertEquals(List.of(first, second), fixture.adapter.frames);
+            assertEquals(1, fixture.adapter.maxInFlight.get());
+        } finally {
+            fixture.dispatcher.shutdown();
+        }
+    }
+
     private static final class Fixture {
         private final ChannelAdminRepository repository = mock(ChannelAdminRepository.class);
         private final InMemoryChannelOutboundFrameHandoff handoff = new InMemoryChannelOutboundFrameHandoff();
@@ -167,12 +235,22 @@ class GatewayNativeChannelOutboundFrameDispatcherTest {
             upstreamRelaySupervisor,
             new ChannelOutboundRelayProperties()
         );
+
+        private Fixture() {
+            when(repository.findProfile(profile.id())).thenReturn(Optional.of(profile));
+        }
     }
 
     private static final class CapturingNativeAdapter implements GatewayNativeChannelProviderAdapter {
         private final String providerType;
-        private final List<ChannelOutboundFrame> frames = new ArrayList<>();
+        private final List<ChannelOutboundFrame> frames = new CopyOnWriteArrayList<>();
+        private final CountDownLatch firstFrameStarted = new CountDownLatch(1);
+        private final CountDownLatch releaseFirstFrame = new CountDownLatch(1);
+        private final CountDownLatch twoFramesConsumed = new CountDownLatch(2);
+        private final AtomicInteger inFlight = new AtomicInteger();
+        private final AtomicInteger maxInFlight = new AtomicInteger();
         private boolean fail;
+        private boolean blockFirstFrame;
 
         private CapturingNativeAdapter(String providerType) {
             this.providerType = providerType;
@@ -193,7 +271,34 @@ class GatewayNativeChannelOutboundFrameDispatcherTest {
             if (fail) {
                 throw new IllegalStateException("native delivery failed");
             }
-            frames.add(frame);
+            int currentInFlight = inFlight.incrementAndGet();
+            maxInFlight.accumulateAndGet(currentInFlight, Math::max);
+            try {
+                if (blockFirstFrame && frames.isEmpty()) {
+                    firstFrameStarted.countDown();
+                    if (!releaseFirstFrame.await(1, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("timed out waiting to release first native frame");
+                    }
+                }
+                frames.add(frame);
+                twoFramesConsumed.countDown();
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("native delivery interrupted", interrupted);
+            } finally {
+                inFlight.decrementAndGet();
+            }
+        }
+
+        private ChannelOutboundFrame awaitFrame(long timeoutMillis) throws InterruptedException {
+            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+            while (System.nanoTime() < deadline) {
+                if (!frames.isEmpty()) {
+                    return frames.getFirst();
+                }
+                Thread.sleep(10);
+            }
+            throw new AssertionError("timed out waiting for native frame");
         }
     }
 

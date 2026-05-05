@@ -23,8 +23,9 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 public class ChannelOutboundExtensionStreamService {
     private static final Logger log = LoggerFactory.getLogger(ChannelOutboundExtensionStreamService.class);
     private static final int DRAIN_LIMIT = 25;
-    private static final Duration EMPTY_POLL_DELAY = Duration.ofMillis(200);
     private static final Duration HEARTBEAT_INTERVAL = Duration.ofSeconds(20);
+    private static final Duration MAX_IDLE_WAIT = Duration.ofSeconds(5);
+    private static final Duration MIN_IDLE_WAIT = Duration.ofMillis(100);
 
     private final ChannelOutboundExtensionAccessService accessService;
     private final ChannelAdminRepository repository;
@@ -104,14 +105,17 @@ public class ChannelOutboundExtensionStreamService {
                 if (!leaseService.renew(consumer, leaseToken, properties.getExtensionStreamLeaseTtl())) {
                     throw new ConflictException("channel outbound extension stream lease lost for consumer: " + ProfileConsumerKeys.key(consumer));
                 }
-                List<ChannelOutboundFrame> frames = handoff.drain(consumer, DRAIN_LIMIT);
+                long now = System.currentTimeMillis();
+                if (now >= nextHeartbeatAt) {
+                    sendHeartbeat(emitter);
+                    nextHeartbeatAt = now + HEARTBEAT_INTERVAL.toMillis();
+                }
+                List<ChannelOutboundFrame> frames = handoff.drainOrWait(
+                    consumer,
+                    DRAIN_LIMIT,
+                    idleWaitTimeout(now, nextHeartbeatAt, properties.getExtensionStreamLeaseTtl())
+                );
                 if (frames.isEmpty()) {
-                    long now = System.currentTimeMillis();
-                    if (now >= nextHeartbeatAt) {
-                        sendHeartbeat(emitter);
-                        nextHeartbeatAt = now + HEARTBEAT_INTERVAL.toMillis();
-                    }
-                    Thread.sleep(EMPTY_POLL_DELAY.toMillis());
                     continue;
                 }
                 for (ChannelOutboundFrame frame : frames) {
@@ -146,6 +150,22 @@ public class ChannelOutboundExtensionStreamService {
 
     private String nextStreamCursor() {
         return Long.toString(streamCursorSequence.incrementAndGet());
+    }
+
+    private static Duration idleWaitTimeout(long now, long nextHeartbeatAt, Duration leaseTtl) {
+        long heartbeatWaitMillis = Math.max(1, nextHeartbeatAt - now);
+        long leaseRenewWaitMillis = leaseRenewWaitMillis(leaseTtl);
+        long waitMillis = Math.min(heartbeatWaitMillis, leaseRenewWaitMillis);
+        return Duration.ofMillis(waitMillis);
+    }
+
+    private static long leaseRenewWaitMillis(Duration leaseTtl) {
+        if (leaseTtl == null || leaseTtl.isNegative() || leaseTtl.isZero()) {
+            return MAX_IDLE_WAIT.toMillis();
+        }
+        long thirdTtl = Math.max(1, leaseTtl.toMillis() / 3);
+        long bounded = Math.min(MAX_IDLE_WAIT.toMillis(), thirdTtl);
+        return Math.max(MIN_IDLE_WAIT.toMillis(), bounded);
     }
 
     private void cleanup(ChannelOutboundProfileConsumer consumer, String leaseToken, AtomicBoolean closed) {

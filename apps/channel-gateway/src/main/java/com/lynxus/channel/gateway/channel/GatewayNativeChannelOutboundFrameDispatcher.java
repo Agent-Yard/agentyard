@@ -9,12 +9,18 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundFrame;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundFrameCheckpoint;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundFrameKind;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundProfileConsumer;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -31,6 +37,9 @@ public class GatewayNativeChannelOutboundFrameDispatcher {
     private final ChannelOutboundUpstreamRelaySupervisor upstreamRelaySupervisor;
     private final ChannelOutboundRelayProperties properties;
     private final Set<String> activeConsumers = ConcurrentHashMap.newKeySet();
+    private final ExecutorService immediateDispatchExecutor;
+    private final AtomicBoolean listenerRegistered = new AtomicBoolean();
+    private final ChannelOutboundFrameHandoff.FrameAvailableListener frameAvailableListener = this::onFramesAvailable;
 
     public GatewayNativeChannelOutboundFrameDispatcher(
         ChannelAdminRepository repository,
@@ -46,6 +55,22 @@ public class GatewayNativeChannelOutboundFrameDispatcher {
         this.handoff = handoff;
         this.upstreamRelaySupervisor = upstreamRelaySupervisor;
         this.properties = properties;
+        this.immediateDispatchExecutor = Executors.newCachedThreadPool(Thread.ofVirtual().name("channel-outbound-native-", 0).factory());
+    }
+
+    @PostConstruct
+    void start() {
+        if (listenerRegistered.compareAndSet(false, true)) {
+            handoff.registerListener(frameAvailableListener);
+        }
+    }
+
+    @PreDestroy
+    void shutdown() {
+        if (listenerRegistered.compareAndSet(true, false)) {
+            handoff.unregisterListener(frameAvailableListener);
+        }
+        immediateDispatchExecutor.shutdownNow();
     }
 
     @Scheduled(fixedDelayString = "#{@channelOutboundRelayProperties.scanFixedDelay.toMillis()}")
@@ -63,19 +88,56 @@ public class GatewayNativeChannelOutboundFrameDispatcher {
     }
 
     void dispatchOne(ResolvedProfileConsumer resolved) {
+        dispatchUntilIdle(resolved);
+    }
+
+    private void onFramesAvailable(ChannelOutboundProfileConsumer consumer) {
+        if (!properties.isEnabled() || consumer.consumerKind() != ChannelOutboundConsumerKind.GATEWAY_NATIVE) {
+            return;
+        }
+        if (activeConsumers.contains(ProfileConsumerKeys.key(consumer))) {
+            return;
+        }
+        try {
+            immediateDispatchExecutor.submit(() -> dispatchConsumer(consumer));
+        } catch (RejectedExecutionException ignored) {
+            // Shutdown races can occur while Spring is stopping the service.
+        }
+    }
+
+    private void dispatchConsumer(ChannelOutboundProfileConsumer consumer) {
+        try {
+            Optional<ResolvedProfileConsumer> resolved = repository.findProfile(consumer.channelProfileId())
+                .flatMap(consumerResolver::resolve)
+                .filter(candidate -> candidate.consumer().consumerKind() == ChannelOutboundConsumerKind.GATEWAY_NATIVE)
+                .filter(candidate -> ProfileConsumerKeys.key(candidate.consumer()).equals(ProfileConsumerKeys.key(consumer)));
+            resolved.ifPresent(this::dispatchUntilIdle);
+        } catch (RuntimeException error) {
+            log.warn("channel outbound native immediate dispatch failed consumer={}", ProfileConsumerKeys.key(consumer), error);
+        }
+    }
+
+    private void dispatchUntilIdle(ResolvedProfileConsumer resolved) {
         ChannelOutboundProfileConsumer consumer = resolved.consumer();
         String key = ProfileConsumerKeys.key(consumer);
         if (!activeConsumers.add(key)) {
             return;
         }
+        boolean completedNormally = false;
         try {
-            List<ChannelOutboundFrame> frames = handoff.drain(consumer, 1);
-            if (frames.isEmpty()) {
-                return;
+            while (properties.isEnabled()) {
+                List<ChannelOutboundFrame> frames = handoff.drain(consumer, 1);
+                if (frames.isEmpty()) {
+                    completedNormally = true;
+                    return;
+                }
+                consumeFrame(resolved, frames.getFirst());
             }
-            consumeFrame(resolved, frames.getFirst());
         } finally {
             activeConsumers.remove(key);
+            if (completedNormally && handoff.hasFrames(consumer)) {
+                onFramesAvailable(consumer);
+            }
         }
     }
 

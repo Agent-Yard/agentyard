@@ -23,6 +23,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -81,6 +86,66 @@ class ChannelOutboundRelayComponentsTest {
         assertEquals(List.of(finalFrame(1)), handoff.drain(consumer, 1));
         assertEquals(0, handoff.pendingFinals(consumer));
         assertTrue(handoff.offer(consumer, finalFrame(2), 1, 0));
+    }
+
+    @Test
+    void handoffDrainOrWaitWakesWhenFrameIsOffered() throws Exception {
+        InMemoryChannelOutboundFrameHandoff handoff = new InMemoryChannelOutboundFrameHandoff();
+        ChannelOutboundProfileConsumer consumer = consumer();
+        ChannelOutboundFrame frame = finalFrame(1);
+        CountDownLatch waiterStarted = new CountDownLatch(1);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<List<ChannelOutboundFrame>> waitingDrain = executor.submit(() -> {
+                waiterStarted.countDown();
+                return handoff.drainOrWait(consumer, 1, Duration.ofSeconds(5));
+            });
+
+            assertTrue(waiterStarted.await(1, TimeUnit.SECONDS));
+            assertFalse(waitingDrain.isDone());
+            assertTrue(handoff.offer(consumer, frame, 1, 0));
+
+            assertEquals(List.of(frame), waitingDrain.get(500, TimeUnit.MILLISECONDS));
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void handoffDrainOrWaitWakesWhenFrameIsRequeuedFirst() throws Exception {
+        InMemoryChannelOutboundFrameHandoff handoff = new InMemoryChannelOutboundFrameHandoff();
+        ChannelOutboundProfileConsumer consumer = consumer();
+        ChannelOutboundFrame frame = finalFrame(1);
+        CountDownLatch waiterStarted = new CountDownLatch(1);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<List<ChannelOutboundFrame>> waitingDrain = executor.submit(() -> {
+                waiterStarted.countDown();
+                return handoff.drainOrWait(consumer, 1, Duration.ofSeconds(5));
+            });
+
+            assertTrue(waiterStarted.await(1, TimeUnit.SECONDS));
+            assertFalse(waitingDrain.isDone());
+            handoff.requeueFirst(consumer, frame);
+
+            assertEquals(List.of(frame), waitingDrain.get(500, TimeUnit.MILLISECONDS));
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void handoffKeepsConsumerStateStableAfterDrainToAvoidDetachedOffers() {
+        InMemoryChannelOutboundFrameHandoff handoff = new InMemoryChannelOutboundFrameHandoff();
+        ChannelOutboundProfileConsumer consumer = consumer();
+        ChannelOutboundFrame first = finalFrame(1);
+        ChannelOutboundFrame second = finalFrame(2);
+
+        assertTrue(handoff.offer(consumer, first, 1, 0));
+        assertEquals(List.of(first), handoff.drain(consumer, 1));
+
+        assertTrue(handoff.offer(consumer, second, 1, 0));
+        assertEquals(List.of(second), handoff.drain(consumer, 1));
     }
 
     @Test
