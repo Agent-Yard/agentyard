@@ -35,6 +35,9 @@ public final class ManifestValidator {
     private static final Set<String> VISIBILITY_OPERATORS = Set.of("equals", "notEquals", "in", "notIn", "exists", "notExists");
     private static final List<String> PROTOCOL_SCHEMA_FILES = List.of(
         "assistant-binding.schema.json",
+        "channel-outbound-frame.schema.json",
+        "channel-outbound-frame-ack.schema.json",
+        "channel-outbound-frame-subscription.schema.json",
         "channel-provider-descriptor.schema.json",
         "extension-error.schema.json",
         "external-template-binding.schema.json",
@@ -171,12 +174,9 @@ public final class ManifestValidator {
         requireArrayField(descriptor, "accountConfigUiSchema", path, errors);
         requireObjectField(descriptor, "configSchema", path, errors);
         requireArrayField(descriptor, "configUiSchema", path, errors);
+        validateChannelProviderOutbound(requireObjectField(descriptor, "outbound", path, errors), path + "/outbound", errors);
 
         Map<String, Object> endpoints = requireObjectField(descriptor, "endpoints", path, errors);
-        validateDeclaredEndpoint(endpoints, LynxusExtensionProtocol.CHANNEL_PROVIDER_SEND_OUTBOUND_ENDPOINT, path + "/endpoints", errors);
-        if (endpoints.containsKey(LynxusExtensionProtocol.CHANNEL_PROVIDER_SEND_ACTIVITY_ENDPOINT)) {
-            validateDeclaredEndpoint(endpoints, LynxusExtensionProtocol.CHANNEL_PROVIDER_SEND_ACTIVITY_ENDPOINT, path + "/endpoints", errors);
-        }
         validateCredentialEndpointCompleteness(descriptor, endpoints, path, errors);
 
         validateUiPair(
@@ -227,6 +227,35 @@ public final class ManifestValidator {
                     "Job config defaults must not contain secret=true"
                 );
             }
+        }
+    }
+
+    private static void validateChannelProviderOutbound(Map<String, Object> outbound, String path, List<ManifestValidationError> errors) {
+        requireString(outbound, "mode", 1, 64, errorsAt(path, errors));
+        for (String field : Set.of(
+            "supportsTyping",
+            "supportsDraftUpdate",
+            "supportsFinalDelivery",
+            "supportsCredentialRef",
+            "requiresIdempotentFinalDelivery"
+        )) {
+            if (!(outbound.get(field) instanceof Boolean)) {
+                add(errors, MANIFEST_SCHEMA_INVALID, path + "/" + field, "Outbound capability field must be boolean");
+            }
+        }
+        if (!"FRAME_STREAM".equals(outbound.get("mode"))) {
+            add(errors, MANIFEST_SCHEMA_INVALID, path + "/mode", "outbound.mode must be FRAME_STREAM");
+        }
+        if (!Boolean.TRUE.equals(outbound.get("supportsFinalDelivery"))) {
+            add(errors, MANIFEST_SCHEMA_INVALID, path + "/supportsFinalDelivery", "outbound.supportsFinalDelivery must be true");
+        }
+        if (!Boolean.TRUE.equals(outbound.get("requiresIdempotentFinalDelivery"))) {
+            add(
+                errors,
+                MANIFEST_SCHEMA_INVALID,
+                path + "/requiresIdempotentFinalDelivery",
+                "outbound.requiresIdempotentFinalDelivery must be true"
+            );
         }
     }
 

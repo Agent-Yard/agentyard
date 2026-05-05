@@ -35,17 +35,17 @@ export type ChannelProfileStatus = 'ACTIVE' | 'INACTIVE';
 export type ChannelConversationBindingStatus = 'ACTIVE' | 'ARCHIVED';
 export type ChannelInboundEventStatus = 'RECEIVED' | 'REJECTED';
 export type ChannelOutboundDeliveryStatus = 'PENDING' | 'SENDING' | 'SENT' | 'FAILED';
-export type ChannelProviderJobScheduleType = 'INTERVAL' | 'CRON' | 'MANUAL';
-export type ChannelProviderJobStatus = 'ACTIVE' | 'RUNNING' | 'PAUSED' | 'DISABLED';
-export type ChannelProviderJobRunStatus = 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'TIMED_OUT';
-export type ChannelOutboundResponseStatus = 'SENT' | 'ACCEPTED';
-export type ChannelOutboundActivityType =
+export type ChannelOutboundFrameKind =
   | 'TYPING_START'
   | 'TYPING_STOP'
   | 'DRAFT_UPDATE'
   | 'DRAFT_COMPLETE'
-  | 'DRAFT_DISCARD';
-export type ChannelOutboundActivityResponseStatus = 'SENT' | 'ACCEPTED' | 'UNSUPPORTED' | 'NO_OP';
+  | 'DRAFT_DISCARD'
+  | 'FINAL_DELIVERY';
+export type ChannelOutboundConsumerKind = 'REMOTE_EXTENSION' | 'GATEWAY_NATIVE';
+export type ChannelProviderJobScheduleType = 'INTERVAL' | 'CRON' | 'MANUAL';
+export type ChannelProviderJobStatus = 'ACTIVE' | 'RUNNING' | 'PAUSED' | 'DISABLED';
+export type ChannelProviderJobRunStatus = 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'TIMED_OUT';
 export type ChannelRunJobResponseStatus = 'SUCCEEDED' | 'NOOP';
 export type NormalizedChannelEventType =
   | 'MESSAGE_RECEIVED'
@@ -480,16 +480,6 @@ export interface ChannelOutboundDelivery {
   updatedAt: string;
 }
 
-export interface ChannelOutboundDeliveryRequest {
-  channelProfileId: string;
-  assistantId: string;
-  externalConversationId: string;
-  sessionId?: string | null;
-  sessionMessageId?: string | null;
-  messageBlock: Record<string, unknown>;
-  traceContext?: NormalizedChannelTraceContext | null;
-}
-
 export interface ChannelOutboundResolvedTemplate {
   messageType: string;
   messageSubtype?: string | null;
@@ -498,70 +488,180 @@ export interface ChannelOutboundResolvedTemplate {
   externalTemplateVersion?: string | null;
 }
 
-export interface ChannelOutboundPayload {
-  externalConversationId: string;
-  messageBlock: Record<string, unknown>;
+export interface ChannelProviderOutboundCapability {
+  mode: 'FRAME_STREAM';
+  supportsTyping: boolean;
+  supportsDraftUpdate: boolean;
+  supportsFinalDelivery: true;
+  supportsCredentialRef: boolean;
+  requiresIdempotentFinalDelivery: true;
+}
+
+export interface ChannelOutboundTypingPayload {
+  messageId: string;
+}
+
+export interface ChannelOutboundDraftUpdatePayload {
+  messageId: string;
+  blockId: string;
+  blockType: string;
+  delta?: string | null;
+}
+
+export interface ChannelOutboundDraftCompletePayload {
+  messageId: string;
+  blockId: string;
+  blockType: string;
+  block: Record<string, unknown>;
+}
+
+export interface ChannelOutboundDraftDiscardPayload {
+  messageId: string;
+  reason?: string | null;
+}
+
+export interface ChannelOutboundFinalDeliveryPayload {
+  sessionMessageId: string;
+  messageSequence: number;
+  messageBlocks: Record<string, unknown>[];
   resolvedTemplate?: ChannelOutboundResolvedTemplate | null;
 }
 
-export interface ChannelOutboundRequest {
-  providerType: string;
-  channelProfileId: string;
-  config: Record<string, unknown>;
-  externalSecretRef?: string | null;
-  idempotencyKey: string;
-  traceContext: NormalizedChannelTraceContext;
-  payload: ChannelOutboundPayload;
-}
+export type ChannelOutboundTransientFrame =
+  | {
+      protocol: 'lynxus.channel-outbound-frame.v1';
+      frameId: string;
+      channelProfileId: string;
+      providerType: string;
+      assistantId?: string | null;
+      externalConversationId: string;
+      sessionId: string;
+      turnId: string;
+      turnExecutionId: string;
+      sourceSeq: number;
+      kind: 'TYPING_START' | 'TYPING_STOP';
+      occurredAt: string;
+      idempotencyKey: string;
+      credentialRef?: string | null;
+      payload: ChannelOutboundTypingPayload;
+      traceContext?: NormalizedChannelTraceContext | null;
+    }
+  | {
+      protocol: 'lynxus.channel-outbound-frame.v1';
+      frameId: string;
+      channelProfileId: string;
+      providerType: string;
+      assistantId?: string | null;
+      externalConversationId: string;
+      sessionId: string;
+      turnId: string;
+      turnExecutionId: string;
+      sourceSeq: number;
+      kind: 'DRAFT_UPDATE';
+      occurredAt: string;
+      idempotencyKey: string;
+      credentialRef?: string | null;
+      payload: ChannelOutboundDraftUpdatePayload;
+      traceContext?: NormalizedChannelTraceContext | null;
+    }
+  | {
+      protocol: 'lynxus.channel-outbound-frame.v1';
+      frameId: string;
+      channelProfileId: string;
+      providerType: string;
+      assistantId?: string | null;
+      externalConversationId: string;
+      sessionId: string;
+      turnId: string;
+      turnExecutionId: string;
+      sourceSeq: number;
+      kind: 'DRAFT_COMPLETE';
+      occurredAt: string;
+      idempotencyKey: string;
+      credentialRef?: string | null;
+      payload: ChannelOutboundDraftCompletePayload;
+      traceContext?: NormalizedChannelTraceContext | null;
+    }
+  | {
+      protocol: 'lynxus.channel-outbound-frame.v1';
+      frameId: string;
+      channelProfileId: string;
+      providerType: string;
+      assistantId?: string | null;
+      externalConversationId: string;
+      sessionId: string;
+      turnId: string;
+      turnExecutionId: string;
+      sourceSeq: number;
+      kind: 'DRAFT_DISCARD';
+      occurredAt: string;
+      idempotencyKey: string;
+      credentialRef?: string | null;
+      payload: ChannelOutboundDraftDiscardPayload;
+      traceContext?: NormalizedChannelTraceContext | null;
+    };
 
-export interface ChannelOutboundResponse {
-  status: ChannelOutboundResponseStatus;
-  externalMessageId?: string | null;
-  retryable: boolean;
-  metadata: Record<string, unknown>;
-}
-
-export interface ChannelProviderCapabilities {
-  typing: boolean;
-  draftUpdate: boolean;
-}
-
-export interface ChannelOutboundActivityRequest {
-  channelProfileId: string;
-  assistantId: string;
-  externalConversationId: string;
-  sessionId?: string | null;
-  turnId?: string | null;
+export interface ChannelOutboundFinalDeliveryFrame {
+  protocol: 'lynxus.channel-outbound-frame.v1';
   frameId: string;
-  activityType: ChannelOutboundActivityType;
+  channelProfileId: string;
+  providerType: string;
+  assistantId?: string | null;
+  externalConversationId: string;
+  sessionId: string;
+  finalSequence: number;
+  kind: 'FINAL_DELIVERY';
+  occurredAt: string;
   idempotencyKey: string;
-  payload: Record<string, unknown>;
+  credentialRef?: string | null;
+  payload: ChannelOutboundFinalDeliveryPayload;
   traceContext?: NormalizedChannelTraceContext | null;
 }
 
-export interface ChannelProviderActivityPayload {
-  externalConversationId: string;
-  sessionId?: string | null;
-  turnId?: string | null;
-  frameId: string;
-  activityType: ChannelOutboundActivityType;
-  activity: Record<string, unknown>;
-}
+export type ChannelOutboundFrame = ChannelOutboundTransientFrame | ChannelOutboundFinalDeliveryFrame;
 
-export interface ChannelProviderActivityRequest {
-  providerType: string;
+export interface ChannelOutboundProfileConsumer {
   channelProfileId: string;
-  config: Record<string, unknown>;
-  externalSecretRef?: string | null;
-  idempotencyKey: string;
-  traceContext: NormalizedChannelTraceContext;
-  payload: ChannelProviderActivityPayload;
+  providerType: string;
+  consumerKind: ChannelOutboundConsumerKind;
+  consumerId: string;
+  registrationId?: string | null;
 }
 
-export interface ChannelOutboundActivityResponse {
-  status: ChannelOutboundActivityResponseStatus;
-  retryable: boolean;
-  metadata: Record<string, unknown>;
+export interface ChannelOutboundFrameCheckpoint {
+  consumer: ChannelOutboundProfileConsumer;
+  lastAckedFinalSequence?: number | null;
+  lastAckedFinalFrameId?: string | null;
+  lastAckedSessionId?: string | null;
+  lastAckedSessionMessageId?: string | null;
+  lastAckedAt?: string | null;
+}
+
+export interface ChannelOutboundFrameStreamCursor {
+  streamCursor?: string | null;
+  lastAckedFinalSequence?: number | null;
+  lastAckedSessionId?: string | null;
+  lastAckedSessionMessageId?: string | null;
+  maxFinalReplayFrames?: number | null;
+}
+
+export interface ChannelOutboundFrameAck {
+  protocol: 'lynxus.channel-outbound-frame-ack.v1';
+  channelProfileId: string;
+  providerType: string;
+  frameId: string;
+  finalSequence: number;
+  sessionId: string;
+  sessionMessageId: string;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface ChannelOutboundBindingSnapshotRefreshRequest {
+  channelProfileId?: string | null;
+  bindingId?: string | null;
+  sessionId?: string | null;
+  reason: string;
+  bindingUpdatedAt?: string | null;
 }
 
 export interface ChannelTemplateBindingKey {

@@ -1,30 +1,25 @@
 {
-  "name": "descriptor-level request envelope rejects idempotency mismatch",
-  "operation": "channelSendOutbound",
+  "name": "tool descriptor request envelope rejects idempotency mismatch",
+  "operation": "toolInvoke",
   "expectedErrorCode": "IDEMPOTENCY_KEY_MISMATCH",
   "headers": {
     "Authorization": "Bearer internal-token",
     "X-Lynxus-Extension-Registration-Id": "acme-channel",
-    "X-Lynxus-Extension-Descriptor-Type": "CHANNEL_PROVIDER",
-    "X-Lynxus-Extension-Descriptor-Id": "enterprise.acme.internal-im",
+    "X-Lynxus-Extension-Descriptor-Type": "TOOL_CONNECTOR",
+    "X-Lynxus-Extension-Descriptor-Id": "enterprise.acme.crm",
     "X-Lynxus-Trace-Id": "4bf92f3577b34da6a3ce929d0e0e4736",
     "X-Lynxus-Request-Id": "request-3",
     "Idempotency-Key": "channel-outbound-1"
   },
   "request": {
-    "providerType": "enterprise.acme.internal-im",
-    "channelProfileId": "channel-profile-1",
-    "config": {},
+    "connectorType": "enterprise.acme.crm",
+    "operation": "createLead",
     "idempotencyKey": "channel-outbound-other",
     "traceContext": {
       "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
     },
-    "payload": {
-      "externalConversationId": "chat-1",
-      "messageBlock": {
-        "type": "TEXT",
-        "text": "hello"
-      }
+    "input": {
+      "name": "Acme"
     }
   }
 }

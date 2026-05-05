@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lynxus.dev/schemas/extension-protocol/channel-outbound-frame-subscription.schema.json",
+  "title": "Channel outbound frame subscription",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "channelProfileId",
+    "providerType",
+    "status",
+    "streamUrl",
+    "revision",
+    "updatedAt"
+  ],
+  "properties": {
+    "channelProfileId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "providerType": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "const": "ACTIVE"
+    },
+    "streamUrl": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Extension-facing SSE URL for this profile consumer."
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "lastAckedFinalSequence": {
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "description": "Gateway's durable final checkpoint for extension self-check. It is not controlled by Last-Event-ID."
+    }
+  }
+}

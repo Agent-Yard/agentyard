@@ -416,8 +416,9 @@ function checkOpenApi() {
     "/health/live",
     "/health/ready",
     "/tools/invoke",
-    "/channel/send-outbound",
-    "/channel/send-activity",
+    "/extension/channel/outbound-frame-subscriptions",
+    "/extension/channel/outbound-frames/stream",
+    "/extension/channel/outbound-frames/ack",
     "/channel/run-job",
     "/credentials",
     "/credentials/rotate",
@@ -435,9 +436,9 @@ function checkOpenApi() {
     "ToolConnectorDescriptor",
     "RemoteToolInvokeRequest",
     "ToolInvokeResponse",
-    "ChannelOutboundRequest",
-    "ChannelProviderActivityRequest",
-    "ChannelOutboundActivityResponse",
+    "ChannelOutboundFrame",
+    "ChannelOutboundFrameAck",
+    "ChannelOutboundFrameSubscription",
     "ChannelRunJobRequest",
     "CreateCredentialRequest",
     "RotateCredentialRequest",
@@ -461,7 +462,7 @@ function checkOpenApi() {
 
   assertNormalizedEventAcceptedOpenApi(openApi);
 
-  const descriptorPaths = ["/tools/invoke", "/channel/send-outbound", "/channel/send-activity", "/channel/run-job", "/internal/channel-events/normalized"];
+  const descriptorPaths = ["/tools/invoke", "/channel/run-job", "/internal/channel-events/normalized"];
   for (const descriptorPath of descriptorPaths) {
     const headers = operationHeaders(openApi, descriptorPath, "post");
     for (const header of [
@@ -703,11 +704,8 @@ function validateManifest(manifest) {
 }
 
 function validateChannelProvider(descriptor, pathPrefix, errors) {
-  requireFields(descriptor, ["providerType", "title", "accountConfigSchema", "accountConfigUiSchema", "configSchema", "configUiSchema", "endpoints"], pathPrefix, errors);
-  validateDeclaredPath(descriptor.endpoints?.sendOutbound, `${pathPrefix}/endpoints/sendOutbound`, errors);
-  if (hasOwn(descriptor.endpoints ?? {}, "sendActivity")) {
-    validateDeclaredPath(descriptor.endpoints?.sendActivity, `${pathPrefix}/endpoints/sendActivity`, errors);
-  }
+  requireFields(descriptor, ["providerType", "title", "accountConfigSchema", "accountConfigUiSchema", "configSchema", "configUiSchema", "outbound", "endpoints"], pathPrefix, errors);
+  validateChannelProviderOutbound(descriptor.outbound, `${pathPrefix}/outbound`, errors);
   validateCredentialCapability(descriptor, pathPrefix, errors);
   validateUiPair(descriptor.accountConfigSchema, descriptor.accountConfigUiSchema ?? [], `${pathPrefix}/accountConfigUiSchema`, false, errors);
   validateUiPair(descriptor.configSchema, descriptor.configUiSchema ?? [], `${pathPrefix}/configUiSchema`, false, errors);
@@ -739,6 +737,43 @@ function validateChannelProvider(descriptor, pathPrefix, errors) {
     scanNormalConfigForSecrets(job.jobConfigSchema, `${jobPath}/jobConfigSchema`, errors);
     scanNormalConfigForSecrets(job.defaultSchedule?.jobConfig, `${jobPath}/defaultSchedule/jobConfig`, errors);
   });
+}
+
+function validateChannelProviderOutbound(outbound, pathPrefix, errors) {
+  if (!isObject(outbound)) {
+    errors.push({ code: "MANIFEST_INVALID", path: pathPrefix, message: "outbound must be object" });
+    return;
+  }
+  requireFields(
+    outbound,
+    [
+      "mode",
+      "supportsTyping",
+      "supportsDraftUpdate",
+      "supportsFinalDelivery",
+      "supportsCredentialRef",
+      "requiresIdempotentFinalDelivery"
+    ],
+    pathPrefix,
+    errors
+  );
+  if (outbound.mode !== "FRAME_STREAM") {
+    errors.push({ code: "MANIFEST_INVALID", path: `${pathPrefix}/mode`, message: "outbound.mode must be FRAME_STREAM" });
+  }
+  if (outbound.supportsFinalDelivery !== true) {
+    errors.push({
+      code: "MANIFEST_INVALID",
+      path: `${pathPrefix}/supportsFinalDelivery`,
+      message: "outbound.supportsFinalDelivery must be true"
+    });
+  }
+  if (outbound.requiresIdempotentFinalDelivery !== true) {
+    errors.push({
+      code: "MANIFEST_INVALID",
+      path: `${pathPrefix}/requiresIdempotentFinalDelivery`,
+      message: "outbound.requiresIdempotentFinalDelivery must be true"
+    });
+  }
 }
 
 function validateToolConnector(descriptor, pathPrefix, errors) {
@@ -922,7 +957,7 @@ function validateRequestEnvelopeFixture(fixture) {
   const headers = fixture.headers ?? {};
   const request = fixture.request ?? {};
 
-  const descriptorOperations = new Set(["toolInvoke", "channelSendOutbound", "channelRunJob", "normalizedEvent"]);
+  const descriptorOperations = new Set(["toolInvoke", "channelRunJob", "normalizedEvent"]);
   const credentialOperations = new Set(["createCredential", "rotateCredential", "validateCredential", "revokeCredential"]);
   const serviceOperations = new Set(["serviceManifest", "extensionHealth", "healthLive", "healthReady"]);
   const authRequiredOperations = new Set([...descriptorOperations, ...credentialOperations, "serviceManifest", "extensionHealth"]);
@@ -1214,13 +1249,15 @@ function channelProviderDigestObject(descriptor) {
     providerType: descriptor.providerType,
     accountConfigSchema: validationOnlySchema(descriptor.accountConfigSchema ?? null),
     credentialSchema: validationOnlySchema(descriptor.credentialSchema ?? null),
-    capabilities: {
-      draftUpdate: descriptor.capabilities?.draftUpdate === true,
-      typing: descriptor.capabilities?.typing === true
+    outbound: {
+      mode: descriptor.outbound?.mode ?? null,
+      requiresIdempotentFinalDelivery: descriptor.outbound?.requiresIdempotentFinalDelivery === true,
+      supportsCredentialRef: descriptor.outbound?.supportsCredentialRef === true,
+      supportsDraftUpdate: descriptor.outbound?.supportsDraftUpdate === true,
+      supportsFinalDelivery: descriptor.outbound?.supportsFinalDelivery === true,
+      supportsTyping: descriptor.outbound?.supportsTyping === true
     },
     endpoints: {
-      sendOutbound: descriptor.endpoints?.sendOutbound ?? null,
-      sendActivity: descriptor.endpoints?.sendActivity ?? null,
       runJob: descriptor.endpoints?.runJob ?? null,
       createCredential: descriptor.endpoints?.createCredential ?? null,
       rotateCredential: descriptor.endpoints?.rotateCredential ?? null,

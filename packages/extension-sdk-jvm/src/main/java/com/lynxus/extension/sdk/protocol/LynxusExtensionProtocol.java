@@ -7,10 +7,11 @@ public final class LynxusExtensionProtocol {
     public static final String EXTENSION_HEALTH_PATH = "/extension/health";
     public static final String HEALTH_LIVE_PATH = "/health/live";
     public static final String HEALTH_READY_PATH = "/health/ready";
+    public static final String CHANNEL_OUTBOUND_FRAME_SUBSCRIPTIONS_PATH = "/extension/channel/outbound-frame-subscriptions";
+    public static final String CHANNEL_OUTBOUND_FRAMES_STREAM_PATH = "/extension/channel/outbound-frames/stream";
+    public static final String CHANNEL_OUTBOUND_FRAMES_ACK_PATH = "/extension/channel/outbound-frames/ack";
 
     public static final String TOOL_CONNECTOR_INVOKE_ENDPOINT = "invoke";
-    public static final String CHANNEL_PROVIDER_SEND_OUTBOUND_ENDPOINT = "sendOutbound";
-    public static final String CHANNEL_PROVIDER_SEND_ACTIVITY_ENDPOINT = "sendActivity";
     public static final String CHANNEL_PROVIDER_RUN_JOB_ENDPOINT = "runJob";
     public static final String CREATE_CREDENTIAL_ENDPOINT = "createCredential";
     public static final String ROTATE_CREDENTIAL_ENDPOINT = "rotateCredential";

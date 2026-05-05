@@ -58,6 +58,16 @@ final class GeneratedProtocolModelContractTest {
         Map<String, Object> openApi = JsonDocuments.parseObject(Files.readString(OPENAPI_PATH));
         Set<String> sourceSchemas = object(object(openApi.get("components")).get("schemas")).keySet();
         Map<String, Object> sourceAccepted = schemaProperty(openApi, "NormalizedEventAccepted", "accepted");
+        Map<String, Object> sourceSupportsFinalDelivery = schemaProperty(
+            openApi,
+            "ChannelProviderOutboundCapability",
+            "supportsFinalDelivery"
+        );
+        Map<String, Object> sourceRequiresIdempotentFinalDelivery = schemaProperty(
+            openApi,
+            "ChannelProviderOutboundCapability",
+            "requiresIdempotentFinalDelivery"
+        );
 
         assertTrue(
             GENERATED_OPENAPI_PATH.normalize().startsWith(SDK_ROOT.resolve("build").normalize()),
@@ -69,9 +79,27 @@ final class GeneratedProtocolModelContractTest {
         );
         Map<String, Object> generatorOpenApi = JsonDocuments.parseObject(Files.readString(GENERATED_OPENAPI_PATH));
         Map<String, Object> generatorAccepted = schemaProperty(generatorOpenApi, "NormalizedEventAccepted", "accepted");
+        Map<String, Object> generatorSupportsFinalDelivery = schemaProperty(
+            generatorOpenApi,
+            "ChannelProviderOutboundCapability",
+            "supportsFinalDelivery"
+        );
+        Map<String, Object> generatorRequiresIdempotentFinalDelivery = schemaProperty(
+            generatorOpenApi,
+            "ChannelProviderOutboundCapability",
+            "requiresIdempotentFinalDelivery"
+        );
         assertTrue(
             Boolean.TRUE.equals(sourceAccepted.get("const")),
             "source OpenAPI NormalizedEventAccepted.accepted must keep const: true"
+        );
+        assertTrue(
+            Boolean.TRUE.equals(sourceSupportsFinalDelivery.get("const")),
+            "source OpenAPI ChannelProviderOutboundCapability.supportsFinalDelivery must keep const: true"
+        );
+        assertTrue(
+            Boolean.TRUE.equals(sourceRequiresIdempotentFinalDelivery.get("const")),
+            "source OpenAPI ChannelProviderOutboundCapability.requiresIdempotentFinalDelivery must keep const: true"
         );
         assertTrue(
             Boolean.TRUE.equals(generatorAccepted.get("default")),
@@ -80,6 +108,22 @@ final class GeneratedProtocolModelContractTest {
         assertTrue(
             !generatorAccepted.containsKey("const"),
             "generator-only OpenAPI copy should remove boolean const for OpenAPI Generator Java"
+        );
+        assertTrue(
+            Boolean.TRUE.equals(generatorSupportsFinalDelivery.get("default")),
+            "generator-only OpenAPI copy should downgrade supportsFinalDelivery boolean const to default"
+        );
+        assertTrue(
+            !generatorSupportsFinalDelivery.containsKey("const"),
+            "generator-only OpenAPI copy should remove supportsFinalDelivery boolean const"
+        );
+        assertTrue(
+            Boolean.TRUE.equals(generatorRequiresIdempotentFinalDelivery.get("default")),
+            "generator-only OpenAPI copy should downgrade requiresIdempotentFinalDelivery boolean const to default"
+        );
+        assertTrue(
+            !generatorRequiresIdempotentFinalDelivery.containsKey("const"),
+            "generator-only OpenAPI copy should remove requiresIdempotentFinalDelivery boolean const"
         );
 
         assertTrue(
@@ -99,6 +143,8 @@ final class GeneratedProtocolModelContractTest {
             "ServiceManifestEnvelope",
             "ExtensionError",
             "ChannelProviderDescriptor",
+            "ChannelOutboundFrame",
+            "ChannelOutboundFrameAck",
             "ToolConnectorDescriptor"
         )) {
             assertTrue(sourceSchemas.contains(expectedSchema), "OpenAPI source schema missing " + expectedSchema);

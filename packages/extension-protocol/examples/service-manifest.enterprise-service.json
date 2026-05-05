@@ -107,8 +107,15 @@
             "defaultJobTimeoutSeconds": 60
           }
         ],
+        "outbound": {
+          "mode": "FRAME_STREAM",
+          "supportsTyping": true,
+          "supportsDraftUpdate": true,
+          "supportsFinalDelivery": true,
+          "supportsCredentialRef": true,
+          "requiresIdempotentFinalDelivery": true
+        },
         "endpoints": {
-          "sendOutbound": "/channel/send-outbound",
           "runJob": "/channel/run-job",
           "createCredential": "/credentials",
           "rotateCredential": "/credentials/rotate",

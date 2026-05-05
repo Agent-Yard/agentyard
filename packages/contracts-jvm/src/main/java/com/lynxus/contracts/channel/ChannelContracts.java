@@ -46,11 +46,28 @@ public final class ChannelContracts {
         REJECTED
     }
 
+    public static final String CHANNEL_OUTBOUND_FRAME_PROTOCOL = "lynxus.channel-outbound-frame.v1";
+    public static final String CHANNEL_OUTBOUND_FRAME_ACK_PROTOCOL = "lynxus.channel-outbound-frame-ack.v1";
+
     public enum ChannelOutboundDeliveryStatus {
         PENDING,
         SENDING,
         SENT,
         FAILED
+    }
+
+    public enum ChannelOutboundFrameKind {
+        TYPING_START,
+        TYPING_STOP,
+        DRAFT_UPDATE,
+        DRAFT_COMPLETE,
+        DRAFT_DISCARD,
+        FINAL_DELIVERY
+    }
+
+    public enum ChannelOutboundConsumerKind {
+        REMOTE_EXTENSION,
+        GATEWAY_NATIVE
     }
 
     public enum ChannelProviderJobScheduleType {
@@ -292,20 +309,6 @@ public final class ChannelContracts {
         }
     }
 
-    public record ChannelOutboundDeliveryRequest(
-        String channelProfileId,
-        String assistantId,
-        String externalConversationId,
-        String sessionId,
-        String sessionMessageId,
-        Map<String, Object> messageBlock,
-        NormalizedChannelTraceContext traceContext
-    ) {
-        public ChannelOutboundDeliveryRequest {
-            messageBlock = requiredImmutableObjectMap(messageBlock, "messageBlock");
-        }
-    }
-
     public record ChannelOutboundResolvedTemplate(
         String messageType,
         String messageSubtype,
@@ -315,121 +318,230 @@ public final class ChannelContracts {
     ) {
     }
 
-    public record ChannelOutboundPayload(
-        String externalConversationId,
-        Map<String, Object> messageBlock,
-        ChannelOutboundResolvedTemplate resolvedTemplate
+    public record ChannelProviderOutboundCapability(
+        String mode,
+        boolean supportsTyping,
+        boolean supportsDraftUpdate,
+        boolean supportsFinalDelivery,
+        boolean supportsCredentialRef,
+        boolean requiresIdempotentFinalDelivery
     ) {
-        public ChannelOutboundPayload {
-            messageBlock = requiredImmutableObjectMap(messageBlock, "payload.messageBlock");
+        public static final String FRAME_STREAM_MODE = "FRAME_STREAM";
+
+        public ChannelProviderOutboundCapability {
+            if (!FRAME_STREAM_MODE.equals(mode)) {
+                throw new IllegalArgumentException("outbound.mode must be FRAME_STREAM");
+            }
+            if (!supportsFinalDelivery) {
+                throw new IllegalArgumentException("outbound.supportsFinalDelivery must be true");
+            }
+            if (!requiresIdempotentFinalDelivery) {
+                throw new IllegalArgumentException("outbound.requiresIdempotentFinalDelivery must be true");
+            }
         }
     }
 
-    public record ChannelOutboundRequest(
+    public record ChannelOutboundFrame(
+        String protocol,
+        String frameId,
+        String channelProfileId,
         String providerType,
-        String channelProfileId,
-        Map<String, Object> config,
-        String externalSecretRef,
-        String idempotencyKey,
-        NormalizedChannelTraceContext traceContext,
-        ChannelOutboundPayload payload
-    ) {
-        public ChannelOutboundRequest {
-            config = requiredImmutableObjectMap(config, "config");
-        }
-    }
-
-    public enum ChannelOutboundResponseStatus {
-        SENT,
-        ACCEPTED
-    }
-
-    public enum ChannelOutboundActivityType {
-        TYPING_START,
-        TYPING_STOP,
-        DRAFT_UPDATE,
-        DRAFT_COMPLETE,
-        DRAFT_DISCARD
-    }
-
-    public enum ChannelOutboundActivityResponseStatus {
-        SENT,
-        ACCEPTED,
-        UNSUPPORTED,
-        NO_OP
-    }
-
-    public record ChannelProviderCapabilities(
-        boolean typing,
-        boolean draftUpdate
-    ) {
-        public static ChannelProviderCapabilities unsupported() {
-            return new ChannelProviderCapabilities(false, false);
-        }
-    }
-
-    public record ChannelOutboundResponse(
-        ChannelOutboundResponseStatus status,
-        String externalMessageId,
-        boolean retryable,
-        Map<String, Object> metadata
-    ) {
-        public ChannelOutboundResponse {
-            metadata = requiredImmutableObjectMap(metadata, "metadata");
-        }
-    }
-
-    public record ChannelOutboundActivityRequest(
-        String channelProfileId,
         String assistantId,
         String externalConversationId,
         String sessionId,
         String turnId,
-        String frameId,
-        ChannelOutboundActivityType activityType,
+        String turnExecutionId,
+        Long sourceSeq,
+        Long finalSequence,
+        ChannelOutboundFrameKind kind,
+        Instant occurredAt,
         String idempotencyKey,
+        String credentialRef,
         Map<String, Object> payload,
         NormalizedChannelTraceContext traceContext
     ) {
-        public ChannelOutboundActivityRequest {
-            payload = immutableObjectMap(payload);
+        public ChannelOutboundFrame {
+            if (!CHANNEL_OUTBOUND_FRAME_PROTOCOL.equals(protocol)) {
+                throw new IllegalArgumentException("protocol must be " + CHANNEL_OUTBOUND_FRAME_PROTOCOL);
+            }
+            requireText(frameId, "frameId");
+            requireText(channelProfileId, "channelProfileId");
+            requireText(providerType, "providerType");
+            requireText(externalConversationId, "externalConversationId");
+            requireText(sessionId, "sessionId");
+            if (kind == null) {
+                throw new IllegalArgumentException("kind is required");
+            }
+            if (occurredAt == null) {
+                throw new IllegalArgumentException("occurredAt is required");
+            }
+            requireText(idempotencyKey, "idempotencyKey");
+            payload = requiredImmutableObjectMap(payload, "payload");
+            validateOutboundFrameSemantics(kind, turnId, turnExecutionId, sourceSeq, finalSequence, payload);
         }
     }
 
-    public record ChannelProviderActivityPayload(
-        String externalConversationId,
-        String sessionId,
-        String turnId,
-        String frameId,
-        ChannelOutboundActivityType activityType,
-        Map<String, Object> activity
-    ) {
-        public ChannelProviderActivityPayload {
-            activity = immutableObjectMap(activity);
+    public record ChannelOutboundFinalSequence(long value) {
+        public ChannelOutboundFinalSequence {
+            if (value <= 0) {
+                throw new IllegalArgumentException("finalSequence must be positive");
+            }
         }
     }
 
-    public record ChannelProviderActivityRequest(
-        String providerType,
+    public record ChannelOutboundProfileConsumer(
         String channelProfileId,
-        Map<String, Object> config,
-        String externalSecretRef,
-        String idempotencyKey,
-        NormalizedChannelTraceContext traceContext,
-        ChannelProviderActivityPayload payload
+        String providerType,
+        ChannelOutboundConsumerKind consumerKind,
+        String consumerId,
+        String registrationId
     ) {
-        public ChannelProviderActivityRequest {
-            config = requiredImmutableObjectMap(config, "config");
+        public ChannelOutboundProfileConsumer {
+            requireText(channelProfileId, "channelProfileId");
+            requireText(providerType, "providerType");
+            if (consumerKind == null) {
+                throw new IllegalArgumentException("consumerKind is required");
+            }
+            requireText(consumerId, "consumerId");
         }
     }
 
-    public record ChannelOutboundActivityResponse(
-        ChannelOutboundActivityResponseStatus status,
-        boolean retryable,
+    public record ChannelOutboundFrameCheckpoint(
+        ChannelOutboundProfileConsumer consumer,
+        Long lastAckedFinalSequence,
+        String lastAckedFinalFrameId,
+        String lastAckedSessionId,
+        String lastAckedSessionMessageId,
+        Instant lastAckedAt
+    ) {
+        public ChannelOutboundFrameCheckpoint {
+            if (consumer == null) {
+                throw new IllegalArgumentException("consumer is required");
+            }
+            if (lastAckedFinalSequence != null && lastAckedFinalSequence <= 0) {
+                throw new IllegalArgumentException("lastAckedFinalSequence must be positive");
+            }
+        }
+    }
+
+    public record ChannelOutboundFrameStreamCursor(
+        String streamCursor,
+        Long lastAckedFinalSequence,
+        String lastAckedSessionId,
+        String lastAckedSessionMessageId,
+        Integer maxFinalReplayFrames
+    ) {
+        public ChannelOutboundFrameStreamCursor {
+            if (lastAckedFinalSequence != null && lastAckedFinalSequence <= 0) {
+                throw new IllegalArgumentException("lastAckedFinalSequence must be positive");
+            }
+            if (maxFinalReplayFrames != null && maxFinalReplayFrames <= 0) {
+                throw new IllegalArgumentException("maxFinalReplayFrames must be positive");
+            }
+        }
+    }
+
+    public record ChannelOutboundFrameAck(
+        String protocol,
+        String channelProfileId,
+        String providerType,
+        String frameId,
+        long finalSequence,
+        String sessionId,
+        String sessionMessageId,
         Map<String, Object> metadata
     ) {
-        public ChannelOutboundActivityResponse {
-            metadata = requiredImmutableObjectMap(metadata, "metadata");
+        public ChannelOutboundFrameAck {
+            if (!CHANNEL_OUTBOUND_FRAME_ACK_PROTOCOL.equals(protocol)) {
+                throw new IllegalArgumentException("protocol must be " + CHANNEL_OUTBOUND_FRAME_ACK_PROTOCOL);
+            }
+            requireText(channelProfileId, "channelProfileId");
+            requireText(providerType, "providerType");
+            requireText(frameId, "frameId");
+            if (finalSequence <= 0) {
+                throw new IllegalArgumentException("finalSequence must be positive");
+            }
+            requireText(sessionId, "sessionId");
+            requireText(sessionMessageId, "sessionMessageId");
+            metadata = immutableObjectMap(metadata);
+            forbidAckMetadataFields(metadata);
+        }
+    }
+
+    public record ChannelOutboundBindingSnapshotRefreshRequest(
+        String channelProfileId,
+        String bindingId,
+        String sessionId,
+        String reason,
+        Instant bindingUpdatedAt
+    ) {
+        public ChannelOutboundBindingSnapshotRefreshRequest {
+            if ((channelProfileId == null || channelProfileId.isBlank())
+                && (bindingId == null || bindingId.isBlank())
+                && (sessionId == null || sessionId.isBlank())) {
+                throw new IllegalArgumentException("channelProfileId, bindingId, or sessionId is required");
+            }
+            requireText(reason, "reason");
+        }
+    }
+
+    private static String requireText(String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(field + " is required");
+        }
+        return value;
+    }
+
+    private static void validateOutboundFrameSemantics(
+        ChannelOutboundFrameKind kind,
+        String turnId,
+        String turnExecutionId,
+        Long sourceSeq,
+        Long finalSequence,
+        Map<String, Object> payload
+    ) {
+        if (kind == ChannelOutboundFrameKind.FINAL_DELIVERY) {
+            if (finalSequence == null || finalSequence <= 0) {
+                throw new IllegalArgumentException("finalSequence is required for FINAL_DELIVERY");
+            }
+            requirePayloadFields(payload, "sessionMessageId", "messageSequence", "messageBlocks");
+            return;
+        }
+        if (finalSequence != null) {
+            throw new IllegalArgumentException("finalSequence is only allowed for FINAL_DELIVERY");
+        }
+        requireText(turnId, "turnId");
+        requireText(turnExecutionId, "turnExecutionId");
+        if (sourceSeq == null || sourceSeq <= 0) {
+            throw new IllegalArgumentException("sourceSeq is required for transient frames");
+        }
+        switch (kind) {
+            case TYPING_START, TYPING_STOP, DRAFT_DISCARD -> requirePayloadFields(payload, "messageId");
+            case DRAFT_UPDATE -> {
+                requirePayloadFields(payload, "messageId", "blockId", "blockType");
+                if ("TEXT".equals(payload.get("blockType"))) {
+                    requirePayloadFields(payload, "delta");
+                }
+            }
+            case DRAFT_COMPLETE -> requirePayloadFields(payload, "messageId", "blockId", "blockType", "block");
+            default -> throw new IllegalArgumentException("unsupported channel outbound frame kind");
+        }
+    }
+
+    private static void requirePayloadFields(Map<String, Object> payload, String... fields) {
+        for (String field : fields) {
+            Object value = payload.get(field);
+            if (value == null || (value instanceof String text && text.isBlank())) {
+                throw new IllegalArgumentException("payload." + field + " is required");
+            }
+        }
+    }
+
+    private static void forbidAckMetadataFields(Map<String, Object> metadata) {
+        for (String field : List.of("providerResponse", "rawProviderResponse", "credential", "credentialRef", "externalSecretRef")) {
+            if (metadata.containsKey(field)) {
+                throw new IllegalArgumentException("ACK metadata must not contain " + field);
+            }
         }
     }
 

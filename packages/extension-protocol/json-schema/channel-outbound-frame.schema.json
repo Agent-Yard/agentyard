@@ -1,0 +1,334 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lynxus.dev/schemas/extension-protocol/channel-outbound-frame.schema.json",
+  "title": "Channel outbound frame",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocol",
+    "frameId",
+    "channelProfileId",
+    "providerType",
+    "externalConversationId",
+    "sessionId",
+    "kind",
+    "occurredAt",
+    "idempotencyKey",
+    "payload"
+  ],
+  "properties": {
+    "protocol": {
+      "type": "string",
+      "const": "lynxus.channel-outbound-frame.v1"
+    },
+    "frameId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable idempotency key for this frame. Replays of the same business action must use the same frameId."
+    },
+    "channelProfileId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "providerType": {
+      "type": "string",
+      "minLength": 1
+    },
+    "assistantId": {
+      "type": ["string", "null"]
+    },
+    "externalConversationId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "turnId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "turnExecutionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceSeq": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "finalSequence": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Durable global ordering checkpoint for FINAL_DELIVERY only. It is not an SSE cursor and must not appear on transient frames."
+    },
+    "kind": {
+      "$ref": "#/$defs/kind"
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "minLength": 1
+    },
+    "credentialRef": {
+      "type": ["string", "null"],
+      "description": "Scoped credential reference for remote providers. This field must never contain raw secret material."
+    },
+    "payload": {
+      "type": "object"
+    },
+    "traceContext": {
+      "type": ["object", "null"],
+      "additionalProperties": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "enum": ["TYPING_START", "TYPING_STOP"]
+          }
+        },
+        "required": ["kind"]
+      },
+      "then": {
+        "required": ["turnId", "turnExecutionId", "sourceSeq"],
+        "not": {
+          "required": ["finalSequence"]
+        },
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/typingPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "DRAFT_UPDATE"
+          }
+        },
+        "required": ["kind"]
+      },
+      "then": {
+        "required": ["turnId", "turnExecutionId", "sourceSeq"],
+        "not": {
+          "required": ["finalSequence"]
+        },
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/draftUpdatePayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "DRAFT_COMPLETE"
+          }
+        },
+        "required": ["kind"]
+      },
+      "then": {
+        "description": "DRAFT_COMPLETE only completes or closes transient draft state. It never represents formal external message delivery.",
+        "required": ["turnId", "turnExecutionId", "sourceSeq"],
+        "not": {
+          "required": ["finalSequence"]
+        },
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/draftCompletePayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "DRAFT_DISCARD"
+          }
+        },
+        "required": ["kind"]
+      },
+      "then": {
+        "required": ["turnId", "turnExecutionId", "sourceSeq"],
+        "not": {
+          "required": ["finalSequence"]
+        },
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/draftDiscardPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "FINAL_DELIVERY"
+          }
+        },
+        "required": ["kind"]
+      },
+      "then": {
+        "description": "FINAL_DELIVERY is the only frame kind that causes a formal external message send. It must be processed idempotently by frameId.",
+        "required": ["finalSequence"],
+        "not": {
+          "anyOf": [
+            {
+              "required": ["turnId"]
+            },
+            {
+              "required": ["turnExecutionId"]
+            },
+            {
+              "required": ["sourceSeq"]
+            }
+          ]
+        },
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/finalDeliveryPayload"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "TYPING_START",
+        "TYPING_STOP",
+        "DRAFT_UPDATE",
+        "DRAFT_COMPLETE",
+        "DRAFT_DISCARD",
+        "FINAL_DELIVERY"
+      ]
+    },
+    "jsonObject": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "typingPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["messageId"],
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "draftUpdatePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["messageId", "blockId", "blockType"],
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "blockId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "blockType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "delta": {
+          "type": "string"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "blockType": {
+                "const": "TEXT"
+              }
+            },
+            "required": ["blockType"]
+          },
+          "then": {
+            "required": ["delta"]
+          }
+        }
+      ]
+    },
+    "draftCompletePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["messageId", "blockId", "blockType", "block"],
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "blockId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "blockType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "block": {
+          "$ref": "#/$defs/jsonObject"
+        }
+      }
+    },
+    "draftDiscardPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["messageId"],
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "finalDeliveryPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionMessageId", "messageSequence", "messageBlocks"],
+      "properties": {
+        "sessionMessageId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "messageSequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "messageBlocks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/jsonObject"
+          }
+        },
+        "resolvedTemplate": {
+          "type": ["object", "null"],
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}

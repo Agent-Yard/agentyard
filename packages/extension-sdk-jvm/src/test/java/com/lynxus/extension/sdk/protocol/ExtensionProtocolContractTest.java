@@ -35,11 +35,22 @@ final class ExtensionProtocolContractTest {
             LynxusExtensionProtocol.EXTENSION_MANIFEST_PATH,
             LynxusExtensionProtocol.EXTENSION_HEALTH_PATH,
             LynxusExtensionProtocol.HEALTH_LIVE_PATH,
-            LynxusExtensionProtocol.HEALTH_READY_PATH
+            LynxusExtensionProtocol.HEALTH_READY_PATH,
+            LynxusExtensionProtocol.CHANNEL_OUTBOUND_FRAME_SUBSCRIPTIONS_PATH,
+            LynxusExtensionProtocol.CHANNEL_OUTBOUND_FRAMES_STREAM_PATH,
+            LynxusExtensionProtocol.CHANNEL_OUTBOUND_FRAMES_ACK_PATH
         );
 
         assertEquals(
-            Set.of("/extension/manifest", "/extension/health", "/health/live", "/health/ready"),
+            Set.of(
+                "/extension/manifest",
+                "/extension/health",
+                "/health/live",
+                "/health/ready",
+                "/extension/channel/outbound-frame-subscriptions",
+                "/extension/channel/outbound-frames/stream",
+                "/extension/channel/outbound-frames/ack"
+            ),
             fixedPathConstants
         );
         assertTrue(openApiPaths.containsAll(fixedPathConstants));
@@ -62,8 +73,6 @@ final class ExtensionProtocolContractTest {
             LynxusExtensionProtocol.VALIDATE_CREDENTIAL_ENDPOINT
         );
         Set<String> channelEndpointConstants = Set.of(
-            LynxusExtensionProtocol.CHANNEL_PROVIDER_SEND_OUTBOUND_ENDPOINT,
-            LynxusExtensionProtocol.CHANNEL_PROVIDER_SEND_ACTIVITY_ENDPOINT,
             LynxusExtensionProtocol.CHANNEL_PROVIDER_RUN_JOB_ENDPOINT,
             LynxusExtensionProtocol.CREATE_CREDENTIAL_ENDPOINT,
             LynxusExtensionProtocol.ROTATE_CREDENTIAL_ENDPOINT,
@@ -73,7 +82,7 @@ final class ExtensionProtocolContractTest {
 
         assertEquals(Set.of("invoke", "createCredential", "rotateCredential", "revokeCredential", "validateCredential"), toolEndpointConstants);
         assertEquals(
-            Set.of("sendOutbound", "sendActivity", "runJob", "createCredential", "rotateCredential", "revokeCredential", "validateCredential"),
+            Set.of("runJob", "createCredential", "rotateCredential", "revokeCredential", "validateCredential"),
             channelEndpointConstants
         );
         assertEquals(toolEndpointConstants, endpointPropertyKeys(toolDescriptorSchema));
@@ -97,7 +106,6 @@ final class ExtensionProtocolContractTest {
 
         for (String operationId : List.of(
             "invokeToolConnector",
-            "sendChannelOutbound",
             "runChannelProviderJob",
             "ingestNormalizedChannelEvent"
         )) {
@@ -206,7 +214,6 @@ final class ExtensionProtocolContractTest {
             "getExtensionManifest",
             "getExtensionHealth",
             "invokeToolConnector",
-            "sendChannelOutbound",
             "runChannelProviderJob",
             "createCredential",
             "rotateCredential",

@@ -13,6 +13,22 @@ fun jsonObject(value: Any?, label: String): MutableMap<String, Any?> {
     return value as? MutableMap<String, Any?> ?: error("$label must be a JSON object")
 }
 
+@Suppress("UNCHECKED_CAST")
+fun downgradeBooleanConstForOpenApiGenerator(value: Any?) {
+    when (value) {
+        is MutableMap<*, *> -> {
+            val objectValue = value as MutableMap<String, Any?>
+            val constValue = objectValue["const"]
+            if (constValue is Boolean) {
+                objectValue.remove("const")
+                objectValue.putIfAbsent("default", constValue)
+            }
+            objectValue.values.forEach(::downgradeBooleanConstForOpenApiGenerator)
+        }
+        is MutableList<*> -> value.forEach(::downgradeBooleanConstForOpenApiGenerator)
+    }
+}
+
 java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(25))
@@ -66,8 +82,7 @@ val prepareExtensionProtocolJavaGeneratorOpenApi = tasks.register("prepareExtens
             "Source OpenAPI NormalizedEventAccepted.accepted must keep const: true"
         }
 
-        accepted.remove("const")
-        accepted["default"] = true
+        downgradeBooleanConstForOpenApiGenerator(openApi)
 
         Files.createDirectories(targetFile.toPath().parent)
         Files.writeString(targetFile.toPath(), JsonOutput.prettyPrint(JsonOutput.toJson(openApi)) + "\n")
@@ -123,6 +138,8 @@ val writeGeneratedExtensionProtocolJavaCompileSmoke = tasks.register("writeGener
         package com.lynxus.extension.sdk.generated.protocol.smoke;
 
         import com.lynxus.extension.sdk.generated.protocol.model.ChannelProviderDescriptor;
+        import com.lynxus.extension.sdk.generated.protocol.model.ChannelOutboundFrame;
+        import com.lynxus.extension.sdk.generated.protocol.model.ChannelOutboundFrameAck;
         import com.lynxus.extension.sdk.generated.protocol.model.ExtensionError;
         import com.lynxus.extension.sdk.generated.protocol.model.ServiceManifestEnvelope;
         import com.lynxus.extension.sdk.generated.protocol.model.ToolConnectorDescriptor;
@@ -132,6 +149,8 @@ val writeGeneratedExtensionProtocolJavaCompileSmoke = tasks.register("writeGener
                 ServiceManifestEnvelope.class,
                 ExtensionError.class,
                 ChannelProviderDescriptor.class,
+                ChannelOutboundFrame.class,
+                ChannelOutboundFrameAck.class,
                 ToolConnectorDescriptor.class,
             };
 

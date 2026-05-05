@@ -63,6 +63,84 @@ paths:
                 $ref: '#/components/schemas/ApiResponseToolConnectorDefinitionList'
         '503':
           description: Extension definition registry is not ready
+  /internal/channel-outbound/frames/stream:
+    get:
+      summary: Stream channel outbound frames for one channel profile
+      description: >
+        Internal SSE endpoint consumed by channel-gateway. The SSE id is a short-lived streamCursor for
+        transient replay only. Last-Event-ID can resume recent transient frames when the replay buffer still
+        contains that cursor, but it is not a durable final checkpoint. Durable final replay is driven only by
+        X-Lynxus-Last-Acked-Final-Sequence, and each FINAL_DELIVERY frame data carries finalSequence.
+      parameters:
+        - in: query
+          name: channelProfileId
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - in: header
+          name: Last-Event-ID
+          required: false
+          description: Short-lived streamCursor for transient SSE replay; can expire and must not be used as lastAckedFinalSequence.
+          schema:
+            type: string
+        - in: header
+          name: X-Lynxus-Last-Acked-Final-Sequence
+          required: false
+          description: Durable profile-consumer checkpoint. API replays FINAL_DELIVERY frames with finalSequence greater than this value.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+        - in: header
+          name: X-Lynxus-Last-Acked-Session-Id
+          required: false
+          description: Diagnostic integrity field paired with lastAckedFinalSequence; not used as the ordering key.
+          schema:
+            type: string
+        - in: header
+          name: X-Lynxus-Last-Acked-Session-Message-Id
+          required: false
+          description: Diagnostic integrity field paired with lastAckedFinalSequence; not used as the ordering key.
+          schema:
+            type: string
+        - in: header
+          name: X-Lynxus-Max-Final-Replay-Frames
+          required: false
+          description: Gateway replay credit. API must cap the number of FINAL_DELIVERY frames emitted during this connection.
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: >
+            text/event-stream. event=channel-outbound-frame data is ChannelOutboundFrame. event=final-replay-window-exhausted
+            data is ChannelOutboundFinalReplayWindowExhausted.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '400':
+          description: Checkpoint headers are syntactically invalid
+        '422':
+          description: Checkpoint headers are semantically invalid
+  /internal/channel-outbound/binding-snapshot/refresh:
+    post:
+      summary: Request API refresh of channel binding snapshots
+      description: >
+        Internal hint from channel-gateway after binding/profile changes. The API must treat this as a trigger
+        to refresh from channel-gateway authoritative binding/profile APIs, not as a trusted snapshot upsert body.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChannelOutboundBindingSnapshotRefreshRequest'
+      responses:
+        '202':
+          description: Refresh request accepted for shared debounce and single-flight processing
+        '400':
+          description: Refresh request is invalid
   /channel-admin/profiles:
     get:
       summary: List channel profiles
@@ -2510,6 +2588,204 @@ components:
         updatedAt:
           type: string
           format: date-time
+    ChannelOutboundFrameKind:
+      type: string
+      enum: [TYPING_START, TYPING_STOP, DRAFT_UPDATE, DRAFT_COMPLETE, DRAFT_DISCARD, FINAL_DELIVERY]
+    ChannelOutboundFrame:
+      type: object
+      required:
+        - protocol
+        - frameId
+        - channelProfileId
+        - providerType
+        - externalConversationId
+        - sessionId
+        - kind
+        - occurredAt
+        - idempotencyKey
+        - payload
+      properties:
+        protocol:
+          type: string
+          enum: [lynxus.channel-outbound-frame.v1]
+        frameId:
+          type: string
+          minLength: 1
+          description: Stable frame id and idempotency key. Replays of the same business action must keep the same frameId.
+        channelProfileId:
+          type: string
+        providerType:
+          type: string
+        assistantId:
+          type: string
+          nullable: true
+        externalConversationId:
+          type: string
+        sessionId:
+          type: string
+        turnId:
+          type: string
+          nullable: true
+          description: Required for transient frames and omitted for FINAL_DELIVERY.
+        turnExecutionId:
+          type: string
+          nullable: true
+          description: Required for transient frames and omitted for FINAL_DELIVERY.
+        sourceSeq:
+          type: integer
+          format: int64
+          minimum: 1
+          nullable: true
+          description: Runtime source sequence for transient frames only.
+        finalSequence:
+          type: integer
+          format: int64
+          minimum: 1
+          nullable: true
+          description: Durable global final message ordering key. Required only for FINAL_DELIVERY and never used as streamCursor.
+        kind:
+          $ref: '#/components/schemas/ChannelOutboundFrameKind'
+        occurredAt:
+          type: string
+          format: date-time
+        idempotencyKey:
+          type: string
+          minLength: 1
+        credentialRef:
+          type: string
+          nullable: true
+          description: Scoped credential reference only; never raw credential material.
+        payload:
+          type: object
+          additionalProperties: true
+          description: >
+            Kind-specific payload. TYPING_* requires messageId. DRAFT_UPDATE requires messageId/blockId/blockType
+            and TEXT delta. DRAFT_COMPLETE requires messageId/blockId/blockType/block and only closes draft state.
+            FINAL_DELIVERY requires sessionMessageId/messageSequence/messageBlocks and is the only official external send action.
+        traceContext:
+          $ref: '#/components/schemas/NormalizedChannelTraceContext'
+          nullable: true
+    ChannelOutboundFrameAck:
+      type: object
+      required:
+        - protocol
+        - channelProfileId
+        - providerType
+        - frameId
+        - finalSequence
+        - sessionId
+        - sessionMessageId
+      properties:
+        protocol:
+          type: string
+          enum: [lynxus.channel-outbound-frame-ack.v1]
+        channelProfileId:
+          type: string
+        providerType:
+          type: string
+        frameId:
+          type: string
+          description: Must match a delivered FINAL_DELIVERY frameId.
+        finalSequence:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Candidate lastAckedFinalSequence. It advances durable replay and is distinct from SSE streamCursor.
+        sessionId:
+          type: string
+        sessionMessageId:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: Sanitized diagnostics only. Raw provider response, credential, credentialRef, and externalSecretRef are forbidden.
+    ChannelOutboundConsumerKind:
+      type: string
+      enum: [REMOTE_EXTENSION, GATEWAY_NATIVE]
+    ChannelOutboundProfileConsumer:
+      type: object
+      required:
+        - channelProfileId
+        - providerType
+        - consumerKind
+        - consumerId
+      properties:
+        channelProfileId:
+          type: string
+        providerType:
+          type: string
+        consumerKind:
+          $ref: '#/components/schemas/ChannelOutboundConsumerKind'
+        consumerId:
+          type: string
+          description: registrationId for REMOTE_EXTENSION or a stable native consumer id such as native:{providerType}.
+        registrationId:
+          type: string
+          nullable: true
+    ChannelOutboundFrameCheckpoint:
+      type: object
+      required:
+        - consumer
+      properties:
+        consumer:
+          $ref: '#/components/schemas/ChannelOutboundProfileConsumer'
+        lastAckedFinalSequence:
+          type: integer
+          format: int64
+          minimum: 1
+          nullable: true
+          description: Durable final replay checkpoint. API resumes with finalSequence greater than this value.
+        lastAckedFinalFrameId:
+          type: string
+          nullable: true
+        lastAckedSessionId:
+          type: string
+          nullable: true
+          description: Diagnostic integrity field, not the ordering key.
+        lastAckedSessionMessageId:
+          type: string
+          nullable: true
+          description: Diagnostic integrity field, not the ordering key.
+        lastAckedAt:
+          type: string
+          format: date-time
+          nullable: true
+    ChannelOutboundFinalReplayWindowExhausted:
+      type: object
+      required:
+        - emitted
+      properties:
+        emitted:
+          type: integer
+          minimum: 0
+        lastEmittedFinalSequence:
+          type: integer
+          format: int64
+          minimum: 1
+          nullable: true
+    ChannelOutboundBindingSnapshotRefreshRequest:
+      type: object
+      required:
+        - reason
+      properties:
+        channelProfileId:
+          type: string
+          nullable: true
+        bindingId:
+          type: string
+          nullable: true
+        sessionId:
+          type: string
+          nullable: true
+        reason:
+          type: string
+          minLength: 1
+        bindingUpdatedAt:
+          type: string
+          format: date-time
+          nullable: true
+      description: At least one of channelProfileId, bindingId, or sessionId must be present.
     ChannelProviderJobScheduleConfig:
       type: object
       required:

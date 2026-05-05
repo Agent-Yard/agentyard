@@ -14,8 +14,6 @@ from referencing.jsonschema import DRAFT202012
 
 from lynxus_extension_sdk.protocol import (
     CHANNEL_PROVIDER_RUN_JOB_ENDPOINT,
-    CHANNEL_PROVIDER_SEND_ACTIVITY_ENDPOINT,
-    CHANNEL_PROVIDER_SEND_OUTBOUND_ENDPOINT,
     CREATE_CREDENTIAL_ENDPOINT,
     EXTENSION_API_VERSION,
     REVOKE_CREDENTIAL_ENDPOINT,
@@ -38,6 +36,9 @@ _OPTION_COMPONENTS = frozenset({"select", "multiSelect", "radio", "checkboxGroup
 _VISIBILITY_OPERATORS = frozenset({"equals", "notEquals", "in", "notIn", "exists", "notExists"})
 _PROTOCOL_SCHEMA_FILES = (
     "assistant-binding.schema.json",
+    "channel-outbound-frame.schema.json",
+    "channel-outbound-frame-ack.schema.json",
+    "channel-outbound-frame-subscription.schema.json",
     "channel-provider-descriptor.schema.json",
     "extension-error.schema.json",
     "external-template-binding.schema.json",
@@ -163,11 +164,9 @@ def _validate_channel_provider(descriptor: dict[str, Any], path: str, errors: li
     _require_array_field(descriptor, "accountConfigUiSchema", path, errors)
     _require_object_field(descriptor, "configSchema", path, errors)
     _require_array_field(descriptor, "configUiSchema", path, errors)
+    _validate_channel_provider_outbound(_require_object_field(descriptor, "outbound", path, errors), f"{path}/outbound", errors)
 
     endpoints = _require_object_field(descriptor, "endpoints", path, errors)
-    _validate_declared_endpoint(endpoints, CHANNEL_PROVIDER_SEND_OUTBOUND_ENDPOINT, f"{path}/endpoints", errors)
-    if CHANNEL_PROVIDER_SEND_ACTIVITY_ENDPOINT in endpoints:
-        _validate_declared_endpoint(endpoints, CHANNEL_PROVIDER_SEND_ACTIVITY_ENDPOINT, f"{path}/endpoints", errors)
     _validate_credential_endpoint_completeness(descriptor, endpoints, path, errors)
 
     _validate_ui_pair(
@@ -214,7 +213,35 @@ def _validate_channel_provider(descriptor: dict[str, Any], path: str, errors: li
                 "UI_SCHEMA_SECRET_NOT_ALLOWED",
                 f"{job_path}/defaultSchedule/jobConfig",
                 "Job config defaults must not contain secret=true",
-            )
+        )
+
+
+def _validate_channel_provider_outbound(
+    outbound: dict[str, Any],
+    path: str,
+    errors: list[ManifestValidationError],
+) -> None:
+    _require_string(outbound, "mode", 1, 64, path, errors)
+    for field in {
+        "supportsTyping",
+        "supportsDraftUpdate",
+        "supportsFinalDelivery",
+        "supportsCredentialRef",
+        "requiresIdempotentFinalDelivery",
+    }:
+        if not isinstance(outbound.get(field), bool):
+            _add(errors, MANIFEST_SCHEMA_INVALID, f"{path}/{field}", "Outbound capability field must be boolean")
+    if outbound.get("mode") != "FRAME_STREAM":
+        _add(errors, MANIFEST_SCHEMA_INVALID, f"{path}/mode", "outbound.mode must be FRAME_STREAM")
+    if outbound.get("supportsFinalDelivery") is not True:
+        _add(errors, MANIFEST_SCHEMA_INVALID, f"{path}/supportsFinalDelivery", "outbound.supportsFinalDelivery must be true")
+    if outbound.get("requiresIdempotentFinalDelivery") is not True:
+        _add(
+            errors,
+            MANIFEST_SCHEMA_INVALID,
+            f"{path}/requiresIdempotentFinalDelivery",
+            "outbound.requiresIdempotentFinalDelivery must be true",
+        )
 
 
 def _validate_tool_connector(descriptor: dict[str, Any], path: str, errors: list[ManifestValidationError]) -> None:

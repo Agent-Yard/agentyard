@@ -154,10 +154,10 @@
         }
       }
     },
-    "/channel/send-outbound": {
-      "post": {
-        "operationId": "sendChannelOutbound",
-        "summary": "Representative path for channelProvider.endpoints.sendOutbound. Actual path is manifest-declared.",
+    "/extension/channel/outbound-frame-subscriptions": {
+      "get": {
+        "operationId": "listChannelOutboundFrameSubscriptions",
+        "summary": "List ACTIVE channel profiles this extension should subscribe to for outbound frame streams.",
         "parameters": [
           {
             "$ref": "#/components/parameters/AuthorizationHeader"
@@ -170,34 +170,15 @@
           },
           {
             "$ref": "#/components/parameters/DescriptorIdHeader"
-          },
-          {
-            "$ref": "#/components/parameters/TraceIdHeader"
-          },
-          {
-            "$ref": "#/components/parameters/RequestIdHeader"
-          },
-          {
-            "$ref": "#/components/parameters/IdempotencyKeyHeader"
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ChannelOutboundRequest"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
-            "description": "Outbound delivery result.",
+            "description": "Bootstrap subscription snapshot filtered by registrationId and providerType.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ChannelOutboundResponse"
+                  "$ref": "#/components/schemas/ChannelOutboundFrameSubscriptionList"
                 }
               }
             }
@@ -208,10 +189,11 @@
         }
       }
     },
-    "/channel/send-activity": {
-      "post": {
-        "operationId": "sendChannelActivity",
-        "summary": "Representative path for channelProvider.endpoints.sendActivity. Actual path is manifest-declared.",
+    "/extension/channel/outbound-frames/stream": {
+      "get": {
+        "operationId": "streamChannelOutboundFrames",
+        "summary": "Open the extension-facing SSE stream for a channel profile's outbound frames.",
+        "description": "The SSE id is a short-lived streamCursor for transient replay only. Last-Event-ID never replaces finalSequence. FINAL_DELIVERY frames carry finalSequence, and extensions ACK them after idempotent provider handling.",
         "parameters": [
           {
             "$ref": "#/components/parameters/AuthorizationHeader"
@@ -226,13 +208,68 @@
             "$ref": "#/components/parameters/DescriptorIdHeader"
           },
           {
-            "$ref": "#/components/parameters/TraceIdHeader"
+            "name": "channelProfileId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
           },
           {
-            "$ref": "#/components/parameters/RequestIdHeader"
+            "name": "Last-Event-ID",
+            "in": "header",
+            "required": false,
+            "description": "Short-lived streamCursor for transient SSE replay. It is not a durable final checkpoint.",
+            "schema": {
+              "type": "string"
+            }
           },
           {
-            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+            "name": "X-Lynxus-Last-Acked-Final-Sequence",
+            "in": "header",
+            "required": false,
+            "description": "Diagnostic extension-local final checkpoint. The gateway checkpoint is authoritative.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE stream with event: channel-outbound-frame and data: ChannelOutboundFrame.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/ExtensionErrorResponse"
+          }
+        }
+      }
+    },
+    "/extension/channel/outbound-frames/ack": {
+      "post": {
+        "operationId": "ackChannelOutboundFrame",
+        "summary": "ACK a successfully processed FINAL_DELIVERY frame.",
+        "description": "ACK applies only to FINAL_DELIVERY. The request advances lastAckedFinalSequence only after the gateway verifies this frame was forwarded in order. Raw provider response and credential fields are forbidden.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AuthorizationHeader"
+          },
+          {
+            "$ref": "#/components/parameters/RegistrationIdHeaderRequired"
+          },
+          {
+            "$ref": "#/components/parameters/DescriptorTypeHeader"
+          },
+          {
+            "$ref": "#/components/parameters/DescriptorIdHeader"
           }
         ],
         "requestBody": {
@@ -240,21 +277,27 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ChannelProviderActivityRequest"
+                "$ref": "#/components/schemas/ChannelOutboundFrameAck"
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Transient channel activity result.",
+            "description": "ACK accepted or duplicate/old ACK treated as successful no-op.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ChannelOutboundActivityResponse"
+                  "$ref": "#/components/schemas/ChannelOutboundFrameAckResponse"
                 }
               }
             }
+          },
+          "409": {
+            "description": "ACK is not the pending queue head or the gateway cannot prove ordered forwarding."
+          },
+          "422": {
+            "description": "ACK payload is semantically invalid for current checkpoint state."
           },
           "default": {
             "$ref": "#/components/responses/ExtensionErrorResponse"
@@ -805,25 +848,41 @@
               "$ref": "#/components/schemas/ChannelJobDefinition"
             }
           },
-          "capabilities": {
-            "$ref": "#/components/schemas/ChannelProviderCapabilities"
+          "outbound": {
+            "$ref": "#/components/schemas/ChannelProviderOutboundCapability"
           },
           "endpoints": {
             "$ref": "#/components/schemas/ChannelProviderEndpoints"
           }
         }
       },
-      "ChannelProviderCapabilities": {
+      "ChannelProviderOutboundCapability": {
         "type": "object",
         "additionalProperties": false,
+        "required": ["mode", "supportsTyping", "supportsDraftUpdate", "supportsFinalDelivery", "supportsCredentialRef", "requiresIdempotentFinalDelivery"],
         "properties": {
-          "typing": {
-            "type": "boolean",
-            "default": false
+          "mode": {
+            "type": "string",
+            "const": "FRAME_STREAM"
           },
-          "draftUpdate": {
+          "supportsTyping": {
+            "type": "boolean"
+          },
+          "supportsDraftUpdate": {
+            "type": "boolean"
+          },
+          "supportsFinalDelivery": {
             "type": "boolean",
-            "default": false
+            "const": true,
+            "description": "Must be true for FRAME_STREAM channel providers."
+          },
+          "supportsCredentialRef": {
+            "type": "boolean"
+          },
+          "requiresIdempotentFinalDelivery": {
+            "type": "boolean",
+            "const": true,
+            "description": "Must be true so repeated FINAL_DELIVERY frameId values are not sent twice."
           }
         }
       },
@@ -898,14 +957,7 @@
       "ChannelProviderEndpoints": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["sendOutbound"],
         "properties": {
-          "sendOutbound": {
-            "$ref": "#/components/schemas/DeclaredPath"
-          },
-          "sendActivity": {
-            "$ref": "#/components/schemas/DeclaredPath"
-          },
           "runJob": {
             "$ref": "#/components/schemas/DeclaredPath"
           },
@@ -1234,43 +1286,169 @@
           }
         }
       },
-      "ChannelOutboundRequest": {
+      "ChannelOutboundFrameKind": {
+        "type": "string",
+        "enum": ["TYPING_START", "TYPING_STOP", "DRAFT_UPDATE", "DRAFT_COMPLETE", "DRAFT_DISCARD", "FINAL_DELIVERY"]
+      },
+      "ChannelOutboundFrame": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["providerType", "channelProfileId", "config", "idempotencyKey", "traceContext", "payload"],
+        "required": ["protocol", "frameId", "channelProfileId", "providerType", "externalConversationId", "sessionId", "kind", "occurredAt", "idempotencyKey", "payload"],
         "properties": {
-          "providerType": {
-            "type": "string"
+          "protocol": {
+            "type": "string",
+            "const": "lynxus.channel-outbound-frame.v1"
+          },
+          "frameId": {
+            "type": "string",
+            "description": "Stable idempotency key for the frame. Replays of the same business action must use the same frameId."
           },
           "channelProfileId": {
             "type": "string"
           },
-          "config": {
-            "$ref": "#/components/schemas/JsonObject"
+          "providerType": {
+            "type": "string"
           },
-          "externalSecretRef": {
-            "$ref": "#/components/schemas/ExternalSecretRef"
+          "assistantId": {
+            "type": ["string", "null"]
           },
-          "idempotencyKey": {
-            "$ref": "#/components/schemas/IdempotencyKey"
-          },
-          "traceContext": {
-            "$ref": "#/components/schemas/TraceContext"
-          },
-          "payload": {
-            "$ref": "#/components/schemas/ChannelOutboundPayload"
-          }
-        }
-      },
-      "ChannelOutboundPayload": {
-        "type": "object",
-        "required": ["externalConversationId", "messageBlock"],
-        "properties": {
           "externalConversationId": {
             "type": "string"
           },
-          "messageBlock": {
+          "sessionId": {
+            "type": "string"
+          },
+          "turnId": {
+            "type": "string"
+          },
+          "turnExecutionId": {
+            "type": "string"
+          },
+          "sourceSeq": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "finalSequence": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Durable global ordering checkpoint for FINAL_DELIVERY only. It is distinct from streamCursor and Last-Event-ID."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ChannelOutboundFrameKind"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "credentialRef": {
+            "type": ["string", "null"]
+          },
+          "payload": {
+            "$ref": "#/components/schemas/JsonObject",
+            "description": "Kind-specific payload. The JSON Schema assets define illegal kind/payload combinations."
+          },
+          "traceContext": {
+            "$ref": "#/components/schemas/TraceContext"
+          }
+        }
+      },
+      "ChannelOutboundTypingPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["messageId"],
+        "properties": {
+          "messageId": {
+            "type": "string"
+          }
+        }
+      },
+      "ChannelOutboundDraftUpdatePayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["messageId", "blockId", "blockType"],
+        "properties": {
+          "messageId": {
+            "type": "string"
+          },
+          "blockId": {
+            "type": "string"
+          },
+          "blockType": {
+            "type": "string"
+          },
+          "delta": {
+            "type": "string"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "blockType": {
+                  "const": "TEXT"
+                }
+              },
+              "required": ["blockType"]
+            },
+            "then": {
+              "required": ["delta"]
+            }
+          }
+        ]
+      },
+      "ChannelOutboundDraftCompletePayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["messageId", "blockId", "blockType", "block"],
+        "properties": {
+          "messageId": {
+            "type": "string"
+          },
+          "blockId": {
+            "type": "string"
+          },
+          "blockType": {
+            "type": "string"
+          },
+          "block": {
             "$ref": "#/components/schemas/JsonObject"
+          }
+        }
+      },
+      "ChannelOutboundDraftDiscardPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["messageId"],
+        "properties": {
+          "messageId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "ChannelOutboundFinalDeliveryPayload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sessionMessageId", "messageSequence", "messageBlocks"],
+        "properties": {
+          "sessionMessageId": {
+            "type": "string"
+          },
+          "messageSequence": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "messageBlocks": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/JsonObject"
+            }
           },
           "resolvedTemplate": {
             "$ref": "#/components/schemas/ResolvedTemplate"
@@ -1299,97 +1477,120 @@
           }
         }
       },
-      "ChannelOutboundResponse": {
+      "ChannelOutboundFrameAck": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["status", "retryable", "metadata"],
+        "required": ["protocol", "channelProfileId", "providerType", "frameId", "finalSequence", "sessionId", "sessionMessageId"],
         "properties": {
-          "status": {
+          "protocol": {
             "type": "string",
-            "enum": ["SENT", "ACCEPTED"]
-          },
-          "externalMessageId": {
-            "type": "string"
-          },
-          "retryable": {
-            "type": "boolean"
-          },
-          "metadata": {
-            "$ref": "#/components/schemas/JsonObject"
-          }
-        }
-      },
-      "ChannelOutboundActivityType": {
-        "type": "string",
-        "enum": ["TYPING_START", "TYPING_STOP", "DRAFT_CREATE", "DRAFT_UPDATE", "DRAFT_COMPLETE", "DRAFT_DISCARD"]
-      },
-      "ChannelProviderActivityRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["providerType", "channelProfileId", "config", "idempotencyKey", "traceContext", "payload"],
-        "properties": {
-          "providerType": {
-            "type": "string"
+            "const": "lynxus.channel-outbound-frame-ack.v1"
           },
           "channelProfileId": {
             "type": "string"
           },
-          "config": {
-            "$ref": "#/components/schemas/JsonObject"
-          },
-          "externalSecretRef": {
-            "$ref": "#/components/schemas/ExternalSecretRef"
-          },
-          "idempotencyKey": {
-            "$ref": "#/components/schemas/IdempotencyKey"
-          },
-          "traceContext": {
-            "$ref": "#/components/schemas/TraceContext"
-          },
-          "payload": {
-            "$ref": "#/components/schemas/ChannelProviderActivityPayload"
-          }
-        }
-      },
-      "ChannelProviderActivityPayload": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["externalConversationId", "frameId", "activityType", "activity"],
-        "properties": {
-          "externalConversationId": {
+          "providerType": {
             "type": "string"
-          },
-          "sessionId": {
-            "type": ["string", "null"]
-          },
-          "turnId": {
-            "type": ["string", "null"]
           },
           "frameId": {
             "type": "string"
           },
-          "activityType": {
-            "$ref": "#/components/schemas/ChannelOutboundActivityType"
+          "finalSequence": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "lastAckedFinalSequence candidate for the profile consumer; unrelated to SSE streamCursor."
           },
-          "activity": {
-            "$ref": "#/components/schemas/JsonObject"
+          "sessionId": {
+            "type": "string"
+          },
+          "sessionMessageId": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true,
+            "not": {
+              "anyOf": [
+                {
+                  "required": ["providerResponse"]
+                },
+                {
+                  "required": ["rawProviderResponse"]
+                },
+                {
+                  "required": ["credential"]
+                },
+                {
+                  "required": ["credentialRef"]
+                },
+                {
+                  "required": ["externalSecretRef"]
+                }
+              ]
+            }
           }
         }
       },
-      "ChannelOutboundActivityResponse": {
+      "ChannelOutboundFrameAckResponse": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["status", "retryable", "metadata"],
+        "required": ["accepted", "duplicate"],
         "properties": {
-          "status": {
-            "type": "string",
-            "enum": ["SENT", "ACCEPTED", "UNSUPPORTED", "NO_OP"]
-          },
-          "retryable": {
+          "accepted": {
             "type": "boolean"
           },
-          "metadata": {
-            "$ref": "#/components/schemas/JsonObject"
+          "duplicate": {
+            "type": "boolean"
+          },
+          "lastAckedFinalSequence": {
+            "type": ["integer", "null"],
+            "minimum": 1
+          }
+        }
+      },
+      "ChannelOutboundFrameSubscription": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["channelProfileId", "providerType", "status", "streamUrl", "revision", "updatedAt"],
+        "properties": {
+          "channelProfileId": {
+            "type": "string"
+          },
+          "providerType": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "const": "ACTIVE"
+          },
+          "streamUrl": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastAckedFinalSequence": {
+            "type": ["integer", "null"],
+            "minimum": 1,
+            "description": "Gateway durable final checkpoint for extension self-check."
+          }
+        }
+      },
+      "ChannelOutboundFrameSubscriptionList": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["subscriptions"],
+        "properties": {
+          "subscriptions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChannelOutboundFrameSubscription"
+            }
           }
         }
       },

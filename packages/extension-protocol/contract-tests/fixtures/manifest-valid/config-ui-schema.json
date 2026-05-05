@@ -59,9 +59,15 @@
             "tenantId": "acme",
             "mode": "sandbox"
           },
-          "endpoints": {
-            "sendOutbound": "/channel/send-outbound"
-          }
+          "outbound": {
+            "mode": "FRAME_STREAM",
+            "supportsTyping": false,
+            "supportsDraftUpdate": false,
+            "supportsFinalDelivery": true,
+            "supportsCredentialRef": true,
+            "requiresIdempotentFinalDelivery": true
+          },
+          "endpoints": {}
         }
       ],
       "toolConnectors": []

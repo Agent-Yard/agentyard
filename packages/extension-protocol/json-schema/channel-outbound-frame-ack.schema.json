@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lynxus.dev/schemas/extension-protocol/channel-outbound-frame-ack.schema.json",
+  "title": "Channel outbound frame ACK",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocol",
+    "channelProfileId",
+    "providerType",
+    "frameId",
+    "finalSequence",
+    "sessionId",
+    "sessionMessageId"
+  ],
+  "properties": {
+    "protocol": {
+      "type": "string",
+      "const": "lynxus.channel-outbound-frame-ack.v1"
+    },
+    "channelProfileId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "providerType": {
+      "type": "string",
+      "minLength": 1
+    },
+    "frameId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Must match a received FINAL_DELIVERY frameId. ACK is only valid for FINAL_DELIVERY frames."
+    },
+    "finalSequence": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Durable final checkpoint being acknowledged. It is distinct from the SSE stream cursor."
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sessionMessageId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "not": {
+        "anyOf": [
+          {
+            "required": ["providerResponse"]
+          },
+          {
+            "required": ["rawProviderResponse"]
+          },
+          {
+            "required": ["credential"]
+          },
+          {
+            "required": ["credentialRef"]
+          },
+          {
+            "required": ["externalSecretRef"]
+          }
+        ]
+      },
+      "description": "Optional sanitized diagnostics only. Raw provider response and credential fields are forbidden."
+    }
+  }
+}

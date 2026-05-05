@@ -33,6 +33,8 @@ def test_datamodel_codegen_writes_protocol_models_under_python_build_directory()
         "ServiceManifestEnvelope",
         "ExtensionError",
         "ChannelProviderDescriptor",
+        "ChannelOutboundFrame",
+        "ChannelOutboundFrameAck",
         "ToolConnectorDescriptor",
     }:
         assert expected_schema in source_schemas

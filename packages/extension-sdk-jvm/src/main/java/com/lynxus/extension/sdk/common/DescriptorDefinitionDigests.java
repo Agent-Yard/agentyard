@@ -36,7 +36,7 @@ public final class DescriptorDefinitionDigests {
         result.put("providerType", descriptor.get("providerType"));
         result.put("accountConfigSchema", validationOnlySchema(descriptor.get("accountConfigSchema")));
         result.put("credentialSchema", validationOnlySchema(descriptor.get("credentialSchema")));
-        result.put("capabilities", channelProviderCapabilities(descriptor));
+        result.put("outbound", channelProviderOutbound(descriptor));
         result.put("endpoints", channelProviderEndpoints(descriptor));
         result.put("configSchema", validationOnlySchema(descriptor.get("configSchema")));
         result.put("jobDefinitions", jobDefinitions);
@@ -80,22 +80,24 @@ public final class DescriptorDefinitionDigests {
     }
 
     @SuppressWarnings("unchecked")
-    private static Map<String, Object> channelProviderCapabilities(Map<String, Object> descriptor) {
-        Object rawCapabilities = descriptor.get("capabilities");
-        Map<String, Object> capabilities = rawCapabilities instanceof Map<?, ?> map
+    private static Map<String, Object> channelProviderOutbound(Map<String, Object> descriptor) {
+        Object rawOutbound = descriptor.get("outbound");
+        Map<String, Object> outbound = rawOutbound instanceof Map<?, ?> map
             ? (Map<String, Object>) map
             : Map.of();
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("draftUpdate", Boolean.TRUE.equals(capabilities.get("draftUpdate")));
-        result.put("typing", Boolean.TRUE.equals(capabilities.get("typing")));
+        result.put("mode", outbound.get("mode"));
+        result.put("requiresIdempotentFinalDelivery", Boolean.TRUE.equals(outbound.get("requiresIdempotentFinalDelivery")));
+        result.put("supportsCredentialRef", Boolean.TRUE.equals(outbound.get("supportsCredentialRef")));
+        result.put("supportsDraftUpdate", Boolean.TRUE.equals(outbound.get("supportsDraftUpdate")));
+        result.put("supportsFinalDelivery", Boolean.TRUE.equals(outbound.get("supportsFinalDelivery")));
+        result.put("supportsTyping", Boolean.TRUE.equals(outbound.get("supportsTyping")));
         return result;
     }
 
     private static Map<String, Object> channelProviderEndpoints(Map<String, Object> descriptor) {
         Map<String, Object> descriptorEndpoints = endpoints(descriptor);
         Map<String, Object> endpoints = new LinkedHashMap<>();
-        endpoints.put("sendOutbound", descriptorEndpoints.get("sendOutbound"));
-        endpoints.put("sendActivity", descriptorEndpoints.get("sendActivity"));
         endpoints.put("runJob", descriptorEndpoints.get("runJob"));
         endpoints.put("createCredential", descriptorEndpoints.get("createCredential"));
         endpoints.put("rotateCredential", descriptorEndpoints.get("rotateCredential"));

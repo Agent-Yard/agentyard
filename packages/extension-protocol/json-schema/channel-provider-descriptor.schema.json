@@ -11,6 +11,7 @@
     "accountConfigUiSchema",
     "configSchema",
     "configUiSchema",
+    "outbound",
     "endpoints"
   ],
   "properties": {
@@ -56,31 +57,45 @@
         "$ref": "job-definition.schema.json"
       }
     },
-    "capabilities": {
+    "outbound": {
       "type": "object",
       "additionalProperties": false,
+      "required": [
+        "mode",
+        "supportsTyping",
+        "supportsDraftUpdate",
+        "supportsFinalDelivery",
+        "supportsCredentialRef",
+        "requiresIdempotentFinalDelivery"
+      ],
       "properties": {
-        "typing": {
-          "type": "boolean",
-          "default": false
+        "mode": {
+          "type": "string",
+          "const": "FRAME_STREAM"
         },
-        "draftUpdate": {
+        "supportsTyping": {
+          "type": "boolean"
+        },
+        "supportsDraftUpdate": {
+          "type": "boolean"
+        },
+        "supportsFinalDelivery": {
           "type": "boolean",
-          "default": false
+          "const": true
+        },
+        "supportsCredentialRef": {
+          "type": "boolean"
+        },
+        "requiresIdempotentFinalDelivery": {
+          "type": "boolean",
+          "const": true
         }
       }
     },
     "endpoints": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sendOutbound"],
       "properties": {
-        "sendOutbound": {
-          "$ref": "#/$defs/declaredPath"
-        },
-        "sendActivity": {
-          "$ref": "#/$defs/declaredPath"
-        },
         "runJob": {
           "$ref": "#/$defs/declaredPath"
         },

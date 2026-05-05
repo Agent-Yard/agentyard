@@ -101,7 +101,6 @@ def test_openapi_default_error_responses_use_extension_error_schema() -> None:
         "getExtensionManifest",
         "getExtensionHealth",
         "invokeToolConnector",
-        "sendChannelOutbound",
         "runChannelProviderJob",
         "createCredential",
         "rotateCredential",
