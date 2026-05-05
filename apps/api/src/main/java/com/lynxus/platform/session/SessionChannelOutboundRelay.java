@@ -67,7 +67,7 @@ public class SessionChannelOutboundRelay {
         }
         Optional<ChannelOutboundBindingSnapshot> snapshot;
         try {
-            snapshot = bindingLookupService.findActiveBySessionFailClosed(sessionId);
+            snapshot = bindingLookupService.findActiveBySession(sessionId);
         } catch (RuntimeException error) {
             log.warn("failed to resolve channel binding snapshot for final relay notification: sessionId={}", sessionId, error);
             return;

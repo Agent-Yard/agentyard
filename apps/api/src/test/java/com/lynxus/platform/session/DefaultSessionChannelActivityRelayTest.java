@@ -27,7 +27,7 @@ class DefaultSessionChannelActivityRelayTest {
     void publishesTransientDraftFramesThroughFramePublisher() {
         ChannelBindingSnapshotLookupService lookupService = mock(ChannelBindingSnapshotLookupService.class);
         ChannelOutboundFramePublisher framePublisher = mock(ChannelOutboundFramePublisher.class);
-        when(lookupService.findActiveBySessionFailClosed("session-1")).thenReturn(Optional.of(snapshot()));
+        when(lookupService.findActiveBySession("session-1")).thenReturn(Optional.of(snapshot()));
         DefaultSessionChannelActivityRelay relay = new DefaultSessionChannelActivityRelay(lookupService, framePublisher);
 
         relay.relay(frame(AgentTurnTransientFrameKind.REPLY_BLOCK_DELTA, StreamVisibility.CUSTOMER, 6, Map.of(
@@ -56,7 +56,7 @@ class DefaultSessionChannelActivityRelayTest {
     void publishesReplyBlockCompletedAsDraftCompleteThenTypingStop() {
         ChannelBindingSnapshotLookupService lookupService = mock(ChannelBindingSnapshotLookupService.class);
         ChannelOutboundFramePublisher framePublisher = mock(ChannelOutboundFramePublisher.class);
-        when(lookupService.findActiveBySessionFailClosed("session-1")).thenReturn(Optional.of(snapshot()));
+        when(lookupService.findActiveBySession("session-1")).thenReturn(Optional.of(snapshot()));
         DefaultSessionChannelActivityRelay relay = new DefaultSessionChannelActivityRelay(lookupService, framePublisher);
 
         relay.relay(frame(AgentTurnTransientFrameKind.REPLY_BLOCK_COMPLETED, StreamVisibility.CUSTOMER, 2, Map.of(
@@ -77,10 +77,10 @@ class DefaultSessionChannelActivityRelayTest {
     }
 
     @Test
-    void snapshotMissFailsClosed() {
+    void snapshotMissNoOps() {
         ChannelBindingSnapshotLookupService lookupService = mock(ChannelBindingSnapshotLookupService.class);
         ChannelOutboundFramePublisher framePublisher = mock(ChannelOutboundFramePublisher.class);
-        when(lookupService.findActiveBySessionFailClosed("session-1")).thenReturn(Optional.empty());
+        when(lookupService.findActiveBySession("session-1")).thenReturn(Optional.empty());
 
         new DefaultSessionChannelActivityRelay(lookupService, framePublisher)
             .relay(frame(
@@ -110,7 +110,7 @@ class DefaultSessionChannelActivityRelayTest {
             "hello"
         )));
 
-        verify(lookupService, never()).findActiveBySessionFailClosed(any());
+        verify(lookupService, never()).findActiveBySession(any());
         verify(framePublisher, never()).publishTransient(any());
     }
 

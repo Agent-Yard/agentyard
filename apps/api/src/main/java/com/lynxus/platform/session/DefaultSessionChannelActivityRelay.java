@@ -45,7 +45,7 @@ final class DefaultSessionChannelActivityRelay implements SessionChannelActivity
         }
         Optional<ChannelOutboundBindingSnapshot> snapshot;
         try {
-            snapshot = bindingLookupService.findActiveBySessionFailClosed(frame.sessionId());
+            snapshot = bindingLookupService.findActiveBySession(frame.sessionId());
         } catch (RuntimeException error) {
             LOGGER.warn(
                 "failed to look up channel binding snapshot for frame relay sessionId={} frameId={}",

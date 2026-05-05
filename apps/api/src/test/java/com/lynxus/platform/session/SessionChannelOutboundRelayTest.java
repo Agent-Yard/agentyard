@@ -24,7 +24,7 @@ class SessionChannelOutboundRelayTest {
         ChannelBindingSnapshotLookupService lookupService = mock(ChannelBindingSnapshotLookupService.class);
         ChannelOutboundFramePublisher framePublisher = mock(ChannelOutboundFramePublisher.class);
         SessionChannelOutboundRelay relay = relay(lookupService, framePublisher);
-        when(lookupService.findActiveBySessionFailClosed("session-1")).thenReturn(Optional.of(snapshot()));
+        when(lookupService.findActiveBySession("session-1")).thenReturn(Optional.of(snapshot()));
 
         relay.relaySession("session-1");
 
@@ -32,11 +32,11 @@ class SessionChannelOutboundRelayTest {
     }
 
     @Test
-    void snapshotMissFailsClosed() {
+    void snapshotMissNoOps() {
         ChannelBindingSnapshotLookupService lookupService = mock(ChannelBindingSnapshotLookupService.class);
         ChannelOutboundFramePublisher framePublisher = mock(ChannelOutboundFramePublisher.class);
         SessionChannelOutboundRelay relay = relay(lookupService, framePublisher);
-        when(lookupService.findActiveBySessionFailClosed("session-1")).thenReturn(Optional.empty());
+        when(lookupService.findActiveBySession("session-1")).thenReturn(Optional.empty());
 
         relay.relaySession("session-1");
 
