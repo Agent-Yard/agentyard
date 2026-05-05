@@ -193,7 +193,10 @@ public class PlaybookNodeActivitiesImpl implements PlaybookNodeActivities {
     }
 
     private Map<String, Object> extractMarkedResult(String output) {
-        int markerIndex = output == null ? -1 : output.lastIndexOf(RESULT_MARKER);
+        if (output == null) {
+            throw new IllegalStateException("sandbox step did not emit structured result marker");
+        }
+        int markerIndex = output.lastIndexOf(RESULT_MARKER);
         if (markerIndex < 0) {
             throw new IllegalStateException("sandbox step did not emit structured result marker");
         }

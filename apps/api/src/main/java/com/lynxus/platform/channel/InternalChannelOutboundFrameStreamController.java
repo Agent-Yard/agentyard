@@ -38,7 +38,7 @@ public class InternalChannelOutboundFrameStreamController {
         try {
             return framePublisher.connect(channelProfileId, lastEventId, lastAckedFinalSequence, maxFinalReplayFrames);
         } catch (IllegalArgumentException error) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, error.getMessage(), error);
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_CONTENT, error.getMessage(), error);
         }
     }
 
@@ -50,7 +50,7 @@ public class InternalChannelOutboundFrameStreamController {
         boolean hasDiagnosticSession = hasText(lastAckedSessionId) || hasText(lastAckedSessionMessageId);
         if (hasDiagnosticSession && lastAckedFinalSequence == null) {
             throw new ResponseStatusException(
-                HttpStatus.UNPROCESSABLE_ENTITY,
+                HttpStatus.UNPROCESSABLE_CONTENT,
                 "lastAckedFinalSequence is required when diagnostic final checkpoint headers are present"
             );
         }

@@ -198,16 +198,19 @@ public class ChannelAdminService {
         String messageVersion,
         ChannelTemplateBindingWriteRequest request
     ) {
+        if (request == null) {
+            throw new IllegalArgumentException("templateBinding is required");
+        }
         getProfile(channelProfileId);
         ChannelTemplateBindingKey key = templateBindingKey(channelProfileId, assistantId, messageType, messageSubtype, messageVersion);
         ChannelTemplateBinding existing = repository.findTemplateBinding(key).orElse(null);
         Instant now = Instant.now();
-        String externalTemplateId = requireText(request == null ? null : request.externalTemplateId(), "templateBinding.externalTemplateId");
-        Map<String, Object> variableSchema = request == null ? Map.of() : request.variableSchema();
+        String externalTemplateId = requireText(request.externalTemplateId(), "templateBinding.externalTemplateId");
+        Map<String, Object> variableSchema = request.variableSchema();
         ChannelTemplateBindingVariableSchemaValidator.validate(variableSchema);
 
         if (existing == null) {
-            Long expectedRevision = request == null ? null : request.expectedRevision();
+            Long expectedRevision = request.expectedRevision();
             if (expectedRevision != null && expectedRevision > 0) {
                 throw new ConflictException("channel template binding revision conflict: " + templateBindingLabel(key));
             }
@@ -232,7 +235,7 @@ public class ChannelAdminService {
             return created;
         }
 
-        long expectedRevision = requireExpectedRevision(request == null ? null : request.expectedRevision(), "templateBinding.expectedRevision");
+        long expectedRevision = requireExpectedRevision(request.expectedRevision(), "templateBinding.expectedRevision");
         ChannelTemplateBinding updated = new ChannelTemplateBinding(
             existing.id(),
             existing.channelProfileId(),

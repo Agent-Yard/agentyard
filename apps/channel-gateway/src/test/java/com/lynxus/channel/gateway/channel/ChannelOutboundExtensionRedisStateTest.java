@@ -84,9 +84,8 @@ class ChannelOutboundExtensionRedisStateTest {
                 pendingEntry
             )
         ));
-        @SuppressWarnings({ "rawtypes", "unchecked" })
-        DefaultRedisScript<Long> anyScript = any(DefaultRedisScript.class);
-        when(redisTemplate.execute(anyScript, any(List.class), eq(pendingEntry))).thenReturn(4L);
+        DefaultRedisScript<Long> anyScript = any();
+        when(redisTemplate.execute(anyScript, anyStringList(), eq(pendingEntry))).thenReturn(4L);
 
         assertEquals(
             ChannelOutboundForwardedPendingStore.AckPendingResult.NON_HEAD,
@@ -159,5 +158,9 @@ class ChannelOutboundExtensionRedisStateTest {
             "registration-1",
             "registration-1"
         );
+    }
+
+    private static List<String> anyStringList() {
+        return any();
     }
 }

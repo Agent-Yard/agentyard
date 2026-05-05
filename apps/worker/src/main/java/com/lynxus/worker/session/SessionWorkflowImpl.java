@@ -439,13 +439,14 @@ public class SessionWorkflowImpl implements SessionWorkflow {
                 break;
             }
             AgentTurnResult result = outcome.result();
-            if (isSecurityBlocked(result == null ? null : result.securityAssessment())) {
+            SecurityAssessment securityAssessment = result == null ? null : result.securityAssessment();
+            if (securityAssessment != null && isSecurityBlocked(securityAssessment)) {
                 AgentDecision decision = result == null ? null : result.decision();
                 if (decision != null && hasMessageContent(decision.replyMessage())) {
                     emitOwnerReply(replyMessageId, decision.replyMessage(), SessionActorType.AGENT, currentOwnerAgentId, activePlaybookRunId, currentOwnerAgentId, null);
                 }
                 emitSecurityBlocked(
-                    result.securityAssessment(),
+                    securityAssessment,
                     trigger,
                     currentOwnerAgentId,
                     activePlaybookRunId
@@ -495,7 +496,7 @@ public class SessionWorkflowImpl implements SessionWorkflow {
 
             if (decision.action() == AgentDecisionAction.SECURITY_BLOCK) {
                 emitSecurityBlocked(
-                    securityAssessmentOrDefault(result.securityAssessment()),
+                    securityAssessmentOrDefault(result == null ? null : result.securityAssessment()),
                     trigger,
                     currentOwnerAgentId,
                     activePlaybookRunId

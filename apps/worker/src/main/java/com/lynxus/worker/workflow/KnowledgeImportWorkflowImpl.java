@@ -25,7 +25,7 @@ public class KnowledgeImportWorkflowImpl implements KnowledgeImportWorkflow {
 
     @Override
     public KnowledgeJobResult run(KnowledgeImportRequest request) {
-        try (WorkerLogContext.Scope ignored = WorkerLogContext.open(request.logContext())) {
+        try (WorkerLogContext.Scope _ = WorkerLogContext.open(request.logContext())) {
             currentResult = activities.runImport(request);
             return currentResult;
         }

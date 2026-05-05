@@ -45,7 +45,7 @@ class KnowledgeServiceClientTest {
         try {
             KnowledgeServiceClient client = new KnowledgeServiceClient(serverUrl(server), "internal-token");
 
-            try (PlatformLogContext.Scope ignored = PlatformLogContext.open(
+            try (PlatformLogContext.Scope _ = PlatformLogContext.open(
                 new TraceContext("0123456789abcdef0123456789abcdef", "0123456789abcdef", "01"),
                 "session-1",
                 "wf-1",

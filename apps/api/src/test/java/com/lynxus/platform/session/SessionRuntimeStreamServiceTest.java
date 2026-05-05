@@ -100,7 +100,9 @@ class SessionRuntimeStreamServiceTest {
         when(repository.listMessages("session-1")).thenReturn(List.of());
         when(repository.listEvents("session-1")).thenReturn(List.of());
         when(repository.listPlaybookRuns("session-1")).thenReturn(List.of());
-        when(repository.findSessionChangeStamp("session-1")).thenReturn(Optional.of(initial), Optional.of(updated));
+        when(repository.findSessionChangeStamp("session-1"))
+            .thenReturn(Optional.of(initial))
+            .thenReturn(Optional.of(updated));
         when(replayStore.append(any())).thenReturn(true);
 
         service.connect("session-1", null, "tester");

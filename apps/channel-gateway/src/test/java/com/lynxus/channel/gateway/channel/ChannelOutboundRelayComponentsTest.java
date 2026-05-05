@@ -92,9 +92,8 @@ class ChannelOutboundRelayComponentsTest {
         when(valueOperations.setIfAbsent(anyString(), anyString(), any(Duration.class))).thenReturn(true);
         when(valueOperations.get("test:lock:channel-outbound-api-stream-owner:profile-1:provider-1:REMOTE_EXTENSION:registration-1"))
             .thenReturn("owner-1");
-        @SuppressWarnings({ "rawtypes", "unchecked" })
-        DefaultRedisScript<Long> anyScript = any(DefaultRedisScript.class);
-        when(redisTemplate.execute(anyScript, any(List.class), anyString(), anyString())).thenReturn(1L);
+        DefaultRedisScript<Long> anyScript = any();
+        when(redisTemplate.execute(anyScript, anyStringList(), anyString(), anyString())).thenReturn(1L);
         ChannelOutboundStreamOwnerLockService lockService = new ChannelOutboundStreamOwnerLockService(
             redisTemplate,
             new RedisKeyspace("test")
@@ -222,6 +221,10 @@ class ChannelOutboundRelayComponentsTest {
             ),
             null
         );
+    }
+
+    private static List<String> anyStringList() {
+        return any();
     }
 
     private record StaticRegistry(ChannelProviderDescriptor descriptor) implements ChannelProviderRegistry {

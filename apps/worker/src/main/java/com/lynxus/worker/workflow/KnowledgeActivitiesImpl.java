@@ -21,7 +21,7 @@ public class KnowledgeActivitiesImpl implements KnowledgeActivities {
 
     @Override
     public KnowledgeJobResult runImport(KnowledgeImportRequest request) {
-        try (WorkerLogContext.Scope ignored = WorkerLogContext.open(request.logContext())) {
+        try (WorkerLogContext.Scope _ = WorkerLogContext.open(request.logContext())) {
             log.info("knowledge import activity workflowId={} importJobId={}", request.workflowId(), request.importJobId());
             String status = knowledgeServiceGateway.runImportJob(request.importJobId());
             return new KnowledgeJobResult(
@@ -37,7 +37,7 @@ public class KnowledgeActivitiesImpl implements KnowledgeActivities {
 
     @Override
     public KnowledgeJobResult buildIndex(KnowledgeIndexBuildRequest request) {
-        try (WorkerLogContext.Scope ignored = WorkerLogContext.open(request.logContext())) {
+        try (WorkerLogContext.Scope _ = WorkerLogContext.open(request.logContext())) {
             log.info("knowledge index activity workflowId={} snapshotId={}", request.workflowId(), request.indexSnapshotId());
             String status = knowledgeServiceGateway.buildIndexSnapshot(request.indexSnapshotId());
             return new KnowledgeJobResult(

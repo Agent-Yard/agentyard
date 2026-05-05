@@ -25,7 +25,7 @@ public class KnowledgeIndexBuildWorkflowImpl implements KnowledgeIndexBuildWorkf
 
     @Override
     public KnowledgeJobResult run(KnowledgeIndexBuildRequest request) {
-        try (WorkerLogContext.Scope ignored = WorkerLogContext.open(request.logContext())) {
+        try (WorkerLogContext.Scope _ = WorkerLogContext.open(request.logContext())) {
             currentResult = activities.buildIndex(request);
             return currentResult;
         }

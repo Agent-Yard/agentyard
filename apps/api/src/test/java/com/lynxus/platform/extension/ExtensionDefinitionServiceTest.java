@@ -415,7 +415,8 @@ final class ExtensionDefinitionServiceTest {
         Map<String, Object> descriptor = toolConnectorDescriptor("enterprise.acme.crm", "Acme CRM");
         descriptor.put("credentialSchema", objectSchema(Map.of("apiKey", Map.of("type", "string"))));
         descriptor.put("credentialUiSchema", List.of());
-        Map<String, Object> endpoints = new LinkedHashMap<>((Map<String, Object>) descriptor.get("endpoints"));
+        Map<String, Object> endpoints = new LinkedHashMap<>();
+        endpoints.put("invoke", "/tools/enterprise.acme.crm/invoke");
         endpoints.put("createCredential", "/credentials/create");
         endpoints.put("rotateCredential", "/credentials/rotate");
         endpoints.put("revokeCredential", "/credentials/revoke");

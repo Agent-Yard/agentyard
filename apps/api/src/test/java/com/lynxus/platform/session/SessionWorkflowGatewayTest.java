@@ -39,12 +39,11 @@ class SessionWorkflowGatewayTest {
         UserMessage message = new UserMessage("msg-1", "customer-1", textMessageInput("hello"));
 
         when(workflowClient.newUntypedWorkflowStub("session-1")).thenReturn(workflowStub);
-        when(workflowStub.startUpdate(any(UpdateOptions.class), eq(message))).thenReturn(updateHandle);
+        when(workflowStub.<SessionUserMessageUpdateResult>startUpdate(anyUpdateOptions(), eq(message))).thenReturn(updateHandle);
 
         gateway.submitUserMessage("session-1", message);
 
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<UpdateOptions<SessionUserMessageUpdateResult>> optionsCaptor = ArgumentCaptor.forClass((Class) UpdateOptions.class);
+        ArgumentCaptor<UpdateOptions<SessionUserMessageUpdateResult>> optionsCaptor = updateOptionsCaptor();
         verify(workflowStub).startUpdate(optionsCaptor.capture(), eq(message));
         assertEquals("submitUserMessage", optionsCaptor.getValue().getUpdateName());
         assertEquals(WorkflowUpdateStage.ACCEPTED, optionsCaptor.getValue().getWaitForStage());
@@ -63,7 +62,7 @@ class SessionWorkflowGatewayTest {
         UserMessage message = new UserMessage("msg-1", "customer-1", textMessageInput("hello"));
 
         when(workflowClient.newUntypedWorkflowStub("session-1")).thenReturn(workflowStub);
-        when(workflowStub.startUpdate(any(UpdateOptions.class), eq(message))).thenThrow(
+        when(workflowStub.<SessionUserMessageUpdateResult>startUpdate(anyUpdateOptions(), eq(message))).thenThrow(
             new WorkflowUpdateTimeoutOrCancelledException(
                 WorkflowExecution.newBuilder().setWorkflowId("session-1").setRunId("run-1").build(),
                 "update-1",
@@ -85,5 +84,14 @@ class SessionWorkflowGatewayTest {
             List.of(Map.of("type", "TEXT", "text", text)),
             Map.of()
         );
+    }
+
+    private static UpdateOptions<SessionUserMessageUpdateResult> anyUpdateOptions() {
+        return any();
+    }
+
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    private static ArgumentCaptor<UpdateOptions<SessionUserMessageUpdateResult>> updateOptionsCaptor() {
+        return ArgumentCaptor.forClass((Class) UpdateOptions.class);
     }
 }

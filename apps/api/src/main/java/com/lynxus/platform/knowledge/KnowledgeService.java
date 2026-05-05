@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.function.BiFunction;
@@ -733,12 +734,21 @@ public class KnowledgeService {
     }
 
     private KnowledgeRetrievalProfileDto normalizeKnowledgeRetrievalProfile(KnowledgeRetrievalProfileDto profile) {
+        int defaultTopK = 5;
+        String retrievalMode = "HYBRID";
+        double minScore = 0.1;
+        if (profile != null) {
+            defaultTopK = Math.max(1, profile.defaultTopK());
+            String normalizedRetrievalMode = normalizeOptionalText(profile.retrievalMode());
+            if (!normalizedRetrievalMode.isBlank()) {
+                retrievalMode = normalizedRetrievalMode.toUpperCase(Locale.ROOT);
+            }
+            minScore = Math.max(0, profile.minScore());
+        }
         return new KnowledgeRetrievalProfileDto(
-            profile == null ? 5 : Math.max(1, profile.defaultTopK()),
-            normalizeOptionalText(profile == null ? null : profile.retrievalMode()).isBlank()
-                ? "HYBRID"
-                : normalizeOptionalText(profile.retrievalMode()).toUpperCase(),
-            profile == null ? 0.1 : Math.max(0, profile.minScore())
+            defaultTopK,
+            retrievalMode,
+            minScore
         );
     }
 

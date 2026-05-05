@@ -34,8 +34,6 @@ import tools.jackson.databind.ObjectMapper;
 public class ChannelGatewayClient {
     private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelGatewayProfile>>> CHANNEL_PROFILE_LIST = new ParameterizedTypeReference<>() {
     };
-    private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelConversationBinding>>> CHANNEL_BINDING_LIST = new ParameterizedTypeReference<>() {
-    };
     private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelOutboundBindingSnapshot>>> CHANNEL_BINDING_SNAPSHOT_LIST = new ParameterizedTypeReference<>() {
     };
     private static final ParameterizedTypeReference<ApiEnvelope<ChannelOutboundBindingSnapshotPage>> CHANNEL_BINDING_SNAPSHOT_PAGE = new ParameterizedTypeReference<>() {
@@ -45,8 +43,6 @@ public class ChannelGatewayClient {
     private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelInboundEvent>>> CHANNEL_INBOUND_EVENT_LIST = new ParameterizedTypeReference<>() {
     };
     private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelOutboundFrameCheckpoint>>> CHANNEL_OUTBOUND_FINAL_CHECKPOINT_LIST = new ParameterizedTypeReference<>() {
-    };
-    private static final ParameterizedTypeReference<ApiEnvelope<ChannelConversationBinding>> CHANNEL_BINDING = new ParameterizedTypeReference<>() {
     };
     private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelTemplateBinding>>> CHANNEL_TEMPLATE_BINDING_LIST = new ParameterizedTypeReference<>() {
     };

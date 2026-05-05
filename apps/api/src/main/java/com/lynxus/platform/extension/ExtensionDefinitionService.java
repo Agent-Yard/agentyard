@@ -106,7 +106,7 @@ public final class ExtensionDefinitionService {
                     continue;
                 }
                 loadedChannelProviders.add(providerType);
-                channelProviderCounts.merge(providerType, 1, Integer::sum);
+                channelProviderCounts.merge(providerType, 1, (a, b) -> a + b);
                 if (!expectedChannelProviders.contains(providerType)) {
                     errors.add(registryError(
                         "UNEXPECTED_DESCRIPTOR",
@@ -141,7 +141,7 @@ public final class ExtensionDefinitionService {
                     continue;
                 }
                 loadedToolConnectors.add(connectorType);
-                toolConnectorCounts.merge(connectorType, 1, Integer::sum);
+                toolConnectorCounts.merge(connectorType, 1, (a, b) -> a + b);
                 if (!expectedToolConnectors.contains(connectorType)) {
                     errors.add(registryError(
                         "UNEXPECTED_DESCRIPTOR",

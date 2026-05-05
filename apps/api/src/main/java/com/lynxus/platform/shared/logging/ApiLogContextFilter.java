@@ -39,7 +39,7 @@ public class ApiLogContextFilter extends OncePerRequestFilter {
         String customerId = extractCustomerId(requestToUse);
         String userId = resolveUserId();
         response.setHeader(LogContextHeaders.TRACEPARENT, traceContext.toTraceparent());
-        try (PlatformLogContext.Scope ignored = PlatformLogContext.open(traceContext, sessionId, null, customerId, userId)) {
+        try (PlatformLogContext.Scope _ = PlatformLogContext.open(traceContext, sessionId, null, customerId, userId)) {
             filterChain.doFilter(requestToUse, response);
         }
     }

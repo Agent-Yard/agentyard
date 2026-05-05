@@ -36,7 +36,7 @@ class KnowledgeServiceGatewayTest {
                 "internal-token"
             );
 
-            try (WorkerLogContext.Scope ignored = WorkerLogContext.open(new WorkflowContracts.LogContext(
+            try (WorkerLogContext.Scope _ = WorkerLogContext.open(new WorkflowContracts.LogContext(
                 "0123456789abcdef0123456789abcdef",
                 "session-1",
                 "wf-1",

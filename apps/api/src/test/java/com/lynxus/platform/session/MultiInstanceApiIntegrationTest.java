@@ -1,8 +1,10 @@
 package com.lynxus.platform.session;
 
+import static com.lynxus.platform.session.SessionRuntimeDtos.SessionRuntimeSessionDto;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.lynxus.contracts.session.SessionContracts.ExternalCallbackSignal;
 import com.lynxus.contracts.session.SessionContracts.EndHumanHandoffSignal;
@@ -52,16 +54,19 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
+import javax.sql.DataSource;
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.flywaydb.core.Flyway;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
+import org.springframework.core.env.MapPropertySource;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.connection.RedisPassword;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
@@ -69,32 +74,23 @@ import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactor
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.springframework.core.env.MapPropertySource;
 import org.springframework.session.SessionRepository;
 import org.springframework.session.data.redis.config.annotation.web.http.EnableRedisHttpSession;
+import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.lifecycle.Startables;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-import javax.sql.DataSource;
-import java.util.stream.Stream;
-
-import static com.lynxus.platform.session.SessionRuntimeDtos.SessionRuntimeSessionDto;
-
-@Testcontainers(disabledWithoutDocker = true)
 class MultiInstanceApiIntegrationTest {
     private static final String INTERNAL_AUTH_TOKEN = "test-internal-token";
     private static final String REDIS_PASSWORD = "lynxus";
     private static final String SESSION_COOKIE_NAME = "LYNXUS_SESSION";
 
-    @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
 
-    @Container
+    @SuppressWarnings("resource")
     static GenericContainer<?> redis = new GenericContainer<>("redis:7.2-alpine")
         .withExposedPorts(6379)
         .withCommand("redis-server", "--save", "", "--appendonly", "no", "--requirepass", REDIS_PASSWORD);
@@ -106,6 +102,7 @@ class MultiInstanceApiIntegrationTest {
 
     @BeforeAll
     static void startApplications() {
+        assumeTrue(DockerClientFactory.instance().isDockerAvailable(), "Docker is required for multi-instance integration tests");
         try {
             Startables.deepStart(Stream.of(postgres, redis)).join();
             awaitInfrastructureReady();

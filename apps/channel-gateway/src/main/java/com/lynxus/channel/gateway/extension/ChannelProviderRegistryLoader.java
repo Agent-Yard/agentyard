@@ -68,7 +68,7 @@ public final class ChannelProviderRegistryLoader {
                     continue;
                 }
                 loadedForRegistration.add(providerType);
-                loadedCounts.merge(providerType, 1, Integer::sum);
+                loadedCounts.merge(providerType, 1, (a, b) -> a + b);
 
                 if (!expectedForRegistration.contains(providerType)) {
                     unexpectedDescriptorIds.add(providerType);
