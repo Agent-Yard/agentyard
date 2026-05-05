@@ -161,7 +161,7 @@
 
 ### 3.6 多实例部署一致性与共享状态
 
-状态（截至 2026-04-21）：shared-state refactor 已将多实例主干能力全面落地，详细盘点与剩余工作见 `docs/todo/multi_instance_plan.md`。
+状态（截至 2026-04-21）：shared-state refactor 已将多实例主干能力全面落地，详细盘点与剩余工作见 `docs/develop_record/multi_instance_plan.md`。
 
 已完成的主干能力：
 
