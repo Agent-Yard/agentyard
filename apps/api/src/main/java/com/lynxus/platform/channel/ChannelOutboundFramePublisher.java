@@ -21,7 +21,14 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,7 +49,9 @@ public class ChannelOutboundFramePublisher {
     private final RedisKeyspace keyspace;
     private final RedisJsonCodec codec;
     private final RedisSharedStateProperties properties;
+    private final ChannelOutboundFrameStreamProperties streamProperties;
     private final Function<Long, SseEmitter> emitterFactory;
+    private final ScheduledExecutorService heartbeatExecutor;
     private final AtomicLong localStreamSequence = new AtomicLong();
     private final Map<String, ArrayDeque<StoredFrame>> transientReplayByProfile = new ConcurrentHashMap<>();
     private final Map<String, CopyOnWriteArraySet<Subscriber>> subscribersByProfile = new ConcurrentHashMap<>();
@@ -54,9 +63,10 @@ public class ChannelOutboundFramePublisher {
         RedisPubSubBus pubSubBus,
         RedisKeyspace keyspace,
         RedisJsonCodec codec,
-        RedisSharedStateProperties properties
+        RedisSharedStateProperties properties,
+        ChannelOutboundFrameStreamProperties streamProperties
     ) {
-        this(repository, pubSubBus, keyspace, codec, properties, SseEmitter::new);
+        this(repository, pubSubBus, keyspace, codec, properties, streamProperties, SseEmitter::new, newHeartbeatExecutor());
     }
 
     ChannelOutboundFramePublisher(
@@ -65,14 +75,18 @@ public class ChannelOutboundFramePublisher {
         RedisKeyspace keyspace,
         RedisJsonCodec codec,
         RedisSharedStateProperties properties,
-        Function<Long, SseEmitter> emitterFactory
+        ChannelOutboundFrameStreamProperties streamProperties,
+        Function<Long, SseEmitter> emitterFactory,
+        ScheduledExecutorService heartbeatExecutor
     ) {
         this.repository = repository;
         this.pubSubBus = pubSubBus;
         this.keyspace = keyspace;
         this.codec = codec;
         this.properties = properties;
+        this.streamProperties = streamProperties;
         this.emitterFactory = emitterFactory;
+        this.heartbeatExecutor = heartbeatExecutor;
     }
 
     @PostConstruct
@@ -87,8 +101,13 @@ public class ChannelOutboundFramePublisher {
         if (current != null) {
             current.close();
         }
-        subscribersByProfile.values().forEach(subscribers -> subscribers.forEach(subscriber -> subscriber.emitter().complete()));
+        subscribersByProfile.values().forEach(subscribers -> subscribers.forEach(subscriber -> {
+            subscriber.closed().set(true);
+            cancelHeartbeat(subscriber);
+            subscriber.emitter().complete();
+        }));
         subscribersByProfile.clear();
+        heartbeatExecutor.shutdownNow();
     }
 
     public SseEmitter connect(
@@ -101,7 +120,13 @@ public class ChannelOutboundFramePublisher {
         long checkpoint = normalizeCheckpoint(lastAckedFinalSequence);
         int replayLimit = normalizeMaxFinalReplayFrames(maxFinalReplayFrames);
         SseEmitter emitter = Objects.requireNonNull(emitterFactory.apply(0L), "emitter");
-        Subscriber subscriber = new Subscriber(profileId, emitter, new AtomicLong(checkpoint));
+        Subscriber subscriber = new Subscriber(
+            profileId,
+            emitter,
+            new AtomicLong(checkpoint),
+            new AtomicReference<>(),
+            new AtomicBoolean(false)
+        );
         subscribersByProfile.computeIfAbsent(profileId, ignored -> new CopyOnWriteArraySet<>()).add(subscriber);
         Runnable cleanup = () -> unregister(profileId, subscriber);
         emitter.onCompletion(cleanup);
@@ -111,6 +136,8 @@ public class ChannelOutboundFramePublisher {
             replayTransient(profileId, lastEventId).forEach(stored -> sendFrame(emitter, stored.streamCursor(), stored.frame()));
             if (emitFinalReplay(subscriber, replayLimit).exhausted()) {
                 cleanup.run();
+            } else {
+                scheduleHeartbeat(subscriber);
             }
         } catch (RuntimeException error) {
             cleanup.run();
@@ -286,6 +313,22 @@ public class ChannelOutboundFramePublisher {
         }
     }
 
+    void emitHeartbeats() {
+        subscribersByProfile.forEach((channelProfileId, subscribers) -> {
+            for (Subscriber subscriber : subscribers) {
+                emitHeartbeat(channelProfileId, subscriber);
+            }
+        });
+    }
+
+    private void emitHeartbeat(String channelProfileId, Subscriber subscriber) {
+        try {
+            sendHeartbeat(subscriber.emitter());
+        } catch (RuntimeException error) {
+            unregister(channelProfileId, subscriber);
+        }
+    }
+
     private void sendFrame(SseEmitter emitter, String streamCursor, ChannelOutboundFrame frame) {
         try {
             emitter.send(SseEmitter.event()
@@ -294,6 +337,14 @@ public class ChannelOutboundFramePublisher {
                 .data(frame));
         } catch (IOException error) {
             throw new IllegalStateException("failed to emit channel outbound frame", error);
+        }
+    }
+
+    private void sendHeartbeat(SseEmitter emitter) {
+        try {
+            emitter.send(SseEmitter.event().comment("channel-outbound-heartbeat"));
+        } catch (IOException error) {
+            throw new IllegalStateException("failed to emit channel outbound heartbeat", error);
         }
     }
 
@@ -308,11 +359,14 @@ public class ChannelOutboundFramePublisher {
     }
 
     private void unregister(String channelProfileId, Subscriber subscriber) {
+        subscriber.closed().set(true);
         CopyOnWriteArraySet<Subscriber> subscribers = subscribersByProfile.get(channelProfileId);
         if (subscribers == null) {
+            cancelHeartbeat(subscriber);
             return;
         }
         subscribers.remove(subscriber);
+        cancelHeartbeat(subscriber);
         if (subscribers.isEmpty()) {
             subscribersByProfile.remove(channelProfileId);
         }
@@ -347,6 +401,40 @@ public class ChannelOutboundFramePublisher {
         return value.trim();
     }
 
+    private void scheduleHeartbeat(Subscriber subscriber) {
+        long heartbeatIntervalMillis = Math.max(1L, streamProperties.heartbeatInterval().toMillis());
+        ScheduledFuture<?> task = heartbeatExecutor.scheduleAtFixedRate(
+            () -> emitHeartbeat(subscriber.channelProfileId(), subscriber),
+            heartbeatIntervalMillis,
+            heartbeatIntervalMillis,
+            TimeUnit.MILLISECONDS
+        );
+        if (subscriber.closed().get()) {
+            task.cancel(true);
+            return;
+        }
+        subscriber.heartbeatTask().set(task);
+        if (subscriber.closed().get()) {
+            cancelHeartbeat(subscriber);
+        }
+    }
+
+    private static void cancelHeartbeat(Subscriber subscriber) {
+        ScheduledFuture<?> task = subscriber.heartbeatTask().getAndSet(null);
+        if (task != null) {
+            task.cancel(true);
+        }
+    }
+
+    private static ScheduledExecutorService newHeartbeatExecutor() {
+        ThreadFactory threadFactory = runnable -> {
+            Thread thread = new Thread(runnable, "channel-outbound-frame-heartbeat");
+            thread.setDaemon(true);
+            return thread;
+        };
+        return Executors.newSingleThreadScheduledExecutor(threadFactory);
+    }
+
     public record FinalReplayWindowExhausted(int emitted, long lastEmittedFinalSequence) {
     }
 
@@ -379,7 +467,9 @@ public class ChannelOutboundFramePublisher {
     private record Subscriber(
         String channelProfileId,
         SseEmitter emitter,
-        AtomicLong lastSentFinalSequence
+        AtomicLong lastSentFinalSequence,
+        AtomicReference<ScheduledFuture<?>> heartbeatTask,
+        AtomicBoolean closed
     ) {
     }
 }

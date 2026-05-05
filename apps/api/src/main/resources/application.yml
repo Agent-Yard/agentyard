@@ -68,6 +68,8 @@ lynxus:
     base-url: ${LYNXUS_KNOWLEDGE_SERVICE_BASE_URL:http://127.0.0.1:8091}
   channel-gateway:
     base-url: ${LYNXUS_CHANNEL_GATEWAY_BASE_URL:http://127.0.0.1:8082}
+  channel-outbound-frame-stream:
+    heartbeat-interval: ${LYNXUS_CHANNEL_OUTBOUND_FRAME_STREAM_HEARTBEAT_INTERVAL:20s}
   agent-runtime:
     base-url: ${LYNXUS_AGENT_RUNTIME_BASE_URL:http://127.0.0.1:8090}
   extensions:

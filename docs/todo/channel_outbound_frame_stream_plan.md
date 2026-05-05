@@ -352,7 +352,7 @@ stream 与 checkpoint 规则：
 10. 如果达到 replay window 但 durable final backlog 仍未追平，API 发送 `final-replay-window-exhausted` 后正常结束连接；gateway 等 pending final 降到低水位后再用最新 checkpoint 重新连接。
 11. 如果 durable final replay 已追平，API 保持 SSE 连接，继续发送 live transient/final frames。
 12. 如果 checkpoint header 非法，API 返回 400/422，不静默降级为全量 replay。
-13. 待补：API internal SSE 在 live idle 期间发送 heartbeat comment，建议间隔 15-30 秒；heartbeat 不带 `id`、不推进 `streamCursor`，也不参与 final checkpoint，只用于避免代理/网关 idle timeout 断开长期空闲连接。
+13. API internal SSE 在 live idle 期间发送 heartbeat comment，默认 20 秒；heartbeat 不带 `id`、不推进 `streamCursor`，也不参与 final checkpoint，只用于避免代理/网关 idle timeout 断开长期空闲连接。
 
 API 侧职责：
 

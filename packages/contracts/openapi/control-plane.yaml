@@ -115,7 +115,8 @@ paths:
         '200':
           description: >
             text/event-stream. event=channel-outbound-frame data is ChannelOutboundFrame. event=final-replay-window-exhausted
-            data is ChannelOutboundFinalReplayWindowExhausted.
+            data is ChannelOutboundFinalReplayWindowExhausted. Live idle periods may include comment-only
+            heartbeat frames; clients must ignore them for Last-Event-ID replay and final checkpoint purposes.
           content:
             text/event-stream:
               schema:

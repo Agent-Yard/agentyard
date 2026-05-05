@@ -23,11 +23,23 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executors;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import tools.jackson.databind.ObjectMapper;
 
 class ChannelOutboundFramePublisherTest {
+    private final List<ChannelOutboundFramePublisher> publishers = new ArrayList<>();
+
+    @AfterEach
+    void closePublishers() throws Exception {
+        for (ChannelOutboundFramePublisher publisher : publishers) {
+            publisher.close();
+        }
+        publishers.clear();
+    }
+
     @Test
     void lastEventIdMissDoesNotBlockDurableFinalReplay() {
         SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
@@ -85,12 +97,34 @@ class ChannelOutboundFramePublisherTest {
         assertEquals(List.of(Map.of("type", "TEXT", "text", "hello message-12")), frame.payload().get("messageBlocks"));
     }
 
-    private static ChannelOutboundFramePublisher publisher(
+    @Test
+    void emitsHeartbeatAsCommentWithoutCursorEventOrData() {
+        SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
+        TrackingSseEmitter emitter = new TrackingSseEmitter();
+        ChannelOutboundFramePublisher publisher = publisher(repository, mock(RedisPubSubBus.class), emitter);
+        when(repository.listChannelOutboundFinalMessages("channel-profile-1", 10L, 101))
+            .thenReturn(List.of())
+            .thenReturn(List.of(finalMessage(12L, "message-12")));
+
+        publisher.connect("channel-profile-1", null, 10L, null);
+        publisher.emitHeartbeats();
+        publisher.publishTransient(transientFrame(1L));
+        publisher.notifyFinalAvailableForSession("channel-profile-1");
+
+        assertEquals(List.of(":channel-outbound-heartbeat\n\n"), emitter.commentEvents());
+        assertEquals(List.of("id:instance-a:1\nevent:channel-outbound-frame\ndata:", "id:instance-a:2\nevent:channel-outbound-frame\ndata:"), emitter.framePrefixes());
+        assertEquals(List.of(12L), emitter.frames().stream()
+            .filter(frame -> frame.kind() == ChannelOutboundFrameKind.FINAL_DELIVERY)
+            .map(ChannelOutboundFrame::finalSequence)
+            .toList());
+    }
+
+    private ChannelOutboundFramePublisher publisher(
         SessionRuntimeRepository repository,
         RedisPubSubBus pubSubBus,
         TrackingSseEmitter emitter
     ) {
-        return new ChannelOutboundFramePublisher(
+        ChannelOutboundFramePublisher publisher = new ChannelOutboundFramePublisher(
             repository,
             pubSubBus,
             new RedisKeyspace(),
@@ -104,8 +138,16 @@ class ChannelOutboundFramePublisherTest {
                 16,
                 Duration.ofSeconds(1)
             ),
-            ignored -> emitter
+            new ChannelOutboundFrameStreamProperties(Duration.ofSeconds(20)),
+            ignored -> emitter,
+            Executors.newSingleThreadScheduledExecutor(runnable -> {
+                Thread thread = new Thread(runnable, "channel-outbound-frame-publisher-test-heartbeat");
+                thread.setDaemon(true);
+                return thread;
+            })
         );
+        publishers.add(publisher);
+        return publisher;
     }
 
     private static SessionRuntimeStore.ChannelOutboundFinalMessageData finalMessage(long finalSequence, String messageId) {
@@ -177,6 +219,22 @@ class ChannelOutboundFramePublisherTest {
             return sentData.stream()
                 .filter(FinalReplayWindowExhausted.class::isInstance)
                 .map(FinalReplayWindowExhausted.class::cast)
+                .toList();
+        }
+
+        private List<String> commentEvents() {
+            return sentData.stream()
+                .filter(String.class::isInstance)
+                .map(String.class::cast)
+                .filter(value -> value.startsWith(":"))
+                .toList();
+        }
+
+        private List<String> framePrefixes() {
+            return sentData.stream()
+                .filter(String.class::isInstance)
+                .map(String.class::cast)
+                .filter(value -> value.contains("event:channel-outbound-frame"))
                 .toList();
         }
 
