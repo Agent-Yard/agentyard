@@ -1,15 +1,36 @@
 package com.lynxus.channel.gateway.connector.feishu;
 
 import com.lynxus.channel.gateway.extension.GatewayNativeChannelProviderAdapter;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundFrame;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundFrameKind;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
 public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayNativeChannelProviderAdapter {
     public static final String PROVIDER_TYPE = "feishu";
     private static final String DEFAULT_RECEIVE_ID_TYPE = "chat_id";
+
+    private final FeishuCredentialProvider credentialProvider;
+    private final FeishuMessageSender messageSender;
+
+    public FeishuGatewayNativeChannelProviderAdapter() {
+        this(null, null);
+    }
+
+    @Autowired
+    public FeishuGatewayNativeChannelProviderAdapter(
+        FeishuCredentialProvider credentialProvider,
+        FeishuMessageSender messageSender
+    ) {
+        this.credentialProvider = credentialProvider;
+        this.messageSender = messageSender;
+    }
 
     @Override
     public String providerType() {
@@ -40,6 +61,24 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
         descriptor.put("jobDefinitions", List.of());
         descriptor.put("endpoints", Map.of());
         return Map.copyOf(descriptor);
+    }
+
+    @Override
+    public void consumeOutboundFrame(ChannelGatewayProfile profile, ChannelOutboundFrame frame) {
+        if (frame.kind() != ChannelOutboundFrameKind.FINAL_DELIVERY) {
+            throw new IllegalArgumentException("Feishu gateway-native provider only supports FINAL_DELIVERY frames");
+        }
+        if (credentialProvider == null || messageSender == null) {
+            throw new IllegalStateException("Feishu gateway-native outbound dependencies are not configured");
+        }
+        FeishuAppCredential credential = credentialProvider.resolve(profile.accountId(), profile.config());
+        messageSender.sendText(new FeishuMessageSender.FeishuSendTextCommand(
+            credential,
+            receiveIdType(profile.config()),
+            frame.externalConversationId(),
+            finalText(frame),
+            frame.idempotencyKey()
+        ));
     }
 
     private static Map<String, Object> accountConfigSchema() {
@@ -119,4 +158,43 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
         ));
     }
 
+    private static String receiveIdType(Map<String, Object> profileConfig) {
+        Object value = profileConfig == null ? null : profileConfig.get("receiveIdType");
+        if (value instanceof String text && !text.isBlank()) {
+            return text;
+        }
+        return DEFAULT_RECEIVE_ID_TYPE;
+    }
+
+    private static String finalText(ChannelOutboundFrame frame) {
+        Object rawBlocks = frame.payload().get("messageBlocks");
+        if (!(rawBlocks instanceof List<?> blocks) || blocks.isEmpty()) {
+            throw new IllegalArgumentException("FINAL_DELIVERY payload.messageBlocks must contain at least one text block for Feishu");
+        }
+        List<String> parts = new ArrayList<>();
+        for (Object rawBlock : blocks) {
+            if (!(rawBlock instanceof Map<?, ?> block)) {
+                continue;
+            }
+            Object rawType = block.get("type");
+            String type = rawType == null ? "TEXT" : String.valueOf(rawType);
+            if ("TEXT".equals(type)) {
+                Object text = block.get("text");
+                if (text instanceof String value && !value.isBlank()) {
+                    parts.add(value);
+                }
+                continue;
+            }
+            if ("RICH_TEXT".equals(type)) {
+                Object content = block.get("content");
+                if (content instanceof String value && !value.isBlank()) {
+                    parts.add(value);
+                }
+            }
+        }
+        if (parts.isEmpty()) {
+            throw new IllegalArgumentException("FINAL_DELIVERY payload.messageBlocks has no text content Feishu can send");
+        }
+        return String.join("\n", parts);
+    }
 }

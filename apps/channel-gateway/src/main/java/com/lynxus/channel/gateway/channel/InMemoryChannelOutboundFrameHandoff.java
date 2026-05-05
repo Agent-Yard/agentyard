@@ -77,6 +77,17 @@ public class InMemoryChannelOutboundFrameHandoff implements ChannelOutboundFrame
         }
     }
 
+    @Override
+    public void requeueFirst(ChannelOutboundProfileConsumer consumer, ChannelOutboundFrame frame) {
+        QueueState state = queues.computeIfAbsent(ProfileConsumerKeys.key(consumer), ignored -> new QueueState());
+        synchronized (state) {
+            state.frames.addFirst(frame);
+            if (frame.kind() == ChannelOutboundFrameKind.FINAL_DELIVERY) {
+                state.pendingFinals += 1;
+            }
+        }
+    }
+
     private static boolean dropFirstTransient(QueueState state) {
         Iterator<ChannelOutboundFrame> iterator = state.frames.iterator();
         while (iterator.hasNext()) {

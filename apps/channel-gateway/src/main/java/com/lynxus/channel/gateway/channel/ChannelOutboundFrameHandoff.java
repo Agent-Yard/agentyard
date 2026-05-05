@@ -10,4 +10,6 @@ public interface ChannelOutboundFrameHandoff {
     int pendingFinals(ChannelOutboundProfileConsumer consumer);
 
     List<ChannelOutboundFrame> drain(ChannelOutboundProfileConsumer consumer, int limit);
+
+    void requeueFirst(ChannelOutboundProfileConsumer consumer, ChannelOutboundFrame frame);
 }
