@@ -72,6 +72,18 @@ public class RedisKeyspace {
         return qualify("lynxus:lock:channel-outbound-api-stream-owner:" + profileConsumerKey);
     }
 
+    public String channelOutboundExtensionStreamLease(String profileConsumerKey) {
+        return qualify("lynxus:lock:channel-outbound-extension-stream:" + profileConsumerKey);
+    }
+
+    public String channelOutboundExtensionPendingFinals(String profileConsumerKey) {
+        return qualify("lynxus:channel-outbound:extension-pending-finals:" + profileConsumerKey);
+    }
+
+    public String channelOutboundExtensionForwardedFinal(String profileConsumerKey, long finalSequence) {
+        return qualify("lynxus:channel-outbound:extension-forwarded-final:" + profileConsumerKey + ":" + finalSequence);
+    }
+
     public String channelBindingSnapshotRefreshLock(String key) {
         return qualify("lynxus:lock:channel-binding-snapshot-refresh:" + key);
     }

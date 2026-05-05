@@ -40,6 +40,8 @@ public class ChannelOutboundUpstreamRelaySupervisor {
     private final ChannelAdminRepository repository;
     private final ChannelOutboundProfileConsumerResolver consumerResolver;
     private final ChannelOutboundStreamOwnerLockService ownerLockService;
+    private final ChannelOutboundDownstreamConsumerRegistry downstreamRegistry;
+    private final ChannelOutboundForwardedPendingStore forwardedPendingStore;
     private final ChannelOutboundFrameHandoff handoff;
     private final ChannelOutboundCapabilityFilter capabilityFilter;
     private final ChannelOutboundReplayCreditCalculator creditCalculator;
@@ -54,6 +56,8 @@ public class ChannelOutboundUpstreamRelaySupervisor {
         ChannelAdminRepository repository,
         ChannelOutboundProfileConsumerResolver consumerResolver,
         ChannelOutboundStreamOwnerLockService ownerLockService,
+        ChannelOutboundDownstreamConsumerRegistry downstreamRegistry,
+        ChannelOutboundForwardedPendingStore forwardedPendingStore,
         ChannelOutboundFrameHandoff handoff,
         ChannelOutboundCapabilityFilter capabilityFilter,
         ChannelOutboundReplayCreditCalculator creditCalculator,
@@ -66,6 +70,8 @@ public class ChannelOutboundUpstreamRelaySupervisor {
             repository,
             consumerResolver,
             ownerLockService,
+            downstreamRegistry,
+            forwardedPendingStore,
             handoff,
             capabilityFilter,
             creditCalculator,
@@ -86,6 +92,8 @@ public class ChannelOutboundUpstreamRelaySupervisor {
         ChannelAdminRepository repository,
         ChannelOutboundProfileConsumerResolver consumerResolver,
         ChannelOutboundStreamOwnerLockService ownerLockService,
+        ChannelOutboundDownstreamConsumerRegistry downstreamRegistry,
+        ChannelOutboundForwardedPendingStore forwardedPendingStore,
         ChannelOutboundFrameHandoff handoff,
         ChannelOutboundCapabilityFilter capabilityFilter,
         ChannelOutboundReplayCreditCalculator creditCalculator,
@@ -97,6 +105,8 @@ public class ChannelOutboundUpstreamRelaySupervisor {
         this.repository = repository;
         this.consumerResolver = consumerResolver;
         this.ownerLockService = ownerLockService;
+        this.downstreamRegistry = downstreamRegistry;
+        this.forwardedPendingStore = forwardedPendingStore;
         this.handoff = handoff;
         this.capabilityFilter = capabilityFilter;
         this.creditCalculator = creditCalculator;
@@ -119,6 +129,9 @@ public class ChannelOutboundUpstreamRelaySupervisor {
                 continue;
             }
             ResolvedProfileConsumer profileConsumer = resolved.get();
+            if (!downstreamRegistry.isActive(profileConsumer.consumer())) {
+                continue;
+            }
             String key = ProfileConsumerKeys.key(profileConsumer.consumer());
             desiredKeys.add(key);
             repository.ensureOutboundFinalCheckpoint(profileConsumer.consumer(), Instant.now());
@@ -163,7 +176,7 @@ public class ChannelOutboundUpstreamRelaySupervisor {
         if (existing != null && !existing.isDone() && existing.running.get()) {
             return;
         }
-        int currentPendingFinals = handoff.pendingFinals(consumer);
+        int currentPendingFinals = currentPendingFinals(consumer);
         if (!creditCalculator.shouldResume(currentPendingFinals, resumePendingFinals(consumer))) {
             return;
         }
@@ -189,7 +202,7 @@ public class ChannelOutboundUpstreamRelaySupervisor {
         try {
             ChannelOutboundFrameCheckpoint checkpoint = repository.findOutboundFinalCheckpoint(resolved.consumer())
                 .orElse(null);
-            int credit = creditCalculator.replayCredit(maxPendingFinals(resolved.consumer()), handoff.pendingFinals(resolved.consumer()));
+            int credit = creditCalculator.replayCredit(maxPendingFinals(resolved.consumer()), currentPendingFinals(resolved.consumer()));
             StreamRequest request = new StreamRequest(
                 resolved.consumer().channelProfileId(),
                 lastStreamCursorByConsumer.get(key),
@@ -216,6 +229,27 @@ public class ChannelOutboundUpstreamRelaySupervisor {
         return consumer.consumerKind() == ChannelOutboundConsumerKind.GATEWAY_NATIVE
             ? properties.getNativeMaxPendingFinals()
             : properties.getRemoteMaxPendingFinals();
+    }
+
+    private int currentPendingFinals(ChannelOutboundProfileConsumer consumer) {
+        long forwardedPendingFinals = consumer.consumerKind() == ChannelOutboundConsumerKind.REMOTE_EXTENSION
+            ? forwardedPendingStore.pendingFinalCount(consumer)
+            : 0;
+        long total = forwardedPendingFinals + handoff.pendingFinals(consumer);
+        return total > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) total;
+    }
+
+    private int maxPendingFinalsForOffer(ChannelOutboundProfileConsumer consumer) {
+        int max = maxPendingFinals(consumer);
+        if (consumer.consumerKind() != ChannelOutboundConsumerKind.REMOTE_EXTENSION) {
+            return max;
+        }
+        long forwardedPendingFinals = forwardedPendingStore.pendingFinalCount(consumer);
+        long remaining = max - forwardedPendingFinals;
+        if (remaining <= 0) {
+            return 0;
+        }
+        return remaining > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) remaining;
     }
 
     private int resumePendingFinals(ChannelOutboundProfileConsumer consumer) {
@@ -278,7 +312,7 @@ public class ChannelOutboundUpstreamRelaySupervisor {
             boolean accepted = handoff.offer(
                 resolved.consumer(),
                 frame,
-                maxPendingFinals(resolved.consumer()),
+                maxPendingFinalsForOffer(resolved.consumer()),
                 properties.getTransientQueueCapacity()
             );
             if (!accepted && frame.kind() == ChannelOutboundFrameKind.FINAL_DELIVERY) {

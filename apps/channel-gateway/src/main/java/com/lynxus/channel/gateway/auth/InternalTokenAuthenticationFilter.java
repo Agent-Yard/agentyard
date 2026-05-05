@@ -23,7 +23,10 @@ public class InternalTokenAuthenticationFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI();
-        return !path.startsWith("/internal/") && !path.equals("/extension/manifest");
+        return !path.startsWith("/internal/")
+            && !path.equals("/extension/manifest")
+            && !path.equals("/extension/channel/outbound-frame-subscriptions")
+            && !path.startsWith("/extension/channel/outbound-frames/");
     }
 
     @Override

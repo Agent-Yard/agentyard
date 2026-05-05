@@ -11,6 +11,8 @@ public class ChannelOutboundRelayProperties {
     private boolean enabled = true;
     private Duration scanFixedDelay = Duration.ofSeconds(5);
     private Duration ownerLockTtl = Duration.ofSeconds(30);
+    private Duration extensionStreamLeaseTtl = Duration.ofSeconds(30);
+    private Duration extensionForwardedPendingTtl = Duration.ofMinutes(5);
     private Duration connectTimeout = Duration.ofSeconds(10);
     @Min(1)
     private int remoteMaxPendingFinals = 100;
@@ -45,6 +47,26 @@ public class ChannelOutboundRelayProperties {
 
     public void setOwnerLockTtl(Duration ownerLockTtl) {
         this.ownerLockTtl = ownerLockTtl;
+    }
+
+    public Duration getExtensionStreamLeaseTtl() {
+        return extensionStreamLeaseTtl;
+    }
+
+    public void setExtensionStreamLeaseTtl(Duration extensionStreamLeaseTtl) {
+        this.extensionStreamLeaseTtl = extensionStreamLeaseTtl;
+    }
+
+    public Duration getExtensionForwardedPendingTtl() {
+        if (extensionForwardedPendingTtl == null || extensionForwardedPendingTtl.isNegative() || extensionForwardedPendingTtl.isZero()) {
+            return Duration.ofMinutes(5);
+        }
+        Duration max = Duration.ofMinutes(15);
+        return extensionForwardedPendingTtl.compareTo(max) > 0 ? max : extensionForwardedPendingTtl;
+    }
+
+    public void setExtensionForwardedPendingTtl(Duration extensionForwardedPendingTtl) {
+        this.extensionForwardedPendingTtl = extensionForwardedPendingTtl;
     }
 
     public Duration getConnectTimeout() {

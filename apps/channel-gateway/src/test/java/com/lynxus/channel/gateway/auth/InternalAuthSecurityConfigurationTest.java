@@ -9,6 +9,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.lynxus.channel.gateway.channel.ChannelAdminService;
+import com.lynxus.channel.gateway.channel.ChannelOutboundExtensionAckService;
+import com.lynxus.channel.gateway.channel.ChannelOutboundExtensionController;
+import com.lynxus.channel.gateway.channel.ChannelOutboundExtensionStreamService;
+import com.lynxus.channel.gateway.channel.ChannelOutboundExtensionSubscriptionService;
 import com.lynxus.channel.gateway.channel.ChannelInboundSessionDispatcher;
 import com.lynxus.channel.gateway.channel.InternalNormalizedChannelEventController;
 import com.lynxus.channel.gateway.channel.InternalChannelAdminController;
@@ -133,6 +137,34 @@ class InternalAuthSecurityConfigurationTest {
         }
     }
 
+    @Test
+    void shouldRejectExtensionOutboundBootstrapWithoutBearerToken() throws Exception {
+        try (AnnotationConfigApplicationContext context = createAuthorizedContext()) {
+            MockMvc mockMvc = mockMvc(context);
+
+            mockMvc.perform(get("/extension/channel/outbound-frame-subscriptions"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.detail").value("Authentication is required"));
+        }
+    }
+
+    @Test
+    void shouldAllowExtensionOutboundBootstrapWithValidBearerToken() throws Exception {
+        try (AnnotationConfigApplicationContext context = createAuthorizedContext()) {
+            ChannelOutboundExtensionSubscriptionService subscriptionService = context.getBean(ChannelOutboundExtensionSubscriptionService.class);
+            when(subscriptionService.list(any())).thenReturn(new ChannelOutboundExtensionSubscriptionService.ChannelOutboundFrameSubscriptionList(List.of()));
+            MockMvc mockMvc = mockMvc(context);
+
+            mockMvc.perform(get("/extension/channel/outbound-frame-subscriptions")
+                    .header("Authorization", "Bearer test-internal-token")
+                    .header("X-Lynxus-Extension-Registration-Id", "acme-channel-provider")
+                    .header("X-Lynxus-Extension-Descriptor-Type", "CHANNEL_PROVIDER")
+                    .header("X-Lynxus-Extension-Descriptor-Id", "enterprise.acme.im"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.subscriptions").isArray());
+        }
+    }
+
     private AnnotationConfigApplicationContext createAuthorizedContext() {
         AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
         context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("test", java.util.Map.of(
@@ -149,7 +181,8 @@ class InternalAuthSecurityConfigurationTest {
                 context.getBean(InternalChannelAdminController.class),
                 context.getBean(InternalNormalizedChannelEventController.class),
                 context.getBean(FeishuWebhookController.class),
-                context.getBean(ExtensionManifestController.class)
+                context.getBean(ExtensionManifestController.class),
+                context.getBean(ChannelOutboundExtensionController.class)
             )
             .setControllerAdvice(context.getBean(ApiExceptionHandler.class))
             .addFilters(securityFilter)
@@ -184,6 +217,15 @@ class InternalAuthSecurityConfigurationTest {
         }
 
         @Bean
+        ChannelOutboundExtensionController channelOutboundExtensionController(
+            ChannelOutboundExtensionSubscriptionService subscriptionService,
+            ChannelOutboundExtensionStreamService streamService,
+            ChannelOutboundExtensionAckService ackService
+        ) {
+            return new ChannelOutboundExtensionController(subscriptionService, streamService, ackService);
+        }
+
+        @Bean
         ChannelGatewayDescriptorProvider channelGatewayDescriptorProvider() {
             return new ChannelGatewayDescriptorProvider();
         }
@@ -191,6 +233,21 @@ class InternalAuthSecurityConfigurationTest {
         @Bean
         ChannelAdminService channelAdminService() {
             return mock(ChannelAdminService.class);
+        }
+
+        @Bean
+        ChannelOutboundExtensionSubscriptionService channelOutboundExtensionSubscriptionService() {
+            return mock(ChannelOutboundExtensionSubscriptionService.class);
+        }
+
+        @Bean
+        ChannelOutboundExtensionStreamService channelOutboundExtensionStreamService() {
+            return mock(ChannelOutboundExtensionStreamService.class);
+        }
+
+        @Bean
+        ChannelOutboundExtensionAckService channelOutboundExtensionAckService() {
+            return mock(ChannelOutboundExtensionAckService.class);
         }
 
         @Bean
