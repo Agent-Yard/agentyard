@@ -9,7 +9,7 @@
 - §1 人工接管与恢复操作台 ↔ 主 todos §2.1
 - §2 长 session 历史分页 ↔ 主 todos §2.4
 - 历史流式执行与回复草稿方案已归档至 [`runtime_streaming_plan.md`](../develop_record/runtime_streaming_plan.md)
-- channel outbound frame stream 改造方案见 [`channel_outbound_frame_stream_plan.md`](./channel_outbound_frame_stream_plan.md)
+- channel outbound frame stream 改造方案见 [`channel_outbound_frame_stream_plan.md`](../develop_record/channel_outbound_frame_stream_plan.md)
 
 ## 1. 人工接管与恢复操作台还不完整
 
