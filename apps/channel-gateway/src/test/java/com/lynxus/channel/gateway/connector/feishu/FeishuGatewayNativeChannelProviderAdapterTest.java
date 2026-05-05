@@ -2,6 +2,7 @@ package com.lynxus.channel.gateway.connector.feishu;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lynxus.contracts.channel.ChannelContracts;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
@@ -16,7 +17,7 @@ import org.junit.jupiter.api.Test;
 
 class FeishuGatewayNativeChannelProviderAdapterTest {
     @Test
-    void finalDeliveryUsesFrameIdAsFeishuIdempotencyUuid() {
+    void finalDeliveryUsesBoundedFeishuIdempotencyUuid() {
         CapturingCredentialProvider credentialProvider = new CapturingCredentialProvider();
         CapturingMessageSender messageSender = new CapturingMessageSender();
         FeishuGatewayNativeChannelProviderAdapter adapter = new FeishuGatewayNativeChannelProviderAdapter(
@@ -31,7 +32,8 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
         assertEquals("chat_id", messageSender.commands.getFirst().receiveIdType());
         assertEquals("chat-1", messageSender.commands.getFirst().receiveId());
         assertEquals("hello\nworld", messageSender.commands.getFirst().text());
-        assertEquals(frame.frameId(), messageSender.commands.getFirst().uuid());
+        assertEquals("cof-b756d04622f455de1bce7530f2c6eadf", messageSender.commands.getFirst().uuid());
+        assertTrue(messageSender.commands.getFirst().uuid().length() <= 50);
     }
 
     @Test
@@ -79,7 +81,7 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
     }
 
     private static ChannelOutboundFrame finalFrameWithBlocks(List<Map<String, Object>> messageBlocks) {
-        String frameId = "profile-1:session-1:message-1:FINAL_DELIVERY";
+        String frameId = "channel-profile-d28237bb:session-v2-b50aa165:session-message-4b8e6432-b10a-358c-a77e-197599f37579:FINAL_DELIVERY";
         return new ChannelOutboundFrame(
             ChannelContracts.CHANNEL_OUTBOUND_FRAME_PROTOCOL,
             frameId,

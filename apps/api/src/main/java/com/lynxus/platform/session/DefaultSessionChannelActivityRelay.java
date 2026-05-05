@@ -128,7 +128,7 @@ final class DefaultSessionChannelActivityRelay implements SessionChannelActivity
             null,
             frameKind,
             frame.occurredAt(),
-            frameId,
+            ChannelContracts.channelOutboundFrameIdempotencyKey(frameId),
             framePayload(frame, frameKind),
             null
         );

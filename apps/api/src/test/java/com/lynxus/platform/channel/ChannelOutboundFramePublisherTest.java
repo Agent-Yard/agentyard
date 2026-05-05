@@ -1,6 +1,8 @@
 package com.lynxus.platform.channel;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -90,7 +92,9 @@ class ChannelOutboundFramePublisherTest {
 
         ChannelOutboundFrame frame = emitter.frames().get(0);
         assertEquals("channel-profile-1:session-1:message-12:FINAL_DELIVERY", frame.frameId());
-        assertEquals(frame.frameId(), frame.idempotencyKey());
+        assertEquals(ChannelContracts.channelOutboundFrameIdempotencyKey(frame.frameId()), frame.idempotencyKey());
+        assertNotEquals(frame.frameId(), frame.idempotencyKey());
+        assertTrue(frame.idempotencyKey().length() <= 50);
         assertEquals(12L, frame.finalSequence());
         assertEquals("message-12", frame.payload().get("sessionMessageId"));
         assertEquals(3L, frame.payload().get("messageSequence"));

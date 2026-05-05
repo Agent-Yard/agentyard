@@ -1,6 +1,7 @@
 package com.lynxus.channel.gateway.connector.feishu;
 
 import com.lynxus.channel.gateway.extension.GatewayNativeChannelProviderAdapter;
+import com.lynxus.contracts.channel.ChannelContracts;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundFrame;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundFrameKind;
@@ -19,6 +20,7 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
     private static final Logger log = LoggerFactory.getLogger(FeishuGatewayNativeChannelProviderAdapter.class);
     public static final String PROVIDER_TYPE = "feishu";
     private static final String DEFAULT_RECEIVE_ID_TYPE = "chat_id";
+    private static final int FEISHU_UUID_MAX_LENGTH = 50;
 
     private final FeishuCredentialProvider credentialProvider;
     private final FeishuMessageSender messageSender;
@@ -84,7 +86,7 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
             receiveIdType(profile.config()),
             frame.externalConversationId(),
             text.get(),
-            frame.idempotencyKey()
+            feishuUuid(frame)
         ));
     }
 
@@ -171,6 +173,16 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
             return text;
         }
         return DEFAULT_RECEIVE_ID_TYPE;
+    }
+
+    private static String feishuUuid(ChannelOutboundFrame frame) {
+        String seed = frame.idempotencyKey() == null || frame.idempotencyKey().isBlank()
+            ? frame.frameId()
+            : frame.idempotencyKey();
+        if (seed.length() <= FEISHU_UUID_MAX_LENGTH) {
+            return seed;
+        }
+        return ChannelContracts.channelOutboundFrameIdempotencyKey(seed);
     }
 
     private static Optional<String> finalText(ChannelGatewayProfile profile, ChannelOutboundFrame frame) {

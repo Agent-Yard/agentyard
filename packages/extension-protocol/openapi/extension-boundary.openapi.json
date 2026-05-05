@@ -1338,7 +1338,10 @@
             "format": "date-time"
           },
           "idempotencyKey": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50,
+            "description": "Stable compact idempotency key for provider delivery; frameId remains the ACK/checkpoint identity."
           },
           "payload": {
             "$ref": "#/components/schemas/JsonObject",

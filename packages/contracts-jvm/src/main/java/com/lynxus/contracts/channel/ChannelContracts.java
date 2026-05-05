@@ -1,13 +1,27 @@
 package com.lynxus.contracts.channel;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.Collections;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 public final class ChannelContracts {
     private ChannelContracts() {
+    }
+
+    public static String channelOutboundFrameIdempotencyKey(String seed) {
+        String value = requireText(seed, "seed");
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
+            return "cof-" + HexFormat.of().formatHex(digest).substring(0, 32);
+        } catch (NoSuchAlgorithmException error) {
+            throw new IllegalStateException("SHA-256 is unavailable", error);
+        }
     }
 
     private static Map<String, Object> immutableObjectMap(Map<String, Object> source) {

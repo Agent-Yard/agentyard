@@ -250,7 +250,7 @@ public class ChannelOutboundFramePublisher {
             message.finalSequence(),
             ChannelOutboundFrameKind.FINAL_DELIVERY,
             message.updatedAt() == null ? message.createdAt() : message.updatedAt(),
-            frameId,
+            ChannelContracts.channelOutboundFrameIdempotencyKey(frameId),
             Map.copyOf(payload),
             null
         );

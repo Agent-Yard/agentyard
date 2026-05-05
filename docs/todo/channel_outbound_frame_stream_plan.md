@@ -122,7 +122,7 @@ frame body：
   "sourceSeq": 7,
   "kind": "DRAFT_UPDATE",
   "occurredAt": "2026-05-04T10:00:00Z",
-  "idempotencyKey": "channel-profile-1:exec-1:7:DRAFT_UPDATE",
+  "idempotencyKey": "cof-0123456789abcdef0123456789abcdef",
   "payload": {
     "messageId": "session-message-reply-1",
     "blockId": "reply-block-1",
@@ -139,7 +139,7 @@ field 规则：
 3. gateway-native provider 在 channel-gateway 内部按 profile/account 解析凭证。
 4. `turnId / turnExecutionId / sourceSeq` 只对 transient frame 必填；`FINAL_DELIVERY` 可以不带这些字段。
 5. `finalSequence` 只对 `FINAL_DELIVERY` 必填；transient frame 不带 `finalSequence`。
-6. `frameId` 是幂等键，`finalSequence` 是 durable final message 的全局排序字段，两者不能混用。
+6. `frameId` 是 ACK/checkpoint 与 extension 本地幂等身份；`idempotencyKey` 是短 provider 投递幂等键，稳定派生自 `frameId`，当前格式为 `cof-` + SHA-256(frameId) 前 32 位 hex，长度不超过 50；`finalSequence` 是 durable final message 的全局排序字段，三者不能混用。
 
 frame kinds：
 
@@ -158,7 +158,7 @@ FINAL_DELIVERY
 2. 本轮和目标架构不做 `DRAFT_UPDATE` 短窗口合并；draft/transient 可以逐 frame SSE。
 3. final delivery：`{channelProfileId}:{sessionId}:{sessionMessageId}:FINAL_DELIVERY`。
 4. 同一个业务动作重放时必须生成相同 `frameId`。
-5. extension 必须把 `frameId` 当作幂等键。重复收到同一个 `frameId` 时不得重复发送外部消息。
+5. extension 必须把 `frameId` 当作本地幂等身份。重复收到同一个 `frameId` 时不得重复发送外部消息；provider API 如支持 idempotency key，优先使用 frame 中的短 `idempotencyKey`。
 
 `finalSequence` 与 checkpoint 规则：
 
@@ -564,7 +564,7 @@ extension 必须实现 `frameId` 幂等。
 extension 收到重复 `FINAL_DELIVERY`：
 
 1. 如果本地已处理过该 `frameId`，直接 no-op。
-2. 如果 provider 支持 idempotency key，把 `frameId` 透传给 provider。
+2. 如果 provider 支持 idempotency key，把 frame 中的短 `idempotencyKey` 透传给 provider。
 3. 如果 provider 不支持幂等，extension 自己必须持久化 `frameId -> externalMessageId`。
 4. 如果 extension 无法提供幂等能力，该 provider 不能声明 `supportsFinalDelivery=true`。
 
@@ -656,7 +656,7 @@ channel-gateway 下发侧：
 
 1. 如果 extension SSE consumer 落后太多，transient frame 可以过期丢弃。
 2. `FINAL_DELIVERY` 不允许被标记为已完成；如果 backpressure 导致连接关闭，未 ACK final 从 checkpoint 重新派生。
-3. 同一个 final delivery 的重发必须使用同一个 `frameId` 和 `Idempotency-Key`。
+3. 同一个 final delivery 的重发必须使用同一个 `frameId` 和 `idempotencyKey`。
 
 final replay window：
 

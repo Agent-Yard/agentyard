@@ -1,12 +1,15 @@
 package com.lynxus.platform.session;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.lynxus.contracts.channel.ChannelContracts;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundBindingSnapshot;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundFrame;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundFrameKind;
@@ -45,6 +48,9 @@ class DefaultSessionChannelActivityRelayTest {
         verify(framePublisher).publishTransient(frame.capture());
         assertEquals(ChannelOutboundFrameKind.DRAFT_UPDATE, frame.getValue().kind());
         assertEquals("channel-profile-1:exec-1:6:DRAFT_UPDATE", frame.getValue().frameId());
+        assertEquals(ChannelContracts.channelOutboundFrameIdempotencyKey(frame.getValue().frameId()), frame.getValue().idempotencyKey());
+        assertNotEquals(frame.getValue().frameId(), frame.getValue().idempotencyKey());
+        assertTrue(frame.getValue().idempotencyKey().length() <= 50);
         assertEquals("channel-profile-1", frame.getValue().channelProfileId());
         assertEquals("provider.acme", frame.getValue().providerType());
         assertEquals("chat-1", frame.getValue().externalConversationId());
