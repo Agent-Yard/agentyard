@@ -24,18 +24,21 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
 
     private final FeishuCredentialProvider credentialProvider;
     private final FeishuMessageSender messageSender;
+    private final FeishuTypingReactionLifecycle typingReactionLifecycle;
 
     public FeishuGatewayNativeChannelProviderAdapter() {
-        this(null, null);
+        this(null, null, FeishuTypingReactionLifecycle.NOOP);
     }
 
     @Autowired
     public FeishuGatewayNativeChannelProviderAdapter(
         FeishuCredentialProvider credentialProvider,
-        FeishuMessageSender messageSender
+        FeishuMessageSender messageSender,
+        FeishuTypingReactionLifecycle typingReactionLifecycle
     ) {
         this.credentialProvider = credentialProvider;
         this.messageSender = messageSender;
+        this.typingReactionLifecycle = typingReactionLifecycle == null ? FeishuTypingReactionLifecycle.NOOP : typingReactionLifecycle;
     }
 
     @Override
@@ -58,7 +61,7 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
         descriptor.put("defaultConfig", Map.of("receiveIdType", DEFAULT_RECEIVE_ID_TYPE));
         descriptor.put("outbound", Map.of(
             "mode", "FRAME_STREAM",
-            "supportsTyping", false,
+            "supportsTyping", true,
             "supportsDraftUpdate", false,
             "supportsFinalDelivery", true,
             "requiresIdempotentFinalDelivery", true
@@ -70,8 +73,12 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
 
     @Override
     public void consumeOutboundFrame(ChannelGatewayProfile profile, ChannelOutboundFrame frame) {
+        typingReactionLifecycle.deleteTypingReactionOnFirstOutboundFrame(profile, frame.sessionId(), frame.externalConversationId());
+        if (frame.kind() == ChannelOutboundFrameKind.TYPING_START || frame.kind() == ChannelOutboundFrameKind.TYPING_STOP) {
+            return;
+        }
         if (frame.kind() != ChannelOutboundFrameKind.FINAL_DELIVERY) {
-            throw new IllegalArgumentException("Feishu gateway-native provider only supports FINAL_DELIVERY frames");
+            throw new IllegalArgumentException("Feishu gateway-native provider only supports TYPING_* and FINAL_DELIVERY frames");
         }
         Optional<String> text = finalText(profile, frame);
         if (text.isEmpty()) {

@@ -25,13 +25,16 @@ import org.springframework.stereotype.Service;
 final class FeishuInboundEventService {
     private final NormalizedChannelEventIngestService ingestService;
     private final ChannelInboundSessionDispatcher sessionDispatcher;
+    private final FeishuTypingReactionService typingReactionService;
 
     FeishuInboundEventService(
         NormalizedChannelEventIngestService ingestService,
-        ChannelInboundSessionDispatcher sessionDispatcher
+        ChannelInboundSessionDispatcher sessionDispatcher,
+        FeishuTypingReactionService typingReactionService
     ) {
         this.ingestService = ingestService;
         this.sessionDispatcher = sessionDispatcher;
+        this.typingReactionService = typingReactionService;
     }
 
     void ingestTextMessage(FeishuInboundTextMessage message) {
@@ -70,6 +73,9 @@ final class FeishuInboundEventService {
             firstNonBlank(message.requestId(), UUID.randomUUID().toString()),
             dedupKey
         ));
+        if (!result.duplicate() && typingReactionService != null) {
+            typingReactionService.beginInboundTypingReaction(event);
+        }
         sessionDispatcher.dispatchAsync(event, result);
     }
 

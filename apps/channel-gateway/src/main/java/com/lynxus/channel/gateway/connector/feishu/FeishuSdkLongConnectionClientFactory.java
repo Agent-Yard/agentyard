@@ -3,6 +3,7 @@ package com.lynxus.channel.gateway.connector.feishu;
 import com.lark.oapi.event.EventDispatcher;
 import com.lark.oapi.service.im.ImService;
 import com.lark.oapi.service.im.v1.model.EventMessage;
+import com.lark.oapi.service.im.v1.model.P2MessageReactionCreatedV1;
 import com.lark.oapi.service.im.v1.model.P2MessageReceiveV1;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
@@ -53,6 +54,12 @@ final class FeishuSdkLongConnectionClientFactory implements FeishuLongConnection
                     } catch (RuntimeException error) {
                         log.warn("failed to ingest feishu long connection message: channelProfileId={}", profile.channelProfileId(), error);
                     }
+                }
+            })
+            .onP2MessageReactionCreatedV1(new ImService.P2MessageReactionCreatedV1Handler() {
+                @Override
+                public void handle(P2MessageReactionCreatedV1 event) {
+                    log.info("get message reaction: {}", event.getEvent());
                 }
             })
             .build();

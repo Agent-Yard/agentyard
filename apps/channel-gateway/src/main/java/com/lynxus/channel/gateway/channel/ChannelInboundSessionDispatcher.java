@@ -29,18 +29,21 @@ public class ChannelInboundSessionDispatcher {
     private final ChannelSessionRuntimeClient sessionRuntimeClient;
     private final ChannelBindingSnapshotRefreshHintClient bindingSnapshotRefreshHintClient;
     private final Executor executor;
+    private final List<ChannelInboundSessionDispatchObserver> observers;
 
     @Autowired
     public ChannelInboundSessionDispatcher(
         ChannelAdminRepository repository,
         ChannelSessionRuntimeClient sessionRuntimeClient,
         ChannelBindingSnapshotRefreshHintClient bindingSnapshotRefreshHintClient,
-        @Qualifier(ChannelGatewayAsyncConfiguration.CHANNEL_INBOUND_SESSION_DISPATCH_EXECUTOR) Executor executor
+        @Qualifier(ChannelGatewayAsyncConfiguration.CHANNEL_INBOUND_SESSION_DISPATCH_EXECUTOR) Executor executor,
+        List<ChannelInboundSessionDispatchObserver> observers
     ) {
         this.repository = repository;
         this.sessionRuntimeClient = sessionRuntimeClient;
         this.bindingSnapshotRefreshHintClient = bindingSnapshotRefreshHintClient;
         this.executor = executor;
+        this.observers = observers == null || observers.isEmpty() ? List.of() : List.copyOf(observers);
     }
 
     ChannelInboundSessionDispatcher(
@@ -48,7 +51,16 @@ public class ChannelInboundSessionDispatcher {
         ChannelSessionRuntimeClient sessionRuntimeClient,
         Executor executor
     ) {
-        this(repository, sessionRuntimeClient, null, executor);
+        this(repository, sessionRuntimeClient, null, executor, List.of());
+    }
+
+    ChannelInboundSessionDispatcher(
+        ChannelAdminRepository repository,
+        ChannelSessionRuntimeClient sessionRuntimeClient,
+        ChannelBindingSnapshotRefreshHintClient bindingSnapshotRefreshHintClient,
+        Executor executor
+    ) {
+        this(repository, sessionRuntimeClient, bindingSnapshotRefreshHintClient, executor, List.of());
     }
 
     public void dispatchAsync(
@@ -61,8 +73,10 @@ public class ChannelInboundSessionDispatcher {
         try {
             executor.execute(() -> {
                 try {
-                    dispatch(event, ingestResult);
+                    ChannelInboundSessionDispatchResult dispatchResult = dispatch(event, ingestResult);
+                    notifyDispatchSucceeded(event, ingestResult, dispatchResult);
                 } catch (RuntimeException error) {
+                    notifyDispatchFailed(event, ingestResult, error);
                     log.warn(
                         "failed to dispatch channel inbound event to session runtime: channelProfileId={}, externalConversationId={}, inboundEventId={}, dedupKey={}",
                         event.channelProfileId(),
@@ -74,6 +88,7 @@ public class ChannelInboundSessionDispatcher {
                 }
             });
         } catch (RejectedExecutionException error) {
+            notifyDispatchFailed(event, ingestResult, error);
             log.warn(
                 "failed to queue channel inbound event dispatch: channelProfileId={}, externalConversationId={}, inboundEventId={}, dedupKey={}",
                 event.channelProfileId(),
@@ -123,6 +138,37 @@ public class ChannelInboundSessionDispatcher {
             response.sessionId()
         );
         return new ChannelInboundSessionDispatchResult(ingestResult.eventId(), response.sessionId(), updatedBinding.id());
+    }
+
+    private void notifyDispatchSucceeded(
+        NormalizedChannelInboundEvent event,
+        NormalizedChannelInboundEventResult ingestResult,
+        ChannelInboundSessionDispatchResult dispatchResult
+    ) {
+        if (dispatchResult == null) {
+            return;
+        }
+        for (ChannelInboundSessionDispatchObserver observer : observers) {
+            try {
+                observer.afterDispatchSucceeded(event, ingestResult, dispatchResult);
+            } catch (RuntimeException error) {
+                log.warn("channel inbound session dispatch success observer failed: dedupKey={}", event.dedupKey(), error);
+            }
+        }
+    }
+
+    private void notifyDispatchFailed(
+        NormalizedChannelInboundEvent event,
+        NormalizedChannelInboundEventResult ingestResult,
+        RuntimeException error
+    ) {
+        for (ChannelInboundSessionDispatchObserver observer : observers) {
+            try {
+                observer.afterDispatchFailed(event, ingestResult, error);
+            } catch (RuntimeException observerError) {
+                log.warn("channel inbound session dispatch failure observer failed: dedupKey={}", event.dedupKey(), observerError);
+            }
+        }
     }
 
     private ChannelConversationBinding attachSession(ChannelConversationBinding binding, String sessionId) {

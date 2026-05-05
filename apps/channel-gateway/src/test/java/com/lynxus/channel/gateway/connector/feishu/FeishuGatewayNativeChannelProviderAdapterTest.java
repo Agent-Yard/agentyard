@@ -22,7 +22,8 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
         CapturingMessageSender messageSender = new CapturingMessageSender();
         FeishuGatewayNativeChannelProviderAdapter adapter = new FeishuGatewayNativeChannelProviderAdapter(
             credentialProvider,
-            messageSender
+            messageSender,
+            FeishuTypingReactionLifecycle.NOOP
         );
         ChannelOutboundFrame frame = finalFrame();
 
@@ -42,7 +43,8 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
         CapturingMessageSender messageSender = new CapturingMessageSender();
         FeishuGatewayNativeChannelProviderAdapter adapter = new FeishuGatewayNativeChannelProviderAdapter(
             credentialProvider,
-            messageSender
+            messageSender,
+            FeishuTypingReactionLifecycle.NOOP
         );
         ChannelOutboundFrame frame = finalFrameWithBlocks(List.of(
             Map.of("type", "IMAGE", "url", "https://example.invalid/image.png"),
@@ -53,6 +55,37 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
 
         assertNull(credentialProvider.accountId);
         assertEquals(0, messageSender.commands.size());
+    }
+
+    @Test
+    void typingStartOnlyClearsTypingReactionWithoutSendingMessage() {
+        CapturingTypingReactionLifecycle typingLifecycle = new CapturingTypingReactionLifecycle();
+        CapturingMessageSender messageSender = new CapturingMessageSender();
+        FeishuGatewayNativeChannelProviderAdapter adapter = new FeishuGatewayNativeChannelProviderAdapter(
+            new CapturingCredentialProvider(),
+            messageSender,
+            typingLifecycle
+        );
+        ChannelOutboundFrame frame = typingFrame();
+
+        adapter.consumeOutboundFrame(profile(), frame);
+
+        assertEquals(List.of("session-1"), typingLifecycle.deletedSessions);
+        assertEquals(0, messageSender.commands.size());
+    }
+
+    @Test
+    void descriptorDeclaresTypingSupportForReactionLifecycleFrames() {
+        FeishuGatewayNativeChannelProviderAdapter adapter = new FeishuGatewayNativeChannelProviderAdapter(
+            new CapturingCredentialProvider(),
+            new CapturingMessageSender(),
+            FeishuTypingReactionLifecycle.NOOP
+        );
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> outbound = (Map<String, Object>) adapter.descriptor().get("outbound");
+
+        assertEquals(true, outbound.get("supportsTyping"));
     }
 
     private static ChannelGatewayProfile profile() {
@@ -106,6 +139,28 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
         );
     }
 
+    private static ChannelOutboundFrame typingFrame() {
+        String frameId = "profile-1:turn-1:1:TYPING_START";
+        return new ChannelOutboundFrame(
+            ChannelContracts.CHANNEL_OUTBOUND_FRAME_PROTOCOL,
+            frameId,
+            "profile-1",
+            FeishuGatewayNativeChannelProviderAdapter.PROVIDER_TYPE,
+            "assistant-1",
+            "chat-1",
+            "session-1",
+            "turn-1",
+            "turn-1:exec-1",
+            1L,
+            null,
+            ChannelOutboundFrameKind.TYPING_START,
+            Instant.parse("2026-05-05T00:00:00Z"),
+            frameId,
+            Map.of("messageId", "message-1"),
+            null
+        );
+    }
+
     private static final class CapturingCredentialProvider implements FeishuCredentialProvider {
         private String accountId;
 
@@ -123,6 +178,19 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
         public FeishuSendTextResult sendText(FeishuSendTextCommand command) {
             commands.add(command);
             return new FeishuSendTextResult("external-message-1", Map.of());
+        }
+    }
+
+    private static final class CapturingTypingReactionLifecycle implements FeishuTypingReactionLifecycle {
+        private final List<String> deletedSessions = new ArrayList<>();
+
+        @Override
+        public void deleteTypingReactionOnFirstOutboundFrame(
+            ChannelGatewayProfile profile,
+            String sessionId,
+            String externalConversationId
+        ) {
+            deletedSessions.add(sessionId);
         }
     }
 }

@@ -84,6 +84,18 @@ public class RedisKeyspace {
         return qualify("lynxus:channel-outbound:extension-forwarded-final:" + profileConsumerKey + ":" + finalSequence);
     }
 
+    public String channelFeishuTypingReactionState(String channelProfileId, String dedupKeyHash) {
+        return qualify("lynxus:channel-feishu:typing-reaction:state:" + channelProfileId + ":" + dedupKeyHash);
+    }
+
+    public String channelFeishuTypingReactionSessionIndex(String channelProfileId, String sessionIdHash) {
+        return qualify("lynxus:channel-feishu:typing-reaction:session:" + channelProfileId + ":" + sessionIdHash);
+    }
+
+    public String channelFeishuTypingReactionConversationIndex(String channelProfileId, String externalConversationIdHash) {
+        return qualify("lynxus:channel-feishu:typing-reaction:conversation:" + channelProfileId + ":" + externalConversationIdHash);
+    }
+
     public String channelBindingSnapshotRefreshLock(String key) {
         return qualify("lynxus:lock:channel-binding-snapshot-refresh:" + key);
     }
