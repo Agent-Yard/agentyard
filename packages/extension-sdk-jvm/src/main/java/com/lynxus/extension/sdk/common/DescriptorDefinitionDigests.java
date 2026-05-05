@@ -88,7 +88,6 @@ public final class DescriptorDefinitionDigests {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("mode", outbound.get("mode"));
         result.put("requiresIdempotentFinalDelivery", Boolean.TRUE.equals(outbound.get("requiresIdempotentFinalDelivery")));
-        result.put("supportsCredentialRef", Boolean.TRUE.equals(outbound.get("supportsCredentialRef")));
         result.put("supportsDraftUpdate", Boolean.TRUE.equals(outbound.get("supportsDraftUpdate")));
         result.put("supportsFinalDelivery", Boolean.TRUE.equals(outbound.get("supportsFinalDelivery")));
         result.put("supportsTyping", Boolean.TRUE.equals(outbound.get("supportsTyping")));

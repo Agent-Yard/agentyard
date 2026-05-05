@@ -59,9 +59,6 @@
             "required": ["credential"]
           },
           {
-            "required": ["credentialRef"]
-          },
-          {
             "required": ["externalSecretRef"]
           }
         ]

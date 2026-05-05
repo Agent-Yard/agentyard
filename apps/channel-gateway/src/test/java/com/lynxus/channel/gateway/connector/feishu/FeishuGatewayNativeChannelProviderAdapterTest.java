@@ -95,7 +95,6 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
             ChannelOutboundFrameKind.FINAL_DELIVERY,
             Instant.parse("2026-05-05T00:00:00Z"),
             frameId,
-            null,
             Map.of(
                 "sessionMessageId", "message-1",
                 "messageSequence", 1,

@@ -1090,7 +1090,6 @@ class IntegrationAccountServiceTest {
             "supportsTyping", true,
             "supportsDraftUpdate", true,
             "supportsFinalDelivery", true,
-            "supportsCredentialRef", false,
             "requiresIdempotentFinalDelivery", true
         );
     }

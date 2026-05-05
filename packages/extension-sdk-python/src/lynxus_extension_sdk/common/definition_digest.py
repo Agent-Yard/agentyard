@@ -38,7 +38,6 @@ def channel_provider_definition_digest_input(descriptor: dict[str, Any]) -> dict
         "outbound": {
             "mode": outbound.get("mode"),
             "requiresIdempotentFinalDelivery": outbound.get("requiresIdempotentFinalDelivery") is True,
-            "supportsCredentialRef": outbound.get("supportsCredentialRef") is True,
             "supportsDraftUpdate": outbound.get("supportsDraftUpdate") is True,
             "supportsFinalDelivery": outbound.get("supportsFinalDelivery") is True,
             "supportsTyping": outbound.get("supportsTyping") is True,

@@ -123,7 +123,6 @@ frame body：
   "kind": "DRAFT_UPDATE",
   "occurredAt": "2026-05-04T10:00:00Z",
   "idempotencyKey": "channel-profile-1:exec-1:7:DRAFT_UPDATE",
-  "credentialRef": "vault://channel-profile-1",
   "payload": {
     "messageId": "session-message-reply-1",
     "blockId": "reply-block-1",
@@ -135,13 +134,12 @@ frame body：
 
 field 规则：
 
-1. `credentialRef` 是可选的凭证引用，不是 raw secret。
-2. remote extension provider 需要调用外部平台时，必须通过 `credentialRef` 或等价 scoped credential context 解析凭证。
-3. gateway-native provider 可以忽略 `credentialRef`，在 channel-gateway 内部按 profile/account 解析凭证。
-4. frame 不包含 raw token、account secret、provider native secret。
-5. `turnId / turnExecutionId / sourceSeq` 只对 transient frame 必填；`FINAL_DELIVERY` 可以不带这些字段。
-6. `finalSequence` 只对 `FINAL_DELIVERY` 必填；transient frame 不带 `finalSequence`。
-7. `frameId` 是幂等键，`finalSequence` 是 durable final message 的全局排序字段，两者不能混用。
+1. frame 不包含 raw token、account secret、provider native secret，也不下发 credential reference。
+2. remote extension provider 自己管理外部平台 credential；core 最多通过独立 API 做受控中转，不把凭证上下文塞进 outbound frame。
+3. gateway-native provider 在 channel-gateway 内部按 profile/account 解析凭证。
+4. `turnId / turnExecutionId / sourceSeq` 只对 transient frame 必填；`FINAL_DELIVERY` 可以不带这些字段。
+5. `finalSequence` 只对 `FINAL_DELIVERY` 必填；transient frame 不带 `finalSequence`。
+6. `frameId` 是幂等键，`finalSequence` 是 durable final message 的全局排序字段，两者不能混用。
 
 frame kinds：
 
@@ -157,7 +155,7 @@ FINAL_DELIVERY
 `frameId` 规则：
 
 1. transient frame：`{channelProfileId}:{turnExecutionId}:{sourceSeq}:{kind}`。
-2. coalesced draft frame：`{channelProfileId}:{turnExecutionId}:{firstSourceSeq}-{lastSourceSeq}:DRAFT_UPDATE`。
+2. 本轮和目标架构不做 `DRAFT_UPDATE` 短窗口合并；draft/transient 可以逐 frame SSE。
 3. final delivery：`{channelProfileId}:{sessionId}:{sessionMessageId}:FINAL_DELIVERY`。
 4. 同一个业务动作重放时必须生成相同 `frameId`。
 5. extension 必须把 `frameId` 当作幂等键。重复收到同一个 `frameId` 时不得重复发送外部消息。
@@ -180,7 +178,7 @@ payload 约定：
 2. `DRAFT_UPDATE`
    - 必须带 `messageId / blockId / blockType`。
    - `TEXT` block 必须带 `delta`。
-   - 如果合并多个 delta，`delta` 是合并后的增量文本。
+   - draft 是 best-effort transient 体验，可以逐 source frame 下发，不参与 final/ACK/checkpoint 正确性。
 3. `DRAFT_COMPLETE`
    - 必须带 `messageId / blockId / block`。
    - `block` 是 canonical session message block。
@@ -608,10 +606,9 @@ ACK 规则：
 
 remote extension 凭证：
 
-1. `credentialRef` 是 extension-facing frame 的可选字段。
-2. `credentialRef` 只表示受控凭证引用，不暴露 raw secret。
-3. extension 解析凭证时必须走现有 credential lifecycle 或等价的 secret backend。
-4. credential scope 必须绑定 `registrationId / providerType / channelProfileId`。
+1. outbound frame 不携带 credential reference，也不携带 raw credential。
+2. remote extension provider 自己管理外部平台 credential。
+3. 如果后续需要 core 中转外部平台调用，必须单独定义 API 边界、授权和审计语义；不能把凭证引用加入 outbound frame。
 
 ## 11. Capability 与 manifest 改造
 
@@ -624,7 +621,6 @@ channel provider descriptor 的 outbound 能力收敛为明确对象：
     "supportsTyping": true,
     "supportsDraftUpdate": true,
     "supportsFinalDelivery": true,
-    "supportsCredentialRef": true,
     "requiresIdempotentFinalDelivery": true
   }
 }
@@ -644,18 +640,16 @@ descriptor 校验：
 3. `requiresIdempotentFinalDelivery` 必须为 true。
 4. 如果 `supportsDraftUpdate=false`，gateway 不向 extension 下发 `DRAFT_UPDATE / DRAFT_COMPLETE / DRAFT_DISCARD`。
 5. 如果 `supportsTyping=false`，gateway 不下发 `TYPING_*`。
-6. remote provider 如果需要外部平台凭证，必须声明 `supportsCredentialRef=true`。
 
-## 12. Backpressure 与合并
+## 12. Backpressure 与 transient 策略
 
 不能把每个模型 token 无限制推给 extension。
 
 API 发布侧：
 
-1. 对 `DRAFT_UPDATE` 做 profile/session/turn/block 维度短窗口合并。
-2. 默认合并窗口 100ms。
-3. 合并后 frameId 使用 `firstSourceSeq-lastSourceSeq`，避免重放时幂等键漂移。
-4. customer-visible 校验仍在 API 边界完成，不能把 INTERNAL/DEVELOPER frame 投到 channel outbound frame。
+1. 不做 `DRAFT_UPDATE` 短窗口合并；transient frame 可以逐 frame SSE。
+2. draft 是 best-effort，不影响 `FINAL_DELIVERY`、ACK 或 checkpoint 正确性。
+3. customer-visible 校验仍在 API 边界完成，不能把 INTERNAL/DEVELOPER frame 投到 channel outbound frame。
 
 channel-gateway 下发侧：
 
@@ -684,9 +678,8 @@ final replay window：
    - providerType 与 channel profile 匹配
    - channel profile ACTIVE
 3. extension stream 只能订阅自己 providerType/registrationId 暴露的 profile。
-4. frame payload 不包含 secret、account credential、raw provider token。
-5. `credentialRef` 必须是 scoped reference，不是 secret value。
-6. customer-visible frame 只允许客户可见文本和 canonical message block。
+4. frame payload 不包含 secret、account credential、raw provider token，也不包含 credential reference。
+5. customer-visible frame 只允许客户可见文本和 canonical message block。
 
 ## 14. 前面 review findings 的落点
 
@@ -704,7 +697,7 @@ final replay window：
 
 ### Finding 4: Remote extension 凭证上下文被切断
 
-落点：frame 增加可选 `credentialRef`。它是 scoped credential reference，不是 raw secret。remote extension 需要凭证时按 `registrationId / providerType / channelProfileId` scope 解析。
+落点：不在 outbound frame 下发 credential reference。remote extension provider 自己管理外部平台 credential；core 如需参与外部平台调用，只能通过独立 API 做受控中转。
 
 ### Finding 5: DRAFT_COMPLETE 与 FINAL_DELIVERY 可能双发
 
@@ -712,7 +705,7 @@ final replay window：
 
 ### Finding 6: Coalescing 与 frameId 稳定性冲突
 
-落点：coalesced draft frame 使用 `firstSourceSeq-lastSourceSeq` 生成 frameId；draft 不参与 durable recovery，断线后不从中间补 draft。
+落点：不做短窗口合并。transient frame 逐 frame SSE，draft 不参与 durable recovery，断线后不从中间补 draft。
 
 ## 15. 实施阶段
 

@@ -2598,10 +2598,6 @@ components:
         idempotencyKey:
           type: string
           minLength: 1
-        credentialRef:
-          type: string
-          nullable: true
-          description: Scoped credential reference only; never raw credential material.
         payload:
           type: object
           additionalProperties: true
@@ -2646,7 +2642,7 @@ components:
           type: object
           additionalProperties: true
           nullable: true
-          description: Sanitized diagnostics only. Raw provider response, credential, credentialRef, and externalSecretRef are forbidden.
+          description: Sanitized diagnostics only. Raw provider response, credential, and externalSecretRef are forbidden.
     ChannelOutboundConsumerKind:
       type: string
       enum: [REMOTE_EXTENSION, GATEWAY_NATIVE]

@@ -444,7 +444,6 @@ def _channel_outbound_capability() -> dict[str, Any]:
         "supportsTyping": True,
         "supportsDraftUpdate": True,
         "supportsFinalDelivery": True,
-        "supportsCredentialRef": False,
         "requiresIdempotentFinalDelivery": True,
     }
 

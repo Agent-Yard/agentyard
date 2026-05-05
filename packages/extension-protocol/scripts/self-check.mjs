@@ -751,7 +751,6 @@ function validateChannelProviderOutbound(outbound, pathPrefix, errors) {
       "supportsTyping",
       "supportsDraftUpdate",
       "supportsFinalDelivery",
-      "supportsCredentialRef",
       "requiresIdempotentFinalDelivery"
     ],
     pathPrefix,
@@ -1252,7 +1251,6 @@ function channelProviderDigestObject(descriptor) {
     outbound: {
       mode: descriptor.outbound?.mode ?? null,
       requiresIdempotentFinalDelivery: descriptor.outbound?.requiresIdempotentFinalDelivery === true,
-      supportsCredentialRef: descriptor.outbound?.supportsCredentialRef === true,
       supportsDraftUpdate: descriptor.outbound?.supportsDraftUpdate === true,
       supportsFinalDelivery: descriptor.outbound?.supportsFinalDelivery === true,
       supportsTyping: descriptor.outbound?.supportsTyping === true

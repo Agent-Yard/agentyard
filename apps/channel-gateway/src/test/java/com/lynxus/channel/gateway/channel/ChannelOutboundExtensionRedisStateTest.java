@@ -138,7 +138,6 @@ class ChannelOutboundExtensionRedisStateTest {
             ChannelOutboundFrameKind.FINAL_DELIVERY,
             Instant.parse("2026-05-05T00:00:00Z"),
             frameId(finalSequence),
-            null,
             Map.of(
                 "sessionMessageId", "message-" + finalSequence,
                 "messageSequence", finalSequence,

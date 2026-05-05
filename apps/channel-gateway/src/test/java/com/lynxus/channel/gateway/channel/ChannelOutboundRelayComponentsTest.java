@@ -148,7 +148,6 @@ class ChannelOutboundRelayComponentsTest {
                 supportsTyping,
                 supportsDraft,
                 supportsFinal,
-                false,
                 true
             ),
             Map.of()
@@ -194,7 +193,6 @@ class ChannelOutboundRelayComponentsTest {
             kind,
             Instant.parse("2026-05-04T10:00:00Z"),
             "profile-1:turn-execution-1:1:" + kind,
-            null,
             payload,
             null
         );
@@ -217,7 +215,6 @@ class ChannelOutboundRelayComponentsTest {
             ChannelOutboundFrameKind.FINAL_DELIVERY,
             Instant.parse("2026-05-04T10:00:00Z"),
             frameId,
-            null,
             Map.of(
                 "sessionMessageId", "message-" + finalSequence,
                 "messageSequence", finalSequence,

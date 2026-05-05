@@ -342,7 +342,6 @@ public final class ChannelContracts {
         boolean supportsTyping,
         boolean supportsDraftUpdate,
         boolean supportsFinalDelivery,
-        boolean supportsCredentialRef,
         boolean requiresIdempotentFinalDelivery
     ) {
         public static final String FRAME_STREAM_MODE = "FRAME_STREAM";
@@ -375,7 +374,6 @@ public final class ChannelContracts {
         ChannelOutboundFrameKind kind,
         Instant occurredAt,
         String idempotencyKey,
-        String credentialRef,
         Map<String, Object> payload,
         NormalizedChannelTraceContext traceContext
     ) {
@@ -557,7 +555,7 @@ public final class ChannelContracts {
     }
 
     private static void forbidAckMetadataFields(Map<String, Object> metadata) {
-        for (String field : List.of("providerResponse", "rawProviderResponse", "credential", "credentialRef", "externalSecretRef")) {
+        for (String field : List.of("providerResponse", "rawProviderResponse", "credential", "externalSecretRef")) {
             if (metadata.containsKey(field)) {
                 throw new IllegalArgumentException("ACK metadata must not contain " + field);
             }

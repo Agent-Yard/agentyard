@@ -197,7 +197,7 @@ def test_channel_outbound_ack_schema_forbids_provider_response_and_credential_fi
     }
     assert not list(validator.iter_errors(ack))
 
-    for forbidden_field in {"providerResponse", "rawProviderResponse", "credential", "credentialRef", "externalSecretRef"}:
+    for forbidden_field in {"providerResponse", "rawProviderResponse", "credential", "externalSecretRef"}:
         invalid_ack = dict(ack, metadata={forbidden_field: "secret-or-raw-response"})
         assert list(validator.iter_errors(invalid_ack)), forbidden_field
 

@@ -112,7 +112,6 @@
           "supportsTyping": true,
           "supportsDraftUpdate": true,
           "supportsFinalDelivery": true,
-          "supportsCredentialRef": true,
           "requiresIdempotentFinalDelivery": true
         },
         "endpoints": {

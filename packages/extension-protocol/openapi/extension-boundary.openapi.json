@@ -859,7 +859,7 @@
       "ChannelProviderOutboundCapability": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["mode", "supportsTyping", "supportsDraftUpdate", "supportsFinalDelivery", "supportsCredentialRef", "requiresIdempotentFinalDelivery"],
+        "required": ["mode", "supportsTyping", "supportsDraftUpdate", "supportsFinalDelivery", "requiresIdempotentFinalDelivery"],
         "properties": {
           "mode": {
             "type": "string",
@@ -875,9 +875,6 @@
             "type": "boolean",
             "const": true,
             "description": "Must be true for FRAME_STREAM channel providers."
-          },
-          "supportsCredentialRef": {
-            "type": "boolean"
           },
           "requiresIdempotentFinalDelivery": {
             "type": "boolean",
@@ -1343,9 +1340,6 @@
           "idempotencyKey": {
             "type": "string"
           },
-          "credentialRef": {
-            "type": ["string", "null"]
-          },
           "payload": {
             "$ref": "#/components/schemas/JsonObject",
             "description": "Kind-specific payload. The JSON Schema assets define illegal kind/payload combinations."
@@ -1519,9 +1513,6 @@
                 },
                 {
                   "required": ["credential"]
-                },
-                {
-                  "required": ["credentialRef"]
                 },
                 {
                   "required": ["externalSecretRef"]

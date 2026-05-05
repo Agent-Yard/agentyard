@@ -222,7 +222,6 @@ public class ChannelOutboundFramePublisher {
             ChannelOutboundFrameKind.FINAL_DELIVERY,
             message.updatedAt() == null ? message.createdAt() : message.updatedAt(),
             frameId,
-            null,
             Map.copyOf(payload),
             null
         );

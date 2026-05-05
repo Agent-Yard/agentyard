@@ -59,7 +59,6 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
             "supportsTyping", false,
             "supportsDraftUpdate", false,
             "supportsFinalDelivery", true,
-            "supportsCredentialRef", false,
             "requiresIdempotentFinalDelivery", true
         ));
         descriptor.put("jobDefinitions", List.of());

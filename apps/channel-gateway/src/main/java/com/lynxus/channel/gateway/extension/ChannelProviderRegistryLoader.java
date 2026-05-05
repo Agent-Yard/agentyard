@@ -203,7 +203,6 @@ public final class ChannelProviderRegistryLoader {
             Boolean.TRUE.equals(outbound.get("supportsTyping")),
             Boolean.TRUE.equals(outbound.get("supportsDraftUpdate")),
             Boolean.TRUE.equals(outbound.get("supportsFinalDelivery")),
-            Boolean.TRUE.equals(outbound.get("supportsCredentialRef")),
             Boolean.TRUE.equals(outbound.get("requiresIdempotentFinalDelivery"))
         );
     }

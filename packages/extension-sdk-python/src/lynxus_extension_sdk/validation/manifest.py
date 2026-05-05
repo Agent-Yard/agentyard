@@ -226,7 +226,6 @@ def _validate_channel_provider_outbound(
         "supportsTyping",
         "supportsDraftUpdate",
         "supportsFinalDelivery",
-        "supportsCredentialRef",
         "requiresIdempotentFinalDelivery",
     }:
         if not isinstance(outbound.get(field), bool):

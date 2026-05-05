@@ -236,7 +236,6 @@ public final class ManifestValidator {
             "supportsTyping",
             "supportsDraftUpdate",
             "supportsFinalDelivery",
-            "supportsCredentialRef",
             "requiresIdempotentFinalDelivery"
         )) {
             if (!(outbound.get(field) instanceof Boolean)) {

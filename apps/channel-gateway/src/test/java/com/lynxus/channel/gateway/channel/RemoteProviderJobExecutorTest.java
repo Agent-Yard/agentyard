@@ -185,7 +185,6 @@ class RemoteProviderJobExecutorTest {
             "supportsTyping", false,
             "supportsDraftUpdate", false,
             "supportsFinalDelivery", true,
-            "supportsCredentialRef", false,
             "requiresIdempotentFinalDelivery", true
         );
     }

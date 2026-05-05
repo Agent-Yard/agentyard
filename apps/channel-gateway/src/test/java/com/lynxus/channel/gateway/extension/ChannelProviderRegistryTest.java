@@ -265,7 +265,6 @@ final class ChannelProviderRegistryTest {
             "supportsTyping", supportsTyping,
             "supportsDraftUpdate", supportsDraftUpdate,
             "supportsFinalDelivery", true,
-            "supportsCredentialRef", false,
             "requiresIdempotentFinalDelivery", true
         );
     }

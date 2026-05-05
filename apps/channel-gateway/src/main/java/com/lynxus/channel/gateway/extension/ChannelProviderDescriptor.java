@@ -63,10 +63,6 @@ public record ChannelProviderDescriptor(
         return outboundCapability.supportsFinalDelivery();
     }
 
-    public boolean supportsCredentialRef() {
-        return outboundCapability.supportsCredentialRef();
-    }
-
     private static Map<String, Object> immutableObject(Map<String, Object> value) {
         if (value == null || value.isEmpty()) {
             return Map.of();

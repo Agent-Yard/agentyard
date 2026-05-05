@@ -476,7 +476,6 @@ export interface ChannelProviderOutboundCapability {
   supportsTyping: boolean;
   supportsDraftUpdate: boolean;
   supportsFinalDelivery: true;
-  supportsCredentialRef: boolean;
   requiresIdempotentFinalDelivery: true;
 }
 
@@ -525,7 +524,6 @@ export type ChannelOutboundTransientFrame =
       kind: 'TYPING_START' | 'TYPING_STOP';
       occurredAt: string;
       idempotencyKey: string;
-      credentialRef?: string | null;
       payload: ChannelOutboundTypingPayload;
       traceContext?: NormalizedChannelTraceContext | null;
     }
@@ -543,7 +541,6 @@ export type ChannelOutboundTransientFrame =
       kind: 'DRAFT_UPDATE';
       occurredAt: string;
       idempotencyKey: string;
-      credentialRef?: string | null;
       payload: ChannelOutboundDraftUpdatePayload;
       traceContext?: NormalizedChannelTraceContext | null;
     }
@@ -561,7 +558,6 @@ export type ChannelOutboundTransientFrame =
       kind: 'DRAFT_COMPLETE';
       occurredAt: string;
       idempotencyKey: string;
-      credentialRef?: string | null;
       payload: ChannelOutboundDraftCompletePayload;
       traceContext?: NormalizedChannelTraceContext | null;
     }
@@ -579,7 +575,6 @@ export type ChannelOutboundTransientFrame =
       kind: 'DRAFT_DISCARD';
       occurredAt: string;
       idempotencyKey: string;
-      credentialRef?: string | null;
       payload: ChannelOutboundDraftDiscardPayload;
       traceContext?: NormalizedChannelTraceContext | null;
     };
@@ -596,7 +591,6 @@ export interface ChannelOutboundFinalDeliveryFrame {
   kind: 'FINAL_DELIVERY';
   occurredAt: string;
   idempotencyKey: string;
-  credentialRef?: string | null;
   payload: ChannelOutboundFinalDeliveryPayload;
   traceContext?: NormalizedChannelTraceContext | null;
 }

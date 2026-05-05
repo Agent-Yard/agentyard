@@ -73,10 +73,6 @@
       "type": "string",
       "minLength": 1
     },
-    "credentialRef": {
-      "type": ["string", "null"],
-      "description": "Scoped credential reference for remote providers. This field must never contain raw secret material."
-    },
     "payload": {
       "type": "object"
     },

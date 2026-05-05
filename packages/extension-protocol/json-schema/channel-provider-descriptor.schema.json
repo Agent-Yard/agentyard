@@ -65,7 +65,6 @@
         "supportsTyping",
         "supportsDraftUpdate",
         "supportsFinalDelivery",
-        "supportsCredentialRef",
         "requiresIdempotentFinalDelivery"
       ],
       "properties": {
@@ -82,9 +81,6 @@
         "supportsFinalDelivery": {
           "type": "boolean",
           "const": true
-        },
-        "supportsCredentialRef": {
-          "type": "boolean"
         },
         "requiresIdempotentFinalDelivery": {
           "type": "boolean",

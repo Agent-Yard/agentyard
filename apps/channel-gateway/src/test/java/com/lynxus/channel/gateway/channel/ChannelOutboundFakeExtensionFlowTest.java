@@ -277,7 +277,7 @@ class ChannelOutboundFakeExtensionFlowTest {
             "digest",
             Map.of(),
             Map.of(),
-            new ChannelProviderOutboundCapability("FRAME_STREAM", true, true, true, false, true),
+            new ChannelProviderOutboundCapability("FRAME_STREAM", true, true, true, true),
             Map.of()
         );
     }
@@ -299,7 +299,6 @@ class ChannelOutboundFakeExtensionFlowTest {
             ChannelOutboundFrameKind.FINAL_DELIVERY,
             Instant.parse("2026-05-05T00:00:00Z"),
             frameId,
-            null,
             Map.of(
                 "sessionMessageId", "message-501",
                 "messageSequence", 501,

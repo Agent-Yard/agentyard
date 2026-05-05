@@ -143,7 +143,6 @@ class ChannelOutboundFramePublisherTest {
             ChannelOutboundFrameKind.TYPING_START,
             Instant.parse("2026-05-02T00:00:00Z"),
             "channel-profile-1:exec-1:" + sourceSeq + ":TYPING_START",
-            null,
             Map.of("messageId", "message-1"),
             null
         );

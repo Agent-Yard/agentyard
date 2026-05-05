@@ -129,7 +129,7 @@ class ChannelOutboundExtensionSubscriptionServiceTest {
             "digest",
             Map.of(),
             Map.of(),
-            new ChannelProviderOutboundCapability("FRAME_STREAM", true, true, true, false, true),
+            new ChannelProviderOutboundCapability("FRAME_STREAM", true, true, true, true),
             Map.of()
         );
     }
