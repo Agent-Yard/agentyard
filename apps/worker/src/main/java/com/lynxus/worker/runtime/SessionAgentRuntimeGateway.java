@@ -111,12 +111,11 @@ public interface SessionAgentRuntimeGateway {
                     .header("Content-Type", "application/json")
                     .header("Accept", "application/x-ndjson")
                     .header("Authorization", authorizationHeaderValue)
-                    .timeout(streamIdleTimeout)
                     .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                     .build();
                 HttpResponse<InputStream> response;
                 try {
-                    response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofInputStream());
+                    response = sendStreamRequestWithResponseDeadline(httpRequest);
                 } catch (HttpTimeoutException error) {
                     recordStreamStall(context, "request", error);
                     try (TransientFrameIngestSession frameIngest = startTransientFrameIngest(context)) {
@@ -142,6 +141,32 @@ public interface SessionAgentRuntimeGateway {
                     Thread.currentThread().interrupt();
                 }
                 throw new IllegalStateException("failed to invoke session agent-runtime stream endpoint", error);
+            }
+        }
+
+        private HttpResponse<InputStream> sendStreamRequestWithResponseDeadline(
+            HttpRequest httpRequest
+        ) throws IOException, InterruptedException {
+            CompletableFuture<HttpResponse<InputStream>> responseFuture = httpClient.sendAsync(
+                httpRequest,
+                HttpResponse.BodyHandlers.ofInputStream()
+            );
+            try {
+                return responseFuture.get(Math.max(1, streamIdleTimeout.toMillis()), TimeUnit.MILLISECONDS);
+            } catch (TimeoutException error) {
+                responseFuture.cancel(true);
+                HttpTimeoutException timeout = new HttpTimeoutException("agent-runtime stream response timed out");
+                timeout.initCause(error);
+                throw timeout;
+            } catch (ExecutionException error) {
+                Throwable cause = error.getCause();
+                if (cause instanceof IOException ioError) {
+                    throw ioError;
+                }
+                throw new IOException("agent-runtime stream request failed", cause);
+            } catch (InterruptedException error) {
+                responseFuture.cancel(true);
+                throw error;
             }
         }
 

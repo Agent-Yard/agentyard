@@ -136,7 +136,7 @@ class ChannelOutboundUpstreamRelaySupervisorTest {
         private final AtomicReference<StreamRequest> request = new AtomicReference<>();
 
         private CapturingStreamClient() {
-            super(new ObjectMapper(), "http://api.example.com", "token", HttpClient.newHttpClient(), Duration.ofSeconds(1));
+            super(new ObjectMapper(), "http://api.example.com", "token", HttpClient.newHttpClient());
         }
 
         @Override
@@ -147,7 +147,7 @@ class ChannelOutboundUpstreamRelaySupervisorTest {
 
     private static final class EmittingStreamClient extends ChannelOutboundApiFrameStreamClient {
         private EmittingStreamClient() {
-            super(new ObjectMapper(), "http://api.example.com", "token", HttpClient.newHttpClient(), Duration.ofSeconds(1));
+            super(new ObjectMapper(), "http://api.example.com", "token", HttpClient.newHttpClient());
         }
 
         @Override

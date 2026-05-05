@@ -73,7 +73,7 @@ public class GatewayNativeChannelOutboundFrameDispatcher {
         immediateDispatchExecutor.shutdownNow();
     }
 
-    @Scheduled(fixedDelayString = "#{@channelOutboundRelayProperties.scanFixedDelay.toMillis()}")
+    @Scheduled(fixedDelayString = "${lynxus.channel-gateway.outbound-relay.scan-fixed-delay:PT5S}")
     public void dispatchAvailableFrames() {
         if (!properties.isEnabled()) {
             return;

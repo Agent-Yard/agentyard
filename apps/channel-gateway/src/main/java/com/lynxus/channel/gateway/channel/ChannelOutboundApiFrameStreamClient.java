@@ -11,7 +11,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import tools.jackson.databind.ObjectMapper;
@@ -24,26 +23,22 @@ class ChannelOutboundApiFrameStreamClient {
     private final String apiBaseUrl;
     private final String internalAuthToken;
     private final HttpClient httpClient;
-    private final Duration connectTimeout;
 
     ChannelOutboundApiFrameStreamClient(
         ObjectMapper objectMapper,
         String apiBaseUrl,
         String internalAuthToken,
-        HttpClient httpClient,
-        Duration connectTimeout
+        HttpClient httpClient
     ) {
         this.objectMapper = objectMapper;
         this.apiBaseUrl = requireText(apiBaseUrl, "lynxus.api.base-url");
         this.internalAuthToken = requireText(internalAuthToken, "lynxus.internal-auth.token");
         this.httpClient = httpClient;
-        this.connectTimeout = connectTimeout == null ? Duration.ofSeconds(10) : connectTimeout;
     }
 
     void stream(StreamRequest request, StreamHandler handler) throws Exception {
         HttpRequest.Builder builder = HttpRequest.newBuilder()
             .uri(streamUri(request.channelProfileId()))
-            .timeout(connectTimeout)
             .GET()
             .header("Accept", "text/event-stream")
             .header("Authorization", "Bearer " + internalAuthToken)

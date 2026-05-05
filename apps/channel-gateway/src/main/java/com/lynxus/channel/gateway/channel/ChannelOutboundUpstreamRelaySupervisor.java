@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -52,6 +53,7 @@ public class ChannelOutboundUpstreamRelaySupervisor {
     private final Map<String, Subscription> subscriptions = new ConcurrentHashMap<>();
     private final Map<String, String> lastStreamCursorByConsumer = new ConcurrentHashMap<>();
 
+    @Autowired
     public ChannelOutboundUpstreamRelaySupervisor(
         ChannelAdminRepository repository,
         ChannelOutboundProfileConsumerResolver consumerResolver,
@@ -80,8 +82,9 @@ public class ChannelOutboundUpstreamRelaySupervisor {
                 objectMapper,
                 apiBaseUrl,
                 internalAuthToken,
-                HttpClient.newHttpClient(),
-                properties.getConnectTimeout()
+                HttpClient.newBuilder()
+                    .connectTimeout(properties.getConnectTimeout())
+                    .build()
             ),
             Executors.newCachedThreadPool(Thread.ofVirtual().name("channel-outbound-upstream-", 0).factory()),
             "channel-gateway:" + UUID.randomUUID()
@@ -116,7 +119,7 @@ public class ChannelOutboundUpstreamRelaySupervisor {
         this.instanceOwnerPrefix = instanceOwnerPrefix;
     }
 
-    @Scheduled(fixedDelayString = "#{@channelOutboundRelayProperties.scanFixedDelay.toMillis()}")
+    @Scheduled(fixedDelayString = "${lynxus.channel-gateway.outbound-relay.scan-fixed-delay:PT5S}")
     public void reconcileSubscriptions() {
         if (!properties.isEnabled()) {
             stopAll();
@@ -144,7 +147,7 @@ public class ChannelOutboundUpstreamRelaySupervisor {
         }
     }
 
-    @Scheduled(fixedDelayString = "#{@channelOutboundRelayProperties.scanFixedDelay.toMillis()}")
+    @Scheduled(fixedDelayString = "${lynxus.channel-gateway.outbound-relay.scan-fixed-delay:PT5S}")
     public void renewOwnership() {
         for (Map.Entry<String, Subscription> entry : subscriptions.entrySet()) {
             Subscription subscription = entry.getValue();

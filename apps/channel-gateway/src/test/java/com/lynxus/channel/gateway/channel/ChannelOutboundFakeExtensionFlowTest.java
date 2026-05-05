@@ -196,7 +196,7 @@ class ChannelOutboundFakeExtensionFlowTest {
         private final List<StreamRequest> requests = new ArrayList<>();
 
         private ReplayStreamClient(ChannelOutboundFrame frame) {
-            super(new ObjectMapper(), "http://api.example.com", "token", HttpClient.newHttpClient(), Duration.ofSeconds(1));
+            super(new ObjectMapper(), "http://api.example.com", "token", HttpClient.newHttpClient());
             this.frame = frame;
         }
 

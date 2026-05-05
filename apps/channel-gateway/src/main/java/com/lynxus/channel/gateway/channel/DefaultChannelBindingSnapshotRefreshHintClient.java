@@ -7,6 +7,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -21,6 +23,7 @@ final class DefaultChannelBindingSnapshotRefreshHintClient implements ChannelBin
     private final String internalAuthToken;
     private final HttpClient httpClient;
 
+    @Autowired
     DefaultChannelBindingSnapshotRefreshHintClient(
         ObjectMapper objectMapper,
         @Value("${lynxus.api.base-url}") String apiBaseUrl,

@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -47,6 +48,7 @@ public class ChannelOutboundFramePublisher {
     private final Map<String, CopyOnWriteArraySet<Subscriber>> subscribersByProfile = new ConcurrentHashMap<>();
     private AutoCloseable subscription;
 
+    @Autowired
     public ChannelOutboundFramePublisher(
         SessionRuntimeRepository repository,
         RedisPubSubBus pubSubBus,

@@ -10,6 +10,16 @@ spring:
     url: ${LYNXUS_CHANNEL_GATEWAY_DATASOURCE_URL:jdbc:postgresql://127.0.0.1:5432/lynxus_channel_gateway}
     username: ${SPRING_DATASOURCE_USERNAME:lynxus}
     password: ${SPRING_DATASOURCE_PASSWORD:lynxus}
+  data:
+    redis:
+      host: ${LYNXUS_REDIS_HOST:127.0.0.1}
+      port: ${LYNXUS_REDIS_PORT:6379}
+      database: ${LYNXUS_REDIS_DATABASE:0}
+      username: ${LYNXUS_REDIS_USERNAME:}
+      password: ${LYNXUS_REDIS_PASSWORD:lynxus}
+      ssl:
+        enabled: ${LYNXUS_REDIS_SSL_ENABLED:false}
+      timeout: ${LYNXUS_REDIS_TIMEOUT:3s}
   flyway:
     enabled: true
     table: channel_gateway_schema_history

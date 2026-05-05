@@ -352,6 +352,7 @@ stream 与 checkpoint 规则：
 10. 如果达到 replay window 但 durable final backlog 仍未追平，API 发送 `final-replay-window-exhausted` 后正常结束连接；gateway 等 pending final 降到低水位后再用最新 checkpoint 重新连接。
 11. 如果 durable final replay 已追平，API 保持 SSE 连接，继续发送 live transient/final frames。
 12. 如果 checkpoint header 非法，API 返回 400/422，不静默降级为全量 replay。
+13. 待补：API internal SSE 在 live idle 期间发送 heartbeat comment，建议间隔 15-30 秒；heartbeat 不带 `id`、不推进 `streamCursor`，也不参与 final checkpoint，只用于避免代理/网关 idle timeout 断开长期空闲连接。
 
 API 侧职责：
 
@@ -890,10 +891,11 @@ externalConversationId
 6. extension 重复收到同一 final frame。
 7. extension 收到 final 后发送成功但 ACK 前崩溃。
 8. gateway checkpoint 表落后于 extension 本地幂等记录。
-9. forwarded marker TTL 过期后 extension 才 ACK。
-10. binding disabled/deleted tombstone 丢失后由 full reconcile 清理。
-11. extension 先 ACK 后续 final、前序 final 未 ACK。
-12. gateway-native provider 同一 profile consumer 下多个 session final 并发到达。
+9. API internal SSE live idle 超过常见代理 idle timeout，确认 heartbeat comment 能保持连接且不改变 replay/checkpoint 语义。
+10. forwarded marker TTL 过期后 extension 才 ACK。
+11. binding disabled/deleted tombstone 丢失后由 full reconcile 清理。
+12. extension 先 ACK 后续 final、前序 final 未 ACK。
+13. gateway-native provider 同一 profile consumer 下多个 session final 并发到达。
 
 ## 16. 最终验收标准
 
