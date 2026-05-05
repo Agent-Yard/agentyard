@@ -23,6 +23,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
+import static com.lynxus.persistence.jooq.Tables.CHANNEL_SESSION_BINDING_SNAPSHOT;
+
 class JooqSessionRuntimeRepositoryTest {
     private static EmbeddedPostgresTestDatabase database;
 
@@ -132,5 +134,113 @@ class JooqSessionRuntimeRepositoryTest {
         assertEquals(1L, stamp.latestMessageSequence());
         assertEquals(1L, stamp.latestEventSequence());
         assertTrue(stamp.fingerprint().startsWith("session-1:"));
+    }
+
+    @Test
+    void listsChannelOutboundFinalMessagesByFinalSequenceNotCreatedAt() {
+        Instant now = Instant.parse("2026-05-02T00:00:00Z");
+        repository.saveSession(session("session-1", "assistant-1", now));
+        repository.saveSession(session("session-2", "assistant-1", now));
+        insertSnapshot("binding-1", "session-1", "channel-profile-1", "assistant-1", "chat-1", now);
+        insertSnapshot("binding-2", "session-2", "channel-profile-1", "assistant-1", "chat-2", now);
+        repository.appendMessage(message(
+            "message-final-1",
+            "session-1",
+            1L,
+            SessionMessageRole.ASSISTANT,
+            Instant.parse("2026-05-02T00:00:10Z")
+        ));
+        repository.appendMessage(message(
+            "message-final-2",
+            "session-2",
+            1L,
+            SessionMessageRole.ASSISTANT,
+            Instant.parse("2026-05-02T00:00:01Z")
+        ));
+        repository.appendMessage(message(
+            "message-user-3",
+            "session-2",
+            2L,
+            SessionMessageRole.USER,
+            Instant.parse("2026-05-02T00:00:20Z")
+        ));
+
+        var messages = repository.listChannelOutboundFinalMessages("channel-profile-1", 0L, 10);
+
+        assertEquals(List.of("message-final-1", "message-final-2"), messages.stream().map(item -> item.messageId()).toList());
+        assertTrue(messages.get(0).finalSequence() < messages.get(1).finalSequence());
+    }
+
+    private static SessionRuntimeDtos.SessionRuntimeSessionDto session(String sessionId, String assistantId, Instant now) {
+        return new SessionRuntimeDtos.SessionRuntimeSessionDto(
+            sessionId,
+            "scenario-1",
+            "session " + sessionId,
+            "customer-" + sessionId,
+            assistantId,
+            "Assistant",
+            "1.0.0",
+            "ACTIVE",
+            "agent-1",
+            "agent-1",
+            null,
+            false,
+            false,
+            false,
+            false,
+            Map.of(),
+            null,
+            now,
+            now,
+            null,
+            0L,
+            0L
+        );
+    }
+
+    private static SessionMessage message(
+        String messageId,
+        String sessionId,
+        long sequence,
+        SessionMessageRole role,
+        Instant createdAt
+    ) {
+        return new SessionMessage(
+            messageId,
+            sessionId,
+            sequence,
+            role,
+            new SessionMessageSender(SessionMessageSenderType.AGENT, "agent-1", "agent-1"),
+            SessionMessageStatus.SENT,
+            List.of(Map.of("type", "TEXT", "text", messageId)),
+            Map.of(),
+            null,
+            "agent-1",
+            null,
+            createdAt,
+            createdAt
+        );
+    }
+
+    private void insertSnapshot(
+        String bindingId,
+        String sessionId,
+        String channelProfileId,
+        String assistantId,
+        String externalConversationId,
+        Instant now
+    ) {
+        database.dsl().insertInto(CHANNEL_SESSION_BINDING_SNAPSHOT)
+            .set(CHANNEL_SESSION_BINDING_SNAPSHOT.BINDING_ID, bindingId)
+            .set(CHANNEL_SESSION_BINDING_SNAPSHOT.SESSION_ID, sessionId)
+            .set(CHANNEL_SESSION_BINDING_SNAPSHOT.CHANNEL_PROFILE_ID, channelProfileId)
+            .set(CHANNEL_SESSION_BINDING_SNAPSHOT.PROVIDER_TYPE, "provider.acme")
+            .set(CHANNEL_SESSION_BINDING_SNAPSHOT.EXTERNAL_CONVERSATION_ID, externalConversationId)
+            .set(CHANNEL_SESSION_BINDING_SNAPSHOT.ASSISTANT_ID, assistantId)
+            .set(CHANNEL_SESSION_BINDING_SNAPSHOT.BINDING_STATUS, "ACTIVE")
+            .set(CHANNEL_SESSION_BINDING_SNAPSHOT.PROFILE_STATUS, "ACTIVE")
+            .set(CHANNEL_SESSION_BINDING_SNAPSHOT.PROFILE_REVISION, 1L)
+            .set(CHANNEL_SESSION_BINDING_SNAPSHOT.UPDATED_AT, java.time.OffsetDateTime.parse(now.toString()))
+            .execute();
     }
 }

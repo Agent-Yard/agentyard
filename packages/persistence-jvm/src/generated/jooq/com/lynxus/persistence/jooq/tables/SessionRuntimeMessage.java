@@ -132,6 +132,11 @@ public class SessionRuntimeMessage extends TableImpl<SessionRuntimeMessageRecord
      */
     public final TableField<SessionRuntimeMessageRecord, OffsetDateTime> UPDATED_AT = createField(DSL.name("updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false), this, "");
 
+    /**
+     * The column <code>public.session_runtime_message.final_sequence</code>.
+     */
+    public final TableField<SessionRuntimeMessageRecord, Long> FINAL_SEQUENCE = createField(DSL.name("final_sequence"), SQLDataType.BIGINT.nullable(false).defaultValue(DSL.field(DSL.raw("nextval('channel_outbound_final_sequence'::regclass)"), SQLDataType.BIGINT)), this, "");
+
     private SessionRuntimeMessage(Name alias, Table<SessionRuntimeMessageRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -170,7 +175,7 @@ public class SessionRuntimeMessage extends TableImpl<SessionRuntimeMessageRecord
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_SESSION_RUNTIME_MESSAGE_SESSION, Indexes.UK_SESSION_RUNTIME_MESSAGE_SEQUENCE);
+        return Arrays.asList(Indexes.IDX_SESSION_RUNTIME_MESSAGE_FINAL_REPLAY, Indexes.IDX_SESSION_RUNTIME_MESSAGE_SESSION, Indexes.UK_SESSION_RUNTIME_MESSAGE_FINAL_SEQUENCE, Indexes.UK_SESSION_RUNTIME_MESSAGE_SEQUENCE);
     }
 
     @Override

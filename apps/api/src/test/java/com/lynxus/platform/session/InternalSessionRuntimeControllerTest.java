@@ -51,7 +51,6 @@ class InternalSessionRuntimeControllerTest {
         return MockMvcBuilders.standaloneSetup(new InternalSessionRuntimeController(
             mock(SessionRuntimeService.class),
             streamService,
-            mock(SessionChannelOutboundRelay.class),
             new InternalRuntimeAuth("internal-token"),
             new ObjectMapper()
         )).build();

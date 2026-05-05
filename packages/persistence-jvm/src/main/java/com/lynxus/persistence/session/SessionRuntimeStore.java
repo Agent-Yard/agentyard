@@ -26,9 +26,19 @@ import static com.lynxus.persistence.jooq.Tables.SESSION_RUNTIME_EVENT;
 import static com.lynxus.persistence.jooq.Tables.SESSION_RUNTIME_MESSAGE;
 import static com.lynxus.persistence.jooq.Tables.SESSION_RUNTIME_PLAYBOOK_RUN;
 import static com.lynxus.persistence.jooq.Tables.SESSION_RUNTIME_SESSION;
+import static com.lynxus.persistence.jooq.Tables.CHANNEL_SESSION_BINDING_SNAPSHOT;
 
 public final class SessionRuntimeStore {
     private static final List<String> ACTIVE_STATUSES = List.of("ACTIVE", "IDLE", "DRAINING");
+    private static final List<String> OUTBOUND_MESSAGE_ROLES = List.of(
+        SessionMessageRole.ASSISTANT.name(),
+        SessionMessageRole.HUMAN_OPERATOR.name(),
+        SessionMessageRole.SYSTEM.name()
+    );
+    private static final List<String> FINAL_MESSAGE_STATUSES = List.of(
+        SessionMessageStatus.SENT.name(),
+        SessionMessageStatus.DELIVERED.name()
+    );
 
     private final DSLContext dsl;
     private final JooqJsonbSupport jsonbSupport;
@@ -213,6 +223,47 @@ public final class SessionRuntimeStore {
             .execute();
     }
 
+    public List<ChannelOutboundFinalMessageData> listChannelOutboundFinalMessages(
+        String channelProfileId,
+        long afterFinalSequence,
+        int limit
+    ) {
+        Field<Integer> blockCount = DSL.field(
+            "jsonb_array_length({0})",
+            Integer.class,
+            SESSION_RUNTIME_MESSAGE.BLOCKS
+        );
+        return dsl.select(
+                SESSION_RUNTIME_MESSAGE.MESSAGE_ID,
+                SESSION_RUNTIME_MESSAGE.SESSION_ID,
+                SESSION_RUNTIME_MESSAGE.SEQUENCE,
+                SESSION_RUNTIME_MESSAGE.ROLE,
+                SESSION_RUNTIME_MESSAGE.BLOCKS,
+                SESSION_RUNTIME_MESSAGE.METADATA,
+                SESSION_RUNTIME_MESSAGE.CREATED_AT,
+                SESSION_RUNTIME_MESSAGE.UPDATED_AT,
+                SESSION_RUNTIME_MESSAGE.FINAL_SEQUENCE,
+                CHANNEL_SESSION_BINDING_SNAPSHOT.CHANNEL_PROFILE_ID,
+                CHANNEL_SESSION_BINDING_SNAPSHOT.PROVIDER_TYPE,
+                CHANNEL_SESSION_BINDING_SNAPSHOT.EXTERNAL_CONVERSATION_ID,
+                CHANNEL_SESSION_BINDING_SNAPSHOT.ASSISTANT_ID
+            )
+            .from(SESSION_RUNTIME_MESSAGE)
+            .join(CHANNEL_SESSION_BINDING_SNAPSHOT)
+            .on(CHANNEL_SESSION_BINDING_SNAPSHOT.SESSION_ID.eq(SESSION_RUNTIME_MESSAGE.SESSION_ID))
+            .where(CHANNEL_SESSION_BINDING_SNAPSHOT.CHANNEL_PROFILE_ID.eq(requireText(channelProfileId, "channelProfileId")))
+            .and(CHANNEL_SESSION_BINDING_SNAPSHOT.BINDING_STATUS.eq("ACTIVE"))
+            .and(CHANNEL_SESSION_BINDING_SNAPSHOT.PROFILE_STATUS.eq("ACTIVE"))
+            .and(CHANNEL_SESSION_BINDING_SNAPSHOT.EXTERNAL_CONVERSATION_ID.isNotNull())
+            .and(SESSION_RUNTIME_MESSAGE.FINAL_SEQUENCE.gt(afterFinalSequence))
+            .and(SESSION_RUNTIME_MESSAGE.ROLE.in(OUTBOUND_MESSAGE_ROLES))
+            .and(SESSION_RUNTIME_MESSAGE.STATUS.in(FINAL_MESSAGE_STATUSES))
+            .and(blockCount.gt(0))
+            .orderBy(SESSION_RUNTIME_MESSAGE.FINAL_SEQUENCE.asc())
+            .limit(Math.max(0, limit))
+            .fetch(this::mapChannelOutboundFinalMessage);
+    }
+
     public List<PlaybookRun> listPlaybookRuns(String sessionId) {
         return dsl.selectFrom(SESSION_RUNTIME_PLAYBOOK_RUN)
             .where(SESSION_RUNTIME_PLAYBOOK_RUN.SESSION_ID.eq(sessionId))
@@ -355,6 +406,31 @@ public final class SessionRuntimeStore {
         );
     }
 
+    private ChannelOutboundFinalMessageData mapChannelOutboundFinalMessage(Record record) {
+        return new ChannelOutboundFinalMessageData(
+            record.get(SESSION_RUNTIME_MESSAGE.FINAL_SEQUENCE),
+            record.get(SESSION_RUNTIME_MESSAGE.MESSAGE_ID),
+            record.get(SESSION_RUNTIME_MESSAGE.SESSION_ID),
+            record.get(SESSION_RUNTIME_MESSAGE.SEQUENCE),
+            SessionMessageRole.valueOf(record.get(SESSION_RUNTIME_MESSAGE.ROLE)),
+            jsonbSupport.readList(record.get(SESSION_RUNTIME_MESSAGE.BLOCKS)),
+            jsonbSupport.readObjectMap(record.get(SESSION_RUNTIME_MESSAGE.METADATA)),
+            JooqTimeSupport.toInstant(record.get(SESSION_RUNTIME_MESSAGE.CREATED_AT)),
+            JooqTimeSupport.toInstant(record.get(SESSION_RUNTIME_MESSAGE.UPDATED_AT)),
+            record.get(CHANNEL_SESSION_BINDING_SNAPSHOT.CHANNEL_PROFILE_ID),
+            record.get(CHANNEL_SESSION_BINDING_SNAPSHOT.PROVIDER_TYPE),
+            record.get(CHANNEL_SESSION_BINDING_SNAPSHOT.EXTERNAL_CONVERSATION_ID),
+            record.get(CHANNEL_SESSION_BINDING_SNAPSHOT.ASSISTANT_ID)
+        );
+    }
+
+    private static String requireText(String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(field + " is required");
+        }
+        return value.trim();
+    }
+
     public record SessionRuntimeSessionData(
         String id,
         String scenarioId,
@@ -392,6 +468,27 @@ public final class SessionRuntimeStore {
             long sessionMillis = sessionUpdatedAt == null ? 0L : sessionUpdatedAt.toEpochMilli();
             long playbookMillis = latestPlaybookRunUpdatedAt == null ? 0L : latestPlaybookRunUpdatedAt.toEpochMilli();
             return sessionId + ":" + sessionMillis + ":" + latestMessageSequence + ":" + latestEventSequence + ":" + playbookMillis;
+        }
+    }
+
+    public record ChannelOutboundFinalMessageData(
+        long finalSequence,
+        String messageId,
+        String sessionId,
+        long messageSequence,
+        SessionMessageRole role,
+        List<Object> blocks,
+        Map<String, Object> metadata,
+        Instant createdAt,
+        Instant updatedAt,
+        String channelProfileId,
+        String providerType,
+        String externalConversationId,
+        String assistantId
+    ) {
+        public ChannelOutboundFinalMessageData {
+            blocks = blocks == null ? List.of() : List.copyOf(blocks);
+            metadata = metadata == null ? Map.of() : Map.copyOf(metadata);
         }
     }
 }

@@ -12,7 +12,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -25,20 +24,17 @@ import tools.jackson.databind.ObjectMapper;
 public class InternalSessionRuntimeController {
     private final SessionRuntimeService sessionRuntimeService;
     private final SessionRuntimeStreamService streamService;
-    private final SessionChannelOutboundRelay outboundRelay;
     private final InternalRuntimeAuth internalRuntimeAuth;
     private final ObjectMapper objectMapper;
 
     public InternalSessionRuntimeController(
         SessionRuntimeService sessionRuntimeService,
         SessionRuntimeStreamService streamService,
-        SessionChannelOutboundRelay outboundRelay,
         InternalRuntimeAuth internalRuntimeAuth,
         ObjectMapper objectMapper
     ) {
         this.sessionRuntimeService = sessionRuntimeService;
         this.streamService = streamService;
-        this.outboundRelay = outboundRelay;
         this.internalRuntimeAuth = internalRuntimeAuth;
         this.objectMapper = objectMapper;
     }
@@ -51,16 +47,6 @@ public class InternalSessionRuntimeController {
     ) {
         internalRuntimeAuth.requireBearer(authorization);
         return ApiResponse.ok(sessionRuntimeService.channelInboundMessage(request, idempotencyKey));
-    }
-
-    @PostMapping("/api/internal/session-runtime/sessions/{sessionId}/channel-outbound/replay")
-    public ApiResponse<?> replayChannelOutbound(
-        @PathVariable String sessionId,
-        @RequestHeader(name = "Authorization", required = false) String authorization
-    ) {
-        internalRuntimeAuth.requireBearer(authorization);
-        outboundRelay.relaySession(sessionId);
-        return ApiResponse.ok(Map.of("sessionId", sessionId));
     }
 
     @PostMapping(

@@ -1,20 +1,23 @@
 package com.lynxus.platform.session;
 
-import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundActivityRequest;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundActivityType;
+import com.lynxus.contracts.channel.ChannelContracts;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundBindingSnapshot;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundFrame;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundFrameKind;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnTransientFrame;
 import com.lynxus.contracts.session.SessionContracts.ErrorPayload;
 import com.lynxus.contracts.session.SessionContracts.ReplyBlockCompletedPayload;
 import com.lynxus.contracts.session.SessionContracts.ReplyBlockDeltaPayload;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageBlockType;
 import com.lynxus.contracts.session.SessionContracts.StreamVisibility;
 import com.lynxus.contracts.session.SessionContracts.TurnCompletedPayload;
 import com.lynxus.contracts.session.SessionContracts.TurnStartedPayload;
-import com.lynxus.platform.channel.ChannelGatewayClient;
+import com.lynxus.platform.channel.ChannelBindingSnapshotLookupService;
+import com.lynxus.platform.channel.ChannelOutboundFramePublisher;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.NoSuchElementException;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -23,65 +26,62 @@ import org.springframework.stereotype.Service;
 final class DefaultSessionChannelActivityRelay implements SessionChannelActivityRelay {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultSessionChannelActivityRelay.class);
 
-    private final ChannelGatewayClient channelGatewayClient;
+    private final ChannelBindingSnapshotLookupService bindingLookupService;
+    private final ChannelOutboundFramePublisher framePublisher;
 
-    DefaultSessionChannelActivityRelay(ChannelGatewayClient channelGatewayClient) {
-        this.channelGatewayClient = channelGatewayClient;
+    DefaultSessionChannelActivityRelay(
+        ChannelBindingSnapshotLookupService bindingLookupService,
+        ChannelOutboundFramePublisher framePublisher
+    ) {
+        this.bindingLookupService = bindingLookupService;
+        this.framePublisher = framePublisher;
     }
 
     @Override
     public void relay(AgentTurnTransientFrame frame) {
-        List<ChannelOutboundActivityType> activityTypes = activityTypes(frame);
-        if (activityTypes.isEmpty()) {
+        List<ChannelOutboundFrameKind> frameKinds = frameKinds(frame);
+        if (frameKinds.isEmpty()) {
             return;
         }
-        ChannelConversationBinding binding;
+        Optional<ChannelOutboundBindingSnapshot> snapshot;
         try {
-            binding = channelGatewayClient.getBindingBySession(frame.sessionId());
-        } catch (NoSuchElementException missingBinding) {
-            return;
+            snapshot = bindingLookupService.findActiveBySessionFailClosed(frame.sessionId());
         } catch (RuntimeException error) {
             LOGGER.warn(
-                "failed to look up channel binding for activity relay sessionId={} frameId={}",
+                "failed to look up channel binding snapshot for frame relay sessionId={} frameId={}",
                 frame.sessionId(),
                 frame.frameId(),
                 error
             );
             return;
         }
+        if (snapshot.isEmpty()) {
+            return;
+        }
+        ChannelOutboundBindingSnapshot binding = snapshot.orElseThrow();
         if (binding == null
             || binding.channelProfileId() == null
+            || binding.providerType() == null
             || binding.assistantId() == null
             || binding.externalConversationId() == null) {
             return;
         }
-        for (ChannelOutboundActivityType activityType : activityTypes) {
+        for (ChannelOutboundFrameKind frameKind : frameKinds) {
             try {
-                channelGatewayClient.sendOutboundActivity(new ChannelOutboundActivityRequest(
-                    binding.channelProfileId(),
-                    binding.assistantId(),
-                    binding.externalConversationId(),
-                    frame.sessionId(),
-                    frame.turnId(),
-                    frame.frameId(),
-                    activityType,
-                    activityIdempotencyKey(frame.frameId(), activityType),
-                    activityPayload(frame, activityType),
-                    null
-                ));
+                framePublisher.publishTransient(toFrame(binding, frame, frameKind));
             } catch (RuntimeException error) {
                 LOGGER.warn(
-                    "failed to relay channel activity sessionId={} frameId={} activityType={}",
+                    "failed to publish channel outbound transient frame sessionId={} frameId={} frameKind={}",
                     frame.sessionId(),
                     frame.frameId(),
-                    activityType,
+                    frameKind,
                     error
                 );
             }
         }
     }
 
-    private static List<ChannelOutboundActivityType> activityTypes(AgentTurnTransientFrame frame) {
+    private static List<ChannelOutboundFrameKind> frameKinds(AgentTurnTransientFrame frame) {
         if (frame == null || frame.kind() == null) {
             return List.of();
         }
@@ -89,11 +89,11 @@ final class DefaultSessionChannelActivityRelay implements SessionChannelActivity
             return List.of();
         }
         return switch (frame.kind()) {
-            case TURN_STARTED -> List.of(ChannelOutboundActivityType.TYPING_START);
-            case REPLY_BLOCK_DELTA -> customerOnly(frame, ChannelOutboundActivityType.DRAFT_UPDATE);
-            case REPLY_BLOCK_COMPLETED -> List.of(ChannelOutboundActivityType.DRAFT_COMPLETE, ChannelOutboundActivityType.TYPING_STOP);
-            case TURN_COMPLETED -> List.of(ChannelOutboundActivityType.TYPING_STOP);
-            case ERROR -> List.of(ChannelOutboundActivityType.DRAFT_DISCARD, ChannelOutboundActivityType.TYPING_STOP);
+            case TURN_STARTED -> List.of(ChannelOutboundFrameKind.TYPING_START);
+            case REPLY_BLOCK_DELTA -> customerOnly(frame, ChannelOutboundFrameKind.DRAFT_UPDATE);
+            case REPLY_BLOCK_COMPLETED -> List.of(ChannelOutboundFrameKind.DRAFT_COMPLETE, ChannelOutboundFrameKind.TYPING_STOP);
+            case TURN_COMPLETED -> List.of(ChannelOutboundFrameKind.TYPING_STOP);
+            case ERROR -> List.of(ChannelOutboundFrameKind.DRAFT_DISCARD, ChannelOutboundFrameKind.TYPING_STOP);
             case MODEL_STARTED,
                 MODEL_COMPLETED,
                 ACTION_TOOL_STARTED,
@@ -101,20 +101,45 @@ final class DefaultSessionChannelActivityRelay implements SessionChannelActivity
         };
     }
 
-    private static List<ChannelOutboundActivityType> customerOnly(
+    private static List<ChannelOutboundFrameKind> customerOnly(
         AgentTurnTransientFrame frame,
-        ChannelOutboundActivityType activityType
+        ChannelOutboundFrameKind frameKind
     ) {
-        return frame.visibility() == StreamVisibility.CUSTOMER ? List.of(activityType) : List.of();
+        return frame.visibility() == StreamVisibility.CUSTOMER ? List.of(frameKind) : List.of();
     }
 
-    private static Map<String, Object> activityPayload(
+    private static ChannelOutboundFrame toFrame(
+        ChannelOutboundBindingSnapshot binding,
         AgentTurnTransientFrame frame,
-        ChannelOutboundActivityType activityType
+        ChannelOutboundFrameKind frameKind
+    ) {
+        String frameId = binding.channelProfileId() + ":" + frame.turnExecutionId() + ":" + frame.seq() + ":" + frameKind.name();
+        return new ChannelOutboundFrame(
+            ChannelContracts.CHANNEL_OUTBOUND_FRAME_PROTOCOL,
+            frameId,
+            binding.channelProfileId(),
+            binding.providerType(),
+            binding.assistantId(),
+            binding.externalConversationId(),
+            frame.sessionId(),
+            frame.turnId(),
+            frame.turnExecutionId(),
+            frame.seq(),
+            null,
+            frameKind,
+            frame.occurredAt(),
+            frameId,
+            null,
+            framePayload(frame, frameKind),
+            null
+        );
+    }
+
+    private static Map<String, Object> framePayload(
+        AgentTurnTransientFrame frame,
+        ChannelOutboundFrameKind frameKind
     ) {
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("activityType", activityType.name());
-        payload.put("frameId", frame.frameId());
         if (messageId(frame) != null) {
             payload.put("messageId", messageId(frame));
         }
@@ -133,6 +158,13 @@ final class DefaultSessionChannelActivityRelay implements SessionChannelActivity
         Object block = block(frame);
         if (block != null) {
             payload.put("block", block);
+            payload.putIfAbsent("blockType", blockTypeFromBlock(block));
+        }
+        if (frameKind == ChannelOutboundFrameKind.TYPING_START || frameKind == ChannelOutboundFrameKind.TYPING_STOP) {
+            payload.keySet().retainAll(java.util.Set.of("messageId"));
+        }
+        if (frameKind == ChannelOutboundFrameKind.DRAFT_DISCARD && frame.payload() instanceof ErrorPayload errorPayload) {
+            payload.put("reason", errorPayload.code());
         }
         return Map.copyOf(payload);
     }
@@ -181,7 +213,14 @@ final class DefaultSessionChannelActivityRelay implements SessionChannelActivity
         return frame.payload() instanceof ReplyBlockCompletedPayload payload ? payload.block() : null;
     }
 
-    private static String activityIdempotencyKey(String frameId, ChannelOutboundActivityType activityType) {
-        return "stream-frame:" + frameId + ":" + activityType.name();
+    private static String blockTypeFromBlock(Object block) {
+        if (block instanceof Map<?, ?> blockMap) {
+            Object type = blockMap.get("type");
+            return type == null ? SessionMessageBlockType.TEXT.name() : String.valueOf(type);
+        }
+        if (block instanceof com.lynxus.contracts.session.SessionContracts.TextMessageBlock) {
+            return SessionMessageBlockType.TEXT.name();
+        }
+        return SessionMessageBlockType.TEXT.name();
     }
 }

@@ -27,6 +27,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -55,6 +56,7 @@ public class ChannelBindingSnapshotRefreshCoordinator {
     private final ConcurrentMap<String, CopyOnWriteArrayList<CompletableFuture<Void>>> localRefreshWaiters = new ConcurrentHashMap<>();
     private AutoCloseable subscription;
 
+    @Autowired
     public ChannelBindingSnapshotRefreshCoordinator(
         JooqChannelBindingSnapshotRepository repository,
         ChannelGatewayClient channelGatewayClient,

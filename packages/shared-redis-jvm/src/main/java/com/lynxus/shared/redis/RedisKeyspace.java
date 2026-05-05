@@ -64,6 +64,10 @@ public class RedisKeyspace {
         return qualify("lynxus:channel-binding-snapshot:invalidation");
     }
 
+    public String channelOutboundFrameChannel() {
+        return qualify("lynxus:channel-outbound:frames");
+    }
+
     public String channelBindingSnapshotRefreshLock(String key) {
         return qualify("lynxus:lock:channel-binding-snapshot-refresh:" + key);
     }

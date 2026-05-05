@@ -3,12 +3,9 @@ package com.lynxus.platform.channel;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundActivityRequest;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundActivityResponse;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundBindingSnapshot;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundBindingSnapshotPage;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDelivery;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundDeliveryRequest;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfig;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobConfigWriteRequest;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobRun;
@@ -50,10 +47,6 @@ public class ChannelGatewayClient {
     private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelOutboundDelivery>>> CHANNEL_OUTBOUND_DELIVERY_LIST = new ParameterizedTypeReference<>() {
     };
     private static final ParameterizedTypeReference<ApiEnvelope<ChannelConversationBinding>> CHANNEL_BINDING = new ParameterizedTypeReference<>() {
-    };
-    private static final ParameterizedTypeReference<ApiEnvelope<ChannelOutboundDelivery>> CHANNEL_OUTBOUND_DELIVERY = new ParameterizedTypeReference<>() {
-    };
-    private static final ParameterizedTypeReference<ApiEnvelope<ChannelOutboundActivityResponse>> CHANNEL_OUTBOUND_ACTIVITY = new ParameterizedTypeReference<>() {
     };
     private static final ParameterizedTypeReference<ApiEnvelope<List<ChannelTemplateBinding>>> CHANNEL_TEMPLATE_BINDING_LIST = new ParameterizedTypeReference<>() {
     };
@@ -181,22 +174,6 @@ public class ChannelGatewayClient {
             .uri("/internal/channel-admin/profiles/{channelProfileId}/outbound-deliveries", channelProfileId)
             .retrieve()
             .body(CHANNEL_OUTBOUND_DELIVERY_LIST)));
-    }
-
-    public ChannelOutboundDelivery deliverOutbound(ChannelOutboundDeliveryRequest request) {
-        return invoke(() -> body(restClient.post()
-            .uri("/internal/channel-outbound/deliveries")
-            .body(request)
-            .retrieve()
-            .body(CHANNEL_OUTBOUND_DELIVERY)));
-    }
-
-    public ChannelOutboundActivityResponse sendOutboundActivity(ChannelOutboundActivityRequest request) {
-        return invoke(() -> body(restClient.post()
-            .uri("/internal/channel-outbound/activities")
-            .body(request)
-            .retrieve()
-            .body(CHANNEL_OUTBOUND_ACTIVITY)));
     }
 
     public List<ChannelTemplateBinding> listTemplateBindings(String channelProfileId) {

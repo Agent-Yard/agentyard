@@ -14,7 +14,6 @@ import com.lynxus.contracts.session.SessionContracts.AgentTurnTransientFrame;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnTransientFrameKind;
 import com.lynxus.contracts.session.SessionContracts.AgentTurnStreamFrame;
 import com.lynxus.contracts.session.SessionContracts.StreamVisibility;
-import com.lynxus.platform.channel.ChannelGatewayClient;
 import com.lynxus.contracts.session.SessionRuntimeChangeNotice;
 import com.lynxus.platform.session.SessionRuntimeDtos.SessionRuntimeSessionDto;
 import com.lynxus.platform.session.SessionRuntimeStreamDtos.SessionRuntimeStreamEvent;
@@ -302,12 +301,10 @@ class SessionRuntimeStreamServiceTest {
     }
 
     @Test
-    void shouldStillAcceptAndPublishFrameWhenChannelBindingLookupFails() {
+    void shouldStillAcceptAndPublishFrameWithNoChannelActivityRelay() {
         SessionRuntimeReplayStore replayStore = mock(SessionRuntimeReplayStore.class);
         RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);
         RedisKeyspace keyspace = new RedisKeyspace();
-        ChannelGatewayClient channelGatewayClient = mock(ChannelGatewayClient.class);
-        when(channelGatewayClient.getBindingBySession("session-1")).thenThrow(new IllegalStateException("gateway unavailable"));
         when(replayStore.append(any())).thenReturn(true);
         SessionRuntimeStreamService service = new SessionRuntimeStreamService(
             mock(SessionRuntimeRepository.class),
@@ -315,7 +312,7 @@ class SessionRuntimeStreamServiceTest {
             pubSubBus,
             keyspace,
             new RedisJsonCodec(new ObjectMapper()),
-            new DefaultSessionChannelActivityRelay(channelGatewayClient),
+            SessionChannelActivityRelay.noop(),
             new io.micrometer.core.instrument.simple.SimpleMeterRegistry()
         );
 

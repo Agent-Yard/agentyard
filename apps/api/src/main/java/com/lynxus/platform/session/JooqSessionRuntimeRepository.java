@@ -82,6 +82,15 @@ public class JooqSessionRuntimeRepository implements SessionRuntimeRepository {
     }
 
     @Override
+    public List<SessionRuntimeStore.ChannelOutboundFinalMessageData> listChannelOutboundFinalMessages(
+        String channelProfileId,
+        long afterFinalSequence,
+        int limit
+    ) {
+        return store.listChannelOutboundFinalMessages(channelProfileId, afterFinalSequence, limit);
+    }
+
+    @Override
     public List<SessionEvent> listEvents(String sessionId) {
         return store.listEvents(sessionId);
     }

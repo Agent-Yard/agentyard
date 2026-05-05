@@ -3,6 +3,7 @@ package com.lynxus.platform.session;
 import com.lynxus.contracts.session.SessionContracts.PlaybookRun;
 import com.lynxus.contracts.session.SessionContracts.SessionEvent;
 import com.lynxus.contracts.session.SessionContracts.SessionMessage;
+import com.lynxus.persistence.session.SessionRuntimeStore;
 import java.util.List;
 import java.util.Optional;
 
@@ -20,6 +21,12 @@ public interface SessionRuntimeRepository {
     void saveSession(SessionRuntimeSessionDto session);
 
     List<SessionMessage> listMessages(String sessionId);
+
+    List<SessionRuntimeStore.ChannelOutboundFinalMessageData> listChannelOutboundFinalMessages(
+        String channelProfileId,
+        long afterFinalSequence,
+        int limit
+    );
 
     List<SessionEvent> listEvents(String sessionId);
 

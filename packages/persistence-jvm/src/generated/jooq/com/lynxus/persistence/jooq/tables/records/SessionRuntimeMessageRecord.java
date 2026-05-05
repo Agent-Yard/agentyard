@@ -235,6 +235,20 @@ public class SessionRuntimeMessageRecord extends UpdatableRecordImpl<SessionRunt
         return (OffsetDateTime) get(14);
     }
 
+    /**
+     * Setter for <code>public.session_runtime_message.final_sequence</code>.
+     */
+    public void setFinalSequence(Long value) {
+        set(15, value);
+    }
+
+    /**
+     * Getter for <code>public.session_runtime_message.final_sequence</code>.
+     */
+    public Long getFinalSequence() {
+        return (Long) get(15);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -258,7 +272,7 @@ public class SessionRuntimeMessageRecord extends UpdatableRecordImpl<SessionRunt
     /**
      * Create a detached, initialised SessionRuntimeMessageRecord
      */
-    public SessionRuntimeMessageRecord(String messageId, String sessionId, Long sequence, String role, String senderType, String senderId, String senderName, String status, JSONB blocks, JSONB metadata, String relatedPlaybookRunId, String relatedOwnerAgentId, String sourceEventId, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+    public SessionRuntimeMessageRecord(String messageId, String sessionId, Long sequence, String role, String senderType, String senderId, String senderName, String status, JSONB blocks, JSONB metadata, String relatedPlaybookRunId, String relatedOwnerAgentId, String sourceEventId, OffsetDateTime createdAt, OffsetDateTime updatedAt, Long finalSequence) {
         super(SessionRuntimeMessage.SESSION_RUNTIME_MESSAGE);
 
         setMessageId(messageId);
@@ -276,6 +290,7 @@ public class SessionRuntimeMessageRecord extends UpdatableRecordImpl<SessionRunt
         setSourceEventId(sourceEventId);
         setCreatedAt(createdAt);
         setUpdatedAt(updatedAt);
+        setFinalSequence(finalSequence);
         resetChangedOnNotNull();
     }
 }
