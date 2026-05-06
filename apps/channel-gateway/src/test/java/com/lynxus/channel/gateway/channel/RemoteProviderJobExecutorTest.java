@@ -170,7 +170,7 @@ class RemoteProviderJobExecutorTest {
             "title", "Pull messages",
             "jobConfigSchema", Map.of("type", "object"),
             "jobConfigUiSchema", List.of(),
-            "defaultSchedule", Map.of("scheduleType", "MANUAL"),
+            "defaultSchedule", Map.of("scheduleType", "MANUAL", "timezone", "UTC", "jobConfig", Map.of()),
             "defaultEnabled", true,
             "defaultJobTimeoutSeconds", 45
         )));
