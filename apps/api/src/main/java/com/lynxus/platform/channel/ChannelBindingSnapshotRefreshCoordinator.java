@@ -30,9 +30,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.env.Environment;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.ResourceAccessException;
 
 @Service
 public class ChannelBindingSnapshotRefreshCoordinator {
@@ -53,6 +55,7 @@ public class ChannelBindingSnapshotRefreshCoordinator {
     private final ExecutorService refreshExecutor;
     private final Duration debounce;
     private final Duration localRefreshWait;
+    private final boolean localProfile;
     private final ConcurrentMap<String, CopyOnWriteArrayList<CompletableFuture<Void>>> localRefreshWaiters = new ConcurrentHashMap<>();
     private AutoCloseable subscription;
 
@@ -64,7 +67,8 @@ public class ChannelBindingSnapshotRefreshCoordinator {
         RedisKeyspace keyspace,
         RedisJsonCodec codec,
         RedisSharedStateProperties redisProperties,
-        StringRedisTemplate redisTemplate
+        StringRedisTemplate redisTemplate,
+        Environment environment
     ) {
         this(
             repository,
@@ -76,7 +80,8 @@ public class ChannelBindingSnapshotRefreshCoordinator {
             redisTemplate,
             Executors.newCachedThreadPool(),
             DEBOUNCE,
-            LOCAL_REFRESH_WAIT
+            LOCAL_REFRESH_WAIT,
+            isLocalProfile(environment)
         );
     }
 
@@ -90,7 +95,8 @@ public class ChannelBindingSnapshotRefreshCoordinator {
         StringRedisTemplate redisTemplate,
         ExecutorService refreshExecutor,
         Duration debounce,
-        Duration localRefreshWait
+        Duration localRefreshWait,
+        boolean localProfile
     ) {
         this.repository = repository;
         this.channelGatewayClient = channelGatewayClient;
@@ -102,6 +108,7 @@ public class ChannelBindingSnapshotRefreshCoordinator {
         this.refreshExecutor = refreshExecutor;
         this.debounce = debounce == null ? DEBOUNCE : debounce;
         this.localRefreshWait = localRefreshWait == null ? LOCAL_REFRESH_WAIT : localRefreshWait;
+        this.localProfile = localProfile;
     }
 
     @PostConstruct
@@ -122,7 +129,10 @@ public class ChannelBindingSnapshotRefreshCoordinator {
         requestFullRefresh("STARTUP_FULL_REFRESH");
     }
 
-    @Scheduled(fixedDelayString = "${lynxus.channel-outbound.binding-snapshot.reconcile-fixed-delay:PT5M}")
+    @Scheduled(
+        initialDelayString = "${lynxus.channel-outbound.binding-snapshot.reconcile-initial-delay:PT30S}",
+        fixedDelayString = "${lynxus.channel-outbound.binding-snapshot.reconcile-fixed-delay:PT5M}"
+    )
     void reconcilePeriodically() {
         requestFullRefresh("PERIODIC_RECONCILE");
     }
@@ -188,6 +198,15 @@ public class ChannelBindingSnapshotRefreshCoordinator {
             refreshAuthoritativeRows(request);
             publishInvalidation(request.key());
         } catch (RuntimeException error) {
+            if (isLocalStartupGatewayUnavailable(request, error)) {
+                log.info(
+                    "skip local startup channel binding snapshot refresh because channel gateway is unavailable: key={}, reason={}, error={}",
+                    request.key(),
+                    request.reason(),
+                    conciseError(error)
+                );
+                return;
+            }
             failure = error;
             log.warn("channel binding snapshot refresh failed: key={}, reason={}", request.key(), request.reason(), error);
             throw error;
@@ -346,6 +365,51 @@ public class ChannelBindingSnapshotRefreshCoordinator {
 
     private static boolean hasText(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private boolean isLocalStartupGatewayUnavailable(SharedRefreshRequest request, RuntimeException error) {
+        return localProfile
+            && request != null
+            && ALL_KEY.equals(request.key())
+            && "STARTUP_FULL_REFRESH".equals(request.reason())
+            && hasCause(error, ResourceAccessException.class);
+    }
+
+    private static boolean hasCause(Throwable error, Class<? extends Throwable> causeType) {
+        Throwable current = error;
+        while (current != null) {
+            if (causeType.isInstance(current)) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private static String conciseError(Throwable error) {
+        Throwable current = error;
+        Throwable root = error;
+        while (current != null) {
+            root = current;
+            current = current.getCause();
+        }
+        String message = root == null ? null : root.getMessage();
+        if (message == null || message.isBlank()) {
+            return root == null ? "unknown" : root.getClass().getSimpleName();
+        }
+        return root.getClass().getSimpleName() + ": " + message;
+    }
+
+    private static boolean isLocalProfile(Environment environment) {
+        if (environment == null) {
+            return false;
+        }
+        for (String profile : environment.getActiveProfiles()) {
+            if ("local".equals(profile)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     record SharedRefreshRequest(

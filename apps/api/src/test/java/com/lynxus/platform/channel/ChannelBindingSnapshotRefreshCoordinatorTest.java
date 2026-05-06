@@ -1,5 +1,8 @@
 package com.lynxus.platform.channel;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -22,9 +25,75 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.web.client.ResourceAccessException;
 import tools.jackson.databind.ObjectMapper;
 
 class ChannelBindingSnapshotRefreshCoordinatorTest {
+    @Test
+    void periodicReconcileHasInitialDelay() throws Exception {
+        Scheduled scheduled = ChannelBindingSnapshotRefreshCoordinator.class
+            .getDeclaredMethod("reconcilePeriodically")
+            .getAnnotation(Scheduled.class);
+
+        assertEquals(
+            "${lynxus.channel-outbound.binding-snapshot.reconcile-initial-delay:PT30S}",
+            scheduled.initialDelayString()
+        );
+        assertEquals(
+            "${lynxus.channel-outbound.binding-snapshot.reconcile-fixed-delay:PT5M}",
+            scheduled.fixedDelayString()
+        );
+    }
+
+    @Test
+    void localStartupFullRefreshIgnoresGatewayUnavailable() {
+        JooqChannelBindingSnapshotRepository repository = mock(JooqChannelBindingSnapshotRepository.class);
+        ChannelGatewayClient gatewayClient = mock(ChannelGatewayClient.class);
+        StringRedisTemplate redisTemplate = redisTemplateWithAcquiredLease();
+        when(gatewayClient.listBindingSnapshots(null, null, 500))
+            .thenThrow(new ResourceAccessException("Connection refused"));
+        ChannelBindingSnapshotRefreshCoordinator coordinator = coordinator(repository, gatewayClient, redisTemplate, true);
+
+        assertDoesNotThrow(() -> coordinator.consumeSharedRefresh(fullRefreshRequest("STARTUP_FULL_REFRESH")));
+
+        verify(redisTemplate).delete(eq("lynxus:lock:channel-binding-snapshot-refresh:all"));
+    }
+
+    @Test
+    void localPeriodicFullRefreshStillPropagatesGatewayUnavailable() {
+        JooqChannelBindingSnapshotRepository repository = mock(JooqChannelBindingSnapshotRepository.class);
+        ChannelGatewayClient gatewayClient = mock(ChannelGatewayClient.class);
+        StringRedisTemplate redisTemplate = redisTemplateWithAcquiredLease();
+        when(gatewayClient.listBindingSnapshots(null, null, 500))
+            .thenThrow(new ResourceAccessException("Connection refused"));
+        ChannelBindingSnapshotRefreshCoordinator coordinator = coordinator(repository, gatewayClient, redisTemplate, true);
+
+        assertThrows(
+            ResourceAccessException.class,
+            () -> coordinator.consumeSharedRefresh(fullRefreshRequest("PERIODIC_RECONCILE"))
+        );
+
+        verify(redisTemplate).delete(eq("lynxus:lock:channel-binding-snapshot-refresh:all"));
+    }
+
+    @Test
+    void nonLocalStartupFullRefreshStillPropagatesGatewayUnavailable() {
+        JooqChannelBindingSnapshotRepository repository = mock(JooqChannelBindingSnapshotRepository.class);
+        ChannelGatewayClient gatewayClient = mock(ChannelGatewayClient.class);
+        StringRedisTemplate redisTemplate = redisTemplateWithAcquiredLease();
+        when(gatewayClient.listBindingSnapshots(null, null, 500))
+            .thenThrow(new ResourceAccessException("Connection refused"));
+        ChannelBindingSnapshotRefreshCoordinator coordinator = coordinator(repository, gatewayClient, redisTemplate, false);
+
+        assertThrows(
+            ResourceAccessException.class,
+            () -> coordinator.consumeSharedRefresh(fullRefreshRequest("STARTUP_FULL_REFRESH"))
+        );
+
+        verify(redisTemplate).delete(eq("lynxus:lock:channel-binding-snapshot-refresh:all"));
+    }
+
     @Test
     void refreshBySessionPublishesSharedRequestAndWaitsForLocalConsumer() throws Exception {
         JooqChannelBindingSnapshotRepository repository = mock(JooqChannelBindingSnapshotRepository.class);
@@ -56,7 +125,8 @@ class ChannelBindingSnapshotRefreshCoordinatorTest {
             redisTemplate,
             executor,
             Duration.ZERO,
-            Duration.ofSeconds(1)
+            Duration.ofSeconds(1),
+            false
         );
         coordinatorRef.set(coordinator);
 
@@ -131,6 +201,15 @@ class ChannelBindingSnapshotRefreshCoordinatorTest {
         ChannelGatewayClient gatewayClient,
         StringRedisTemplate redisTemplate
     ) {
+        return coordinator(repository, gatewayClient, redisTemplate, false);
+    }
+
+    private static ChannelBindingSnapshotRefreshCoordinator coordinator(
+        JooqChannelBindingSnapshotRepository repository,
+        ChannelGatewayClient gatewayClient,
+        StringRedisTemplate redisTemplate,
+        boolean localProfile
+    ) {
         return new ChannelBindingSnapshotRefreshCoordinator(
             repository,
             gatewayClient,
@@ -141,7 +220,30 @@ class ChannelBindingSnapshotRefreshCoordinatorTest {
             redisTemplate,
             Executors.newSingleThreadExecutor(),
             Duration.ZERO,
-            Duration.ofMillis(100)
+            Duration.ofMillis(100),
+            localProfile
+        );
+    }
+
+    private static StringRedisTemplate redisTemplateWithAcquiredLease() {
+        StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
+        @SuppressWarnings("unchecked")
+        ValueOperations<String, String> valueOperations = mock(ValueOperations.class);
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.setIfAbsent(any(), any(), any(Duration.class))).thenReturn(true);
+        return redisTemplate;
+    }
+
+    private static ChannelBindingSnapshotRefreshCoordinator.SharedRefreshRequest fullRefreshRequest(String reason) {
+        return new ChannelBindingSnapshotRefreshCoordinator.SharedRefreshRequest(
+            "all",
+            null,
+            null,
+            null,
+            reason,
+            null,
+            Instant.now(),
+            "test"
         );
     }
 
