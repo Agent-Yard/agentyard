@@ -114,6 +114,29 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
     }
 
     @Test
+    void draftUpdatePreservesWhitespaceOnlyDeltaOnPreparedStreamingCard() {
+        CapturingMessageSender messageSender = new CapturingMessageSender();
+        InMemoryStreamingCardStore store = new InMemoryStreamingCardStore();
+        FeishuGatewayNativeChannelProviderAdapter adapter = new FeishuGatewayNativeChannelProviderAdapter(
+            new CapturingCredentialProvider(),
+            messageSender,
+            FeishuTypingReactionLifecycle.NOOP,
+            store,
+            new ObjectMapper()
+        );
+
+        adapter.consumeOutboundFrame(profile(), typingFrameWithMessageId("session-message-reply-1"));
+        adapter.consumeOutboundFrame(profile(), draftUpdateFrame(2L, "\n "));
+
+        assertEquals(1, messageSender.updateTextCommands.size());
+        assertEquals("\n ", messageSender.updateTextCommands.getFirst().content());
+        FeishuStreamingReplyCardState state = store.find(FeishuStreamingReplyCardKey.fromFrame(draftUpdateFrame(2L, "ignored"))).orElseThrow();
+        assertEquals("\n ", state.content());
+        assertEquals(1, state.sequence());
+        assertEquals(2L, state.lastSourceSeq());
+    }
+
+    @Test
     void firstDraftWaitsUntilPreparedCardMessageHasBeenSent() throws Exception {
         BlockingMessageSender messageSender = new BlockingMessageSender();
         InMemoryStreamingCardStore store = new InMemoryStreamingCardStore();
@@ -177,6 +200,36 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
             assertEquals(1, messageSender.updateSettingsCommands.size());
             assertTrue(messageSender.updateSettingsCommands.getFirst().settings().contains("\"streaming_mode\":false"));
             assertTrue(store.find(FeishuStreamingReplyCardKey.fromFrame(typingFrameWithMessageId("session-message-reply-1"))).isEmpty());
+        } finally {
+            adapter.shutdown();
+        }
+    }
+
+    @Test
+    void typingStopDoesNotDeletePreparedCardAfterWhitespaceDraftDelta() throws Exception {
+        CapturingMessageSender messageSender = new CapturingMessageSender();
+        InMemoryStreamingCardStore store = new InMemoryStreamingCardStore();
+        FeishuStreamingReplyCardProperties properties = streamingProperties(Duration.ZERO);
+        FeishuGatewayNativeChannelProviderAdapter adapter = new FeishuGatewayNativeChannelProviderAdapter(
+            new CapturingCredentialProvider(),
+            messageSender,
+            FeishuTypingReactionLifecycle.NOOP,
+            store,
+            new FeishuStreamingReplyCardReadiness(),
+            properties,
+            new ObjectMapper()
+        );
+
+        try {
+            adapter.consumeOutboundFrame(profile(), typingFrameWithMessageId("session-message-reply-1"));
+            adapter.consumeOutboundFrame(profile(), draftUpdateFrame(2L, "\n "));
+            adapter.consumeOutboundFrame(profile(), typingStopFrameWithMessageId(5L, "session-message-reply-1"));
+
+            assertFalse(messageSender.deleteMessageCalled.await(100, TimeUnit.MILLISECONDS));
+            assertEquals(0, messageSender.deleteMessageCommands.size());
+            FeishuStreamingReplyCardState state = store.find(FeishuStreamingReplyCardKey.fromFrame(typingFrameWithMessageId("session-message-reply-1"))).orElseThrow();
+            assertTrue(state.closed());
+            assertEquals("\n ", state.content());
         } finally {
             adapter.shutdown();
         }
@@ -634,6 +687,7 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
         protected final List<FeishuDeleteMessageCommand> deleteMessageCommands = new ArrayList<>();
         protected final List<FeishuUpdateCardTextCommand> updateTextCommands = new ArrayList<>();
         protected final List<FeishuUpdateCardSettingsCommand> updateSettingsCommands = new ArrayList<>();
+        protected final CountDownLatch deleteMessageCalled = new CountDownLatch(1);
 
         @Override
         public FeishuCreateCardResult createCard(FeishuCreateCardCommand command) {
@@ -650,6 +704,7 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
         @Override
         public void deleteMessage(FeishuDeleteMessageCommand command) {
             deleteMessageCommands.add(command);
+            deleteMessageCalled.countDown();
         }
 
         @Override

@@ -674,7 +674,7 @@ public class SessionRuntimeStreamService {
             if (payload.blockType() != SessionMessageBlockType.TEXT) {
                 throw badFrame("customer reply draft only allows text blocks");
             }
-            if (isBlank(payload.delta()) || containsInternalTextToken(payload.delta())) {
+            if (isEmpty(payload.delta()) || containsInternalTextToken(payload.delta())) {
                 throw badFrame("customer reply draft delta is not allowed");
             }
             return;
@@ -726,6 +726,10 @@ public class SessionRuntimeStreamService {
 
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private static boolean isEmpty(String value) {
+        return value == null || value.isEmpty();
     }
 
     private static boolean isVisibleTo(SessionRuntimeStreamEvent event, Set<StreamVisibility> visibility) {

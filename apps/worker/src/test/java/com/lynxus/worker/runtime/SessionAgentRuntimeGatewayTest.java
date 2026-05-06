@@ -38,6 +38,14 @@ class SessionAgentRuntimeGatewayTest {
     }
 
     @Test
+    void shouldDeserializeWhitespaceOnlyReplyDeltaFrame() throws Exception {
+        AgentTurnStreamFrame frame = new ObjectMapper().readValue(customerDraftDeltaFrame("\\n "), AgentTurnStreamFrame.class);
+
+        ReplyBlockDeltaPayload payload = assertInstanceOf(ReplyBlockDeltaPayload.class, frame.payload());
+        assertEquals("\n ", payload.delta());
+    }
+
+    @Test
     void shouldRejectRuntimeFrameWhenKindAndPayloadDoNotMatch() {
         String invalidFrame = (
             "{\"protocol\":\"%s\",\"frameId\":\"exec-1:1\",\"streamId\":\"stream-1\",\"sessionId\":\"session-1\","
@@ -524,13 +532,17 @@ class SessionAgentRuntimeGatewayTest {
     }
 
     private static String customerDraftDeltaFrame() {
+        return customerDraftDeltaFrame("hello");
+    }
+
+    private static String customerDraftDeltaFrame(String delta) {
         return (
             "{\"protocol\":\"%s\",\"frameId\":\"exec-1:1\",\"streamId\":\"stream-1\",\"sessionId\":\"session-1\","
                 + "\"turnId\":\"turn-1\",\"turnExecutionId\":\"exec-1\",\"ownerAgentId\":\"agent-1\","
                 + "\"ownershipEpoch\":1,\"seq\":1,\"kind\":\"REPLY_BLOCK_DELTA\",\"visibility\":\"CUSTOMER\","
                 + "\"occurredAt\":\"2026-05-03T00:00:01Z\","
-                + "\"payload\":{\"messageId\":\"session-message-reply-1\",\"blockId\":\"block-1\",\"blockType\":\"TEXT\",\"delta\":\"hello\"}}"
-        ).formatted(AgentTurnStreamFrame.PROTOCOL);
+                + "\"payload\":{\"messageId\":\"session-message-reply-1\",\"blockId\":\"block-1\",\"blockType\":\"TEXT\",\"delta\":\"%s\"}}"
+        ).formatted(AgentTurnStreamFrame.PROTOCOL, delta);
     }
 
     private static String serverUrl(HttpServer server) {

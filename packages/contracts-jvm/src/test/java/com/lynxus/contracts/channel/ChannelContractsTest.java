@@ -5,6 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundFrame;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundFrameKind;
+import java.time.Instant;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class ChannelContractsTest {
@@ -23,5 +27,43 @@ class ChannelContractsTest {
     @Test
     void channelOutboundFrameIdempotencyKeyRejectsBlankSeed() {
         assertThrows(IllegalArgumentException.class, () -> ChannelContracts.channelOutboundFrameIdempotencyKey(" "));
+    }
+
+    @Test
+    void channelOutboundDraftUpdateAllowsWhitespaceOnlyDelta() {
+        ChannelOutboundFrame frame = draftUpdateFrame("\n ");
+
+        assertEquals("\n ", frame.payload().get("delta"));
+    }
+
+    @Test
+    void channelOutboundDraftUpdateRejectsEmptyDelta() {
+        assertThrows(IllegalArgumentException.class, () -> draftUpdateFrame(""));
+    }
+
+    private static ChannelOutboundFrame draftUpdateFrame(String delta) {
+        return new ChannelOutboundFrame(
+            ChannelContracts.CHANNEL_OUTBOUND_FRAME_PROTOCOL,
+            "profile-1:exec-1:2:DRAFT_UPDATE",
+            "profile-1",
+            "provider.acme",
+            "assistant-1",
+            "chat-1",
+            "session-1",
+            "turn-1",
+            "exec-1",
+            2L,
+            null,
+            ChannelOutboundFrameKind.DRAFT_UPDATE,
+            Instant.parse("2026-05-05T00:00:00Z"),
+            "profile-1:exec-1:2:DRAFT_UPDATE",
+            Map.of(
+                "messageId", "session-message-reply-1",
+                "blockId", "reply-block-1",
+                "blockType", "TEXT",
+                "delta", delta
+            ),
+            null
+        );
     }
 }

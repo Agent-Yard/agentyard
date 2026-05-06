@@ -209,7 +209,7 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
         ChannelGatewayProfile profile,
         FeishuStreamingReplyCardState state
     ) {
-        if (!state.content().isBlank()) {
+        if (!state.content().isEmpty()) {
             return;
         }
         schedulePreparedEmptyCardDeletion(profile, state.key());
@@ -247,7 +247,7 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
             return;
         }
         FeishuStreamingReplyCardState state = current.orElseThrow();
-        if (!state.content().isBlank()) {
+        if (!state.content().isEmpty()) {
             return;
         }
         if (state.externalMessageId() == null || state.externalMessageId().isBlank()) {
@@ -275,7 +275,7 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
     private void consumeDraftUpdate(ChannelGatewayProfile profile, ChannelOutboundFrame frame) {
         requireStreamingDependencies();
         String delta = textPayload(frame, "delta").orElse(null);
-        if (delta == null || delta.isBlank()) {
+        if (delta == null || delta.isEmpty()) {
             return;
         }
         FeishuStreamingReplyCardKey key = FeishuStreamingReplyCardKey.fromFrame(frame);
@@ -610,7 +610,7 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
 
     private static Optional<String> textPayload(ChannelOutboundFrame frame, String field) {
         Object value = frame.payload().get(field);
-        return value instanceof String text && !text.isBlank() ? Optional.of(text) : Optional.empty();
+        return value instanceof String text && !text.isEmpty() ? Optional.of(text) : Optional.empty();
     }
 
     private static Optional<String> completedBlockText(ChannelGatewayProfile profile, ChannelOutboundFrame frame) {

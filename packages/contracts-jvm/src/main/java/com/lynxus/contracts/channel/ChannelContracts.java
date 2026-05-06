@@ -551,7 +551,7 @@ public final class ChannelContracts {
             case DRAFT_UPDATE -> {
                 requirePayloadFields(payload, "messageId", "blockId", "blockType");
                 if ("TEXT".equals(payload.get("blockType"))) {
-                    requirePayloadFields(payload, "delta");
+                    requirePayloadNonEmptyString(payload, "delta");
                 }
             }
             case DRAFT_COMPLETE -> requirePayloadFields(payload, "messageId", "blockId", "blockType", "block");
@@ -565,6 +565,13 @@ public final class ChannelContracts {
             if (value == null || (value instanceof String text && text.isBlank())) {
                 throw new IllegalArgumentException("payload." + field + " is required");
             }
+        }
+    }
+
+    private static void requirePayloadNonEmptyString(Map<String, Object> payload, String field) {
+        Object value = payload.get(field);
+        if (!(value instanceof String text) || text.isEmpty()) {
+            throw new IllegalArgumentException("payload." + field + " is required");
         }
     }
 

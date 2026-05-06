@@ -59,6 +59,30 @@ class DefaultSessionChannelActivityRelayTest {
     }
 
     @Test
+    void publishesWhitespaceOnlyDraftDeltaThroughFramePublisher() {
+        ChannelBindingSnapshotLookupService lookupService = mock(ChannelBindingSnapshotLookupService.class);
+        ChannelOutboundFramePublisher framePublisher = mock(ChannelOutboundFramePublisher.class);
+        when(lookupService.findActiveBySession("session-1")).thenReturn(Optional.of(snapshot()));
+        DefaultSessionChannelActivityRelay relay = new DefaultSessionChannelActivityRelay(lookupService, framePublisher);
+
+        relay.relay(frame(AgentTurnTransientFrameKind.REPLY_BLOCK_DELTA, StreamVisibility.CUSTOMER, 6, Map.of(
+            "messageId",
+            "session-message-reply-1",
+            "blockId",
+            "block-1",
+            "blockType",
+            "TEXT",
+            "delta",
+            "\n "
+        )));
+
+        ArgumentCaptor<ChannelOutboundFrame> frame = ArgumentCaptor.forClass(ChannelOutboundFrame.class);
+        verify(framePublisher).publishTransient(frame.capture());
+        assertEquals(ChannelOutboundFrameKind.DRAFT_UPDATE, frame.getValue().kind());
+        assertEquals("\n ", frame.getValue().payload().get("delta"));
+    }
+
+    @Test
     void publishesReplyBlockCompletedAsDraftCompleteThenTypingStop() {
         ChannelBindingSnapshotLookupService lookupService = mock(ChannelBindingSnapshotLookupService.class);
         ChannelOutboundFramePublisher framePublisher = mock(ChannelOutboundFramePublisher.class);

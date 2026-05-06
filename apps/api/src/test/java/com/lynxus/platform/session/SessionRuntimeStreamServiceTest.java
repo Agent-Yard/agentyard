@@ -441,6 +441,33 @@ class SessionRuntimeStreamServiceTest {
     }
 
     @Test
+    void shouldProjectWhitespaceOnlyReplyDraftDelta() {
+        SessionRuntimeReplayStore replayStore = mock(SessionRuntimeReplayStore.class);
+        RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);
+        RedisKeyspace keyspace = new RedisKeyspace();
+        SessionRuntimeStreamService service = serviceWith(replayStore, pubSubBus, keyspace);
+        when(replayStore.append(any())).thenReturn(true);
+
+        service.acceptStreamFrame(frame(AgentTurnTransientFrameKind.REPLY_BLOCK_DELTA, StreamVisibility.CUSTOMER, 2, Map.of(
+            "messageId",
+            "session-message-reply-1",
+            "blockId",
+            "block-1",
+            "blockType",
+            "TEXT",
+            "delta",
+            "\n "
+        )));
+
+        verify(replayStore).append(argThat(event ->
+            "SESSION_REPLY_DRAFT".equals(event.type())
+                && "session-message-reply-1".equals(event.messageId())
+                && "\n ".equals(event.delta())
+        ));
+        verify(pubSubBus).publish(eq(keyspace.sseChannelSessionUpdated()), any());
+    }
+
+    @Test
     void shouldRejectCustomerActionToolFramesBeforeProjection() {
         SessionRuntimeReplayStore replayStore = mock(SessionRuntimeReplayStore.class);
         RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);

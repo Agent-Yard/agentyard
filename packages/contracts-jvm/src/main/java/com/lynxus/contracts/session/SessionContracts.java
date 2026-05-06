@@ -986,7 +986,7 @@ public final class SessionContracts {
                 if (replyBlockDelta.blockType() != SessionMessageBlockType.TEXT) {
                     throw new IllegalArgumentException("payload.blockType must be TEXT");
                 }
-                requirePayloadText(replyBlockDelta.delta(), "payload.delta");
+                requirePayloadNonEmptyString(replyBlockDelta.delta(), "payload.delta");
             }
             case ReplyBlockCompletedPayload replyBlockCompleted -> {
                 requirePayloadText(replyBlockCompleted.messageId(), "payload.messageId");
@@ -1013,6 +1013,12 @@ public final class SessionContracts {
 
     private static void requirePayloadText(String value, String field) {
         if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(field + " must be a non-empty string");
+        }
+    }
+
+    private static void requirePayloadNonEmptyString(String value, String field) {
+        if (value == null || value.isEmpty()) {
             throw new IllegalArgumentException(field + " must be a non-empty string");
         }
     }
@@ -1087,7 +1093,7 @@ public final class SessionContracts {
                     requiredString(source, "messageId"),
                     requiredString(source, "blockId"),
                     requiredEnum(source, "blockType", SessionMessageBlockType.class),
-                    requiredString(source, "delta")
+                    requiredNonEmptyString(source, "delta")
                 );
             }
             case REPLY_BLOCK_COMPLETED -> {
@@ -1197,7 +1203,7 @@ public final class SessionContracts {
                     requiredString(source, "messageId"),
                     requiredString(source, "blockId"),
                     requiredEnum(source, "blockType", SessionMessageBlockType.class),
-                    requiredString(source, "delta")
+                    requiredNonEmptyString(source, "delta")
                 );
             }
             case REPLY_BLOCK_COMPLETED -> {
@@ -1515,6 +1521,14 @@ public final class SessionContracts {
     private static String requiredString(Map<String, Object> payload, String field) {
         Object value = requiredValue(payload, field);
         if (value instanceof String text && !text.isBlank()) {
+            return text;
+        }
+        throw new IllegalArgumentException(field + " must be a non-empty string");
+    }
+
+    private static String requiredNonEmptyString(Map<String, Object> payload, String field) {
+        Object value = requiredValue(payload, field);
+        if (value instanceof String text && !text.isEmpty()) {
             return text;
         }
         throw new IllegalArgumentException(field + " must be a non-empty string");
