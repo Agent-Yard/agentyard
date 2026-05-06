@@ -96,6 +96,10 @@ public class RedisKeyspace {
         return qualify("lynxus:channel-feishu:typing-reaction:conversation:" + channelProfileId + ":" + externalConversationIdHash);
     }
 
+    public String channelFeishuStreamingReplyCardState(String channelProfileId, String sessionIdHash, String messageIdHash) {
+        return qualify("lynxus:channel-feishu:streaming-reply-card:state:" + channelProfileId + ":" + sessionIdHash + ":" + messageIdHash);
+    }
+
     public String channelBindingSnapshotRefreshLock(String key) {
         return qualify("lynxus:lock:channel-binding-snapshot-refresh:" + key);
     }

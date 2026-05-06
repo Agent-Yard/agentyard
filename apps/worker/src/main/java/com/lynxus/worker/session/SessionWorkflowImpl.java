@@ -416,7 +416,8 @@ public class SessionWorkflowImpl implements SessionWorkflow {
                     Map.of("reason", error.getMessage() == null ? "agent turn failed" : error.getMessage(), "triggerType", trigger.triggerType().name()),
                     activePlaybookRunId,
                     currentOwnerAgentId,
-                    textMessageInput(TURN_FAILED_REPLY)
+                    textMessageInput(TURN_FAILED_REPLY),
+                    replyMessageId
                 );
                 break;
             }
@@ -434,7 +435,8 @@ public class SessionWorkflowImpl implements SessionWorkflow {
                     Map.of("reason", failureReason, "triggerType", trigger.triggerType().name()),
                     activePlaybookRunId,
                     currentOwnerAgentId,
-                    textMessageInput(TURN_FAILED_REPLY)
+                    textMessageInput(TURN_FAILED_REPLY),
+                    replyMessageId
                 );
                 break;
             }
@@ -442,14 +444,16 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             SecurityAssessment securityAssessment = result == null ? null : result.securityAssessment();
             if (securityAssessment != null && isSecurityBlocked(securityAssessment)) {
                 AgentDecision decision = result == null ? null : result.decision();
-                if (decision != null && hasMessageContent(decision.replyMessage())) {
+                boolean assistantReplyEmitted = decision != null && hasMessageContent(decision.replyMessage());
+                if (assistantReplyEmitted) {
                     emitOwnerReply(replyMessageId, decision.replyMessage(), SessionActorType.AGENT, currentOwnerAgentId, activePlaybookRunId, currentOwnerAgentId, null);
                 }
                 emitSecurityBlocked(
                     securityAssessment,
                     trigger,
                     currentOwnerAgentId,
-                    activePlaybookRunId
+                    activePlaybookRunId,
+                    assistantReplyEmitted ? null : replyMessageId
                 );
                 break;
             }
@@ -487,7 +491,8 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             }
             AgentDecision decision = validation.decision();
 
-            if (hasMessageContent(decision.replyMessage())) {
+            boolean assistantReplyEmitted = hasMessageContent(decision.replyMessage());
+            if (assistantReplyEmitted) {
                 emitOwnerReply(replyMessageId, decision.replyMessage(), SessionActorType.AGENT, currentOwnerAgentId, activePlaybookRunId, currentOwnerAgentId, null);
             }
             if (decision.action() == AgentDecisionAction.REPLY || decision.action() == AgentDecisionAction.NO_OP) {
@@ -499,7 +504,8 @@ public class SessionWorkflowImpl implements SessionWorkflow {
                     securityAssessmentOrDefault(result == null ? null : result.securityAssessment()),
                     trigger,
                     currentOwnerAgentId,
-                    activePlaybookRunId
+                    activePlaybookRunId,
+                    assistantReplyEmitted ? null : replyMessageId
                 );
                 break;
             }
@@ -827,7 +833,8 @@ public class SessionWorkflowImpl implements SessionWorkflow {
         SecurityAssessment assessment,
         SessionTrigger trigger,
         String ownerAgentId,
-        String activePlaybookRunId
+        String activePlaybookRunId,
+        String messageId
     ) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("action", assessment.action());
@@ -844,7 +851,8 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             payload,
             activePlaybookRunId,
             ownerAgentId,
-            textMessageInput(SECURITY_BLOCKED_REPLY)
+            textMessageInput(SECURITY_BLOCKED_REPLY),
+            messageId
         );
     }
 

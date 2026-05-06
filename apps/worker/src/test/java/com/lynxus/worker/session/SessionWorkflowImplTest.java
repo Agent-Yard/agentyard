@@ -395,8 +395,9 @@ class SessionWorkflowImplTest {
         try (TestWorkflowEnvironment environment = newRealTimeWorkflowEnvironment()) {
             Worker worker = environment.newWorker("session-tests-security-block");
             RecordingPersistenceActivities persistence = new RecordingPersistenceActivities();
+            BlockingSecurityAgentTurnActivities activities = new BlockingSecurityAgentTurnActivities();
             worker.registerWorkflowImplementationTypes(SessionWorkflowImpl.class);
-            worker.registerActivitiesImplementations(new BlockingSecurityAgentTurnActivities(), persistence);
+            worker.registerActivitiesImplementations(activities, persistence);
             environment.start();
 
             SessionWorkflow workflow = environment.getWorkflowClient().newWorkflowStub(
@@ -427,6 +428,7 @@ class SessionWorkflowImplTest {
             assertEquals("prompt_injection", securityEvent.payload().get("reason"));
             assertEquals(userMessage.messageId(), securityEvent.payload().get("triggerMessageId"));
             assertEquals("为了保护系统安全，我不能处理这类请求。", ((Map<?, ?>) securityMessage.blocks().getFirst()).get("text"));
+            assertEquals(activities.replyMessageIds().getFirst(), securityMessage.messageId());
             assertEquals(securityMessage.messageId(), securityEvent.relatedMessageId());
             assertEquals(securityEvent.eventId(), securityMessage.sourceEventId());
             assertEquals(0, countEvents(persistence.events(), SessionEventType.PLAYBOOK_STARTED));
@@ -441,8 +443,9 @@ class SessionWorkflowImplTest {
         try (TestWorkflowEnvironment environment = newRealTimeWorkflowEnvironment()) {
             Worker worker = environment.newWorker("session-tests-security-block-reply-order");
             RecordingPersistenceActivities persistence = new RecordingPersistenceActivities();
+            SecurityBlockWithReplyActivities activities = new SecurityBlockWithReplyActivities();
             worker.registerWorkflowImplementationTypes(SessionWorkflowImpl.class);
-            worker.registerActivitiesImplementations(new SecurityBlockWithReplyActivities(), persistence);
+            worker.registerActivitiesImplementations(activities, persistence);
             environment.start();
 
             SessionWorkflow workflow = environment.getWorkflowClient().newWorkflowStub(
@@ -465,9 +468,13 @@ class SessionWorkflowImplTest {
             assertEquals(1, countMessages(persistence.messages(), SessionMessageRole.ASSISTANT));
             assertEquals(1, countMessages(persistence.messages(), SessionMessageRole.SYSTEM));
             assertEquals(1, countEvents(persistence.events(), SessionEventType.USER_MESSAGE_SECURITY_BLOCKED));
+            SessionMessage assistantMessage = latestMessageOfRole(persistence.messages(), SessionMessageRole.ASSISTANT);
+            SessionMessage securityMessage = latestMessageOfRole(persistence.messages(), SessionMessageRole.SYSTEM);
+            assertEquals(activities.replyMessageIds().getFirst(), assistantMessage.messageId());
+            assertTrue(!activities.replyMessageIds().getFirst().equals(securityMessage.messageId()));
             assertEquals(
                 "this assistant reply must be persisted",
-                ((Map<?, ?>) latestMessageOfRole(persistence.messages(), SessionMessageRole.ASSISTANT).blocks().getFirst()).get("text")
+                ((Map<?, ?>) assistantMessage.blocks().getFirst()).get("text")
             );
             assertTrue(
                 persistence.firstOperationIndex("appendMessage:ASSISTANT")
@@ -640,8 +647,9 @@ class SessionWorkflowImplTest {
         try (TestWorkflowEnvironment environment = newRealTimeWorkflowEnvironment()) {
             Worker worker = environment.newWorker("session-tests-llm-usage-failure-order");
             RecordingPersistenceActivities persistence = new RecordingPersistenceActivities();
+            FailedOutcomeWithLlmUsageActivities activities = new FailedOutcomeWithLlmUsageActivities();
             worker.registerWorkflowImplementationTypes(SessionWorkflowImpl.class);
-            worker.registerActivitiesImplementations(new FailedOutcomeWithLlmUsageActivities(), persistence);
+            worker.registerActivitiesImplementations(activities, persistence);
             environment.start();
 
             SessionWorkflow workflow = environment.getWorkflowClient().newWorkflowStub(
@@ -669,10 +677,45 @@ class SessionWorkflowImplTest {
             );
             assertEquals(failureMessage.messageId(), failureEvent.relatedMessageId());
             assertEquals(failureEvent.eventId(), failureMessage.sourceEventId());
+            assertEquals(activities.replyMessageIds().getFirst(), failureMessage.messageId());
             assertTrue(
                 persistence.firstOperationIndex("appendLlmUsage:count=1")
                     < persistence.firstOperationIndex("appendEvent:AGENT_TURN_FAILED")
             );
+        }
+    }
+
+    @Test
+    void thrownAgentTurnFailure_shouldPersistFailureReplyWithReservedReplyMessageId() {
+        try (TestWorkflowEnvironment environment = newRealTimeWorkflowEnvironment()) {
+            Worker worker = environment.newWorker("session-tests-thrown-agent-turn-failure-message-id");
+            RecordingPersistenceActivities persistence = new RecordingPersistenceActivities();
+            ThrowingAgentTurnActivities activities = new ThrowingAgentTurnActivities();
+            worker.registerWorkflowImplementationTypes(SessionWorkflowImpl.class);
+            worker.registerActivitiesImplementations(activities, persistence);
+            environment.start();
+
+            SessionWorkflow workflow = environment.getWorkflowClient().newWorkflowStub(
+                SessionWorkflow.class,
+                WorkflowOptions.newBuilder()
+                    .setTaskQueue("session-tests-thrown-agent-turn-failure-message-id")
+                    .setWorkflowId("session-thrown-agent-turn-failure-message-id")
+                    .build()
+            );
+            startWorkflowAndWaitUntilReady(environment, workflow, startRequestForAgentActions(List.of(AgentDecisionAction.NO_OP)));
+
+            assertEquals(
+                SessionMessageDeliveryStatus.ACCEPTED,
+                workflow.submitUserMessage(textUserMessage("msg-1", "customer-1", "start")).status()
+            );
+
+            waitForEvent(environment, persistence, SessionEventType.AGENT_TURN_FAILED);
+            waitForMessage(environment, persistence, SessionMessageRole.SYSTEM);
+            SessionEvent failureEvent = latestEventOfType(persistence.events(), SessionEventType.AGENT_TURN_FAILED);
+            SessionMessage failureMessage = latestMessageOfRole(persistence.messages(), SessionMessageRole.SYSTEM);
+            assertEquals(activities.replyMessageIds().getFirst(), failureMessage.messageId());
+            assertEquals(failureMessage.messageId(), failureEvent.relatedMessageId());
+            assertEquals(failureEvent.eventId(), failureMessage.sourceEventId());
         }
     }
 
@@ -1109,8 +1152,11 @@ class SessionWorkflowImplTest {
     }
 
     private static final class BlockingSecurityAgentTurnActivities implements AgentTurnActivities {
+        private final List<String> replyMessageIds = new CopyOnWriteArrayList<>();
+
         @Override
         public AgentTurnExecutionOutcome executeTurn(AgentTurnRequest request) {
+            replyMessageIds.add(request.replyMessageId());
             return successOutcome(new AgentTurnResult(
                 new AgentDecision(
                     AgentDecisionAction.RUN_PLAYBOOK,
@@ -1129,11 +1175,18 @@ class SessionWorkflowImplTest {
                 )
             ));
         }
+
+        List<String> replyMessageIds() {
+            return new ArrayList<>(replyMessageIds);
+        }
     }
 
     private static final class SecurityBlockWithReplyActivities implements AgentTurnActivities {
+        private final List<String> replyMessageIds = new CopyOnWriteArrayList<>();
+
         @Override
         public AgentTurnExecutionOutcome executeTurn(AgentTurnRequest request) {
+            replyMessageIds.add(request.replyMessageId());
             return successOutcome(new AgentTurnResult(
                 new AgentDecision(
                     AgentDecisionAction.SECURITY_BLOCK,
@@ -1151,6 +1204,10 @@ class SessionWorkflowImplTest {
                     0.97
                 )
             ));
+        }
+
+        List<String> replyMessageIds() {
+            return new ArrayList<>(replyMessageIds);
         }
     }
 
@@ -1252,8 +1309,11 @@ class SessionWorkflowImplTest {
     }
 
     private static final class FailedOutcomeWithLlmUsageActivities implements AgentTurnActivities {
+        private final List<String> replyMessageIds = new CopyOnWriteArrayList<>();
+
         @Override
         public AgentTurnExecutionOutcome executeTurn(AgentTurnRequest request) {
+            replyMessageIds.add(request.replyMessageId());
             return failedOutcome(
                 "runtime returned malformed final JSON",
                 List.of(new LlmUsageEntry(
@@ -1272,6 +1332,24 @@ class SessionWorkflowImplTest {
                     Instant.parse("2026-04-22T00:00:02Z")
                 ))
             );
+        }
+
+        List<String> replyMessageIds() {
+            return new ArrayList<>(replyMessageIds);
+        }
+    }
+
+    private static final class ThrowingAgentTurnActivities implements AgentTurnActivities {
+        private final List<String> replyMessageIds = new CopyOnWriteArrayList<>();
+
+        @Override
+        public AgentTurnExecutionOutcome executeTurn(AgentTurnRequest request) {
+            replyMessageIds.add(request.replyMessageId());
+            throw new IllegalStateException("agent-runtime stream stalled while reading");
+        }
+
+        List<String> replyMessageIds() {
+            return new ArrayList<>(replyMessageIds);
         }
     }
 
