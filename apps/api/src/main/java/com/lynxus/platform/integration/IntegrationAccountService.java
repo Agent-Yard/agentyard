@@ -1,5 +1,6 @@
 package com.lynxus.platform.integration;
 
+import com.lynxus.extension.sdk.validation.JsonSchemaValues;
 import com.lynxus.platform.extension.ExtensionDefinitionDtos.ChannelProviderDefinition;
 import com.lynxus.platform.extension.ExtensionDefinitionDtos.CredentialCapabilityMode;
 import com.lynxus.platform.extension.ExtensionDefinitionDtos.ToolConnectorDefinition;
@@ -26,11 +27,6 @@ import com.lynxus.platform.integration.IntegrationDtos.StoredIntegrationAccount;
 import com.lynxus.platform.integration.IntegrationDtos.UpdateIntegrationAccountRequest;
 import com.lynxus.platform.integration.IntegrationDtos.UpdateIntegrationAccountStatusRequest;
 import com.lynxus.platform.shared.ApiProblemException;
-import com.networknt.schema.InputFormat;
-import com.networknt.schema.Schema;
-import com.networknt.schema.SchemaLocation;
-import com.networknt.schema.SchemaRegistry;
-import com.networknt.schema.SpecificationVersion;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -42,13 +38,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import tools.jackson.databind.ObjectMapper;
 
 @Service
 public class IntegrationAccountService {
     private static final String ACCOUNT_CONFIG_SCHEMA_ID = "https://lynxus.local/schemas/integration-account-config.schema.json";
     private static final int ACCOUNT_NAME_MAX_LENGTH = 128;
-    private static final ObjectMapper JSON = new ObjectMapper();
 
     private final IntegrationAccountRepository repository;
     private final IntegrationCredentialCrypto credentialCrypto;
@@ -511,16 +505,7 @@ public class IntegrationAccountService {
 
     private void validateObjectSchema(Map<String, Object> schema, Map<String, Object> value, boolean credential) {
         try {
-            String schemaJson = JSON.writeValueAsString(schema == null ? Map.of() : schema);
-            String valueJson = JSON.writeValueAsString(value == null ? Map.of() : value);
-            SchemaRegistry schemaRegistry = SchemaRegistry.withDefaultDialect(
-                SpecificationVersion.DRAFT_2020_12,
-                builder -> builder.schemas(Map.of(ACCOUNT_CONFIG_SCHEMA_ID, schemaJson))
-            );
-            Schema objectSchema = schemaRegistry.getSchema(SchemaLocation.of(ACCOUNT_CONFIG_SCHEMA_ID));
-            if (!objectSchema.validate(valueJson, InputFormat.JSON).isEmpty()) {
-                throw credential ? credentialInvalid() : configInvalid();
-            }
+            JsonSchemaValues.validate(schema, value, ACCOUNT_CONFIG_SCHEMA_ID);
         } catch (ApiProblemException error) {
             throw error;
         } catch (Exception error) {

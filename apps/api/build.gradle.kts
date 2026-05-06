@@ -33,9 +33,6 @@ dependencies {
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.5")
     implementation("io.temporal:temporal-sdk:$temporalVersion")
     implementation("org.postgresql:postgresql:42.7.7")
-    implementation("com.networknt:json-schema-validator:2.0.1") {
-        exclude(group = "com.fasterxml.jackson.dataformat", module = "jackson-dataformat-yaml")
-    }
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")

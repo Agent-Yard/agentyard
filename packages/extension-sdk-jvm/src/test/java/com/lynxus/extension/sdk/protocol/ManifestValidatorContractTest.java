@@ -71,6 +71,24 @@ final class ManifestValidatorContractTest {
     }
 
     @Test
+    void defaultValidationUsesBundledProtocolSchemaResources() {
+        ManifestValidationResult result = ManifestValidator.validateJson(
+            baseValidToolManifest(
+                """
+                ,
+                  "unexpected": true
+                """
+            )
+        );
+
+        assertFalse(result.valid());
+        assertTrue(
+            result.errors().stream().anyMatch(error -> "MANIFEST_SCHEMA_INVALID".equals(error.code())),
+            () -> "expected MANIFEST_SCHEMA_INVALID from bundled schemas, got " + result.errors()
+        );
+    }
+
+    @Test
     void rejectsEmptyDescriptorEnvelopeThroughSchemaAndSemanticValidation() {
         ManifestValidationResult result = ManifestValidator.validateJson(
             """

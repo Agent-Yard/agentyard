@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from pathlib import Path
+from importlib.resources.abc import Traversable
 from typing import Any, Mapping
 
 from jsonschema import Draft202012Validator
@@ -21,6 +21,7 @@ from lynxus_extension_sdk.protocol import (
     TOOL_CONNECTOR_INVOKE_ENDPOINT,
     VALIDATE_CREDENTIAL_ENDPOINT,
 )
+from lynxus_extension_protocol import protocol_schema_dir
 
 MANIFEST_SCHEMA_INVALID = "MANIFEST_SCHEMA_INVALID"
 
@@ -67,11 +68,15 @@ class ManifestValidationResult:
         return not self.errors
 
 
-def validate_manifest_json(raw_json: str, *, schema_dir: Path | None = None) -> ManifestValidationResult:
+def default_protocol_schema_dir() -> Traversable:
+    return protocol_schema_dir()
+
+
+def validate_manifest_json(raw_json: str, *, schema_dir: Traversable | None = None) -> ManifestValidationResult:
     return validate_manifest_object(json.loads(raw_json), schema_dir=schema_dir)
 
 
-def validate_manifest_object(manifest: object, *, schema_dir: Path | None = None) -> ManifestValidationResult:
+def validate_manifest_object(manifest: object, *, schema_dir: Traversable | None = None) -> ManifestValidationResult:
     errors: list[ManifestValidationError] = []
     if schema_dir is not None:
         schemas = _load_protocol_schema_assets(schema_dir, errors)
@@ -82,7 +87,7 @@ def validate_manifest_object(manifest: object, *, schema_dir: Path | None = None
 
 
 def _load_protocol_schema_assets(
-    schema_dir: Path,
+    schema_dir: Traversable,
     errors: list[ManifestValidationError],
 ) -> dict[str, dict[str, Any]] | None:
     schemas: dict[str, dict[str, Any]] = {}
@@ -542,6 +547,7 @@ def _add(errors: list[ManifestValidationError], code: str, path: str, message: s
 __all__ = [
     "ManifestValidationError",
     "ManifestValidationResult",
+    "default_protocol_schema_dir",
     "validate_manifest_json",
     "validate_manifest_object",
 ]

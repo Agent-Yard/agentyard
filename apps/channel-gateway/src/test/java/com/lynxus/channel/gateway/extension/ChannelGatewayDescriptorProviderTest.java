@@ -9,8 +9,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.lynxus.extension.sdk.common.DescriptorDefinitionDigests;
 import com.lynxus.extension.sdk.protocol.JsonDocuments;
 import com.lynxus.extension.sdk.validation.ManifestValidator;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MvcResult;
@@ -22,7 +20,6 @@ final class ChannelGatewayDescriptorProviderTest {
         ChannelGatewayDescriptorProvider provider = new ChannelGatewayDescriptorProvider();
 
         assertTrue(ManifestValidator.validate(provider.manifest()).valid());
-        assertTrue(ManifestValidator.validate(provider.manifest(), protocolSchemaDir()).valid());
         assertTrue(ManifestValidator.validateJson(new String(provider.canonicalManifestBytes())).valid());
         assertEquals("feishu", provider.channelProviderDescriptors().getFirst().get("providerType"));
         assertTrue(
@@ -43,17 +40,5 @@ final class ChannelGatewayDescriptorProviderTest {
         assertArrayEquals(provider.canonicalManifestBytes(), result.getResponse().getContentAsByteArray());
         Map<String, Object> manifest = JsonDocuments.parseObject(result.getResponse().getContentAsString());
         assertTrue(ManifestValidator.validate(manifest).valid());
-    }
-
-    private static Path protocolSchemaDir() {
-        Path current = Path.of("").toAbsolutePath();
-        while (current != null) {
-            Path schemaDir = current.resolve("packages/extension-protocol/json-schema");
-            if (Files.isDirectory(schemaDir)) {
-                return schemaDir;
-            }
-            current = current.getParent();
-        }
-        throw new IllegalStateException("unable to locate extension protocol schema assets");
     }
 }

@@ -3,6 +3,7 @@
 from lynxus_extension_sdk.validation.manifest import (
     ManifestValidationError,
     ManifestValidationResult,
+    default_protocol_schema_dir,
     validate_manifest_json,
     validate_manifest_object,
 )
@@ -10,6 +11,7 @@ from lynxus_extension_sdk.validation.manifest import (
 __all__ = [
     "ManifestValidationError",
     "ManifestValidationResult",
+    "default_protocol_schema_dir",
     "validate_manifest_json",
     "validate_manifest_object",
 ]

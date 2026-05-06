@@ -5,6 +5,7 @@ description = "Python SDK skeleton for Lynxus Extension Plane implementations"
 requires-python = ">=3.11"
 dependencies = [
     "jsonschema>=4.25.1,<5",
+    "lynxus-extension-protocol",
     "pyyaml>=6.0.3,<7",
     "referencing>=0.36,<1",
 ]

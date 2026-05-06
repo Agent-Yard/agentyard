@@ -2,6 +2,11 @@ package com.lynxus.platform.catalog;
 
 import static com.lynxus.platform.catalog.CatalogDtos.*;
 
+import com.lynxus.contracts.runtime.WorkflowContracts.ResourceType;
+import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
+import com.lynxus.contracts.runtime.WorkflowContracts.VersionStatus;
+import com.lynxus.contracts.session.SessionContracts.AgentDecisionAction;
+import com.lynxus.extension.sdk.validation.JsonSchemaValues;
 import com.lynxus.platform.event.PlatformEventDtos.PlatformAggregateType;
 import com.lynxus.platform.event.PlatformEventService;
 import com.lynxus.platform.extension.ExtensionDefinitionDtos.ToolConnectorDefinition;
@@ -15,15 +20,6 @@ import com.lynxus.platform.knowledge.KnowledgeRepository;
 import com.lynxus.platform.knowledge.KnowledgeService;
 import com.lynxus.platform.knowledge.KnowledgeServiceClient;
 import com.lynxus.platform.knowledge.KnowledgeWorkflowGateway;
-import com.lynxus.contracts.session.SessionContracts.AgentDecisionAction;
-import com.lynxus.contracts.runtime.WorkflowContracts.ResourceType;
-import com.lynxus.contracts.runtime.WorkflowContracts.ShareScope;
-import com.lynxus.contracts.runtime.WorkflowContracts.VersionStatus;
-import com.networknt.schema.InputFormat;
-import com.networknt.schema.Schema;
-import com.networknt.schema.SchemaLocation;
-import com.networknt.schema.SchemaRegistry;
-import com.networknt.schema.SpecificationVersion;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -42,7 +38,6 @@ import java.util.function.Function;
 import java.util.regex.Pattern;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import tools.jackson.databind.ObjectMapper;
 
 @Service
 public class CatalogService {
@@ -69,7 +64,6 @@ public class CatalogService {
         "token",
         "bearertoken"
     );
-    private static final ObjectMapper JSON = new ObjectMapper();
 
     private final CatalogRepository repository;
     private final KnowledgeRepository knowledgeRepository;
@@ -2539,19 +2533,8 @@ public class CatalogService {
 
     private static void validateSchema(Map<String, Object> schema, Map<String, Object> value, String label) {
         try {
-            String schemaJson = JSON.writeValueAsString(schema == null ? Map.of() : schema);
-            String valueJson = JSON.writeValueAsString(value == null ? Map.of() : value);
-            SchemaRegistry schemaRegistry = SchemaRegistry.withDefaultDialect(
-                SpecificationVersion.DRAFT_2020_12,
-                builder -> builder.schemas(Map.of(TOOL_CONNECTOR_CONFIG_SCHEMA_ID, schemaJson))
-            );
-            Schema objectSchema = schemaRegistry.getSchema(SchemaLocation.of(TOOL_CONNECTOR_CONFIG_SCHEMA_ID));
-            if (!objectSchema.validate(valueJson, InputFormat.JSON).isEmpty()) {
-                throw new IllegalArgumentException(label + " does not satisfy connector schema");
-            }
+            JsonSchemaValues.validate(schema, value, TOOL_CONNECTOR_CONFIG_SCHEMA_ID);
         } catch (IllegalArgumentException error) {
-            throw error;
-        } catch (Exception error) {
             throw new IllegalArgumentException(label + " does not satisfy connector schema", error);
         }
     }

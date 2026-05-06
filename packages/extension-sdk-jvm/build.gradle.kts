@@ -6,6 +6,7 @@ plugins {
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import java.nio.file.Files
+import org.gradle.language.jvm.tasks.ProcessResources
 import org.openapitools.generator.gradle.plugin.tasks.GenerateTask
 
 @Suppress("UNCHECKED_CAST")
@@ -40,6 +41,10 @@ java {
 val extensionProtocolOpenApi = rootProject.layout.projectDirectory.file(
     "packages/extension-protocol/openapi/extension-boundary.openapi.json"
 )
+val extensionProtocolJsonSchemaDir = rootProject.layout.projectDirectory.dir(
+    "packages/extension-protocol/json-schema"
+)
+val extensionProtocolJsonSchemaResourceRoot = "com/lynxus/extension/sdk/protocol/json-schema"
 val extensionProtocolJavaGeneratorOpenApi = layout.buildDirectory.file(
     "generated/extension-protocol/openapi/extension-boundary.openapi.generator.json"
 )
@@ -230,6 +235,13 @@ tasks.withType<JavaCompile>().configureEach {
 
 tasks.named<JavaCompile>("compileJava") {
     dependsOn(generateExtensionProtocolJavaModels)
+}
+
+tasks.named<ProcessResources>("processResources") {
+    from(extensionProtocolJsonSchemaDir) {
+        include("*.schema.json")
+        into(extensionProtocolJsonSchemaResourceRoot)
+    }
 }
 
 tasks.withType<Test>().configureEach {

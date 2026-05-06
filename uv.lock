@@ -9,6 +9,7 @@ resolution-markers = [
 [manifest]
 members = [
     "lynxus-agent-runtime",
+    "lynxus-extension-protocol",
     "lynxus-extension-sdk",
     "lynxus-knowledge-service",
     "lynxus-python-common",
@@ -706,11 +707,17 @@ requires-dist = [
 ]
 
 [[package]]
+name = "lynxus-extension-protocol"
+version = "0.1.0"
+source = { editable = "packages/extension-protocol" }
+
+[[package]]
 name = "lynxus-extension-sdk"
 version = "0.1.0"
 source = { editable = "packages/extension-sdk-python" }
 dependencies = [
     { name = "jsonschema" },
+    { name = "lynxus-extension-protocol" },
     { name = "pyyaml" },
     { name = "referencing" },
 ]
@@ -718,6 +725,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "jsonschema", specifier = ">=4.25.1,<5" },
+    { name = "lynxus-extension-protocol", editable = "packages/extension-protocol" },
     { name = "pyyaml", specifier = ">=6.0.3,<7" },
     { name = "referencing", specifier = ">=0.36,<1" },
 ]

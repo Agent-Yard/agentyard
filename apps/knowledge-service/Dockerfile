@@ -5,6 +5,7 @@ WORKDIR /workspace
 COPY pyproject.toml uv.lock ./
 COPY apps/agent-runtime/pyproject.toml apps/agent-runtime/pyproject.toml
 COPY apps/knowledge-service/pyproject.toml apps/knowledge-service/pyproject.toml
+COPY packages/extension-protocol/pyproject.toml packages/extension-protocol/pyproject.toml
 COPY packages/extension-sdk-python/pyproject.toml packages/extension-sdk-python/pyproject.toml
 COPY packages/python-common/pyproject.toml packages/python-common/pyproject.toml
 COPY packages/python-common/src packages/python-common/src

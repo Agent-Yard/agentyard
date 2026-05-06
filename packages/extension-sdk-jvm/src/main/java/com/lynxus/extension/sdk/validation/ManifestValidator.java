@@ -10,6 +10,8 @@ import com.networknt.schema.SchemaLocation;
 import com.networknt.schema.SchemaRegistry;
 import com.networknt.schema.SpecificationVersion;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -24,6 +26,7 @@ public final class ManifestValidator {
     private static final String MANIFEST_SCHEMA_INVALID = "MANIFEST_SCHEMA_INVALID";
     private static final String SERVICE_MANIFEST_SCHEMA_ID =
         "https://lynxus.dev/schemas/extension-protocol/service-manifest.schema.json";
+    private static final String PROTOCOL_SCHEMA_RESOURCE_ROOT = "com/lynxus/extension/sdk/protocol/json-schema";
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Set<String> CREDENTIAL_ENDPOINTS = Set.of(
         LynxusExtensionProtocol.CREATE_CREDENTIAL_ENDPOINT,
@@ -51,7 +54,7 @@ public final class ManifestValidator {
     private ManifestValidator() {}
 
     public static ManifestValidationResult validateJson(String rawJson) {
-        return validate(JsonDocuments.parse(rawJson), null);
+        return validate(JsonDocuments.parse(rawJson));
     }
 
     public static ManifestValidationResult validateJson(String rawJson, Path protocolSchemaDir) {
@@ -59,19 +62,52 @@ public final class ManifestValidator {
     }
 
     public static ManifestValidationResult validate(Object manifest) {
-        return validate(manifest, null);
-    }
-
-    public static ManifestValidationResult validate(Object manifest, Path protocolSchemaDir) {
         List<ManifestValidationError> errors = new ArrayList<>();
-        if (protocolSchemaDir != null) {
-            Map<String, String> schemas = loadProtocolSchemaAssets(protocolSchemaDir, errors);
-            if (schemas != null) {
-                validateAgainstServiceManifestSchema(manifest, schemas, errors);
-            }
+        Map<String, String> schemas = loadBundledProtocolSchemaAssets(errors);
+        if (schemas != null) {
+            validateAgainstServiceManifestSchema(manifest, schemas, errors);
         }
         validateManifest(manifest, errors);
         return new ManifestValidationResult(errors);
+    }
+
+    public static ManifestValidationResult validate(Object manifest, Path protocolSchemaDir) {
+        Objects.requireNonNull(protocolSchemaDir, "protocolSchemaDir must not be null");
+        List<ManifestValidationError> errors = new ArrayList<>();
+        Map<String, String> schemas = loadProtocolSchemaAssets(protocolSchemaDir, errors);
+        if (schemas != null) {
+            validateAgainstServiceManifestSchema(manifest, schemas, errors);
+        }
+        validateManifest(manifest, errors);
+        return new ManifestValidationResult(errors);
+    }
+
+    private static Map<String, String> loadBundledProtocolSchemaAssets(List<ManifestValidationError> errors) {
+        Map<String, String> schemas = new LinkedHashMap<>();
+        for (String fileName : PROTOCOL_SCHEMA_FILES) {
+            String resourceName = PROTOCOL_SCHEMA_RESOURCE_ROOT + "/" + fileName;
+            try (InputStream input = resourceStream(resourceName)) {
+                if (input == null) {
+                    add(errors, "PROTOCOL_SCHEMA_ASSET_MISSING", "/schemas/" + fileName, "Protocol JSON Schema asset is missing");
+                    return null;
+                }
+                if (!addProtocolSchemaAsset(fileName, new String(input.readAllBytes(), StandardCharsets.UTF_8), schemas, errors)) {
+                    return null;
+                }
+            } catch (IOException | RuntimeException exception) {
+                add(errors, "PROTOCOL_SCHEMA_ASSET_INVALID", "/schemas/" + fileName, "Protocol JSON Schema asset is invalid");
+                return null;
+            }
+        }
+        return schemas;
+    }
+
+    private static InputStream resourceStream(String resourceName) {
+        ClassLoader classLoader = ManifestValidator.class.getClassLoader();
+        if (classLoader != null) {
+            return classLoader.getResourceAsStream(resourceName);
+        }
+        return ClassLoader.getSystemResourceAsStream(resourceName);
     }
 
     private static Map<String, String> loadProtocolSchemaAssets(Path schemaDir, List<ManifestValidationError> errors) {
@@ -83,20 +119,31 @@ public final class ManifestValidator {
                 return null;
             }
             try {
-                String rawSchema = Files.readString(schemaFile);
-                Map<String, Object> schema = JsonDocuments.parseObject(rawSchema);
-                Object schemaId = schema.get("$id");
-                if (!(schemaId instanceof String id) || id.isBlank()) {
-                    add(errors, "PROTOCOL_SCHEMA_ASSET_INVALID", "/schemas/" + fileName, "Protocol JSON Schema asset is missing $id");
+                if (!addProtocolSchemaAsset(fileName, Files.readString(schemaFile), schemas, errors)) {
                     return null;
                 }
-                schemas.put(id, rawSchema);
             } catch (IOException | RuntimeException exception) {
                 add(errors, "PROTOCOL_SCHEMA_ASSET_INVALID", "/schemas/" + fileName, "Protocol JSON Schema asset is invalid");
                 return null;
             }
         }
         return schemas;
+    }
+
+    private static boolean addProtocolSchemaAsset(
+        String fileName,
+        String rawSchema,
+        Map<String, String> schemas,
+        List<ManifestValidationError> errors
+    ) {
+        Map<String, Object> schema = JsonDocuments.parseObject(rawSchema);
+        Object schemaId = schema.get("$id");
+        if (!(schemaId instanceof String id) || id.isBlank()) {
+            add(errors, "PROTOCOL_SCHEMA_ASSET_INVALID", "/schemas/" + fileName, "Protocol JSON Schema asset is missing $id");
+            return false;
+        }
+        schemas.put(id, rawSchema);
+        return true;
     }
 
     private static void validateAgainstServiceManifestSchema(

@@ -26,11 +26,13 @@ constraint-dependencies = [
 members = [
     "apps/agent-runtime",
     "apps/knowledge-service",
+    "packages/extension-protocol",
     "packages/extension-sdk-python",
     "packages/python-common",
 ]
 
 [tool.uv.sources]
 lynxus-agent-runtime = { workspace = true }
+lynxus-extension-protocol = { workspace = true }
 lynxus-extension-sdk = { workspace = true }
 lynxus-python-common = { workspace = true }

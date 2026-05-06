@@ -6,13 +6,19 @@ from pathlib import Path
 
 import pytest
 
-from lynxus_extension_sdk.validation import validate_manifest_object
+from lynxus_extension_sdk.validation import default_protocol_schema_dir, validate_manifest_object
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SCHEMA_DIR = REPO_ROOT / "packages/extension-protocol/json-schema"
 VALID_FIXTURES = REPO_ROOT / "packages/extension-protocol/contract-tests/fixtures/manifest-valid"
 INVALID_FIXTURES = REPO_ROOT / "packages/extension-protocol/contract-tests/fixtures/manifest-invalid"
+
+
+def test_default_protocol_schema_dir_resolves_shared_schema_assets() -> None:
+    schema_dir = default_protocol_schema_dir()
+
+    assert (schema_dir / "service-manifest.schema.json").is_file()
 
 
 @pytest.mark.parametrize("fixture_path", sorted(VALID_FIXTURES.glob("*.json")), ids=lambda path: path.name)

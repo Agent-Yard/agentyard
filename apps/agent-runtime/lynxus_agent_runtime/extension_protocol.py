@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from lynxus_extension_sdk.common import (
     CanonicalJsonError,
     canonical_bytes,
@@ -19,13 +17,10 @@ from lynxus_extension_sdk.protocol import (
 )
 from lynxus_extension_sdk.validation import (
     ManifestValidationResult,
+    default_protocol_schema_dir,
     validate_manifest_json,
     validate_manifest_object,
 )
-
-
-def default_protocol_schema_dir() -> Path:
-    return Path(__file__).resolve().parents[3] / "packages/extension-protocol/json-schema"
 
 
 def validate_manifest_against_protocol_schema(manifest: object) -> ManifestValidationResult:
