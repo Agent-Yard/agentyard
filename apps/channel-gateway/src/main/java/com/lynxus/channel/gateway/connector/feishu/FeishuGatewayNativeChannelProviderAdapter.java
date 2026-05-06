@@ -4,7 +4,6 @@ import com.lynxus.channel.gateway.extension.GatewayNativeChannelProviderAdapter;
 import com.lynxus.contracts.channel.ChannelContracts;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundFrame;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundFrameKind;
 import jakarta.annotation.PreDestroy;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -317,7 +316,7 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
         String initialContent,
         String displayContent
     ) {
-        try (FeishuStreamingReplyCardReadiness.Reservation ignored = streamingCardReadiness.begin(key)) {
+        try (FeishuStreamingReplyCardReadiness.Reservation _ = streamingCardReadiness.begin(key)) {
             Optional<FeishuStreamingReplyCardState> existing = streamingCardStore.find(key);
             if (existing.isPresent()) {
                 return existing.orElseThrow();

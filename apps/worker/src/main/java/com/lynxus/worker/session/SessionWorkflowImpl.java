@@ -444,9 +444,10 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             SecurityAssessment securityAssessment = result == null ? null : result.securityAssessment();
             if (securityAssessment != null && isSecurityBlocked(securityAssessment)) {
                 AgentDecision decision = result == null ? null : result.decision();
-                boolean assistantReplyEmitted = decision != null && hasMessageContent(decision.replyMessage());
+                SessionMessageInput assistantReply = decision == null ? null : decision.replyMessage();
+                boolean assistantReplyEmitted = hasMessageContent(assistantReply);
                 if (assistantReplyEmitted) {
-                    emitOwnerReply(replyMessageId, decision.replyMessage(), SessionActorType.AGENT, currentOwnerAgentId, activePlaybookRunId, currentOwnerAgentId, null);
+                    emitOwnerReply(replyMessageId, assistantReply, SessionActorType.AGENT, currentOwnerAgentId, activePlaybookRunId, currentOwnerAgentId, null);
                 }
                 emitSecurityBlocked(
                     securityAssessment,
@@ -947,17 +948,6 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             currentOwnerAgentId,
             sourceEventId
         );
-    }
-
-    private void emitSystemEventBackedReply(
-        SessionEventType eventType,
-        String actorId,
-        Map<String, Object> payload,
-        String relatedPlaybookRunId,
-        String relatedOwnerAgentId,
-        SessionMessageInput reply
-    ) {
-        emitSystemEventBackedReply(eventType, actorId, payload, relatedPlaybookRunId, relatedOwnerAgentId, reply, null);
     }
 
     private void emitSystemEventBackedReply(

@@ -1,6 +1,6 @@
 plugins {
     `java-library`
-    id("org.openapi.generator") version "7.10.0"
+    id("org.openapi.generator") version "7.17.0"
 }
 
 import groovy.json.JsonOutput
