@@ -5,10 +5,13 @@ WORKDIR /workspace
 COPY pyproject.toml uv.lock ./
 COPY apps/agent-runtime/pyproject.toml apps/agent-runtime/pyproject.toml
 COPY apps/knowledge-service/pyproject.toml apps/knowledge-service/pyproject.toml
+COPY packages/extension-sdk-python/pyproject.toml packages/extension-sdk-python/pyproject.toml
 COPY packages/python-common/pyproject.toml packages/python-common/pyproject.toml
+COPY packages/extension-sdk-python/src packages/extension-sdk-python/src
 COPY packages/python-common/src packages/python-common/src
 COPY apps/agent-runtime/lynxus_agent_runtime apps/agent-runtime/lynxus_agent_runtime
 
+RUN uv build --package lynxus-extension-sdk --out-dir /dist
 RUN uv build --package lynxus-python-common --out-dir /dist
 RUN uv build --package lynxus-agent-runtime --out-dir /dist
 
