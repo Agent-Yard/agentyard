@@ -27,6 +27,7 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
     public static final String PROVIDER_TYPE = "feishu";
     private static final String DEFAULT_RECEIVE_ID_TYPE = "chat_id";
     private static final int FEISHU_UUID_MAX_LENGTH = 50;
+    private static final int FEISHU_STREAMING_MODE_CLOSED_CODE = 300309;
     private static final String INITIAL_STREAMING_REPLY_PLACEHOLDER = "思考中...";
 
     private final FeishuCredentialProvider credentialProvider;
@@ -297,14 +298,22 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
         }
         String content = state.content() + delta;
         int sequence = state.sequence() + 1;
-        messageSender.updateCardText(new FeishuMessageSender.FeishuUpdateCardTextCommand(
-            credential,
-            state.cardId(),
-            state.elementId(),
-            content,
-            sequence,
-            feishuUuid(frame, "text")
-        ));
+        try {
+            messageSender.updateCardText(new FeishuMessageSender.FeishuUpdateCardTextCommand(
+                credential,
+                state.cardId(),
+                state.elementId(),
+                content,
+                sequence,
+                feishuUuid(frame, "text")
+            ));
+        } catch (RuntimeException error) {
+            if (isFeishuStreamingModeClosed(error)) {
+                streamingCardStore.save(state.closed(sequence, advanceSourceSeq(state, frame), frame.occurredAt()));
+                return;
+            }
+            throw error;
+        }
         streamingCardStore.save(state.withContent(content, sequence, advanceSourceSeq(state, frame), frame.occurredAt()));
     }
 
@@ -425,25 +434,43 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
         FeishuStreamingReplyCardState current = state;
         if (finalContent.isPresent() && !finalContent.orElseThrow().equals(current.content())) {
             int contentSequence = current.sequence() + 1;
-            messageSender.updateCardText(new FeishuMessageSender.FeishuUpdateCardTextCommand(
-                credential,
-                current.cardId(),
-                current.elementId(),
-                finalContent.orElseThrow(),
-                contentSequence,
-                feishuUuid(frame, "text")
-            ));
+            try {
+                messageSender.updateCardText(new FeishuMessageSender.FeishuUpdateCardTextCommand(
+                    credential,
+                    current.cardId(),
+                    current.elementId(),
+                    finalContent.orElseThrow(),
+                    contentSequence,
+                    feishuUuid(frame, "text")
+                ));
+            } catch (RuntimeException error) {
+                if (isFeishuStreamingModeClosed(error)) {
+                    current = current.closed(contentSequence, advanceSourceSeq(current, frame), frame.occurredAt());
+                    streamingCardStore.save(current);
+                    return Optional.of(current);
+                }
+                throw error;
+            }
             current = current.withContent(finalContent.orElseThrow(), contentSequence, advanceSourceSeq(current, frame), frame.occurredAt());
         }
         if (!current.closed()) {
             int closeSequence = current.sequence() + 1;
-            messageSender.updateCardSettings(new FeishuMessageSender.FeishuUpdateCardSettingsCommand(
-                credential,
-                current.cardId(),
-                FeishuCardJsonFactory.streamingOffSettings(objectMapper),
-                closeSequence,
-                feishuUuid(frame, "settings")
-            ));
+            try {
+                messageSender.updateCardSettings(new FeishuMessageSender.FeishuUpdateCardSettingsCommand(
+                    credential,
+                    current.cardId(),
+                    FeishuCardJsonFactory.streamingOffSettings(objectMapper),
+                    closeSequence,
+                    feishuUuid(frame, "settings")
+                ));
+            } catch (RuntimeException error) {
+                if (isFeishuStreamingModeClosed(error)) {
+                    current = current.closed(closeSequence, advanceSourceSeq(current, frame), frame.occurredAt());
+                    streamingCardStore.save(current);
+                    return Optional.of(current);
+                }
+                throw error;
+            }
             current = current.closed(closeSequence, advanceSourceSeq(current, frame), frame.occurredAt());
         }
         streamingCardStore.save(current);
@@ -611,6 +638,11 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
     private static Optional<String> textPayload(ChannelOutboundFrame frame, String field) {
         Object value = frame.payload().get(field);
         return value instanceof String text && !text.isEmpty() ? Optional.of(text) : Optional.empty();
+    }
+
+    private static boolean isFeishuStreamingModeClosed(RuntimeException error) {
+        return error instanceof FeishuApiException feishuError
+            && feishuError.code() == FEISHU_STREAMING_MODE_CLOSED_CODE;
     }
 
     private static Optional<String> completedBlockText(ChannelGatewayProfile profile, ChannelOutboundFrame frame) {

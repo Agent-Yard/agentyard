@@ -137,6 +137,29 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
     }
 
     @Test
+    void draftUpdateTreatsFeishuStreamingModeClosedAsStaleFrame() {
+        StreamingModeClosedMessageSender messageSender = new StreamingModeClosedMessageSender();
+        InMemoryStreamingCardStore store = new InMemoryStreamingCardStore();
+        FeishuGatewayNativeChannelProviderAdapter adapter = new FeishuGatewayNativeChannelProviderAdapter(
+            new CapturingCredentialProvider(),
+            messageSender,
+            FeishuTypingReactionLifecycle.NOOP,
+            store,
+            new ObjectMapper()
+        );
+
+        adapter.consumeOutboundFrame(profile(), typingFrameWithMessageId("session-message-reply-1"));
+        adapter.consumeOutboundFrame(profile(), draftUpdateFrame(2L, "late"));
+        adapter.consumeOutboundFrame(profile(), draftUpdateFrame(3L, " ignored"));
+
+        assertEquals(1, messageSender.updateTextCommands.size());
+        FeishuStreamingReplyCardState state = store.find(FeishuStreamingReplyCardKey.fromFrame(draftUpdateFrame(3L, "ignored"))).orElseThrow();
+        assertTrue(state.closed());
+        assertEquals("", state.content());
+        assertEquals(2L, state.lastSourceSeq());
+    }
+
+    @Test
     void firstDraftWaitsUntilPreparedCardMessageHasBeenSent() throws Exception {
         BlockingMessageSender messageSender = new BlockingMessageSender();
         InMemoryStreamingCardStore store = new InMemoryStreamingCardStore();
@@ -380,6 +403,57 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
         assertEquals(1, messageSender.updateTextCommands.size());
         assertEquals("hello", messageSender.updateTextCommands.getFirst().content());
         assertEquals(1, messageSender.updateSettingsCommands.size());
+    }
+
+    @Test
+    void finalDeliveryTreatsFeishuStreamingModeClosedAsAlreadyClosed() {
+        StreamingModeClosedMessageSender messageSender = new StreamingModeClosedMessageSender();
+        InMemoryStreamingCardStore store = new InMemoryStreamingCardStore();
+        FeishuGatewayNativeChannelProviderAdapter adapter = new FeishuGatewayNativeChannelProviderAdapter(
+            new CapturingCredentialProvider(),
+            messageSender,
+            FeishuTypingReactionLifecycle.NOOP,
+            store,
+            new ObjectMapper()
+        );
+
+        messageSender.failUpdateText = false;
+        adapter.consumeOutboundFrame(profile(), draftUpdateFrame(2L, "hel"));
+        messageSender.failUpdateText = true;
+
+        adapter.consumeOutboundFrame(profile(), finalFrameWithMessageId("session-message-reply-1", List.of(
+            Map.of("type", "TEXT", "text", "hello")
+        )));
+
+        assertEquals(1, messageSender.updateTextCommands.size());
+        assertEquals(0, messageSender.updateSettingsCommands.size());
+        FeishuStreamingReplyCardState state = store.find(FeishuStreamingReplyCardKey.fromFrame(draftUpdateFrame(2L, "ignored"))).orElseThrow();
+        assertTrue(state.closed());
+        assertEquals("hel", state.content());
+    }
+
+    @Test
+    void draftCompleteTreatsFeishuStreamingModeClosedAsAlreadyClosed() {
+        StreamingModeClosedMessageSender messageSender = new StreamingModeClosedMessageSender();
+        InMemoryStreamingCardStore store = new InMemoryStreamingCardStore();
+        FeishuGatewayNativeChannelProviderAdapter adapter = new FeishuGatewayNativeChannelProviderAdapter(
+            new CapturingCredentialProvider(),
+            messageSender,
+            FeishuTypingReactionLifecycle.NOOP,
+            store,
+            new ObjectMapper()
+        );
+
+        messageSender.failUpdateText = false;
+        adapter.consumeOutboundFrame(profile(), draftUpdateFrame(2L, "hello"));
+        messageSender.failUpdateSettings = true;
+
+        adapter.consumeOutboundFrame(profile(), draftCompleteFrame(4L, Map.of("type", "TEXT", "text", "hello")));
+
+        assertEquals(1, messageSender.updateSettingsCommands.size());
+        FeishuStreamingReplyCardState state = store.find(FeishuStreamingReplyCardKey.fromFrame(draftUpdateFrame(4L, "ignored"))).orElseThrow();
+        assertTrue(state.closed());
+        assertEquals("hello", state.content());
     }
 
     @Test
@@ -738,6 +812,36 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
 
         private void releaseSend() {
             sendAllowed.countDown();
+        }
+    }
+
+    private static final class StreamingModeClosedMessageSender extends CapturingMessageSender {
+        private boolean failUpdateText = true;
+        private boolean failUpdateSettings = false;
+
+        @Override
+        public void updateCardText(FeishuUpdateCardTextCommand command) {
+            super.updateCardText(command);
+            if (failUpdateText) {
+                throw streamingModeClosed("feishu update card text failed");
+            }
+        }
+
+        @Override
+        public void updateCardSettings(FeishuUpdateCardSettingsCommand command) {
+            super.updateCardSettings(command);
+            if (failUpdateSettings) {
+                throw streamingModeClosed("feishu update card settings failed");
+            }
+        }
+
+        private static FeishuApiException streamingModeClosed(String prefix) {
+            return new FeishuApiException(
+                prefix,
+                300309,
+                "ErrMsg: streaming mode is closed; ",
+                "request-1"
+            );
         }
     }
 

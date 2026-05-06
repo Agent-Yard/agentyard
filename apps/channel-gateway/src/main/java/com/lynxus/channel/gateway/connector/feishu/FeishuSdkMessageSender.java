@@ -38,7 +38,7 @@ final class FeishuSdkMessageSender implements FeishuMessageSender {
                 .build();
             CreateCardResp response = client(command.credential()).cardkit().v1().card().create(request);
             if (!response.success()) {
-                throw new IllegalStateException(feishuError("feishu create card failed", response.getCode(), response.getMsg(), response.getRequestId()));
+                throw feishuError("feishu create card failed", response.getCode(), response.getMsg(), response.getRequestId());
             }
             String cardId = response.getData() == null ? null : response.getData().getCardId();
             if (cardId == null || cardId.isBlank()) {
@@ -69,12 +69,7 @@ final class FeishuSdkMessageSender implements FeishuMessageSender {
                 .build();
             CreateMessageResp response = client(command.credential()).im().v1().message().create(request);
             if (!response.success()) {
-                throw new IllegalStateException("feishu send interactive card failed: code="
-                    + response.getCode()
-                    + ", msg="
-                    + response.getMsg()
-                    + ", requestId="
-                    + response.getRequestId());
+                throw feishuError("feishu send interactive card failed", response.getCode(), response.getMsg(), response.getRequestId());
             }
             return new FeishuSendInteractiveCardResult(
                 response.getData() == null ? null : response.getData().getMessageId(),
@@ -95,7 +90,7 @@ final class FeishuSdkMessageSender implements FeishuMessageSender {
                 .build();
             DeleteMessageResp response = client(command.credential()).im().v1().message().delete(request);
             if (!response.success()) {
-                throw new IllegalStateException(feishuError("feishu delete message failed", response.getCode(), response.getMsg(), response.getRequestId()));
+                throw feishuError("feishu delete message failed", response.getCode(), response.getMsg(), response.getRequestId());
             }
         } catch (IllegalStateException error) {
             throw error;
@@ -118,7 +113,7 @@ final class FeishuSdkMessageSender implements FeishuMessageSender {
                 .build();
             ContentCardElementResp response = client(command.credential()).cardkit().v1().cardElement().content(request);
             if (!response.success()) {
-                throw new IllegalStateException(feishuError("feishu update card text failed", response.getCode(), response.getMsg(), response.getRequestId()));
+                throw feishuError("feishu update card text failed", response.getCode(), response.getMsg(), response.getRequestId());
             }
         } catch (IllegalStateException error) {
             throw error;
@@ -140,7 +135,7 @@ final class FeishuSdkMessageSender implements FeishuMessageSender {
                 .build();
             SettingsCardResp response = client(command.credential()).cardkit().v1().card().settings(request);
             if (!response.success()) {
-                throw new IllegalStateException(feishuError("feishu update card settings failed", response.getCode(), response.getMsg(), response.getRequestId()));
+                throw feishuError("feishu update card settings failed", response.getCode(), response.getMsg(), response.getRequestId());
             }
         } catch (IllegalStateException error) {
             throw error;
@@ -165,7 +160,7 @@ final class FeishuSdkMessageSender implements FeishuMessageSender {
         }
     }
 
-    private static String feishuError(String prefix, int code, String msg, String requestId) {
-        return prefix + ": code=" + code + ", msg=" + msg + ", requestId=" + requestId;
+    private static FeishuApiException feishuError(String prefix, int code, String msg, String requestId) {
+        return new FeishuApiException(prefix, code, msg, requestId);
     }
 }
