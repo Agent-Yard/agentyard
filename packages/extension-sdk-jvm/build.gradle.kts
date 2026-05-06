@@ -33,6 +33,8 @@ java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(25))
     }
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
 }
 
 val extensionProtocolOpenApi = rootProject.layout.projectDirectory.file(
@@ -46,6 +48,12 @@ val generatedExtensionProtocolJavaSmokeSourcesDir = layout.buildDirectory.dir(
     "generated/extension-protocol/java-smoke/src/main/java"
 )
 val generatedExtensionProtocolJavaClassesDir = layout.buildDirectory.dir("classes/java/generated-extension-protocol")
+
+sourceSets {
+    main {
+        java.srcDir(generatedExtensionProtocolJavaModelsDir.map { it.dir("src/main/java") })
+    }
+}
 
 val generatedExtensionProtocolJavaCompileClasspath by configurations.creating {
     isCanBeConsumed = false
@@ -110,14 +118,18 @@ val generateExtensionProtocolJavaModels = tasks.register<GenerateTask>("generate
             "apis" to "false",
             "apiDocs" to "false",
             "apiTests" to "false",
-            "supportingFiles" to "JSON.java,AbstractOpenApiSchema.java,ApiException.java",
         )
     )
     configOptions.set(
         mapOf(
             "dateLibrary" to "java8",
+            "disallowAdditionalPropertiesIfNotPresent" to "true",
+            "additionalModelTypeAnnotations" to
+                "@com.fasterxml.jackson.annotation.JsonFormat(shape = com.fasterxml.jackson.annotation.JsonFormat.Shape.OBJECT)",
             "hideGenerationTimestamp" to "true",
+            "library" to "resttemplate",
             "openApiNullable" to "false",
+            "serializationLibrary" to "jackson",
             "useJakartaEe" to "true",
         )
     )
@@ -195,20 +207,29 @@ val compileGeneratedExtensionProtocolJavaModels = tasks.register<JavaCompile>(
 }
 
 dependencies {
+    api("com.fasterxml.jackson.core:jackson-annotations:2.20")
+    api("jakarta.annotation:jakarta.annotation-api:3.0.0")
+
     implementation("com.fasterxml.jackson.core:jackson-databind:2.20.1")
     implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.20.1")
     implementation("com.networknt:json-schema-validator:2.0.1") {
         exclude(group = "com.fasterxml.jackson.dataformat", module = "jackson-dataformat-yaml")
     }
 
-    generatedExtensionProtocolJavaCompileClasspath("com.google.code.gson:gson:2.13.2")
-    generatedExtensionProtocolJavaCompileClasspath("io.gsonfire:gson-fire:1.9.0")
+    generatedExtensionProtocolJavaCompileClasspath("com.fasterxml.jackson.core:jackson-annotations:2.20")
     generatedExtensionProtocolJavaCompileClasspath("jakarta.annotation:jakarta.annotation-api:3.0.0")
-    generatedExtensionProtocolJavaCompileClasspath("com.squareup.okio:okio-jvm:3.6.0")
 
     testImplementation(platform("org.junit:junit-bom:5.11.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+
+tasks.withType<JavaCompile>().configureEach {
+    options.release.set(21)
+}
+
+tasks.named<JavaCompile>("compileJava") {
+    dependsOn(generateExtensionProtocolJavaModels)
 }
 
 tasks.withType<Test>().configureEach {

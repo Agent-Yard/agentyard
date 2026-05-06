@@ -1,7 +1,11 @@
 package com.lynxus.extension.sdk.protocol;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lynxus.extension.sdk.generated.protocol.model.ServiceManifestEnvelope;
+import com.lynxus.extension.sdk.generated.protocol.model.ToolInvokeResponse;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -10,6 +14,7 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 final class GeneratedProtocolModelContractTest {
+    private static final ObjectMapper JSON = new ObjectMapper();
     private static final Path REPO_ROOT = Path.of(System.getProperty("lynxus.repo.root"));
     private static final Path OPENAPI_PATH = REPO_ROOT.resolve(
         "packages/extension-protocol/openapi/extension-boundary.openapi.json"
@@ -32,16 +37,17 @@ final class GeneratedProtocolModelContractTest {
     private static final Path GENERATED_MODEL_DIR = GENERATED_ROOT.resolve(
         "src/main/java/com/lynxus/extension/sdk/generated/protocol/model"
     );
-    private static final Path GENERATED_SUPPORT_DIR = GENERATED_ROOT.resolve(
-        "src/main/java/com/lynxus/extension/sdk/generated/protocol"
-    );
     private static final Path GENERATED_CLASSES_ROOT = Path.of(
         System.getProperty(
             "lynxus.extension.generated.java.classes.dir",
             SDK_ROOT.resolve("build/classes/java/generated-extension-protocol").toString()
         )
     );
+    private static final Path MAIN_CLASSES_ROOT = SDK_ROOT.resolve("build/classes/java/main");
     private static final Path GENERATED_MODEL_CLASSES_DIR = GENERATED_CLASSES_ROOT.resolve(
+        "com/lynxus/extension/sdk/generated/protocol/model"
+    );
+    private static final Path MAIN_MODEL_CLASSES_DIR = MAIN_CLASSES_ROOT.resolve(
         "com/lynxus/extension/sdk/generated/protocol/model"
     );
     private static final Path GENERATED_SMOKE_CLASS = GENERATED_CLASSES_ROOT.resolve(
@@ -127,14 +133,6 @@ final class GeneratedProtocolModelContractTest {
         );
 
         assertTrue(
-            Files.isRegularFile(GENERATED_SUPPORT_DIR.resolve("JSON.java")),
-            "generated Java support class missing for model JSON helpers"
-        );
-        assertTrue(
-            Files.isRegularFile(GENERATED_MODEL_DIR.resolve("AbstractOpenApiSchema.java")),
-            "generated Java support class missing for composed models"
-        );
-        assertTrue(
             Files.isRegularFile(GENERATED_SMOKE_CLASS),
             () -> "generated Java compile smoke class missing: " + GENERATED_SMOKE_CLASS
         );
@@ -156,7 +154,37 @@ final class GeneratedProtocolModelContractTest {
                 Files.isRegularFile(GENERATED_MODEL_CLASSES_DIR.resolve(expectedSchema + ".class")),
                 () -> "generated Java model did not compile for " + expectedSchema
             );
+            assertTrue(
+                Files.isRegularFile(MAIN_MODEL_CLASSES_DIR.resolve(expectedSchema + ".class")),
+                () -> "generated Java model is not included in SDK main classes for " + expectedSchema
+            );
         }
+    }
+
+    @Test
+    void generatedProtocolModelsAreJacksonFriendlySdkDtos() throws IOException {
+        ToolInvokeResponse response = new ToolInvokeResponse()
+            .status(ToolInvokeResponse.StatusEnum.SUCCEEDED)
+            .output(Map.of("result", "ok"))
+            .metadata(Map.of());
+
+        String responseJson = JSON.writeValueAsString(response);
+        assertTrue(responseJson.contains("\"status\":\"SUCCEEDED\""));
+        assertTrue(responseJson.contains("\"output\":{\"result\":\"ok\"}"));
+        assertTrue(!responseJson.contains("\"additionalProperties\""));
+
+        ServiceManifestEnvelope manifest = JSON.readValue(
+            Files.readString(REPO_ROOT.resolve("packages/extension-protocol/examples/service-manifest.enterprise-service.json")),
+            ServiceManifestEnvelope.class
+        );
+        assertEquals(1, manifest.getExtensionApiVersion());
+        assertEquals(1, manifest.getDescriptors().getChannelProviders().size());
+        assertEquals(1, manifest.getDescriptors().getToolConnectors().size());
+
+        String manifestJson = JSON.writeValueAsString(manifest);
+        assertTrue(manifestJson.contains("\"channelProviders\""));
+        assertTrue(manifestJson.contains("\"toolConnectors\""));
+        assertTrue(!manifestJson.contains("\"additionalProperties\":null"));
     }
 
     private static Map<String, Object> schemaProperty(

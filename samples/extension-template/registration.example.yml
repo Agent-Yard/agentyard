@@ -1,0 +1,12 @@
+lynxus:
+  extensions:
+    services:
+      - registrationId: example-extension-template
+        baseUrl: http://127.0.0.1:18100
+        exposes:
+          channelProviderTypes:
+            - example.extension.template.channel
+          toolConnectorTypes:
+            - example.extension.template.tool
+        auth:
+          type: INTERNAL_TOKEN

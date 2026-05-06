@@ -1,4 +1,4 @@
 /**
- * Manifest and schema validation facade package. Validator implementation is intentionally deferred to a later Slice 2 subtask.
+ * Manifest and schema validation facade package.
  */
 package com.lynxus.extension.sdk.validation;

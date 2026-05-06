@@ -1,0 +1,218 @@
+{
+  "extensionApiVersion": 1,
+  "coreMinVersion": "0.8.0",
+  "coreMaxVersion": "0.9.x",
+  "descriptors": {
+    "channelProviders": [
+      {
+        "providerType": "example.extension.template.channel",
+        "title": "Example Channel Provider",
+        "description": "Template channel provider descriptor. Replace schemas, schedules, and endpoint implementation with your provider contract.",
+        "accountConfigSchema": {
+          "type": "object",
+          "properties": {
+            "tenantId": {
+              "type": "string"
+            }
+          },
+          "required": ["tenantId"],
+          "additionalProperties": false
+        },
+        "accountConfigUiSchema": [
+          {
+            "key": "/tenantId",
+            "label": "Tenant",
+            "component": "text",
+            "required": true,
+            "order": 10
+          }
+        ],
+        "credentialSchema": {
+          "type": "object",
+          "properties": {
+            "apiKey": {
+              "type": "string"
+            }
+          },
+          "required": ["apiKey"],
+          "additionalProperties": false
+        },
+        "credentialUiSchema": [
+          {
+            "key": "/apiKey",
+            "label": "API key",
+            "component": "password",
+            "required": true,
+            "secret": true,
+            "order": 10
+          }
+        ],
+        "configSchema": {
+          "type": "object",
+          "properties": {
+            "roomPrefix": {
+              "type": "string"
+            }
+          },
+          "required": ["roomPrefix"],
+          "additionalProperties": false
+        },
+        "configUiSchema": [
+          {
+            "key": "/roomPrefix",
+            "label": "Room prefix",
+            "component": "text",
+            "required": true,
+            "order": 10
+          }
+        ],
+        "defaultConfig": {
+          "roomPrefix": "support-"
+        },
+        "jobDefinitions": [
+          {
+            "jobType": "PULL_MESSAGES",
+            "title": "Pull messages",
+            "description": "Optional pull-style synchronization job. Remove this block if your provider is webhook-only.",
+            "jobConfigSchema": {
+              "type": "object",
+              "properties": {
+                "lookbackMinutes": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": ["lookbackMinutes"],
+              "additionalProperties": false
+            },
+            "jobConfigUiSchema": [
+              {
+                "key": "/lookbackMinutes",
+                "label": "Lookback minutes",
+                "component": "number",
+                "required": true,
+                "order": 10
+              }
+            ],
+            "defaultSchedule": {
+              "scheduleType": "INTERVAL",
+              "intervalSeconds": 300,
+              "cronExpression": null,
+              "timezone": "UTC",
+              "jobConfig": {
+                "lookbackMinutes": 15
+              }
+            },
+            "defaultEnabled": false,
+            "defaultJobTimeoutSeconds": 60
+          }
+        ],
+        "outbound": {
+          "mode": "FRAME_STREAM",
+          "supportsTyping": true,
+          "supportsDraftUpdate": true,
+          "supportsFinalDelivery": true,
+          "requiresIdempotentFinalDelivery": true
+        },
+        "endpoints": {
+          "runJob": "/channel/run-job",
+          "createCredential": "/credentials",
+          "rotateCredential": "/credentials/rotate",
+          "revokeCredential": "/credentials/revoke",
+          "validateCredential": "/credentials/validate"
+        }
+      }
+    ],
+    "toolConnectors": [
+      {
+        "connectorType": "example.extension.template.tool",
+        "title": "Example Tool Connector",
+        "description": "Template tool connector descriptor. Replace schemas and invoke implementation with your business system contract.",
+        "accountConfigSchema": {
+          "type": "object",
+          "properties": {
+            "tenantId": {
+              "type": "string"
+            }
+          },
+          "required": ["tenantId"],
+          "additionalProperties": false
+        },
+        "accountConfigUiSchema": [
+          {
+            "key": "/tenantId",
+            "label": "Tenant",
+            "component": "text",
+            "required": true,
+            "order": 10
+          }
+        ],
+        "credentialSchema": {
+          "type": "object",
+          "properties": {
+            "apiKey": {
+              "type": "string"
+            }
+          },
+          "required": ["apiKey"],
+          "additionalProperties": false
+        },
+        "credentialUiSchema": [
+          {
+            "key": "/apiKey",
+            "label": "API key",
+            "component": "password",
+            "required": true,
+            "secret": true,
+            "order": 10
+          }
+        ],
+        "configSchema": {
+          "type": "object",
+          "properties": {
+            "basePath": {
+              "type": "string"
+            }
+          },
+          "required": ["basePath"],
+          "additionalProperties": false
+        },
+        "configUiSchema": [
+          {
+            "key": "/basePath",
+            "label": "Base path",
+            "component": "text",
+            "required": true,
+            "order": 10
+          }
+        ],
+        "operationMappingSchema": {
+          "type": "object",
+          "properties": {
+            "remoteOperation": {
+              "type": "string"
+            }
+          },
+          "required": ["remoteOperation"],
+          "additionalProperties": false
+        },
+        "operationMappingUiSchema": [
+          {
+            "key": "/remoteOperation",
+            "label": "Remote operation",
+            "component": "text",
+            "required": true,
+            "order": 10
+          }
+        ],
+        "endpoints": {
+          "invoke": "/tools/invoke",
+          "createCredential": "/credentials",
+          "rotateCredential": "/credentials/rotate",
+          "revokeCredential": "/credentials/revoke",
+          "validateCredential": "/credentials/validate"
+        }
+      }
+    ]
+  }
+}

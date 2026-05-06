@@ -1,0 +1,20 @@
+server:
+  port: ${PORT:18100}
+
+spring:
+  application:
+    name: lynxus-extension-template
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+lynxus:
+  extension-template:
+    internal-auth-token: ${LYNXUS_INTERNAL_AUTH_TOKEN:}
+    registration-id: ${LYNXUS_EXTENSION_REGISTRATION_ID:example-extension-template}
+    channel-provider-type: ${LYNXUS_CHANNEL_PROVIDER_TYPE:example.extension.template.channel}
+    tool-connector-type: ${LYNXUS_TOOL_CONNECTOR_TYPE:example.extension.template.tool}
+    lynxus-channel-gateway-base-url: ${LYNXUS_CHANNEL_GATEWAY_BASE_URL:http://127.0.0.1:18082}

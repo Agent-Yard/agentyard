@@ -268,9 +268,11 @@ JVM 与 Python 都提供 SDK（仅 hand-written 协议常量、validator、regis
 
 约束：
 
-- 所有生成的 DTO / client / server stub 必须写到 build-generated 目录，不允许提交到 SDK 源码目录或 extension 项目源码目录
+- 所有生成的 DTO / client / server stub 源码必须写到 `build/generated/*` 目录，不允许提交到 SDK 源码目录或 extension 项目源码目录；JVM SDK 发布物会包含编译后的 generated protocol DTO class，供外部 extension 项目直接引用
 - 不要在 extension 项目里复制粘贴协议常量；统一引 SDK
 - 不要绕过 `ManifestValidator`：平台在加载 manifest 时会再次跑一次完整校验，本地通过验证后再发布
+
+外部开发者可以从仓库根目录 `samples/extension-template` 复制 Java 21 + Spring Boot 模板作为新 extension service 起点。该模板是独立 Gradle 项目，依赖已发布的 `com.lynxus:extension-sdk-jvm`，并包含 manifest、tool invoke、channel runJob、credential lifecycle、channel outbound/inbound 客户端占位。
 
 ## 12. Descriptor 字段分层
 

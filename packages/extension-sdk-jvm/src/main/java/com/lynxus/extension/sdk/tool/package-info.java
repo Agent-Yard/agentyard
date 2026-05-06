@@ -1,4 +1,4 @@
 /**
- * Tool connector SDK facade package. Protocol DTO generation is intentionally deferred to a later Slice 2 subtask.
+ * Tool connector SDK facade package. Protocol DTOs are generated into the SDK build output.
  */
 package com.lynxus.extension.sdk.tool;

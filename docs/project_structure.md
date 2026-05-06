@@ -28,6 +28,8 @@ scripts/
   local/              本地源码直跑脚本
   dev/                开发服务器源码直跑脚本
   common/             环境变量装载与进程管理脚本
+samples/
+  extension-template/ 外部 extension service 的独立 Java 21 + Spring Boot 启动模板
 docs/
   architecture/       当前架构与环境说明
   briefing/           项目背景资料
@@ -174,6 +176,7 @@ demo/                 演示素材目录，不参与当前主实现说明
 - `apps/knowledge-service` 负责 source/job/document/snapshot 检索链路
 - `apps/web` 负责治理控制台与运行观测
 - `packages/extension-protocol` 定义 Extension Plane 协议（Tool Connector / Channel Provider 注册与契约）
+- `samples/extension-template` 提供外部开发者复制使用的独立 extension service 模板
 
 ## 7. 一句话总结
 
