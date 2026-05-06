@@ -72,7 +72,7 @@ class ChannelGatewayClientTest {
                         "displayName": "飞书客服机器人",
                         "status": "ACTIVE",
                         "inboundEnabled": true,
-                        "config": {"appId": "cli_xxx"},
+                        "config": {},
                         "assistantBinding": null,
                         "accountId": "integration-account-1",
                         "hasExternalSecretRef": true,
@@ -94,7 +94,7 @@ class ChannelGatewayClientTest {
                 "飞书客服机器人",
                 ChannelProfileStatus.ACTIVE,
                 true,
-                Map.of("appId", "cli_xxx"),
+                Map.of(),
                 null,
                 new ChannelProfileAccountSnapshot("integration-account-1", "vault://opaque-ref")
             ));
@@ -187,7 +187,7 @@ class ChannelGatewayClientTest {
                         "displayName": "飞书客服机器人",
                         "status": "INACTIVE",
                         "inboundEnabled": true,
-                        "config": {"appId": "cli_xxx"},
+                        "config": {},
                         "assistantBinding": null,
                         "accountId": "integration-account-1",
                         "hasExternalSecretRef": true,

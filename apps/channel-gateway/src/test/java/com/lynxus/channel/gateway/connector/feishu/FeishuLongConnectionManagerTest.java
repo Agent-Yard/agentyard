@@ -148,7 +148,7 @@ class FeishuLongConnectionManagerTest {
         private final AtomicReference<String> accountId = new AtomicReference<>();
 
         @Override
-        public FeishuAppCredential resolve(String accountId, Map<String, Object> profileConfig) {
+        public FeishuAppCredential resolve(String accountId) {
             this.accountId.set(accountId);
             return new FeishuAppCredential(accountId, "cli_test", "secret_test");
         }

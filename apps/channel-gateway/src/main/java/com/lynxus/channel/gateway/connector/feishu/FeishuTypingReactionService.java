@@ -51,7 +51,7 @@ final class FeishuTypingReactionService implements ChannelInboundSessionDispatch
         }
         FeishuMessageReactionClient.FeishuAddReactionResult created;
         try {
-            FeishuAppCredential credential = credentialProvider.resolve(profile.accountId(), profile.config());
+            FeishuAppCredential credential = credentialProvider.resolve(profile.accountId());
             created = reactionClient.addReaction(new FeishuMessageReactionClient.FeishuAddReactionCommand(
                 credential,
                 event.externalMessageId(),
@@ -160,7 +160,7 @@ final class FeishuTypingReactionService implements ChannelInboundSessionDispatch
 
     private void deleteClaimedReaction(ChannelGatewayProfile profile, FeishuTypingReactionState state) {
         try {
-            FeishuAppCredential credential = credentialProvider.resolve(profile.accountId(), profile.config());
+            FeishuAppCredential credential = credentialProvider.resolve(profile.accountId());
             reactionClient.deleteReaction(new FeishuMessageReactionClient.FeishuDeleteReactionCommand(
                 credential,
                 state.externalMessageId(),
@@ -180,7 +180,7 @@ final class FeishuTypingReactionService implements ChannelInboundSessionDispatch
 
     private void deleteUntrackedReaction(ChannelGatewayProfile profile, String messageId, String reactionId) {
         try {
-            FeishuAppCredential credential = credentialProvider.resolve(profile.accountId(), profile.config());
+            FeishuAppCredential credential = credentialProvider.resolve(profile.accountId());
             reactionClient.deleteReaction(new FeishuMessageReactionClient.FeishuDeleteReactionCommand(
                 credential,
                 messageId,

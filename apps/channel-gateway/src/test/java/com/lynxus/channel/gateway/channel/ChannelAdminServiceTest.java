@@ -67,7 +67,7 @@ class ChannelAdminServiceTest {
             "飞书客服机器人",
             ChannelProfileStatus.ACTIVE,
             true,
-            Map.of("appId", "cli_xxx"),
+            Map.of(),
             new ChannelAssistantBinding("assistant-1", null),
             new ChannelProfileAccountSnapshot("integration-account-1", "vault://opaque-ref")
         ));
@@ -81,7 +81,7 @@ class ChannelAdminServiceTest {
             "飞书客服机器人 Updated",
             ChannelProfileStatus.INACTIVE,
             false,
-            Map.of("appId", "cli_xxx"),
+            Map.of(),
             new ChannelAssistantBinding("assistant-2", "scenario-1"),
             new ChannelProfileAccountSnapshot("integration-account-2", null),
             1L
@@ -101,7 +101,7 @@ class ChannelAdminServiceTest {
             "飞书客服机器人",
             null,
             true,
-            Map.of("appId", "cli_xxx"),
+            Map.of(),
             null,
             null
         ));
@@ -111,7 +111,7 @@ class ChannelAdminServiceTest {
             "飞书客服机器人 Updated",
             null,
             true,
-            Map.of("appId", "cli_xxx"),
+            Map.of(),
             null,
             null,
             1L
@@ -122,7 +122,7 @@ class ChannelAdminServiceTest {
             "飞书客服机器人 Stale",
             null,
             true,
-            Map.of("appId", "cli_xxx"),
+            Map.of(),
             null,
             null,
             1L
@@ -136,7 +136,7 @@ class ChannelAdminServiceTest {
             "飞书客服机器人",
             ChannelProfileStatus.ACTIVE,
             true,
-            Map.of("appId", "cli_xxx"),
+            Map.of(),
             new ChannelAssistantBinding("assistant-1", "scenario-1"),
             new ChannelProfileAccountSnapshot("integration-account-1", "vault://opaque-ref")
         ));
@@ -166,7 +166,7 @@ class ChannelAdminServiceTest {
             "飞书客服机器人",
             null,
             true,
-            Map.of("appId", "cli_xxx"),
+            Map.of(),
             null,
             null
         ));
@@ -183,7 +183,7 @@ class ChannelAdminServiceTest {
             "飞书客服机器人",
             null,
             true,
-            Map.of("appId", "cli_xxx"),
+            Map.of(),
             null,
             null
         ));
@@ -532,7 +532,7 @@ class ChannelAdminServiceTest {
             "飞书客服机器人",
             null,
             true,
-            Map.of("appId", "cli_xxx"),
+            Map.of(),
             new ChannelAssistantBinding("assistant-1", null),
             null
         ));

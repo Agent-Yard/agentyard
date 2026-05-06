@@ -50,6 +50,10 @@ public class ChannelAdminService {
         return repository.listProfiles();
     }
 
+    public List<ChannelGatewayProfile> listProfilesByProvider(String providerType) {
+        return repository.listProfilesByProvider(requireText(providerType, "channelProfile.providerType"));
+    }
+
     public ChannelGatewayProfile createProfile(CreateChannelProfileInternalRequest request) {
         Instant now = Instant.now();
         ChannelProfileAccountSnapshot accountSnapshot = request.accountSnapshot();
@@ -401,14 +405,6 @@ public class ChannelAdminService {
         ChannelProviderJobConfig job = repository.findJob(channelProfileId, jobDefinition.jobType())
             .orElseThrow(() -> new NoSuchElementException("channel provider job not found: " + jobDefinition.jobType()));
         return repository.listJobRuns(job.jobId());
-    }
-
-    public ChannelGatewayProfile findProfileByProviderAppId(String providerType, String appId) {
-        String normalizedAppId = requireText(appId, "channelProfile.config.appId");
-        return repository.listProfilesByProvider(providerType).stream()
-            .filter(profile -> normalizedAppId.equals(String.valueOf(profile.config().get("appId"))))
-            .findFirst()
-            .orElseThrow(() -> new NoSuchElementException("channel profile not found for " + providerType + " appId: " + normalizedAppId));
     }
 
     public void saveInboundEvent(ChannelInboundEvent event) {

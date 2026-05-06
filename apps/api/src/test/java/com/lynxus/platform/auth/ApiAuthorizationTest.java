@@ -181,7 +181,7 @@ class ApiAuthorizationTest {
                 "飞书客服机器人",
                 ChannelContracts.ChannelProfileStatus.ACTIVE,
                 true,
-                java.util.Map.of("appId", "cli_xxx"),
+                java.util.Map.of(),
                 null,
                 null,
                 false,
@@ -202,9 +202,7 @@ class ApiAuthorizationTest {
                           "displayName": "飞书客服机器人",
                           "status": "ACTIVE",
                           "inboundEnabled": true,
-                          "config": {
-                            "appId": "cli_xxx"
-                          }
+                          "config": {}
                         }
                         """))
                 .andExpect(status().isOk())
@@ -260,7 +258,7 @@ class ApiAuthorizationTest {
                 "飞书客服机器人",
                 ChannelContracts.ChannelProfileStatus.INACTIVE,
                 true,
-                java.util.Map.of("appId", "cli_xxx"),
+                java.util.Map.of(),
                 null,
                 null,
                 false,

@@ -7,8 +7,10 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEventStatus;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Objects;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
@@ -19,10 +21,16 @@ public class FeishuWebhookService {
 
     private final ChannelAdminService channelAdminService;
     private final ObjectMapper objectMapper;
+    private final FeishuIntegrationAccountRuntimeProvider accountRuntimeProvider;
 
-    public FeishuWebhookService(ChannelAdminService channelAdminService, ObjectMapper objectMapper) {
+    public FeishuWebhookService(
+        ChannelAdminService channelAdminService,
+        ObjectMapper objectMapper,
+        FeishuIntegrationAccountRuntimeProvider accountRuntimeProvider
+    ) {
         this.channelAdminService = channelAdminService;
         this.objectMapper = objectMapper;
+        this.accountRuntimeProvider = accountRuntimeProvider;
     }
 
     public Object handleWebhook(Map<String, Object> payload, Map<String, String> headers) {
@@ -32,8 +40,8 @@ public class FeishuWebhookService {
             readNestedString(body, "header", "app_id"),
             readNestedString(body, "event", "app_id")
         );
-        ChannelGatewayProfile profile = channelAdminService.findProfileByProviderAppId(PROVIDER, appId);
-        validateVerificationToken(profile, body);
+        ProfileAccount profileAccount = findProfileAccountByAppId(appId);
+        validateVerificationToken(profileAccount.account(), body);
 
         if ("url_verification".equals(readString(body.get("type")))) {
             String challenge = readString(body.get("challenge"));
@@ -57,7 +65,7 @@ public class FeishuWebhookService {
         Instant now = Instant.now();
         ChannelInboundEvent event = new ChannelInboundEvent(
             channelAdminService.nextId("channel-inbound-event"),
-            profile.id(),
+            profileAccount.profile().id(),
             PROVIDER,
             readString(normalizedPayload.get("eventType")),
             readString(normalizedPayload.get("externalEventId")),
@@ -78,11 +86,27 @@ public class FeishuWebhookService {
         );
     }
 
-    private void validateVerificationToken(ChannelGatewayProfile profile, Map<String, Object> payload) {
-        Object configuredToken = profile.config().get("verificationToken");
-        String expectedToken = configuredToken == null ? null : String.valueOf(configuredToken).trim();
+    private ProfileAccount findProfileAccountByAppId(String appId) {
+        String normalizedAppId = requireText(appId, "feishu appId");
+        Map<String, FeishuIntegrationAccountRuntime> accountsById = new HashMap<>();
+        for (ChannelGatewayProfile profile : channelAdminService.listProfilesByProvider(PROVIDER)) {
+            String accountId = profile.accountId();
+            if (accountId == null || accountId.isBlank()) {
+                continue;
+            }
+            FeishuIntegrationAccountRuntime account = accountsById.computeIfAbsent(accountId, accountRuntimeProvider::load);
+            account.requireEnabledFeishuChannelProvider();
+            if (normalizedAppId.equals(account.appId())) {
+                return new ProfileAccount(profile, account);
+            }
+        }
+        throw new NoSuchElementException("channel profile not found for " + PROVIDER + " integration account appId: " + normalizedAppId);
+    }
+
+    private void validateVerificationToken(FeishuIntegrationAccountRuntime account, Map<String, Object> payload) {
+        String expectedToken = account.verificationToken();
         String actualToken = readString(payload.get("token"));
-        if (expectedToken != null && !expectedToken.isBlank() && actualToken != null && !expectedToken.equals(actualToken)) {
+        if (expectedToken != null && !expectedToken.equals(actualToken)) {
             throw new IllegalArgumentException("feishu verification token mismatch");
         }
     }
@@ -216,5 +240,15 @@ public class FeishuWebhookService {
             .filter(candidate -> !candidate.isEmpty())
             .findFirst()
             .orElse(null);
+    }
+
+    private static String requireText(String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(field + " is required");
+        }
+        return value.trim();
+    }
+
+    private record ProfileAccount(ChannelGatewayProfile profile, FeishuIntegrationAccountRuntime account) {
     }
 }

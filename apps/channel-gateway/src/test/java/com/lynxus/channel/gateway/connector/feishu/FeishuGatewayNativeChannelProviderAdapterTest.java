@@ -88,6 +88,57 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
         assertEquals(true, outbound.get("supportsTyping"));
     }
 
+    @Test
+    void descriptorKeepsAppIdOnAccountConfigAndSecretsOnCredential() {
+        FeishuGatewayNativeChannelProviderAdapter adapter = new FeishuGatewayNativeChannelProviderAdapter(
+            new CapturingCredentialProvider(),
+            new CapturingMessageSender(),
+            FeishuTypingReactionLifecycle.NOOP
+        );
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> accountConfigSchema = (Map<String, Object>) adapter.descriptor().get("accountConfigSchema");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> accountProperties = (Map<String, Object>) accountConfigSchema.get("properties");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> accountConfigUiSchema =
+            (List<Map<String, Object>>) adapter.descriptor().get("accountConfigUiSchema");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> credentialSchema = (Map<String, Object>) adapter.descriptor().get("credentialSchema");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> credentialProperties = (Map<String, Object>) credentialSchema.get("properties");
+        @SuppressWarnings("unchecked")
+        List<String> credentialRequired = (List<String>) credentialSchema.get("required");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> credentialUiSchema =
+            (List<Map<String, Object>>) adapter.descriptor().get("credentialUiSchema");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> profileConfigSchema = (Map<String, Object>) adapter.descriptor().get("configSchema");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> profileProperties = (Map<String, Object>) profileConfigSchema.get("properties");
+
+        assertTrue(accountProperties.containsKey("appId"));
+        assertEquals(List.of("appId"), accountConfigSchema.get("required"));
+        assertEquals(List.of("/appId"), accountConfigUiSchema.stream()
+            .map(field -> field.get("key"))
+            .toList());
+        assertEquals(true, accountConfigUiSchema.getFirst().get("required"));
+        assertTrue(credentialProperties.containsKey("appSecret"));
+        assertTrue(credentialProperties.containsKey("verificationToken"));
+        assertTrue(credentialProperties.containsKey("encryptKey"));
+        assertEquals(List.of("appSecret"), credentialRequired);
+        assertEquals(List.of("/appSecret", "/verificationToken", "/encryptKey"), credentialUiSchema.stream()
+            .map(field -> field.get("key"))
+            .toList());
+        assertEquals(true, credentialUiSchema.get(0).get("required"));
+        assertEquals(false, credentialUiSchema.get(1).get("required"));
+        assertEquals(false, credentialUiSchema.get(2).get("required"));
+        assertTrue(profileProperties.containsKey("receiveIdType"));
+        assertEquals(false, profileProperties.containsKey("appId"));
+        assertEquals(false, profileProperties.containsKey("verificationToken"));
+        assertEquals(false, profileProperties.containsKey("encryptKey"));
+    }
+
     private static ChannelGatewayProfile profile() {
         Instant now = Instant.parse("2026-05-05T00:00:00Z");
         return new ChannelGatewayProfile(
@@ -165,7 +216,7 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
         private String accountId;
 
         @Override
-        public FeishuAppCredential resolve(String accountId, Map<String, Object> profileConfig) {
+        public FeishuAppCredential resolve(String accountId) {
             this.accountId = accountId;
             return new FeishuAppCredential(accountId, "app-id", "secret");
         }

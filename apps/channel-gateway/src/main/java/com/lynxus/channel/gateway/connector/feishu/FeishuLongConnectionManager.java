@@ -87,7 +87,7 @@ final class FeishuLongConnectionManager {
             return;
         }
         try {
-            FeishuAppCredential credential = credentialProvider.resolve(accountId, profile.config());
+            FeishuAppCredential credential = credentialProvider.resolve(accountId);
             // The Feishu SDK starts its own non-blocking websocket lifecycle; keep this inline so we do not
             // introduce a separate executor that competes with the SDK's connection management.
             clientFactory.start(() -> selectedProfilesByAccountId.get(accountId), credential);

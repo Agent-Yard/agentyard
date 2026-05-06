@@ -94,7 +94,7 @@ class InternalChannelAdminControllerTest {
             "飞书客服机器人",
             ChannelProfileStatus.INACTIVE,
             true,
-            Map.of("appId", "cli_xxx"),
+            Map.of(),
             null,
             "integration-account-1",
             true,

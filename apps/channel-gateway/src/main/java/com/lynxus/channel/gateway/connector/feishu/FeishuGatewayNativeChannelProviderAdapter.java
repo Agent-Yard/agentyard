@@ -87,7 +87,7 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
         if (credentialProvider == null || messageSender == null) {
             throw new IllegalStateException("Feishu gateway-native outbound dependencies are not configured");
         }
-        FeishuAppCredential credential = credentialProvider.resolve(profile.accountId(), profile.config());
+        FeishuAppCredential credential = credentialProvider.resolve(profile.accountId());
         messageSender.sendText(new FeishuMessageSender.FeishuSendTextCommand(
             credential,
             receiveIdType(profile.config()),
@@ -109,20 +109,24 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
     }
 
     private static List<Map<String, Object>> accountConfigUiSchema() {
-        return List.of(Map.of(
-            "key", "/appId",
-            "label", "App ID",
-            "component", "text",
-            "required", true,
-            "order", 10
-        ));
+        return List.of(
+            Map.of(
+                "key", "/appId",
+                "label", "App ID",
+                "component", "text",
+                "required", true,
+                "order", 10
+            )
+        );
     }
 
     private static Map<String, Object> credentialSchema() {
         return Map.of(
             "type", "object",
             "properties", Map.of(
-                "appSecret", Map.of("type", "string", "minLength", 1)
+                "appSecret", Map.of("type", "string", "minLength", 1),
+                "verificationToken", Map.of("type", "string"),
+                "encryptKey", Map.of("type", "string")
             ),
             "required", List.of("appSecret"),
             "additionalProperties", false
@@ -130,14 +134,32 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
     }
 
     private static List<Map<String, Object>> credentialUiSchema() {
-        return List.of(Map.of(
-            "key", "/appSecret",
-            "label", "App Secret",
-            "component", "password",
-            "required", true,
-            "secret", true,
-            "order", 10
-        ));
+        return List.of(
+            Map.of(
+                "key", "/appSecret",
+                "label", "App Secret",
+                "component", "password",
+                "required", true,
+                "secret", true,
+                "order", 10
+            ),
+            Map.of(
+                "key", "/verificationToken",
+                "label", "Verification Token",
+                "component", "password",
+                "required", false,
+                "secret", true,
+                "order", 20
+            ),
+            Map.of(
+                "key", "/encryptKey",
+                "label", "Encrypt Key",
+                "component", "password",
+                "required", false,
+                "secret", true,
+                "order", 30
+            )
+        );
     }
 
     private static Map<String, Object> configSchema() {
@@ -148,9 +170,7 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
                     "type", "string",
                     "enum", List.of("chat_id", "open_id", "user_id", "union_id", "email"),
                     "default", DEFAULT_RECEIVE_ID_TYPE
-                ),
-                "appId", Map.of("type", "string"),
-                "verificationToken", Map.of("type", "string")
+                )
             ),
             "additionalProperties", false
         );

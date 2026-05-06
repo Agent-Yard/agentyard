@@ -16,6 +16,7 @@ import com.lynxus.channel.gateway.extension.RuntimeChannelProviderRegistry;
 import com.lynxus.channel.gateway.shared.ApiExceptionHandler;
 import com.lynxus.channel.gateway.testing.EmbeddedPostgresTestDatabase;
 import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileInternalRequest;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileAccountSnapshot;
 import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -31,6 +32,7 @@ class FeishuWebhookControllerTest {
 
     private MockMvc mockMvc;
     private ChannelAdminRepository repository;
+    private FakeFeishuIntegrationAccountRuntimeProvider accountRuntimeProvider;
 
     @BeforeAll
     static void startDatabase() throws Exception {
@@ -48,7 +50,23 @@ class FeishuWebhookControllerTest {
         ObjectMapper objectMapper = new ObjectMapper();
         repository = new ChannelAdminRepository(database.dsl(), objectMapper);
         ChannelAdminService channelAdminService = new ChannelAdminService(repository, coreRegistry());
-        FeishuWebhookService feishuWebhookService = new FeishuWebhookService(channelAdminService, objectMapper);
+        accountRuntimeProvider = new FakeFeishuIntegrationAccountRuntimeProvider();
+        accountRuntimeProvider.accounts = Map.of(
+            "integration-account-1",
+            new FeishuIntegrationAccountRuntime(
+                "integration-account-1",
+                "CHANNEL_PROVIDER",
+                "feishu",
+                "ENABLED",
+                Map.of("appId", "cli_xxx"),
+                Map.of("verificationToken", "verify-token")
+            )
+        );
+        FeishuWebhookService feishuWebhookService = new FeishuWebhookService(
+            channelAdminService,
+            objectMapper,
+            accountRuntimeProvider
+        );
         mockMvc = MockMvcBuilders.standaloneSetup(new FeishuWebhookController(feishuWebhookService))
             .setControllerAdvice(new ApiExceptionHandler())
             .build();
@@ -58,9 +76,9 @@ class FeishuWebhookControllerTest {
             "飞书客服机器人",
             null,
             true,
-            Map.of("appId", "cli_xxx", "verificationToken", "verify-token"),
+            Map.of(),
             null,
-            null
+            new ChannelProfileAccountSnapshot("integration-account-1", null)
         ));
     }
 
@@ -90,6 +108,48 @@ class FeishuWebhookControllerTest {
                       "type": "url_verification",
                       "app_id": "cli_xxx",
                       "token": "verify-token",
+                      "challenge": "challenge-value"
+                    }
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.challenge").value("challenge-value"));
+    }
+
+    @Test
+    void shouldRejectWebhookWhenConfiguredVerificationTokenIsMissing() throws Exception {
+        mockMvc.perform(post("/connectors/feishu/webhook")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "type": "url_verification",
+                      "app_id": "cli_xxx",
+                      "challenge": "challenge-value"
+                    }
+                    """))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail").value("feishu verification token mismatch"));
+    }
+
+    @Test
+    void shouldAcceptWebhookWhenIntegrationAccountHasNoVerificationToken() throws Exception {
+        accountRuntimeProvider.accounts = Map.of(
+            "integration-account-1",
+            new FeishuIntegrationAccountRuntime(
+                "integration-account-1",
+                "CHANNEL_PROVIDER",
+                "feishu",
+                "ENABLED",
+                Map.of("appId", "cli_xxx"),
+                Map.of()
+            )
+        );
+
+        mockMvc.perform(post("/connectors/feishu/webhook")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "type": "url_verification",
+                      "app_id": "cli_xxx",
                       "challenge": "challenge-value"
                     }
                     """))
@@ -141,5 +201,18 @@ class FeishuWebhookControllerTest {
         String channelProfileId = repository.listProfiles().getFirst().id();
         assertEquals(1, repository.listInboundEvents(channelProfileId).size());
         assertEquals("evt_001", repository.listInboundEvents(channelProfileId).getFirst().externalEventId());
+    }
+
+    private static final class FakeFeishuIntegrationAccountRuntimeProvider implements FeishuIntegrationAccountRuntimeProvider {
+        private Map<String, FeishuIntegrationAccountRuntime> accounts = Map.of();
+
+        @Override
+        public FeishuIntegrationAccountRuntime load(String accountId) {
+            FeishuIntegrationAccountRuntime account = accounts.get(accountId);
+            if (account == null) {
+                throw new IllegalArgumentException("unknown account: " + accountId);
+            }
+            return account;
+        }
     }
 }

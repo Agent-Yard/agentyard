@@ -54,7 +54,7 @@ class FeishuInboundEventServiceTest {
             new FeishuTypingReactionService(
                 repository,
                 new InMemoryTypingReactionStore(),
-                (accountId, profileConfig) -> new FeishuAppCredential(accountId, "app-id", "secret"),
+                accountId -> new FeishuAppCredential(accountId, "app-id", "secret"),
                 reactionClient
             )
         );

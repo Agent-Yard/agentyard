@@ -58,7 +58,7 @@ class FeishuTypingReactionServiceTest {
         service = new FeishuTypingReactionService(
             repository,
             reactionStore,
-            (accountId, profileConfig) -> new FeishuAppCredential(accountId, "app-id", "secret"),
+            accountId -> new FeishuAppCredential(accountId, "app-id", "secret"),
             reactionClient
         );
         createProfile();
