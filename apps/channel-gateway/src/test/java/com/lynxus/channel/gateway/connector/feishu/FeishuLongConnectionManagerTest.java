@@ -9,6 +9,8 @@ import com.lynxus.channel.gateway.testing.EmbeddedPostgresTestDatabase;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelAssistantBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileStatus;
+import java.net.ConnectException;
+import java.net.http.HttpTimeoutException;
 import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -18,6 +20,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.scheduling.annotation.Scheduled;
 import tools.jackson.databind.ObjectMapper;
 
 class FeishuLongConnectionManagerTest {
@@ -53,6 +56,53 @@ class FeishuLongConnectionManagerTest {
             credentialProvider,
             clientFactory
         );
+    }
+
+    private FeishuLongConnectionManager manager(boolean localProfile) {
+        return new FeishuLongConnectionManager(
+            repository,
+            credentialProvider,
+            clientFactory,
+            localProfile
+        );
+    }
+
+    @Test
+    void periodicReconcileHasInitialDelay() throws Exception {
+        Scheduled scheduled = FeishuLongConnectionManager.class
+            .getDeclaredMethod("reconcile")
+            .getAnnotation(Scheduled.class);
+
+        assertEquals(
+            "${lynxus.channel-gateway.feishu.long-connection.reconcile-initial-delay-ms:30000}",
+            scheduled.initialDelayString()
+        );
+        assertEquals(
+            "${lynxus.channel-gateway.feishu.long-connection.reconcile-fixed-delay-ms:30000}",
+            scheduled.fixedDelayString()
+        );
+    }
+
+    @Test
+    void localStartupApiUnavailableOnlyMatchesStartupConnectionFailures() {
+        FeishuLongConnectionManager localManager = manager(true);
+        RuntimeException connectionFailure = new IllegalStateException(
+            "failed to load feishu integration account runtime",
+            new ConnectException("Connection refused")
+        );
+        RuntimeException timeoutFailure = new IllegalStateException(
+            "failed to load feishu integration account runtime",
+            new HttpTimeoutException("request timed out")
+        );
+
+        assertTrue(localManager.isLocalStartupApiUnavailable("STARTUP_RECONCILE", connectionFailure));
+        assertTrue(localManager.isLocalStartupApiUnavailable("STARTUP_RECONCILE", timeoutFailure));
+        assertFalse(localManager.isLocalStartupApiUnavailable("PERIODIC_RECONCILE", connectionFailure));
+        assertFalse(manager(false).isLocalStartupApiUnavailable("STARTUP_RECONCILE", connectionFailure));
+        assertFalse(localManager.isLocalStartupApiUnavailable(
+            "STARTUP_RECONCILE",
+            new IllegalStateException("integration account runtime lookup failed with HTTP 500")
+        ));
     }
 
     @Test
