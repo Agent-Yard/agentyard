@@ -1,7 +1,6 @@
 package com.lynxus.channel.gateway.connector.feishu;
 
 import com.lynxus.channel.gateway.extension.GatewayNativeChannelProviderAdapter;
-import com.lynxus.channel.gateway.extension.GatewayNativeChannelProviderAdapter.OutboundFrameDispatch;
 import com.lynxus.contracts.channel.ChannelContracts;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundFrame;

@@ -178,15 +178,16 @@ final class FeishuLongConnectionManager {
     }
 
     private static String conciseError(Throwable error) {
-        Throwable current = error;
-        Throwable root = error;
-        while (current != null) {
-            root = current;
-            current = current.getCause();
+        if (error == null) {
+            return "unknown";
         }
-        String message = root == null ? null : root.getMessage();
+        Throwable root = error;
+        while (root.getCause() != null) {
+            root = root.getCause();
+        }
+        String message = root.getMessage();
         if (message == null || message.isBlank()) {
-            return root == null ? "unknown" : root.getClass().getSimpleName();
+            return root.getClass().getSimpleName();
         }
         return root.getClass().getSimpleName() + ": " + message;
     }
