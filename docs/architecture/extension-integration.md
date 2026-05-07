@@ -275,7 +275,7 @@ JVM 与 Python 都提供 SDK（仅 hand-written 协议常量、validator、regis
 - 不要在 extension 项目里复制粘贴协议常量；统一引 SDK
 - 不要绕过 `ManifestValidator`：平台在加载 manifest 时会再次跑一次完整校验，本地通过验证后再发布
 
-外部开发者可以从仓库根目录 `samples/extension-template` 复制 Java 21 + Spring Boot 模板作为新 extension service 起点。该模板是独立 Gradle 项目，依赖已发布的 `com.lynxus:extension-sdk-jvm`，并包含 manifest、tool invoke、channel runJob、credential lifecycle、channel outbound/inbound 客户端占位。
+外部开发者应从独立维护的 `lynxus-extension-boilerplate` 项目复制 Java 21 + Spring Boot 模板作为新 extension service 起点。该模板不再位于 Lynxus monorepo 内；它作为独立 Gradle 项目依赖已发布的 `com.lynxus:extension-sdk-jvm`，并包含 manifest、tool invoke、channel runJob、credential lifecycle、channel outbound/inbound 客户端占位。
 
 ## 12. Descriptor 字段分层
 

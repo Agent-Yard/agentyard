@@ -32,8 +32,6 @@ deploy/
   local/       Docker Compose for local development dependencies
   dev/         Docker Compose for persistent dev environment
   test/        Modular test deployment templates, including compose and web/Nginx examples
-samples/
-  extension-template/  Standalone extension boilerplate directory
 scripts/
   common/      Shared env loading and process helpers
   dev/         Source-run wrappers for dev environment
