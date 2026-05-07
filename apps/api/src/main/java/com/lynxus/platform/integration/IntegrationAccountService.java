@@ -48,18 +48,21 @@ public class IntegrationAccountService {
     private final IntegrationCredentialCrypto credentialCrypto;
     private final ExtensionDefinitionService definitionService;
     private final IntegrationCredentialLifecycleClient credentialLifecycleClient;
+    private final IntegrationAccountChangeNotifier changeNotifier;
 
     @Autowired
     public IntegrationAccountService(
         IntegrationAccountRepository repository,
         IntegrationCredentialCrypto credentialCrypto,
         ExtensionDefinitionService definitionService,
-        IntegrationCredentialLifecycleClient credentialLifecycleClient
+        IntegrationCredentialLifecycleClient credentialLifecycleClient,
+        IntegrationAccountChangeNotifier changeNotifier
     ) {
         this.repository = repository;
         this.credentialCrypto = credentialCrypto;
         this.definitionService = definitionService;
         this.credentialLifecycleClient = credentialLifecycleClient;
+        this.changeNotifier = changeNotifier == null ? IntegrationAccountChangeNotifier.noop() : changeNotifier;
     }
 
     IntegrationAccountService(
@@ -69,7 +72,16 @@ public class IntegrationAccountService {
     ) {
         this(repository, credentialCrypto, definitionService, (baseUrl, path, request, traceId, requestId) -> {
             throw remoteFailure();
-        });
+        }, IntegrationAccountChangeNotifier.noop());
+    }
+
+    public IntegrationAccountService(
+        IntegrationAccountRepository repository,
+        IntegrationCredentialCrypto credentialCrypto,
+        ExtensionDefinitionService definitionService,
+        IntegrationCredentialLifecycleClient credentialLifecycleClient
+    ) {
+        this(repository, credentialCrypto, definitionService, credentialLifecycleClient, IntegrationAccountChangeNotifier.noop());
     }
 
     @Transactional(readOnly = true)
@@ -181,23 +193,23 @@ public class IntegrationAccountService {
             ensureCredentialModeSupported(credentialFacts);
             validateCredential(credentialFacts.credentialSchema(), requireCredentialObject(request.credential()));
         }
-        repository.saveAccount(account);
+        saveAndPublish(account, "ACCOUNT_CREATED");
         if (request.credential() != null) {
             try {
                 account = createCredential(account, credentialFacts, request.credential());
             } catch (ApiProblemException error) {
                 if ("INTEGRATION_ACCOUNT_CREDENTIAL_REMOTE_FAILED".equals(error.code())) {
-                    repository.saveAccount(withCredentialState(
+                    saveAndPublish(withCredentialState(
                         account,
                         null,
                         null,
                         null,
                         IntegrationAccountCredentialStatus.VALIDATION_FAILED
-                    ));
+                    ), "CREDENTIAL_CREATE_FAILED");
                 }
                 throw error;
             }
-            repository.saveAccount(account);
+            saveAndPublish(account, "CREDENTIAL_CREATED");
         }
         return toDto(account);
     }
@@ -225,7 +237,7 @@ public class IntegrationAccountService {
             existing.createdAt(),
             Instant.now()
         );
-        repository.saveAccount(updated);
+        saveAndPublish(updated, "ACCOUNT_UPDATED");
         return toDto(updated);
     }
 
@@ -255,17 +267,17 @@ public class IntegrationAccountService {
                 );
             } catch (ApiProblemException error) {
                 if ("INTEGRATION_ACCOUNT_CREDENTIAL_REMOTE_FAILED".equals(error.code())) {
-                    repository.saveAccount(withCredentialState(
+                    saveAndPublish(withCredentialState(
                         account,
                         null,
                         null,
                         null,
                         IntegrationAccountCredentialStatus.VALIDATION_FAILED
-                    ));
+                    ), "CREDENTIAL_CREATE_FAILED");
                 }
                 throw error;
             }
-            repository.saveAccount(updated);
+            saveAndPublish(updated, "CREDENTIAL_CREATED");
             return toDto(updated);
         });
     }
@@ -300,18 +312,18 @@ public class IntegrationAccountService {
                     updated = withCredentialState(account, account.externalSecretRef(), null, null, IntegrationAccountCredentialStatus.ACTIVE);
                 } catch (ApiProblemException error) {
                     if ("INTEGRATION_ACCOUNT_CREDENTIAL_REMOTE_FAILED".equals(error.code())) {
-                        repository.saveAccount(withCredentialState(
+                        saveAndPublish(withCredentialState(
                             account,
                             account.externalSecretRef(),
                             account.credentialCiphertext(),
                             account.credentialFingerprint(),
                             IntegrationAccountCredentialStatus.ROTATION_REQUIRED
-                        ));
+                        ), "CREDENTIAL_ROTATE_FAILED");
                     }
                     throw error;
                 }
             }
-            repository.saveAccount(updated);
+            saveAndPublish(updated, "CREDENTIAL_ROTATED");
             return toDto(updated);
         });
     }
@@ -340,7 +352,7 @@ public class IntegrationAccountService {
                 }
                 updated = withCredentialState(account, account.externalSecretRef(), null, null, response.credentialStatus());
             }
-            repository.saveAccount(updated);
+            saveAndPublish(updated, "CREDENTIAL_VALIDATED");
             return toDto(updated);
         });
     }
@@ -371,18 +383,18 @@ public class IntegrationAccountService {
                     updated = withCredentialState(account, null, null, null, IntegrationAccountCredentialStatus.REVOKED);
                 } catch (ApiProblemException error) {
                     if ("INTEGRATION_ACCOUNT_CREDENTIAL_REMOTE_FAILED".equals(error.code())) {
-                        repository.saveAccount(withCredentialState(
+                        saveAndPublish(withCredentialState(
                             account,
                             account.externalSecretRef(),
                             account.credentialCiphertext(),
                             account.credentialFingerprint(),
                             IntegrationAccountCredentialStatus.REVOKE_FAILED
-                        ));
+                        ), "CREDENTIAL_REVOKE_FAILED");
                     }
                     throw error;
                 }
             }
-            repository.saveAccount(updated);
+            saveAndPublish(updated, "CREDENTIAL_REVOKED");
             return toDto(updated);
         });
     }
@@ -525,6 +537,11 @@ public class IntegrationAccountService {
             .orElseThrow(() -> new NoSuchElementException("integration account not found: " + normalizedAccountId));
     }
 
+    private void saveAndPublish(StoredIntegrationAccount account, String reason) {
+        repository.saveAccount(account);
+        changeNotifier.accountChanged(account, reason);
+    }
+
     private IntegrationAccountDto toDto(StoredIntegrationAccount account) {
         return new IntegrationAccountDto(
             account.id(),
@@ -594,7 +611,7 @@ public class IntegrationAccountService {
             existing.createdAt(),
             Instant.now()
         );
-        repository.saveAccount(updated);
+        saveAndPublish(updated, "ACCOUNT_STATUS_UPDATED");
         return toDto(updated);
     }
 

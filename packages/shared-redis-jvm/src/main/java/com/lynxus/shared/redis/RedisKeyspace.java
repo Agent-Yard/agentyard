@@ -56,6 +56,10 @@ public class RedisKeyspace {
         return qualify(SharedStateKeyspace.knowledgeInvalidationChannel());
     }
 
+    public String integrationAccountInvalidationChannel() {
+        return qualify("lynxus:integration-account:invalidation");
+    }
+
     public String channelBindingSnapshotRefreshChannel() {
         return qualify("lynxus:channel-binding-snapshot:refresh");
     }

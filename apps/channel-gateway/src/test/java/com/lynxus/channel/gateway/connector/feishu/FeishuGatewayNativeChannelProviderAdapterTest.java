@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.lynxus.channel.gateway.extension.GatewayNativeChannelProviderAdapter.OutboundFrameDispatch;
 import com.lynxus.contracts.channel.ChannelContracts;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundFrame;
@@ -29,6 +30,44 @@ import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
 class FeishuGatewayNativeChannelProviderAdapterTest {
+    @Test
+    void prepareOutboundFramesCoalescesContiguousDraftUpdatesForSameMessageBlock() {
+        FeishuGatewayNativeChannelProviderAdapter adapter = new FeishuGatewayNativeChannelProviderAdapter();
+        ChannelOutboundFrame first = draftUpdateFrame(2L, "hel");
+        ChannelOutboundFrame second = draftUpdateFrame(3L, "lo");
+        ChannelOutboundFrame typingStop = typingStopFrameWithMessageId(4L, "session-message-reply-1");
+
+        List<OutboundFrameDispatch> dispatches = adapter.prepareOutboundFrames(profile(), List.of(first, second, typingStop));
+
+        assertEquals(2, dispatches.size());
+        assertEquals(List.of(first, second), dispatches.getFirst().drainedFrames());
+        assertEquals(ChannelOutboundFrameKind.DRAFT_UPDATE, dispatches.getFirst().frame().kind());
+        assertEquals("hello", dispatches.getFirst().frame().payload().get("delta"));
+        assertEquals(3L, dispatches.getFirst().frame().sourceSeq());
+        assertEquals(List.of(typingStop), dispatches.get(1).drainedFrames());
+        assertEquals(typingStop, dispatches.get(1).frame());
+    }
+
+    @Test
+    void prepareOutboundFramesFlushesDraftRunBeforeBarrierOrDifferentBlock() {
+        FeishuGatewayNativeChannelProviderAdapter adapter = new FeishuGatewayNativeChannelProviderAdapter();
+        ChannelOutboundFrame first = draftUpdateFrame(2L, "a");
+        ChannelOutboundFrame draftComplete = draftCompleteFrame(3L, Map.of("type", "TEXT", "text", "a"));
+        ChannelOutboundFrame second = draftUpdateFrame(4L, "b");
+        ChannelOutboundFrame differentBlock = draftUpdateFrame(5L, "c", "session-message-reply-1", "other-block");
+
+        List<OutboundFrameDispatch> dispatches = adapter.prepareOutboundFrames(
+            profile(),
+            List.of(first, draftComplete, second, differentBlock)
+        );
+
+        assertEquals(4, dispatches.size());
+        assertEquals(first, dispatches.get(0).frame());
+        assertEquals(draftComplete, dispatches.get(1).frame());
+        assertEquals(second, dispatches.get(2).frame());
+        assertEquals(differentBlock, dispatches.get(3).frame());
+    }
+
     @Test
     void finalDeliverySendsCardWithBoundedFeishuIdempotencyUuid() {
         CapturingCredentialProvider credentialProvider = new CapturingCredentialProvider();
@@ -694,6 +733,10 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
     }
 
     private static ChannelOutboundFrame draftUpdateFrame(long sourceSeq, String delta) {
+        return draftUpdateFrame(sourceSeq, delta, "session-message-reply-1", "reply-block-1");
+    }
+
+    private static ChannelOutboundFrame draftUpdateFrame(long sourceSeq, String delta, String messageId, String blockId) {
         return new ChannelOutboundFrame(
             ChannelContracts.CHANNEL_OUTBOUND_FRAME_PROTOCOL,
             "profile-1:exec-1:" + sourceSeq + ":DRAFT_UPDATE",
@@ -710,8 +753,8 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
             Instant.parse("2026-05-05T00:00:00Z"),
             "profile-1:exec-1:" + sourceSeq + ":DRAFT_UPDATE",
             Map.of(
-                "messageId", "session-message-reply-1",
-                "blockId", "reply-block-1",
+                "messageId", messageId,
+                "blockId", blockId,
                 "blockType", "TEXT",
                 "delta", delta
             ),

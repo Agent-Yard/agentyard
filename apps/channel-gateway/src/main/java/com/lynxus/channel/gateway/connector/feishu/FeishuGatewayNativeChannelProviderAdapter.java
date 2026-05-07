@@ -1,9 +1,11 @@
 package com.lynxus.channel.gateway.connector.feishu;
 
 import com.lynxus.channel.gateway.extension.GatewayNativeChannelProviderAdapter;
+import com.lynxus.channel.gateway.extension.GatewayNativeChannelProviderAdapter.OutboundFrameDispatch;
 import com.lynxus.contracts.channel.ChannelContracts;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundFrame;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundFrameKind;
 import jakarta.annotation.PreDestroy;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -166,6 +168,35 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
         descriptor.put("jobDefinitions", List.of());
         descriptor.put("endpoints", Map.of());
         return Map.copyOf(descriptor);
+    }
+
+    @Override
+    public List<OutboundFrameDispatch> prepareOutboundFrames(ChannelGatewayProfile profile, List<ChannelOutboundFrame> frames) {
+        if (frames == null || frames.isEmpty()) {
+            return List.of();
+        }
+        List<OutboundFrameDispatch> dispatches = new ArrayList<>();
+        DraftUpdateRun draftRun = null;
+        for (ChannelOutboundFrame frame : frames) {
+            DraftUpdateKey key = DraftUpdateKey.from(frame);
+            if (key != null && draftRun != null && draftRun.canAppend(key, frame)) {
+                draftRun.append(frame);
+                continue;
+            }
+            if (draftRun != null) {
+                dispatches.add(draftRun.toDispatch());
+                draftRun = null;
+            }
+            if (key == null) {
+                dispatches.add(new OutboundFrameDispatch(frame, List.of(frame)));
+            } else {
+                draftRun = new DraftUpdateRun(key, frame);
+            }
+        }
+        if (draftRun != null) {
+            dispatches.add(draftRun.toDispatch());
+        }
+        return List.copyOf(dispatches);
     }
 
     @Override
@@ -643,6 +674,93 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
     private static boolean isFeishuStreamingModeClosed(RuntimeException error) {
         return error instanceof FeishuApiException feishuError
             && feishuError.code() == FEISHU_STREAMING_MODE_CLOSED_CODE;
+    }
+
+    private record DraftUpdateKey(String channelProfileId, String sessionId, String messageId, String blockId) {
+        private static DraftUpdateKey from(ChannelOutboundFrame frame) {
+            if (frame.kind() != ChannelOutboundFrameKind.DRAFT_UPDATE) {
+                return null;
+            }
+            Optional<String> delta = textPayload(frame, "delta");
+            if (delta.isEmpty()) {
+                return null;
+            }
+            return new DraftUpdateKey(
+                frame.channelProfileId(),
+                frame.sessionId(),
+                textPayload(frame, "messageId").orElse(null),
+                textPayload(frame, "blockId").orElse(null)
+            );
+        }
+
+        private DraftUpdateKey {
+            if (messageId == null || blockId == null) {
+                throw new IllegalArgumentException("messageId and blockId are required for Feishu draft update coalescing");
+            }
+        }
+    }
+
+    private static final class DraftUpdateRun {
+        private final DraftUpdateKey key;
+        private final List<ChannelOutboundFrame> frames = new ArrayList<>();
+        private final StringBuilder delta = new StringBuilder();
+        private Map<String, Object> payloadWithoutDelta;
+
+        private DraftUpdateRun(DraftUpdateKey key, ChannelOutboundFrame firstFrame) {
+            this.key = key;
+            append(firstFrame);
+        }
+
+        private boolean canAppend(DraftUpdateKey candidateKey, ChannelOutboundFrame frame) {
+            return key.equals(candidateKey) && payloadWithoutDelta.equals(payloadWithoutDelta(frame));
+        }
+
+        private void append(ChannelOutboundFrame frame) {
+            if (frames.isEmpty()) {
+                payloadWithoutDelta = payloadWithoutDelta(frame);
+            }
+            frames.add(frame);
+            delta.append(textPayload(frame, "delta").orElseThrow());
+        }
+
+        private OutboundFrameDispatch toDispatch() {
+            if (frames.size() == 1) {
+                ChannelOutboundFrame frame = frames.getFirst();
+                return new OutboundFrameDispatch(frame, List.of(frame));
+            }
+            ChannelOutboundFrame first = frames.getFirst();
+            ChannelOutboundFrame last = frames.getLast();
+            Map<String, Object> payload = new LinkedHashMap<>(last.payload());
+            payload.put("delta", delta.toString());
+            String idempotencyKey = ChannelContracts.channelOutboundFrameIdempotencyKey(
+                first.idempotencyKey() + ":" + last.idempotencyKey() + ":feishu-draft-update-coalesced"
+            );
+            ChannelOutboundFrame coalesced = new ChannelOutboundFrame(
+                first.protocol(),
+                first.channelProfileId() + ":" + first.sessionId() + ":" + last.sourceSeq() + ":DRAFT_UPDATE:COALESCED",
+                first.channelProfileId(),
+                first.providerType(),
+                first.assistantId(),
+                first.externalConversationId(),
+                first.sessionId(),
+                last.turnId(),
+                last.turnExecutionId(),
+                last.sourceSeq(),
+                null,
+                ChannelOutboundFrameKind.DRAFT_UPDATE,
+                last.occurredAt(),
+                idempotencyKey,
+                payload,
+                last.traceContext()
+            );
+            return new OutboundFrameDispatch(coalesced, frames);
+        }
+
+        private static Map<String, Object> payloadWithoutDelta(ChannelOutboundFrame frame) {
+            Map<String, Object> payload = new LinkedHashMap<>(frame.payload());
+            payload.remove("delta");
+            return Map.copyOf(payload);
+        }
     }
 
     private static Optional<String> completedBlockText(ChannelGatewayProfile profile, ChannelOutboundFrame frame) {

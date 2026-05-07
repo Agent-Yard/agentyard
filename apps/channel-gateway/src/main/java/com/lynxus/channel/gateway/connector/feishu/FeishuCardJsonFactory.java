@@ -17,8 +17,8 @@ final class FeishuCardJsonFactory {
                 "update_multi", true,
                 "summary", Map.of("content", ""),
                 "streaming_config", Map.of(
-                    "print_frequency_ms", endpointConfig(70),
-                    "print_step", endpointConfig(1),
+                    "print_frequency_ms", endpointConfig(50),
+                    "print_step", endpointConfig(2),
                     "print_strategy", "fast"
                 )
             ),

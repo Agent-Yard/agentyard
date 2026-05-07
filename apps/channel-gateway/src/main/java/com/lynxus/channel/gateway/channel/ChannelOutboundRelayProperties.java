@@ -22,6 +22,8 @@ public class ChannelOutboundRelayProperties {
     private int nativeMaxPendingFinals = 1;
     @Min(0)
     private int nativeResumePendingFinals = 0;
+    @Min(1)
+    private int nativeDispatchBatchSize = 32;
     @Min(0)
     private int transientQueueCapacity = 100;
 
@@ -107,6 +109,14 @@ public class ChannelOutboundRelayProperties {
 
     public void setNativeResumePendingFinals(int nativeResumePendingFinals) {
         this.nativeResumePendingFinals = nativeResumePendingFinals;
+    }
+
+    public int getNativeDispatchBatchSize() {
+        return nativeDispatchBatchSize;
+    }
+
+    public void setNativeDispatchBatchSize(int nativeDispatchBatchSize) {
+        this.nativeDispatchBatchSize = nativeDispatchBatchSize;
     }
 
     public int getTransientQueueCapacity() {

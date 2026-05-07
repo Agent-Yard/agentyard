@@ -16,6 +16,7 @@ class RedisKeyspaceTest {
         assertEquals("lynxus:sse:channel:session-changed", keyspace.sseChannelSessionChanged());
         assertEquals("lynxus:sse:channel:session-updated", keyspace.sseChannelSessionUpdated());
         assertEquals("lynxus:privacy:session:session-1:summary", keyspace.privacySessionSummary("session-1"));
+        assertEquals("lynxus:integration-account:invalidation", keyspace.integrationAccountInvalidationChannel());
         assertEquals("lynxus:session:http", keyspace.httpSessionNamespace());
     }
 
@@ -26,5 +27,6 @@ class RedisKeyspaceTest {
         assertEquals("lynxus:test:lock:session:session-1", testKeyspace.lock("session", "session-1"));
         assertEquals("lynxus:test:sse:channel:session-changed", testKeyspace.sseChannelSessionChanged());
         assertEquals("lynxus:test:cache:invalidate:knowledge", testKeyspace.knowledgeInvalidationChannel());
+        assertEquals("lynxus:test:integration-account:invalidation", testKeyspace.integrationAccountInvalidationChannel());
     }
 }

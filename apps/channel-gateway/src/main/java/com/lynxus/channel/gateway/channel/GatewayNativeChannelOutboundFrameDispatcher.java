@@ -2,6 +2,7 @@ package com.lynxus.channel.gateway.channel;
 
 import com.lynxus.channel.gateway.channel.ChannelOutboundProfileConsumerResolver.ResolvedProfileConsumer;
 import com.lynxus.channel.gateway.extension.GatewayNativeChannelProviderAdapter;
+import com.lynxus.channel.gateway.extension.GatewayNativeChannelProviderAdapter.OutboundFrameDispatch;
 import com.lynxus.channel.gateway.extension.GatewayNativeChannelProviderAdapters;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundConsumerKind;
@@ -12,6 +13,7 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundProfileConsu
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -126,12 +128,12 @@ public class GatewayNativeChannelOutboundFrameDispatcher {
         boolean completedNormally = false;
         try {
             while (properties.isEnabled()) {
-                List<ChannelOutboundFrame> frames = handoff.drain(consumer, 1);
+                List<ChannelOutboundFrame> frames = handoff.drain(consumer, properties.getNativeDispatchBatchSize());
                 if (frames.isEmpty()) {
                     completedNormally = true;
                     return;
                 }
-                consumeFrame(resolved, frames.getFirst());
+                consumeFrames(resolved, frames);
             }
         } finally {
             activeConsumers.remove(key);
@@ -141,23 +143,57 @@ public class GatewayNativeChannelOutboundFrameDispatcher {
         }
     }
 
-    private void consumeFrame(ResolvedProfileConsumer resolved, ChannelOutboundFrame frame) {
+    private void consumeFrames(ResolvedProfileConsumer resolved, List<ChannelOutboundFrame> drainedFrames) {
+        ChannelOutboundProfileConsumer consumer = resolved.consumer();
+        GatewayNativeChannelProviderAdapter adapter;
+        List<OutboundFrameDispatch> dispatches;
+        try {
+            adapter = nativeAdapters.find(resolved.profile().providerType())
+                .orElseThrow(() -> new IllegalStateException("missing gateway-native channel provider adapter: " + resolved.profile().providerType()));
+            dispatches = adapter.prepareOutboundFrames(resolved.profile(), drainedFrames);
+            if (dispatches == null) {
+                throw new IllegalStateException("gateway-native channel provider adapter returned null outbound dispatches: " + resolved.profile().providerType());
+            }
+            validatePreparedDispatches(resolved.profile().providerType(), drainedFrames, dispatches);
+        } catch (RuntimeException error) {
+            requeueFirstPreservingOrder(consumer, drainedFrames);
+            throw error;
+        }
+        for (int index = 0; index < dispatches.size(); index++) {
+            if (!properties.isEnabled()) {
+                requeueFirstPreservingOrder(consumer, unconsumedFrames(dispatches, index));
+                return;
+            }
+            OutboundFrameDispatch dispatch = dispatches.get(index);
+            try {
+                consumeFrame(resolved, adapter, dispatch.frame());
+            } catch (RuntimeException error) {
+                if (containsFinalDelivery(dispatch.drainedFrames())) {
+                    requeueFirstPreservingOrder(consumer, unconsumedFrames(dispatches, index));
+                    throw error;
+                }
+                log.warn(
+                    "dropping failed transient native outbound frames consumer={} count={}",
+                    ProfileConsumerKeys.key(consumer),
+                    dispatch.drainedFrames().size(),
+                    error
+                );
+            }
+        }
+    }
+
+    private void consumeFrame(
+        ResolvedProfileConsumer resolved,
+        GatewayNativeChannelProviderAdapter adapter,
+        ChannelOutboundFrame frame
+    ) {
         ChannelOutboundProfileConsumer consumer = resolved.consumer();
         if (frame.kind() == ChannelOutboundFrameKind.FINAL_DELIVERY && alreadyAcked(consumer, frame)) {
             upstreamRelaySupervisor.reconcileSubscriptions();
             return;
         }
 
-        try {
-            GatewayNativeChannelProviderAdapter adapter = nativeAdapters.find(resolved.profile().providerType())
-                .orElseThrow(() -> new IllegalStateException("missing gateway-native channel provider adapter: " + resolved.profile().providerType()));
-            adapter.consumeOutboundFrame(resolved.profile(), frame);
-        } catch (RuntimeException error) {
-            if (frame.kind() == ChannelOutboundFrameKind.FINAL_DELIVERY) {
-                handoff.requeueFirst(consumer, frame);
-            }
-            throw error;
-        }
+        adapter.consumeOutboundFrame(resolved.profile(), frame);
 
         if (frame.kind() == ChannelOutboundFrameKind.FINAL_DELIVERY) {
             repository.advanceOutboundFinalCheckpoint(
@@ -175,6 +211,53 @@ public class GatewayNativeChannelOutboundFrameDispatcher {
                 frame.finalSequence(),
                 frame.frameId()
             );
+        }
+    }
+
+    private static List<ChannelOutboundFrame> unconsumedFrames(List<OutboundFrameDispatch> dispatches, int firstUnconsumed) {
+        List<ChannelOutboundFrame> frames = new ArrayList<>();
+        for (int index = firstUnconsumed; index < dispatches.size(); index++) {
+            frames.addAll(dispatches.get(index).drainedFrames());
+        }
+        return frames;
+    }
+
+    private static boolean containsFinalDelivery(List<ChannelOutboundFrame> frames) {
+        return frames.stream().anyMatch(frame -> frame.kind() == ChannelOutboundFrameKind.FINAL_DELIVERY);
+    }
+
+    private static void validatePreparedDispatches(
+        String providerType,
+        List<ChannelOutboundFrame> drainedFrames,
+        List<OutboundFrameDispatch> dispatches
+    ) {
+        List<ChannelOutboundFrame> covered = new ArrayList<>();
+        for (OutboundFrameDispatch dispatch : dispatches) {
+            validateFinalDeliveryDispatch(providerType, dispatch);
+            covered.addAll(dispatch.drainedFrames());
+        }
+        if (!covered.equals(drainedFrames)) {
+            throw new IllegalStateException("gateway-native channel provider adapter changed drained frame order or coverage: " + providerType);
+        }
+    }
+
+    private static void validateFinalDeliveryDispatch(String providerType, OutboundFrameDispatch dispatch) {
+        List<ChannelOutboundFrame> frames = dispatch.drainedFrames();
+        boolean dispatchesFinal = dispatch.frame().kind() == ChannelOutboundFrameKind.FINAL_DELIVERY;
+        boolean coversFinal = containsFinalDelivery(frames);
+        if (!dispatchesFinal && !coversFinal) {
+            return;
+        }
+        if (frames.size() != 1
+            || frames.getFirst().kind() != ChannelOutboundFrameKind.FINAL_DELIVERY
+            || !dispatch.frame().equals(frames.getFirst())) {
+            throw new IllegalStateException("gateway-native FINAL_DELIVERY must be dispatched independently: " + providerType);
+        }
+    }
+
+    private void requeueFirstPreservingOrder(ChannelOutboundProfileConsumer consumer, List<ChannelOutboundFrame> frames) {
+        for (int index = frames.size() - 1; index >= 0; index--) {
+            handoff.requeueFirst(consumer, frames.get(index));
         }
     }
 

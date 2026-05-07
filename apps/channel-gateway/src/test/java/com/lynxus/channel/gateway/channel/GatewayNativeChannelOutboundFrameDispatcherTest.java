@@ -16,6 +16,7 @@ import com.lynxus.channel.gateway.extension.ChannelProviderDescriptor;
 import com.lynxus.channel.gateway.extension.ChannelProviderRegistry;
 import com.lynxus.channel.gateway.extension.ChannelProviderRegistryLoadResult;
 import com.lynxus.channel.gateway.extension.GatewayNativeChannelProviderAdapter;
+import com.lynxus.channel.gateway.extension.GatewayNativeChannelProviderAdapter.OutboundFrameDispatch;
 import com.lynxus.channel.gateway.extension.GatewayNativeChannelProviderAdapters;
 import com.lynxus.contracts.channel.ChannelContracts;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
@@ -105,6 +106,88 @@ class GatewayNativeChannelOutboundFrameDispatcherTest {
         assertThrows(IllegalStateException.class, () -> fixture.dispatcher.dispatchOne(fixture.resolved));
 
         assertEquals(List.of(frame), fixture.handoff.drain(fixture.consumer, 1));
+        verify(fixture.repository, never()).advanceOutboundFinalCheckpoint(
+            any(),
+            anyLong(),
+            any(),
+            any(),
+            any(),
+            any(Instant.class)
+        );
+    }
+
+    @Test
+    void nativeTransientBatchFailureDropsFailedFrameAndContinuesToFinalDelivery() {
+        Fixture fixture = new Fixture();
+        ChannelOutboundFrame first = draftUpdateFrame(2, "a");
+        ChannelOutboundFrame finalDelivery = finalFrame(102);
+        fixture.adapter.failFrameId = first.frameId();
+        fixture.handoff.offer(fixture.consumer, first, 1, 10);
+        fixture.handoff.offer(fixture.consumer, finalDelivery, 1, 10);
+        when(fixture.repository.findOutboundFinalCheckpoint(fixture.consumer)).thenReturn(Optional.empty());
+        when(fixture.repository.advanceOutboundFinalCheckpoint(
+            eq(fixture.consumer),
+            eq(102L),
+            eq(finalDelivery.frameId()),
+            eq("session-1"),
+            eq("message-102"),
+            any(Instant.class)
+        )).thenReturn(true);
+
+        fixture.dispatcher.dispatchOne(fixture.resolved);
+
+        assertEquals(List.of(finalDelivery), fixture.adapter.frames);
+        assertEquals(List.of(), fixture.handoff.drain(fixture.consumer, 10));
+        verify(fixture.repository).advanceOutboundFinalCheckpoint(
+            eq(fixture.consumer),
+            eq(102L),
+            eq(finalDelivery.frameId()),
+            eq("session-1"),
+            eq("message-102"),
+            any(Instant.class)
+        );
+    }
+
+    @Test
+    void nativeFinalBatchFailureRequeuesFailedAndUnconsumedFramesInOriginalOrder() {
+        Fixture fixture = new Fixture();
+        ChannelOutboundFrame first = draftUpdateFrame(2, "a");
+        ChannelOutboundFrame second = finalFrame(103);
+        ChannelOutboundFrame third = draftUpdateFrame(4, "c");
+        fixture.adapter.failFrameId = second.frameId();
+        fixture.handoff.offer(fixture.consumer, first, 1, 10);
+        fixture.handoff.offer(fixture.consumer, second, 1, 10);
+        fixture.handoff.offer(fixture.consumer, third, 1, 10);
+        when(fixture.repository.findOutboundFinalCheckpoint(fixture.consumer)).thenReturn(Optional.empty());
+
+        assertThrows(IllegalStateException.class, () -> fixture.dispatcher.dispatchOne(fixture.resolved));
+
+        assertEquals(List.of(first), fixture.adapter.frames);
+        assertEquals(List.of(second, third), fixture.handoff.drain(fixture.consumer, 10));
+        verify(fixture.repository, never()).advanceOutboundFinalCheckpoint(
+            any(),
+            anyLong(),
+            any(),
+            any(),
+            any(),
+            any(Instant.class)
+        );
+    }
+
+    @Test
+    void nativePreparedDispatchRejectsFinalDeliveryMergedWithOtherFrames() {
+        Fixture fixture = new Fixture();
+        ChannelOutboundFrame first = draftUpdateFrame(2, "a");
+        ChannelOutboundFrame finalDelivery = finalFrame(104);
+        fixture.adapter.preparedDispatches = List.of(new OutboundFrameDispatch(finalDelivery, List.of(first, finalDelivery)));
+        fixture.handoff.offer(fixture.consumer, first, 1, 10);
+        fixture.handoff.offer(fixture.consumer, finalDelivery, 1, 10);
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, () -> fixture.dispatcher.dispatchOne(fixture.resolved));
+
+        assertTrue(error.getMessage().contains("FINAL_DELIVERY must be dispatched independently"));
+        assertEquals(List.of(), fixture.adapter.frames);
+        assertEquals(List.of(first, finalDelivery), fixture.handoff.drain(fixture.consumer, 10));
         verify(fixture.repository, never()).advanceOutboundFinalCheckpoint(
             any(),
             anyLong(),
@@ -251,6 +334,8 @@ class GatewayNativeChannelOutboundFrameDispatcherTest {
         private final AtomicInteger maxInFlight = new AtomicInteger();
         private boolean fail;
         private boolean blockFirstFrame;
+        private String failFrameId;
+        private List<OutboundFrameDispatch> preparedDispatches;
 
         private CapturingNativeAdapter(String providerType) {
             this.providerType = providerType;
@@ -267,8 +352,16 @@ class GatewayNativeChannelOutboundFrameDispatcherTest {
         }
 
         @Override
+        public List<OutboundFrameDispatch> prepareOutboundFrames(ChannelGatewayProfile profile, List<ChannelOutboundFrame> frames) {
+            if (preparedDispatches != null) {
+                return preparedDispatches;
+            }
+            return GatewayNativeChannelProviderAdapter.super.prepareOutboundFrames(profile, frames);
+        }
+
+        @Override
         public void consumeOutboundFrame(ChannelGatewayProfile profile, ChannelOutboundFrame frame) {
-            if (fail) {
+            if (fail || frame.frameId().equals(failFrameId)) {
                 throw new IllegalStateException("native delivery failed");
             }
             int currentInFlight = inFlight.incrementAndGet();
@@ -404,6 +497,33 @@ class GatewayNativeChannelOutboundFrameDispatcherTest {
                 "sessionMessageId", "message-" + finalSequence,
                 "messageSequence", finalSequence,
                 "messageBlocks", List.of(Map.of("type", "TEXT", "text", "hello"))
+            ),
+            null
+        );
+    }
+
+    private static ChannelOutboundFrame draftUpdateFrame(long sourceSeq, String delta) {
+        String frameId = "profile-1:exec-1:" + sourceSeq + ":DRAFT_UPDATE";
+        return new ChannelOutboundFrame(
+            ChannelContracts.CHANNEL_OUTBOUND_FRAME_PROTOCOL,
+            frameId,
+            "profile-1",
+            "native-provider",
+            "assistant-1",
+            "conversation-1",
+            "session-1",
+            "turn-1",
+            "exec-1",
+            sourceSeq,
+            null,
+            ChannelOutboundFrameKind.DRAFT_UPDATE,
+            Instant.parse("2026-05-05T00:00:00Z"),
+            frameId,
+            Map.of(
+                "messageId", "message-1",
+                "blockId", "block-1",
+                "blockType", "TEXT",
+                "delta", delta
             ),
             null
         );
