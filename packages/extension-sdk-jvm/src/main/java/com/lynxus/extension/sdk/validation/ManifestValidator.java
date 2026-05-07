@@ -238,7 +238,7 @@ public final class ManifestValidator {
         requireArrayField(descriptor, "configUiSchema", path, errors);
         validateChannelProviderOutbound(requireObjectField(descriptor, "outbound", path, errors), path + "/outbound", errors);
 
-        Map<String, Object> endpoints = requireObjectField(descriptor, "endpoints", path, errors);
+        requireObjectField(descriptor, "endpoints", path, errors);
         validateCredentialLifecycleProfileReference(descriptor, credentialLifecycleEndpointProfiles, path, errors);
 
         validateUiPair(
