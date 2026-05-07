@@ -1,11 +1,14 @@
 plugins {
     `java-library`
+    `maven-publish`
     id("org.openapi.generator") version "7.17.0"
 }
 
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import java.nio.file.Files
+import org.gradle.api.artifacts.repositories.PasswordCredentials
+import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.language.jvm.tasks.ProcessResources
 import org.openapitools.generator.gradle.plugin.tasks.GenerateTask
 
@@ -15,18 +18,18 @@ fun jsonObject(value: Any?, label: String): MutableMap<String, Any?> {
 }
 
 @Suppress("UNCHECKED_CAST")
-fun downgradeBooleanConstForOpenApiGenerator(value: Any?) {
+fun downgradeBooleanAndNumericConstForOpenApiGenerator(value: Any?) {
     when (value) {
         is MutableMap<*, *> -> {
             val objectValue = value as MutableMap<String, Any?>
             val constValue = objectValue["const"]
-            if (constValue is Boolean) {
+            if (constValue is Boolean || constValue is Number) {
                 objectValue.remove("const")
                 objectValue.putIfAbsent("default", constValue)
             }
-            objectValue.values.forEach(::downgradeBooleanConstForOpenApiGenerator)
+            objectValue.values.forEach(::downgradeBooleanAndNumericConstForOpenApiGenerator)
         }
-        is MutableList<*> -> value.forEach(::downgradeBooleanConstForOpenApiGenerator)
+        is MutableList<*> -> value.forEach(::downgradeBooleanAndNumericConstForOpenApiGenerator)
     }
 }
 
@@ -36,6 +39,7 @@ java {
     }
     sourceCompatibility = JavaVersion.VERSION_21
     targetCompatibility = JavaVersion.VERSION_21
+    withSourcesJar()
 }
 
 val extensionProtocolOpenApi = rootProject.layout.projectDirectory.file(
@@ -95,7 +99,7 @@ val prepareExtensionProtocolJavaGeneratorOpenApi = tasks.register("prepareExtens
             "Source OpenAPI NormalizedEventAccepted.accepted must keep const: true"
         }
 
-        downgradeBooleanConstForOpenApiGenerator(openApi)
+        downgradeBooleanAndNumericConstForOpenApiGenerator(openApi)
 
         Files.createDirectories(targetFile.toPath().parent)
         Files.writeString(targetFile.toPath(), JsonOutput.prettyPrint(JsonOutput.toJson(openApi)) + "\n")
@@ -241,6 +245,66 @@ tasks.named<ProcessResources>("processResources") {
     from(extensionProtocolJsonSchemaDir) {
         include("*.schema.json")
         into(extensionProtocolJsonSchemaResourceRoot)
+    }
+}
+
+tasks.named("sourcesJar") {
+    dependsOn(generateExtensionProtocolJavaModels)
+}
+
+val extensionSdkJvmGroupId = providers.gradleProperty("lynxusExtensionSdkJvmGroupId")
+    .orElse(project.group.toString())
+val extensionSdkJvmArtifactId = providers.gradleProperty("lynxusExtensionSdkJvmArtifactId")
+    .orElse(project.name)
+val extensionSdkJvmVersion = providers.gradleProperty("lynxusExtensionSdkJvmVersion")
+    .orElse(project.version.toString())
+val lynxusMavenRepositoryUrl = providers.gradleProperty("lynxusMavenRepositoryUrl")
+    .orElse(providers.environmentVariable("LYNXUS_MAVEN_REPOSITORY_URL"))
+val lynxusMavenRepositoryName = providers.gradleProperty("lynxusMavenRepositoryName")
+    .orElse(providers.environmentVariable("LYNXUS_MAVEN_REPOSITORY_NAME"))
+    .orElse("lynxus")
+val lynxusMavenRepositoryUsername = providers.gradleProperty("lynxusMavenRepositoryUsername")
+    .orElse(providers.environmentVariable("LYNXUS_MAVEN_REPOSITORY_USERNAME"))
+val lynxusMavenRepositoryPassword = providers.gradleProperty("lynxusMavenRepositoryPassword")
+    .orElse(providers.environmentVariable("LYNXUS_MAVEN_REPOSITORY_PASSWORD"))
+val lynxusMavenRepositoryAllowInsecureProtocol = providers
+    .gradleProperty("lynxusMavenRepositoryAllowInsecureProtocol")
+    .orElse(providers.environmentVariable("LYNXUS_MAVEN_REPOSITORY_ALLOW_INSECURE_PROTOCOL"))
+    .map(String::toBoolean)
+    .orElse(false)
+
+publishing {
+    publications {
+        create<MavenPublication>("mavenJava") {
+            from(components["java"])
+
+            groupId = extensionSdkJvmGroupId.get()
+            artifactId = extensionSdkJvmArtifactId.get()
+            version = extensionSdkJvmVersion.get()
+
+            pom {
+                name.set("Lynxus Extension SDK for JVM")
+                description.set("JVM SDK for Lynxus Extension Plane implementations.")
+            }
+        }
+    }
+
+    repositories {
+        lynxusMavenRepositoryUrl.orNull?.let { repositoryUrl ->
+            maven {
+                name = lynxusMavenRepositoryName.get()
+                url = uri(repositoryUrl)
+                isAllowInsecureProtocol = lynxusMavenRepositoryAllowInsecureProtocol.get()
+                val repositoryUsername = lynxusMavenRepositoryUsername.orNull
+                val repositoryPassword = lynxusMavenRepositoryPassword.orNull
+                if (repositoryUsername != null || repositoryPassword != null) {
+                    credentials(PasswordCredentials::class) {
+                        username = repositoryUsername.orEmpty()
+                        password = repositoryPassword.orEmpty()
+                    }
+                }
+            }
+        }
     }
 }
 
