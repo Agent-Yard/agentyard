@@ -105,9 +105,40 @@ final class ExtensionDefinitionServiceTest {
 
         assertFalse(definitions.get("mcp").credentialCapability().supported());
         assertEquals(null, definitions.get("mcp").credentialCapability().mode());
+        assertFalse(definitions.get("mcp").credentialCapability().supportsValidate());
         assertEquals(CredentialCapabilityMode.CORE_ENCRYPTED_REFERENCE, definitions.get("simple-http").credentialCapability().mode());
+        assertTrue(definitions.get("simple-http").credentialCapability().supportsValidate());
         assertEquals(CredentialCapabilityMode.REMOTE_LIFECYCLE, definitions.get("enterprise.acme.crm").credentialCapability().mode());
+        assertTrue(definitions.get("enterprise.acme.crm").credentialCapability().supportsValidate());
     }
+
+    @Test
+    void remoteCredentialLifecycleDoesNotRequireValidateEndpoint() {
+        CapturingFetcher fetcher = coreFetcher();
+        fetcher.responses.put("acme-remote", manifest(List.of(), List.of(remoteToolConnectorDescriptor()), false));
+
+        ExtensionDefinitionService service = service("""
+            lynxus:
+              extensions:
+                services:
+                  - registrationId: acme-remote
+                    baseUrl: https://remote.example.com/private
+                    exposes:
+                      toolConnectorTypes:
+                        - enterprise.acme.crm
+                    auth:
+                      type: INTERNAL_TOKEN
+            """, fetcher);
+
+        ToolConnectorDefinition definition = service.toolConnectors().stream()
+            .filter(candidate -> "enterprise.acme.crm".equals(candidate.connectorType()))
+            .findFirst()
+            .orElseThrow();
+
+        assertEquals(CredentialCapabilityMode.REMOTE_LIFECYCLE, definition.credentialCapability().mode());
+        assertFalse(definition.credentialCapability().supportsValidate());
+    }
+
 
     @Test
     void manifestFetchUsesServiceLevelHeadersOnly() {
@@ -258,7 +289,7 @@ final class ExtensionDefinitionServiceTest {
     }
 
     @Test
-    void remoteCredentialSchemaApiKeyIsAllowedWhenCredentialEndpointsAreDeclared() throws Exception {
+    void remoteCredentialSchemaApiKeyIsAllowedWhenCredentialEndpointProfileIsDeclared() throws Exception {
         CapturingFetcher fetcher = coreFetcher();
         fetcher.responses.put("acme-remote", manifest(List.of(), List.of(remoteToolConnectorDescriptor())));
 
@@ -347,6 +378,14 @@ final class ExtensionDefinitionServiceTest {
     }
 
     private static String manifest(List<Map<String, Object>> channelProviders, List<Map<String, Object>> toolConnectors) {
+        return manifest(channelProviders, toolConnectors, true);
+    }
+
+    private static String manifest(
+        List<Map<String, Object>> channelProviders,
+        List<Map<String, Object>> toolConnectors,
+        boolean includeValidate
+    ) {
         Map<String, Object> descriptors = new LinkedHashMap<>();
         descriptors.put("channelProviders", channelProviders);
         descriptors.put("toolConnectors", toolConnectors);
@@ -354,8 +393,20 @@ final class ExtensionDefinitionServiceTest {
         manifest.put("extensionApiVersion", 1);
         manifest.put("coreMinVersion", "0.8.0");
         manifest.put("coreMaxVersion", "0.9.x");
+        manifest.put("credentialLifecycleEndpointProfiles", defaultCredentialLifecycleEndpointProfiles(includeValidate));
         manifest.put("descriptors", descriptors);
         return LynxusCanonicalJson.canonicalizeValue(manifest);
+    }
+
+    private static Map<String, Object> defaultCredentialLifecycleEndpointProfiles(boolean includeValidate) {
+        Map<String, Object> endpoints = new LinkedHashMap<>();
+        endpoints.put("createCredential", "/credentials/create");
+        endpoints.put("rotateCredential", "/credentials/rotate");
+        endpoints.put("revokeCredential", "/credentials/revoke");
+        if (includeValidate) {
+            endpoints.put("validateCredential", "/credentials/validate");
+        }
+        return Map.of("default", endpoints);
     }
 
     private static Map<String, Object> channelProviderDescriptor(String providerType) {
@@ -415,13 +466,7 @@ final class ExtensionDefinitionServiceTest {
         Map<String, Object> descriptor = toolConnectorDescriptor("enterprise.acme.crm", "Acme CRM");
         descriptor.put("credentialSchema", objectSchema(Map.of("apiKey", Map.of("type", "string"))));
         descriptor.put("credentialUiSchema", List.of());
-        Map<String, Object> endpoints = new LinkedHashMap<>();
-        endpoints.put("invoke", "/tools/enterprise.acme.crm/invoke");
-        endpoints.put("createCredential", "/credentials/create");
-        endpoints.put("rotateCredential", "/credentials/rotate");
-        endpoints.put("revokeCredential", "/credentials/revoke");
-        endpoints.put("validateCredential", "/credentials/validate");
-        descriptor.put("endpoints", endpoints);
+        descriptor.put("credentialLifecycleEndpointProfile", "default");
         return descriptor;
     }
 

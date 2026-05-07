@@ -35,6 +35,7 @@ class ManifestFetcher(Protocol):
 class LoadedToolConnectorManifest:
     registration_id: str
     descriptors: tuple[dict[str, Any], ...]
+    credential_lifecycle_endpoint_profiles: dict[str, Any]
     errors: tuple[dict[str, Any], ...] = ()
 
 
@@ -96,7 +97,7 @@ class ToolConnectorRegistryLoadError(RuntimeError):
 class _LoadedToolConnectorRegistrySnapshot:
     registration_set: ExtensionRegistrationSet
     registrations: tuple[ExtensionRegistration, ...]
-    loaded_descriptor_entries: tuple[tuple[ExtensionRegistration, dict[str, Any]], ...]
+    loaded_descriptor_entries: tuple[tuple[ExtensionRegistration, dict[str, Any], dict[str, Any]], ...]
     manifest_errors: tuple[dict[str, Any], ...]
 
 
@@ -126,7 +127,10 @@ def load_tool_connector_registry(
     validation_result = _validation_result_from_snapshot(snapshot)
     if validation_result.get("status") != "READY":
         raise ToolConnectorRegistryLoadError(validation_result)
-    entries = tuple(_registry_entry(registration, descriptor) for registration, descriptor in snapshot.loaded_descriptor_entries)
+    entries = tuple(
+        _registry_entry(registration, descriptor)
+        for registration, descriptor, _ in snapshot.loaded_descriptor_entries
+    )
     return ToolConnectorRegistry(entries, validation_result=validation_result)
 
 
@@ -136,12 +140,15 @@ def _load_tool_connector_registry_snapshot(
     manifest_fetcher: ManifestFetcher,
 ) -> _LoadedToolConnectorRegistrySnapshot:
     registrations = _tool_connector_registrations(registration_set)
-    loaded_descriptor_entries: list[tuple[ExtensionRegistration, dict[str, Any]]] = []
+    loaded_descriptor_entries: list[tuple[ExtensionRegistration, dict[str, Any], dict[str, Any]]] = []
     manifest_errors: list[dict[str, Any]] = []
 
     for registration in registrations:
         loaded = _load_tool_connector_manifest(registration, descriptor_provider, manifest_fetcher)
-        loaded_descriptor_entries.extend((registration, descriptor) for descriptor in loaded.descriptors)
+        loaded_descriptor_entries.extend(
+            (registration, descriptor, loaded.credential_lifecycle_endpoint_profiles)
+            for descriptor in loaded.descriptors
+        )
         manifest_errors.extend(loaded.errors)
 
     return _LoadedToolConnectorRegistrySnapshot(
@@ -162,7 +169,11 @@ def _validation_result_from_snapshot(snapshot: _LoadedToolConnectorRegistrySnaps
 
     loaded_descriptor_entries = [
         (registration.registration_id, descriptor)
-        for registration, descriptor in snapshot.loaded_descriptor_entries
+        for registration, descriptor, _ in snapshot.loaded_descriptor_entries
+    ]
+    loaded_digest_entries = [
+        (descriptor, credential_lifecycle_endpoint_profiles)
+        for _, descriptor, credential_lifecycle_endpoint_profiles in snapshot.loaded_descriptor_entries
     ]
     loaded_descriptors = [descriptor for _, descriptor in loaded_descriptor_entries]
     loaded_descriptor_ids_in_order = [
@@ -177,7 +188,7 @@ def _validation_result_from_snapshot(snapshot: _LoadedToolConnectorRegistrySnaps
     missing_descriptor_ids = _sorted_unique(expected_set - loaded_set)
     unexpected_descriptor_ids = _sorted_unique(loaded_set - expected_set)
     manifest_errors = list(snapshot.manifest_errors)
-    descriptor_definition_digests = _definition_digests(loaded_descriptors, manifest_errors)
+    descriptor_definition_digests = _definition_digests(loaded_digest_entries, manifest_errors)
 
     registry_errors = _registry_descriptor_errors(
         registrations=registrations,
@@ -256,6 +267,7 @@ def _load_tool_connector_manifest(
             return LoadedToolConnectorManifest(
                 registration_id=registration.registration_id,
                 descriptors=(),
+                credential_lifecycle_endpoint_profiles={},
                 errors=(
                     _manifest_error(
                         code="MANIFEST_FETCH_FAILED",
@@ -273,6 +285,7 @@ def _load_tool_connector_manifest(
             return LoadedToolConnectorManifest(
                 registration_id=registration.registration_id,
                 descriptors=(),
+                credential_lifecycle_endpoint_profiles={},
                 errors=(
                     _manifest_error(
                         code="MANIFEST_FETCH_FAILED",
@@ -293,6 +306,7 @@ def _load_tool_connector_manifest(
         return LoadedToolConnectorManifest(
             registration_id=registration.registration_id,
             descriptors=(),
+            credential_lifecycle_endpoint_profiles={},
             errors=(
                 _manifest_error(
                     code="MANIFEST_SCHEMA_INVALID",
@@ -318,14 +332,16 @@ def _load_tool_connector_manifest(
         for error in validation.errors
     ]
     if errors:
-        return LoadedToolConnectorManifest(registration.registration_id, (), tuple(errors))
+        return LoadedToolConnectorManifest(registration.registration_id, (), {}, tuple(errors))
 
     descriptors = tuple(
         descriptor
         for descriptor in manifest["descriptors"]["toolConnectors"]
         if isinstance(descriptor, dict)
     )
-    return LoadedToolConnectorManifest(registration.registration_id, descriptors, ())
+    raw_profiles = manifest.get("credentialLifecycleEndpointProfiles")
+    profiles = raw_profiles if isinstance(raw_profiles, dict) else {}
+    return LoadedToolConnectorManifest(registration.registration_id, descriptors, profiles, ())
 
 
 def _registry_descriptor_errors(
@@ -418,16 +434,19 @@ def _tool_connector_registrations(registration_set: ExtensionRegistrationSet) ->
 
 
 def _definition_digests(
-    descriptors: list[dict[str, Any]],
+    descriptor_entries: list[tuple[dict[str, Any], dict[str, Any]]],
     manifest_errors: list[dict[str, Any]],
 ) -> dict[str, str]:
     digests: dict[str, str] = {}
-    for descriptor in descriptors:
+    for descriptor, credential_lifecycle_endpoint_profiles in descriptor_entries:
         descriptor_id = descriptor.get("connectorType")
         if not isinstance(descriptor_id, str):
             continue
         try:
-            digests[descriptor_id] = tool_connector_definition_digest(descriptor)
+            digests[descriptor_id] = tool_connector_definition_digest(
+                descriptor,
+                credential_lifecycle_endpoint_profiles,
+            )
         except Exception as error:
             manifest_errors.append(
                 _manifest_error(

@@ -73,23 +73,18 @@ def test_endpoint_key_constants_match_json_schema_endpoint_properties() -> None:
     tool_descriptor_schema = json.loads(TOOL_CONNECTOR_SCHEMA_PATH.read_text(encoding="utf-8"))
     channel_descriptor_schema = json.loads(CHANNEL_PROVIDER_SCHEMA_PATH.read_text(encoding="utf-8"))
 
-    tool_endpoint_constants = {
-        TOOL_CONNECTOR_INVOKE_ENDPOINT,
+    credential_endpoint_constants = {
         CREATE_CREDENTIAL_ENDPOINT,
         ROTATE_CREDENTIAL_ENDPOINT,
         REVOKE_CREDENTIAL_ENDPOINT,
         VALIDATE_CREDENTIAL_ENDPOINT,
     }
-    channel_endpoint_constants = {
-        CHANNEL_PROVIDER_RUN_JOB_ENDPOINT,
-        CREATE_CREDENTIAL_ENDPOINT,
-        ROTATE_CREDENTIAL_ENDPOINT,
-        REVOKE_CREDENTIAL_ENDPOINT,
-        VALIDATE_CREDENTIAL_ENDPOINT,
-    }
+    tool_endpoint_constants = {TOOL_CONNECTOR_INVOKE_ENDPOINT}
+    channel_endpoint_constants = {CHANNEL_PROVIDER_RUN_JOB_ENDPOINT}
 
-    assert tool_endpoint_constants == {"invoke", "createCredential", "rotateCredential", "revokeCredential", "validateCredential"}
-    assert channel_endpoint_constants == {"runJob", "createCredential", "rotateCredential", "revokeCredential", "validateCredential"}
+    assert credential_endpoint_constants == {"createCredential", "rotateCredential", "revokeCredential", "validateCredential"}
+    assert tool_endpoint_constants == {"invoke"}
+    assert channel_endpoint_constants == {"runJob"}
     assert tool_endpoint_constants == _endpoint_property_keys(tool_descriptor_schema)
     assert channel_endpoint_constants == _endpoint_property_keys(channel_descriptor_schema)
 

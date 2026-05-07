@@ -340,6 +340,7 @@ public class IntegrationAccountService {
             if (facts.credentialMode() == CredentialCapabilityMode.CORE_ENCRYPTED_REFERENCE) {
                 updated = validateLocalCredential(account, facts);
             } else {
+                ensureRemoteValidateSupported(facts);
                 RemoteCredentialLifecycleResponse response = invokeRemoteCredential(
                     facts,
                     account,
@@ -671,6 +672,12 @@ public class IntegrationAccountService {
         }
     }
 
+    private void ensureRemoteValidateSupported(InternalCredentialRoutingFacts facts) {
+        if (facts.credentialMode() == CredentialCapabilityMode.REMOTE_LIFECYCLE && !hasText(facts.validateCredentialPath())) {
+            throw credentialValidateUnsupported();
+        }
+    }
+
     private StoredIntegrationAccount withCredentialState(
         StoredIntegrationAccount account,
         String externalSecretRef,
@@ -732,6 +739,14 @@ public class IntegrationAccountService {
             HttpStatus.UNPROCESSABLE_CONTENT,
             "INTEGRATION_ACCOUNT_CREDENTIAL_UNSUPPORTED",
             "INTEGRATION_ACCOUNT_CREDENTIAL_UNSUPPORTED: descriptor does not support Core-managed credential lifecycle"
+        );
+    }
+
+    private static ApiProblemException credentialValidateUnsupported() {
+        return new ApiProblemException(
+            HttpStatus.UNPROCESSABLE_CONTENT,
+            "INTEGRATION_ACCOUNT_CREDENTIAL_VALIDATE_UNSUPPORTED",
+            "INTEGRATION_ACCOUNT_CREDENTIAL_VALIDATE_UNSUPPORTED: descriptor does not support credential validation"
         );
     }
 

@@ -64,6 +64,7 @@ export interface CredentialCapability {
   mode: CredentialCapabilityMode | null;
   credentialSchema: Record<string, unknown> | null;
   credentialUiSchema: Record<string, unknown>[];
+  supportsValidate: boolean;
 }
 
 export interface ChannelProviderJobDefinition {

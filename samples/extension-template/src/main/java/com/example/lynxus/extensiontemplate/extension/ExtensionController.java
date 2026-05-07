@@ -2,7 +2,6 @@ package com.example.lynxus.extensiontemplate.extension;
 
 import com.lynxus.extension.sdk.generated.protocol.model.ExtensionHealth;
 import com.lynxus.extension.sdk.generated.protocol.model.HealthProbe;
-import com.lynxus.extension.sdk.generated.protocol.model.ServiceManifestEnvelope;
 import com.lynxus.extension.sdk.protocol.LynxusExtensionProtocol;
 import java.time.OffsetDateTime;
 import java.util.Map;
@@ -12,15 +11,15 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 public final class ExtensionController {
-    private final ManifestService manifestService;
+    private final ExtensionManifestFactory manifestFactory;
 
-    public ExtensionController(ManifestService manifestService) {
-        this.manifestService = manifestService;
+    public ExtensionController(ExtensionManifestFactory manifestFactory) {
+        this.manifestFactory = manifestFactory;
     }
 
     @GetMapping(value = LynxusExtensionProtocol.EXTENSION_MANIFEST_PATH, produces = MediaType.APPLICATION_JSON_VALUE)
-    public ServiceManifestEnvelope manifest() {
-        return manifestService.manifest();
+    public Map<String, Object> manifest() {
+        return manifestFactory.manifest();
     }
 
     @GetMapping(value = LynxusExtensionProtocol.EXTENSION_HEALTH_PATH, produces = MediaType.APPLICATION_JSON_VALUE)

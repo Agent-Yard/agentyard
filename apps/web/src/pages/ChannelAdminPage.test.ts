@@ -29,6 +29,7 @@ const providerDefinition: ChannelProviderDefinition = {
     mode: null,
     credentialSchema: null,
     credentialUiSchema: [],
+    supportsValidate: false,
   },
   configSchema: {
     type: 'object',

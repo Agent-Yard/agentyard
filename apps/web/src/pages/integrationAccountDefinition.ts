@@ -18,6 +18,7 @@ export interface IntegrationAccountDefinition {
     mode: string | null;
     credentialSchema: Record<string, unknown> | null;
     credentialUiSchema: Record<string, unknown>[];
+    supportsValidate: boolean;
   };
 }
 
@@ -127,6 +128,7 @@ export function canRotateCredential(account: IntegrationAccount, definition: Int
 
 export function canValidateCredential(account: IntegrationAccount, definition: IntegrationAccountDefinition | null): boolean {
   return supportsCredentialManagement(definition)
+    && definition?.credentialCapability.supportsValidate === true
     && account.credentialConfigured
     && !isBlockingCredentialStatus(account.credentialStatus);
 }

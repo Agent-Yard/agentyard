@@ -13,7 +13,7 @@ public final class TemplateChannelProviderHandler implements ChannelProviderHand
     public ChannelRunJobResponse runJob(ChannelRunJobRequest request, ExtensionRequestContext context) {
         // Replace this no-op with provider pull/sync logic when jobDefinitions are kept in the manifest.
         // Pull-style providers may return normalized inbound events in events; webhook-only providers
-        // should remove jobDefinitions and endpoints.runJob from extension-manifest.json.
+        // should remove jobDefinitions from ExtensionDescriptorRegistry.
         return new ChannelRunJobResponse()
             .status(ChannelRunJobResponse.StatusEnum.NOOP)
             .nextCursor(null)

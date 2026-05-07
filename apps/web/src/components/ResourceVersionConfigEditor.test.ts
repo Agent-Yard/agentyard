@@ -22,6 +22,7 @@ function definition(overrides: Partial<ToolConnectorDefinition> = {}): ToolConne
       mode: null,
       credentialSchema: null,
       credentialUiSchema: [],
+      supportsValidate: false,
     },
     configSchema: { type: 'object' },
     configUiSchema: [],

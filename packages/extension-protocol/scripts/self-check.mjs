@@ -698,15 +698,17 @@ function validateManifest(manifest) {
   if (channelProviders.length === 0 && toolConnectors.length === 0) {
     errors.push({ code: "MANIFEST_EMPTY", path: "/descriptors", message: "manifest must expose at least one descriptor" });
   }
-  channelProviders.forEach((descriptor, index) => validateChannelProvider(descriptor, `/descriptors/channelProviders/${index}`, errors));
-  toolConnectors.forEach((descriptor, index) => validateToolConnector(descriptor, `/descriptors/toolConnectors/${index}`, errors));
+  const credentialLifecycleEndpointProfiles = manifest.credentialLifecycleEndpointProfiles ?? {};
+  validateCredentialLifecycleEndpointProfiles(credentialLifecycleEndpointProfiles, errors);
+  channelProviders.forEach((descriptor, index) => validateChannelProvider(descriptor, `/descriptors/channelProviders/${index}`, credentialLifecycleEndpointProfiles, errors));
+  toolConnectors.forEach((descriptor, index) => validateToolConnector(descriptor, `/descriptors/toolConnectors/${index}`, credentialLifecycleEndpointProfiles, errors));
   return errors;
 }
 
-function validateChannelProvider(descriptor, pathPrefix, errors) {
+function validateChannelProvider(descriptor, pathPrefix, credentialLifecycleEndpointProfiles, errors) {
   requireFields(descriptor, ["providerType", "title", "accountConfigSchema", "accountConfigUiSchema", "configSchema", "configUiSchema", "outbound", "endpoints"], pathPrefix, errors);
   validateChannelProviderOutbound(descriptor.outbound, `${pathPrefix}/outbound`, errors);
-  validateCredentialCapability(descriptor, pathPrefix, errors);
+  validateCredentialCapability(descriptor, pathPrefix, credentialLifecycleEndpointProfiles, errors);
   validateUiPair(descriptor.accountConfigSchema, descriptor.accountConfigUiSchema ?? [], `${pathPrefix}/accountConfigUiSchema`, false, errors);
   validateUiPair(descriptor.configSchema, descriptor.configUiSchema ?? [], `${pathPrefix}/configUiSchema`, false, errors);
   scanNormalConfigForSecrets(descriptor.configSchema, `${pathPrefix}/configSchema`, errors);
@@ -775,10 +777,10 @@ function validateChannelProviderOutbound(outbound, pathPrefix, errors) {
   }
 }
 
-function validateToolConnector(descriptor, pathPrefix, errors) {
+function validateToolConnector(descriptor, pathPrefix, credentialLifecycleEndpointProfiles, errors) {
   requireFields(descriptor, ["connectorType", "title", "accountConfigSchema", "accountConfigUiSchema", "configSchema", "configUiSchema", "operationMappingSchema", "operationMappingUiSchema", "endpoints"], pathPrefix, errors);
   validateDeclaredPath(descriptor.endpoints?.invoke, `${pathPrefix}/endpoints/invoke`, errors);
-  validateCredentialCapability(descriptor, pathPrefix, errors);
+  validateCredentialCapability(descriptor, pathPrefix, credentialLifecycleEndpointProfiles, errors);
   validateUiPair(descriptor.accountConfigSchema, descriptor.accountConfigUiSchema ?? [], `${pathPrefix}/accountConfigUiSchema`, false, errors);
   validateUiPair(descriptor.configSchema, descriptor.configUiSchema ?? [], `${pathPrefix}/configUiSchema`, false, errors);
   validateUiPair(descriptor.operationMappingSchema, descriptor.operationMappingUiSchema ?? [], `${pathPrefix}/operationMappingUiSchema`, false, errors);
@@ -807,17 +809,44 @@ function validateDeclaredPath(value, fieldPath, errors) {
   }
 }
 
-function validateCredentialCapability(descriptor, pathPrefix, errors) {
-  const endpoints = descriptor.endpoints ?? {};
-  const credentialKeys = ["createCredential", "rotateCredential", "revokeCredential", "validateCredential"];
-  const declared = credentialKeys.filter((key) => hasOwn(endpoints, key));
-  if (declared.length > 0) {
-    if (declared.length !== credentialKeys.length || !isObject(descriptor.credentialSchema)) {
-      errors.push({ code: "CREDENTIAL_ENDPOINTS_INCOMPLETE", path: `${pathPrefix}/endpoints`, message: "credential endpoints require all four endpoints and credentialSchema" });
+function validateCredentialLifecycleEndpointProfiles(profiles, errors) {
+  if (!isObject(profiles)) {
+    errors.push({ code: "MANIFEST_INVALID", path: "/credentialLifecycleEndpointProfiles", message: "credentialLifecycleEndpointProfiles must be object" });
+    return;
+  }
+  const requiredCredentialKeys = ["createCredential", "rotateCredential", "revokeCredential"];
+  const credentialKeys = [...requiredCredentialKeys, "validateCredential"];
+  for (const [profileName, endpoints] of Object.entries(profiles)) {
+    const profilePath = `/credentialLifecycleEndpointProfiles/${profileName}`;
+    if (!isObject(endpoints)) {
+      errors.push({ code: "MANIFEST_INVALID", path: profilePath, message: "credential lifecycle endpoint profile must be object" });
+      continue;
+    }
+    if (!requiredCredentialKeys.every((key) => hasOwn(endpoints, key))) {
+      errors.push({ code: "CREDENTIAL_ENDPOINTS_INCOMPLETE", path: profilePath, message: "credential lifecycle endpoint profiles require createCredential, rotateCredential, and revokeCredential; validateCredential is optional" });
     }
     for (const key of credentialKeys) {
-      validateDeclaredPath(endpoints[key], `${pathPrefix}/endpoints/${key}`, errors);
+      if (hasOwn(endpoints, key)) {
+        validateDeclaredPath(endpoints[key], `${profilePath}/${key}`, errors);
+      }
     }
+  }
+}
+
+function validateCredentialCapability(descriptor, pathPrefix, credentialLifecycleEndpointProfiles, errors) {
+  const profile = descriptor.credentialLifecycleEndpointProfile;
+  if (profile === undefined) {
+    return;
+  }
+  if (typeof profile !== "string" || profile.length === 0) {
+    errors.push({ code: "MANIFEST_INVALID", path: `${pathPrefix}/credentialLifecycleEndpointProfile`, message: "credentialLifecycleEndpointProfile must be non-empty string" });
+    return;
+  }
+  if (!isObject(descriptor.credentialSchema)) {
+    errors.push({ code: "CREDENTIAL_ENDPOINT_PROFILE_INVALID", path: `${pathPrefix}/credentialLifecycleEndpointProfile`, message: "credentialLifecycleEndpointProfile requires credentialSchema" });
+  }
+  if (!hasOwn(credentialLifecycleEndpointProfiles, profile)) {
+    errors.push({ code: "CREDENTIAL_ENDPOINT_PROFILE_INVALID", path: `${pathPrefix}/credentialLifecycleEndpointProfile`, message: "credentialLifecycleEndpointProfile must reference credentialLifecycleEndpointProfiles" });
   }
 }
 
@@ -1179,9 +1208,9 @@ function evaluateCanonicalFixture(fixture) {
     if (fixture.type === "registrationConfigDigest") {
       value = normalizeRegistrationConfig(fixture.input);
     } else if (fixture.type === "channelProviderDefinitionDigest") {
-      value = channelProviderDigestObject(fixture.input);
+      value = channelProviderDigestObject(fixture.input, fixture.credentialLifecycleEndpointProfiles ?? {});
     } else if (fixture.type === "toolConnectorDefinitionDigest") {
-      value = toolConnectorDigestObject(fixture.input);
+      value = toolConnectorDigestObject(fixture.input, fixture.credentialLifecycleEndpointProfiles ?? {});
     } else {
       value = parseCanonicalJson(fixture.input);
     }
@@ -1236,7 +1265,7 @@ function normalizeBaseUrl(value) {
   return `${url.origin}${pathname}`;
 }
 
-function channelProviderDigestObject(descriptor) {
+function channelProviderDigestObject(descriptor, credentialLifecycleEndpointProfiles = {}) {
   const jobDefinitions = [...(descriptor.jobDefinitions ?? [])]
     .sort((left, right) => compareUtf16(left.jobType, right.jobType))
     .map((job) => ({
@@ -1256,18 +1285,16 @@ function channelProviderDigestObject(descriptor) {
       supportsTyping: descriptor.outbound?.supportsTyping === true
     },
     endpoints: {
-      runJob: descriptor.endpoints?.runJob ?? null,
-      createCredential: descriptor.endpoints?.createCredential ?? null,
-      rotateCredential: descriptor.endpoints?.rotateCredential ?? null,
-      revokeCredential: descriptor.endpoints?.revokeCredential ?? null,
-      validateCredential: descriptor.endpoints?.validateCredential ?? null
+      runJob: descriptor.endpoints?.runJob ?? null
     },
+    credentialLifecycleEndpointProfile: descriptor.credentialLifecycleEndpointProfile ?? null,
+    credentialLifecycleEndpoints: credentialLifecycleEndpoints(descriptor, credentialLifecycleEndpointProfiles),
     configSchema: validationOnlySchema(descriptor.configSchema ?? null),
     jobDefinitions
   };
 }
 
-function toolConnectorDigestObject(descriptor) {
+function toolConnectorDigestObject(descriptor, credentialLifecycleEndpointProfiles = {}) {
   return {
     descriptorType: "TOOL_CONNECTOR",
     connectorType: descriptor.connectorType,
@@ -1276,12 +1303,23 @@ function toolConnectorDigestObject(descriptor) {
     configSchema: validationOnlySchema(descriptor.configSchema ?? null),
     operationMappingSchema: validationOnlySchema(descriptor.operationMappingSchema ?? null),
     endpoints: {
-      invoke: descriptor.endpoints?.invoke ?? null,
-      createCredential: descriptor.endpoints?.createCredential ?? null,
-      rotateCredential: descriptor.endpoints?.rotateCredential ?? null,
-      revokeCredential: descriptor.endpoints?.revokeCredential ?? null,
-      validateCredential: descriptor.endpoints?.validateCredential ?? null
-    }
+      invoke: descriptor.endpoints?.invoke ?? null
+    },
+    credentialLifecycleEndpointProfile: descriptor.credentialLifecycleEndpointProfile ?? null,
+    credentialLifecycleEndpoints: credentialLifecycleEndpoints(descriptor, credentialLifecycleEndpointProfiles)
+  };
+}
+
+function credentialLifecycleEndpoints(descriptor, credentialLifecycleEndpointProfiles) {
+  const profileName = descriptor.credentialLifecycleEndpointProfile;
+  const profile = typeof profileName === "string" && isObject(credentialLifecycleEndpointProfiles[profileName])
+    ? credentialLifecycleEndpointProfiles[profileName]
+    : {};
+  return {
+    createCredential: profile.createCredential ?? null,
+    rotateCredential: profile.rotateCredential ?? null,
+    revokeCredential: profile.revokeCredential ?? null,
+    validateCredential: profile.validateCredential ?? null
   };
 }
 

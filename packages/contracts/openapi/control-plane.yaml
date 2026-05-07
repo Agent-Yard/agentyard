@@ -1700,7 +1700,7 @@ components:
       enum: [REMOTE_LIFECYCLE, CORE_ENCRYPTED_REFERENCE]
     CredentialCapability:
       type: object
-      required: [supported, credentialUiSchema]
+      required: [supported, credentialUiSchema, supportsValidate]
       properties:
         supported:
           type: boolean
@@ -1716,6 +1716,8 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/UiField'
+        supportsValidate:
+          type: boolean
     ChannelProviderJobDefaultSchedule:
       type: object
       additionalProperties: true

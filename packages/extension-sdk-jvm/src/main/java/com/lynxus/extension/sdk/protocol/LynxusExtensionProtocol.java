@@ -17,6 +17,8 @@ public final class LynxusExtensionProtocol {
     public static final String ROTATE_CREDENTIAL_ENDPOINT = "rotateCredential";
     public static final String REVOKE_CREDENTIAL_ENDPOINT = "revokeCredential";
     public static final String VALIDATE_CREDENTIAL_ENDPOINT = "validateCredential";
+    public static final String CREDENTIAL_LIFECYCLE_ENDPOINT_PROFILES_FIELD = "credentialLifecycleEndpointProfiles";
+    public static final String CREDENTIAL_LIFECYCLE_ENDPOINT_PROFILE_FIELD = "credentialLifecycleEndpointProfile";
 
     private LynxusExtensionProtocol() {}
 }

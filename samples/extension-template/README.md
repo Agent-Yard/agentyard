@@ -6,7 +6,7 @@ This project is intentionally independent from the Lynxus monorepo. Copy the who
 
 ## What Is Included
 
-- `GET /extension/manifest` returns `src/main/resources/extension-manifest.json`.
+- `GET /extension/manifest` returns a generated manifest: descriptor/schema content comes from `ExtensionDescriptorRegistry`, while HTTP endpoint paths come from `ExtensionEndpointPaths`.
 - `GET /extension/health`, `GET /health/live`, and `GET /health/ready` provide protocol and container health probes.
 - `POST /tools/invoke` is the Tool Connector runtime entrypoint.
 - `POST /channel/run-job` is the Channel Provider job entrypoint.
@@ -14,7 +14,7 @@ This project is intentionally independent from the Lynxus monorepo. Copy the who
 - `LynxusChannelGatewayClient` contains placeholders for channel inbound event submission, outbound subscription bootstrap, stream URI creation, and final-delivery ACK.
 - `InternalTokenAuthenticationFilter` validates `Authorization: Bearer <token>` using `LYNXUS_INTERNAL_AUTH_TOKEN`.
 - Controllers and handlers use SDK generated protocol DTOs from `com.lynxus.extension.sdk.generated.protocol.model`.
-- `ManifestService` validates the manifest with `com.lynxus:extension-sdk-jvm`.
+- `ExtensionManifestFactory` validates the generated manifest with `com.lynxus:extension-sdk-jvm`.
 
 ## Build Assumptions
 
@@ -46,9 +46,9 @@ The manifest descriptor IDs and registration `exposes` lists must stay aligned:
 
 ## Replace Before Production
 
-1. Edit `src/main/resources/extension-manifest.json`.
+1. Edit `ExtensionDescriptorRegistry`.
 2. Replace `TemplateToolConnectorHandler` with real Tool operation dispatch.
-3. Replace `TemplateChannelProviderHandler` with pull-job behavior, or remove `jobDefinitions` and `endpoints.runJob` for webhook-only providers.
+3. Replace `TemplateChannelProviderHandler` with pull-job behavior, or remove `jobDefinitions` for webhook-only providers.
 4. Implement outbound frame consumption by opening the SSE URI from `LynxusChannelGatewayClient.outboundFrameStreamUri`.
-5. Implement credential lifecycle with your own vault; never return or log cleartext credentials.
+5. Implement credential lifecycle with your own vault; never return or log cleartext credentials. Remove `credentialLifecycleEndpointProfile` from descriptors that do not support remote credential lifecycle; remove `CREDENTIAL_VALIDATE` from the default profile if standalone validation is not supported. `validateCredential` is optional, and the template keeps it in the default profile only as a ready-to-fill placeholder.
 6. Keep `Authorization`, descriptor headers, trace headers, and idempotency handling intact.

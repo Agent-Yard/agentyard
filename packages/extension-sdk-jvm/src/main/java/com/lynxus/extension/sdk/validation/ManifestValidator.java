@@ -34,6 +34,11 @@ public final class ManifestValidator {
         LynxusExtensionProtocol.REVOKE_CREDENTIAL_ENDPOINT,
         LynxusExtensionProtocol.VALIDATE_CREDENTIAL_ENDPOINT
     );
+    private static final Set<String> REQUIRED_CREDENTIAL_ENDPOINTS = Set.of(
+        LynxusExtensionProtocol.CREATE_CREDENTIAL_ENDPOINT,
+        LynxusExtensionProtocol.ROTATE_CREDENTIAL_ENDPOINT,
+        LynxusExtensionProtocol.REVOKE_CREDENTIAL_ENDPOINT
+    );
     private static final Set<String> OPTION_COMPONENTS = Set.of("select", "multiSelect", "radio", "checkboxGroup");
     private static final Set<String> VISIBILITY_OPERATORS = Set.of("equals", "notEquals", "in", "notIn", "exists", "notExists");
     private static final List<String> PROTOCOL_SCHEMA_FILES = List.of(
@@ -192,6 +197,9 @@ public final class ManifestValidator {
         requireString(manifest, "coreMaxVersion", 1, 64, errors);
 
         Map<String, Object> descriptors = object(manifest.get("descriptors"), "/descriptors", errors);
+        Map<String, Object> credentialLifecycleEndpointProfiles = objectOrEmpty(manifest.get("credentialLifecycleEndpointProfiles"));
+        validateCredentialLifecycleEndpointProfiles(credentialLifecycleEndpointProfiles, errors);
+
         List<Object> channelProviders = array(descriptors.get("channelProviders"), "/descriptors/channelProviders", errors);
         List<Object> toolConnectors = array(descriptors.get("toolConnectors"), "/descriptors/toolConnectors", errors);
         if (channelProviders.isEmpty() && toolConnectors.isEmpty()) {
@@ -202,6 +210,7 @@ public final class ManifestValidator {
             validateChannelProvider(
                 object(channelProviders.get(index), "/descriptors/channelProviders/" + index, errors),
                 "/descriptors/channelProviders/" + index,
+                credentialLifecycleEndpointProfiles,
                 errors
             );
         }
@@ -209,12 +218,18 @@ public final class ManifestValidator {
             validateToolConnector(
                 object(toolConnectors.get(index), "/descriptors/toolConnectors/" + index, errors),
                 "/descriptors/toolConnectors/" + index,
+                credentialLifecycleEndpointProfiles,
                 errors
             );
         }
     }
 
-    private static void validateChannelProvider(Map<String, Object> descriptor, String path, List<ManifestValidationError> errors) {
+    private static void validateChannelProvider(
+        Map<String, Object> descriptor,
+        String path,
+        Map<String, Object> credentialLifecycleEndpointProfiles,
+        List<ManifestValidationError> errors
+    ) {
         requireString(descriptor, "providerType", 1, 128, errorsAt(path, errors));
         requireString(descriptor, "title", 1, 120, errorsAt(path, errors));
         requireObjectField(descriptor, "accountConfigSchema", path, errors);
@@ -224,7 +239,7 @@ public final class ManifestValidator {
         validateChannelProviderOutbound(requireObjectField(descriptor, "outbound", path, errors), path + "/outbound", errors);
 
         Map<String, Object> endpoints = requireObjectField(descriptor, "endpoints", path, errors);
-        validateCredentialEndpointCompleteness(descriptor, endpoints, path, errors);
+        validateCredentialLifecycleProfileReference(descriptor, credentialLifecycleEndpointProfiles, path, errors);
 
         validateUiPair(
             objectOrEmpty(descriptor.get("accountConfigSchema")),
@@ -305,7 +320,12 @@ public final class ManifestValidator {
         }
     }
 
-    private static void validateToolConnector(Map<String, Object> descriptor, String path, List<ManifestValidationError> errors) {
+    private static void validateToolConnector(
+        Map<String, Object> descriptor,
+        String path,
+        Map<String, Object> credentialLifecycleEndpointProfiles,
+        List<ManifestValidationError> errors
+    ) {
         requireString(descriptor, "connectorType", 1, 128, errorsAt(path, errors));
         requireString(descriptor, "title", 1, 120, errorsAt(path, errors));
         requireObjectField(descriptor, "accountConfigSchema", path, errors);
@@ -317,7 +337,7 @@ public final class ManifestValidator {
 
         Map<String, Object> endpoints = requireObjectField(descriptor, "endpoints", path, errors);
         validateDeclaredEndpoint(endpoints, LynxusExtensionProtocol.TOOL_CONNECTOR_INVOKE_ENDPOINT, path + "/endpoints", errors);
-        validateCredentialEndpointCompleteness(descriptor, endpoints, path, errors);
+        validateCredentialLifecycleProfileReference(descriptor, credentialLifecycleEndpointProfiles, path, errors);
 
         validateUiPair(
             objectOrEmpty(descriptor.get("accountConfigSchema")),
@@ -351,25 +371,60 @@ public final class ManifestValidator {
         }
     }
 
-    private static void validateCredentialEndpointCompleteness(
+    private static void validateCredentialLifecycleEndpointProfiles(
+        Map<String, Object> profiles,
+        List<ManifestValidationError> errors
+    ) {
+        for (Map.Entry<String, Object> entry : profiles.entrySet()) {
+            Map<String, Object> endpoints = object(entry.getValue(), "/credentialLifecycleEndpointProfiles/" + entry.getKey(), errors);
+            if (endpoints.isEmpty() && !(entry.getValue() instanceof Map<?, ?>)) {
+                continue;
+            }
+            if (!endpoints.keySet().containsAll(REQUIRED_CREDENTIAL_ENDPOINTS)) {
+                add(
+                    errors,
+                    "CREDENTIAL_ENDPOINTS_INCOMPLETE",
+                    "/credentialLifecycleEndpointProfiles/" + entry.getKey(),
+                    "Credential lifecycle endpoint profiles require createCredential, rotateCredential, and revokeCredential; validateCredential is optional"
+                );
+            }
+            for (String endpoint : CREDENTIAL_ENDPOINTS) {
+                if (endpoints.containsKey(endpoint)) {
+                    validateDeclaredEndpoint(endpoints, endpoint, "/credentialLifecycleEndpointProfiles/" + entry.getKey(), errors);
+                }
+            }
+        }
+    }
+
+    private static void validateCredentialLifecycleProfileReference(
         Map<String, Object> descriptor,
-        Map<String, Object> endpoints,
+        Map<String, Object> credentialLifecycleEndpointProfiles,
         String path,
         List<ManifestValidationError> errors
     ) {
-        boolean hasAnyCredentialEndpoint = CREDENTIAL_ENDPOINTS.stream().anyMatch(endpoints::containsKey);
-        if (hasAnyCredentialEndpoint && (!endpoints.keySet().containsAll(CREDENTIAL_ENDPOINTS) || !descriptor.containsKey("credentialSchema"))) {
+        Object rawProfile = descriptor.get("credentialLifecycleEndpointProfile");
+        if (rawProfile == null) {
+            return;
+        }
+        if (!(rawProfile instanceof String profile) || profile.isBlank()) {
+            add(errors, MANIFEST_SCHEMA_INVALID, path + "/credentialLifecycleEndpointProfile", "Credential lifecycle endpoint profile must be a non-empty string");
+            return;
+        }
+        if (!descriptor.containsKey("credentialSchema")) {
             add(
                 errors,
-                "CREDENTIAL_ENDPOINTS_INCOMPLETE",
-                path + "/endpoints",
-                "Credential endpoints require credentialSchema and all four lifecycle endpoint paths"
+                "CREDENTIAL_ENDPOINT_PROFILE_INVALID",
+                path + "/credentialLifecycleEndpointProfile",
+                "credentialLifecycleEndpointProfile requires credentialSchema"
             );
         }
-        for (String endpoint : CREDENTIAL_ENDPOINTS) {
-            if (endpoints.containsKey(endpoint)) {
-                validateDeclaredEndpoint(endpoints, endpoint, path + "/endpoints", errors);
-            }
+        if (!credentialLifecycleEndpointProfiles.containsKey(profile)) {
+            add(
+                errors,
+                "CREDENTIAL_ENDPOINT_PROFILE_INVALID",
+                path + "/credentialLifecycleEndpointProfile",
+                "credentialLifecycleEndpointProfile must reference credentialLifecycleEndpointProfiles"
+            );
         }
     }
 

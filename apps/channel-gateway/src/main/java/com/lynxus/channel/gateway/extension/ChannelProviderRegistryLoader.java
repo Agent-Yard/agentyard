@@ -59,7 +59,8 @@ public final class ChannelProviderRegistryLoader {
         for (ExtensionRegistration registration : channelProviderRegistrations()) {
             Set<String> expectedForRegistration = new LinkedHashSet<>(registration.exposes().channelProviderTypes());
             expectedDescriptorIds.addAll(expectedForRegistration);
-            List<Map<String, Object>> descriptors = loadChannelProviderDescriptors(registration, errors, manifestErrors);
+            LoadedChannelProviderManifest loadedManifest = loadChannelProviderManifest(registration, errors, manifestErrors);
+            List<Map<String, Object>> descriptors = loadedManifest.descriptors();
             Set<String> loadedForRegistration = new LinkedHashSet<>();
 
             for (Map<String, Object> descriptor : descriptors) {
@@ -117,7 +118,10 @@ public final class ChannelProviderRegistryLoader {
                     continue;
                 }
 
-                String definitionDigest = DescriptorDefinitionDigests.channelProviderDefinitionDigest(descriptor);
+                String definitionDigest = DescriptorDefinitionDigests.channelProviderDefinitionDigest(
+                    descriptor,
+                    loadedManifest.credentialLifecycleEndpointProfiles()
+                );
                 descriptorDefinitionDigests.putIfAbsent(providerType, definitionDigest);
                 descriptorsByProviderType.putIfAbsent(
                     providerType,
@@ -214,7 +218,7 @@ public final class ChannelProviderRegistryLoader {
             .toList();
     }
 
-    private List<Map<String, Object>> loadChannelProviderDescriptors(
+    private LoadedChannelProviderManifest loadChannelProviderManifest(
         ExtensionRegistration registration,
         List<RegistryValidationError> errors,
         List<RegistryValidationError> manifestErrors
@@ -232,13 +236,13 @@ public final class ChannelProviderRegistryLoader {
                 RegistryValidationError error = manifestFetchFailedError(registration.registrationId(), exception);
                 errors.add(error);
                 manifestErrors.add(error);
-                return List.of();
+                return LoadedChannelProviderManifest.empty();
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
                 RegistryValidationError error = manifestFetchFailedError(registration.registrationId(), exception);
                 errors.add(error);
                 manifestErrors.add(error);
-                return List.of();
+                return LoadedChannelProviderManifest.empty();
             } catch (RuntimeException exception) {
                 RegistryValidationError error = manifestSchemaError(
                     registration.registrationId(),
@@ -247,7 +251,7 @@ public final class ChannelProviderRegistryLoader {
                 );
                 errors.add(error);
                 manifestErrors.add(error);
-                return List.of();
+                return LoadedChannelProviderManifest.empty();
             }
         }
 
@@ -258,10 +262,10 @@ public final class ChannelProviderRegistryLoader {
                 errors.add(error);
                 manifestErrors.add(error);
             }
-            return List.of();
+            return LoadedChannelProviderManifest.empty();
         }
 
-        return channelProviders(manifest);
+        return new LoadedChannelProviderManifest(channelProviders(manifest), credentialLifecycleEndpointProfiles(manifest));
     }
 
     private static RegistryValidationError manifestFetchFailedError(String registrationId, Exception exception) {
@@ -284,6 +288,16 @@ public final class ChannelProviderRegistryLoader {
         Map<String, Object> manifestMap = (Map<String, Object>) manifest;
         Map<String, Object> descriptors = (Map<String, Object>) manifestMap.get("descriptors");
         return (List<Map<String, Object>>) descriptors.get("channelProviders");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> credentialLifecycleEndpointProfiles(Object manifest) {
+        Map<String, Object> manifestMap = (Map<String, Object>) manifest;
+        Object profiles = manifestMap.get("credentialLifecycleEndpointProfiles");
+        if (profiles instanceof Map<?, ?> map) {
+            return Collections.unmodifiableMap(new LinkedHashMap<>((Map<String, Object>) map));
+        }
+        return Map.of();
     }
 
     private static Map<String, Object> objectValue(
@@ -370,5 +384,14 @@ public final class ChannelProviderRegistryLoader {
             retryable,
             Collections.unmodifiableMap(new LinkedHashMap<>(details))
         );
+    }
+
+    private record LoadedChannelProviderManifest(
+        List<Map<String, Object>> descriptors,
+        Map<String, Object> credentialLifecycleEndpointProfiles
+    ) {
+        private static LoadedChannelProviderManifest empty() {
+            return new LoadedChannelProviderManifest(List.of(), Map.of());
+        }
     }
 }

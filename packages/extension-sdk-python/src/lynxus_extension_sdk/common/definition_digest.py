@@ -18,7 +18,10 @@ _SCHEMA_MAP_KEYWORDS = {
 }
 
 
-def channel_provider_definition_digest_input(descriptor: dict[str, Any]) -> dict[str, Any]:
+def channel_provider_definition_digest_input(
+    descriptor: dict[str, Any],
+    credential_lifecycle_endpoint_profiles: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     job_definitions = [
         {
             "jobType": job.get("jobType"),
@@ -44,18 +47,22 @@ def channel_provider_definition_digest_input(descriptor: dict[str, Any]) -> dict
         },
         "endpoints": {
             "runJob": endpoints.get("runJob"),
-            "createCredential": endpoints.get("createCredential"),
-            "rotateCredential": endpoints.get("rotateCredential"),
-            "revokeCredential": endpoints.get("revokeCredential"),
-            "validateCredential": endpoints.get("validateCredential"),
         },
+        "credentialLifecycleEndpointProfile": descriptor.get("credentialLifecycleEndpointProfile"),
+        "credentialLifecycleEndpoints": _credential_lifecycle_endpoints(
+            descriptor,
+            credential_lifecycle_endpoint_profiles or {},
+        ),
         "configSchema": validation_only_schema(descriptor.get("configSchema")),
         "jobDefinitions": job_definitions,
     }
 
 
-def channel_provider_definition_digest(descriptor: dict[str, Any]) -> str:
-    return sha256_digest(channel_provider_definition_digest_input(descriptor))
+def channel_provider_definition_digest(
+    descriptor: dict[str, Any],
+    credential_lifecycle_endpoint_profiles: dict[str, Any] | None = None,
+) -> str:
+    return sha256_digest(channel_provider_definition_digest_input(descriptor, credential_lifecycle_endpoint_profiles))
 
 
 def channel_provider_definition_canonical_json(descriptor: dict[str, Any]) -> str:
@@ -66,7 +73,10 @@ def channel_provider_definition_canonical_bytes(descriptor: dict[str, Any]) -> b
     return canonical_bytes(channel_provider_definition_digest_input(descriptor))
 
 
-def tool_connector_definition_digest_input(descriptor: dict[str, Any]) -> dict[str, Any]:
+def tool_connector_definition_digest_input(
+    descriptor: dict[str, Any],
+    credential_lifecycle_endpoint_profiles: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     endpoints = descriptor.get("endpoints") or {}
     return {
         "descriptorType": TOOL_CONNECTOR_DESCRIPTOR_TYPE,
@@ -77,16 +87,20 @@ def tool_connector_definition_digest_input(descriptor: dict[str, Any]) -> dict[s
         "operationMappingSchema": validation_only_schema(descriptor.get("operationMappingSchema")),
         "endpoints": {
             "invoke": endpoints.get("invoke"),
-            "createCredential": endpoints.get("createCredential"),
-            "rotateCredential": endpoints.get("rotateCredential"),
-            "revokeCredential": endpoints.get("revokeCredential"),
-            "validateCredential": endpoints.get("validateCredential"),
         },
+        "credentialLifecycleEndpointProfile": descriptor.get("credentialLifecycleEndpointProfile"),
+        "credentialLifecycleEndpoints": _credential_lifecycle_endpoints(
+            descriptor,
+            credential_lifecycle_endpoint_profiles or {},
+        ),
     }
 
 
-def tool_connector_definition_digest(descriptor: dict[str, Any]) -> str:
-    return sha256_digest(tool_connector_definition_digest_input(descriptor))
+def tool_connector_definition_digest(
+    descriptor: dict[str, Any],
+    credential_lifecycle_endpoint_profiles: dict[str, Any] | None = None,
+) -> str:
+    return sha256_digest(tool_connector_definition_digest_input(descriptor, credential_lifecycle_endpoint_profiles))
 
 
 def tool_connector_definition_canonical_json(descriptor: dict[str, Any]) -> str:
@@ -114,3 +128,18 @@ def validation_only_schema(value: Any, *, _schema_map_entries: bool = False) -> 
 
 def _utf16_sort_key(value: str) -> bytes:
     return value.encode("utf-16-be")
+
+
+def _credential_lifecycle_endpoints(
+    descriptor: dict[str, Any],
+    credential_lifecycle_endpoint_profiles: dict[str, Any],
+) -> dict[str, Any]:
+    profile_name = descriptor.get("credentialLifecycleEndpointProfile")
+    raw_profile = credential_lifecycle_endpoint_profiles.get(profile_name) if isinstance(profile_name, str) else None
+    profile = raw_profile if isinstance(raw_profile, dict) else {}
+    return {
+        "createCredential": profile.get("createCredential"),
+        "rotateCredential": profile.get("rotateCredential"),
+        "revokeCredential": profile.get("revokeCredential"),
+        "validateCredential": profile.get("validateCredential"),
+    }

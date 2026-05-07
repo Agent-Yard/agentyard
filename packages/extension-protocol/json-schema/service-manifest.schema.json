@@ -20,6 +20,34 @@
       "minLength": 1,
       "maxLength": 64
     },
+    "credentialLifecycleEndpointProfiles": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Za-z0-9._:-]+$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["createCredential", "rotateCredential", "revokeCredential"],
+        "properties": {
+          "createCredential": {
+            "$ref": "#/$defs/declaredPath"
+          },
+          "rotateCredential": {
+            "$ref": "#/$defs/declaredPath"
+          },
+          "revokeCredential": {
+            "$ref": "#/$defs/declaredPath"
+          },
+          "validateCredential": {
+            "$ref": "#/$defs/declaredPath"
+          }
+        }
+      }
+    },
     "descriptors": {
       "type": "object",
       "additionalProperties": false,
@@ -56,6 +84,12 @@
           }
         }
       }
+    }
+  },
+  "$defs": {
+    "declaredPath": {
+      "type": "string",
+      "pattern": "^/[^?#]*$"
     }
   }
 }

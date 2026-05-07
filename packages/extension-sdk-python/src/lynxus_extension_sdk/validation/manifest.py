@@ -33,6 +33,13 @@ _CREDENTIAL_ENDPOINTS = frozenset(
         VALIDATE_CREDENTIAL_ENDPOINT,
     }
 )
+_REQUIRED_CREDENTIAL_ENDPOINTS = frozenset(
+    {
+        CREATE_CREDENTIAL_ENDPOINT,
+        ROTATE_CREDENTIAL_ENDPOINT,
+        REVOKE_CREDENTIAL_ENDPOINT,
+    }
+)
 _OPTION_COMPONENTS = frozenset({"select", "multiSelect", "radio", "checkboxGroup"})
 _VISIBILITY_OPERATORS = frozenset({"equals", "notEquals", "in", "notIn", "exists", "notExists"})
 _PROTOCOL_SCHEMA_FILES = (
@@ -142,6 +149,9 @@ def _validate_manifest(value: object, errors: list[ManifestValidationError]) -> 
     _require_string(manifest, "coreMinVersion", 1, 64, "", errors)
     _require_string(manifest, "coreMaxVersion", 1, 64, "", errors)
 
+    credential_lifecycle_endpoint_profiles = _object_or_empty(manifest.get("credentialLifecycleEndpointProfiles"))
+    _validate_credential_lifecycle_endpoint_profiles(credential_lifecycle_endpoint_profiles, errors)
+
     descriptors = _object(manifest.get("descriptors"), "/descriptors", errors)
     channel_providers = _array(descriptors.get("channelProviders"), "/descriptors/channelProviders", errors)
     tool_connectors = _array(descriptors.get("toolConnectors"), "/descriptors/toolConnectors", errors)
@@ -152,17 +162,24 @@ def _validate_manifest(value: object, errors: list[ManifestValidationError]) -> 
         _validate_channel_provider(
             _object(descriptor, f"/descriptors/channelProviders/{index}", errors),
             f"/descriptors/channelProviders/{index}",
+            credential_lifecycle_endpoint_profiles,
             errors,
         )
     for index, descriptor in enumerate(tool_connectors):
         _validate_tool_connector(
             _object(descriptor, f"/descriptors/toolConnectors/{index}", errors),
             f"/descriptors/toolConnectors/{index}",
+            credential_lifecycle_endpoint_profiles,
             errors,
         )
 
 
-def _validate_channel_provider(descriptor: dict[str, Any], path: str, errors: list[ManifestValidationError]) -> None:
+def _validate_channel_provider(
+    descriptor: dict[str, Any],
+    path: str,
+    credential_lifecycle_endpoint_profiles: dict[str, Any],
+    errors: list[ManifestValidationError],
+) -> None:
     _require_string(descriptor, "providerType", 1, 128, path, errors)
     _require_string(descriptor, "title", 1, 120, path, errors)
     _require_object_field(descriptor, "accountConfigSchema", path, errors)
@@ -171,8 +188,8 @@ def _validate_channel_provider(descriptor: dict[str, Any], path: str, errors: li
     _require_array_field(descriptor, "configUiSchema", path, errors)
     _validate_channel_provider_outbound(_require_object_field(descriptor, "outbound", path, errors), f"{path}/outbound", errors)
 
-    endpoints = _require_object_field(descriptor, "endpoints", path, errors)
-    _validate_credential_endpoint_completeness(descriptor, endpoints, path, errors)
+    _require_object_field(descriptor, "endpoints", path, errors)
+    _validate_credential_lifecycle_profile_reference(descriptor, credential_lifecycle_endpoint_profiles, path, errors)
 
     _validate_ui_pair(
         _object_or_empty(descriptor.get("accountConfigSchema")),
@@ -248,7 +265,12 @@ def _validate_channel_provider_outbound(
         )
 
 
-def _validate_tool_connector(descriptor: dict[str, Any], path: str, errors: list[ManifestValidationError]) -> None:
+def _validate_tool_connector(
+    descriptor: dict[str, Any],
+    path: str,
+    credential_lifecycle_endpoint_profiles: dict[str, Any],
+    errors: list[ManifestValidationError],
+) -> None:
     _require_string(descriptor, "connectorType", 1, 128, path, errors)
     _require_string(descriptor, "title", 1, 120, path, errors)
     _require_object_field(descriptor, "accountConfigSchema", path, errors)
@@ -260,7 +282,7 @@ def _validate_tool_connector(descriptor: dict[str, Any], path: str, errors: list
 
     endpoints = _require_object_field(descriptor, "endpoints", path, errors)
     _validate_declared_endpoint(endpoints, TOOL_CONNECTOR_INVOKE_ENDPOINT, f"{path}/endpoints", errors)
-    _validate_credential_endpoint_completeness(descriptor, endpoints, path, errors)
+    _validate_credential_lifecycle_profile_reference(descriptor, credential_lifecycle_endpoint_profiles, path, errors)
 
     _validate_ui_pair(
         _object_or_empty(descriptor.get("accountConfigSchema")),
@@ -293,23 +315,58 @@ def _validate_tool_connector(descriptor: dict[str, Any], path: str, errors: list
         )
 
 
-def _validate_credential_endpoint_completeness(
+def _validate_credential_lifecycle_endpoint_profiles(
+    profiles: dict[str, Any],
+    errors: list[ManifestValidationError],
+) -> None:
+    for profile_name, raw_endpoints in profiles.items():
+        path = f"/credentialLifecycleEndpointProfiles/{profile_name}"
+        endpoints = _object(raw_endpoints, path, errors)
+        if not endpoints and not isinstance(raw_endpoints, Mapping):
+            continue
+        if not _REQUIRED_CREDENTIAL_ENDPOINTS.issubset(endpoints):
+            _add(
+                errors,
+                "CREDENTIAL_ENDPOINTS_INCOMPLETE",
+                path,
+                "Credential lifecycle endpoint profiles require createCredential, rotateCredential, and revokeCredential; validateCredential is optional",
+            )
+        for endpoint in _CREDENTIAL_ENDPOINTS:
+            if endpoint in endpoints:
+                _validate_declared_endpoint(endpoints, endpoint, path, errors)
+
+
+def _validate_credential_lifecycle_profile_reference(
     descriptor: dict[str, Any],
-    endpoints: dict[str, Any],
+    credential_lifecycle_endpoint_profiles: dict[str, Any],
     path: str,
     errors: list[ManifestValidationError],
 ) -> None:
-    has_any_credential_endpoint = any(endpoint in endpoints for endpoint in _CREDENTIAL_ENDPOINTS)
-    if has_any_credential_endpoint and (not _CREDENTIAL_ENDPOINTS.issubset(endpoints) or "credentialSchema" not in descriptor):
+    raw_profile = descriptor.get("credentialLifecycleEndpointProfile")
+    if raw_profile is None:
+        return
+    if not isinstance(raw_profile, str) or not raw_profile:
         _add(
             errors,
-            "CREDENTIAL_ENDPOINTS_INCOMPLETE",
-            f"{path}/endpoints",
-            "Credential endpoints require credentialSchema and all four lifecycle endpoint paths",
+            MANIFEST_SCHEMA_INVALID,
+            f"{path}/credentialLifecycleEndpointProfile",
+            "Credential lifecycle endpoint profile must be a non-empty string",
         )
-    for endpoint in _CREDENTIAL_ENDPOINTS:
-        if endpoint in endpoints:
-            _validate_declared_endpoint(endpoints, endpoint, f"{path}/endpoints", errors)
+        return
+    if "credentialSchema" not in descriptor:
+        _add(
+            errors,
+            "CREDENTIAL_ENDPOINT_PROFILE_INVALID",
+            f"{path}/credentialLifecycleEndpointProfile",
+            "credentialLifecycleEndpointProfile requires credentialSchema",
+        )
+    if raw_profile not in credential_lifecycle_endpoint_profiles:
+        _add(
+            errors,
+            "CREDENTIAL_ENDPOINT_PROFILE_INVALID",
+            f"{path}/credentialLifecycleEndpointProfile",
+            "credentialLifecycleEndpointProfile must reference credentialLifecycleEndpointProfiles",
+        )
 
 
 def _validate_declared_endpoint(

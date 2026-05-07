@@ -15,7 +15,8 @@ public final class ExtensionDefinitionDtos {
         boolean supported,
         CredentialCapabilityMode mode,
         Map<String, Object> credentialSchema,
-        List<Object> credentialUiSchema
+        List<Object> credentialUiSchema,
+        boolean supportsValidate
     ) {}
 
     public record ChannelProviderDefinition(

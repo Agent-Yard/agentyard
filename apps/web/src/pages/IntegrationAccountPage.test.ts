@@ -29,6 +29,7 @@ const toolConnector: ToolConnectorDefinition = {
     mode: 'REMOTE_LIFECYCLE',
     credentialSchema: { type: 'object', required: ['apiKey'] },
     credentialUiSchema: [{ key: '/apiKey', label: 'API Key', component: 'password', secret: true }],
+    supportsValidate: true,
   },
   configSchema: { type: 'object' },
   configUiSchema: [],
@@ -48,6 +49,7 @@ const channelProvider: ChannelProviderDefinition = {
     mode: null,
     credentialSchema: null,
     credentialUiSchema: [],
+    supportsValidate: false,
   },
   configSchema: { type: 'object' },
   configUiSchema: [],
@@ -129,5 +131,15 @@ describe('IntegrationAccountPage definition rules', () => {
     expect(canRotateCredential(configured, definition)).toBe(true);
     expect(canValidateCredential(configured, definition)).toBe(true);
     expect(canRevokeCredential(configured, definition)).toBe(true);
+
+    const noValidateDefinition = {
+      ...definition,
+      credentialCapability: {
+        ...definition.credentialCapability,
+        supportsValidate: false,
+      },
+    };
+    expect(canRotateCredential(configured, noValidateDefinition)).toBe(true);
+    expect(canValidateCredential(configured, noValidateDefinition)).toBe(false);
   });
 });

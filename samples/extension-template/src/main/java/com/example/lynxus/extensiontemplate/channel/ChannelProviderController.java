@@ -1,5 +1,6 @@
 package com.example.lynxus.extensiontemplate.channel;
 
+import com.example.lynxus.extensiontemplate.extension.ExtensionEndpointPaths;
 import com.example.lynxus.extensiontemplate.protocol.ExtensionRequestContext;
 import com.example.lynxus.extensiontemplate.protocol.ProtocolHeaderExtractor;
 import com.lynxus.extension.sdk.generated.protocol.model.ChannelRunJobRequest;
@@ -12,8 +13,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 public final class ChannelProviderController {
-    public static final String RUN_JOB_PATH = "/channel/run-job";
-
     private final ProtocolHeaderExtractor headerExtractor;
     private final ChannelProviderHandler handler;
 
@@ -23,7 +22,7 @@ public final class ChannelProviderController {
     }
 
     @PostMapping(
-        value = RUN_JOB_PATH,
+        value = ExtensionEndpointPaths.CHANNEL_RUN_JOB,
         consumes = MediaType.APPLICATION_JSON_VALUE,
         produces = MediaType.APPLICATION_JSON_VALUE
     )

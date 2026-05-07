@@ -28,11 +28,12 @@ Control Plane API 不是 runtime invocation 中转层。Tool invoke、channel `r
 - `GET /extension/manifest`：返回 service-level manifest envelope
 - 至少声明一个 `channelProviders` 或 `toolConnectors` descriptor
 
-按 descriptor 提供下列 endpoint 之一或多个（路径在 manifest 的 `endpoints.*` 中声明，平台按 manifest 路径调用）：
+按 manifest 提供下列 endpoint 之一或多个（路径由 manifest 声明，平台按 manifest 路径调用）：
 
 - `toolConnector.endpoints.invoke`：`TOOL_CONNECTOR` descriptor 必填
 - `channelProvider.endpoints.runJob`：仅在 `CHANNEL_PROVIDER` descriptor 声明 `jobDefinitions` 时需要
-- `descriptor.endpoints.{createCredential,rotateCredential,revokeCredential,validateCredential}`：可选；声明四个齐全才被视为 `REMOTE_LIFECYCLE` credential capability，否则平台不会调用
+- `credentialLifecycleEndpointProfiles.*.{createCredential,rotateCredential,revokeCredential}`：可选；descriptor 通过 `credentialLifecycleEndpointProfile` 引用 profile 后才被视为 `REMOTE_LIFECYCLE` credential capability
+- `credentialLifecycleEndpointProfiles.*.validateCredential`：可选；未声明时平台不展示/不调用独立 credential validate 操作
 
 可选但建议实现：
 
@@ -55,14 +56,14 @@ Manifest envelope 字段与约束（详见 `service-manifest.schema.json`）：
 - `coreMinVersion` / `coreMaxVersion`：声明该 extension 兼容的 Lynxus 版本范围
 - `descriptors.channelProviders` 与 `descriptors.toolConnectors`：两个键都必须存在；至少一个数组非空
 
-每个 descriptor 必须自洽，即 schema、UI schema、endpoints 都通过 manifest 一次性声明。SDK 提供 manifest 校验器（JVM `ManifestValidator.validate`、Python `validate_manifest_against_protocol_schema`），平台在拉取 manifest 时也会再次跑同一校验；任何 schema 错误都会让该服务下所有 descriptor 进入 NOT_READY，不会暴露给 Web 或 runtime。
+每个 descriptor 必须自洽，即 schema、UI schema、runtime endpoints 与可选 credential lifecycle profile 引用都通过 manifest 一次性声明。SDK 提供 manifest 校验器（JVM `ManifestValidator.validate`、Python `validate_manifest_against_protocol_schema`），平台在拉取 manifest 时也会再次跑同一校验；任何 schema 错误都会让该服务下所有 descriptor 进入 NOT_READY，不会暴露给 Web 或 runtime。
 
 约束要点：
 
 - `defaultConfig`、`defaultSchedule.jobConfig` 不允许包含敏感字段。平台会拒绝键名为 `externalSecretRef` / `password` / `apiKey` / `accessToken` / `refreshToken` / `privateKey` / `webhookSigningSecret`，或对应 UI schema 中 `secret: true` 的默认值。敏感字段必须放进 credential schema，不得作为普通配置默认值
 - `accountConfigSchema` / `configSchema` / `operationMappingSchema` / `credentialSchema` 都是普通 JSON Schema 对象。Web 渲染依赖配套的 `*UiSchema`（结构见 `ui-field.schema.json`）
 - `outbound.mode` 当前只有 `FRAME_STREAM`；`supportsFinalDelivery` 与 `requiresIdempotentFinalDelivery` 都必须为 `true`。`supportsTyping` / `supportsDraftUpdate` 由 extension 自行声明，平台在生成 frame 时会按声明过滤
-- `endpoints` 中所有 declared path 必须以 `/` 开头且不含 query/fragment（pattern `^/[^?#]*$`）。平台调用时以 `baseUrl + path` 拼接
+- descriptor `endpoints` 与 `credentialLifecycleEndpointProfiles` 中所有 declared path 必须以 `/` 开头且不含 query/fragment（pattern `^/[^?#]*$`）。平台调用时以 `baseUrl + path` 拼接
 
 完整样例见 `@lynxus/extension-protocol` 包的 `examples/service-manifest.enterprise-service.json`。
 
@@ -71,10 +72,11 @@ Manifest envelope 字段与约束（详见 `service-manifest.schema.json`）：
 平台按以下规则推导 credential 能力：
 
 - descriptor 未声明 `credentialSchema`：`enabled = false`
-- 声明了 `credentialSchema` 且四个 credential endpoint 全部齐全：`mode = REMOTE_LIFECYCLE`，平台通过这些 endpoint 完成 create/rotate/revoke/validate
-- 声明了 `credentialSchema` 但 endpoint 不全：对外部 extension 视为 `enabled = false`
+- 声明了 `credentialSchema` 且 `credentialLifecycleEndpointProfile` 指向一个包含 `createCredential`、`rotateCredential`、`revokeCredential` 的 profile：`mode = REMOTE_LIFECYCLE`，平台通过这些 endpoint 完成 create/rotate/revoke
+- 同一 profile 声明 `validateCredential`：`supportsValidate = true`，平台允许独立 validate；未声明则 `supportsValidate = false`，平台隐藏 validate 操作，直接调用会返回 unsupported
+- 声明了 `credentialSchema` 但未引用有效 profile：对外部 extension 视为 `enabled = false`
 
-因此 extension 若需要 credential lifecycle，必须在 manifest 中同时声明 `credentialSchema`、`credentialUiSchema` 和四个 credential endpoint。
+因此 extension 若需要 credential lifecycle，必须在 manifest 中同时声明 `credentialSchema`、`credentialUiSchema` 和一个包含 create/rotate/revoke 的 credential lifecycle endpoint profile。`validateCredential` 只在第三方系统能可靠探测凭证时声明；否则应留空，让真正的 tool/channel runtime 调用暴露连通性问题。
 
 ## 4. Static registration
 
@@ -213,12 +215,13 @@ Credential lifecycle 是 control-plane 操作，由 Lynxus 控制面在 Web/admi
 
 - `POST createCredentialPath`：`CreateCredentialRequest` → `CreateCredentialResponse`，必返回 `externalSecretRef` 和 `credentialStatus: ACTIVE`
 - `POST rotateCredentialPath`：`RotateCredentialRequest`，extension 应原地写入新的密钥并返回新的 `externalSecretRef`
-- `POST validateCredentialPath`：返回 `ACTIVE` / `VALIDATION_FAILED` / `ROTATION_REQUIRED`
+- `POST validateCredentialPath`：可选；返回 `ACTIVE` / `VALIDATION_FAILED` / `ROTATION_REQUIRED`
 - `POST revokeCredentialPath`：返回 `credentialStatus: REVOKED`
 
 约束：
 
 - 平台永不收到明文凭证。`credential` 字段在请求体中由 Web 直传 extension（经平台路由），extension 自行加密落到自有 vault，并仅返回 opaque `externalSecretRef`
+- 对未声明 `validateCredential` 的远程 lifecycle，`ACTIVE` 仅表示 extension 已接收并保存凭证引用，可用于 runtime；不表示第三方系统已被独立探测通过
 - `externalSecretRef` 长度 ≤ 512，blank 视为无效
 - runtime 调用（tool invoke、runJob）只接收 `externalSecretRef`；extension 自行解析并取回真实密钥。runtime 路径上的平台服务从不持有明文凭证
 
@@ -280,6 +283,7 @@ JVM 与 Python 都提供 SDK（仅 hand-written 协议常量、validator、regis
 
 - `accountConfigSchema` / `accountConfigUiSchema`：Integration Account 上承载的账号级身份（如 tenantId、appId）
 - `credentialSchema` / `credentialUiSchema`：仅密钥；`secret: true` 字段会被 Web 当 password 渲染并禁止落 `defaultConfig`
+- `credentialLifecycleEndpointProfile`：descriptor 对 manifest 级 credential lifecycle endpoint profile 的引用；多个 descriptor 可复用同一组 endpoint path
 - `configSchema` / `configUiSchema` / `defaultConfig`：channel profile / tool resource 级运行配置
 - `operationMappingSchema` / `operationMappingUiSchema`：tool connector 每个 operation 的协议映射（如 HTTP method/path、远端 tool 名）
 - `jobConfigSchema` / `jobConfigUiSchema` 与 `defaultSchedule`：channel provider job 的配置和默认排程

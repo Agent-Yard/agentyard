@@ -362,7 +362,7 @@
     "/credentials": {
       "post": {
         "operationId": "createCredential",
-        "summary": "Representative path for descriptor.endpoints.createCredential. Actual path is manifest-declared.",
+        "summary": "Representative path for credentialLifecycleEndpointProfiles.*.createCredential. Actual path is manifest-declared.",
         "parameters": [
           {
             "$ref": "#/components/parameters/AuthorizationHeader"
@@ -404,7 +404,7 @@
     "/credentials/rotate": {
       "post": {
         "operationId": "rotateCredential",
-        "summary": "Representative path for descriptor.endpoints.rotateCredential. Actual path is manifest-declared.",
+        "summary": "Representative path for credentialLifecycleEndpointProfiles.*.rotateCredential. Actual path is manifest-declared.",
         "parameters": [
           {
             "$ref": "#/components/parameters/AuthorizationHeader"
@@ -446,7 +446,7 @@
     "/credentials/revoke": {
       "post": {
         "operationId": "revokeCredential",
-        "summary": "Representative path for descriptor.endpoints.revokeCredential. Actual path is manifest-declared.",
+        "summary": "Representative path for credentialLifecycleEndpointProfiles.*.revokeCredential. Actual path is manifest-declared.",
         "parameters": [
           {
             "$ref": "#/components/parameters/AuthorizationHeader"
@@ -488,7 +488,7 @@
     "/credentials/validate": {
       "post": {
         "operationId": "validateCredential",
-        "summary": "Representative path for descriptor.endpoints.validateCredential. Actual path is manifest-declared.",
+        "summary": "Representative path for optional credentialLifecycleEndpointProfiles.*.validateCredential. Actual path is manifest-declared.",
         "parameters": [
           {
             "$ref": "#/components/parameters/AuthorizationHeader"
@@ -763,6 +763,12 @@
           "coreMaxVersion": {
             "type": "string"
           },
+          "credentialLifecycleEndpointProfiles": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CredentialLifecycleEndpointProfile"
+            }
+          },
           "descriptors": {
             "type": "object",
             "additionalProperties": false,
@@ -832,6 +838,9 @@
           },
           "credentialUiSchema": {
             "$ref": "#/components/schemas/UiFieldArray"
+          },
+          "credentialLifecycleEndpointProfile": {
+            "type": "string"
           },
           "configSchema": {
             "$ref": "#/components/schemas/JsonObject"
@@ -914,6 +923,9 @@
           "credentialUiSchema": {
             "$ref": "#/components/schemas/UiFieldArray"
           },
+          "credentialLifecycleEndpointProfile": {
+            "type": "string"
+          },
           "operationMappingSchema": {
             "$ref": "#/components/schemas/JsonObject"
           },
@@ -936,18 +948,6 @@
         "properties": {
           "invoke": {
             "$ref": "#/components/schemas/DeclaredPath"
-          },
-          "createCredential": {
-            "$ref": "#/components/schemas/DeclaredPath"
-          },
-          "rotateCredential": {
-            "$ref": "#/components/schemas/DeclaredPath"
-          },
-          "revokeCredential": {
-            "$ref": "#/components/schemas/DeclaredPath"
-          },
-          "validateCredential": {
-            "$ref": "#/components/schemas/DeclaredPath"
           }
         }
       },
@@ -957,7 +957,14 @@
         "properties": {
           "runJob": {
             "$ref": "#/components/schemas/DeclaredPath"
-          },
+          }
+        }
+      },
+      "CredentialLifecycleEndpointProfile": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["createCredential", "rotateCredential", "revokeCredential"],
+        "properties": {
           "createCredential": {
             "$ref": "#/components/schemas/DeclaredPath"
           },

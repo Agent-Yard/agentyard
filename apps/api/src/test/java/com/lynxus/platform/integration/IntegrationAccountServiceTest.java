@@ -450,6 +450,39 @@ class IntegrationAccountServiceTest {
     }
 
     @Test
+    void remoteValidateIsRejectedWhenDescriptorDoesNotDeclareValidateEndpoint() {
+        IntegrationAccountRepository repository = mock(IntegrationAccountRepository.class);
+        AtomicReference<StoredIntegrationAccount> saved = new AtomicReference<>(storedAccount(
+            "integration-account-remote",
+            IntegrationAccountSubjectType.TOOL_CONNECTOR,
+            "enterprise.acme.crm",
+            "Remote Account",
+            IntegrationAccountStatus.ENABLED,
+            Map.of(),
+            "vault://existing-ref",
+            null,
+            null
+        ));
+        when(repository.findAccount(any())).thenAnswer(invocation -> Optional.ofNullable(saved.get()));
+        AtomicReference<Boolean> remoteInvoked = new AtomicReference<>(false);
+        IntegrationAccountService service = new IntegrationAccountService(
+            repository,
+            new IntegrationCredentialCrypto(new ObjectMapper(), "test-encryption-key"),
+            remoteDefinitionService(false),
+            (baseUrl, path, lifecycleRequest, traceId, requestId) -> {
+                remoteInvoked.set(true);
+                return new RemoteCredentialLifecycleResponse(null, IntegrationAccountCredentialStatus.ACTIVE);
+            }
+        );
+
+        ApiProblemException error = assertThrows(ApiProblemException.class, () -> service.validateCredential(saved.get().id()));
+
+        assertEquals("INTEGRATION_ACCOUNT_CREDENTIAL_VALIDATE_UNSUPPORTED", error.code());
+        assertFalse(remoteInvoked.get());
+    }
+
+
+    @Test
     void remoteRevokeFailureKeepsRefAndMarksRevokeFailed() {
         IntegrationAccountRepository repository = mock(IntegrationAccountRepository.class);
         AtomicReference<StoredIntegrationAccount> saved = new AtomicReference<>(storedAccount(
@@ -944,20 +977,24 @@ class IntegrationAccountServiceTest {
     }
 
     private static ExtensionDefinitionService remoteDefinitionService() {
+        return remoteDefinitionService(true);
+    }
+
+    private static ExtensionDefinitionService remoteDefinitionService(boolean includeValidate) {
         ExtensionManifestFetcher fetcher = (manifestUrl, headers) -> {
             String registrationId = headers.get(LynxusExtensionHeaders.REGISTRATION_ID);
             if (ExtensionRegistrationLoader.CORE_CHANNEL_GATEWAY_REGISTRATION_ID.equals(registrationId)) {
-                return manifest(List.of(channelProviderDescriptor("feishu", Map.of("type", "object"))), List.of());
+                return manifest(List.of(channelProviderDescriptor("feishu", Map.of("type", "object"))), List.of(), includeValidate);
             }
             if (ExtensionRegistrationLoader.CORE_AGENT_RUNTIME_REGISTRATION_ID.equals(registrationId)) {
                 return manifest(List.of(), List.of(
                     toolConnectorDescriptor("business-code-secret-http", Map.of("type", "object")),
                     toolConnectorDescriptor("mcp", Map.of("type", "object")),
                     toolConnectorDescriptor("simple-http", Map.of("type", "object"))
-                ));
+                ), includeValidate);
             }
             if ("acme-remote".equals(registrationId)) {
-                return manifest(List.of(), List.of(remoteToolConnectorDescriptor()));
+                return manifest(List.of(), List.of(remoteToolConnectorDescriptor()), includeValidate);
             }
             throw new AssertionError("unexpected manifest fetch for " + registrationId);
         };
@@ -1057,6 +1094,14 @@ class IntegrationAccountServiceTest {
     }
 
     private static String manifest(List<Map<String, Object>> channelProviders, List<Map<String, Object>> toolConnectors) {
+        return manifest(channelProviders, toolConnectors, true);
+    }
+
+    private static String manifest(
+        List<Map<String, Object>> channelProviders,
+        List<Map<String, Object>> toolConnectors,
+        boolean includeValidate
+    ) {
         Map<String, Object> descriptors = new LinkedHashMap<>();
         descriptors.put("channelProviders", channelProviders);
         descriptors.put("toolConnectors", toolConnectors);
@@ -1064,8 +1109,20 @@ class IntegrationAccountServiceTest {
         manifest.put("extensionApiVersion", 1);
         manifest.put("coreMinVersion", "0.8.0");
         manifest.put("coreMaxVersion", "0.9.x");
+        manifest.put("credentialLifecycleEndpointProfiles", defaultCredentialLifecycleEndpointProfiles(includeValidate));
         manifest.put("descriptors", descriptors);
         return new ObjectMapper().writeValueAsString(manifest);
+    }
+
+    private static Map<String, Object> defaultCredentialLifecycleEndpointProfiles(boolean includeValidate) {
+        Map<String, Object> endpoints = new LinkedHashMap<>();
+        endpoints.put("createCredential", "/credentials/create");
+        endpoints.put("rotateCredential", "/credentials/rotate");
+        endpoints.put("revokeCredential", "/credentials/revoke");
+        if (includeValidate) {
+            endpoints.put("validateCredential", "/credentials/validate");
+        }
+        return Map.of("default", endpoints);
     }
 
     private static Map<String, Object> channelProviderDescriptor(String providerType, Map<String, Object> accountConfigSchema) {
@@ -1139,13 +1196,7 @@ class IntegrationAccountServiceTest {
             "additionalProperties", false
         ));
         descriptor.put("credentialUiSchema", List.of());
-        Map<String, Object> endpoints = new LinkedHashMap<>();
-        endpoints.put("invoke", "/tools/crm/invoke");
-        endpoints.put("createCredential", "/credentials/create");
-        endpoints.put("rotateCredential", "/credentials/rotate");
-        endpoints.put("revokeCredential", "/credentials/revoke");
-        endpoints.put("validateCredential", "/credentials/validate");
-        descriptor.put("endpoints", endpoints);
+        descriptor.put("credentialLifecycleEndpointProfile", "default");
         return descriptor;
     }
 

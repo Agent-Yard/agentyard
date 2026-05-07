@@ -42,6 +42,12 @@
     "credentialUiSchema": {
       "$ref": "ui-field.schema.json"
     },
+    "credentialLifecycleEndpointProfile": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    },
     "configSchema": {
       "type": "object"
     },
@@ -93,18 +99,6 @@
       "additionalProperties": false,
       "properties": {
         "runJob": {
-          "$ref": "#/$defs/declaredPath"
-        },
-        "createCredential": {
-          "$ref": "#/$defs/declaredPath"
-        },
-        "rotateCredential": {
-          "$ref": "#/$defs/declaredPath"
-        },
-        "revokeCredential": {
-          "$ref": "#/$defs/declaredPath"
-        },
-        "validateCredential": {
           "$ref": "#/$defs/declaredPath"
         }
       }

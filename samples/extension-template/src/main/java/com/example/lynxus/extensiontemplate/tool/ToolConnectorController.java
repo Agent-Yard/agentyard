@@ -1,5 +1,6 @@
 package com.example.lynxus.extensiontemplate.tool;
 
+import com.example.lynxus.extensiontemplate.extension.ExtensionEndpointPaths;
 import com.example.lynxus.extensiontemplate.protocol.ExtensionRequestContext;
 import com.example.lynxus.extensiontemplate.protocol.ProtocolHeaderExtractor;
 import com.lynxus.extension.sdk.generated.protocol.model.RemoteToolInvokeRequest;
@@ -12,8 +13,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 public final class ToolConnectorController {
-    public static final String INVOKE_PATH = "/tools/invoke";
-
     private final ProtocolHeaderExtractor headerExtractor;
     private final ToolConnectorHandler handler;
 
@@ -23,7 +22,7 @@ public final class ToolConnectorController {
     }
 
     @PostMapping(
-        value = INVOKE_PATH,
+        value = ExtensionEndpointPaths.TOOL_INVOKE,
         consumes = MediaType.APPLICATION_JSON_VALUE,
         produces = MediaType.APPLICATION_JSON_VALUE
     )

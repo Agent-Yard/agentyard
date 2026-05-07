@@ -65,26 +65,18 @@ final class ExtensionProtocolContractTest {
             Files.readString(REPO_ROOT.resolve("packages/extension-protocol/json-schema/channel-provider-descriptor.schema.json"))
         );
 
-        Set<String> toolEndpointConstants = Set.of(
-            LynxusExtensionProtocol.TOOL_CONNECTOR_INVOKE_ENDPOINT,
+        Set<String> credentialEndpointConstants = Set.of(
             LynxusExtensionProtocol.CREATE_CREDENTIAL_ENDPOINT,
             LynxusExtensionProtocol.ROTATE_CREDENTIAL_ENDPOINT,
             LynxusExtensionProtocol.REVOKE_CREDENTIAL_ENDPOINT,
             LynxusExtensionProtocol.VALIDATE_CREDENTIAL_ENDPOINT
         );
-        Set<String> channelEndpointConstants = Set.of(
-            LynxusExtensionProtocol.CHANNEL_PROVIDER_RUN_JOB_ENDPOINT,
-            LynxusExtensionProtocol.CREATE_CREDENTIAL_ENDPOINT,
-            LynxusExtensionProtocol.ROTATE_CREDENTIAL_ENDPOINT,
-            LynxusExtensionProtocol.REVOKE_CREDENTIAL_ENDPOINT,
-            LynxusExtensionProtocol.VALIDATE_CREDENTIAL_ENDPOINT
-        );
+        Set<String> toolEndpointConstants = Set.of(LynxusExtensionProtocol.TOOL_CONNECTOR_INVOKE_ENDPOINT);
+        Set<String> channelEndpointConstants = Set.of(LynxusExtensionProtocol.CHANNEL_PROVIDER_RUN_JOB_ENDPOINT);
 
-        assertEquals(Set.of("invoke", "createCredential", "rotateCredential", "revokeCredential", "validateCredential"), toolEndpointConstants);
-        assertEquals(
-            Set.of("runJob", "createCredential", "rotateCredential", "revokeCredential", "validateCredential"),
-            channelEndpointConstants
-        );
+        assertEquals(Set.of("createCredential", "rotateCredential", "revokeCredential", "validateCredential"), credentialEndpointConstants);
+        assertEquals(Set.of("invoke"), toolEndpointConstants);
+        assertEquals(Set.of("runJob"), channelEndpointConstants);
         assertEquals(toolEndpointConstants, endpointPropertyKeys(toolDescriptorSchema));
         assertEquals(channelEndpointConstants, endpointPropertyKeys(channelDescriptorSchema));
     }

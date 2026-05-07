@@ -32,11 +32,10 @@ public final class ExtensionDefinitionService {
     private static final String ERROR = "ERROR";
     private static final String CHANNEL_PROVIDER = "CHANNEL_PROVIDER";
     private static final String TOOL_CONNECTOR = "TOOL_CONNECTOR";
-    private static final Set<String> CREDENTIAL_ENDPOINTS = Set.of(
+    private static final Set<String> REQUIRED_REMOTE_CREDENTIAL_ENDPOINTS = Set.of(
         LynxusExtensionProtocol.CREATE_CREDENTIAL_ENDPOINT,
         LynxusExtensionProtocol.ROTATE_CREDENTIAL_ENDPOINT,
-        LynxusExtensionProtocol.REVOKE_CREDENTIAL_ENDPOINT,
-        LynxusExtensionProtocol.VALIDATE_CREDENTIAL_ENDPOINT
+        LynxusExtensionProtocol.REVOKE_CREDENTIAL_ENDPOINT
     );
     private static final Set<String> SENSITIVE_DEFAULT_KEYS = Set.of(
         "externalSecretRef",
@@ -99,6 +98,7 @@ public final class ExtensionDefinitionService {
             Set<String> expectedToolConnectors = new LinkedHashSet<>(registration.exposes().toolConnectorTypes());
             Set<String> loadedChannelProviders = new LinkedHashSet<>();
             Set<String> loadedToolConnectors = new LinkedHashSet<>();
+            Map<String, Object> credentialEndpointProfiles = credentialLifecycleEndpointProfiles(loaded.manifest());
 
             for (Map<String, Object> descriptor : channelProviderDescriptors(loaded.manifest())) {
                 Object rawProviderType = descriptor.get("providerType");
@@ -117,10 +117,10 @@ public final class ExtensionDefinitionService {
                     ));
                     continue;
                 }
-                channelProviders.putIfAbsent(providerType, channelProviderDefinition(descriptor, registration));
+                channelProviders.putIfAbsent(providerType, channelProviderDefinition(descriptor, credentialEndpointProfiles, registration));
                 credentialRoutingFacts.putIfAbsent(
                     credentialRoutingKey(CHANNEL_PROVIDER, providerType),
-                    credentialRoutingFacts(CHANNEL_PROVIDER, providerType, descriptor, registration)
+                    credentialRoutingFacts(CHANNEL_PROVIDER, providerType, descriptor, credentialEndpointProfiles, registration)
                 );
             }
             for (String expected : expectedChannelProviders) {
@@ -152,10 +152,10 @@ public final class ExtensionDefinitionService {
                     ));
                     continue;
                 }
-                toolConnectors.putIfAbsent(connectorType, toolConnectorDefinition(descriptor, registration));
+                toolConnectors.putIfAbsent(connectorType, toolConnectorDefinition(descriptor, credentialEndpointProfiles, registration));
                 credentialRoutingFacts.putIfAbsent(
                     credentialRoutingKey(TOOL_CONNECTOR, connectorType),
-                    credentialRoutingFacts(TOOL_CONNECTOR, connectorType, descriptor, registration)
+                    credentialRoutingFacts(TOOL_CONNECTOR, connectorType, descriptor, credentialEndpointProfiles, registration)
                 );
             }
             for (String expected : expectedToolConnectors) {
@@ -252,16 +252,17 @@ public final class ExtensionDefinitionService {
 
     private static ChannelProviderDefinition channelProviderDefinition(
         Map<String, Object> descriptor,
+        Map<String, Object> credentialEndpointProfiles,
         ExtensionRegistration registration
     ) {
         return new ChannelProviderDefinition(
             stringValue(descriptor, "providerType"),
             stringValue(descriptor, "title"),
             nullableStringValue(descriptor, "description"),
-            DescriptorDefinitionDigests.channelProviderDefinitionDigest(descriptor),
+            DescriptorDefinitionDigests.channelProviderDefinitionDigest(descriptor, credentialEndpointProfiles),
             objectValue(descriptor, "accountConfigSchema"),
             arrayValue(descriptor, "accountConfigUiSchema"),
-            credentialCapability(descriptor, registration),
+            credentialCapability(descriptor, credentialEndpointProfiles, registration),
             objectValue(descriptor, "configSchema"),
             arrayValue(descriptor, "configUiSchema"),
             objectValue(descriptor, "defaultConfig"),
@@ -271,16 +272,17 @@ public final class ExtensionDefinitionService {
 
     private static ToolConnectorDefinition toolConnectorDefinition(
         Map<String, Object> descriptor,
+        Map<String, Object> credentialEndpointProfiles,
         ExtensionRegistration registration
     ) {
         return new ToolConnectorDefinition(
             stringValue(descriptor, "connectorType"),
             stringValue(descriptor, "title"),
             nullableStringValue(descriptor, "description"),
-            DescriptorDefinitionDigests.toolConnectorDefinitionDigest(descriptor),
+            DescriptorDefinitionDigests.toolConnectorDefinitionDigest(descriptor, credentialEndpointProfiles),
             objectValue(descriptor, "accountConfigSchema"),
             arrayValue(descriptor, "accountConfigUiSchema"),
-            credentialCapability(descriptor, registration),
+            credentialCapability(descriptor, credentialEndpointProfiles, registration),
             objectValue(descriptor, "configSchema"),
             arrayValue(descriptor, "configUiSchema"),
             objectValue(descriptor, "operationMappingSchema"),
@@ -288,20 +290,25 @@ public final class ExtensionDefinitionService {
         );
     }
 
-    private static CredentialCapability credentialCapability(Map<String, Object> descriptor, ExtensionRegistration registration) {
+    private static CredentialCapability credentialCapability(
+        Map<String, Object> descriptor,
+        Map<String, Object> credentialEndpointProfiles,
+        ExtensionRegistration registration
+    ) {
         Map<String, Object> credentialSchema = nullableObjectValue(descriptor, "credentialSchema");
         if (credentialSchema == null) {
-            return new CredentialCapability(false, null, null, List.of());
+            return new CredentialCapability(false, null, null, List.of(), false);
         }
 
-        Map<String, Object> endpoints = objectValue(descriptor, "endpoints");
-        boolean hasAllCredentialEndpoints = endpoints.keySet().containsAll(CREDENTIAL_ENDPOINTS);
-        if (hasAllCredentialEndpoints) {
+        Map<String, Object> endpoints = credentialLifecycleEndpointProfile(descriptor, credentialEndpointProfiles);
+        boolean hasRemoteLifecycleEndpoints = endpoints.keySet().containsAll(REQUIRED_REMOTE_CREDENTIAL_ENDPOINTS);
+        if (hasRemoteLifecycleEndpoints) {
             return new CredentialCapability(
                 true,
                 CredentialCapabilityMode.REMOTE_LIFECYCLE,
                 credentialSchema,
-                arrayValue(descriptor, "credentialUiSchema")
+                arrayValue(descriptor, "credentialUiSchema"),
+                endpoints.containsKey(LynxusExtensionProtocol.VALIDATE_CREDENTIAL_ENDPOINT)
             );
         }
         if (registration.source() == RegistrationSource.CORE_PRESET) {
@@ -309,20 +316,22 @@ public final class ExtensionDefinitionService {
                 true,
                 CredentialCapabilityMode.CORE_ENCRYPTED_REFERENCE,
                 credentialSchema,
-                arrayValue(descriptor, "credentialUiSchema")
+                arrayValue(descriptor, "credentialUiSchema"),
+                true
             );
         }
-        return new CredentialCapability(false, null, null, List.of());
+        return new CredentialCapability(false, null, null, List.of(), false);
     }
 
     private static InternalCredentialRoutingFacts credentialRoutingFacts(
         String descriptorType,
         String descriptorId,
         Map<String, Object> descriptor,
+        Map<String, Object> credentialEndpointProfiles,
         ExtensionRegistration registration
     ) {
-        CredentialCapability capability = credentialCapability(descriptor, registration);
-        Map<String, Object> endpoints = objectValue(descriptor, "endpoints");
+        CredentialCapability capability = credentialCapability(descriptor, credentialEndpointProfiles, registration);
+        Map<String, Object> endpoints = credentialLifecycleEndpointProfile(descriptor, credentialEndpointProfiles);
         return new InternalCredentialRoutingFacts(
             descriptorType,
             descriptorId,
@@ -334,6 +343,23 @@ public final class ExtensionDefinitionService {
             stringEndpoint(endpoints, LynxusExtensionProtocol.VALIDATE_CREDENTIAL_ENDPOINT),
             stringEndpoint(endpoints, LynxusExtensionProtocol.REVOKE_CREDENTIAL_ENDPOINT)
         );
+    }
+
+    private static Map<String, Object> credentialLifecycleEndpointProfile(
+        Map<String, Object> descriptor,
+        Map<String, Object> credentialEndpointProfiles
+    ) {
+        Object rawProfile = descriptor.get("credentialLifecycleEndpointProfile");
+        if (!(rawProfile instanceof String profile) || profile.isBlank()) {
+            return Map.of();
+        }
+        Object endpoints = credentialEndpointProfiles.get(profile);
+        if (endpoints instanceof Map<?, ?> map) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> typed = (Map<String, Object>) map;
+            return Collections.unmodifiableMap(new LinkedHashMap<>(typed));
+        }
+        return Map.of();
     }
 
     private static String stringEndpoint(Map<String, Object> endpoints, String endpointName) {
@@ -454,6 +480,16 @@ public final class ExtensionDefinitionService {
         Map<String, Object> manifestMap = (Map<String, Object>) manifest;
         Map<String, Object> descriptors = (Map<String, Object>) manifestMap.get("descriptors");
         return (List<Map<String, Object>>) descriptors.get("toolConnectors");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> credentialLifecycleEndpointProfiles(Object manifest) {
+        Map<String, Object> manifestMap = (Map<String, Object>) manifest;
+        Object profiles = manifestMap.get("credentialLifecycleEndpointProfiles");
+        if (profiles instanceof Map<?, ?> map) {
+            return Collections.unmodifiableMap(new LinkedHashMap<>((Map<String, Object>) map));
+        }
+        return Map.of();
     }
 
     private static String requireInternalAuthToken(String internalAuthToken) {

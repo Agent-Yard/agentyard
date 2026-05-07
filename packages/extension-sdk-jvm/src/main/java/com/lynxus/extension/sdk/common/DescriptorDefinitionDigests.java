@@ -22,6 +22,13 @@ public final class DescriptorDefinitionDigests {
     private DescriptorDefinitionDigests() {}
 
     public static Map<String, Object> channelProviderDefinitionDigestInput(Map<String, Object> descriptor) {
+        return channelProviderDefinitionDigestInput(descriptor, Map.of());
+    }
+
+    public static Map<String, Object> channelProviderDefinitionDigestInput(
+        Map<String, Object> descriptor,
+        Map<String, Object> credentialLifecycleEndpointProfiles
+    ) {
         List<Map<String, Object>> jobDefinitions = new ArrayList<>();
         for (Map<String, Object> job : objects(descriptor.get("jobDefinitions"))) {
             Map<String, Object> normalizedJob = new LinkedHashMap<>();
@@ -38,6 +45,8 @@ public final class DescriptorDefinitionDigests {
         result.put("credentialSchema", validationOnlySchema(descriptor.get("credentialSchema")));
         result.put("outbound", channelProviderOutbound(descriptor));
         result.put("endpoints", channelProviderEndpoints(descriptor));
+        result.put("credentialLifecycleEndpointProfile", descriptor.get("credentialLifecycleEndpointProfile"));
+        result.put("credentialLifecycleEndpoints", credentialLifecycleEndpoints(descriptor, credentialLifecycleEndpointProfiles));
         result.put("configSchema", validationOnlySchema(descriptor.get("configSchema")));
         result.put("jobDefinitions", jobDefinitions);
         return result;
@@ -45,6 +54,15 @@ public final class DescriptorDefinitionDigests {
 
     public static String channelProviderDefinitionDigest(Map<String, Object> descriptor) {
         return LynxusCanonicalJson.sha256ValueDigest(channelProviderDefinitionDigestInput(descriptor));
+    }
+
+    public static String channelProviderDefinitionDigest(
+        Map<String, Object> descriptor,
+        Map<String, Object> credentialLifecycleEndpointProfiles
+    ) {
+        return LynxusCanonicalJson.sha256ValueDigest(
+            channelProviderDefinitionDigestInput(descriptor, credentialLifecycleEndpointProfiles)
+        );
     }
 
     public static String channelProviderDefinitionCanonicalJson(Map<String, Object> descriptor) {
@@ -56,6 +74,13 @@ public final class DescriptorDefinitionDigests {
     }
 
     public static Map<String, Object> toolConnectorDefinitionDigestInput(Map<String, Object> descriptor) {
+        return toolConnectorDefinitionDigestInput(descriptor, Map.of());
+    }
+
+    public static Map<String, Object> toolConnectorDefinitionDigestInput(
+        Map<String, Object> descriptor,
+        Map<String, Object> credentialLifecycleEndpointProfiles
+    ) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("descriptorType", TOOL_CONNECTOR_DESCRIPTOR_TYPE);
         result.put("connectorType", descriptor.get("connectorType"));
@@ -64,11 +89,22 @@ public final class DescriptorDefinitionDigests {
         result.put("configSchema", validationOnlySchema(descriptor.get("configSchema")));
         result.put("operationMappingSchema", validationOnlySchema(descriptor.get("operationMappingSchema")));
         result.put("endpoints", toolConnectorEndpoints(descriptor));
+        result.put("credentialLifecycleEndpointProfile", descriptor.get("credentialLifecycleEndpointProfile"));
+        result.put("credentialLifecycleEndpoints", credentialLifecycleEndpoints(descriptor, credentialLifecycleEndpointProfiles));
         return result;
     }
 
     public static String toolConnectorDefinitionDigest(Map<String, Object> descriptor) {
         return LynxusCanonicalJson.sha256ValueDigest(toolConnectorDefinitionDigestInput(descriptor));
+    }
+
+    public static String toolConnectorDefinitionDigest(
+        Map<String, Object> descriptor,
+        Map<String, Object> credentialLifecycleEndpointProfiles
+    ) {
+        return LynxusCanonicalJson.sha256ValueDigest(
+            toolConnectorDefinitionDigestInput(descriptor, credentialLifecycleEndpointProfiles)
+        );
     }
 
     public static String toolConnectorDefinitionCanonicalJson(Map<String, Object> descriptor) {
@@ -98,10 +134,28 @@ public final class DescriptorDefinitionDigests {
         Map<String, Object> descriptorEndpoints = endpoints(descriptor);
         Map<String, Object> endpoints = new LinkedHashMap<>();
         endpoints.put("runJob", descriptorEndpoints.get("runJob"));
-        endpoints.put("createCredential", descriptorEndpoints.get("createCredential"));
-        endpoints.put("rotateCredential", descriptorEndpoints.get("rotateCredential"));
-        endpoints.put("revokeCredential", descriptorEndpoints.get("revokeCredential"));
-        endpoints.put("validateCredential", descriptorEndpoints.get("validateCredential"));
+        return endpoints;
+    }
+
+    private static Map<String, Object> credentialLifecycleEndpoints(
+        Map<String, Object> descriptor,
+        Map<String, Object> credentialLifecycleEndpointProfiles
+    ) {
+        Object rawProfile = descriptor.get("credentialLifecycleEndpointProfile");
+        Map<String, Object> profile = Map.of();
+        if (rawProfile instanceof String profileName && !profileName.isBlank()) {
+            Object rawEndpoints = credentialLifecycleEndpointProfiles.get(profileName);
+            if (rawEndpoints instanceof Map<?, ?> map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> typed = (Map<String, Object>) map;
+                profile = typed;
+            }
+        }
+        Map<String, Object> endpoints = new LinkedHashMap<>();
+        endpoints.put("createCredential", profile.get("createCredential"));
+        endpoints.put("rotateCredential", profile.get("rotateCredential"));
+        endpoints.put("revokeCredential", profile.get("revokeCredential"));
+        endpoints.put("validateCredential", profile.get("validateCredential"));
         return endpoints;
     }
 
@@ -109,10 +163,6 @@ public final class DescriptorDefinitionDigests {
         Map<String, Object> descriptorEndpoints = endpoints(descriptor);
         Map<String, Object> endpoints = new LinkedHashMap<>();
         endpoints.put("invoke", descriptorEndpoints.get("invoke"));
-        endpoints.put("createCredential", descriptorEndpoints.get("createCredential"));
-        endpoints.put("rotateCredential", descriptorEndpoints.get("rotateCredential"));
-        endpoints.put("revokeCredential", descriptorEndpoints.get("revokeCredential"));
-        endpoints.put("validateCredential", descriptorEndpoints.get("validateCredential"));
         return endpoints;
     }
 
