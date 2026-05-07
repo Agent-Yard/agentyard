@@ -17,10 +17,6 @@ allprojects {
 }
 
 subprojects {
-    repositories {
-        mavenCentral()
-    }
-
     pluginManager.withPlugin("java") {
         tasks.withType<Test>().configureEach {
             useJUnitPlatform()

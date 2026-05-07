@@ -1,5 +1,12 @@
 rootProject.name = "lynxus"
 
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        mavenCentral()
+    }
+}
+
 include("apps:api")
 include("apps:channel-gateway")
 include("apps:worker")
