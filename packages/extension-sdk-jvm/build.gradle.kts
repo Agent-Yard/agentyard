@@ -113,7 +113,7 @@ val generateExtensionProtocolJavaModels = tasks.register<GenerateTask>("generate
     dependsOn(prepareExtensionProtocolJavaGeneratorOpenApi)
 
     generatorName.set("java")
-    inputSpec.set(extensionProtocolJavaGeneratorOpenApi.map { it.asFile.absolutePath })
+    inputSpec.set(extensionProtocolJavaGeneratorOpenApi.map { it.asFile.toURI().toString() })
     outputDir.set(generatedExtensionProtocolJavaModelsDir.get().asFile.absolutePath)
     modelPackage.set("com.lynxus.extension.sdk.generated.protocol.model")
     apiPackage.set("com.lynxus.extension.sdk.generated.protocol.api")
