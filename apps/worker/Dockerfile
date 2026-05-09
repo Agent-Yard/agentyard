@@ -24,4 +24,4 @@ COPY --from=builder /workspace/apps/worker/build/libs/*.jar /app/app.jar
 
 EXPOSE 8081
 
-ENTRYPOINT ["sh", "-c", "unset SPRING_DATASOURCE_URL; exec java -jar /app/app.jar"]
+ENTRYPOINT ["sh", "-c", "unset SPRING_DATASOURCE_URL; exec java $JAVA_OPTS -jar /app/app.jar"]
