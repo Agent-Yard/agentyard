@@ -36,7 +36,7 @@ Recommended target layout:
     .env
 ```
 
-Each host may keep only the compose files and env variables needed by that host. The PostgreSQL module requires this relative layout because it mounts `../../common/postgres-bootstrap`.
+Each host may keep only the compose files, module-local runtime files, and env variables needed by that host. The PostgreSQL module requires the `common + test` relative layout because it mounts `../../common/postgres-bootstrap`; the Temporal UI gateway Caddyfile is embedded in its compose file.
 
 Start the module:
 
@@ -74,6 +74,8 @@ It also enables `vector` and `pg_trgm` in the knowledge database.
 
 Temporal is included as its own module because test has no existing Temporal service. Deploy it on its own host or a dedicated runtime host with [compose/temporal.yml](/Users/eric/projects/lynxus/deploy/test/compose/temporal.yml).
 
+Temporal UI is exposed through a Caddy gateway with basic authentication. Deploy it with [compose/temporal-ui.yml](/Users/eric/projects/lynxus/deploy/test/compose/temporal-ui.yml) on the host that should expose the UI endpoint.
+
 Sandbox is also a separate module. Deploy it with [compose/sandbox.yml](/Users/eric/projects/lynxus/deploy/test/compose/sandbox.yml).
 
 ## Startup Order
@@ -96,13 +98,19 @@ Recommended order when PostgreSQL is deployed by this package:
    docker compose --env-file test/.env -f test/compose/temporal.yml up -d
    ```
 
-3. Sandbox:
+3. Temporal UI:
+
+   ```bash
+   docker compose --env-file test/.env -f test/compose/temporal-ui.yml up -d
+   ```
+
+4. Sandbox:
 
    ```bash
    docker compose --env-file test/.env -f test/compose/sandbox.yml up -d
    ```
 
-4. Internal services:
+5. Internal services:
 
    ```bash
    docker compose --env-file test/.env -f test/compose/channel-gateway.yml up -d
@@ -110,19 +118,19 @@ Recommended order when PostgreSQL is deployed by this package:
    docker compose --env-file test/.env -f test/compose/agent-runtime.yml up -d
    ```
 
-5. Worker:
+6. Worker:
 
    ```bash
    docker compose --env-file test/.env -f test/compose/worker.yml up -d
    ```
 
-6. API:
+7. API:
 
    ```bash
    docker compose --env-file test/.env -f test/compose/api.yml up -d
    ```
 
-7. Web static assets and Nginx.
+8. Web static assets and Nginx.
 
 When PostgreSQL is managed outside this package, the deployer must create `lynxus_core`, `lynxus_channel_gateway`, `lynxus_knowledge`, `lynxus_agent_runtime`, `temporal`, and `temporal_visibility` before starting Temporal or application services. The knowledge database must have `vector` and `pg_trgm` enabled.
 
@@ -132,6 +140,7 @@ When PostgreSQL is managed outside this package, the deployer must create `lynxu
 | --- | --- |
 | postgres | Persistent disk |
 | temporal | PostgreSQL `temporal` and `temporal_visibility` databases |
+| temporal-ui | Temporal |
 | sandbox | No Lynxus service dependency |
 | channel-gateway | PostgreSQL `lynxus_channel_gateway` |
 | knowledge-service | PostgreSQL `lynxus_knowledge`, S3-compatible object storage, embedding provider |

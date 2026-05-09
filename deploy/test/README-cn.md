@@ -36,7 +36,7 @@ deploy/test/
     .env
 ```
 
-每台主机可以只保留该主机所需的 compose 文件和环境变量。PostgreSQL 模块需要此相对布局，因为它要挂载 `../../common/postgres-bootstrap`。
+每台主机可以只保留该主机所需的 compose 文件、模块本地运行时文件和环境变量。PostgreSQL 模块需要 `common + test` 的相对布局，因为它要挂载 `../../common/postgres-bootstrap`；Temporal UI 网关的 Caddyfile 已内嵌在它的 compose 文件中。
 
 启动模块：
 
@@ -74,6 +74,8 @@ PostgreSQL 模块通过发布的 `common + test` 布局，使用 [../common/post
 
 Temporal 作为一个独立的模块包含在内，因为测试环境没有现成的 Temporal 服务。可以使用 [compose/temporal.yml](/Users/eric/projects/lynxus/deploy/test/compose/temporal.yml) 将其部署在自己的主机或专用的运行主机上。
 
+Temporal UI 通过带基础认证的 Caddy 网关暴露。可以使用 [compose/temporal-ui.yml](/Users/eric/projects/lynxus/deploy/test/compose/temporal-ui.yml) 将其部署在需要暴露 UI 入口的主机上。
+
 Sandbox 也是一个独立模块。使用 [compose/sandbox.yml](/Users/eric/projects/lynxus/deploy/test/compose/sandbox.yml) 进行部署。
 
 ## 启动顺序
@@ -96,13 +98,19 @@ compose 文件有意保持相互独立，因为不同模块可能运行在不同
    docker compose --env-file test/.env -f test/compose/temporal.yml up -d
    ```
 
-3. Sandbox：
+3. Temporal UI：
+
+   ```bash
+   docker compose --env-file test/.env -f test/compose/temporal-ui.yml up -d
+   ```
+
+4. Sandbox：
 
    ```bash
    docker compose --env-file test/.env -f test/compose/sandbox.yml up -d
    ```
 
-4. 内部服务：
+5. 内部服务：
 
    ```bash
    docker compose --env-file test/.env -f test/compose/channel-gateway.yml up -d
@@ -110,19 +118,19 @@ compose 文件有意保持相互独立，因为不同模块可能运行在不同
    docker compose --env-file test/.env -f test/compose/agent-runtime.yml up -d
    ```
 
-5. Worker：
+6. Worker：
 
    ```bash
    docker compose --env-file test/.env -f test/compose/worker.yml up -d
    ```
 
-6. API：
+7. API：
 
    ```bash
    docker compose --env-file test/.env -f test/compose/api.yml up -d
    ```
 
-7. Web 静态资源与 Nginx。
+8. Web 静态资源与 Nginx。
 
 当 PostgreSQL 由本包外部管理时，部署人员必须在启动 Temporal 或应用服务之前创建 `lynxus_core`、`lynxus_channel_gateway`、`lynxus_knowledge`、`lynxus_agent_runtime`、`temporal` 和 `temporal_visibility` 数据库。知识库必须启用 `vector` 和 `pg_trgm` 扩展。
 
@@ -132,6 +140,7 @@ compose 文件有意保持相互独立，因为不同模块可能运行在不同
 | --- | --- |
 | postgres | 持久化磁盘 |
 | temporal | PostgreSQL 数据库 `temporal` 和 `temporal_visibility` |
+| temporal-ui | Temporal |
 | sandbox | 无需依赖其他 Lynxus 服务 |
 | channel-gateway | PostgreSQL 数据库 `lynxus_channel_gateway` |
 | knowledge-service | PostgreSQL 数据库 `lynxus_knowledge`、兼容 S3 的对象存储、嵌入（embedding）服务商 |

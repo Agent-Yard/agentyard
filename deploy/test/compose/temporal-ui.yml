@@ -6,5 +6,34 @@ services:
     restart: unless-stopped
     environment:
       TEMPORAL_ADDRESS: ${LYNXUS_TEMPORAL_UI_TARGET:?LYNXUS_TEMPORAL_UI_TARGET is required}
+
+  temporal-ui-gateway:
+    image: ${LYNXUS_IMAGE_CADDY:?LYNXUS_IMAGE_CADDY is required}
+    restart: unless-stopped
+    environment:
+      LYNXUS_TEMPORAL_UI_USERNAME: ${LYNXUS_TEMPORAL_UI_USERNAME:?LYNXUS_TEMPORAL_UI_USERNAME is required}
+      LYNXUS_TEMPORAL_UI_PASSWORD: ${LYNXUS_TEMPORAL_UI_PASSWORD:?LYNXUS_TEMPORAL_UI_PASSWORD is required}
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        export LYNXUS_TEMPORAL_UI_PASSWORD_HASH="$$(caddy hash-password --plaintext "$$LYNXUS_TEMPORAL_UI_PASSWORD")"
+        exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
     ports:
-      - "${LYNXUS_TEMPORAL_UI_BIND_ADDRESS:-127.0.0.1}:${LYNXUS_TEMPORAL_UI_PORT:-8088}:8080"
+      - "${LYNXUS_TEMPORAL_UI_BIND_ADDRESS:-127.0.0.1}:${LYNXUS_TEMPORAL_UI_PORT:-8088}:8088"
+    configs:
+      - source: temporal_ui_gateway_caddyfile
+        target: /etc/caddy/Caddyfile
+    depends_on:
+      - temporal-ui
+
+configs:
+  temporal_ui_gateway_caddyfile:
+    content: |
+      :8088 {
+      	basicauth {
+      		{$$LYNXUS_TEMPORAL_UI_USERNAME} {$$LYNXUS_TEMPORAL_UI_PASSWORD_HASH}
+      	}
+
+      	reverse_proxy temporal-ui:8080
+      }
