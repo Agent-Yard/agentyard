@@ -1,3 +1,10 @@
+x-python-package-index-build-args: &python-package-index-build-args
+  - PIP_INDEX_URL
+  - PIP_EXTRA_INDEX_URL
+  - PIP_TRUSTED_HOST
+  - UV_INDEX_URL
+  - UV_EXTRA_INDEX_URL
+
 services:
   postgres:
     image: ${LYNXUS_IMAGE_POSTGRES:-pgvector/pgvector:pg17}
@@ -109,6 +116,7 @@ services:
     build:
       context: ../..
       dockerfile: apps/knowledge-service/Dockerfile
+      args: *python-package-index-build-args
     image: lynxus-knowledge-service:dev
     restart: unless-stopped
     environment:
@@ -147,6 +155,7 @@ services:
     build:
       context: ../..
       dockerfile: apps/knowledge-service/Dockerfile
+      args: *python-package-index-build-args
     image: lynxus-knowledge-service:dev
     restart: unless-stopped
     environment:
@@ -184,6 +193,7 @@ services:
     build:
       context: ../..
       dockerfile: apps/agent-runtime/Dockerfile
+      args: *python-package-index-build-args
     image: lynxus-agent-runtime:dev
     restart: unless-stopped
     environment:
@@ -228,6 +238,7 @@ services:
     build:
       context: ../..
       dockerfile: apps/agent-runtime/Dockerfile
+      args: *python-package-index-build-args
     image: lynxus-agent-runtime:dev
     restart: unless-stopped
     environment:

@@ -2,6 +2,9 @@ FROM ghcr.io/astral-sh/uv:python3.11-bookworm AS requirements
 
 WORKDIR /workspace
 
+ARG UV_INDEX_URL
+ARG UV_EXTRA_INDEX_URL
+
 COPY pyproject.toml uv.lock ./
 COPY apps/agent-runtime/pyproject.toml apps/agent-runtime/pyproject.toml
 COPY apps/knowledge-service/pyproject.toml apps/knowledge-service/pyproject.toml
@@ -14,6 +17,9 @@ RUN uv export --quiet --frozen --package lynxus-knowledge-service --no-dev --no-
 FROM ghcr.io/astral-sh/uv:python3.11-bookworm AS builder
 
 WORKDIR /workspace
+
+ARG UV_INDEX_URL
+ARG UV_EXTRA_INDEX_URL
 
 COPY pyproject.toml uv.lock ./
 COPY apps/agent-runtime/pyproject.toml apps/agent-runtime/pyproject.toml
@@ -33,6 +39,10 @@ WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+
+ARG PIP_INDEX_URL
+ARG PIP_EXTRA_INDEX_URL
+ARG PIP_TRUSTED_HOST
 
 COPY --from=requirements /requirements.txt /requirements.txt
 
