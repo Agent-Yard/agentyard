@@ -50,19 +50,19 @@ flowchart TB
     %% ===== 用户入口 =====
     subgraph Clients["用户入口"]
         Web["apps/web<br/>Vue 控制台"]
-        ChannelUsers["业务渠道用户<br/>(Feishu / ...)"]
+        ChannelUsers["业务渠道用户 / 坐席系统<br/>(Feishu / 工单 / 客服平台 / ...)"]
     end
 
     %% ===== 控制面 / 接入面 =====
     subgraph ControlPlane["控制面 & 接入面 (JVM)"]
         API["apps/api<br/>Spring Boot 控制面<br/>发布快照 / session-runtime"]
-        Gateway["apps/channel-gateway<br/>Channel Provider 运行时<br/>入站 + 出站 + 注册"]
+        Gateway["apps/channel-gateway<br/>Channel Provider 运行时<br/>入站归一化 / 出站 frame relay / provider registry"]
         Worker["apps/worker<br/>Temporal worker<br/>SessionWorkflow / PlaybookWorkflow"]
     end
 
     %% ===== 执行面 =====
     subgraph Runtime["执行面 (Python)"]
-        AgentRT["apps/agent-runtime<br/>owner 单轮推理<br/>playbook TOOL_TASK"]
+        AgentRT["apps/agent-runtime<br/>owner 单轮推理<br/>playbook TOOL_TASK<br/>内置 tool connector 运行时"]
         Knowledge["apps/knowledge-service<br/>导入 / 切片 / 快照 / 检索"]
     end
 
@@ -75,25 +75,36 @@ flowchart TB
     end
 
     %% ===== 扩展面 =====
-    subgraph Extension["Extension Plane (packages/extension-protocol)"]
-        ToolConn["Tool Connector<br/>SIMPLE_HTTP / BUSINESS_CODE_SECRET_HTTP / MCP"]
-        ChannelProv["Channel Provider<br/>飞书等"]
+    subgraph Extension["Extension Plane"]
+        Protocol["packages/extension-protocol<br/>OpenAPI / JSON Schema / fixtures"]
+        ExtSvc["外部 Extension Service<br/>/extension/manifest"]
+        ToolConn["Tool Connector<br/>第三方业务系统工具"]
+        ChannelProv["Channel Provider<br/>第三方 IM / 工单 / 客服"]
     end
 
     %% ===== 流向 =====
     Web -->|HTTP / SSE| API
-    ChannelUsers -->|inbound| Gateway
+    ChannelUsers -->|内置渠道 inbound| Gateway
+    ChannelUsers -->|第三方渠道事件 / 坐席消息| ChannelProv
+    Protocol -.->|协议约束| ExtSvc
+    ExtSvc --- ToolConn
+    ExtSvc --- ChannelProv
 
     Gateway -->|normalized event| API
-    API -->|outbound| Gateway
+    ChannelProv -->|normalized inbound| Gateway
+    API -->|outbound frames| Gateway
+    Gateway -->|outbound frame stream / runJob| ChannelProv
+    ChannelProv -->|ACK / delivery result| Gateway
 
     API -->|Temporal client| Worker
     Worker -->|HTTP| AgentRT
     Worker -->|HTTP| Knowledge
     AgentRT -->|检索| Knowledge
 
-    AgentRT -.->|tool call| ToolConn
-    Gateway -.->|provider 实现| ChannelProv
+    AgentRT -.->|tool invoke| ToolConn
+    API -.->|manifest / descriptor registry| ExtSvc
+    Gateway -.->|provider manifest| ExtSvc
+    AgentRT -.->|tool manifest| ExtSvc
 
     API --- PG
     API --- Redis
@@ -104,7 +115,7 @@ flowchart TB
     Gateway --- PG
 ```
 
-控制面通过 *Extension Plane* 协议（`packages/extension-protocol`）声明性地注册 Channel Provider 与 Tool Connector；核心服务自动注册由 `LYNXUS_CHANNEL_GATEWAY_BASE_URL` / `LYNXUS_AGENT_RUNTIME_BASE_URL` 提供，运营方扩展通过 `LYNXUS_EXTENSION_REGISTRATION_FILE` 加载。
+*Extension Plane* 是协议与注册边界（`packages/extension-protocol`），不是单独的核心运行面。外部 Extension Service 通过 `/extension/manifest` 声明 Channel Provider 与 Tool Connector；Channel Provider 侧由 `channel-gateway` 接收 normalized inbound、提供 outbound frame stream / ACK 边界，Tool Connector 侧由 `agent-runtime` 直接发起 tool invoke。核心服务自动注册由 `LYNXUS_CHANNEL_GATEWAY_BASE_URL` / `LYNXUS_AGENT_RUNTIME_BASE_URL` 提供，运营方扩展通过 `LYNXUS_EXTENSION_REGISTRATION_FILE` 加载。
 
 ## 仓库结构
 
