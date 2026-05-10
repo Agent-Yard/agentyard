@@ -621,7 +621,8 @@ public final class SessionContracts {
         SessionMessageInput replyMessage,
         String targetAgentId,
         String playbookId,
-        Map<String, Object> playbookInput
+        Map<String, Object> playbookInput,
+        String operatorReason
     ) {
         public AgentDecision {
             playbookInput = immutableObjectMap(playbookInput);

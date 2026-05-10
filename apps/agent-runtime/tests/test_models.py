@@ -55,6 +55,32 @@ class AgentDecisionModelTest(unittest.TestCase):
         decision = AgentDecision.model_validate({"action": "SECURITY_BLOCK"})
         self.assertEqual(decision.action, "SECURITY_BLOCK")
 
+    def test_human_handoff_operator_reason_is_trimmed_and_action_scoped(self) -> None:
+        decision = AgentDecision.model_validate(
+            {
+                "action": "SESSION_HUMAN_HANDOFF",
+                "operatorReason": "  billing escalation  ",
+            }
+        )
+        self.assertEqual("billing escalation", decision.operatorReason)
+
+        blank_reason = AgentDecision.model_validate(
+            {
+                "action": "SESSION_HUMAN_HANDOFF",
+                "operatorReason": "  ",
+            }
+        )
+        self.assertIsNone(blank_reason.operatorReason)
+
+        with self.assertRaises(ValidationError):
+            AgentDecision.model_validate(
+                {
+                    "action": "REPLY",
+                    "replyMessage": _text_message_input("hello"),
+                    "operatorReason": "billing escalation",
+                }
+            )
+
     def test_tool_connector_release_shape_reads_account_snapshot(self) -> None:
         tool = ToolDescriptor.model_validate(
             {

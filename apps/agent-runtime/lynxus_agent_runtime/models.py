@@ -260,9 +260,15 @@ class AgentDecision(BaseModel):
     targetAgentId: str | None = None
     playbookId: str | None = None
     playbookInput: dict[str, Any] | None = None
+    operatorReason: str | None = None
 
     @model_validator(mode="after")
     def validate_action_payload(self) -> "AgentDecision":
+        if self.operatorReason is not None:
+            operator_reason = self.operatorReason.strip()
+            self.operatorReason = operator_reason or None
+        if self.operatorReason is not None and self.action != "SESSION_HUMAN_HANDOFF":
+            raise ValueError("operatorReason is only supported for SESSION_HUMAN_HANDOFF")
         if self.action == "REPLY" and not _has_message_content(self.replyMessage):
             raise ValueError("REPLY requires replyMessage")
         if self.action == "SWITCH_OWNER" and not (self.targetAgentId or "").strip():

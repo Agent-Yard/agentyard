@@ -557,10 +557,20 @@ def _lifecycle_action_tool_definitions(request: AgentTurnRequest) -> list[Semant
         definitions.append(
             _semantic_tool(
                 HUMAN_HANDOFF_TOOL,
-                "Request session human handoff.",
+                (
+                    "Request session human handoff as a terminal lifecycle action. "
+                    "If this tool call is accepted and becomes the final lifecycle action, this agent turn stops. "
+                    "To show the customer a handoff explanation, produce the customer-visible assistant reply before calling this tool. "
+                    "operatorReason is not customer-visible; it is for human operators and internal audit only."
+                ),
                 {
                     "type": "object",
-                    "properties": {"reason": {"type": "string"}},
+                    "properties": {
+                        "operatorReason": {
+                            "type": "string",
+                            "description": "Internal reason for human operators and audit. This is not shown to the customer.",
+                        }
+                    },
                     "additionalProperties": False,
                 },
                 _accepted_output_schema(),

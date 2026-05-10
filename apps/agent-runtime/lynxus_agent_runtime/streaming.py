@@ -709,8 +709,10 @@ class _StreamingOutcomeAccumulator:
             return _tool_acceptance(error)
         if tool_call.tool_name == HUMAN_HANDOFF_TOOL:
             action = "SESSION_HUMAN_HANDOFF"
+            operator_reason = _optional_string(tool_call.arguments.get("operatorReason"))
             error = None if action in set(self._request.currentOwner.allowedActions) else f"action {action} is not allowed"
-            self._lifecycle_actions.append(_LifecycleActionCandidate(action=action, payload={}, error=error))
+            payload = {"operatorReason": operator_reason} if operator_reason else {}
+            self._lifecycle_actions.append(_LifecycleActionCandidate(action=action, payload=payload, error=error))
             return _tool_acceptance(error)
         if tool_call.tool_name == SECURITY_BLOCK_TOOL:
             categories = tool_call.arguments.get("categories")
@@ -753,7 +755,11 @@ class _StreamingOutcomeAccumulator:
                 playbookInput=dict(lifecycle_action.payload.get("playbookInput") or {}),
             )
         if lifecycle_action.action == "SESSION_HUMAN_HANDOFF":
-            return AgentDecision(action="SESSION_HUMAN_HANDOFF", replyMessage=reply)
+            return AgentDecision(
+                action="SESSION_HUMAN_HANDOFF",
+                replyMessage=reply,
+                operatorReason=_optional_string(lifecycle_action.payload.get("operatorReason")),
+            )
         raise ValueError(f"unsupported lifecycle action: {lifecycle_action.action}")
 
     def _reply_message(self) -> SessionMessageInput | None:

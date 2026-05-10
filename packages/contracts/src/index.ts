@@ -1309,6 +1309,7 @@ export interface AgentDecision {
   targetAgentId: string | null;
   playbookId: string | null;
   playbookInput: Record<string, unknown>;
+  operatorReason: string | null;
 }
 
 export type LlmUsageSourceType = 'SESSION_OWNER_MODEL' | 'SESSION_PRIVACY_MODEL';

@@ -155,7 +155,7 @@ class SessionWorkflowImplTest {
             Worker worker = environment.newWorker("session-tests-draining-handoff-end");
             RecordingPersistenceActivities persistence = new RecordingPersistenceActivities();
             worker.registerWorkflowImplementationTypes(SessionWorkflowImpl.class);
-            worker.registerActivitiesImplementations(new HandoffAgentTurnActivities(), persistence);
+            worker.registerActivitiesImplementations(new HandoffAgentTurnActivities("billing escalation"), persistence);
             environment.start();
 
             SessionWorkflow workflow = environment.getWorkflowClient().newWorkflowStub(
@@ -182,6 +182,8 @@ class SessionWorkflowImplTest {
             );
 
             waitForEvent(environment, persistence, SessionEventType.SESSION_HUMAN_HANDOFF_STARTED);
+            SessionEvent handoffStarted = latestEventOfType(persistence.events(), SessionEventType.SESSION_HUMAN_HANDOFF_STARTED);
+            assertEquals(Map.of("operatorReason", "billing escalation"), handoffStarted.payload());
             environment.sleep(Duration.ofSeconds(3));
             assertTrue(workflow.currentSnapshot().draining());
 
@@ -190,6 +192,44 @@ class SessionWorkflowImplTest {
             SessionSnapshot finalSnapshot = waitForWorkflowCompletion(environment, workflow);
             assertTrue(finalSnapshot.draining());
             assertEquals(false, finalSnapshot.sessionHumanHandoffActive());
+        }
+    }
+
+    @Test
+    void sessionHumanHandoffStarted_shouldOmitBlankOperatorReason() {
+        try (TestWorkflowEnvironment environment = newRealTimeWorkflowEnvironment()) {
+            Worker worker = environment.newWorker("session-tests-handoff-blank-reason");
+            RecordingPersistenceActivities persistence = new RecordingPersistenceActivities();
+            worker.registerWorkflowImplementationTypes(SessionWorkflowImpl.class);
+            worker.registerActivitiesImplementations(new HandoffAgentTurnActivities("  "), persistence);
+            environment.start();
+
+            SessionWorkflow workflow = environment.getWorkflowClient().newWorkflowStub(
+                SessionWorkflow.class,
+                WorkflowOptions.newBuilder()
+                    .setTaskQueue("session-tests-handoff-blank-reason")
+                    .setWorkflowId("session-1")
+                    .build()
+            );
+            startWorkflowAndWaitUntilReady(
+                environment,
+                workflow,
+                startRequestForAgentActionsAndPolicy(
+                    List.of(AgentDecisionAction.SESSION_HUMAN_HANDOFF),
+                    Duration.ofHours(1),
+                    Duration.ofSeconds(30),
+                    20_000
+                )
+            );
+
+            assertEquals(
+                SessionMessageDeliveryStatus.ACCEPTED,
+                workflow.submitUserMessage(textUserMessage("msg-1", "customer-1", "start")).status()
+            );
+
+            waitForEvent(environment, persistence, SessionEventType.SESSION_HUMAN_HANDOFF_STARTED);
+            SessionEvent handoffStarted = latestEventOfType(persistence.events(), SessionEventType.SESSION_HUMAN_HANDOFF_STARTED);
+            assertEquals(Map.of(), handoffStarted.payload());
         }
     }
 
@@ -1031,14 +1071,15 @@ class SessionWorkflowImplTest {
                         (SessionMessageInput) null,
                         null,
                         "playbook-1",
-                        Map.of("customerId", "customer-1")
+                        Map.of("customerId", "customer-1"),
+                        null
                     ),
                     Map.of(),
                     null
                 ));
             }
             return successOutcome(new AgentTurnResult(
-                new AgentDecision(AgentDecisionAction.NO_OP, (SessionMessageInput) null, null, null, Map.of()),
+                new AgentDecision(AgentDecisionAction.NO_OP, (SessionMessageInput) null, null, null, Map.of(), null),
                 Map.of(),
                 null
             ));
@@ -1058,14 +1099,15 @@ class SessionWorkflowImplTest {
                         (SessionMessageInput) null,
                         null,
                         "playbook-1",
-                        Map.of("customerId", "customer-1")
+                        Map.of("customerId", "customer-1"),
+                        null
                     ),
                     Map.of(),
                     null
                 ));
             }
             return successOutcome(new AgentTurnResult(
-                new AgentDecision(AgentDecisionAction.NO_OP, (SessionMessageInput) null, null, null, Map.of()),
+                new AgentDecision(AgentDecisionAction.NO_OP, (SessionMessageInput) null, null, null, Map.of(), null),
                 Map.of(),
                 null
             ));
@@ -1077,6 +1119,12 @@ class SessionWorkflowImplTest {
     }
 
     private static final class HandoffAgentTurnActivities implements AgentTurnActivities {
+        private final String operatorReason;
+
+        private HandoffAgentTurnActivities(String operatorReason) {
+            this.operatorReason = operatorReason;
+        }
+
         @Override
         public AgentTurnExecutionOutcome executeTurn(AgentTurnRequest request) {
             return successOutcome(new AgentTurnResult(
@@ -1085,7 +1133,8 @@ class SessionWorkflowImplTest {
                     (SessionMessageInput) null,
                     null,
                     null,
-                    Map.of()
+                    Map.of(),
+                    operatorReason
                 ),
                 Map.of(),
                 null
@@ -1102,7 +1151,8 @@ class SessionWorkflowImplTest {
                     (SessionMessageInput) null,
                     "agent-2",
                     null,
-                    Map.of("customerId", "customer-1")
+                    Map.of("customerId", "customer-1"),
+                    null
                 ),
                 Map.of("reviewMarker", "malformed-run-playbook"),
                 null
@@ -1119,7 +1169,8 @@ class SessionWorkflowImplTest {
                     (SessionMessageInput) null,
                     null,
                     "playbook-1",
-                    Map.of("customerId", "customer-1")
+                    Map.of("customerId", "customer-1"),
+                    null
                 ),
                 Map.of("reviewMarker", "malformed-switch-owner"),
                 null
@@ -1139,7 +1190,8 @@ class SessionWorkflowImplTest {
                         textMessageInput("reply from owner"),
                         "agent-2",
                         "playbook-1",
-                        Map.of("customerId", "customer-1")
+                        Map.of("customerId", "customer-1"),
+                        null
                     ),
                 Map.of(),
                 null
@@ -1163,7 +1215,8 @@ class SessionWorkflowImplTest {
                     (SessionMessageInput) null,
                     null,
                     "playbook-1",
-                    Map.of("customerId", "customer-1")
+                    Map.of("customerId", "customer-1"),
+                    null
                 ),
                 Map.of("unsafeMarker", true),
                 null,
@@ -1193,7 +1246,8 @@ class SessionWorkflowImplTest {
                     textMessageInput("this assistant reply must be persisted"),
                     null,
                     null,
-                    Map.of()
+                    Map.of(),
+                    null
                 ),
                 Map.of(),
                 null,
@@ -1243,7 +1297,7 @@ class SessionWorkflowImplTest {
                     Instant.parse("2026-04-20T12:01:00Z")
                 );
             return successOutcome(new AgentTurnResult(
-                new AgentDecision(AgentDecisionAction.NO_OP, (SessionMessageInput) null, null, null, Map.of()),
+                new AgentDecision(AgentDecisionAction.NO_OP, (SessionMessageInput) null, null, null, Map.of(), null),
                 Map.of(),
                 telemetry
             ));
@@ -1254,7 +1308,7 @@ class SessionWorkflowImplTest {
         @Override
         public AgentTurnExecutionOutcome executeTurn(AgentTurnRequest request) {
             return successOutcome(new AgentTurnResult(
-                new AgentDecision(AgentDecisionAction.NO_OP, (SessionMessageInput) null, null, null, Map.of()),
+                new AgentDecision(AgentDecisionAction.NO_OP, (SessionMessageInput) null, null, null, Map.of(), null),
                 Map.of(),
                 null
             ), List.of(new LlmUsageEntry(
@@ -1285,7 +1339,8 @@ class SessionWorkflowImplTest {
                     (SessionMessageInput) null,
                     "agent-2",
                     null,
-                    Map.of("customerId", "customer-1")
+                    Map.of("customerId", "customer-1"),
+                    null
                 ),
                 Map.of(),
                 null

@@ -552,7 +552,7 @@ public class SessionWorkflowImpl implements SessionWorkflow {
                     SessionEventType.SESSION_HUMAN_HANDOFF_STARTED,
                     SessionActorType.AGENT,
                     currentOwnerAgentId,
-                    Map.of(),
+                    humanHandoffStartedPayload(decision),
                     activePlaybookRunId,
                     currentOwnerAgentId
                 );
@@ -750,6 +750,14 @@ public class SessionWorkflowImpl implements SessionWorkflow {
             return DecisionValidation.rejected("reply_content_required");
         }
         return DecisionValidation.accepted(decision);
+    }
+
+    private Map<String, Object> humanHandoffStartedPayload(AgentDecision decision) {
+        String operatorReason = decision.operatorReason();
+        if (operatorReason == null || operatorReason.isBlank()) {
+            return Map.of();
+        }
+        return Map.of("operatorReason", operatorReason.trim());
     }
 
     private DecisionValidation validateSwitchOwnerDecision(

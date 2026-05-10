@@ -197,6 +197,25 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual(["agent-b"], target_schema["enum"])
         self.assertIn("agent-b = Agent B, ops - handle escalations", target_schema["description"])
 
+    def test_should_describe_human_handoff_operator_reason_and_lifecycle_contract(self) -> None:
+        payload = request_payload()
+        payload["currentOwner"]["allowedActions"] = ["SESSION_HUMAN_HANDOFF"]
+        request = AgentTurnRequest.model_validate(payload)
+
+        definitions_by_name = {
+            spec.definition.name: spec.definition
+            for spec in runtime_tool_specs(request)
+        }
+
+        handoff_tool = definitions_by_name["human_handoff"]
+        self.assertIn("terminal lifecycle action", handoff_tool.description)
+        self.assertIn("agent turn stops", handoff_tool.description)
+        self.assertIn("customer-visible assistant reply before calling", handoff_tool.description)
+        self.assertIn("operatorReason is not customer-visible", handoff_tool.description)
+        self.assertIn("operatorReason", handoff_tool.input_schema["properties"])
+        self.assertNotIn("reason", handoff_tool.input_schema["properties"])
+        self.assertFalse(handoff_tool.input_schema["additionalProperties"])
+
     def test_should_hide_connector_type_from_resource_tool_description_fallback(self) -> None:
         payload = request_payload()
         payload["currentOwner"]["tools"][0]["operations"][0]["description"] = ""
@@ -945,6 +964,48 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual("call-3", interaction_entries[2].content_json["tool_calls"][0]["id"])
         self.assertEqual("call-3", interaction_entries[3].content_json["tool_call_id"])
 
+    def test_should_accumulate_human_handoff_operator_reason(self) -> None:
+        request = request_payload()
+        request["turnId"] = "turn-handoff"
+        request["turnExecutionId"] = "exec-handoff"
+        request["currentOwner"]["allowedActions"] = ["SESSION_HUMAN_HANDOFF"]
+
+        events = iter(
+            [
+                OpenAiCompatibleStreamEvent(event_type="content_delta", delta="我会为你转接人工。"),
+                OpenAiCompatibleStreamEvent(
+                    event_type="tool_call_delta",
+                    tool_call_index=0,
+                    tool_call_id="call-handoff",
+                    tool_name="human_handoff",
+                    arguments_delta=json.dumps(
+                        {"operatorReason": "  billing escalation  "},
+                        ensure_ascii=False,
+                    ),
+                ),
+                OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
+                OpenAiCompatibleStreamEvent(event_type="done"),
+            ]
+        )
+
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
+            with agent_runtime_client() as client:
+                response = client.post(
+                    "/agent-turns/execute-stream",
+                    json=request,
+                    headers={"Authorization": "Bearer test-internal-token"},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
+        outcome = frames[-1]["payload"]["outcome"]
+        self.assertTrue(outcome["success"])
+        decision = outcome["result"]["decision"]
+        self.assertEqual("SESSION_HUMAN_HANDOFF", decision["action"])
+        self.assertEqual("billing escalation", decision["operatorReason"])
+        self.assertEqual("我会为你转接人工。", decision["replyMessage"]["blocks"][0]["text"])
+
     def test_should_replay_same_turn_thinking_with_tool_call_as_reasoning_content(self) -> None:
         request = request_payload()
         request["turnId"] = "turn-thinking-tool"
@@ -1619,7 +1680,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         cases = [
             ("switch_owner", {"targetAgentId": "agent-x"}, "switch_owner targetAgentId is not allowed"),
             ("run_playbook", {"playbookId": "pb-x", "playbookInput": {}}, "run_playbook playbookId is not allowed"),
-            ("human_handoff", {"reason": "billing"}, "unsupported streaming tool call: human_handoff"),
+            ("human_handoff", {"operatorReason": "billing"}, "unsupported streaming tool call: human_handoff"),
         ]
 
         for index, (tool_name, arguments, expected_reason) in enumerate(cases, start=1):
