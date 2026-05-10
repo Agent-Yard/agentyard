@@ -567,6 +567,14 @@ class _LifecycleActionCandidate:
     error: str | None = None
 
 
+_LIFECYCLE_ACTION_BY_TOOL = {
+    SWITCH_OWNER_TOOL: "SWITCH_OWNER",
+    RUN_PLAYBOOK_TOOL: "RUN_PLAYBOOK",
+    HUMAN_HANDOFF_TOOL: "SESSION_HUMAN_HANDOFF",
+    SECURITY_BLOCK_TOOL: "SECURITY_BLOCK",
+}
+
+
 _OutcomeToolHandler = Callable[[OpenAiCompatibleStreamToolCall], dict[str, Any]]
 
 
@@ -611,10 +619,10 @@ class _StreamingOutcomeAccumulator:
             APPEND_IMAGE_BLOCK_TOOL: (RuntimeToolKind.MESSAGE_BLOCK_TOOL, self._apply_message_block_tool),
             APPEND_RICH_TEXT_BLOCK_TOOL: (RuntimeToolKind.MESSAGE_BLOCK_TOOL, self._apply_message_block_tool),
             APPEND_CARD_BLOCK_TOOL: (RuntimeToolKind.MESSAGE_BLOCK_TOOL, self._apply_message_block_tool),
-            SWITCH_OWNER_TOOL: (RuntimeToolKind.LIFECYCLE_ACTION_TOOL, self._apply_lifecycle_action_tool),
-            RUN_PLAYBOOK_TOOL: (RuntimeToolKind.LIFECYCLE_ACTION_TOOL, self._apply_lifecycle_action_tool),
-            HUMAN_HANDOFF_TOOL: (RuntimeToolKind.LIFECYCLE_ACTION_TOOL, self._apply_lifecycle_action_tool),
-            SECURITY_BLOCK_TOOL: (RuntimeToolKind.LIFECYCLE_ACTION_TOOL, self._apply_lifecycle_action_tool),
+            SWITCH_OWNER_TOOL: (RuntimeToolKind.LIFECYCLE_ACTION_TOOL, self._apply_switch_owner_tool),
+            RUN_PLAYBOOK_TOOL: (RuntimeToolKind.LIFECYCLE_ACTION_TOOL, self._apply_run_playbook_tool),
+            HUMAN_HANDOFF_TOOL: (RuntimeToolKind.LIFECYCLE_ACTION_TOOL, self._apply_human_handoff_tool),
+            SECURITY_BLOCK_TOOL: (RuntimeToolKind.LIFECYCLE_ACTION_TOOL, self._apply_security_block_tool),
         }
 
     def _require_outcome_tool_handler_contract(self) -> None:
@@ -667,72 +675,95 @@ class _StreamingOutcomeAccumulator:
         self._reply_blocks.append(normalized)
         return {"accepted": True, "blockId": f"tool-block-{len(self._reply_blocks)}"}
 
-    def _apply_lifecycle_action_tool(self, tool_call: OpenAiCompatibleStreamToolCall) -> dict[str, Any]:
-        if tool_call.tool_name == SWITCH_OWNER_TOOL:
-            action = "SWITCH_OWNER"
-            target_agent_id = str(tool_call.arguments.get("targetAgentId") or "").strip()
-            error = None
-            if action not in set(self._request.currentOwner.allowedActions):
-                error = f"action {action} is not allowed"
-            elif not target_agent_id:
-                error = "switch_owner targetAgentId is required"
-            elif target_agent_id not in set(self._request.currentOwner.switchableOwnerAgentIds):
-                error = "switch_owner targetAgentId is not allowed"
-            self._lifecycle_actions.append(
-                _LifecycleActionCandidate(
-                    action=action,
-                    payload={"targetAgentId": target_agent_id},
-                    error=error,
+    def _apply_switch_owner_tool(self, tool_call: OpenAiCompatibleStreamToolCall) -> dict[str, Any]:
+        action = _LIFECYCLE_ACTION_BY_TOOL[SWITCH_OWNER_TOOL]
+        target_agent_id = str(tool_call.arguments.get("targetAgentId") or "").strip()
+        error = _first_error(
+            self._lifecycle_action_allowed_error(action),
+            _missing_value_error(target_agent_id, "switch_owner targetAgentId is required"),
+            _value_not_allowed_error(
+                target_agent_id,
+                set(self._request.currentOwner.switchableOwnerAgentIds),
+                "switch_owner targetAgentId is not allowed",
+            ),
+        )
+        return self._record_lifecycle_action(
+            action=action,
+            payload={"targetAgentId": target_agent_id},
+            error=error,
+        )
+
+    def _apply_run_playbook_tool(self, tool_call: OpenAiCompatibleStreamToolCall) -> dict[str, Any]:
+        action = _LIFECYCLE_ACTION_BY_TOOL[RUN_PLAYBOOK_TOOL]
+        playbook_id = str(tool_call.arguments.get("playbookId") or "").strip()
+        playbook_input = tool_call.arguments.get("playbookInput")
+        error = _first_error(
+            self._lifecycle_action_allowed_error(action),
+            _missing_value_error(playbook_id, "run_playbook playbookId is required"),
+            _value_not_allowed_error(
+                playbook_id,
+                set(self._request.currentOwner.playbookIds),
+                "run_playbook playbookId is not allowed",
+            ),
+            None if isinstance(playbook_input, dict) else "run_playbook playbookInput must be an object",
+        )
+        return self._record_lifecycle_action(
+            action=action,
+            payload={
+                "playbookId": playbook_id,
+                "playbookInput": playbook_input if isinstance(playbook_input, dict) else {},
+            },
+            error=error,
+        )
+
+    def _apply_human_handoff_tool(self, tool_call: OpenAiCompatibleStreamToolCall) -> dict[str, Any]:
+        action = _LIFECYCLE_ACTION_BY_TOOL[HUMAN_HANDOFF_TOOL]
+        operator_reason = _optional_string(tool_call.arguments.get("operatorReason"))
+        payload = {"operatorReason": operator_reason} if operator_reason else {}
+        return self._record_lifecycle_action(
+            action=action,
+            payload=payload,
+            error=self._lifecycle_action_allowed_error(action),
+        )
+
+    def _apply_security_block_tool(self, tool_call: OpenAiCompatibleStreamToolCall) -> dict[str, Any]:
+        categories = _required_string_array(
+            tool_call.arguments.get("categories"),
+            "security_block categories must be a non-empty string array",
+        )
+        self._security_assessment = {
+            "action": "BLOCK",
+            "categories": categories,
+            "reason": _required_trimmed_string(
+                tool_call.arguments.get("reason"),
+                "security_block reason is required",
+            ),
+            "confidence": float(
+                _required_number(
+                    tool_call.arguments.get("confidence"),
+                    "security_block confidence must be a number",
                 )
-            )
-            return _tool_acceptance(error)
-        if tool_call.tool_name == RUN_PLAYBOOK_TOOL:
-            action = "RUN_PLAYBOOK"
-            playbook_id = str(tool_call.arguments.get("playbookId") or "").strip()
-            playbook_input = tool_call.arguments.get("playbookInput")
-            error = None
-            if action not in set(self._request.currentOwner.allowedActions):
-                error = f"action {action} is not allowed"
-            elif not playbook_id:
-                error = "run_playbook playbookId is required"
-            elif playbook_id not in set(self._request.currentOwner.playbookIds):
-                error = "run_playbook playbookId is not allowed"
-            elif not isinstance(playbook_input, dict):
-                error = "run_playbook playbookInput must be an object"
-            self._lifecycle_actions.append(
-                _LifecycleActionCandidate(
-                    action=action,
-                    payload={"playbookId": playbook_id, "playbookInput": playbook_input if isinstance(playbook_input, dict) else {}},
-                    error=error,
-                )
-            )
-            return _tool_acceptance(error)
-        if tool_call.tool_name == HUMAN_HANDOFF_TOOL:
-            action = "SESSION_HUMAN_HANDOFF"
-            operator_reason = _optional_string(tool_call.arguments.get("operatorReason"))
-            error = None if action in set(self._request.currentOwner.allowedActions) else f"action {action} is not allowed"
-            payload = {"operatorReason": operator_reason} if operator_reason else {}
-            self._lifecycle_actions.append(_LifecycleActionCandidate(action=action, payload=payload, error=error))
-            return _tool_acceptance(error)
-        if tool_call.tool_name == SECURITY_BLOCK_TOOL:
-            categories = tool_call.arguments.get("categories")
-            if not isinstance(categories, list) or not all(isinstance(item, str) and item.strip() for item in categories):
-                raise ValueError("security_block categories must be a non-empty string array")
-            reason = str(tool_call.arguments.get("reason") or "").strip()
-            if not reason:
-                raise ValueError("security_block reason is required")
-            confidence = tool_call.arguments.get("confidence")
-            if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):
-                raise ValueError("security_block confidence must be a number")
-            self._security_assessment = {
-                "action": "BLOCK",
-                "categories": [item.strip() for item in categories],
-                "reason": reason,
-                "confidence": float(confidence),
-            }
-            self._lifecycle_actions.append(_LifecycleActionCandidate(action="SECURITY_BLOCK", payload={}))
-            return {"accepted": True}
-        raise ValueError(f"unsupported lifecycle action tool: {tool_call.tool_name}")
+            ),
+        }
+        return self._record_lifecycle_action(
+            action=_LIFECYCLE_ACTION_BY_TOOL[SECURITY_BLOCK_TOOL],
+            payload={},
+        )
+
+    def _record_lifecycle_action(
+        self,
+        *,
+        action: str,
+        payload: dict[str, Any],
+        error: str | None = None,
+    ) -> dict[str, Any]:
+        self._lifecycle_actions.append(_LifecycleActionCandidate(action=action, payload=payload, error=error))
+        return _tool_acceptance(error)
+
+    def _lifecycle_action_allowed_error(self, action: str) -> str | None:
+        if action in set(self._request.currentOwner.allowedActions):
+            return None
+        return f"action {action} is not allowed"
 
     def _build_decision(self) -> AgentDecision:
         reply = self._reply_message()
@@ -1013,6 +1044,37 @@ def _tool_acceptance(error: str | None) -> dict[str, Any]:
     return {"accepted": True}
 
 
+def _first_error(*errors: str | None) -> str | None:
+    return next((error for error in errors if error), None)
+
+
+def _missing_value_error(value: str, error: str) -> str | None:
+    return None if value else error
+
+
+def _value_not_allowed_error(value: str, allowed_values: set[str], error: str) -> str | None:
+    return None if value in allowed_values else error
+
+
+def _required_string_array(value: Any, error: str) -> list[str]:
+    if not isinstance(value, list) or not all(isinstance(item, str) and item.strip() for item in value):
+        raise ValueError(error)
+    return [item.strip() for item in value]
+
+
+def _required_trimmed_string(value: Any, error: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        raise ValueError(error)
+    return text
+
+
+def _required_number(value: Any, error: str) -> int | float:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise ValueError(error)
+    return value
+
+
 def _tool_completion_status(result: dict[str, Any]) -> str:
     return "ACCEPTED" if bool(result.get("accepted", True)) else "REJECTED"
 
@@ -1041,12 +1103,7 @@ def _tool_produced_payload(
 
 
 def _lifecycle_action_name(tool_name: str) -> str:
-    return {
-        SWITCH_OWNER_TOOL: "SWITCH_OWNER",
-        RUN_PLAYBOOK_TOOL: "RUN_PLAYBOOK",
-        HUMAN_HANDOFF_TOOL: "SESSION_HUMAN_HANDOFF",
-        SECURITY_BLOCK_TOOL: "SECURITY_BLOCK",
-    }.get(tool_name, tool_name)
+    return _LIFECYCLE_ACTION_BY_TOOL.get(tool_name, tool_name)
 
 
 def _has_message_content(message: SessionMessageInput | None) -> bool:
