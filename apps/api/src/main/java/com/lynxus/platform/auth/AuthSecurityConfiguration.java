@@ -1,8 +1,11 @@
 package com.lynxus.platform.auth;
 
 import com.lynxus.platform.shared.logging.ApiLogContextFilter;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -14,10 +17,14 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
+import org.springframework.security.web.authentication.AuthenticationFailureHandler;
+import org.springframework.security.web.authentication.SimpleUrlAuthenticationFailureHandler;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.context.SecurityContextRepository;
@@ -27,6 +34,10 @@ import tools.jackson.databind.ObjectMapper;
 @EnableWebSecurity
 @EnableMethodSecurity
 public class AuthSecurityConfiguration {
+    private static final Logger log = LoggerFactory.getLogger(AuthSecurityConfiguration.class);
+    private static final String OAUTH2_FAILURE_REDIRECT_URL = "/login?error";
+    private static final int MAX_LOG_VALUE_LENGTH = 512;
+
     @Bean
     SecurityContextRepository securityContextRepository() {
         return new HttpSessionSecurityContextRepository();
@@ -73,7 +84,10 @@ public class AuthSecurityConfiguration {
             );
 
         if (clientRegistrationRepositoryProvider.getIfAvailable() != null) {
-            http.oauth2Login(oauth2 -> oauth2.successHandler(oidcProvisioningSuccessHandler));
+            http.oauth2Login(oauth2 -> oauth2
+                .successHandler(oidcProvisioningSuccessHandler)
+                .failureHandler(oauth2AuthenticationFailureHandler())
+            );
         }
 
         return http.build();
@@ -95,6 +109,59 @@ public class AuthSecurityConfiguration {
             "Access is denied",
             objectMapper
         );
+    }
+
+    private AuthenticationFailureHandler oauth2AuthenticationFailureHandler() {
+        SimpleUrlAuthenticationFailureHandler delegate = new SimpleUrlAuthenticationFailureHandler(OAUTH2_FAILURE_REDIRECT_URL);
+        return (request, response, exception) -> {
+            OAuth2Error oauth2Error = exception instanceof OAuth2AuthenticationException oauth2Exception
+                ? oauth2Exception.getError()
+                : null;
+            if (oauth2Error != null) {
+                log.warn(
+                    "oauth2 authentication failed: registrationId={}, errorCode={}, errorDescription={}, responseErrorCode={}, responseErrorDescription={}, exception={}",
+                    callbackRegistrationId(request),
+                    sanitizeLogValue(oauth2Error.getErrorCode()),
+                    sanitizeLogValue(oauth2Error.getDescription()),
+                    sanitizeLogValue(request.getParameter("error")),
+                    sanitizeLogValue(request.getParameter("error_description")),
+                    exception.getClass().getSimpleName(),
+                    exception
+                );
+            } else {
+                log.warn(
+                    "oauth2 authentication failed: registrationId={}, responseErrorCode={}, responseErrorDescription={}, exception={}, message={}",
+                    callbackRegistrationId(request),
+                    sanitizeLogValue(request.getParameter("error")),
+                    sanitizeLogValue(request.getParameter("error_description")),
+                    exception.getClass().getSimpleName(),
+                    sanitizeLogValue(exception.getMessage()),
+                    exception
+                );
+            }
+            delegate.onAuthenticationFailure(request, response, exception);
+        };
+    }
+
+    private String callbackRegistrationId(HttpServletRequest request) {
+        String prefix = request.getContextPath() + "/login/oauth2/code/";
+        String requestUri = request.getRequestURI();
+        int start = requestUri.indexOf(prefix);
+        if (start < 0) {
+            return "unknown";
+        }
+        return sanitizeLogValue(requestUri.substring(start + prefix.length()));
+    }
+
+    private String sanitizeLogValue(String value) {
+        if (value == null || value.isBlank()) {
+            return "n/a";
+        }
+        String sanitized = value.replaceAll("[\\r\\n\\t]+", " ");
+        if (sanitized.length() <= MAX_LOG_VALUE_LENGTH) {
+            return sanitized;
+        }
+        return sanitized.substring(0, MAX_LOG_VALUE_LENGTH) + "...";
     }
 
     private void writeProblem(HttpServletResponse response, HttpStatus status, String detail, ObjectMapper objectMapper) throws IOException {

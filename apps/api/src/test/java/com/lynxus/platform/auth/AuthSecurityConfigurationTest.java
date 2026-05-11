@@ -1,5 +1,6 @@
 package com.lynxus.platform.auth;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -7,6 +8,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.lynxus.platform.auth.AuthModels.AuthSource;
@@ -19,10 +21,19 @@ import com.lynxus.platform.shared.ApiExceptionHandler;
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.oauth2.client.registration.ClientRegistration;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
+import org.springframework.security.oauth2.core.oidc.IdTokenClaimNames;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
@@ -30,6 +41,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import tools.jackson.databind.ObjectMapper;
 
+@ExtendWith(OutputCaptureExtension.class)
 class AuthSecurityConfigurationTest {
     @Test
     void shouldRejectUnauthenticatedSessionRequest() throws Exception {
@@ -84,6 +96,36 @@ class AuthSecurityConfigurationTest {
             mockMvc.perform(post("/api/auth/logout").with(user("admin")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.postLogoutRedirectUrl").value("/login"));
+        }
+    }
+
+    @Test
+    void shouldLogOAuth2AuthenticationFailure(CapturedOutput output) throws Exception {
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(
+            TestConfig.class,
+            OAuth2ClientRegistrationTestConfig.class,
+            AuthSecurityConfiguration.class
+        )) {
+            FilterChainProxy securityFilter = new FilterChainProxy(context.getBeansOfType(SecurityFilterChain.class).values().stream().toList());
+            MockMvc mockMvc = MockMvcBuilders.standaloneSetup(context.getBean(AuthController.class))
+                .setControllerAdvice(context.getBean(ApiExceptionHandler.class))
+                .addFilters(securityFilter)
+                .build();
+
+            mockMvc.perform(get("/login/oauth2/code/lynxus")
+                    .param("error", "access_denied")
+                    .param("error_description", "Provider rejected login\nwith newline")
+                    .param("state", "secret-state"))
+                .andExpect(status().isFound())
+                .andExpect(redirectedUrl("/login?error"));
+
+            assertThat(output)
+                .contains("oauth2 authentication failed")
+                .contains("registrationId=lynxus")
+                .contains("errorCode=authorization_request_not_found")
+                .contains("responseErrorCode=access_denied")
+                .contains("responseErrorDescription=Provider rejected login with newline")
+                .doesNotContain("secret-state");
         }
     }
 
@@ -157,6 +199,27 @@ class AuthSecurityConfigurationTest {
         @Bean
         ApiExceptionHandler apiExceptionHandler() {
             return new ApiExceptionHandler();
+        }
+    }
+
+    @Configuration
+    static class OAuth2ClientRegistrationTestConfig {
+        @Bean
+        ClientRegistrationRepository clientRegistrationRepository() {
+            return new InMemoryClientRegistrationRepository(ClientRegistration.withRegistrationId("lynxus")
+                .clientId("client-id")
+                .clientSecret("client-secret")
+                .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+                .scope("openid")
+                .authorizationUri("https://idp.example.test/oauth2/authorize")
+                .tokenUri("https://idp.example.test/oauth2/token")
+                .jwkSetUri("https://idp.example.test/oauth2/jwks")
+                .userInfoUri("https://idp.example.test/oauth2/userinfo")
+                .userNameAttributeName(IdTokenClaimNames.SUB)
+                .clientName("Lynxus")
+                .build());
         }
     }
 }
