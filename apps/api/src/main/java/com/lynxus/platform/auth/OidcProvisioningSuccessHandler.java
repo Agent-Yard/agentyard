@@ -28,6 +28,6 @@ public class OidcProvisioningSuccessHandler implements AuthenticationSuccessHand
     public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response, Authentication authentication)
         throws IOException, ServletException {
         userProvisioningService.provisionExternalUser(externalIdentityValidator.validate(authentication));
-        response.sendRedirect(authRedirectSupport.loginSuccessPath());
+        response.sendRedirect(authRedirectSupport.consumeLoginReturnTo(request));
     }
 }

@@ -74,6 +74,7 @@ import type {
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api';
 export const AUTH_LOGIN_PATH = `${API_BASE}/auth/login`;
 export const AUTH_DEV_BOOTSTRAP_LOGIN_PATH = `${API_BASE}/auth/dev-bootstrap-login`;
+const LOGIN_PATH = '/login';
 
 let unauthorizedHandler: (() => void) | null = null;
 
@@ -92,6 +93,63 @@ export function setUnauthorizedHandler(handler: (() => void) | null) {
 
 export function isUnauthorizedError(error: unknown): error is UnauthorizedError {
   return error instanceof UnauthorizedError;
+}
+
+function containsUnsafeReturnToCharacters(value: string) {
+  return /[\u0000-\u001f\u007f\\]/.test(value);
+}
+
+function containsUnsafePathSegment(path: string) {
+  return path.split('/').some((segment) => {
+    if (segment === '.' || segment === '..') {
+      return true;
+    }
+    try {
+      const decodedSegment = decodeURIComponent(segment);
+      if (containsUnsafeReturnToCharacters(decodedSegment)) {
+        return true;
+      }
+      return decodedSegment === '.' || decodedSegment === '..';
+    } catch {
+      return true;
+    }
+  });
+}
+
+export function isSafeFrontendReturnTo(value: unknown): value is string {
+  if (typeof value !== 'string' || !value || value !== value.trim()) {
+    return false;
+  }
+  if (!value.startsWith('/') || value.startsWith('//') || containsUnsafeReturnToCharacters(value)) {
+    return false;
+  }
+  if (/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(value)) {
+    return false;
+  }
+
+  const path = value.split(/[?#]/, 1)[0];
+  if (containsUnsafePathSegment(path)) {
+    return false;
+  }
+  if (path === LOGIN_PATH || path.startsWith(`${LOGIN_PATH}/`)) {
+    return false;
+  }
+  return path === '/' || path === '/console' || path.startsWith('/console/');
+}
+
+export function appendSafeReturnTo(path: string, returnTo: unknown) {
+  if (!isSafeFrontendReturnTo(returnTo)) {
+    return path;
+  }
+  const separator = path.includes('?') ? '&' : '?';
+  return `${path}${separator}${new URLSearchParams({ returnTo }).toString()}`;
+}
+
+export function buildLoginRedirectPath(route: { path: string; fullPath: string }) {
+  if (route.path === LOGIN_PATH) {
+    return LOGIN_PATH;
+  }
+  return appendSafeReturnTo(LOGIN_PATH, route.fullPath);
 }
 
 async function parseError(response: Response): Promise<never> {

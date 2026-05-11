@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { api, setUnauthorizedHandler, UnauthorizedError } from './api';
+import {
+  api,
+  appendSafeReturnTo,
+  buildLoginRedirectPath,
+  isSafeFrontendReturnTo,
+  setUnauthorizedHandler,
+  UnauthorizedError,
+} from './api';
 
 describe('api client', () => {
   afterEach(() => {
@@ -28,6 +35,44 @@ describe('api client', () => {
 
     await expect(api.getSession()).rejects.toBeInstanceOf(UnauthorizedError);
     expect(onUnauthorized).toHaveBeenCalledOnce();
+  });
+
+  it('builds login redirects with the current safe frontend route as returnTo', () => {
+    expect(buildLoginRedirectPath({
+      path: '/console/runtime',
+      fullPath: '/console/runtime?sessionId=session-1#events',
+    })).toBe('/login?returnTo=%2Fconsole%2Fruntime%3FsessionId%3Dsession-1%23events');
+  });
+
+  it('does not add login as its own returnTo target', () => {
+    expect(buildLoginRedirectPath({
+      path: '/login',
+      fullPath: '/login',
+    })).toBe('/login');
+  });
+
+  it('accepts only same-site frontend returnTo targets', () => {
+    expect(isSafeFrontendReturnTo('/')).toBe(true);
+    expect(isSafeFrontendReturnTo('/console')).toBe(true);
+    expect(isSafeFrontendReturnTo('/console/runtime?sessionId=session-1#events')).toBe(true);
+
+    expect(isSafeFrontendReturnTo('https://example.com/console')).toBe(false);
+    expect(isSafeFrontendReturnTo('//example.com/console')).toBe(false);
+    expect(isSafeFrontendReturnTo('/api/auth/session')).toBe(false);
+    expect(isSafeFrontendReturnTo('/oauth2/authorization/oidc')).toBe(false);
+    expect(isSafeFrontendReturnTo('/login')).toBe(false);
+    expect(isSafeFrontendReturnTo('/console/../api')).toBe(false);
+    expect(isSafeFrontendReturnTo('/console/%2e%2e/api')).toBe(false);
+    expect(isSafeFrontendReturnTo('/console\\runtime')).toBe(false);
+    expect(isSafeFrontendReturnTo('/console/%5cruntime')).toBe(false);
+    expect(isSafeFrontendReturnTo('/console/runtime\nnext')).toBe(false);
+  });
+
+  it('appends safe returnTo values to auth entrypoints', () => {
+    expect(appendSafeReturnTo('/api/auth/login', '/console/runtime?sessionId=session-1#events')).toBe(
+      '/api/auth/login?returnTo=%2Fconsole%2Fruntime%3FsessionId%3Dsession-1%23events',
+    );
+    expect(appendSafeReturnTo('/api/auth/dev-bootstrap-login', '/login')).toBe('/api/auth/dev-bootstrap-login');
   });
 
   it('surfaces conflict details for concurrent session turns', async () => {

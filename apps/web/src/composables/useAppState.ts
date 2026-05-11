@@ -191,12 +191,12 @@ export function useAppState(currentPageKey: Ref<PageKey>) {
       loading.value = true;
     }
     try {
-      const [sessionData, catalogData, sessionList] = await Promise.all([
-        api.getSession(),
+      const sessionData = await api.getSession();
+      session.value = sessionData;
+      const [catalogData, sessionList] = await Promise.all([
         api.getCatalogSummary(),
         api.getRuntimeSessions(),
       ]);
-      session.value = sessionData;
       catalog.value = catalogData;
       catalogRevision.value += 1;
       conversationSessions.value = sessionList;

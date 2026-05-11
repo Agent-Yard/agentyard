@@ -18,6 +18,7 @@ import org.springframework.security.web.authentication.logout.SecurityContextLog
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -42,12 +43,21 @@ public class AuthController {
     }
 
     @GetMapping("/login")
-    public void login(HttpServletResponse response) throws IOException {
+    public void login(
+        @RequestParam(required = false) String returnTo,
+        HttpServletRequest request,
+        HttpServletResponse response
+    ) throws IOException {
+        authRedirectSupport.storeLoginReturnTo(request, returnTo);
         redirectRelative(response, authRedirectSupport.authorizationRequestPath());
     }
 
     @GetMapping("/dev-bootstrap-login")
-    public void devBootstrapLogin(HttpServletRequest request, HttpServletResponse response) throws IOException {
+    public void devBootstrapLogin(
+        @RequestParam(required = false) String returnTo,
+        HttpServletRequest request,
+        HttpServletResponse response
+    ) throws IOException {
         if (!authProperties.devBootstrapEnabled()) {
             throw new NoSuchElementException("development bootstrap login is not enabled");
         }
@@ -60,7 +70,7 @@ public class AuthController {
         context.setAuthentication(authentication);
         SecurityContextHolder.setContext(context);
         securityContextRepository.saveContext(context, request, response);
-        redirectRelative(response, authRedirectSupport.loginSuccessPath());
+        redirectRelative(response, authRedirectSupport.sanitizeReturnTo(returnTo));
     }
 
     @GetMapping("/session")

@@ -13,10 +13,21 @@ import com.lynxus.platform.auth.AuthModels.Role;
 import com.lynxus.platform.auth.AuthModels.UserSession;
 import com.lynxus.platform.shared.ApiExceptionHandler;
 import java.util.List;
+import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.security.oauth2.client.registration.ClientRegistration;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
+import org.springframework.security.oauth2.core.oidc.IdTokenClaimNames;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class AuthControllerTest {
@@ -57,6 +68,93 @@ class AuthControllerTest {
     }
 
     @Test
+    void shouldStoreSafeLoginReturnToBeforeRedirectingToOidc() throws Exception {
+        MockMvc mockMvc = mockMvcWithRealRedirectSupport();
+
+        MvcResult result = mockMvc.perform(get("/api/auth/login")
+                .param("returnTo", "/console/assistants?filter=active#details"))
+            .andExpect(status().is3xxRedirection())
+            .andExpect(redirectedUrl("/oauth2/authorization/lynxus"))
+            .andReturn();
+
+        Assertions.assertThat(result.getRequest().getSession(false))
+            .isNotNull()
+            .extracting(session -> session.getAttribute(AuthRedirectSupport.RETURN_TO_SESSION_ATTRIBUTE))
+            .isEqualTo("/console/assistants?filter=active#details");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "/",
+        "/console",
+        "/console/runs?status=active#latest"
+    })
+    void shouldStoreAllowedLoginReturnToTargets(String returnTo) throws Exception {
+        MockMvc mockMvc = mockMvcWithRealRedirectSupport();
+
+        MvcResult result = mockMvc.perform(get("/api/auth/login").param("returnTo", returnTo))
+            .andExpect(status().is3xxRedirection())
+            .andExpect(redirectedUrl("/oauth2/authorization/lynxus"))
+            .andReturn();
+
+        Assertions.assertThat(result.getRequest().getSession(false))
+            .isNotNull()
+            .extracting(session -> session.getAttribute(AuthRedirectSupport.RETURN_TO_SESSION_ATTRIBUTE))
+            .isEqualTo(returnTo);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "",
+        "https://evil.example/console",
+        "//evil.example/console",
+        "/api/auth/session",
+        "/oauth2/authorization/lynxus",
+        "/login/oauth2/code/lynxus",
+        "/login",
+        "/consoleevil",
+        "/console\n/next",
+        "/console/../api/auth/session",
+        "/console/%2e%2e/api/auth/session",
+        "/console\\evil",
+        "/console/%5Cevil",
+        "/console/%00"
+    })
+    void shouldFallBackForUnsafeLoginReturnTo(String returnTo) throws Exception {
+        MockMvc mockMvc = mockMvcWithRealRedirectSupport();
+
+        MvcResult result = mockMvc.perform(get("/api/auth/login").param("returnTo", returnTo))
+            .andExpect(status().is3xxRedirection())
+            .andExpect(redirectedUrl("/oauth2/authorization/lynxus"))
+            .andReturn();
+
+        Assertions.assertThat(result.getRequest().getSession(false))
+            .isNotNull()
+            .extracting(session -> session.getAttribute(AuthRedirectSupport.RETURN_TO_SESSION_ATTRIBUTE))
+            .isEqualTo("/");
+    }
+
+    @Test
+    void shouldRedirectDevBootstrapLoginToSafeReturnTo() throws Exception {
+        MockMvc mockMvc = mockMvcWithRealRedirectSupport();
+
+        mockMvc.perform(get("/api/auth/dev-bootstrap-login")
+                .param("returnTo", "/console/runs?status=active#latest"))
+            .andExpect(status().is3xxRedirection())
+            .andExpect(redirectedUrl("/console/runs?status=active#latest"));
+    }
+
+    @Test
+    void shouldRedirectDevBootstrapLoginToLoginSuccessPathForUnsafeReturnTo() throws Exception {
+        MockMvc mockMvc = mockMvcWithRealRedirectSupport();
+
+        mockMvc.perform(get("/api/auth/dev-bootstrap-login")
+                .param("returnTo", "https://evil.example.test/console"))
+            .andExpect(status().is3xxRedirection())
+            .andExpect(redirectedUrl("/"));
+    }
+
+    @Test
     void shouldReturnPostLogoutRedirectUrl() throws Exception {
         AuthService authService = mock(AuthService.class);
         AuthRedirectSupport redirectSupport = mock(AuthRedirectSupport.class);
@@ -81,6 +179,35 @@ class AuthControllerTest {
             new AuthProperties(new AuthProperties.Bootstrap("admin"), Role.BUSINESS_USER, true, "/"),
             authRedirectSupport,
             securityContextRepository
+        );
+    }
+
+    private MockMvc mockMvcWithRealRedirectSupport() {
+        return MockMvcBuilders.standaloneSetup(controller(mock(AuthService.class), realRedirectSupport()))
+            .setControllerAdvice(new ApiExceptionHandler())
+            .build();
+    }
+
+    private AuthRedirectSupport realRedirectSupport() {
+        @SuppressWarnings("unchecked")
+        ObjectProvider<ClientRegistrationRepository> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(new InMemoryClientRegistrationRepository(ClientRegistration.withRegistrationId("lynxus")
+            .clientId("client-id")
+            .clientSecret("client-secret")
+            .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .redirectUri("{baseUrl}/login/oauth2/code/{registrationId}")
+            .scope("openid")
+            .authorizationUri("https://idp.example.test/oauth2/authorize")
+            .tokenUri("https://idp.example.test/oauth2/token")
+            .jwkSetUri("https://idp.example.test/oauth2/jwks")
+            .userInfoUri("https://idp.example.test/oauth2/userinfo")
+            .userNameAttributeName(IdTokenClaimNames.SUB)
+            .clientName("Lynxus")
+            .build()));
+        return new AuthRedirectSupport(
+            new AuthProperties(new AuthProperties.Bootstrap("admin"), Role.BUSINESS_USER, true, "/"),
+            provider
         );
     }
 }

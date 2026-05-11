@@ -28,6 +28,7 @@ import org.springframework.security.web.authentication.SimpleUrlAuthenticationFa
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.context.SecurityContextRepository;
+import org.springframework.security.web.savedrequest.NullRequestCache;
 import tools.jackson.databind.ObjectMapper;
 
 @Configuration
@@ -56,6 +57,7 @@ public class AuthSecurityConfiguration {
             .csrf(AbstractHttpConfigurer::disable)
             .securityContext(context -> context.securityContextRepository(securityContextRepository))
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+            .requestCache(requestCache -> requestCache.requestCache(new NullRequestCache()))
             .addFilterAfter(apiLogContextFilter, SecurityContextHolderFilter.class)
             .authorizeHttpRequests(authorize -> authorize
                 .requestMatchers(

@@ -1,16 +1,20 @@
 <script setup lang="ts">
-import { AUTH_DEV_BOOTSTRAP_LOGIN_PATH, AUTH_LOGIN_PATH } from '../services/api';
+import { computed } from 'vue';
+import { useRoute } from 'vue-router';
+import { appendSafeReturnTo, AUTH_DEV_BOOTSTRAP_LOGIN_PATH, AUTH_LOGIN_PATH } from '../services/api';
 import { isNonPrdDeployEnv, resolveDeployEnv } from '../config/deployEnv';
 
 const deployEnv = resolveDeployEnv(import.meta.env.VITE_DEPLOY_ENV, import.meta.env.MODE);
 const showDevBootstrapLogin = isNonPrdDeployEnv(deployEnv);
+const route = useRoute();
+const returnTo = computed(() => typeof route.query.returnTo === 'string' ? route.query.returnTo : null);
 
 function goToOidcLogin() {
-  window.location.assign(AUTH_LOGIN_PATH);
+  window.location.assign(appendSafeReturnTo(AUTH_LOGIN_PATH, returnTo.value));
 }
 
 function goToDevBootstrapLogin() {
-  window.location.assign(AUTH_DEV_BOOTSTRAP_LOGIN_PATH);
+  window.location.assign(appendSafeReturnTo(AUTH_DEV_BOOTSTRAP_LOGIN_PATH, returnTo.value));
 }
 </script>
 

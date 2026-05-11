@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { reconcileRuntimeDraftsWithDetail } from './useAppState';
-import type { RuntimeDraftMessage, SessionRuntimeDetail } from '../types';
+import { ref } from 'vue';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { reconcileRuntimeDraftsWithDetail, useAppState } from './useAppState';
+import { api } from '../services/api';
+import type { CatalogSummary, RuntimeDraftMessage, SessionRuntimeDetail, UserSession } from '../types';
+import type { PageKey } from '../config/navigation';
 
 function runtimeDraft(messageId: string, sessionId = 'session-1'): RuntimeDraftMessage {
   return {
@@ -63,7 +66,38 @@ function runtimeDetail(messageIds: string[], sessionId = 'session-1'): SessionRu
   };
 }
 
+function userSession(): UserSession {
+  return {
+    userId: 'user-1',
+    displayName: 'User One',
+    currentRole: 'PLATFORM_ADMIN',
+    availableRoles: ['PLATFORM_ADMIN'],
+  };
+}
+
+function emptyCatalog(): CatalogSummary {
+  return {
+    domains: [],
+    scenarios: [],
+    assistants: [],
+    agents: [],
+    resources: [],
+    knowledgeBases: [],
+    resourceCenter: {
+      totalResources: 0,
+      domainSharedResources: 0,
+      privateResources: 0,
+      references: [],
+    },
+    resourceBlueprints: [],
+  };
+}
+
 describe('useAppState runtime draft lifecycle', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('keeps live drafts when session snapshots do not contain the corresponding durable message', () => {
     const liveDraft = runtimeDraft('session-message-reply-1');
     const otherDraft = runtimeDraft('session-message-other', 'session-2');
@@ -83,5 +117,40 @@ describe('useAppState runtime draft lifecycle', () => {
       [finalizedDraft, liveDraft, otherSessionDraft],
       runtimeDetail(['session-message-reply-1']),
     )).toEqual([liveDraft, otherSessionDraft]);
+  });
+
+  it('checks the session before loading catalog and runtime data', async () => {
+    const calls: string[] = [];
+    vi.spyOn(api, 'getSession').mockImplementation(async () => {
+      calls.push('session');
+      return userSession();
+    });
+    vi.spyOn(api, 'getCatalogSummary').mockImplementation(async () => {
+      calls.push('catalog');
+      return emptyCatalog();
+    });
+    vi.spyOn(api, 'getRuntimeSessions').mockImplementation(async () => {
+      calls.push('runtime-sessions');
+      return [];
+    });
+
+    const state = useAppState(ref<PageKey>('runtime'));
+
+    await state.refresh(true);
+
+    expect(calls[0]).toBe('session');
+    expect(calls.slice(1).sort()).toEqual(['catalog', 'runtime-sessions']);
+  });
+
+  it('does not load catalog or runtime data when the session check fails', async () => {
+    vi.spyOn(api, 'getSession').mockRejectedValue(new Error('Authentication is required'));
+    const getCatalogSummary = vi.spyOn(api, 'getCatalogSummary').mockResolvedValue(emptyCatalog());
+    const getRuntimeSessions = vi.spyOn(api, 'getRuntimeSessions').mockResolvedValue([]);
+
+    const state = useAppState(ref<PageKey>('runtime'));
+
+    await expect(state.refresh(true)).rejects.toThrow('Authentication is required');
+    expect(getCatalogSummary).not.toHaveBeenCalled();
+    expect(getRuntimeSessions).not.toHaveBeenCalled();
   });
 });

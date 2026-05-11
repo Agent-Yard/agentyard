@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -14,10 +15,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.lynxus.platform.auth.AuthModels.AuthSource;
 import com.lynxus.platform.auth.AuthModels.PlatformUser;
 import com.lynxus.platform.auth.AuthModels.Role;
-import com.lynxus.platform.auth.AuthModels.UserStatus;
-import com.lynxus.platform.shared.logging.ApiLogContextFilter;
 import com.lynxus.platform.auth.AuthModels.UserSession;
+import com.lynxus.platform.auth.AuthModels.UserStatus;
 import com.lynxus.platform.shared.ApiExceptionHandler;
+import com.lynxus.platform.shared.logging.ApiLogContextFilter;
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -27,6 +28,7 @@ import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
@@ -38,6 +40,7 @@ import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import tools.jackson.databind.ObjectMapper;
 
@@ -46,15 +49,18 @@ class AuthSecurityConfigurationTest {
     @Test
     void shouldRejectUnauthenticatedSessionRequest() throws Exception {
         try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(TestConfig.class, AuthSecurityConfiguration.class)) {
-            FilterChainProxy securityFilter = new FilterChainProxy(context.getBeansOfType(SecurityFilterChain.class).values().stream().toList());
-            MockMvc mockMvc = MockMvcBuilders.standaloneSetup(context.getBean(AuthController.class))
-                .setControllerAdvice(context.getBean(ApiExceptionHandler.class))
-                .addFilters(securityFilter)
-                .build();
+            assertUnauthenticatedSessionRequestReturnsProblem(mockMvc(context));
+        }
+    }
 
-            mockMvc.perform(get("/api/auth/session"))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.detail").value("Authentication is required"));
+    @Test
+    void shouldRejectUnauthenticatedSessionRequestWithOAuth2Client() throws Exception {
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(
+            TestConfig.class,
+            OAuth2ClientRegistrationTestConfig.class,
+            AuthSecurityConfiguration.class
+        )) {
+            assertUnauthenticatedSessionRequestReturnsProblem(mockMvc(context));
         }
     }
 
@@ -68,13 +74,8 @@ class AuthSecurityConfigurationTest {
                 Role.PLATFORM_ADMIN,
                 List.of(Role.PLATFORM_ADMIN)
             ));
-            FilterChainProxy securityFilter = new FilterChainProxy(context.getBeansOfType(SecurityFilterChain.class).values().stream().toList());
-            MockMvc mockMvc = MockMvcBuilders.standaloneSetup(context.getBean(AuthController.class))
-                .setControllerAdvice(context.getBean(ApiExceptionHandler.class))
-                .addFilters(securityFilter)
-                .build();
 
-            mockMvc.perform(get("/api/auth/session").with(user("admin")))
+            mockMvc(context).perform(get("/api/auth/session").with(user("admin")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.userId").value("user-admin"));
         }
@@ -87,13 +88,8 @@ class AuthSecurityConfigurationTest {
             AuthRedirectSupport authRedirectSupport = context.getBean(AuthRedirectSupport.class);
             when(authService.currentSession()).thenThrow(new IllegalStateException("current user is disabled: admin"));
             when(authRedirectSupport.postLogoutRedirectUrl(any(), any())).thenReturn("/login");
-            FilterChainProxy securityFilter = new FilterChainProxy(context.getBeansOfType(SecurityFilterChain.class).values().stream().toList());
-            MockMvc mockMvc = MockMvcBuilders.standaloneSetup(context.getBean(AuthController.class))
-                .setControllerAdvice(context.getBean(ApiExceptionHandler.class))
-                .addFilters(securityFilter)
-                .build();
 
-            mockMvc.perform(post("/api/auth/logout").with(user("admin")))
+            mockMvc(context).perform(post("/api/auth/logout").with(user("admin")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.postLogoutRedirectUrl").value("/login"));
         }
@@ -106,13 +102,7 @@ class AuthSecurityConfigurationTest {
             OAuth2ClientRegistrationTestConfig.class,
             AuthSecurityConfiguration.class
         )) {
-            FilterChainProxy securityFilter = new FilterChainProxy(context.getBeansOfType(SecurityFilterChain.class).values().stream().toList());
-            MockMvc mockMvc = MockMvcBuilders.standaloneSetup(context.getBean(AuthController.class))
-                .setControllerAdvice(context.getBean(ApiExceptionHandler.class))
-                .addFilters(securityFilter)
-                .build();
-
-            mockMvc.perform(get("/login/oauth2/code/lynxus")
+            mockMvc(context).perform(get("/login/oauth2/code/lynxus")
                     .param("error", "access_denied")
                     .param("error_description", "Provider rejected login\nwith newline")
                     .param("state", "secret-state"))
@@ -127,6 +117,28 @@ class AuthSecurityConfigurationTest {
                 .contains("responseErrorDescription=Provider rejected login with newline")
                 .doesNotContain("secret-state");
         }
+    }
+
+    private void assertUnauthenticatedSessionRequestReturnsProblem(MockMvc mockMvc) throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/auth/session"))
+            .andExpect(status().isUnauthorized())
+            .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+            .andExpect(jsonPath("$.title").value("Unauthorized"))
+            .andExpect(jsonPath("$.status").value(401))
+            .andExpect(jsonPath("$.detail").value("Authentication is required"))
+            .andReturn();
+
+        assertThat(result.getRequest().getSession(false)).isNull();
+    }
+
+    private MockMvc mockMvc(AnnotationConfigApplicationContext context) {
+        FilterChainProxy securityFilter = new FilterChainProxy(
+            context.getBeansOfType(SecurityFilterChain.class).values().stream().toList()
+        );
+        return MockMvcBuilders.standaloneSetup(context.getBean(AuthController.class))
+            .setControllerAdvice(context.getBean(ApiExceptionHandler.class))
+            .addFilters(securityFilter)
+            .build();
     }
 
     @Configuration
