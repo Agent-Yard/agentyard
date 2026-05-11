@@ -1,6 +1,6 @@
 # Lynxus Extension SDK for JVM
 
-JVM SDK for Extension Plane implementations.
+JVM SDK for Extension Plane implementations. It provides protocol constants, HTTP/header helpers, `ExtensionError` parsing, canonical JSON / descriptor digest helpers, static registration loading, manifest validation, and generated Jackson-friendly protocol DTOs.
 
 `packages/extension-protocol` is the source of truth for the extension boundary protocol.
 

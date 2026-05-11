@@ -15,6 +15,7 @@ apps/
   channel-gateway/   Spring Boot channel gateway and channel provider runtime boundary
   worker/            Temporal workflow worker
   web/               Vue + Ant Design Vue console
+  site/              Vite static project site / landing page
   agent-runtime/     Python execution runtime
   knowledge-service/ Python knowledge service
 demo/                Just for user demo data, no need to read this unless required

@@ -26,7 +26,7 @@
 
 推荐做法：
 
-1. 复制 [`.env.dev.example`](/Users/eric/projects/lynxus/.env.dev.example) 为根目录 `.env.dev`
+1. 复制 [`.env.dev.example`](../../.env.dev.example) 为根目录 `.env.dev`
 2. 填好服务器域名、内部鉴权 token、数据库/对象存储/模型密钥
 3. 如果是共享环境，优先把 `LYNXUS_AUTH_DEV_BOOTSTRAP_ENABLED` 设为 `false`，并补齐 OIDC 配置
 
@@ -53,9 +53,9 @@
 
 新增编排文件：
 
-- [docker-compose.yml](/Users/eric/projects/lynxus/deploy/dev/docker-compose.yml)
+- [`deploy/dev/docker-compose.yml`](../../deploy/dev/docker-compose.yml)
 
-其中 Web 容器通过 [web.conf](/Users/eric/projects/lynxus/deploy/dev/web.conf) 反向代理：
+其中 Web 容器通过 [`deploy/dev/web.conf`](../../deploy/dev/web.conf) 反向代理：
 
 - `/api`
 - `/oauth2`
@@ -94,7 +94,7 @@
 - `LYNXUS_WEB_HMR_CLIENT_PORT`
 - `LYNXUS_WEB_HMR_PORT`：仅当 HMR websocket 需要走单独上游端口时再设置
 
-当前统一由 [vite.config.ts](/Users/eric/projects/lynxus/apps/web/vite.config.ts) 读取；`local` 不配置这些变量时会继续使用 Vite 默认行为。
+当前统一由 [`apps/web/vite.config.ts`](../../apps/web/vite.config.ts) 读取；`local` 不配置这些变量时会继续使用 Vite 默认行为。
 
 编排内容包括：
 
@@ -108,7 +108,9 @@
 - Worker
 - Knowledge Service
 - Agent Runtime
-- Web
+- Web 控制台
+
+`deploy/dev` 针对控制台与运行主链路，不包含 `apps/site` 静态项目站点。站点可通过 `pnpm --filter @lynxus/site dev` 或 `pnpm build:site` 单独处理。
 
 Knowledge Service 使用通用 S3-compatible object storage 配置；`dev` 编排默认将 provider 固定为 `minio`，endpoint 固定为 Docker 网络内的 `http://minio:9000`，并允许自动创建知识库 bucket。
 

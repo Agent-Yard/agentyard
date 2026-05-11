@@ -21,6 +21,7 @@
 ## 应用划分
 
 - `apps/web`：Vue 控制台，承接配置态页面、知识与资源工作台、运行态页面
+- `apps/site`：Vite 静态项目站点 / 官网落地页，不承载控制台治理与运行观测主链路
 - `apps/api`：Spring Boot 控制面 API，负责目录治理、发布、认证与 `session-runtime` 聚合查询
 - `apps/channel-gateway`：Spring Boot Channel Provider 运行时，承载入站事件归一化、出站投递与 provider 注册（飞书等）
 - `apps/worker`：Temporal worker，负责 `SessionWorkflow`、`PlaybookWorkflow` 与知识相关 workflow / activity
@@ -28,7 +29,7 @@
 - `apps/knowledge-service`：Python 知识服务，负责知识源对象、导入任务、文档切片、索引快照与检索数据
 - `packages/contracts-jvm`：JVM 侧共享 session / playbook / runtime 契约
 - `packages/extension-protocol`：Extension Plane 协议（Tool Connector / Channel Provider 注册、契约样例与 JSON Schema）
-- `packages/extension-sdk-jvm` / `packages/extension-sdk-python`：扩展面 SDK 骨架
+- `packages/extension-sdk-jvm` / `packages/extension-sdk-python`：扩展面 SDK，提供协议常量、canonical JSON / digest、registration、manifest 校验与生成模型接入边界
 - `packages/persistence-jvm`：JVM 侧共享 PostgreSQL persistence 基座，承载 jOOQ generated schema、shared store 与 JSONB helper
 - `packages/shared-redis-jvm`：JVM 侧共享 Redis keyspace、JSON codec、Pub/Sub bus 与分布式锁
 - `packages/contracts`：TypeScript 合同类型与 OpenAPI 文档
@@ -42,8 +43,8 @@
 当前仓库的构建方式是混合式的：
 
 - `apps/api`、`apps/channel-gateway`、`apps/worker`、`packages/contracts-jvm`、`packages/persistence-jvm`、`packages/shared-redis-jvm`、`packages/extension-sdk-jvm` 由根目录 Gradle 多项目管理
-- `apps/web`、`packages/contracts` 由 pnpm workspace 管理
-- `apps/agent-runtime`、`apps/knowledge-service`、`packages/python-common`、`packages/extension-sdk-python` 通过根目录 `uv` workspace 管理
+- `pnpm-workspace.yaml` 覆盖 `apps/*` 与 `packages/*`；当前实际 Node 包包括 `apps/web`、`apps/site`、`packages/extension-protocol`。`packages/contracts` 只保留 OpenAPI 与 TypeScript 契约源码，不是独立 pnpm package
+- `apps/agent-runtime`、`apps/knowledge-service`、`packages/extension-protocol`、`packages/extension-sdk-python`、`packages/python-common` 通过根目录 `uv` workspace 管理
 
 ## 前端导航
 
@@ -154,7 +155,7 @@ Java core 数据访问当前以 `Flyway + jOOQ + packages/persistence-jvm` 为�
 ## 当前边界
 
 - 认证已经进入 OIDC-first 模式，但开发态仍保留 bootstrap 登录旁路
-- session 运行态已落盘，但还没有订阅式更新
+- session 运行态已落盘，session 级 SSE 已接入；仍缺长 session 分页、派生视图和更细粒度订阅
 - Web 运行页仍缺人工操作面板
 - 资源执行层优先保证本地联调和演示闭环，生产级安全治理仍需补齐
 - S3-compatible object storage / pgvector 已进入知识导入与检索正式链路；本地与 dev 使用 MinIO，测试环境可切 AWS S3，线上职责、备份与监控仍需继续补齐
@@ -165,11 +166,11 @@ Java core 数据访问当前以 `Flyway + jOOQ + packages/persistence-jvm` 为�
 
 - pnpm：9.12.0
 - Java toolchain：25
-- Spring Boot：4.0.1
+- Spring Boot：4.0.6（应用插件基线；部分共享包仍通过 Spring Boot dependency BOM 4.0.1 对齐依赖）
 - Vue：3.5.13
 - Vite：8
 - TypeScript：5.9
-- Temporal SDK：1.32.1
+- Temporal SDK：1.34.0
 - FastAPI：0.115.12
 - Uvicorn：0.34.0
 - Ant Design Vue：4.2.6

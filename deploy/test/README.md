@@ -53,15 +53,15 @@ docker compose --env-file test/.env -f test/compose/api.yml up -d
 
 ## Web
 
-The web frontend is not deployed with Docker Compose. Build static assets in the release pipeline and publish them to the existing Nginx host. See [web/README.md](/Users/eric/projects/lynxus/deploy/test/web/README.md).
+The web console frontend is not deployed with Docker Compose. Build `apps/web` static assets in the release pipeline and publish them to the existing Nginx host. See [web/README.md](web/README.md). This package does not deploy `apps/site`.
 
 ## Infrastructure Dependencies
 
 The test deployment uses existing Redis, S3-compatible object storage, and Nginx.
 
-PostgreSQL is listed as its own module because test may either use a managed/existing PostgreSQL service or deploy a dedicated PostgreSQL host. Deploy it with [compose/postgres.yml](/Users/eric/projects/lynxus/deploy/test/compose/postgres.yml) when the test environment does not already provide PostgreSQL.
+PostgreSQL is listed as its own module because test may either use a managed/existing PostgreSQL service or deploy a dedicated PostgreSQL host. Deploy it with [compose/postgres.yml](compose/postgres.yml) when the test environment does not already provide PostgreSQL.
 
-The PostgreSQL module uses [../common/postgres-bootstrap/init-databases.sh](/Users/eric/projects/lynxus/deploy/common/postgres-bootstrap/init-databases.sh) through the published `common + test` layout. Its one-shot bootstrap service creates:
+The PostgreSQL module uses [../common/postgres-bootstrap/init-databases.sh](../common/postgres-bootstrap/init-databases.sh) through the published `common + test` layout. Its one-shot bootstrap service creates:
 
 - `lynxus_core`
 - `lynxus_channel_gateway`
@@ -72,11 +72,11 @@ The PostgreSQL module uses [../common/postgres-bootstrap/init-databases.sh](/Use
 
 It also enables `vector` and `pg_trgm` in the knowledge database.
 
-Temporal is included as its own module because test has no existing Temporal service. Deploy it on its own host or a dedicated runtime host with [compose/temporal.yml](/Users/eric/projects/lynxus/deploy/test/compose/temporal.yml).
+Temporal is included as its own module because test has no existing Temporal service. Deploy it on its own host or a dedicated runtime host with [compose/temporal.yml](compose/temporal.yml).
 
-Temporal UI is exposed through a Caddy gateway with basic authentication. Deploy it with [compose/temporal-ui.yml](/Users/eric/projects/lynxus/deploy/test/compose/temporal-ui.yml) on the host that should expose the UI endpoint.
+Temporal UI is exposed through a Caddy gateway with basic authentication. Deploy it with [compose/temporal-ui.yml](compose/temporal-ui.yml) on the host that should expose the UI endpoint.
 
-Sandbox is also a separate module. Deploy it with [compose/sandbox.yml](/Users/eric/projects/lynxus/deploy/test/compose/sandbox.yml).
+Sandbox is also a separate module. Deploy it with [compose/sandbox.yml](compose/sandbox.yml).
 
 ## Startup Order
 

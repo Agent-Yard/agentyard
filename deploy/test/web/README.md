@@ -12,4 +12,4 @@ Publish `apps/web/dist/` to the web host, for example:
 /opt/lynxus/web/
 ```
 
-Use [nginx.conf.example](/Users/eric/projects/lynxus/deploy/test/web/nginx.conf.example) as the Nginx reference. The web host does not need Docker Compose for the frontend.
+Use [nginx.conf.example](nginx.conf.example) as the Nginx reference. The web host does not need Docker Compose for the console frontend. This package deploys `apps/web/dist/`, not `apps/site`.

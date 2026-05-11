@@ -76,7 +76,7 @@ Tool Connector 的职责是把 Tool 的业务操作映射到具体接入协议�
    - credential 字段缺失
    - response 必须是 JSON object
 
-   API 测试优先覆盖 `CatalogServiceTest` 中 Tool config normalization；Web 至少通过 `pnpm --dir apps/web lint`，复杂字段定义应补组件测试。
+   API 测试优先覆盖 `CatalogServiceTest` 中 Tool config normalization；Web 至少通过 `pnpm --filter @lynxus/web lint`，复杂字段定义应补组件测试。
 
 ## 配置模型约定
 
@@ -111,8 +111,8 @@ Tool resource version 的 connector 配置统一为：
 ## 推荐验证命令
 
 ```bash
-PYTHONPATH=apps/agent-runtime uv run pytest apps/agent-runtime/tests -q
+uv run --package lynxus-agent-runtime pytest apps/agent-runtime/tests -q
 ./gradlew :apps:api:test --tests com.lynxus.platform.catalog.CatalogServiceTest
-pnpm --dir apps/web lint
-pnpm --dir apps/web test
+pnpm --filter @lynxus/web lint
+pnpm --filter @lynxus/web test
 ```

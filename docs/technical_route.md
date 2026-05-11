@@ -2,16 +2,17 @@
 
 ## 当前仓库已落地
 
-- 前端：Vue 3.5 + TypeScript 5.9 + Vite 8 + Ant Design Vue 4
-- 控制面后端：Java 25 + Spring Boot 4.0.1
-- 长流程托管：Temporal SDK 1.32.1
+- 前端控制台：Vue 3.5 + TypeScript 5.9 + Vite 8 + Ant Design Vue 4
+- 静态项目站点：`apps/site` + Vite 8
+- 控制面后端：Java 25 + Spring Boot 4.0.6（应用插件基线）
+- 长流程托管：Temporal SDK 1.34.0
 - 执行运行时：Python + FastAPI
 - 知识检索服务：Python + FastAPI + PostgreSQL `pgvector + pg_trgm + tsvector`
 - 目录与运行态持久化：PostgreSQL typed schema + JSONB 嵌套配置
 - 契约层：`packages/contracts` + `packages/contracts-jvm`
 - 扩展面协议：`packages/extension-protocol` + `packages/extension-sdk-jvm` + `packages/extension-sdk-python`
 - 持久化与共享状态层：`packages/persistence-jvm` + `packages/shared-redis-jvm`
-- 启动脚本：根目录 `scripts/*.sh` 统一装载环境变量并拉起各应用
+- 启动脚本：`scripts/local/*` 与 `scripts/dev/*` 统一装载环境变量并拉起主链路应用
 
 ## 当前运行架构
 
@@ -21,6 +22,7 @@
 - `apps/agent-runtime`：无状态 owner agent 单轮推理服务，执行 `AgentTurnRequest -> AgentTurnResult`，并承担 playbook `TOOL_TASK` 执行
 - `apps/knowledge-service`：知识导入、索引构建、检索与按快照读取
 - `apps/web`：配置态与运行态控制台，运行页围绕 session event / owner / playbook / handoff 组织
+- `apps/site`：独立静态项目站点 / 官网落地页，不参与 session-runtime 主链路
 
 Tool Connector 与 Channel Provider 通过 `packages/extension-protocol` 定义的 *Extension Plane* 协议接入；核心服务自动注册由 `LYNXUS_CHANNEL_GATEWAY_BASE_URL` / `LYNXUS_AGENT_RUNTIME_BASE_URL` 提供，运营方扩展通过 `LYNXUS_EXTENSION_REGISTRATION_FILE` 加载。
 

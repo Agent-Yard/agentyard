@@ -155,6 +155,9 @@ Lynxus 当前的解法，是把这些问题收束到统一平台结构中：
 - `apps/web`
   - Vue 控制台
   - 提供配置治理、知识与资源管理、运行与观测界面
+- `apps/site`
+  - Vite 静态项目站点 / 官网落地页
+  - 不参与控制台治理与 session-runtime 主链路
 
 Tool Connector 与 Channel Provider 通过 `packages/extension-protocol` 定义的 Extension Plane 协议接入，业务系统的鉴权、签名、长连接细节不再泄漏到 Agent / Playbook / Session。
 

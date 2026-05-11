@@ -8,14 +8,15 @@ apps/
   channel-gateway/      Channel Provider 运行时（飞书等渠道接入）
   worker/               Temporal workflow worker
   web/                  Vue + Ant Design Vue 控制台
+  site/                 Vite 静态项目站点 / 官网落地页
   agent-runtime/        Python owner agent / playbook tool task 执行运行时
   knowledge-service/    Python 知识导入、快照构建与检索服务
 packages/
   contracts/             OpenAPI 与 TypeScript 合同
   contracts-jvm/         JVM 侧 session / playbook / runtime 契约
   extension-protocol/    Extension Plane 协议（OpenAPI + JSON Schema + 契约样例）
-  extension-sdk-jvm/     JVM SDK 骨架
-  extension-sdk-python/  Python SDK 骨架
+  extension-sdk-jvm/     JVM Extension SDK（协议常量、DTO 生成、manifest 校验、registration helper）
+  extension-sdk-python/  Python Extension SDK（协议常量、canonical JSON、digest、registration 与 manifest 校验 helper）
   persistence-jvm/       JVM 侧 PostgreSQL 持久化基座与 jOOQ schema
   python-common/         Python 服务共享工具库
   shared-redis-jvm/      JVM 侧共享 Redis keyspace / lock / pubsub / codec
@@ -39,8 +40,8 @@ demo/                 演示素材目录，不参与当前主实现说明
 ## 2. 构建与运行基座
 
 - Gradle 多项目：`apps/api`、`apps/channel-gateway`、`apps/worker`、`packages/contracts-jvm`、`packages/persistence-jvm`、`packages/shared-redis-jvm`、`packages/extension-sdk-jvm`
-- pnpm workspace：`apps/web`、`packages/contracts`
-- uv workspace：`apps/agent-runtime`、`apps/knowledge-service`、`packages/python-common`、`packages/extension-sdk-python`
+- pnpm workspace：`pnpm-workspace.yaml` 覆盖 `apps/*` 与 `packages/*`；当前实际 Node 包包括 `apps/web`、`apps/site`、`packages/extension-protocol`。`packages/contracts` 只保留 OpenAPI 与 TypeScript 契约源码，不是独立 pnpm package。
+- uv workspace：`apps/agent-runtime`、`apps/knowledge-service`、`packages/extension-protocol`、`packages/extension-sdk-python`、`packages/python-common`
 - 本地依赖：PostgreSQL、MinIO（S3-compatible object storage 本地实现）、Redis、Temporal、sandbox
 - PostgreSQL 启动时会自动准备 `lynxus_core`、`lynxus_channel_gateway`、`lynxus_knowledge`、`lynxus_agent_runtime` 四个库，按服务边界隔离
 
@@ -173,8 +174,9 @@ demo/                 演示素材目录，不参与当前主实现说明
 - `apps/agent-runtime` 负责 owner 单轮推理与 playbook tool task 执行
 - `apps/knowledge-service` 负责 source/job/document/snapshot 检索链路
 - `apps/web` 负责治理控制台与运行观测
+- `apps/site` 负责项目静态站点 / 官网落地页，不承载控制台治理与运行观测主链路
 - `packages/extension-protocol` 定义 Extension Plane 协议（Tool Connector / Channel Provider 注册与契约）
-- extension service 模板已从 monorepo 移出，作为独立项目 `lynxus-extension-boilerplate` 维护；本仓库只保留协议、SDK 与平台侧接入边界
+- extension service 模板已从 monorepo 移出，作为独立项目 `lynxus-extension-boilerplate` 维护；本仓库只保留协议、SDK、契约校验与平台侧接入边界
 
 ## 7. 一句话总结
 

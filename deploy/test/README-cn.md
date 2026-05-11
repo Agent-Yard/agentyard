@@ -53,15 +53,15 @@ docker compose --env-file test/.env -f test/compose/api.yml up -d
 
 ## Web 前端
 
-Web 前端不使用 Docker Compose 部署。在发布流水线中构建静态资源，并将其发布到现有的 Nginx 主机上。详见 [web/README.md](/Users/eric/projects/lynxus/deploy/test/web/README.md)。
+Web 控制台前端不使用 Docker Compose 部署。在发布流水线中构建 `apps/web` 静态资源，并将其发布到现有的 Nginx 主机上。详见 [web/README.md](web/README.md)。本测试部署包不部署 `apps/site`。
 
 ## 基础设施依赖
 
 测试部署使用现有的 Redis、兼容 S3 的对象存储以及 Nginx。
 
-PostgreSQL 作为一个独立的模块列出，因为测试环境可能使用托管或现有的 PostgreSQL 服务，也可能部署一个专用的 PostgreSQL 主机。当测试环境尚未提供 PostgreSQL 时，使用 [compose/postgres.yml](/Users/eric/projects/lynxus/deploy/test/compose/postgres.yml) 进行部署。
+PostgreSQL 作为一个独立的模块列出，因为测试环境可能使用托管或现有的 PostgreSQL 服务，也可能部署一个专用的 PostgreSQL 主机。当测试环境尚未提供 PostgreSQL 时，使用 [compose/postgres.yml](compose/postgres.yml) 进行部署。
 
-PostgreSQL 模块通过发布的 `common + test` 布局，使用 [../common/postgres-bootstrap/init-databases.sh](/Users/eric/projects/lynxus/deploy/common/postgres-bootstrap/init-databases.sh)。它的一次性引导服务会创建：
+PostgreSQL 模块通过发布的 `common + test` 布局，使用 [../common/postgres-bootstrap/init-databases.sh](../common/postgres-bootstrap/init-databases.sh)。它的一次性引导服务会创建：
 
 - `lynxus_core`
 - `lynxus_channel_gateway`
@@ -72,11 +72,11 @@ PostgreSQL 模块通过发布的 `common + test` 布局，使用 [../common/post
 
 同时还会在知识库中启用 `vector` 和 `pg_trgm` 扩展。
 
-Temporal 作为一个独立的模块包含在内，因为测试环境没有现成的 Temporal 服务。可以使用 [compose/temporal.yml](/Users/eric/projects/lynxus/deploy/test/compose/temporal.yml) 将其部署在自己的主机或专用的运行主机上。
+Temporal 作为一个独立的模块包含在内，因为测试环境没有现成的 Temporal 服务。可以使用 [compose/temporal.yml](compose/temporal.yml) 将其部署在自己的主机或专用的运行主机上。
 
-Temporal UI 通过带基础认证的 Caddy 网关暴露。可以使用 [compose/temporal-ui.yml](/Users/eric/projects/lynxus/deploy/test/compose/temporal-ui.yml) 将其部署在需要暴露 UI 入口的主机上。
+Temporal UI 通过带基础认证的 Caddy 网关暴露。可以使用 [compose/temporal-ui.yml](compose/temporal-ui.yml) 将其部署在需要暴露 UI 入口的主机上。
 
-Sandbox 也是一个独立模块。使用 [compose/sandbox.yml](/Users/eric/projects/lynxus/deploy/test/compose/sandbox.yml) 进行部署。
+Sandbox 也是一个独立模块。使用 [compose/sandbox.yml](compose/sandbox.yml) 进行部署。
 
 ## 启动顺序
 

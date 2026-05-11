@@ -29,7 +29,7 @@ uv run --package lynxus-agent-runtime uvicorn lynxus_agent_runtime.main:app --re
 uv run --directory apps/agent-runtime --package lynxus-agent-runtime pytest tests/test_internal_auth.py
 ```
 
-[`scripts/local/agent-runtime.sh`](/Users/eric/projects/lynxus/scripts/local/agent-runtime.sh) 会直接使用 `uv run --package lynxus-agent-runtime ...`，因此需要先安装 `uv` 并在仓库根目录执行 `uv sync --all-packages`。
+[`scripts/local/agent-runtime.sh`](../../scripts/local/agent-runtime.sh) 会直接使用 `uv run --package lynxus-agent-runtime ...`，因此需要先安装 `uv` 并在仓库根目录执行 `uv sync --all-packages`。
 
 ## 接口
 

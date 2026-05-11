@@ -94,15 +94,15 @@
 
 现状：
 
-- 五个应用（api / worker / web / agent-runtime / knowledge-service）均已具备 Dockerfile（多阶段构建）
-- API 已暴露 `/api/system/health`
+- 六个主链路服务应用（api / channel-gateway / worker / web / agent-runtime / knowledge-service）均已具备 Dockerfile（多阶段构建）；`apps/site` 为独立静态站点，当前不在部署主链路内
+- API 已暴露 `/api/system/health`，Worker / Python 服务暴露 `/healthz`
 - 本地与开发服务器依赖通过 `deploy/local`、`deploy/dev` 提供 docker-compose 编排，公共初始化脚本与网关配置放在 `deploy/common`
 
 待补：
 
 1. 编写生产级 docker-compose（所有应用 + 依赖一键启动）
 2. 编写 Kubernetes manifests（Deployment / Service / ConfigMap / Secret / Ingress）
-3. 完善 readiness / liveness 区分，Python 服务补健康端点
+3. 在已有 `/api/system/health`、`/healthz` 基础上继续完善 readiness / liveness 区分与容器探针接入
 4. 各服务统一 graceful shutdown（Spring `server.shutdown=graceful`、FastAPI lifespan、Temporal worker drain）
 
 ### 3.2 OpenTelemetry 统一观测
@@ -342,7 +342,7 @@
 - [x] 阶段二 2.5 第一步 External Interaction 通用框架：playbook `EXTERNAL_INTERACTION` 节点、`external-callback` Signal、`waitingReason` 权威校验、回调恢复回流 owner
 - [x] 阶段三 旧 3.6 隐私脱敏映射层：assistant / agent 配置、release freeze、Redis session map、运行态出站脱敏 / 入站还原、审计与运行页统计
 - [x] 阶段三 3.6（多实例）主干：共享模块 `packages/shared-redis-jvm`（keyspace / codec / pub-sub / lock）、API 接入 `spring-session-data-redis` + `RedisIdempotencyService` + `RedisInvalidationBus`、`SessionDispatchLockService` 改走分布式锁、Session Runtime 跨实例流（`SessionRuntimeStreamService / ReplayStore / ChangeNoticePublisher` + worker `SessionRuntimeChangePublisher`）、`CatalogService / KnowledgeService` 去 JVM 内存镜像并接入跨实例失效
-- [x] 阶段三 3.1 部分：五个应用 Dockerfile（多阶段构建）与 `/api/system/health` 健康端点
+- [x] 阶段三 3.1 部分：六个主链路服务 Dockerfile（多阶段构建）与基础健康端点（API `/api/system/health`，Worker / Python 服务 `/healthz`）
 - [x] 历史 P0/P1/P2/P3 工作（详见 `docs/develop_record/2026-03-project_todos_snapshot.md`）：
   - P0.1 运行态持久化：session / session_event / playbook_run 落库
   - P0.2 同步等待改异步 + 轮询观测闭环

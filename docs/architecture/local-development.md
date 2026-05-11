@@ -28,6 +28,8 @@
 
 本地开发约定使用根目录 `uv` workspace 统一管理 Python 依赖。先安装 `uv`，再在仓库根目录执行 `uv sync --all-packages`。
 
+`pnpm local` / `pnpm local:*` 只覆盖控制台与运行主链路，不启动 `apps/site`。静态项目站点需要单独用 `pnpm --filter @lynxus/site dev` 调试，或通过根目录 `pnpm build` 一并构建。
+
 ## 建议启动顺序
 
 1. 启动基础依赖
@@ -55,7 +57,7 @@
 
 其中 Web 的 Vite 环境变量现在统一以仓库根目录 `.env*` 为准；不再建议使用 `apps/web/.env*` 作为主配置入口。
 
-其中 [agent-runtime.sh](/Users/eric/projects/lynxus/scripts/local/agent-runtime.sh) 和 [knowledge-service.sh](/Users/eric/projects/lynxus/scripts/local/knowledge-service.sh) 会直接通过 `uv run` 使用 workspace 环境；运行前需先完成 `uv sync --all-packages`。
+其中 [`scripts/local/agent-runtime.sh`](../../scripts/local/agent-runtime.sh) 和 [`scripts/local/knowledge-service.sh`](../../scripts/local/knowledge-service.sh) 会直接通过 `uv run` 使用 workspace 环境；运行前需先完成 `uv sync --all-packages`。
 
 ## 可配置镜像源
 
@@ -87,18 +89,21 @@ LYNXUS_IMAGE_CADDY=<aws_account_id>.dkr.ecr.<region>.amazonaws.com/docker-hub/li
 
 ## 应用容器构建
 
-当前 5 个应用都已提供多阶段 Dockerfile，构建时统一使用仓库根目录作为 build context：
+当前 6 个主链路服务应用都已提供多阶段 Dockerfile，构建时统一使用仓库根目录作为 build context：
 
 - API：`docker build -f apps/api/Dockerfile -t lynxus-api .`
+- Channel Gateway：`docker build -f apps/channel-gateway/Dockerfile -t lynxus-channel-gateway .`
 - Worker：`docker build -f apps/worker/Dockerfile -t lynxus-worker .`
-- Web：`docker build -f apps/web/Dockerfile -t lynxus-web .`
+- Web 控制台：`docker build -f apps/web/Dockerfile -t lynxus-web .`
 - Agent Runtime：`docker build -f apps/agent-runtime/Dockerfile -t lynxus-agent-runtime .`
 - Knowledge Service：`docker build -f apps/knowledge-service/Dockerfile -t lynxus-knowledge-service .`
 
+`apps/site` 当前是独立 Vite 静态站点，没有 Dockerfile，也不在 local/dev/test 主运行链路中。
+
 构建策略如下：
 
-- API / Worker：Gradle 在构建阶段产出 Spring Boot 可执行 jar，运行阶段使用 JRE 镜像
-- Web：`pnpm build` 产出静态资源，运行阶段使用 Nginx 提供 SPA 文件并处理路由回退
+- API / Channel Gateway / Worker：Gradle 在构建阶段产出 Spring Boot 可执行 jar，运行阶段使用 JRE 镜像
+- Web：`pnpm --filter @lynxus/web build` 产出控制台静态资源，运行阶段使用 Nginx 提供 SPA 文件并处理路由回退
 - Agent Runtime / Knowledge Service：`uv build` 产出 wheel，运行阶段使用 Python slim 镜像安装 wheel
 
 Web 默认把 `VITE_API_BASE_URL` 编译为 `/api`。如果前端容器和 API 不在同一反向代理下，需要在构建时显式覆盖，例如：
@@ -123,8 +128,8 @@ docker build \
 
 - API 与 Worker 默认使用 Spring `local` profile，输出可读文本日志；非 `local` profile 输出结构化 JSON
 - Agent Runtime 与 Knowledge Service 使用 `LYNXUS_LOG_FORMAT=console|json`
-- [agent-runtime.sh](/Users/eric/projects/lynxus/scripts/local/agent-runtime.sh) 与 [knowledge-service.sh](/Users/eric/projects/lynxus/scripts/local/knowledge-service.sh) 默认会设置 `LYNXUS_LOG_FORMAT=console`
-- [worker.sh](/Users/eric/projects/lynxus/scripts/local/worker.sh) 默认会设置 `SPRING_PROFILES_ACTIVE=local`
+- [`scripts/local/agent-runtime.sh`](../../scripts/local/agent-runtime.sh) 与 [`scripts/local/knowledge-service.sh`](../../scripts/local/knowledge-service.sh) 默认会设置 `LYNXUS_LOG_FORMAT=console`
+- [`scripts/local/worker.sh`](../../scripts/local/worker.sh) 默认会设置 `SPRING_PROFILES_ACTIVE=local`
 
 如果需要在本地排查结构化日志链路，可以临时改用：
 
@@ -158,9 +163,9 @@ SPRING_PROFILES_ACTIVE=default pnpm local:worker
 - 前端不再回退到内置 mock 数据；后端未启动时页面请求会直接报错
 - API 在读取 session 列表、session 详情和投递消息前，会按需向 Temporal 检查对应 session workflow 是否仍开放，并在必要时把已结束会话标记为 `ENDED`
 - Worker 会消费同一 Temporal namespace / task queue 下的 `SessionWorkflow` 与 `PlaybookWorkflow`
-- [agent-runtime.sh](/Users/eric/projects/lynxus/scripts/local/agent-runtime.sh) 默认监听 `127.0.0.1:8090`，仅供本机 `worker` 调用
-- [knowledge-service.sh](/Users/eric/projects/lynxus/scripts/local/knowledge-service.sh) 默认监听 `127.0.0.1:8091`，仅供本机 `api / worker / agent-runtime` 调用
-- [web.sh](/Users/eric/projects/lynxus/scripts/local/web.sh) 默认监听 `0.0.0.0:5173`，便于开发时从局域网设备访问
+- [`scripts/local/agent-runtime.sh`](../../scripts/local/agent-runtime.sh) 默认监听 `127.0.0.1:8090`，仅供本机 `worker` 调用
+- [`scripts/local/knowledge-service.sh`](../../scripts/local/knowledge-service.sh) 默认监听 `127.0.0.1:8091`，仅供本机 `api / worker / agent-runtime` 调用
+- [`scripts/local/web.sh`](../../scripts/local/web.sh) 默认监听 `0.0.0.0:5173`，便于开发时从局域网设备访问
 - `pnpm local:api` 默认暴露 `8080` 供前端代理访问；`Temporal UI` 通过 Docker Compose 暴露 `0.0.0.0:8088`
 - `Temporal UI` 通过 `temporal-ui-gateway` 代理暴露，默认 Basic Auth 用户名来自 `LYNXUS_TEMPORAL_UI_USERNAME`，密码来自 `LYNXUS_TEMPORAL_UI_PASSWORD`
 - `Agent Runtime` 与 `Knowledge Service` 的 HTTP 入口不接浏览器 OIDC 会话，只接受共享 internal token
@@ -180,7 +185,7 @@ SPRING_PROFILES_ACTIVE=default pnpm local:worker
 ## 后续扩展方向
 
 - 接入真实企业 OIDC 提供方，并按环境关闭开发态 bootstrap 登录旁路
-- 补齐异步订阅式运行观测
+- 在已有 session 级 SSE 基础上继续补长 session 分页、派生视图和更细粒度订阅
 - 收敛知识检索的线上索引策略、生命周期治理和监控面
 - 明确 S3-compatible object storage / pgvector 的线上职责并补齐监控与备份
 - 基于 Gradle wrapper 补齐 CI 校验

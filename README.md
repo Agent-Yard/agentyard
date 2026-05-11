@@ -8,10 +8,10 @@
 [![CI](https://github.com/Zephor5/lynxus/actions/workflows/ci.yml/badge.svg)](https://github.com/Zephor5/lynxus/actions/workflows/ci.yml)
 ![status](https://img.shields.io/badge/status-alpha-orange)
 ![java](https://img.shields.io/badge/java-25-blue)
-![spring](https://img.shields.io/badge/spring--boot-4.0.1-6db33f)
+![spring](https://img.shields.io/badge/spring--boot-4.0.6-6db33f)
 ![vue](https://img.shields.io/badge/vue-3.5-42b883)
 ![python](https://img.shields.io/badge/python-3.11+-3776ab)
-![temporal](https://img.shields.io/badge/temporal-1.32-orange)
+![temporal](https://img.shields.io/badge/temporal-1.34-orange)
 
 ---
 
@@ -50,6 +50,7 @@ flowchart TB
     %% ===== 用户入口 =====
     subgraph Clients["用户入口"]
         Web["apps/web<br/>Vue 控制台"]
+        Site["apps/site<br/>静态项目站点"]
         ChannelUsers["业务渠道用户 / 坐席系统<br/>(Feishu / 工单 / 客服平台 / ...)"]
     end
 
@@ -125,14 +126,15 @@ apps/
   channel-gateway/    Channel Provider 运行时（飞书等渠道接入）
   worker/             Temporal workflow worker
   web/                Vue + Ant Design Vue 控制台
+  site/               Vite 静态项目站点 / 官网落地页
   agent-runtime/      Python owner agent / playbook tool task 运行时
   knowledge-service/  Python 知识导入 / 快照构建 / 检索服务
 packages/
   contracts/             OpenAPI 与 TypeScript 共享契约
   contracts-jvm/         JVM 侧 session / playbook / runtime 契约
   extension-protocol/    Extension Plane 协议（OpenAPI + JSON Schema + 契约样例）
-  extension-sdk-jvm/     JVM SDK 骨架
-  extension-sdk-python/  Python SDK 骨架
+  extension-sdk-jvm/     JVM Extension SDK（协议常量、DTO 生成、manifest 校验、registration helper）
+  extension-sdk-python/  Python Extension SDK（协议常量、canonical JSON、digest、registration 与 manifest 校验 helper）
   persistence-jvm/       JVM 侧共享 PostgreSQL persistence（jOOQ + shared store）
   python-common/         Python 服务共享工具
   shared-redis-jvm/      JVM 侧共享 Redis keyspace / lock / pubsub / codec
@@ -258,7 +260,15 @@ LYNXUS_TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT=PT2M
 
 仓库未提供 demo seed；业务域、资源与知识库需通过控制台或 API 显式创建。
 
-### 6. 远程 / 共享开发环境
+### 6. 构建前端与站点
+
+根目录 `pnpm build` 会顺序构建控制台 `@lynxus/web` 与静态项目站点 `@lynxus/site`。本地运行主链路的 `pnpm local` 只启动控制台 `apps/web`，不会启动 `apps/site`；如需调试站点，可单独执行：
+
+```bash
+pnpm --filter @lynxus/site dev
+```
+
+### 7. 远程 / 共享开发环境
 
 如果你要把整套环境常驻在开发服务器上：
 
