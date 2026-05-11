@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f7f5ed"/>
+      <stop offset="1" stop-color="#e8eee5"/>
+    </linearGradient>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0 L0 0 L0 48" fill="none" stroke="#17211d" stroke-opacity="0.06" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#grid)"/>
+  <circle cx="960" cy="200" r="220" fill="#0d746e" fill-opacity="0.12"/>
+  <circle cx="240" cy="500" r="180" fill="#b85f3b" fill-opacity="0.10"/>
+
+  <g transform="translate(80,120)">
+    <rect width="64" height="64" rx="12" fill="#17211d"/>
+    <path d="M22 18 V46 H46" stroke="#faf4e5" stroke-width="5" stroke-linecap="square" fill="none"/>
+    <circle cx="54" cy="14" r="5" fill="#0d746e"/>
+  </g>
+
+  <text x="170" y="172" font-family="Inter, system-ui, sans-serif" font-size="44" font-weight="800" fill="#17211d">Lynxus</text>
+
+  <text x="80" y="290" font-family="Inter, system-ui, sans-serif" font-size="68" font-weight="800" fill="#17211d">Governed enterprise</text>
+  <text x="80" y="370" font-family="Inter, system-ui, sans-serif" font-size="68" font-weight="800" fill="#17211d">agent platform.</text>
+
+  <text x="80" y="440" font-family="Inter, system-ui, sans-serif" font-size="26" font-weight="500" fill="#5c6761">Release-driven · Session-first · Recoverable workflows</text>
+
+  <g transform="translate(80,510)" font-family="Inter, system-ui, sans-serif" font-size="20" font-weight="700">
+    <rect width="180" height="48" rx="10" fill="#17211d"/>
+    <text x="90" y="31" text-anchor="middle" fill="#faf4e5">View source</text>
+    <rect x="200" width="180" height="48" rx="10" fill="none" stroke="#17211d" stroke-width="1.5"/>
+    <text x="290" y="31" text-anchor="middle" fill="#17211d">Quick start</text>
+  </g>
+
+  <g transform="translate(750,320)" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="700" fill="#17211d">
+    <rect width="400" height="64" rx="12" fill="#ffffff" stroke="#aeb8ac"/>
+    <text x="24" y="40">Domain → Scenario → Assistant</text>
+    <rect y="80" width="400" height="64" rx="12" fill="#d9ece7" stroke="#0d746e" stroke-opacity="0.35"/>
+    <text x="24" y="120" fill="#0b514c">Temporal + Python runtime</text>
+    <rect y="160" width="400" height="64" rx="12" fill="#f2ddd4" stroke="#b85f3b" stroke-opacity="0.35"/>
+    <text x="24" y="200" fill="#7f3c23">Tools &amp; channels gateway</text>
+  </g>
+</svg>

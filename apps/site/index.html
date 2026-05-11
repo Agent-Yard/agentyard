@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="zh-Hans" data-lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#17211d" />
+    <meta
+      name="description"
+      content="灵枢（Lynxus）是一个开源的、以发布为中心的智能体平台，提供受治理的扩展、可观测的会话与可恢复的业务工作流。"
+    />
+    <meta property="og:title" content="Lynxus 灵枢 — 治理型企业智能体平台" />
+    <meta
+      property="og:description"
+      content="以发布为中心治理智能体、连接业务系统、运行可恢复工作流，并实时观测每一次会话。"
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://zephor5.github.io/lynxus/" />
+    <meta property="og:image" content="https://zephor5.github.io/lynxus/og-image.svg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <title>Lynxus 灵枢 | 治理型企业智能体平台</title>
+    <link rel="canonical" href="https://zephor5.github.io/lynxus/" />
+    <link rel="alternate" hreflang="zh-Hans" href="https://zephor5.github.io/lynxus/" />
+    <link rel="alternate" hreflang="en" href="https://zephor5.github.io/lynxus/en/" />
+    <link rel="alternate" hreflang="x-default" href="https://zephor5.github.io/lynxus/" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="preconnect" href="https://github.com" />
+    <script>
+      (() => {
+        try {
+          const onEn = /\/en\/?$/.test(location.pathname);
+          if (onEn) {
+            document.documentElement.lang = "en";
+            document.documentElement.dataset.lang = "en";
+            return;
+          }
+          const urlLang = new URLSearchParams(location.search).get("lang");
+          if (urlLang === "en") {
+            document.documentElement.lang = "en";
+            document.documentElement.dataset.lang = "en";
+            return;
+          }
+          if (urlLang === "zh") {
+            document.documentElement.lang = "zh-Hans";
+            document.documentElement.dataset.lang = "zh";
+            return;
+          }
+          let stored = null;
+          try { stored = localStorage.getItem("lynxus_lang"); } catch (_) {}
+          const nav = (navigator.language || "").toLowerCase();
+          const preferred = stored === "en" || stored === "zh"
+            ? stored
+            : nav.startsWith("en") ? "en" : "zh";
+          if (preferred === "en") {
+            location.replace("./en/" + location.search + location.hash);
+            return;
+          }
+          document.documentElement.lang = "zh-Hans";
+          document.documentElement.dataset.lang = "zh";
+        } catch (_) {}
+      })();
+    </script>
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#top" data-i18n="skip-link">跳到主内容</a>
+
+    <header class="site-header" data-i18n-aria="aria-primary-nav" aria-label="主导航">
+      <a class="brand-link" href="#top" data-i18n-aria="aria-brand-home" aria-label="Lynxus 首页">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" width="22" height="22">
+            <path d="M2 2 H22 L30 10 V30 H2 Z" fill="currentColor"/>
+            <path d="M10 9 V23 H22" stroke="#faf4e5" stroke-width="2.8" stroke-linecap="square" fill="none"/>
+            <circle cx="26" cy="6" r="2" fill="#0d746e"/>
+          </svg>
+        </span>
+        <span>Lynxus</span>
+      </a>
+      <nav class="header-nav" data-i18n-aria="aria-page-sections" aria-label="页面分区">
+        <a href="#why" data-i18n="nav-why">为什么</a>
+        <a href="#model" data-i18n="nav-model">模型</a>
+        <a href="#runtime" data-i18n="nav-runtime">运行时</a>
+        <a href="#extensions" data-i18n="nav-extensions">扩展</a>
+        <a href="#docs" data-i18n="nav-docs">文档</a>
+      </nav>
+      <div class="header-right">
+        <div class="lang-switcher" role="group" data-lang-switcher aria-label="切换语言">
+          <a class="lang-opt" data-set-lang="zh" href="./" hreflang="zh-Hans">中</a>
+          <a class="lang-opt" data-set-lang="en" href="./en/" hreflang="en">EN</a>
+        </div>
+        <a class="header-action" href="https://github.com/Zephor5/lynxus" rel="noopener">
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+            <path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.5 7.5 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/>
+          </svg>
+          <span>GitHub</span>
+        </a>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="hero-section" aria-labelledby="hero-title">
+        <div class="hero-bg" aria-hidden="true"></div>
+        <div class="hero-content">
+          <p class="eyebrow" data-i18n="hero-eyebrow">开源企业级智能体平台</p>
+          <h1 id="hero-title">Lynxus</h1>
+          <p class="hero-cn-name" data-i18n="hero-cn-name">灵枢</p>
+          <p class="hero-lede" data-i18n="hero-lede">
+            以发布为中心的智能体平台：治理智能体配置、连接业务系统、运行可恢复工作流，并实时观测每一次会话。
+          </p>
+          <div class="hero-actions" data-i18n-aria="aria-project-links" aria-label="项目链接">
+            <a class="button button-primary" href="https://github.com/Zephor5/lynxus" rel="noopener" data-i18n="btn-view-source">查看源码</a>
+            <a class="button button-secondary" href="https://github.com/Zephor5/lynxus#quick-start" rel="noopener" data-i18n="btn-quick-start">快速上手</a>
+          </div>
+          <dl class="hero-facts" data-i18n-aria="aria-project-status" aria-label="项目状态">
+            <div>
+              <dt data-i18n="fact-status-label">状态</dt>
+              <dd data-i18n="fact-status-value">Alpha · v0.1</dd>
+            </div>
+            <div>
+              <dt data-i18n="fact-license-label">许可证</dt>
+              <dd data-i18n="fact-license-value">Apache 2.0</dd>
+            </div>
+            <div>
+              <dt data-i18n="fact-runtime-label">运行时</dt>
+              <dd data-i18n="fact-runtime-value">Temporal + Python</dd>
+            </div>
+            <div>
+              <dt data-i18n="fact-console-label">控制台</dt>
+              <dd data-i18n="fact-console-value">Vue + Spring Boot</dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+
+      <section class="section intro-section" id="why" aria-labelledby="why-title">
+        <div class="section-heading">
+          <p class="eyebrow" data-i18n="why-eyebrow">为什么选 Lynxus</p>
+          <h2 id="why-title" data-i18n="why-title">企业级智能体不止是 prompt。</h2>
+        </div>
+        <div class="problem-grid">
+          <article class="card accent-teal">
+            <h3 data-i18n="why-governance-h">治理</h3>
+            <p data-i18n="why-governance-p">
+              业务域、场景、助手、智能体、playbook、知识库与资源均作为一等治理对象建模。
+            </p>
+          </article>
+          <article class="card accent-clay">
+            <h3 data-i18n="why-integration-h">集成</h3>
+            <p data-i18n="why-integration-p">
+              工具连接器与通道提供方位于协议边界之后，将厂商鉴权、签名、SDK 与长连接隔离在智能体逻辑之外。
+            </p>
+          </article>
+          <article class="card accent-amber">
+            <h3 data-i18n="why-operations-h">运维</h3>
+            <p data-i18n="why-operations-p">
+              会话、事件、playbook 运行、人工转交与共享状态全程持久化，并以面向真实业务的运行时视图呈现。
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section model-section" id="model" aria-labelledby="model-title">
+        <div class="section-heading">
+          <p class="eyebrow" data-i18n="model-eyebrow">核心模型</p>
+          <h2 id="model-title" data-i18n="model-title">一棵贯通运行时的治理树。</h2>
+        </div>
+        <div class="model-layout">
+          <div class="model-tree" role="img" data-i18n-aria="aria-tree" aria-label="治理层级">
+            <ul class="tree-root">
+              <li>
+                <span class="tree-node" data-i18n="tree-domain">业务域</span>
+                <ul>
+                  <li>
+                    <span class="tree-node" data-i18n="tree-scenario">场景</span>
+                    <ul>
+                      <li>
+                        <span class="tree-node tree-anchor">
+                          <span data-i18n="tree-assistant">助手发布</span>
+                          <em data-i18n="tree-assistant-tag">发布锚定</em>
+                        </span>
+                        <ul class="tree-leaves">
+                          <li><span class="tree-leaf" data-i18n="tree-owner">Owner 智能体</span></li>
+                          <li><span class="tree-leaf" data-i18n="tree-playbook">Playbook</span></li>
+                          <li><span class="tree-leaf"><span data-i18n="tree-resource">资源</span> <small data-i18n="tree-resource-sub">工具 · 技能 · 模型 · 知识</small></span></li>
+                        </ul>
+                      </li>
+                    </ul>
+                  </li>
+                </ul>
+              </li>
+            </ul>
+          </div>
+          <div class="model-copy">
+            <p data-i18n="model-copy-p">
+              Lynxus 把配置视为契约。草稿对象可以持续演进，但运行中的会话锚定在一个已固化 Owner 智能体、策略、资源版本、知识绑定与 playbook 定义的助手发布上。
+            </p>
+            <ul class="check-list">
+              <li data-i18n="model-check-1">发布快照避免运行期配置漂移。</li>
+              <li data-i18n="model-check-2">工具、技能、模型与知识都带有稳定的资源版本锚点。</li>
+              <li data-i18n="model-check-3">智能体做决策，playbook 执行结构化业务流程。</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="section runtime-section" id="runtime" aria-labelledby="runtime-title">
+        <div class="section-heading">
+          <p class="eyebrow" data-i18n="runtime-eyebrow">运行时架构</p>
+          <h2 id="runtime-title" data-i18n="runtime-title">以会话为中心、可恢复的工作流执行。</h2>
+        </div>
+        <ol class="arch-flow" data-i18n-aria="aria-runtime-flow" aria-label="运行时流程">
+          <li class="arch-step">
+            <span class="arch-tag" data-i18n="arch-1-tag">控制平面</span>
+            <h3 data-i18n="arch-1-h">发布装配</h3>
+            <p data-i18n="arch-1-p">Spring Boot API 装配发布、治理目录，并对外暴露会话运行时视图。</p>
+            <span class="arch-tech" data-i18n="arch-1-tech">Spring Boot · PostgreSQL</span>
+          </li>
+          <li class="arch-step arch-step-runtime">
+            <span class="arch-tag" data-i18n="arch-2-tag">工作流 Worker</span>
+            <h3 data-i18n="arch-2-h">可恢复编排</h3>
+            <p data-i18n="arch-2-p">Temporal 承载会话与 playbook 工作流，处理等待、恢复、人工转交与共享状态。</p>
+            <span class="arch-tech" data-i18n="arch-2-tech">Temporal · Python SDK</span>
+          </li>
+          <li class="arch-step">
+            <span class="arch-tag" data-i18n="arch-3-tag">智能体运行时</span>
+            <h3 data-i18n="arch-3-h">决策与执行</h3>
+            <p data-i18n="arch-3-p">Python 执行 Owner 轮次、工具任务、隐私策略处理与知识调用。</p>
+            <span class="arch-tech" data-i18n="arch-3-tech">Python · LLM 提供方</span>
+          </li>
+          <li class="arch-step arch-step-aside">
+            <span class="arch-tag" data-i18n="arch-4-tag">知识服务</span>
+            <h3 data-i18n="arch-4-h">检索面</h3>
+            <p data-i18n="arch-4-p">URL 与文件来源被切分为 chunk，生成索引快照，按发布维度做检索。</p>
+            <span class="arch-tech" data-i18n="arch-4-tech">Python · 向量索引</span>
+          </li>
+        </ol>
+      </section>
+
+      <section class="section extensions-section" id="extensions" aria-labelledby="extensions-title">
+        <div class="section-heading">
+          <p class="eyebrow" data-i18n="ext-eyebrow">扩展面</p>
+          <h2 id="extensions-title" data-i18n="ext-title">工具与通道的统一边界。</h2>
+        </div>
+        <div class="extension-layout">
+          <article class="card">
+            <span class="pill pill-teal" data-i18n="ext-tool-pill">工具连接器</span>
+            <h3 data-i18n="ext-tool-h">业务能力接入</h3>
+            <p data-i18n="ext-tool-p">
+              外部系统通过 manifest 暴露操作 schema，Lynxus 负责把智能体运行时的工具调用路由进来。
+            </p>
+          </article>
+          <article class="card">
+            <span class="pill pill-clay" data-i18n="ext-channel-pill">通道提供方</span>
+            <h3 data-i18n="ext-channel-h">会话通道接入</h3>
+            <p data-i18n="ext-channel-p">
+              IM、工单与服务台通道在通道网关一侧统一入站事件，并消费出站消息帧。
+            </p>
+          </article>
+          <article class="card">
+            <span class="pill pill-amber" data-i18n="ext-protocol-pill">协议 + SDK</span>
+            <h3 data-i18n="ext-protocol-h">契约优先的扩展开发</h3>
+            <p data-i18n="ext-protocol-p">
+              OpenAPI、JSON Schema、示例、标准 fixture 及 JVM / Python SDK 让扩展服务与平台边界保持一致。
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section docs-section" id="docs" aria-labelledby="docs-title">
+        <div class="section-heading">
+          <p class="eyebrow" data-i18n="docs-eyebrow">开发者入口</p>
+          <h2 id="docs-title" data-i18n="docs-title">从公开契约开始。</h2>
+        </div>
+        <div class="docs-grid">
+          <a href="https://github.com/Zephor5/lynxus#quick-start" rel="noopener">
+            <span class="docs-num">01</span>
+            <strong data-i18n="docs-1-h">快速上手</strong>
+            <small data-i18n="docs-1-p">在本地运行控制平面、运行时、知识服务与控制台。</small>
+          </a>
+          <a href="https://github.com/Zephor5/lynxus/blob/main/docs/architecture/code-framework.md" rel="noopener">
+            <span class="docs-num">02</span>
+            <strong data-i18n="docs-2-h">架构</strong>
+            <small data-i18n="docs-2-p">应用拆分、运行时流转，以及当前实现边界。</small>
+          </a>
+          <a href="https://github.com/Zephor5/lynxus/blob/main/docs/architecture/extension-integration.md" rel="noopener">
+            <span class="docs-num">03</span>
+            <strong data-i18n="docs-3-h">扩展集成</strong>
+            <small data-i18n="docs-3-p">基于扩展面构建工具连接器与通道提供方。</small>
+          </a>
+          <a href="https://github.com/Zephor5/lynxus/tree/main/packages/extension-protocol" rel="noopener">
+            <span class="docs-num">04</span>
+            <strong data-i18n="docs-4-h">扩展协议</strong>
+            <small data-i18n="docs-4-p">以 OpenAPI、JSON Schema、示例与 fixture 作为单一可信源。</small>
+          </a>
+        </div>
+      </section>
+
+      <section class="section cta-section" aria-labelledby="cta-title">
+        <div class="cta-panel">
+          <div class="cta-copy">
+            <p class="eyebrow" data-i18n="cta-eyebrow">项目状态</p>
+            <h2 id="cta-title" data-i18n="cta-title">Alpha 阶段，面向评估与本地集成。</h2>
+            <p data-i18n="cta-p">
+              Lynxus 已经打通 控制平面 → 发布快照 → Temporal → Python 运行时 的核心链路。在面向生产的强化过程中，接口、数据结构与配置在小版本间仍可能调整。
+            </p>
+          </div>
+          <div class="cta-actions">
+            <a class="button button-primary" href="https://github.com/Zephor5/lynxus" rel="noopener" data-i18n="btn-star">在 GitHub 上 Star</a>
+            <a class="button button-secondary" href="https://github.com/Zephor5/lynxus/releases" rel="noopener" data-i18n="btn-releases">发布记录</a>
+            <a class="button button-ghost" href="https://github.com/Zephor5/lynxus/discussions" rel="noopener" data-i18n="btn-discussions">讨论区</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" width="20" height="20">
+            <path d="M2 2 H22 L30 10 V30 H2 Z" fill="currentColor"/>
+            <path d="M10 9 V23 H22" stroke="#faf4e5" stroke-width="2.8" stroke-linecap="square" fill="none"/>
+            <circle cx="26" cy="6" r="2" fill="#0d746e"/>
+          </svg>
+        </span>
+        <span class="footer-name">Lynxus<span class="footer-cn-name"> · 灵枢</span></span>
+        <span class="footer-meta" data-i18n="footer-license">Apache 2.0 · v0.1 alpha</span>
+      </div>
+      <nav class="footer-nav" data-i18n-aria="aria-project-links" aria-label="项目链接">
+        <a href="https://github.com/Zephor5/lynxus" rel="noopener">GitHub</a>
+        <a href="https://github.com/Zephor5/lynxus/actions/workflows/ci.yml" rel="noopener">CI</a>
+        <a href="https://github.com/Zephor5/lynxus/issues" rel="noopener" data-i18n="footer-issues">议题</a>
+        <a href="https://github.com/Zephor5/lynxus/discussions" rel="noopener" data-i18n="footer-discussions">讨论</a>
+      </nav>
+    </footer>
+
+    <script type="module" src="./src/i18n.js"></script>
+  </body>
+</html>

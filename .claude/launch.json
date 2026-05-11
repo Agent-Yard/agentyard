@@ -6,6 +6,18 @@
       "runtimeExecutable": "npx",
       "runtimeArgs": ["serve", "docs/briefing", "-l", "3456", "--no-clipboard"],
       "port": 3456
+    },
+    {
+      "name": "site",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@lynxus/site", "dev", "--port", "5173", "--strictPort"],
+      "port": 5173
+    },
+    {
+      "name": "site-preview",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@lynxus/site", "preview", "--port", "4173", "--strictPort"],
+      "port": 4173
     }
   ]
 }
