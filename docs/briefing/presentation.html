@@ -52,7 +52,7 @@
             <div class="hero-card">
               <span class="label">当前边界</span>
               <strong>未生产化</strong>
-              <p>多租户、正式权限、细粒度观测和生产级治理仍待补齐。</p>
+              <p>多租户、正式权限、长会话观测深化和生产级治理仍待补齐。</p>
             </div>
           </div>
         </section>
@@ -125,7 +125,7 @@
               <h3>尚未完成</h3>
               <ul>
                 <li>多租户与正式权限治理</li>
-                <li>订阅式运行观测与实时推送</li>
+                <li>长会话分页、派生视图与细粒度订阅</li>
                 <li>生产级审计、隔离、SLO、成本治理</li>
                 <li>对象生命周期与归档治理</li>
                 <li>基础设施职责的最终收敛</li>
@@ -202,10 +202,13 @@ flowchart LR
           <div class="mermaid-card zoomable" data-zoom-label="系统结构图" data-zoom-scale="1.35">
             <pre class="mermaid">
 flowchart LR
-  subgraph CP[控制面]
+  subgraph CP[控制面 & 接入面]
     U[控制台]
     API[控制面 API]
+    CG[Channel Gateway]
     U --> API
+    CG --> API
+    API --> CG
   end
 
   subgraph RP[运行面]
@@ -215,37 +218,44 @@ flowchart LR
     API --> W
     API --> KS
     W --> AR
+    W --> KS
     AR --> KS
   end
 
   subgraph INF[基础设施]
-    PG[(PostgreSQL)]
-    OS[(pgvector)]
-    MI[(MinIO)]
+    PG[(PostgreSQL<br/>typed schema / JSONB / pgvector)]
+    RD[(Redis<br/>Session / Lock / PubSub)]
+    MI[(MinIO / S3-compatible)]
     TP[(Temporal)]
   end
 
   API --> PG
+  API --> RD
+  CG --> PG
+  CG --> RD
+  W --> PG
+  W --> RD
   W --> TP
+  AR --> PG
+  AR --> RD
   KS --> PG
-  KS --> OS
   KS --> MI
 
   classDef control fill:#e6f4f1,stroke:#0f766e,color:#12322f,stroke-width:1.5px;
   classDef runtime fill:#eaf1ff,stroke:#2563eb,color:#17367a,stroke-width:1.5px;
   classDef infra fill:#fff4df,stroke:#d97706,color:#5f370e,stroke-width:1.5px;
 
-  class U,API control;
+  class U,API,CG control;
   class W,AR,KS runtime;
-  class PG,OS,MI,TP infra;
+  class PG,RD,MI,TP infra;
             </pre>
             <div class="diagram-hint">点击放大，可拖拽查看</div>
           </div>
           <div class="foot-grid">
-            <div class="foot-card">控制面 API 负责目录治理、发布快照和 `session-runtime` 聚合查询。</div>
+            <div class="foot-card">控制面 API 负责目录治理、发布快照、认证和 `session-runtime` 聚合查询。</div>
+            <div class="foot-card">Channel Gateway 负责渠道事件归一化、出站 frame relay 和 provider registry。</div>
             <div class="foot-card">流程 Worker 负责 `SessionWorkflow` 主状态机、`PlaybookWorkflow` 子流程和恢复信号处理。</div>
-            <div class="foot-card">知识服务负责导入、切片、索引快照构建和检索。</div>
-            <div class="foot-card">智能体运行时负责执行单个 owner agent 的单轮推理，并完成 tool / skill / knowledge 调用。</div>
+            <div class="foot-card">Agent Runtime 与 Knowledge Service 分别承接 owner 单轮推理、tool task、知识导入、索引快照和检索。</div>
           </div>
         </section>
 
@@ -346,7 +356,7 @@ flowchart LR
             </article>
             <article class="capability">
               <h3>运行观测</h3>
-              <p>当前 owner、session event、playbook run、handoff 和 shared state 可回看。</p>
+              <p>当前 owner、session event、playbook run、handoff 和 shared state 可回看；session 级 SSE 已接入，失败可降级轮询。</p>
             </article>
             <article class="capability">
               <h3>知识工作台</h3>
@@ -354,7 +364,7 @@ flowchart LR
             </article>
             <article class="capability">
               <h3>本地联调闭环</h3>
-              <p>前端、控制面、Worker、知识服务、运行时和基础依赖可在本地一次拉通。</p>
+              <p>控制台、API、Channel Gateway、Worker、Knowledge Service、Agent Runtime 和基础依赖可在本地一次拉通。</p>
             </article>
             <article class="capability">
               <h3>认证与会话</h3>
@@ -415,7 +425,7 @@ flowchart LR
             </div>
             <div class="decision-card">
               <h3>命令受理与结果观测解耦</h3>
-              <p>运行入口先提交命令，再通过 session detail 观察结果，避免 API 同步等待首个业务结果。</p>
+              <p>运行入口先提交命令，再通过 session detail / session SSE 观察结果，避免 API 同步等待首个业务结果。</p>
             </div>
             <div class="decision-card">
               <h3>保留长期平台边界</h3>
@@ -436,7 +446,7 @@ flowchart LR
                 <li>默认单租户，复杂租户治理仅保留模型边界</li>
                 <li>认证已具备 API Session 与 OIDC 边界，开发态仍保留 bootstrap 登录旁路</li>
                 <li>运行态主投影已落 PostgreSQL，API 读取 session 时会按需向 Temporal 校验 workflow 是否仍开放</li>
-                <li>运行入口已改为 session-runtime 异步受理返回，前端仍主要靠轮询收口</li>
+                <li>运行入口已改为 session-runtime 异步受理返回，前端通过 session SSE 观测变化，并保留轮询降级</li>
                 <li>external interaction 已入模，但 provider 与 callback 治理仍待继续补齐</li>
               </ul>
             </div>
@@ -447,7 +457,7 @@ flowchart LR
                 <li>审计、安全隔离、灰度发布、SLO、成本治理尚未成体系</li>
                 <li>pgvector / S3-compatible object storage 的正式职责仍待进一步收敛</li>
                 <li>CI、测试、备份恢复和环境一致性能力仍需补强</li>
-                <li>运行观测仍缺完整事件化订阅链路</li>
+                <li>运行观测仍缺长会话分页、派生视图和更细粒度订阅</li>
               </ul>
             </div>
           </div>
@@ -464,8 +474,8 @@ flowchart LR
           <div class="roadmap">
             <div class="roadmap-card">
               <span>01</span>
-              <h3>订阅式运行观测</h3>
-              <p>在现有 session-runtime 投影基础上补 SSE 或事件推送，增强 session event 和 playbook run 的即时观测能力。</p>
+              <h3>运行观测深化</h3>
+              <p>在已有 session-runtime 投影与 session SSE 基础上，补长会话分页、派生视图和更细粒度订阅。</p>
             </div>
             <div class="roadmap-card">
               <span>02</span>
@@ -487,7 +497,7 @@ flowchart LR
             <div class="panel accent-blue">
               <h3>近期优先级更高</h3>
               <ul>
-                <li>SSE 或订阅式运行观测</li>
+                <li>长会话分页、派生视图与细粒度订阅</li>
                 <li>session event / playbook run 历史与恢复态查询能力</li>
                 <li>真实身份体系替换开发旁路</li>
               </ul>
