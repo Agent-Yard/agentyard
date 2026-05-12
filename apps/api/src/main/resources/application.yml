@@ -21,6 +21,7 @@ spring:
         enabled: ${LYNXUS_REDIS_SSL_ENABLED:false}
       timeout: ${LYNXUS_REDIS_TIMEOUT:3s}
   session:
+    store-type: redis
     redis:
       namespace: ${LYNXUS_SESSION_REDIS_NAMESPACE:lynxus:session:http}
   flyway:

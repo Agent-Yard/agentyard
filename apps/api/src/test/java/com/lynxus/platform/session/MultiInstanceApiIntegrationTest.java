@@ -392,7 +392,6 @@ class MultiInstanceApiIntegrationTest {
             Map.entry("spring.main.allow-bean-definition-overriding", true),
             Map.entry("spring.docker.compose.enabled", false),
             Map.entry("spring.autoconfigure.exclude", "org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration"),
-            Map.entry("spring.session.store-type", "redis"),
             Map.entry("spring.session.redis.namespace", "lynxus:session:http"),
             Map.entry("spring.data.redis.host", redis.getHost()),
             Map.entry("spring.data.redis.port", redis.getMappedPort(6379)),
