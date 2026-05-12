@@ -187,7 +187,6 @@ Knowledge database 必须具备：
 
 ```dotenv
 LYNXUS_REDIS_KEY_PREFIX=lynxus:test
-SPRING_SESSION_STORE_TYPE=redis
 LYNXUS_SESSION_REDIS_NAMESPACE=lynxus:test:session:http
 LYNXUS_PRIVACY_SESSION_STORE_KEY_PREFIX=lynxus:test:privacy:session
 ```
