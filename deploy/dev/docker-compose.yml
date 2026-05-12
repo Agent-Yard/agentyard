@@ -304,12 +304,20 @@ services:
       LYNXUS_API_BASE_URL: http://api-router:8080/api
       LYNXUS_CHANNEL_GATEWAY_BASE_URL: http://channel-gateway:8082
       LYNXUS_AGENT_RUNTIME_BASE_URL: http://agent-runtime-router:8090
+      LYNXUS_REDIS_HOST: redis
+      LYNXUS_REDIS_PORT: 6379
+      LYNXUS_REDIS_DATABASE: ${LYNXUS_REDIS_DATABASE:-0}
+      LYNXUS_REDIS_USERNAME: ${LYNXUS_REDIS_USERNAME:-}
+      LYNXUS_REDIS_PASSWORD: ${LYNXUS_REDIS_PASSWORD:-lynxus}
+      LYNXUS_REDIS_SSL_ENABLED: ${LYNXUS_REDIS_SSL_ENABLED:-false}
       LYNXUS_INTERNAL_AUTH_TOKEN: ${LYNXUS_INTERNAL_AUTH_TOKEN}
     ports:
       - "${LYNXUS_DEV_CHANNEL_GATEWAY_BIND_ADDRESS:-0.0.0.0}:${LYNXUS_DEV_CHANNEL_GATEWAY_PORT:-18082}:8082"
     depends_on:
       postgres-bootstrap:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
 
   api:
     build:
