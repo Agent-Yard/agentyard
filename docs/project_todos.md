@@ -166,7 +166,7 @@
 已完成的主干能力：
 
 - 共享模块 `packages/shared-redis-jvm`：统一 keyspace、JSON codec、Pub/Sub bus、分布式锁
-- API：`spring-boot-starter-session-data-redis` 接入 + `SessionRedisConfiguration`；OIDC authorization request 按 `state` 进入 Redis；`RedisIdempotencyService`、`RedisInvalidationBus`、`SharedStateInvalidationSubscriber` 收口
+- API：`spring-boot-starter-session-data-redis` 接入 + `SessionRedisConfiguration`；`RedisIdempotencyService`、`RedisInvalidationBus`、`SharedStateInvalidationSubscriber` 收口
 - `SessionDispatchLockService` 从进程内 `ReentrantLock` 切到 `RedisLockService`
 - Session Runtime 跨实例流：`SessionRuntimeStreamService` + `SessionRuntimeReplayStore` + `SessionRuntimeChangeNoticePublisher`（API）与 `SessionRuntimeChangePublisher`（worker）通过 Redis Pub/Sub 协同；Web 侧 `EventSource` 已接入，轮询作为 fallback
 - `CatalogService` / `KnowledgeService` 去 JVM 内存镜像，切到 repository-first 读写；发布 / 更新通过 `RedisInvalidationBus` 广播失效
@@ -341,7 +341,7 @@
 - [x] 阶段二 2.4 草稿默认模型策略收敛：`defaultModelResourceId` 显式化、发布前阻断校验、发布快照新增 `defaultModelBinding`、Runtime 预检对齐
 - [x] 阶段二 2.5 第一步 External Interaction 通用框架：playbook `EXTERNAL_INTERACTION` 节点、`external-callback` Signal、`waitingReason` 权威校验、回调恢复回流 owner
 - [x] 阶段三 旧 3.6 隐私脱敏映射层：assistant / agent 配置、release freeze、Redis session map、运行态出站脱敏 / 入站还原、审计与运行页统计
-- [x] 阶段三 3.6（多实例）主干：共享模块 `packages/shared-redis-jvm`（keyspace / codec / pub-sub / lock）、API 接入 `spring-boot-starter-session-data-redis` + Redis OIDC authorization request repository + `RedisIdempotencyService` + `RedisInvalidationBus`、`SessionDispatchLockService` 改走分布式锁、Session Runtime 跨实例流（`SessionRuntimeStreamService / ReplayStore / ChangeNoticePublisher` + worker `SessionRuntimeChangePublisher`）、`CatalogService / KnowledgeService` 去 JVM 内存镜像并接入跨实例失效
+- [x] 阶段三 3.6（多实例）主干：共享模块 `packages/shared-redis-jvm`（keyspace / codec / pub-sub / lock）、API 接入 `spring-boot-starter-session-data-redis` + `RedisIdempotencyService` + `RedisInvalidationBus`、`SessionDispatchLockService` 改走分布式锁、Session Runtime 跨实例流（`SessionRuntimeStreamService / ReplayStore / ChangeNoticePublisher` + worker `SessionRuntimeChangePublisher`）、`CatalogService / KnowledgeService` 去 JVM 内存镜像并接入跨实例失效
 - [x] 阶段三 3.1 部分：六个主链路服务 Dockerfile（多阶段构建）与基础健康端点（API `/api/system/health`，Worker / Python 服务 `/healthz`）
 - [x] 历史 P0/P1/P2/P3 工作（详见 `docs/develop_record/2026-03-project_todos_snapshot.md`）：
   - P0.1 运行态持久化：session / session_event / playbook_run 落库

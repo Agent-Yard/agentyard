@@ -18,7 +18,6 @@ class SessionRedisConfigurationTest {
         assertThat(properties)
             .isNotNull()
             .containsEntry("spring.session.store-type", "redis")
-            .containsEntry("spring.session.redis.namespace", "${LYNXUS_SESSION_REDIS_NAMESPACE:lynxus:session:http}")
-            .containsEntry("lynxus.auth.oauth2.authorization-request.ttl", "${LYNXUS_AUTH_OAUTH2_AUTHORIZATION_REQUEST_TTL:10m}");
+            .containsEntry("spring.session.redis.namespace", "${LYNXUS_SESSION_REDIS_NAMESPACE:lynxus:session:http}");
     }
 }
