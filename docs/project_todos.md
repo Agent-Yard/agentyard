@@ -166,7 +166,7 @@
 已完成的主干能力：
 
 - 共享模块 `packages/shared-redis-jvm`：统一 keyspace、JSON codec、Pub/Sub bus、分布式锁
-- API：`spring-boot-starter-session-data-redis` 接入 + `SessionRedisConfiguration`；`RedisIdempotencyService`、`RedisInvalidationBus`、`SharedStateInvalidationSubscriber` 收口
+- API：`spring-boot-starter-session-data-redis` 接入 + `SessionRedisConfiguration`（Spring Security / OIDC 会话序列化）；`RedisIdempotencyService`、`RedisInvalidationBus`、`SharedStateInvalidationSubscriber` 收口
 - `SessionDispatchLockService` 从进程内 `ReentrantLock` 切到 `RedisLockService`
 - Session Runtime 跨实例流：`SessionRuntimeStreamService` + `SessionRuntimeReplayStore` + `SessionRuntimeChangeNoticePublisher`（API）与 `SessionRuntimeChangePublisher`（worker）通过 Redis Pub/Sub 协同；Web 侧 `EventSource` 已接入，轮询作为 fallback
 - `CatalogService` / `KnowledgeService` 去 JVM 内存镜像，切到 repository-first 读写；发布 / 更新通过 `RedisInvalidationBus` 广播失效
