@@ -37,8 +37,8 @@
     <rect width="400" height="64" rx="12" fill="#ffffff" stroke="#aeb8ac"/>
     <text x="24" y="40">Domain → Scenario → Assistant</text>
     <rect y="80" width="400" height="64" rx="12" fill="#d9ece7" stroke="#0d746e" stroke-opacity="0.35"/>
-    <text x="24" y="120" fill="#0b514c">Temporal + Python runtime</text>
+    <text x="24" y="120" fill="#0b514c">Temporal + JVM/Python runtime</text>
     <rect y="160" width="400" height="64" rx="12" fill="#f2ddd4" stroke="#b85f3b" stroke-opacity="0.35"/>
-    <text x="24" y="200" fill="#7f3c23">Tools &amp; channels gateway</text>
+    <text x="24" y="200" fill="#7f3c23">Extension plane boundary</text>
   </g>
 </svg>

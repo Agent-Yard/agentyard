@@ -33,7 +33,7 @@ export const TRANSLATIONS = {
     "fact-license-label": "许可证",
     "fact-license-value": "Apache 2.0",
     "fact-runtime-label": "运行时",
-    "fact-runtime-value": "Temporal + Python",
+    "fact-runtime-value": "Temporal + JVM/Python",
     "fact-console-label": "控制台",
     "fact-console-value": "Vue + Spring Boot",
     "why-eyebrow": "为什么选 Lynxus",
@@ -43,7 +43,7 @@ export const TRANSLATIONS = {
       "业务域、场景、助手、智能体、playbook、知识库与资源均作为一等治理对象建模。",
     "why-integration-h": "集成",
     "why-integration-p":
-      "工具连接器与通道提供方位于协议边界之后，将厂商鉴权、签名、SDK 与长连接隔离在智能体逻辑之外。",
+      "工具连接器与通道提供方位于协议边界之后，将厂商鉴权、签名、厂商 SDK 与长连接隔离在智能体逻辑之外。",
     "why-operations-h": "运维",
     "why-operations-p":
       "会话、事件、playbook 运行、人工转交与共享状态全程持久化，并以面向真实业务的运行时视图呈现。",
@@ -73,7 +73,7 @@ export const TRANSLATIONS = {
     "arch-2-h": "可恢复编排",
     "arch-2-p":
       "Temporal 承载会话与 playbook 工作流，处理等待、恢复、人工转交与共享状态。",
-    "arch-2-tech": "Temporal · Python SDK",
+    "arch-2-tech": "Temporal · JVM worker",
     "arch-3-tag": "智能体运行时",
     "arch-3-h": "决策与执行",
     "arch-3-p":
@@ -89,15 +89,15 @@ export const TRANSLATIONS = {
     "ext-tool-pill": "工具连接器",
     "ext-tool-h": "业务能力接入",
     "ext-tool-p":
-      "外部系统通过 manifest 暴露操作 schema，Lynxus 负责把智能体运行时的工具调用路由进来。",
+      "扩展服务通过 manifest 暴露工具操作 schema，Lynxus 负责把智能体运行时的工具调用路由到对应连接器。",
     "ext-channel-pill": "通道提供方",
     "ext-channel-h": "会话通道接入",
     "ext-channel-p":
-      "IM、工单与服务台通道在通道网关一侧统一入站事件，并消费出站消息帧。",
+      "通道提供方在通道网关一侧归一化 IM、工单与服务台入站事件，并消费出站消息帧。",
     "ext-protocol-pill": "协议 + SDK",
     "ext-protocol-h": "契约优先的扩展开发",
     "ext-protocol-p":
-      "OpenAPI、JSON Schema、示例、标准 fixture 及 JVM / Python SDK 让扩展服务与平台边界保持一致。",
+      "OpenAPI、JSON Schema、示例、标准 fixture 及 JVM / Python Extension SDK 让扩展服务与平台边界保持一致。",
     "docs-eyebrow": "开发者入口",
     "docs-title": "从公开契约开始。",
     "docs-1-h": "快速上手",
@@ -111,7 +111,7 @@ export const TRANSLATIONS = {
     "cta-eyebrow": "项目状态",
     "cta-title": "Alpha 阶段，面向评估与本地集成。",
     "cta-p":
-      "Lynxus 已经打通 控制平面 → 发布快照 → Temporal → Python 运行时 的核心链路。在面向生产的强化过程中，接口、数据结构与配置在小版本间仍可能调整。",
+      "Lynxus 已经打通 控制平面 → 发布快照 → Temporal worker → Python 运行时 的核心链路。在面向生产的强化过程中，接口、数据结构与配置在小版本间仍可能调整。",
     "btn-star": "在 GitHub 上 Star",
     "btn-releases": "发布记录",
     "btn-discussions": "讨论区",
@@ -152,7 +152,7 @@ export const TRANSLATIONS = {
     "fact-license-label": "License",
     "fact-license-value": "Apache 2.0",
     "fact-runtime-label": "Runtime",
-    "fact-runtime-value": "Temporal + Python",
+    "fact-runtime-value": "Temporal + JVM/Python",
     "fact-console-label": "Console",
     "fact-console-value": "Vue + Spring Boot",
     "why-eyebrow": "Why Lynxus",
@@ -162,7 +162,7 @@ export const TRANSLATIONS = {
       "Business domains, scenarios, assistants, agents, playbooks, knowledge bases, and resources are modeled as first-class governed objects.",
     "why-integration-h": "Integration",
     "why-integration-p":
-      "Tool connectors and channel providers sit behind a protocol boundary, keeping vendor auth, signing, SDKs, and long-lived connections out of agent logic.",
+      "Tool connectors and channel providers sit behind a protocol boundary, keeping vendor auth, signing, vendor SDKs, and long-lived connections out of agent logic.",
     "why-operations-h": "Operations",
     "why-operations-p":
       "Sessions, events, playbook runs, handoffs, and shared state are persisted and projected into a runtime view built for tracing real work.",
@@ -193,7 +193,7 @@ export const TRANSLATIONS = {
     "arch-2-h": "Durable orchestration",
     "arch-2-p":
       "Temporal hosts session and playbook workflows with waits, resumes, handoff, and shared state.",
-    "arch-2-tech": "Temporal · Python SDK",
+    "arch-2-tech": "Temporal · JVM worker",
     "arch-3-tag": "Agent runtime",
     "arch-3-h": "Decide & act",
     "arch-3-p":
@@ -209,15 +209,15 @@ export const TRANSLATIONS = {
     "ext-tool-pill": "Tool Connector",
     "ext-tool-h": "Business capability access",
     "ext-tool-p":
-      "External systems expose operation schemas through a manifest, while Lynxus routes tool invocations from the agent runtime.",
+      "Extension services expose tool operation schemas through manifests, while Lynxus routes agent-runtime tool calls to the selected connector.",
     "ext-channel-pill": "Channel Provider",
     "ext-channel-h": "Conversation channel access",
     "ext-channel-p":
-      "IM, ticketing, and service desk channels normalize inbound events and consume outbound frames through the channel gateway.",
+      "Channel providers normalize IM, ticketing, and service desk inbound events through the channel gateway and consume outbound frames.",
     "ext-protocol-pill": "Protocol + SDK",
     "ext-protocol-h": "Contract-first extension work",
     "ext-protocol-p":
-      "OpenAPI, JSON Schema, examples, canonical fixtures, and JVM/Python SDKs keep extension services aligned with the platform boundary.",
+      "OpenAPI, JSON Schema, examples, canonical fixtures, and JVM/Python Extension SDKs keep extension services aligned with the platform boundary.",
     "docs-eyebrow": "Developer entry points",
     "docs-title": "Start from the public contracts.",
     "docs-1-h": "Quick start",
@@ -233,7 +233,7 @@ export const TRANSLATIONS = {
     "cta-eyebrow": "Project status",
     "cta-title": "Alpha, built for evaluation and local integration.",
     "cta-p":
-      "Lynxus has the core control-plane → release-snapshot → Temporal → Python runtime path in place. Interfaces, data structures, and configuration may change across minor versions while production hardening continues.",
+      "Lynxus has the core control-plane → release-snapshot → Temporal worker → Python runtime path in place. Interfaces, data structures, and configuration may change across minor versions while production hardening continues.",
     "btn-star": "Star on GitHub",
     "btn-releases": "Releases",
     "btn-discussions": "Discussions",
