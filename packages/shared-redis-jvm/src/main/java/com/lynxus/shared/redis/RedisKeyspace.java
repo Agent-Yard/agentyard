@@ -112,6 +112,10 @@ public class RedisKeyspace {
         return qualify(SharedStateKeyspace.httpSessionNamespace());
     }
 
+    public String oauth2AuthorizationRequest(String stateHash) {
+        return qualify("lynxus:auth:oauth2:authorization-request:" + stateHash);
+    }
+
     private String qualify(String key) {
         if (DEFAULT_ROOT_PREFIX.equals(rootPrefix)) {
             return key;

@@ -79,6 +79,8 @@ Nginx 负责：
 - `/login/oauth2` 反向代理到 API 机器
 - TLS、域名、访问日志和静态资源缓存策略
 
+API 多实例部署不依赖 Nginx sticky session。OIDC authorization request 按 `state` 存入 Redis，callback 可落到任意 API 实例；浏览器登录态仍由 Spring Session Redis 共享。
+
 ## 依赖边界
 
 测试环境使用已有：

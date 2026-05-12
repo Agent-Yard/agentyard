@@ -65,6 +65,9 @@ lynxus:
     default-role: ${LYNXUS_AUTH_DEFAULT_ROLE:BUSINESS_USER}
     dev-bootstrap-enabled: ${LYNXUS_AUTH_DEV_BOOTSTRAP_ENABLED:false}
     login-success-path: ${LYNXUS_AUTH_LOGIN_SUCCESS_PATH:/}
+    oauth2:
+      authorization-request:
+        ttl: ${LYNXUS_AUTH_OAUTH2_AUTHORIZATION_REQUEST_TTL:10m}
   knowledge-service:
     base-url: ${LYNXUS_KNOWLEDGE_SERVICE_BASE_URL:http://127.0.0.1:8091}
   channel-gateway:

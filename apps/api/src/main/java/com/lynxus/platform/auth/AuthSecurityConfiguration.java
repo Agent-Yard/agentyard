@@ -17,8 +17,10 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.client.web.AuthorizationRequestRepository;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
+import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
@@ -48,6 +50,7 @@ public class AuthSecurityConfiguration {
     SecurityFilterChain securityFilterChain(
         HttpSecurity http,
         ObjectProvider<ClientRegistrationRepository> clientRegistrationRepositoryProvider,
+        ObjectProvider<AuthorizationRequestRepository<OAuth2AuthorizationRequest>> authorizationRequestRepositoryProvider,
         OidcProvisioningSuccessHandler oidcProvisioningSuccessHandler,
         SecurityContextRepository securityContextRepository,
         ApiLogContextFilter apiLogContextFilter,
@@ -86,10 +89,18 @@ public class AuthSecurityConfiguration {
             );
 
         if (clientRegistrationRepositoryProvider.getIfAvailable() != null) {
-            http.oauth2Login(oauth2 -> oauth2
-                .successHandler(oidcProvisioningSuccessHandler)
-                .failureHandler(oauth2AuthenticationFailureHandler())
-            );
+            http.oauth2Login(oauth2 -> {
+                AuthorizationRequestRepository<OAuth2AuthorizationRequest> authorizationRequestRepository =
+                    authorizationRequestRepositoryProvider.getIfAvailable();
+                if (authorizationRequestRepository != null) {
+                    oauth2.authorizationEndpoint(authorizationEndpoint ->
+                        authorizationEndpoint.authorizationRequestRepository(authorizationRequestRepository)
+                    );
+                }
+                oauth2
+                    .successHandler(oidcProvisioningSuccessHandler)
+                    .failureHandler(oauth2AuthenticationFailureHandler());
+            });
         }
 
         return http.build();
