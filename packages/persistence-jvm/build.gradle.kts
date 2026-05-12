@@ -27,7 +27,7 @@ val codegenImplementation by configurations.getting {
 }
 
 dependencies {
-    api(platform("org.springframework.boot:spring-boot-dependencies:4.0.1"))
+    api(platform("org.springframework.boot:spring-boot-dependencies:4.0.6"))
     api("org.jooq:jooq")
 
     implementation(project(":packages:contracts-jvm"))
@@ -36,7 +36,7 @@ dependencies {
     implementation("org.springframework:spring-tx")
     implementation("tools.jackson.core:jackson-databind")
 
-    codegenImplementation(platform("org.springframework.boot:spring-boot-dependencies:4.0.1"))
+    codegenImplementation(platform("org.springframework.boot:spring-boot-dependencies:4.0.6"))
     codegenImplementation("org.flywaydb:flyway-core")
     codegenImplementation("org.flywaydb:flyway-database-postgresql")
     codegenImplementation("io.zonky.test:embedded-postgres:2.2.2")

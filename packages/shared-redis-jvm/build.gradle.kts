@@ -9,7 +9,7 @@ java {
 }
 
 dependencies {
-    implementation(platform("org.springframework.boot:spring-boot-dependencies:4.0.1"))
+    implementation(platform("org.springframework.boot:spring-boot-dependencies:4.0.6"))
     implementation(project(":packages:contracts-jvm"))
 
     implementation("org.springframework:spring-context")

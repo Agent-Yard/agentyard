@@ -166,7 +166,7 @@ Java core 数据访问当前以 `Flyway + jOOQ + packages/persistence-jvm` 为�
 
 - pnpm：9.12.0
 - Java toolchain：25
-- Spring Boot：4.0.6（应用插件基线；部分共享包仍通过 Spring Boot dependency BOM 4.0.1 对齐依赖）
+- Spring Boot：4.0.6
 - Vue：3.5.13
 - Vite：8
 - TypeScript：5.9
