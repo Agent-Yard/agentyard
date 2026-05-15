@@ -8,7 +8,6 @@ const { messageSuccess, messageError, routerPush, apiMock } = vi.hoisted(() => (
   messageError: vi.fn(),
   routerPush: vi.fn(),
   apiMock: {
-    createRuntimeSession: vi.fn(),
     sendRuntimeSessionMessage: vi.fn(),
   },
 }));
@@ -71,12 +70,12 @@ describe('useRuntimeActions', () => {
     vi.clearAllMocks();
   });
 
-  it('selects created sessions without waiting for background refresh', async () => {
+  it('selects started sessions without waiting for background refresh', async () => {
     const state = makeState();
     const upsertRuntimeSession = vi.fn();
     const refresh = vi.fn().mockReturnValue(new Promise(() => {}));
     const created = runtimeSession('session-created');
-    apiMock.createRuntimeSession.mockResolvedValue(created);
+    apiMock.sendRuntimeSessionMessage.mockResolvedValue(created);
     const actions = useRuntimeActions(
       state,
       { upsertRuntimeSession },
@@ -84,7 +83,7 @@ describe('useRuntimeActions', () => {
       (_, fallback) => fallback,
     );
 
-    await actions.handleCreateSession({
+    await actions.handleStartSession({
       assistantId: 'assistant-1',
       customerId: 'customer-1',
       openingMessage: 'hello',
@@ -96,7 +95,15 @@ describe('useRuntimeActions', () => {
     expect(routerPush).toHaveBeenCalledWith('/console/runtime');
     expect(refresh).toHaveBeenCalledWith(false);
     expect(state.creatingSession.value).toBe(false);
-    expect(messageSuccess).toHaveBeenCalledWith('会话已创建');
+    expect(messageSuccess).toHaveBeenCalledWith('Session 已启动');
+    expect(apiMock.sendRuntimeSessionMessage).toHaveBeenCalledWith({
+      assistantId: 'assistant-1',
+      customerId: 'customer-1',
+      message: {
+        blocks: [{ type: 'TEXT', text: 'hello' }],
+        metadata: {},
+      },
+    });
   });
 
   it('clears sending state after accepted send response without waiting for background refresh', async () => {
@@ -125,5 +132,13 @@ describe('useRuntimeActions', () => {
     expect(refresh).toHaveBeenCalledWith(false);
     expect(state.sendingSessionId.value).toBeNull();
     expect(messageError).not.toHaveBeenCalled();
+    expect(apiMock.sendRuntimeSessionMessage).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      customerId: 'customer-1',
+      message: {
+        blocks: [{ type: 'TEXT', text: 'follow up' }],
+        metadata: {},
+      },
+    });
   });
 });

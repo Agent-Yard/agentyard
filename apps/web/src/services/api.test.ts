@@ -85,7 +85,8 @@ describe('api client', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(
-      api.sendRuntimeSessionMessage('session-1', {
+      api.sendRuntimeSessionMessage({
+        sessionId: 'session-1',
         customerId: 'customer-1',
         message: {
           blocks: [{ type: 'TEXT', text: '第二条消息' }],
@@ -196,17 +197,17 @@ describe('api client', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    await api.createRuntimeSession({
+    await api.sendRuntimeSessionMessage({
       assistantId: 'assistant-1',
       customerId: 'customer-1',
-      openingMessage: {
+      message: {
         blocks: [{ type: 'TEXT', text: '你好' }],
         metadata: {},
       },
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/session-runtime/sessions',
+      '/api/session-runtime/messages',
       expect.objectContaining({
         credentials: 'include',
         headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
@@ -214,7 +215,7 @@ describe('api client', () => {
         body: JSON.stringify({
           assistantId: 'assistant-1',
           customerId: 'customer-1',
-          openingMessage: {
+          message: {
             blocks: [{ type: 'TEXT', text: '你好' }],
             metadata: {},
           },

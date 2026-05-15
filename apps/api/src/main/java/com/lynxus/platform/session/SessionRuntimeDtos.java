@@ -21,14 +21,9 @@ public final class SessionRuntimeDtos {
         return Collections.unmodifiableMap(new LinkedHashMap<>(source));
     }
 
-    public record CreateSessionRequest(
-        String assistantId,
-        String customerId,
-        SessionMessageInput openingMessage
-    ) {
-    }
-
     public record SendSessionMessageRequest(
+        String sessionId,
+        String assistantId,
         String customerId,
         SessionMessageInput message
     ) {

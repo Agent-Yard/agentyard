@@ -34,26 +34,30 @@ export function useRuntimeActions(
     });
   }
 
-  async function handleCreateSession(payload: {
+  async function handleStartSession(payload: {
     assistantId: string;
     customerId: string;
     openingMessage: string;
   }) {
     state.creatingSession.value = true;
     try {
-      const created = await api.createRuntimeSession({
+      const openingMessage = payload.openingMessage.trim();
+      if (!openingMessage) {
+        throw new Error('开场消息不能为空');
+      }
+      const created = await api.sendRuntimeSessionMessage({
         assistantId: payload.assistantId,
         customerId: payload.customerId,
-        openingMessage: payload.openingMessage.trim() ? textMessageInput(payload.openingMessage.trim()) : null,
+        message: textMessageInput(openingMessage),
       });
       helpers.upsertRuntimeSession(created);
       state.runtimePreferredSessionId.value = created.id;
       state.runtimeSelectedSessionId.value = created.id;
       void router.push(pagePathByKey.runtime);
       refreshRuntimeInBackground('刷新会话失败');
-      void message.success('会话已创建');
+      void message.success('Session 已启动');
     } catch (error) {
-      void message.error(errorMessage(error, '创建会话失败'));
+      void message.error(errorMessage(error, '启动 Session 失败'));
     } finally {
       state.creatingSession.value = false;
     }
@@ -64,7 +68,8 @@ export function useRuntimeActions(
     state.runtimePreferredSessionId.value = payload.sessionId;
     state.runtimeSelectedSessionId.value = payload.sessionId;
     try {
-      const session = await api.sendRuntimeSessionMessage(payload.sessionId, {
+      const session = await api.sendRuntimeSessionMessage({
+        sessionId: payload.sessionId,
         customerId: payload.customerId,
         message: textMessageInput(payload.message),
       });
@@ -88,7 +93,7 @@ export function useRuntimeActions(
   }
 
   return {
-    handleCreateSession,
+    handleStartSession,
     handleSendMessage,
     handleSelectRuntimeSession,
   };

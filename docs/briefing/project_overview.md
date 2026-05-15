@@ -64,7 +64,7 @@ Lynxus 当前的解法，是把这些问题收束到统一平台结构中：
 - 一个 `session` 对应一条主 Temporal workflow
 - assistant 显式配置唯一 `primaryAgentId`
 - 运行时始终只有一个 `currentOwnerAgentId`
-- 用户消息通过 `/api/session-runtime/sessions/{sessionId}/messages` 进入当前 session
+- 用户消息通过 `/api/session-runtime/messages` 进入当前 session；请求可携带 `sessionId` 发送到已有 session，或携带 `assistantId` 用首条消息启动 / 复用 session
 - owner 只能返回以下控制动作：
   - `REPLY`
   - `NO_OP`

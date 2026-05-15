@@ -43,11 +43,6 @@ public class SessionRuntimeController {
         return ApiResponse.ok(sessionRuntimeService.listSessions());
     }
 
-    @PostMapping("/sessions")
-    public ApiResponse<?> createSession(@RequestBody CreateSessionRequest request) {
-        return ApiResponse.ok(sessionRuntimeService.createSession(request));
-    }
-
     @GetMapping("/sessions/{sessionId}")
     public ApiResponse<?> session(@PathVariable String sessionId) {
         return ApiResponse.ok(sessionRuntimeService.getSessionDetail(sessionId));
@@ -86,9 +81,9 @@ public class SessionRuntimeController {
         return ApiResponse.ok(sessionRuntimeService.getPrivacyMappingSummary(sessionId));
     }
 
-    @PostMapping("/sessions/{sessionId}/messages")
-    public ApiResponse<?> sendMessage(@PathVariable String sessionId, @RequestBody SendSessionMessageRequest request) {
-        return ApiResponse.ok(sessionRuntimeService.sendMessage(sessionId, request));
+    @PostMapping("/messages")
+    public ApiResponse<?> sendMessage(@RequestBody SendSessionMessageRequest request) {
+        return ApiResponse.ok(sessionRuntimeService.sendMessage(request));
     }
 
     @PostMapping("/sessions/{sessionId}/human-resume")

@@ -32,7 +32,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   selectSession: [sessionId: string];
-  createSession: [payload: { assistantId: string; customerId: string; openingMessage: string }];
+  startSession: [payload: { assistantId: string; customerId: string; openingMessage: string }];
   sendMessage: [payload: { sessionId: string; customerId: string; message: string }];
 }>();
 
@@ -127,14 +127,20 @@ const createAssistantBlockingMessage = computed(() => {
   if (!createSelectedAssistant.value || canRunAssistant(createSelectedAssistant.value)) {
     return null;
   }
-  return '该助手还没有发布版本，当前不能创建 session。';
+  return '该助手还没有发布版本，当前不能启动 session。';
 });
 
 function submitCreate() {
-  if (!createForm.assistantId || !createForm.customerId || props.creatingSession || createAssistantBlockingMessage.value) {
+  if (
+    !createForm.assistantId
+    || !createForm.customerId
+    || !createForm.openingMessage.trim()
+    || props.creatingSession
+    || createAssistantBlockingMessage.value
+  ) {
     return;
   }
-  emit('createSession', {
+  emit('startSession', {
     assistantId: createForm.assistantId,
     customerId: createForm.customerId,
     openingMessage: createForm.openingMessage.trim(),
@@ -269,7 +275,7 @@ function formatSharedState(value: Record<string, unknown> | null | undefined) {
       :disabled="!currentCustomerId"
       @click="openCreateModal"
     >
-      新建 Session
+      启动 Session
     </a-button>
   </PageHeadActions>
 
@@ -515,10 +521,10 @@ function formatSharedState(value: Record<string, unknown> | null | undefined) {
             <a-button
               type="primary"
               :loading="creatingSession"
-              :disabled="!createForm.assistantId || !createForm.customerId || !!createAssistantBlockingMessage"
+              :disabled="!createForm.assistantId || !createForm.customerId || !createForm.openingMessage.trim() || !!createAssistantBlockingMessage"
               @click="submitCreate"
             >
-              {{ creatingSession ? '正在创建...' : '创建 Session' }}
+              {{ creatingSession ? '正在启动...' : '发送并启动' }}
             </a-button>
           </div>
         </a-form>

@@ -73,13 +73,9 @@ export interface PrivacyMappingSummary {
   lastProcessedAt: string | null;
 }
 
-export interface CreateSessionPayload {
-  assistantId: string;
-  customerId: string;
-  openingMessage: SessionMessageInput | null;
-}
-
 export interface SendSessionMessagePayload {
+  sessionId?: string | null;
+  assistantId?: string | null;
   customerId: string;
   message: SessionMessageInput;
 }

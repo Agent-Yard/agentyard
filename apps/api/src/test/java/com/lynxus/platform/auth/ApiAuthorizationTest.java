@@ -110,7 +110,7 @@ class ApiAuthorizationTest {
     void shouldAllowBusinessUserRuntimeRequest() throws Exception {
         try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(TestConfig.class, AuthSecurityConfiguration.class)) {
             SessionRuntimeService sessionRuntimeService = context.getBean(SessionRuntimeService.class);
-            when(sessionRuntimeService.createSession(any())).thenReturn(new SessionRuntimeDtos.SessionRuntimeSessionDto(
+            when(sessionRuntimeService.sendMessage(any())).thenReturn(new SessionRuntimeDtos.SessionRuntimeSessionDto(
                 "session-1",
                 "scenario-1",
                 "默认会话",
@@ -137,14 +137,14 @@ class ApiAuthorizationTest {
 
             MockMvc mockMvc = mockMvc(context);
 
-            mockMvc.perform(post("/api/session-runtime/sessions")
+            mockMvc.perform(post("/api/session-runtime/messages")
                     .with(user("business"))
                     .contentType(MediaType.APPLICATION_JSON)
                     .content("""
                         {
                           "assistantId": "assistant-1",
                           "customerId": "customer-1",
-                          "openingMessage": {
+                          "message": {
                             "blocks": [
                               {
                                 "type": "TEXT",

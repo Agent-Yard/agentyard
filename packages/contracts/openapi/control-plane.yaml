@@ -1408,6 +1408,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/KnowledgeRetrievalPreviewResult'
+  /session-runtime/messages:
+    post:
+      summary: Send a user message into an existing session or start a session with the first message
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendSessionMessageRequest'
+      responses:
+        '200':
+          description: Updated or created session state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionRuntimeSession'
+        '409':
+          description: Session is busy or rejected the message
   /session-runtime/sessions:
     get:
       summary: List session runtime sessions
@@ -1420,21 +1438,6 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/SessionRuntimeSession'
-    post:
-      summary: Create a session runtime session
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateSessionRequest'
-      responses:
-        '200':
-          description: Created session
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SessionRuntimeSession'
   /session-runtime/sessions/{sessionId}:
     get:
       summary: Get session runtime detail
@@ -1498,30 +1501,6 @@ paths:
             application/json:
               schema:
                 type: object
-  /session-runtime/sessions/{sessionId}/messages:
-    post:
-      summary: Send a user message into an existing session
-      parameters:
-        - in: path
-          name: sessionId
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SendSessionMessageRequest'
-      responses:
-        '200':
-          description: Updated session state
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SessionRuntimeSession'
-        '409':
-          description: Session is busy or rejected the message
   /session-runtime/sessions/{sessionId}/human-resume:
     post:
       summary: Resume a waiting playbook run with human input
@@ -3929,21 +3908,17 @@ components:
     PlaybookRunStatus:
       type: string
       enum: [RUNNING, WAITING, SUCCEEDED, FAILED, CANCELLED]
-    CreateSessionRequest:
-      type: object
-      required: [assistantId, customerId]
-      properties:
-        assistantId:
-          type: string
-        customerId:
-          type: string
-        openingMessage:
-          $ref: '#/components/schemas/SessionMessageInput'
-          nullable: true
     SendSessionMessageRequest:
       type: object
       required: [customerId, message]
+      description: Provide exactly one of sessionId or assistantId. sessionId sends into an existing session; assistantId starts or reuses an active session for the customer.
       properties:
+        sessionId:
+          type: string
+          nullable: true
+        assistantId:
+          type: string
+          nullable: true
         customerId:
           type: string
         message:

@@ -172,7 +172,7 @@ const currentView = computed(() => {
       },
       handlers: {
         selectSession: runtimeActions.handleSelectRuntimeSession,
-        createSession: runtimeActions.handleCreateSession,
+        startSession: runtimeActions.handleStartSession,
         sendMessage: runtimeActions.handleSendMessage,
       },
     },

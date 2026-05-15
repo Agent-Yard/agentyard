@@ -2,7 +2,6 @@ package com.lynxus.platform.session;
 
 import com.lynxus.platform.auth.AuthModels;
 import com.lynxus.platform.auth.CurrentUserResolver;
-import static com.lynxus.platform.session.SessionRuntimeDtos.CreateSessionRequest;
 import static com.lynxus.platform.session.SessionRuntimeDtos.SendSessionMessageRequest;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -33,7 +32,7 @@ import org.junit.jupiter.api.Test;
 
 class SessionRuntimeServiceTest {
     @Test
-    void createSession_reusesExistingActiveSessionForSameConversation() {
+    void sendMessage_reusesExistingActiveSessionForSameConversation() {
         SessionWorkflowGateway gateway = mock(SessionWorkflowGateway.class);
         CatalogService catalogService = mock(CatalogService.class);
         SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
@@ -51,8 +50,8 @@ class SessionRuntimeServiceTest {
         when(repository.findSession("session-existing")).thenReturn(java.util.Optional.of(existing));
         when(gateway.isWorkflowOpen("session-existing")).thenReturn(true);
 
-        SessionRuntimeDtos.SessionRuntimeSessionDto result = service.createSession(
-            new CreateSessionRequest("ast-1", "customer-1", textMessageInput("你好"))
+        SessionRuntimeDtos.SessionRuntimeSessionDto result = service.sendMessage(
+            new SendSessionMessageRequest(null, "ast-1", "customer-1", textMessageInput("你好"))
         );
 
         assertEquals("session-existing", result.id());
@@ -60,7 +59,7 @@ class SessionRuntimeServiceTest {
     }
 
     @Test
-    void createSession_reusesExistingActiveSessionForImageOnlyOpeningMessage() {
+    void sendMessage_reusesExistingActiveSessionForImageOnlyOpeningMessage() {
         SessionWorkflowGateway gateway = mock(SessionWorkflowGateway.class);
         CatalogService catalogService = mock(CatalogService.class);
         SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
@@ -78,8 +77,8 @@ class SessionRuntimeServiceTest {
         when(repository.findSession("session-existing")).thenReturn(java.util.Optional.of(existing));
         when(gateway.isWorkflowOpen("session-existing")).thenReturn(true);
 
-        SessionRuntimeDtos.SessionRuntimeSessionDto result = service.createSession(
-            new CreateSessionRequest("ast-1", "customer-1", imageMessageInput("https://example.com/refund.png"))
+        SessionRuntimeDtos.SessionRuntimeSessionDto result = service.sendMessage(
+            new SendSessionMessageRequest(null, "ast-1", "customer-1", imageMessageInput("https://example.com/refund.png"))
         );
 
         assertEquals("session-existing", result.id());
@@ -88,7 +87,7 @@ class SessionRuntimeServiceTest {
     }
 
     @Test
-    void createSession_marksClosedSessionEndedAndStartsNewWorkflow() {
+    void sendMessage_marksReusableClosedSessionEndedAndStartsNewWorkflow() {
         SessionWorkflowGateway gateway = mock(SessionWorkflowGateway.class);
         CatalogService catalogService = mock(CatalogService.class);
         SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
@@ -104,10 +103,10 @@ class SessionRuntimeServiceTest {
         when(catalogService.getAssistantRuntimeSnapshot("ast-1")).thenReturn(assistant);
         when(repository.findActiveSession("customer-1", "ast-1")).thenReturn(java.util.Optional.of(existing));
         when(repository.findSession(any())).thenReturn(java.util.Optional.empty());
-        when(gateway.isWorkflowOpen("session-closed")).thenReturn(false);
+        when(gateway.isWorkflowOpen(any())).thenAnswer(invocation -> !"session-closed".equals(invocation.getArgument(0)));
 
-        SessionRuntimeDtos.SessionRuntimeSessionDto result = service.createSession(
-            new CreateSessionRequest("ast-1", "customer-1", textMessageInput(""))
+        SessionRuntimeDtos.SessionRuntimeSessionDto result = service.sendMessage(
+            new SendSessionMessageRequest(null, "ast-1", "customer-1", textMessageInput("你好"))
         );
 
         assertNotEquals("session-closed", result.id());
@@ -116,7 +115,7 @@ class SessionRuntimeServiceTest {
     }
 
     @Test
-    void createSession_dispatchesImageOnlyOpeningMessageAfterStartingNewWorkflow() {
+    void sendMessage_dispatchesImageOnlyOpeningMessageAfterStartingNewWorkflow() {
         SessionWorkflowGateway gateway = mock(SessionWorkflowGateway.class);
         CatalogService catalogService = mock(CatalogService.class);
         SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
@@ -133,8 +132,8 @@ class SessionRuntimeServiceTest {
         when(repository.findSession(any())).thenReturn(java.util.Optional.empty());
         when(gateway.isWorkflowOpen(any())).thenReturn(true);
 
-        SessionRuntimeDtos.SessionRuntimeSessionDto result = service.createSession(
-            new CreateSessionRequest("ast-1", "customer-1", imageMessageInput("https://example.com/refund.png"))
+        SessionRuntimeDtos.SessionRuntimeSessionDto result = service.sendMessage(
+            new SendSessionMessageRequest(null, "ast-1", "customer-1", imageMessageInput("https://example.com/refund.png"))
         );
 
         assertNotEquals("session-closed", result.id());
@@ -168,8 +167,7 @@ class SessionRuntimeServiceTest {
         when(gateway.isWorkflowOpen(any())).thenAnswer(invocation -> !"session-closed".equals(invocation.getArgument(0)));
 
         SessionRuntimeDtos.SessionRuntimeSessionDto result = service.sendMessage(
-            "session-closed",
-            new SendSessionMessageRequest("customer-1", textMessageInput("你好"))
+            new SendSessionMessageRequest("session-closed", null, "customer-1", textMessageInput("你好"))
         );
 
         assertNotEquals("session-closed", result.id());
@@ -199,8 +197,7 @@ class SessionRuntimeServiceTest {
         when(gateway.isWorkflowOpen(any())).thenAnswer(invocation -> !"session-ended".equals(invocation.getArgument(0)));
 
         SessionRuntimeDtos.SessionRuntimeSessionDto result = service.sendMessage(
-            "session-ended",
-            new SendSessionMessageRequest("customer-1", textMessageInput("继续处理"))
+            new SendSessionMessageRequest("session-ended", null, "customer-1", textMessageInput("继续处理"))
         );
 
         assertNotEquals("session-ended", result.id());
@@ -209,7 +206,7 @@ class SessionRuntimeServiceTest {
     }
 
     @Test
-    void createSession_shouldInjectFrozenReleaseModelSkillAndToolDescriptorsIntoWorkflowStartRequest() {
+    void sendMessage_shouldInjectFrozenReleaseModelSkillAndToolDescriptorsIntoWorkflowStartRequest() {
         SessionWorkflowGateway gateway = mock(SessionWorkflowGateway.class);
         CatalogService catalogService = mock(CatalogService.class);
         SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
@@ -224,8 +221,9 @@ class SessionRuntimeServiceTest {
         when(catalogService.getAssistantRuntimeSnapshot("ast-1")).thenReturn(assistant);
         when(repository.findActiveSession("customer-1", "ast-1")).thenReturn(java.util.Optional.empty());
         when(repository.findSession(any())).thenReturn(java.util.Optional.empty());
-        SessionRuntimeDtos.SessionRuntimeSessionDto result = service.createSession(
-            new CreateSessionRequest("ast-1", "customer-1", textMessageInput(""))
+        when(gateway.isWorkflowOpen(any())).thenReturn(true);
+        SessionRuntimeDtos.SessionRuntimeSessionDto result = service.sendMessage(
+            new SendSessionMessageRequest(null, "ast-1", "customer-1", textMessageInput("你好"))
         );
 
         assertEquals("1.0.0", result.assistantReleaseVersion());
@@ -260,7 +258,7 @@ class SessionRuntimeServiceTest {
     }
 
     @Test
-    void createSession_shouldUseLlmReasoningSettingsWhenAssistantPolicyDoesNotOverride() {
+    void sendMessage_shouldUseLlmReasoningSettingsWhenAssistantPolicyDoesNotOverride() {
         SessionWorkflowGateway gateway = mock(SessionWorkflowGateway.class);
         CatalogService catalogService = mock(CatalogService.class);
         SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
@@ -279,8 +277,9 @@ class SessionRuntimeServiceTest {
         when(catalogService.getAssistantRuntimeSnapshot("ast-1")).thenReturn(assistant);
         when(repository.findActiveSession("customer-1", "ast-1")).thenReturn(java.util.Optional.empty());
         when(repository.findSession(any())).thenReturn(java.util.Optional.empty());
+        when(gateway.isWorkflowOpen(any())).thenReturn(true);
 
-        service.createSession(new CreateSessionRequest("ast-1", "customer-1", textMessageInput("")));
+        service.sendMessage(new SendSessionMessageRequest(null, "ast-1", "customer-1", textMessageInput("你好")));
 
         verify(gateway).start(argThat(startRequest ->
             startRequest.agents().getFirst().model() != null
@@ -290,7 +289,7 @@ class SessionRuntimeServiceTest {
     }
 
     @Test
-    void createSession_shouldRejectUnknownToolConnectorRetryPolicyPresetDuringReleaseMapping() {
+    void sendMessage_shouldRejectUnknownToolConnectorRetryPolicyPresetDuringReleaseMapping() {
         SessionWorkflowGateway gateway = mock(SessionWorkflowGateway.class);
         CatalogService catalogService = mock(CatalogService.class);
         SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
@@ -305,10 +304,11 @@ class SessionRuntimeServiceTest {
         when(catalogService.getAssistantRuntimeSnapshot("ast-1")).thenReturn(assistant);
         when(repository.findActiveSession("customer-1", "ast-1")).thenReturn(java.util.Optional.empty());
         when(repository.findSession(any())).thenReturn(java.util.Optional.empty());
+        when(gateway.isWorkflowOpen(any())).thenReturn(true);
 
         IllegalArgumentException error = assertThrows(
             IllegalArgumentException.class,
-            () -> service.createSession(new CreateSessionRequest("ast-1", "customer-1", textMessageInput("")))
+            () -> service.sendMessage(new SendSessionMessageRequest(null, "ast-1", "customer-1", textMessageInput("你好")))
         );
 
         assertEquals("unsupported tool connector retryPolicy preset: LINEAR", error.getMessage());
@@ -462,8 +462,7 @@ class SessionRuntimeServiceTest {
         when(gateway.isWorkflowOpen("session-1")).thenReturn(true);
 
         SessionRuntimeDtos.SessionRuntimeSessionDto result = service.sendMessage(
-            "session-1",
-            new SendSessionMessageRequest("customer-1", textMessageInput("你好"))
+            new SendSessionMessageRequest("session-1", null, "customer-1", textMessageInput("你好"))
         );
 
         assertEquals(existing, result);
@@ -491,7 +490,7 @@ class SessionRuntimeServiceTest {
 
         ConflictException error = assertThrows(
             ConflictException.class,
-            () -> service.sendMessage("session-1", new SendSessionMessageRequest("customer-1", textMessageInput("你好")))
+            () -> service.sendMessage(new SendSessionMessageRequest("session-1", null, "customer-1", textMessageInput("你好")))
         );
 
         assertEquals("session message acceptance timed out", error.getMessage());
@@ -515,10 +514,78 @@ class SessionRuntimeServiceTest {
 
         ConflictException error = assertThrows(
             ConflictException.class,
-            () -> service.sendMessage("session-1", new SendSessionMessageRequest("customer-1", textMessageInput("")))
+            () -> service.sendMessage(new SendSessionMessageRequest("session-1", null, "customer-1", textMessageInput("")))
         );
 
         assertEquals("message content required", error.getMessage());
+    }
+
+    @Test
+    void sendMessage_shouldRejectMissingSessionAndAssistant() {
+        SessionWorkflowGateway gateway = mock(SessionWorkflowGateway.class);
+        CatalogService catalogService = mock(CatalogService.class);
+        SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
+        SessionRuntimeService service = new SessionRuntimeService(
+            gateway,
+            catalogService,
+            repository,
+            new SessionDispatchLockService()
+        );
+
+        IllegalArgumentException error = assertThrows(
+            IllegalArgumentException.class,
+            () -> service.sendMessage(new SendSessionMessageRequest(null, null, "customer-1", textMessageInput("你好")))
+        );
+
+        assertEquals("exactly one of sessionId or assistantId is required", error.getMessage());
+        verify(gateway, never()).start(any());
+        verify(gateway, never()).submitUserMessage(any(), any());
+    }
+
+    @Test
+    void sendMessage_shouldRejectBothSessionAndAssistant() {
+        SessionWorkflowGateway gateway = mock(SessionWorkflowGateway.class);
+        CatalogService catalogService = mock(CatalogService.class);
+        SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
+        SessionRuntimeService service = new SessionRuntimeService(
+            gateway,
+            catalogService,
+            repository,
+            new SessionDispatchLockService()
+        );
+
+        IllegalArgumentException error = assertThrows(
+            IllegalArgumentException.class,
+            () -> service.sendMessage(new SendSessionMessageRequest("session-1", "ast-1", "customer-1", textMessageInput("你好")))
+        );
+
+        assertEquals("exactly one of sessionId or assistantId is required", error.getMessage());
+        verify(gateway, never()).start(any());
+        verify(gateway, never()).submitUserMessage(any(), any());
+    }
+
+    @Test
+    void sendMessage_shouldRejectCustomerIdMismatchForExistingSession() {
+        SessionWorkflowGateway gateway = mock(SessionWorkflowGateway.class);
+        CatalogService catalogService = mock(CatalogService.class);
+        SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
+        SessionRuntimeService service = new SessionRuntimeService(
+            gateway,
+            catalogService,
+            repository,
+            new SessionDispatchLockService()
+        );
+        SessionRuntimeDtos.SessionRuntimeSessionDto existing = session("session-1", "IDLE", null);
+
+        when(repository.findSession("session-1")).thenReturn(java.util.Optional.of(existing));
+
+        IllegalArgumentException error = assertThrows(
+            IllegalArgumentException.class,
+            () -> service.sendMessage(new SendSessionMessageRequest("session-1", null, "other-customer", textMessageInput("你好")))
+        );
+
+        assertEquals("customerId does not match session", error.getMessage());
+        verify(gateway, never()).submitUserMessage(any(), any());
     }
 
     @Test

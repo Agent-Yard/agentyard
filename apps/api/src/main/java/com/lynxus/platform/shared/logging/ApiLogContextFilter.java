@@ -35,7 +35,7 @@ public class ApiLogContextFilter extends OncePerRequestFilter {
             requestToUse = new CachedBodyHttpServletRequest(request);
         }
         TraceContext traceContext = TraceContext.fromTraceparent(request.getHeader(LogContextHeaders.TRACEPARENT));
-        String sessionId = extractPath(SESSION_PATH, requestToUse.getRequestURI());
+        String sessionId = extractSessionId(requestToUse);
         String customerId = extractCustomerId(requestToUse);
         String userId = resolveUserId();
         response.setHeader(LogContextHeaders.TRACEPARENT, traceContext.toTraceparent());
@@ -59,6 +59,22 @@ public class ApiLogContextFilter extends OncePerRequestFilter {
         try {
             JsonNode jsonNode = objectMapper.readTree(cachedRequest.cachedBody());
             return value(jsonNode, "customerId");
+        } catch (JacksonException ignored) {
+            return null;
+        }
+    }
+
+    private String extractSessionId(HttpServletRequest request) throws IOException {
+        String pathSessionId = extractPath(SESSION_PATH, request.getRequestURI());
+        if (pathSessionId != null) {
+            return pathSessionId;
+        }
+        if (!(request instanceof CachedBodyHttpServletRequest cachedRequest) || cachedRequest.cachedBody().length == 0) {
+            return null;
+        }
+        try {
+            JsonNode jsonNode = objectMapper.readTree(cachedRequest.cachedBody());
+            return value(jsonNode, "sessionId");
         } catch (JacksonException ignored) {
             return null;
         }

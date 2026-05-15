@@ -17,7 +17,6 @@ import type {
   CreateChannelProfilePayload,
   CreateAgentPayload,
   CreateIntegrationAccountCredentialPayload,
-  CreateSessionPayload,
   CreateDomainPayload,
   CreateKnowledgeBasePayload,
   CreateKnowledgeReleasePayload,
@@ -379,10 +378,8 @@ export const api = {
   },
   getRuntimeSessionPrivacyMappingSummary: (sessionId: string) =>
     request<PrivacyMappingSummary>(`/session-runtime/sessions/${sessionId}/privacy-mapping-summary`),
-  createRuntimeSession: (payload: CreateSessionPayload) =>
-    request<SessionRuntimeSession>('/session-runtime/sessions', jsonOptions('POST', payload)),
-  sendRuntimeSessionMessage: (sessionId: string, payload: SendSessionMessagePayload) =>
-    request<SessionRuntimeSession>(`/session-runtime/sessions/${sessionId}/messages`, jsonOptions('POST', payload)),
+  sendRuntimeSessionMessage: (payload: SendSessionMessagePayload) =>
+    request<SessionRuntimeSession>('/session-runtime/messages', jsonOptions('POST', payload)),
   humanReplyRuntimeSession: (sessionId: string, payload: HumanOperatorReplyPayload) =>
     request<SessionRuntimeSession>(`/session-runtime/sessions/${sessionId}/human-reply`, jsonOptions('POST', payload)),
   resumeRuntimePlaybookWithHuman: (sessionId: string, payload: { playbookRunId: string; payload?: Record<string, unknown> }) =>

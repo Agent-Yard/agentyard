@@ -286,9 +286,10 @@ class MultiInstanceApiIntegrationTest {
             client,
             apiA.port(),
             "POST",
-            "/api/session-runtime/sessions/" + sessionId + "/messages",
+            "/api/session-runtime/messages",
             """
                 {
+                  "sessionId": "%s",
                   "customerId": "customer-1",
                   "message": {
                     "blocks": [
@@ -300,16 +301,17 @@ class MultiInstanceApiIntegrationTest {
                     "metadata": {}
                   }
                 }
-                """,
+                """.formatted(sessionId),
             null
         );
         CompletableFuture<HttpResponse<String>> second = sendAsync(
             client,
             apiB.port(),
             "POST",
-            "/api/session-runtime/sessions/" + sessionId + "/messages",
+            "/api/session-runtime/messages",
             """
                 {
+                  "sessionId": "%s",
                   "customerId": "customer-1",
                   "message": {
                     "blocks": [
@@ -321,7 +323,7 @@ class MultiInstanceApiIntegrationTest {
                     "metadata": {}
                   }
                 }
-                """,
+                """.formatted(sessionId),
             null
         );
 

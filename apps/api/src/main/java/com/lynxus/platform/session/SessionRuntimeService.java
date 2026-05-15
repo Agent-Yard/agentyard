@@ -181,22 +181,41 @@ public class SessionRuntimeService {
         }
     }
 
-    public SessionRuntimeSessionDto createSession(CreateSessionRequest request) {
+    public SessionRuntimeSessionDto sendMessage(SendSessionMessageRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("send message request is required");
+        }
+        String customerId = requireText(request.customerId(), "customerId");
+        boolean hasSessionId = hasText(request.sessionId());
+        boolean hasAssistantId = hasText(request.assistantId());
+        if (hasSessionId == hasAssistantId) {
+            throw new IllegalArgumentException("exactly one of sessionId or assistantId is required");
+        }
+        if (isBlankMessageInput(request.message())) {
+            throw new ConflictException("message content required");
+        }
+        if (hasSessionId) {
+            return sendMessageToExistingSession(requireText(request.sessionId(), "sessionId"), customerId, request.message());
+        }
+        String assistantId = requireText(request.assistantId(), "assistantId");
         return dispatchLockService.withConversationLock(
-            request.customerId(),
-            request.assistantId(),
-            () -> createOrReuseSession(request)
+            customerId,
+            assistantId,
+            () -> createOrReuseSession(assistantId, customerId, request.message())
         );
     }
 
-    public SessionRuntimeSessionDto sendMessage(String sessionId, SendSessionMessageRequest request) {
+    private SessionRuntimeSessionDto sendMessageToExistingSession(String sessionId, String customerId, SessionMessageInput message) {
         SessionRuntimeSessionDto existing = repository.findSession(sessionId).orElseThrow();
+        if (!customerId.equals(existing.customerId())) {
+            throw new IllegalArgumentException("customerId does not match session");
+        }
         SessionRuntimeSessionDto current = markEndedIfWorkflowClosed(existing);
         if ("ENDED".equals(current.status())) {
-            return rolloverEndedSession(current, request);
+            return rolloverEndedSession(current, message);
         }
         try {
-            return dispatchLockService.withSessionLock(sessionId, () -> sendMessageInternal(sessionId, request, current));
+            return dispatchLockService.withSessionLock(sessionId, () -> sendMessageInternal(sessionId, customerId, message, current));
         } catch (ConflictException error) {
             if (!"session has ended".equals(error.getMessage())) {
                 throw error;
@@ -204,7 +223,7 @@ public class SessionRuntimeService {
             SessionRuntimeSessionDto latest = repository.findSession(sessionId)
                 .map(this::markEndedIfWorkflowClosed)
                 .orElse(current);
-            return rolloverEndedSession(latest, request);
+            return rolloverEndedSession(latest, message);
         }
     }
 
@@ -280,12 +299,12 @@ public class SessionRuntimeService {
         SessionRuntimeSessionDto session;
         if (hasText(request.sessionId())) {
             try {
-                session = sendMessage(request.sessionId(), new SendSessionMessageRequest(customerId, message));
+                session = sendMessage(new SendSessionMessageRequest(request.sessionId(), null, customerId, message));
             } catch (NoSuchElementException ignored) {
-                session = createSession(new CreateSessionRequest(assistantId, customerId, message));
+                session = sendMessage(new SendSessionMessageRequest(null, assistantId, customerId, message));
             }
         } else {
-            session = createSession(new CreateSessionRequest(assistantId, customerId, message));
+            session = sendMessage(new SendSessionMessageRequest(null, assistantId, customerId, message));
         }
         return new ChannelInboundSessionMessageResponse(session.id(), session.status());
     }
@@ -619,21 +638,18 @@ public class SessionRuntimeService {
         );
     }
 
-    private SessionRuntimeSessionDto createOrReuseSession(CreateSessionRequest request) {
-        AssistantDto assistant = catalogService.getAssistantRuntimeSnapshot(request.assistantId());
+    private SessionRuntimeSessionDto createOrReuseSession(String assistantId, String customerId, SessionMessageInput openingMessage) {
+        AssistantDto assistant = catalogService.getAssistantRuntimeSnapshot(assistantId);
         AssistantReleaseDto release = resolveAssistantRelease(assistant);
-        SessionMessageInput openingMessage = request.openingMessage();
-        Optional<SessionRuntimeSessionDto> activeSession = findReusableActiveSession(request.customerId(), assistant.id());
+        Optional<SessionRuntimeSessionDto> activeSession = findReusableActiveSession(customerId, assistant.id());
         if (activeSession.isPresent()) {
             SessionRuntimeSessionDto existing = activeSession.orElseThrow();
-            if (isBlankMessageInput(openingMessage)) {
-                return existing;
-            }
             return dispatchLockService.withSessionLock(
                 existing.id(),
                 () -> sendMessageInternal(
                     existing.id(),
-                    new SendSessionMessageRequest(request.customerId(), openingMessage),
+                    customerId,
+                    openingMessage,
                     existing
                 )
             );
@@ -646,7 +662,7 @@ public class SessionRuntimeService {
             sessionId,
             assistant.scenarioId(),
             title,
-            request.customerId(),
+            customerId,
             assistant.id(),
             assistant.name(),
             release.releaseVersion(),
@@ -668,14 +684,12 @@ public class SessionRuntimeService {
         );
         sessionWorkflowGateway.start(buildStartRequest(bootstrap, assistant, release));
         SessionRuntimeSessionDto updated = awaitPersistedSession(bootstrap.id(), bootstrap);
-        if (isBlankMessageInput(openingMessage)) {
-            return updated;
-        }
         return dispatchLockService.withSessionLock(
             updated.id(),
             () -> sendMessageInternal(
                 updated.id(),
-                new SendSessionMessageRequest(request.customerId(), openingMessage),
+                customerId,
+                openingMessage,
                 updated
             )
         );
@@ -720,7 +734,8 @@ public class SessionRuntimeService {
 
     private SessionRuntimeSessionDto sendMessageInternal(
         String sessionId,
-        SendSessionMessageRequest request,
+        String customerId,
+        SessionMessageInput message,
         SessionRuntimeSessionDto existingSession
     ) {
         SessionRuntimeSessionDto existing = existingSession == null
@@ -737,12 +752,12 @@ public class SessionRuntimeService {
             if (current.agentTurnActive()) {
                 throw new ConflictException("session is busy");
             }
-            if (isBlankMessageInput(request.message())) {
+            if (isBlankMessageInput(message)) {
                 throw new ConflictException("message content required");
             }
             sessionWorkflowGateway.submitUserMessage(
                 sessionId,
-                new UserMessage(nextId("session-message"), request.customerId(), request.message())
+                new UserMessage(nextId("session-message"), customerId, message)
             );
             return current;
         } catch (RuntimeException error) {
@@ -756,18 +771,12 @@ public class SessionRuntimeService {
 
     private SessionRuntimeSessionDto rolloverEndedSession(
         SessionRuntimeSessionDto endedSession,
-        SendSessionMessageRequest request
+        SessionMessageInput message
     ) {
         return dispatchLockService.withConversationLock(
             endedSession.customerId(),
             endedSession.assistantId(),
-            () -> createOrReuseSession(
-                new CreateSessionRequest(
-                    endedSession.assistantId(),
-                    endedSession.customerId(),
-                    request.message()
-                )
-            )
+            () -> createOrReuseSession(endedSession.assistantId(), endedSession.customerId(), message)
         );
     }
 
