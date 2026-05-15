@@ -47,47 +47,6 @@ create table resource_binding (
     created_at timestamp not null default current_timestamp
 );
 
-create table task_instance (
-    id varchar(64) primary key,
-    session_id varchar(64),
-    scenario_id varchar(64) not null,
-    assistant_id varchar(64) not null,
-    assistant_name varchar(255) not null,
-    assistant_release_version varchar(64) not null,
-    question text not null,
-    customer_id varchar(255) not null,
-    status varchar(32) not null,
-    workflow_instance_id varchar(64) not null,
-    created_at timestamp with time zone not null
-);
-
-create table workflow_instance (
-    id varchar(64) primary key,
-    task_id varchar(64) not null,
-    assistant_id varchar(64) not null,
-    assistant_name varchar(255) not null,
-    assistant_release_version varchar(64) not null,
-    created_at timestamp with time zone not null,
-    updated_at timestamp with time zone not null,
-    status varchar(32) not null,
-    summary text,
-    final_reply text,
-    current_node_key varchar(255),
-    escalation_required boolean not null default false,
-    checkpoint jsonb,
-    resume_task jsonb,
-    pause_reason jsonb,
-    latest_tool_outcome jsonb,
-    resource_anchors jsonb not null,
-    nodes jsonb not null,
-    tool_calls jsonb not null,
-    loaded_skill_resource_version_ids jsonb not null,
-    shared_state jsonb not null,
-    agent_turn_state jsonb,
-    latest_failure jsonb,
-    model_hits jsonb
-);
-
 create table catalog_domain (
     id varchar(64) primary key,
     payload jsonb not null
@@ -131,52 +90,6 @@ create table knowledge_release (
 create table catalog_assistant_releases (
     assistant_id varchar(64) primary key,
     payload jsonb not null
-);
-
-create table conversation_session (
-    id varchar(64) primary key,
-    scenario_id varchar(64) not null,
-    title varchar(255) not null,
-    customer_id varchar(255) not null,
-    assistant_id varchar(64) not null,
-    assistant_name varchar(255) not null,
-    assistant_release_version varchar(64) not null,
-    created_at timestamp with time zone not null,
-    updated_at timestamp with time zone not null,
-    latest_task_id varchar(64),
-    latest_workflow_instance_id varchar(64),
-    latest_tool_outcome jsonb,
-    latest_resume_task jsonb,
-    latest_pause_reason jsonb,
-    loaded_skill_resource_version_ids jsonb not null,
-    shared_state jsonb not null
-);
-
-create table conversation_message (
-    id varchar(64) primary key,
-    session_id varchar(64) not null,
-    role varchar(32) not null,
-    sender_type varchar(32) not null,
-    sender_id varchar(64),
-    sender_name varchar(255) not null,
-    content text not null,
-    created_at timestamp with time zone not null,
-    task_id varchar(64),
-    workflow_instance_id varchar(64)
-);
-
-create table resume_intervention (
-    id varchar(64) primary key,
-    workflow_instance_id varchar(64) not null,
-    action_type varchar(64) not null,
-    action_source varchar(64) not null,
-    user_id varchar(255) not null,
-    comment text,
-    attributes jsonb not null,
-    status varchar(32) not null,
-    created_at timestamp with time zone not null,
-    applied_at timestamp with time zone,
-    failure_reason text
 );
 
 create table catalog_ref_resource_binding (
@@ -232,15 +145,6 @@ create table platform_user_role_binding (
     primary key (user_id, role)
 );
 
-create index idx_task_instance_workflow on task_instance (workflow_instance_id);
-create index idx_task_instance_status on task_instance (status);
-create index idx_workflow_instance_status on workflow_instance (status, updated_at desc);
-create index idx_workflow_instance_failure_code on workflow_instance ((latest_failure ->> 'code'));
-create index idx_workflow_instance_failure_category on workflow_instance ((latest_failure ->> 'category'));
-create index idx_conversation_session_updated on conversation_session (updated_at desc);
-create index idx_conversation_session_latest_workflow on conversation_session (latest_workflow_instance_id);
-create index idx_conversation_message_session on conversation_message (session_id, created_at asc, id asc);
-create index idx_resume_intervention_workflow on resume_intervention (workflow_instance_id, created_at asc, id asc);
 create index idx_ref_resource_binding_resource on catalog_ref_resource_binding (resource_id);
 create index idx_ref_knowledge_binding_kb on catalog_ref_knowledge_binding (knowledge_base_id);
 create index idx_ref_release_resource_resource on catalog_ref_release_resource (resource_id);

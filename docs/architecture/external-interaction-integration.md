@@ -4,7 +4,7 @@
 
 ## 1. 当前结论
 
-- 旧 `workflow + resume_intervention + external_interaction_task` 模型已经退出主工程。
+- 旧 `workflow + resume_intervention + external_interaction_task` 模型已经退出主工程，并已从当前 Flyway schema 与 jOOQ generated surface 清理。
 - 当前控制面公开的 runtime API 只有 `/api/session-runtime/...`。
 - external interaction 不再作为独立 runtime 主模型存在，而是 session / playbook 流程中的一种等待点与事件来源。
 
@@ -28,7 +28,7 @@
 - `playbook_run`
   - 记录当前等待原因、输入、结果、失败原因
 
-不再保留这些旧对象作为设计基准：
+这些旧对象已不再作为 schema/API/generated code surface 保留：
 
 - `ExternalInteractionTask`
 - `ExternalInteractionEvent`

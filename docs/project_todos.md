@@ -48,7 +48,7 @@
 1. 接入一个真实支付或 OAuth provider，端到端跑通业务场景
 2. 抽象 Provider adapter，落地 webhook 签名校验与幂等处理
 3. 主动查单补偿机制，覆盖 webhook 丢失 / 延迟场景
-4. 若业务需要对外暴露交互卡片或回跳链接，必须直接挂在 session / playbook 模型上，而不是重建旧 `external_interaction_task`
+4. 若业务需要对外暴露交互卡片或回跳链接，必须直接挂在 session / playbook 模型上，不得重新引入已清理的旧 `external_interaction_task`
 
 依赖：§2.1（恢复链路产品化）。
 

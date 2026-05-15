@@ -20,10 +20,6 @@ import com.lynxus.persistence.jooq.tables.CatalogResource;
 import com.lynxus.persistence.jooq.tables.CatalogResourceVersions;
 import com.lynxus.persistence.jooq.tables.CatalogScenario;
 import com.lynxus.persistence.jooq.tables.ChannelSessionBindingSnapshot;
-import com.lynxus.persistence.jooq.tables.ConversationMessage;
-import com.lynxus.persistence.jooq.tables.ConversationSession;
-import com.lynxus.persistence.jooq.tables.ExternalInteractionEvent;
-import com.lynxus.persistence.jooq.tables.ExternalInteractionTask;
 import com.lynxus.persistence.jooq.tables.IntegrationAccount;
 import com.lynxus.persistence.jooq.tables.KnowledgeBase;
 import com.lynxus.persistence.jooq.tables.KnowledgeRelease;
@@ -33,15 +29,12 @@ import com.lynxus.persistence.jooq.tables.PlatformUser;
 import com.lynxus.persistence.jooq.tables.PlatformUserRoleBinding;
 import com.lynxus.persistence.jooq.tables.Resource;
 import com.lynxus.persistence.jooq.tables.ResourceBinding;
-import com.lynxus.persistence.jooq.tables.ResumeIntervention;
 import com.lynxus.persistence.jooq.tables.Scenario;
 import com.lynxus.persistence.jooq.tables.SessionRuntimeEvent;
 import com.lynxus.persistence.jooq.tables.SessionRuntimeMessage;
 import com.lynxus.persistence.jooq.tables.SessionRuntimePlaybookRun;
 import com.lynxus.persistence.jooq.tables.SessionRuntimeSession;
 import com.lynxus.persistence.jooq.tables.SharedStateRevision;
-import com.lynxus.persistence.jooq.tables.TaskInstance;
-import com.lynxus.persistence.jooq.tables.WorkflowInstance;
 
 
 /**
@@ -131,26 +124,6 @@ public class Tables {
     public static final ChannelSessionBindingSnapshot CHANNEL_SESSION_BINDING_SNAPSHOT = ChannelSessionBindingSnapshot.CHANNEL_SESSION_BINDING_SNAPSHOT;
 
     /**
-     * The table <code>public.conversation_message</code>.
-     */
-    public static final ConversationMessage CONVERSATION_MESSAGE = ConversationMessage.CONVERSATION_MESSAGE;
-
-    /**
-     * The table <code>public.conversation_session</code>.
-     */
-    public static final ConversationSession CONVERSATION_SESSION = ConversationSession.CONVERSATION_SESSION;
-
-    /**
-     * The table <code>public.external_interaction_event</code>.
-     */
-    public static final ExternalInteractionEvent EXTERNAL_INTERACTION_EVENT = ExternalInteractionEvent.EXTERNAL_INTERACTION_EVENT;
-
-    /**
-     * The table <code>public.external_interaction_task</code>.
-     */
-    public static final ExternalInteractionTask EXTERNAL_INTERACTION_TASK = ExternalInteractionTask.EXTERNAL_INTERACTION_TASK;
-
-    /**
      * The table <code>public.integration_account</code>.
      */
     public static final IntegrationAccount INTEGRATION_ACCOUNT = IntegrationAccount.INTEGRATION_ACCOUNT;
@@ -196,11 +169,6 @@ public class Tables {
     public static final ResourceBinding RESOURCE_BINDING = ResourceBinding.RESOURCE_BINDING;
 
     /**
-     * The table <code>public.resume_intervention</code>.
-     */
-    public static final ResumeIntervention RESUME_INTERVENTION = ResumeIntervention.RESUME_INTERVENTION;
-
-    /**
      * The table <code>public.scenario</code>.
      */
     public static final Scenario SCENARIO = Scenario.SCENARIO;
@@ -229,14 +197,4 @@ public class Tables {
      * The table <code>public.shared_state_revision</code>.
      */
     public static final SharedStateRevision SHARED_STATE_REVISION = SharedStateRevision.SHARED_STATE_REVISION;
-
-    /**
-     * The table <code>public.task_instance</code>.
-     */
-    public static final TaskInstance TASK_INSTANCE = TaskInstance.TASK_INSTANCE;
-
-    /**
-     * The table <code>public.workflow_instance</code>.
-     */
-    public static final WorkflowInstance WORKFLOW_INSTANCE = WorkflowInstance.WORKFLOW_INSTANCE;
 }

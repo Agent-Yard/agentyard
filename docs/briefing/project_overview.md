@@ -89,7 +89,7 @@ Lynxus 当前的解法，是把这些问题收束到统一平台结构中：
 - playbook run 列表
 - handoff / idle / draining 等会话状态
 
-旧的 `TaskInstance / WorkflowInstance / HumanCheckpoint / ResumeAction` 已不再是当前主工程设计基准。
+旧的 `TaskInstance / WorkflowInstance / HumanCheckpoint / ResumeAction` 已从当前主工程的 schema 与 generated surface 清理；后续只按 session runtime 模型演进。
 
 ## 4. 当前已落地能力
 

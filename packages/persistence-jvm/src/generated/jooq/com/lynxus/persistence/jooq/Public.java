@@ -20,10 +20,6 @@ import com.lynxus.persistence.jooq.tables.CatalogResource;
 import com.lynxus.persistence.jooq.tables.CatalogResourceVersions;
 import com.lynxus.persistence.jooq.tables.CatalogScenario;
 import com.lynxus.persistence.jooq.tables.ChannelSessionBindingSnapshot;
-import com.lynxus.persistence.jooq.tables.ConversationMessage;
-import com.lynxus.persistence.jooq.tables.ConversationSession;
-import com.lynxus.persistence.jooq.tables.ExternalInteractionEvent;
-import com.lynxus.persistence.jooq.tables.ExternalInteractionTask;
 import com.lynxus.persistence.jooq.tables.IntegrationAccount;
 import com.lynxus.persistence.jooq.tables.KnowledgeBase;
 import com.lynxus.persistence.jooq.tables.KnowledgeRelease;
@@ -33,15 +29,12 @@ import com.lynxus.persistence.jooq.tables.PlatformUser;
 import com.lynxus.persistence.jooq.tables.PlatformUserRoleBinding;
 import com.lynxus.persistence.jooq.tables.Resource;
 import com.lynxus.persistence.jooq.tables.ResourceBinding;
-import com.lynxus.persistence.jooq.tables.ResumeIntervention;
 import com.lynxus.persistence.jooq.tables.Scenario;
 import com.lynxus.persistence.jooq.tables.SessionRuntimeEvent;
 import com.lynxus.persistence.jooq.tables.SessionRuntimeMessage;
 import com.lynxus.persistence.jooq.tables.SessionRuntimePlaybookRun;
 import com.lynxus.persistence.jooq.tables.SessionRuntimeSession;
 import com.lynxus.persistence.jooq.tables.SharedStateRevision;
-import com.lynxus.persistence.jooq.tables.TaskInstance;
-import com.lynxus.persistence.jooq.tables.WorkflowInstance;
 
 import java.util.Arrays;
 import java.util.List;
@@ -146,26 +139,6 @@ public class Public extends SchemaImpl {
     public final ChannelSessionBindingSnapshot CHANNEL_SESSION_BINDING_SNAPSHOT = ChannelSessionBindingSnapshot.CHANNEL_SESSION_BINDING_SNAPSHOT;
 
     /**
-     * The table <code>public.conversation_message</code>.
-     */
-    public final ConversationMessage CONVERSATION_MESSAGE = ConversationMessage.CONVERSATION_MESSAGE;
-
-    /**
-     * The table <code>public.conversation_session</code>.
-     */
-    public final ConversationSession CONVERSATION_SESSION = ConversationSession.CONVERSATION_SESSION;
-
-    /**
-     * The table <code>public.external_interaction_event</code>.
-     */
-    public final ExternalInteractionEvent EXTERNAL_INTERACTION_EVENT = ExternalInteractionEvent.EXTERNAL_INTERACTION_EVENT;
-
-    /**
-     * The table <code>public.external_interaction_task</code>.
-     */
-    public final ExternalInteractionTask EXTERNAL_INTERACTION_TASK = ExternalInteractionTask.EXTERNAL_INTERACTION_TASK;
-
-    /**
      * The table <code>public.integration_account</code>.
      */
     public final IntegrationAccount INTEGRATION_ACCOUNT = IntegrationAccount.INTEGRATION_ACCOUNT;
@@ -211,11 +184,6 @@ public class Public extends SchemaImpl {
     public final ResourceBinding RESOURCE_BINDING = ResourceBinding.RESOURCE_BINDING;
 
     /**
-     * The table <code>public.resume_intervention</code>.
-     */
-    public final ResumeIntervention RESUME_INTERVENTION = ResumeIntervention.RESUME_INTERVENTION;
-
-    /**
      * The table <code>public.scenario</code>.
      */
     public final Scenario SCENARIO = Scenario.SCENARIO;
@@ -244,16 +212,6 @@ public class Public extends SchemaImpl {
      * The table <code>public.shared_state_revision</code>.
      */
     public final SharedStateRevision SHARED_STATE_REVISION = SharedStateRevision.SHARED_STATE_REVISION;
-
-    /**
-     * The table <code>public.task_instance</code>.
-     */
-    public final TaskInstance TASK_INSTANCE = TaskInstance.TASK_INSTANCE;
-
-    /**
-     * The table <code>public.workflow_instance</code>.
-     */
-    public final WorkflowInstance WORKFLOW_INSTANCE = WorkflowInstance.WORKFLOW_INSTANCE;
 
     /**
      * No further instances allowed
@@ -294,10 +252,6 @@ public class Public extends SchemaImpl {
             CatalogResourceVersions.CATALOG_RESOURCE_VERSIONS,
             CatalogScenario.CATALOG_SCENARIO,
             ChannelSessionBindingSnapshot.CHANNEL_SESSION_BINDING_SNAPSHOT,
-            ConversationMessage.CONVERSATION_MESSAGE,
-            ConversationSession.CONVERSATION_SESSION,
-            ExternalInteractionEvent.EXTERNAL_INTERACTION_EVENT,
-            ExternalInteractionTask.EXTERNAL_INTERACTION_TASK,
             IntegrationAccount.INTEGRATION_ACCOUNT,
             KnowledgeBase.KNOWLEDGE_BASE,
             KnowledgeRelease.KNOWLEDGE_RELEASE,
@@ -307,15 +261,12 @@ public class Public extends SchemaImpl {
             PlatformUserRoleBinding.PLATFORM_USER_ROLE_BINDING,
             Resource.RESOURCE,
             ResourceBinding.RESOURCE_BINDING,
-            ResumeIntervention.RESUME_INTERVENTION,
             Scenario.SCENARIO,
             SessionRuntimeEvent.SESSION_RUNTIME_EVENT,
             SessionRuntimeMessage.SESSION_RUNTIME_MESSAGE,
             SessionRuntimePlaybookRun.SESSION_RUNTIME_PLAYBOOK_RUN,
             SessionRuntimeSession.SESSION_RUNTIME_SESSION,
-            SharedStateRevision.SHARED_STATE_REVISION,
-            TaskInstance.TASK_INSTANCE,
-            WorkflowInstance.WORKFLOW_INSTANCE
+            SharedStateRevision.SHARED_STATE_REVISION
         );
     }
 }
