@@ -1,445 +1,77 @@
-# 多消息一次 Turn 方案
-
-## Summary
-
-采用 **turn -> messages -> blocks** 三层模型：
-
-- `turn`：一次后端处理批次，只触发一次 agent turn。
-- `messages[]`：本批次内的多条用户可见消息，保留独立顺序、时间、外部消息 ID、role、sender、metadata。
-- `blocks[]`：单条消息内的内容部件，类型保持现状：`TEXT`、`IMAGE`、`RICH_TEXT`、`CARD`。
-
-不把多条用户消息压成一条 message 的多个 block。多 block 只用于“一条消息包含多种内容”，比如文字+图片、文字+附件卡片。
-
-关键约束：一个会话当前只绑定一个 channel；因此 channel outbound 只应投递平台新产生的消息，所有外部进入或导入的消息都不能 outbound。
-
-## New Data Structures
-
-### Session runtime public API
-
-新增 turn 级输入接口，替代当前单条 `SendSessionMessageRequest` 语义：
-
-```http
-POST /api/session-runtime/sessions/{sessionId}/turns
-Idempotency-Key: {turnDedupKey}
-```
-
-```ts
-export interface SendSessionTurnRequest {
-  customerId: string;
-  turnDedupKey: string;
-  messages: SessionTurnMessageInput[];
-  metadata: Record<string, unknown>;
-}
-
-export interface SessionTurnMessageInput {
-  clientMessageId?: string | null;
-  externalMessageId?: string | null;
-  occurredAt?: string | null;
-  role: SessionMessageRole;
-  sender: SessionMessageSender;
-  blocks: SessionMessageBlock[];
-  metadata: Record<string, unknown>;
-}
-
-export interface SendSessionTurnResponse {
-  sessionId: string;
-  turnId: string;
-  status: SessionMessageDeliveryStatus;
-  acceptedMessageIds: string[];
-  duplicateExternalMessageIds: string[];
-  reason: string | null;
-}
-```
-
-约束：
-
-- `messages[]` 是本次 turn 的完整输入消息集合，不再拆 `historyMessages` 或 `turnMessageKind`。
-- 系统接手时带入的历史对话、用户滞后发送的多条消息、附件消息，都放在同一个 `messages[]` 中，按数组顺序进入 turn。
-- `turnDedupKey` 是批次级幂等键；`Idempotency-Key` 必须等于 `turnDedupKey`。
-- `clientMessageId` 只用于前端临时关联，不作为数据库主键。
-- 对外部输入接口，服务端将所有 request messages 的 `producerType` 固定为 `EXTERNAL`，客户端不能声明 `PLATFORM`。
-
-### Session block types
-
-block 类型保持现状，不新增 `FILE`：
-
-```ts
-export type SessionMessageBlock =
-  | TextMessageBlock
-  | ImageMessageBlock
-  | RichTextMessageBlock
-  | CardMessageBlock;
-
-export interface TextMessageBlock {
-  type: 'TEXT';
-  text: string;
-}
-
-export interface ImageMessageBlock {
-  type: 'IMAGE';
-  url: string;
-  mimeType: string | null;
-  width: number | null;
-  height: number | null;
-  alt: string | null;
-}
-
-export interface RichTextMessageBlock {
-  type: 'RICH_TEXT';
-  format: 'MARKDOWN';
-  content: string;
-}
-
-export interface CardMessageBlock {
-  type: 'CARD';
-  cardType: string;
-  version: string;
-  data: Record<string, unknown>;
-  actions: CardLinkAction[];
-}
-```
-
-非图片文件附件使用 `CARD`：
-
-```json
-{
-  "type": "CARD",
-  "cardType": "FILE_ATTACHMENT",
-  "version": "1",
-  "data": {
-    "externalAttachmentId": "att-1",
-    "externalFileId": "file-1",
-    "fileName": "contract.pdf",
-    "mimeType": "application/pdf",
-    "url": "https://example.com/contract.pdf",
-    "sizeBytes": 10240
-  },
-  "actions": [
-    {
-      "actionType": "LINK",
-      "label": "Open",
-      "url": "https://example.com/contract.pdf"
-    }
-  ]
-}
-```
-
-### Workflow contracts
-
-新增 workflow update 入参，用一次 update 表示一次 turn：
-
-```java
-public record UserTurn(
-    String turnId,
-    String customerId,
-    String turnDedupKey,
-    List<SessionTurnMessage> messages,
-    Map<String, Object> metadata
-) {
-}
-
-public record SessionTurnMessage(
-    String messageId,
-    String clientMessageId,
-    String externalMessageId,
-    Instant occurredAt,
-    SessionMessageRole role,
-    SessionMessageSender sender,
-    SessionMessageInput message
-) {
-}
-
-public record SessionTrigger(
-    SessionTriggerType triggerType,
-    String turnId,
-    String eventId,
-    Map<String, Object> payload
-) {
-}
-```
-
-约束：
-
-- workflow 按 `messages[]` 顺序 append 所有消息。
-- `executeTurn` 对整个 `messages[]` 只执行一次。
-- `SessionTrigger` 只描述 turn 级触发原因，不再携带单条或多条 trigger message id。
-
-### Agent runtime contracts
-
-`agent-runtime` 不再接收完整 session 历史窗口，也不再接收 `triggerMessageId` / `triggerMessageIds`。它只接收本次需要追加到 agent 上下文里的消息增量：
-
-```java
-public record AgentTurnRequest(
-    String sessionId,
-    String turnId,
-    String turnExecutionId,
-    String replyMessageId,
-    long ownershipEpoch,
-    String assistantId,
-    String assistantReleaseVersion,
-    AgentConfig currentOwner,
-    List<AgentConfig> availableAgents,
-    List<PlaybookConfig> availablePlaybooks,
-    ActivePlaybookSummary activePlaybook,
-    Map<String, Object> sharedState,
-    LlmModelDescriptor effectivePrivacyModelBinding,
-    boolean effectivePrivacyMappingEnabled,
-    SessionTrigger trigger,
-    List<SessionMessage> messages,
-    boolean transcriptBootstrap,
-    List<SessionEvent> events
-) {
-}
-```
-
-约束：
-
-- `messages` 是 append-only delta：本次 turn 要追加进 agent transcript 的消息集合。
-- 正常实时 turn 只传本次 request 产生的新消息。
-- 当 agent transcript 缺失、过期、owner context 切换或需要重建时，worker 可以把一批会话消息作为 bootstrap delta 传入，并设置 `transcriptBootstrap = true`。
-- `agent-runtime` 以 transcript store 中已提交的 provider transcript 作为上下文基础，再把 `messages` 渲染成 provider messages 追加到末尾。
-- 如果 `transcriptBootstrap = true`，`agent-runtime` 必须先清理当前 owner context 下已提交 transcript，再按 `messages` 重建上下文，避免重复追加。
-- `agent-runtime` 不再区分“历史消息”和“本轮输入消息”；对它来说，所有 request messages 都是本次追加的 transcript 增量。
-
-Agent turn stream payload 去掉“单个触发 message”的语义。turn 级 frame 只引用平台将要生成的 reply message：
-
-```java
-public record TurnStartedPayload(
-    String replyMessageId,
-    SessionTriggerType triggerType,
-    int inputMessageCount
-) implements AgentTurnStreamPayload, AgentTurnTransientPayload {
-}
-
-public record TurnCompletedPayload(
-    String replyMessageId,
-    TurnCompletionStatus status
-) implements AgentTurnTransientPayload {
-}
-
-public record ErrorPayload(
-    String code,
-    String replyMessageId,
-    String message,
-    StreamErrorStage stage,
-    boolean retryable,
-    Map<String, Object> details
-) implements AgentTurnStreamPayload, AgentTurnTransientPayload {
-}
-```
-
-约束：
-
-- `TURN_STARTED` / `TURN_COMPLETED` / `ERROR` 不再使用含糊的 `messageId` 字段；统一使用 `replyMessageId`。
-- `REPLY_BLOCK_DELTA`、`REPLY_BLOCK_COMPLETED`、`FINAL_OUTCOME` 仍然绑定 assistant reply message；字段也应命名为 `replyMessageId`，不是 trigger message id。
-- stream 消费方以 `turnId` 识别一次 turn，以 `replyMessageId` 识别本轮平台输出消息。
-
-### Persistence projection
-
-新增消息生产方枚举：
-
-```java
-public enum SessionMessageProducerType {
-    EXTERNAL,
-    PLATFORM
-}
-```
-
-含义：
-
-- `EXTERNAL`：外部进入或导入的 transcript 消息，包括 channel inbound、聊天终端用户输入、系统接手时导入的历史 user/assistant/operator/system 消息。
-- `PLATFORM`：平台内部新产生的消息，包括 agent 回复、平台内人工客服回复、平台系统消息。
-
-新增 turn 表：
-
-```sql
-create table session_runtime_turn (
-    turn_id varchar(64) primary key,
-    session_id varchar(64) not null,
-    dedup_key varchar(128) not null,
-    trigger_type varchar(64) not null,
-    status varchar(32) not null,
-    message_ids jsonb not null,
-    metadata jsonb not null,
-    created_at timestamp with time zone not null,
-    updated_at timestamp with time zone not null,
-    completed_at timestamp with time zone
-);
-
-create unique index uk_session_runtime_turn_dedup
-    on session_runtime_turn (session_id, dedup_key);
-```
-
-扩展 message 表：
-
-```sql
-alter table session_runtime_message
-    add column turn_id varchar(64),
-    add column turn_index integer,
-    add column producer_type varchar(32) not null,
-    add column external_message_id varchar(255),
-    add column client_message_id varchar(255),
-    add column occurred_at timestamp with time zone;
-
-create index idx_session_runtime_message_turn
-    on session_runtime_message (session_id, turn_id, turn_index);
-
-create unique index uk_session_runtime_message_external
-    on session_runtime_message (session_id, external_message_id)
-    where external_message_id is not null;
-```
-
-`SessionMessage` 投影契约同步暴露新增字段，JVM contracts、TS contracts、Python agent-runtime models、web DTO 都必须保持一致：
-
-```java
-public record SessionMessage(
-    String messageId,
-    String sessionId,
-    long sequence,
-    String turnId,
-    Integer turnIndex,
-    SessionMessageProducerType producerType,
-    String externalMessageId,
-    String clientMessageId,
-    Instant occurredAt,
-    SessionMessageRole role,
-    SessionMessageSender sender,
-    SessionMessageStatus status,
-    List<Object> blocks,
-    Map<String, Object> metadata,
-    String relatedPlaybookRunId,
-    String relatedOwnerAgentId,
-    String sourceEventId,
-    Instant createdAt,
-    Instant updatedAt
-) {
-}
-```
-
-约束：
-
-- `turn_index` 是 message 在 turn 内的顺序。
-- `occurred_at` 表示外部消息真实发生时间；`created_at` 仍表示平台落库时间。
-- 外部 turn request 写入的消息统一 `producer_type = EXTERNAL`。
-- workflow 生成的 agent/system 回复、平台内人工客服回复统一 `producer_type = PLATFORM`。
-- channel outbound final replay 只选择 `producer_type = PLATFORM` 且 `role in (ASSISTANT, HUMAN_OPERATOR, SYSTEM)` 的消息。
-- `session_runtime_turn.message_ids` 记录本次 turn append 的全部消息，用于审计、UI 分组和 agent transcript bootstrap。
-
-### Channel inbound contracts
-
-新增消息批次入口，替代“一个 normalized event 对应一条 session message”的模型：
-
-```ts
-export type NormalizedChannelMessageRole =
-  | 'USER'
-  | 'ASSISTANT'
-  | 'HUMAN_OPERATOR'
-  | 'SYSTEM';
-
-export type NormalizedChannelSenderType =
-  | 'CUSTOMER'
-  | 'AGENT'
-  | 'HUMAN_OPERATOR'
-  | 'SYSTEM';
-
-export interface NormalizedChannelMessageSender {
-  senderType: NormalizedChannelSenderType;
-  senderId?: string | null;
-  senderName?: string | null;
-  metadata: Record<string, unknown>;
-}
-
-export interface NormalizedChannelInboundTurn {
-  providerType: string;
-  channelProfileId: string;
-  dedupKey: string;
-  externalConversationId: string;
-  externalUserId?: string | null;
-  conversation: NormalizedChannelConversation;
-  sender?: NormalizedChannelSender | null;
-  messages: NormalizedChannelTurnMessage[];
-  normalizedPayload: Record<string, unknown>;
-  rawPayload?: Record<string, unknown> | null;
-  traceContext: NormalizedChannelTraceContext;
-  metadata?: Record<string, unknown> | null;
-}
-
-export interface NormalizedChannelTurnMessage {
-  externalEventId?: string | null;
-  externalMessageId: string;
-  occurredAt?: string | null;
-  role: NormalizedChannelMessageRole;
-  sender?: NormalizedChannelMessageSender | null;
-  type?: string | null;
-  text?: string | null;
-  attachments: NormalizedChannelAttachment[];
-  metadata: Record<string, unknown>;
-}
-```
-
-gateway 到 API 的内部请求：
-
-```java
-public record ChannelInboundSessionTurnRequest(
-    String channelProfileId,
-    String externalConversationId,
-    String dedupKey,
-    String assistantId,
-    String customerId,
-    String sessionId,
-    List<ChannelInboundSessionTurnMessage> messages,
-    Map<String, Object> metadata
-) {
-}
-
-public record ChannelInboundSessionTurnMessage(
-    String externalEventId,
-    String externalMessageId,
-    Instant occurredAt,
-    SessionMessageRole role,
-    SessionMessageSender sender,
-    SessionMessageInput message
-) {
-}
-```
-
-约束：
-
-- `NormalizedChannelInboundTurn.dedupKey` 是批次级幂等键。
-- `messages[].externalMessageId` 必填，用于 channel 消息级去重。
-- 实时 channel 用户消息设置 `role = USER`；系统接手导入 transcript 时按原始角色设置 `role`。
-- message-level `sender` 优先；为空时使用 turn-level `sender`。
-- channel boundary 使用 `NormalizedChannelMessageRole` / `NormalizedChannelMessageSender`，gateway 内部再映射为 `SessionMessageRole` / `SessionMessageSender`，避免 extension protocol 直接依赖 session runtime 类型。
-- 所有 channel inbound turn messages 写入 session 时均为 `producer_type = EXTERNAL`。
-- 图片附件映射为 `IMAGE` block；非图片附件映射为 `CARD(FILE_ATTACHMENT)`。
-- pull-style provider job 响应改为 `inboundTurns[]`；非消息类事件继续保留 event 语义。
-
-## Runtime Behavior
-
-- 一次 request 生成一个 `turnId`，按顺序追加 `messages[]`。
-- workflow `submitUserTurn` 只执行一次 `executeTurn`，并把本次 append 的 `messages[]` 作为 agent-runtime delta 发送。
-- worker 不再每次把会话历史窗口传给 agent-runtime；agent-runtime 通过 transcript store 维护 owner context 下的 provider transcript。
-- 幂等以 `turnDedupKey` 为主；channel 场景同时按 `sessionId + externalMessageId` 做消息级去重。
-- 如果批次里全部是重复消息，不触发 turn；如果有重复和新消息混合，只追加新消息并对新消息触发一次 turn。
-- 如果 session 正在 agent turn active，整个 turn 请求返回 busy，不做部分写入。
-- 系统接手场景中，历史 transcript 与当前待处理消息统一放入同一个 `messages[]`；它们都会作为本次 transcript delta 追加到 agent-runtime 上下文。
-- 当 agent-runtime transcript 不存在或需要重建时，worker 从权威 session message 表构造 bootstrap `messages[]`，而不是让 agent-runtime 自行读取 session runtime 数据。
-
-## Test Plan
-
-- 契约测试：OpenAPI、JVM contracts、TS contracts 覆盖 `SendSessionTurnRequest`、`UserTurn`、`NormalizedChannelInboundTurn`。
-- API 服务测试：多条 `messages[]` 一次请求只调用一次 workflow update；空 messages 被拒绝。
-- Worker 测试：`submitUserTurn` 追加多条消息，sequence 正确，`executeTurn` 一次，agent-runtime request 只携带本次 delta messages。
-- Agent-runtime 测试：无 committed transcript 时用 `messages` 初始化 prompt；有 committed transcript 时追加 `messages`；`transcriptBootstrap = true` 时重建 transcript 且不重复历史；stream payload 使用 `replyMessageId` 且不暴露 trigger message id。
-- Channel gateway 测试：一个 inbound turn 多条外部消息只 dispatch 一次；重复 externalMessageId 不重复落 session message。
-- UI 测试：同一 turn 下多条 message 仍按独立气泡展示，每条 message 内 blocks 正常渲染。
-- Projection 测试：API/web/agent-runtime 读到的 `SessionMessage` 均包含 `turnId`、`turnIndex`、`producerType`、`externalMessageId`、`clientMessageId`、`occurredAt`。
-- 附件测试：图片映射为 `IMAGE`；非图片附件映射为 `CARD(FILE_ATTACHMENT)`，不引入新 block 类型。
-- Outbound 测试：`producer_type = EXTERNAL` 的 assistant/operator/system 历史消息不会生成 channel `FINAL_DELIVERY`；`producer_type = PLATFORM` 的 agent/operator/system 新消息会生成。
-
-## Assumptions
-
-- 不考虑旧单消息接口兼容，直接向 turn 语义重构。
-- block 类型严格保持现状：`TEXT`、`IMAGE`、`RICH_TEXT`、`CARD`。
-- 一个 session 当前只绑定一个 channel。
-- “一次处理”以 turn 为单位，“多条消息展示/审计/去重”以 message 为单位。
+# Messages Refactor TODO
+
+> 这份顶层文档只保留“多消息一次 turn”重构的执行入口。详细方案已拆到 [`messages_refactor/`](messages_refactor/) 专项目录。
+> 目标不是兼容旧单消息链路，而是直接把 session-runtime、channel gateway、agent-runtime、web、contracts 收敛到 turn -> messages -> blocks 模型。
+
+## 1. 目标
+
+把当前“单条用户消息触发一次 workflow update”的链路，重构为：
+
+- `turn`：一次后端处理批次，是幂等、审计、agent execution 归属和 outbound 投递的边界
+- `messages[]`：一次 turn 内的多条用户可见消息，保留独立顺序、role、sender、外部消息 ID 和发生时间
+- `blocks[]`：单条 message 内的内容部件，继续只使用 `TEXT / IMAGE / RICH_TEXT / CARD`
+
+关键结果：
+
+1. Web 首条消息、channel inbound、系统接手导入 transcript 都走 send-turn/create-or-reuse 语义
+2. Channel 不再把不同 external conversation 复用到同一个 active session
+3. 首条 turn 之前由 API 持久化 `session_runtime_session`，DB active identity 唯一约束成为并发控制边界
+4. 外部进入或导入的 assistant/operator/system 历史消息不会被 channel outbound 再投递
+5. agent-runtime 不再依赖 recent message/event window，而是依赖 committed provider transcript + 本轮 delta
+
+## 2. 专项文档
+
+- [00 Architecture Decisions](messages_refactor/00_architecture_decisions.md)：已经定下来的边界、状态机和阻断问题修正
+- [01 Execution Plan](messages_refactor/01_execution_plan.md)：按依赖拆分的执行阶段、任务、验收和检查点
+- [02 Contracts And Persistence](messages_refactor/02_contracts_and_persistence.md)：API、contracts、DB schema、统一 append 入口和幂等恢复
+- [03 Workflow And Agent Runtime](messages_refactor/03_workflow_and_agent_runtime.md)：Temporal workflow、agent-runtime delta、transcript bootstrap reset
+- [04 Channel And Web](messages_refactor/04_channel_and_web.md)：channel inbound turn、outbound 过滤、Web 客户端迁移
+- [05 Verification Matrix](messages_refactor/05_verification_matrix.md)：测试矩阵、验证命令和完成口径
+
+## 3. 执行顺序
+
+1. 先落 contracts 与 schema 形状，尤其是 `SessionMessage` 新字段、`UserTurn` 数据形状、channel inbound turn 契约
+2. 再落 API-owned create-or-reuse session store、persistence 统一 append 与 `session_runtime_turn` DB 幂等状态机
+3. 再替换 API send-turn、idempotent workflow start 与 Temporal update idempotency
+4. 再改 workflow 平台消息 append 和 no-external-input platform turn allocation
+5. 再改 agent-runtime transcript delta
+6. 再迁移 channel gateway 与 Web
+7. 最后删除旧单消息路径、更新架构文档和全量验证
+
+## 4. 当前必须遵守的决策
+
+- 不保留旧 `/api/session-runtime/messages` 作为并行写路径；实施完成后只保留 turn 写入口
+- Web/console 入口不能声明任意 role/sender，服务端强制写 `USER / CUSTOMER`
+- 可信 channel/import 入口才允许导入 `USER / ASSISTANT / HUMAN_OPERATOR / SYSTEM`
+- 非 channel transcript import 使用 trusted `/internal/session-runtime/import-turns`，import 是消息来源，不新增 `IMPORT` session entry scope
+- API 是首个 `session_runtime_session` row 的创建方；worker `run()` 只能更新已有 session projection，不能作为 active identity 并发控制的创建方
+- `session_runtime_session` 的 active identity 必须包含 `entry_scope`；channel identity 必须包含 `channelProfileId + externalConversationId + customerId + assistantId`
+- `session_runtime_turn` 是 turn 幂等与 ID 恢复的权威状态；Redis 只能做短期 in-flight/cache 优化
+- Temporal update 必须使用稳定 update id，优先使用 `turnId`
+- API preflight 负责可由 DB/session projection 判定的拒绝；workflow-local race guard 使用 Temporal `@UpdateValidatorMethod`，不得在 update handler accepted 后返回业务 `BUSY / REJECTED`
+- workflow 接收 API 已落库的 `SessionMessage` delta，不重新分配外部输入 message id，也不重复执行 external message 去重
+- 所有 message append 必须走 persistence 统一入口，由 DB row lock 分配 `sequence` 与 `turnIndex`
+- human operator、human resume、external callback、playbook completed、system wakeup 等无外部输入的平台动作必须先有 durable platform turn
+- workflow 负责生成 `contextEntries`；`shared_state_revision` 是 shared state snapshot/patch 的单调 revision 来源
+- transcript bootstrap reset 必须持久化 `transcript_bootstrap_reset` marker；同一 `turnExecutionId/providerType` 重试不能重复删除 committed transcript
+- message-class channel inbound turn 使用同步 dispatch；provider response 反映 session-runtime accepted/rejected/duplicate/failed 结果
+- channel outbound 只投递 `producer_type = PLATFORM` 且 role 为 `ASSISTANT / HUMAN_OPERATOR / SYSTEM` 的消息
+- stream payload 对外统一使用 `replyMessageId` 表示平台回复消息；Web draft reconciliation 使用 `clientMessageId -> acceptedMessageAllocations.messageId`，回复 draft 使用 `turnId + replyMessageId`
+
+## 5. 完成口径
+
+完成后至少满足：
+
+- Web 多条消息一次 turn 只触发一次 session turn，UI 仍按独立气泡展示
+- Web 能用 `acceptedMessageAllocations` 将本地 user drafts 替换为已落库 `SessionMessage`，并用 `replyMessageId` 关联 assistant draft stream
+- Channel 一批 inbound messages 只 dispatch 一次，重复 `externalMessageId` 不重复落 session message
+- 同一 active identity 并发首条消息只能创建一个 active session
+- API 崩溃在 session row 创建后、workflow start 前时，重试能复用同一 active session 并幂等确保 workflow 已启动
+- 崩溃恢复能从 `session_runtime_turn` 复用同一组 `turnId/messageId`
+- agent-runtime prompt 只追加本 turn 的 `messages + contextEntries` delta，历史上下文来自 transcript replay
+- 删除 `recentEvents` 后，human resume、external callback、shared state、active playbook 和 owner switch 上下文仍通过 `contextEntries` 进入 prompt
+- agent-runtime context tools 不再暴露依赖 `recentEvents` 的 `list_recent_events`；需要事件上下文时只能使用本次 request 的 `contextEntries`
+- trusted import 的 assistant/operator/system 历史消息进入 transcript replay，但不会被 channel final delivery 投递
+- channel final delivery 不会投递外部导入历史消息
+- API/persistence/channel schema 改动通过 jOOQ generated-code verification，最终验证命令不使用根目录不存在的 `pnpm test`
+- cleanup 搜索覆盖旧单消息 API、旧 channel message dispatch 类型和 `recent*` 字段，并排除 `docs/develop_record/`
