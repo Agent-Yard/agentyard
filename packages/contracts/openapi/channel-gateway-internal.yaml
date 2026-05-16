@@ -5,6 +5,35 @@ info:
 servers:
   - url: http://127.0.0.1:8082
 paths:
+  /internal/channel-turns/normalized:
+    post:
+      summary: Ingest a normalized channel inbound message turn
+      parameters:
+        - $ref: '#/components/parameters/ExtensionRegistrationIdHeader'
+        - $ref: '#/components/parameters/ExtensionDescriptorTypeHeader'
+        - $ref: '#/components/parameters/ExtensionDescriptorIdHeader'
+        - $ref: '#/components/parameters/LynxusTraceIdHeader'
+        - $ref: '#/components/parameters/LynxusRequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NormalizedChannelInboundTurn'
+      responses:
+        '200':
+          description: Stored inbound turn, or existing turn for duplicate dedupKey
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseNormalizedChannelInboundTurnResult'
+        '400':
+          description: Normalized turn payload or descriptor headers are invalid
+        '401':
+          description: Internal auth is missing or invalid
+        '404':
+          description: Channel profile not found
   /internal/channel-events/normalized:
     post:
       summary: Ingest a normalized channel inbound event
@@ -663,6 +692,113 @@ components:
         tracestate:
           type: string
           nullable: true
+    NormalizedChannelMessageRole:
+      type: string
+      enum: [USER, ASSISTANT, HUMAN_OPERATOR, SYSTEM]
+    NormalizedChannelSenderType:
+      type: string
+      enum: [CUSTOMER, AGENT, HUMAN_OPERATOR, SYSTEM]
+    NormalizedChannelMessageSender:
+      type: object
+      required:
+        - senderType
+        - metadata
+      properties:
+        senderType:
+          $ref: '#/components/schemas/NormalizedChannelSenderType'
+        senderId:
+          type: string
+          nullable: true
+        senderName:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+    NormalizedChannelTurnMessage:
+      type: object
+      required:
+        - externalMessageId
+        - role
+        - attachments
+        - metadata
+      properties:
+        externalEventId:
+          type: string
+          nullable: true
+        externalMessageId:
+          type: string
+        occurredAt:
+          type: string
+          format: date-time
+          nullable: true
+        role:
+          $ref: '#/components/schemas/NormalizedChannelMessageRole'
+        sender:
+          $ref: '#/components/schemas/NormalizedChannelMessageSender'
+          nullable: true
+        type:
+          type: string
+          nullable: true
+        text:
+          type: string
+          nullable: true
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/NormalizedChannelAttachment'
+        metadata:
+          type: object
+          additionalProperties: true
+    NormalizedChannelInboundTurn:
+      type: object
+      required:
+        - providerType
+        - channelProfileId
+        - dedupKey
+        - externalConversationId
+        - conversation
+        - messages
+        - normalizedPayload
+        - traceContext
+      properties:
+        providerType:
+          type: string
+          maxLength: 128
+        channelProfileId:
+          type: string
+        dedupKey:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: '^[A-Za-z0-9._:-]+$'
+        externalConversationId:
+          type: string
+        externalUserId:
+          type: string
+          nullable: true
+        conversation:
+          $ref: '#/components/schemas/NormalizedChannelConversation'
+        sender:
+          $ref: '#/components/schemas/NormalizedChannelMessageSender'
+          nullable: true
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/NormalizedChannelTurnMessage'
+        normalizedPayload:
+          type: object
+          additionalProperties: true
+        rawPayload:
+          type: object
+          additionalProperties: true
+          nullable: true
+        traceContext:
+          $ref: '#/components/schemas/NormalizedChannelTraceContext'
+        metadata:
+          type: object
+          additionalProperties: true
+          nullable: true
     NormalizedChannelInboundEvent:
       type: object
       required:
@@ -733,6 +869,16 @@ components:
           type: string
         duplicate:
           type: boolean
+    NormalizedChannelInboundTurnResult:
+      type: object
+      required:
+        - turnId
+        - duplicate
+      properties:
+        turnId:
+          type: string
+        duplicate:
+          type: boolean
     ApiResponseNormalizedChannelInboundEventResult:
       type: object
       properties:
@@ -740,6 +886,13 @@ components:
           type: boolean
         data:
           $ref: '#/components/schemas/NormalizedChannelInboundEventResult'
+    ApiResponseNormalizedChannelInboundTurnResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/NormalizedChannelInboundTurnResult'
         timestamp:
           type: string
           format: date-time

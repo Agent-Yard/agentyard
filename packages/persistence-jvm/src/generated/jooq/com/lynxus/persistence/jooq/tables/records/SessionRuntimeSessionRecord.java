@@ -311,6 +311,84 @@ public class SessionRuntimeSessionRecord extends UpdatableRecordImpl<SessionRunt
         return (OffsetDateTime) get(19);
     }
 
+    /**
+     * Setter for <code>public.session_runtime_session.entry_scope</code>.
+     */
+    public void setEntryScope(String value) {
+        set(20, value);
+    }
+
+    /**
+     * Getter for <code>public.session_runtime_session.entry_scope</code>.
+     */
+    public String getEntryScope() {
+        return (String) get(20);
+    }
+
+    /**
+     * Setter for
+     * <code>public.session_runtime_session.channel_profile_id</code>.
+     */
+    public void setChannelProfileId(String value) {
+        set(21, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.session_runtime_session.channel_profile_id</code>.
+     */
+    public String getChannelProfileId() {
+        return (String) get(21);
+    }
+
+    /**
+     * Setter for
+     * <code>public.session_runtime_session.external_conversation_id</code>.
+     */
+    public void setExternalConversationId(String value) {
+        set(22, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.session_runtime_session.external_conversation_id</code>.
+     */
+    public String getExternalConversationId() {
+        return (String) get(22);
+    }
+
+    /**
+     * Setter for
+     * <code>public.session_runtime_session.next_message_sequence</code>.
+     */
+    public void setNextMessageSequence(Long value) {
+        set(23, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.session_runtime_session.next_message_sequence</code>.
+     */
+    public Long getNextMessageSequence() {
+        return (Long) get(23);
+    }
+
+    /**
+     * Setter for
+     * <code>public.session_runtime_session.shared_state_revision</code>.
+     */
+    public void setSharedStateRevision(Long value) {
+        set(24, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.session_runtime_session.shared_state_revision</code>.
+     */
+    public Long getSharedStateRevision() {
+        return (Long) get(24);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -334,7 +412,7 @@ public class SessionRuntimeSessionRecord extends UpdatableRecordImpl<SessionRunt
     /**
      * Create a detached, initialised SessionRuntimeSessionRecord
      */
-    public SessionRuntimeSessionRecord(String id, String scenarioId, String title, String customerId, String assistantId, String assistantName, String assistantReleaseVersion, String status, String primaryAgentId, String currentOwnerAgentId, String activePlaybookRunId, Boolean agentTurnActive, Boolean sessionHumanHandoffActive, Boolean pendingOwnerReevaluation, Boolean draining, JSONB sharedState, OffsetDateTime idleDeadline, OffsetDateTime createdAt, OffsetDateTime updatedAt, OffsetDateTime endedAt) {
+    public SessionRuntimeSessionRecord(String id, String scenarioId, String title, String customerId, String assistantId, String assistantName, String assistantReleaseVersion, String status, String primaryAgentId, String currentOwnerAgentId, String activePlaybookRunId, Boolean agentTurnActive, Boolean sessionHumanHandoffActive, Boolean pendingOwnerReevaluation, Boolean draining, JSONB sharedState, OffsetDateTime idleDeadline, OffsetDateTime createdAt, OffsetDateTime updatedAt, OffsetDateTime endedAt, String entryScope, String channelProfileId, String externalConversationId, Long nextMessageSequence, Long sharedStateRevision) {
         super(SessionRuntimeSession.SESSION_RUNTIME_SESSION);
 
         setId(id);
@@ -357,6 +435,11 @@ public class SessionRuntimeSessionRecord extends UpdatableRecordImpl<SessionRunt
         setCreatedAt(createdAt);
         setUpdatedAt(updatedAt);
         setEndedAt(endedAt);
+        setEntryScope(entryScope);
+        setChannelProfileId(channelProfileId);
+        setExternalConversationId(externalConversationId);
+        setNextMessageSequence(nextMessageSequence);
+        setSharedStateRevision(sharedStateRevision);
         resetChangedOnNotNull();
     }
 }

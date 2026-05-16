@@ -16,13 +16,19 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEventStatus;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundConsumerKind;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundProfileConsumer;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.Map;
+import org.jooq.JSONB;
 import org.jooq.exception.DataAccessException;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
+
+import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_INBOUND_MESSAGE_DEDUPE;
+import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_INBOUND_TURN;
+import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_INBOUND_TURN_MESSAGE;
 
 class ChannelAdminRepositoryTest {
     private static EmbeddedPostgresTestDatabase database;
@@ -260,5 +266,79 @@ class ChannelAdminRepositoryTest {
             now,
             now
         )));
+    }
+
+    @Test
+    void shouldRecordDuplicateInboundTurnMessagesWithoutAuditUniquenessFailure() {
+        insertInboundTurn("channel-turn-1");
+        insertInboundTurnMessage("channel-turn-1", 0, "msg-1", "RECEIVED", null);
+        insertInboundTurnMessage("channel-turn-1", 1, "msg-1", "DUPLICATE", "channel-turn-1");
+
+        assertEquals(2, database.dsl().fetchCount(
+            CHANNEL_INBOUND_TURN_MESSAGE,
+            CHANNEL_INBOUND_TURN_MESSAGE.TURN_ID.eq("channel-turn-1")
+        ));
+
+        database.dsl().insertInto(CHANNEL_INBOUND_MESSAGE_DEDUPE)
+            .set(CHANNEL_INBOUND_MESSAGE_DEDUPE.CHANNEL_PROFILE_ID, "channel-profile-1")
+            .set(CHANNEL_INBOUND_MESSAGE_DEDUPE.EXTERNAL_CONVERSATION_ID, "chat-1")
+            .set(CHANNEL_INBOUND_MESSAGE_DEDUPE.EXTERNAL_MESSAGE_ID, "msg-1")
+            .set(CHANNEL_INBOUND_MESSAGE_DEDUPE.FIRST_TURN_ID, "channel-turn-1")
+            .set(CHANNEL_INBOUND_MESSAGE_DEDUPE.FIRST_REQUEST_INDEX, 0)
+            .set(CHANNEL_INBOUND_MESSAGE_DEDUPE.CREATED_AT, OffsetDateTime.parse("2026-04-23T00:00:00Z"))
+            .execute();
+
+        assertThrows(DataAccessException.class, () -> database.dsl().insertInto(CHANNEL_INBOUND_MESSAGE_DEDUPE)
+            .set(CHANNEL_INBOUND_MESSAGE_DEDUPE.CHANNEL_PROFILE_ID, "channel-profile-1")
+            .set(CHANNEL_INBOUND_MESSAGE_DEDUPE.EXTERNAL_CONVERSATION_ID, "chat-1")
+            .set(CHANNEL_INBOUND_MESSAGE_DEDUPE.EXTERNAL_MESSAGE_ID, "msg-1")
+            .set(CHANNEL_INBOUND_MESSAGE_DEDUPE.FIRST_TURN_ID, "channel-turn-2")
+            .set(CHANNEL_INBOUND_MESSAGE_DEDUPE.FIRST_REQUEST_INDEX, 0)
+            .set(CHANNEL_INBOUND_MESSAGE_DEDUPE.CREATED_AT, OffsetDateTime.parse("2026-04-23T00:00:01Z"))
+            .execute());
+    }
+
+    private void insertInboundTurn(String turnId) {
+        OffsetDateTime now = OffsetDateTime.parse("2026-04-23T00:00:00Z");
+        database.dsl().insertInto(CHANNEL_INBOUND_TURN)
+            .set(CHANNEL_INBOUND_TURN.TURN_ID, turnId)
+            .set(CHANNEL_INBOUND_TURN.CHANNEL_PROFILE_ID, "channel-profile-1")
+            .set(CHANNEL_INBOUND_TURN.PROVIDER_TYPE, "feishu")
+            .set(CHANNEL_INBOUND_TURN.DEDUP_KEY, "dedup-" + turnId)
+            .set(CHANNEL_INBOUND_TURN.EXTERNAL_CONVERSATION_ID, "chat-1")
+            .set(CHANNEL_INBOUND_TURN.NORMALIZED_PAYLOAD, JSONB.valueOf("{}"))
+            .set(CHANNEL_INBOUND_TURN.RAW_PAYLOAD, JSONB.valueOf("{}"))
+            .set(CHANNEL_INBOUND_TURN.TRACE_CONTEXT, JSONB.valueOf("{}"))
+            .set(CHANNEL_INBOUND_TURN.METADATA, JSONB.valueOf("{}"))
+            .set(CHANNEL_INBOUND_TURN.STATUS, "RECEIVED")
+            .set(CHANNEL_INBOUND_TURN.CREATED_AT, now)
+            .set(CHANNEL_INBOUND_TURN.UPDATED_AT, now)
+            .execute();
+    }
+
+    private void insertInboundTurnMessage(
+        String turnId,
+        int requestIndex,
+        String externalMessageId,
+        String status,
+        String duplicateOfTurnId
+    ) {
+        OffsetDateTime now = OffsetDateTime.parse("2026-04-23T00:00:00Z");
+        database.dsl().insertInto(CHANNEL_INBOUND_TURN_MESSAGE)
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.TURN_ID, turnId)
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.CHANNEL_PROFILE_ID, "channel-profile-1")
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.EXTERNAL_CONVERSATION_ID, "chat-1")
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.REQUEST_INDEX, requestIndex)
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.EXTERNAL_MESSAGE_ID, externalMessageId)
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.OCCURRED_AT, now)
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.ROLE, "USER")
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.SENDER, JSONB.valueOf("{\"senderType\":\"CUSTOMER\"}"))
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.ATTACHMENTS, JSONB.valueOf("[]"))
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.METADATA, JSONB.valueOf("{}"))
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.STATUS, status)
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.DUPLICATE_OF_TURN_ID, duplicateOfTurnId)
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.CREATED_AT, now)
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.UPDATED_AT, now)
+            .execute();
     }
 }

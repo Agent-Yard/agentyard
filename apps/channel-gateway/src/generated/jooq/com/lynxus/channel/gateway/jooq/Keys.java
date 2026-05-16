@@ -6,6 +6,9 @@ package com.lynxus.channel.gateway.jooq;
 
 import com.lynxus.channel.gateway.jooq.tables.ChannelConversationBinding;
 import com.lynxus.channel.gateway.jooq.tables.ChannelInboundEvent;
+import com.lynxus.channel.gateway.jooq.tables.ChannelInboundMessageDedupe;
+import com.lynxus.channel.gateway.jooq.tables.ChannelInboundTurn;
+import com.lynxus.channel.gateway.jooq.tables.ChannelInboundTurnMessage;
 import com.lynxus.channel.gateway.jooq.tables.ChannelOutboundFinalCheckpoint;
 import com.lynxus.channel.gateway.jooq.tables.ChannelProfile;
 import com.lynxus.channel.gateway.jooq.tables.ChannelProfileJob;
@@ -13,6 +16,9 @@ import com.lynxus.channel.gateway.jooq.tables.ChannelProfileJobRun;
 import com.lynxus.channel.gateway.jooq.tables.ChannelProfileTemplateBinding;
 import com.lynxus.channel.gateway.jooq.tables.records.ChannelConversationBindingRecord;
 import com.lynxus.channel.gateway.jooq.tables.records.ChannelInboundEventRecord;
+import com.lynxus.channel.gateway.jooq.tables.records.ChannelInboundMessageDedupeRecord;
+import com.lynxus.channel.gateway.jooq.tables.records.ChannelInboundTurnMessageRecord;
+import com.lynxus.channel.gateway.jooq.tables.records.ChannelInboundTurnRecord;
 import com.lynxus.channel.gateway.jooq.tables.records.ChannelOutboundFinalCheckpointRecord;
 import com.lynxus.channel.gateway.jooq.tables.records.ChannelProfileJobRecord;
 import com.lynxus.channel.gateway.jooq.tables.records.ChannelProfileJobRunRecord;
@@ -39,6 +45,9 @@ public class Keys {
 
     public static final UniqueKey<ChannelConversationBindingRecord> CHANNEL_CONVERSATION_BINDING_PKEY = Internal.createUniqueKey(ChannelConversationBinding.CHANNEL_CONVERSATION_BINDING, DSL.name("channel_conversation_binding_pkey"), new TableField[] { ChannelConversationBinding.CHANNEL_CONVERSATION_BINDING.ID }, true);
     public static final UniqueKey<ChannelInboundEventRecord> CHANNEL_INBOUND_EVENT_PKEY = Internal.createUniqueKey(ChannelInboundEvent.CHANNEL_INBOUND_EVENT, DSL.name("channel_inbound_event_pkey"), new TableField[] { ChannelInboundEvent.CHANNEL_INBOUND_EVENT.EVENT_ID }, true);
+    public static final UniqueKey<ChannelInboundMessageDedupeRecord> CHANNEL_INBOUND_MESSAGE_DEDUPE_PKEY = Internal.createUniqueKey(ChannelInboundMessageDedupe.CHANNEL_INBOUND_MESSAGE_DEDUPE, DSL.name("channel_inbound_message_dedupe_pkey"), new TableField[] { ChannelInboundMessageDedupe.CHANNEL_INBOUND_MESSAGE_DEDUPE.CHANNEL_PROFILE_ID, ChannelInboundMessageDedupe.CHANNEL_INBOUND_MESSAGE_DEDUPE.EXTERNAL_CONVERSATION_ID, ChannelInboundMessageDedupe.CHANNEL_INBOUND_MESSAGE_DEDUPE.EXTERNAL_MESSAGE_ID }, true);
+    public static final UniqueKey<ChannelInboundTurnRecord> CHANNEL_INBOUND_TURN_PKEY = Internal.createUniqueKey(ChannelInboundTurn.CHANNEL_INBOUND_TURN, DSL.name("channel_inbound_turn_pkey"), new TableField[] { ChannelInboundTurn.CHANNEL_INBOUND_TURN.TURN_ID }, true);
+    public static final UniqueKey<ChannelInboundTurnMessageRecord> CHANNEL_INBOUND_TURN_MESSAGE_PKEY = Internal.createUniqueKey(ChannelInboundTurnMessage.CHANNEL_INBOUND_TURN_MESSAGE, DSL.name("channel_inbound_turn_message_pkey"), new TableField[] { ChannelInboundTurnMessage.CHANNEL_INBOUND_TURN_MESSAGE.TURN_ID, ChannelInboundTurnMessage.CHANNEL_INBOUND_TURN_MESSAGE.REQUEST_INDEX }, true);
     public static final UniqueKey<ChannelOutboundFinalCheckpointRecord> PK_CHANNEL_OUTBOUND_FINAL_CHECKPOINT = Internal.createUniqueKey(ChannelOutboundFinalCheckpoint.CHANNEL_OUTBOUND_FINAL_CHECKPOINT, DSL.name("pk_channel_outbound_final_checkpoint"), new TableField[] { ChannelOutboundFinalCheckpoint.CHANNEL_OUTBOUND_FINAL_CHECKPOINT.CHANNEL_PROFILE_ID, ChannelOutboundFinalCheckpoint.CHANNEL_OUTBOUND_FINAL_CHECKPOINT.PROVIDER_TYPE, ChannelOutboundFinalCheckpoint.CHANNEL_OUTBOUND_FINAL_CHECKPOINT.CONSUMER_KIND, ChannelOutboundFinalCheckpoint.CHANNEL_OUTBOUND_FINAL_CHECKPOINT.CONSUMER_ID }, true);
     public static final UniqueKey<ChannelProfileRecord> CHANNEL_PROFILE_PKEY = Internal.createUniqueKey(ChannelProfile.CHANNEL_PROFILE, DSL.name("channel_profile_pkey"), new TableField[] { ChannelProfile.CHANNEL_PROFILE.ID }, true);
     public static final UniqueKey<ChannelProfileJobRecord> CHANNEL_PROFILE_JOB_PKEY = Internal.createUniqueKey(ChannelProfileJob.CHANNEL_PROFILE_JOB, DSL.name("channel_profile_job_pkey"), new TableField[] { ChannelProfileJob.CHANNEL_PROFILE_JOB.ID }, true);

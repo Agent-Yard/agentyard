@@ -34,6 +34,7 @@ import com.lynxus.persistence.jooq.tables.SessionRuntimeEvent;
 import com.lynxus.persistence.jooq.tables.SessionRuntimeMessage;
 import com.lynxus.persistence.jooq.tables.SessionRuntimePlaybookRun;
 import com.lynxus.persistence.jooq.tables.SessionRuntimeSession;
+import com.lynxus.persistence.jooq.tables.SessionRuntimeTurn;
 import com.lynxus.persistence.jooq.tables.SharedStateRevision;
 import com.lynxus.persistence.jooq.tables.records.AgentGroupRecord;
 import com.lynxus.persistence.jooq.tables.records.AgentRecord;
@@ -65,6 +66,7 @@ import com.lynxus.persistence.jooq.tables.records.SessionRuntimeEventRecord;
 import com.lynxus.persistence.jooq.tables.records.SessionRuntimeMessageRecord;
 import com.lynxus.persistence.jooq.tables.records.SessionRuntimePlaybookRunRecord;
 import com.lynxus.persistence.jooq.tables.records.SessionRuntimeSessionRecord;
+import com.lynxus.persistence.jooq.tables.records.SessionRuntimeTurnRecord;
 import com.lynxus.persistence.jooq.tables.records.SharedStateRevisionRecord;
 
 import org.jooq.TableField;
@@ -115,5 +117,6 @@ public class Keys {
     public static final UniqueKey<SessionRuntimeMessageRecord> SESSION_RUNTIME_MESSAGE_PKEY = Internal.createUniqueKey(SessionRuntimeMessage.SESSION_RUNTIME_MESSAGE, DSL.name("session_runtime_message_pkey"), new TableField[] { SessionRuntimeMessage.SESSION_RUNTIME_MESSAGE.MESSAGE_ID }, true);
     public static final UniqueKey<SessionRuntimePlaybookRunRecord> SESSION_RUNTIME_PLAYBOOK_RUN_PKEY = Internal.createUniqueKey(SessionRuntimePlaybookRun.SESSION_RUNTIME_PLAYBOOK_RUN, DSL.name("session_runtime_playbook_run_pkey"), new TableField[] { SessionRuntimePlaybookRun.SESSION_RUNTIME_PLAYBOOK_RUN.RUN_ID }, true);
     public static final UniqueKey<SessionRuntimeSessionRecord> SESSION_RUNTIME_SESSION_PKEY = Internal.createUniqueKey(SessionRuntimeSession.SESSION_RUNTIME_SESSION, DSL.name("session_runtime_session_pkey"), new TableField[] { SessionRuntimeSession.SESSION_RUNTIME_SESSION.ID }, true);
+    public static final UniqueKey<SessionRuntimeTurnRecord> SESSION_RUNTIME_TURN_PKEY = Internal.createUniqueKey(SessionRuntimeTurn.SESSION_RUNTIME_TURN, DSL.name("session_runtime_turn_pkey"), new TableField[] { SessionRuntimeTurn.SESSION_RUNTIME_TURN.TURN_ID }, true);
     public static final UniqueKey<SharedStateRevisionRecord> SHARED_STATE_REVISION_PKEY = Internal.createUniqueKey(SharedStateRevision.SHARED_STATE_REVISION, DSL.name("shared_state_revision_pkey"), new TableField[] { SharedStateRevision.SHARED_STATE_REVISION.DOMAIN }, true);
 }

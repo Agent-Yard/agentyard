@@ -14,6 +14,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 
+import org.jooq.Check;
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.Index;
@@ -30,6 +31,7 @@ import org.jooq.TableField;
 import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
+import org.jooq.impl.Internal;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -160,6 +162,35 @@ public class SessionRuntimeSession extends TableImpl<SessionRuntimeSessionRecord
      */
     public final TableField<SessionRuntimeSessionRecord, OffsetDateTime> ENDED_AT = createField(DSL.name("ended_at"), SQLDataType.TIMESTAMPWITHTIMEZONE(6), this, "");
 
+    /**
+     * The column <code>public.session_runtime_session.entry_scope</code>.
+     */
+    public final TableField<SessionRuntimeSessionRecord, String> ENTRY_SCOPE = createField(DSL.name("entry_scope"), SQLDataType.VARCHAR(32).nullable(false), this, "");
+
+    /**
+     * The column
+     * <code>public.session_runtime_session.channel_profile_id</code>.
+     */
+    public final TableField<SessionRuntimeSessionRecord, String> CHANNEL_PROFILE_ID = createField(DSL.name("channel_profile_id"), SQLDataType.VARCHAR(64), this, "");
+
+    /**
+     * The column
+     * <code>public.session_runtime_session.external_conversation_id</code>.
+     */
+    public final TableField<SessionRuntimeSessionRecord, String> EXTERNAL_CONVERSATION_ID = createField(DSL.name("external_conversation_id"), SQLDataType.VARCHAR(255), this, "");
+
+    /**
+     * The column
+     * <code>public.session_runtime_session.next_message_sequence</code>.
+     */
+    public final TableField<SessionRuntimeSessionRecord, Long> NEXT_MESSAGE_SEQUENCE = createField(DSL.name("next_message_sequence"), SQLDataType.BIGINT.nullable(false).defaultValue(DSL.field(DSL.raw("1"), SQLDataType.BIGINT)), this, "");
+
+    /**
+     * The column
+     * <code>public.session_runtime_session.shared_state_revision</code>.
+     */
+    public final TableField<SessionRuntimeSessionRecord, Long> SHARED_STATE_REVISION = createField(DSL.name("shared_state_revision"), SQLDataType.BIGINT.nullable(false).defaultValue(DSL.field(DSL.raw("0"), SQLDataType.BIGINT)), this, "");
+
     private SessionRuntimeSession(Name alias, Table<SessionRuntimeSessionRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -198,12 +229,20 @@ public class SessionRuntimeSession extends TableImpl<SessionRuntimeSessionRecord
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_SESSION_RUNTIME_SESSION_CUSTOMER_ASSISTANT_STATUS, Indexes.IDX_SESSION_RUNTIME_SESSION_UPDATED);
+        return Arrays.asList(Indexes.IDX_SESSION_RUNTIME_SESSION_CUSTOMER_ASSISTANT_STATUS, Indexes.IDX_SESSION_RUNTIME_SESSION_UPDATED, Indexes.UK_SESSION_RUNTIME_ACTIVE_CHANNEL, Indexes.UK_SESSION_RUNTIME_ACTIVE_WEB);
     }
 
     @Override
     public UniqueKey<SessionRuntimeSessionRecord> getPrimaryKey() {
         return Keys.SESSION_RUNTIME_SESSION_PKEY;
+    }
+
+    @Override
+    public List<Check<SessionRuntimeSessionRecord>> getChecks() {
+        return Arrays.asList(
+            Internal.createCheck(this, DSL.name("ck_session_runtime_session_channel_identity"), "(((((entry_scope)::text = 'WEB'::text) AND (channel_profile_id IS NULL) AND (external_conversation_id IS NULL)) OR (((entry_scope)::text = 'CHANNEL'::text) AND (channel_profile_id IS NOT NULL) AND (external_conversation_id IS NOT NULL))))", true),
+            Internal.createCheck(this, DSL.name("ck_session_runtime_session_entry_scope"), "(((entry_scope)::text = ANY ((ARRAY['WEB'::character varying, 'CHANNEL'::character varying])::text[])))", true)
+        );
     }
 
     @Override

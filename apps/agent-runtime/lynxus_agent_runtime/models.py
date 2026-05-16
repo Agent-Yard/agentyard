@@ -197,6 +197,12 @@ class SessionMessage(BaseModel):
     messageId: str
     sessionId: str
     sequence: int
+    turnId: str
+    turnIndex: int
+    producerType: Literal["EXTERNAL", "PLATFORM"]
+    externalMessageId: str | None = None
+    clientMessageId: str | None = None
+    occurredAt: str | None = None
     role: Literal["USER", "ASSISTANT", "HUMAN_OPERATOR", "SYSTEM"]
     sender: SessionMessageSender
     status: Literal["SENT", "STREAMING", "DELIVERED", "FAILED"]
@@ -210,9 +216,11 @@ class SessionMessage(BaseModel):
 
 
 class SessionTrigger(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     triggerType: Literal["USER_MESSAGE", "PLAYBOOK_COMPLETED"]
+    turnId: str
     eventId: str
-    triggerMessageId: str | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -243,6 +251,19 @@ class SessionEvent(BaseModel):
     relatedMessageId: str | None = None
     relatedPlaybookRunId: str | None = None
     relatedOwnerAgentId: str | None = None
+
+
+class AgentRuntimeContextEntry(BaseModel):
+    entryId: str
+    entryType: Literal[
+        "SESSION_EVENT",
+        "SHARED_STATE_SNAPSHOT",
+        "SHARED_STATE_PATCH",
+        "ACTIVE_PLAYBOOK_SUMMARY",
+    ]
+    revision: int
+    occurredAt: str
+    data: dict[str, Any] = Field(default_factory=dict)
 
 
 class AgentDecision(BaseModel):
@@ -288,9 +309,11 @@ class SecurityAssessment(BaseModel):
 
 
 class AgentTurnRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     sessionId: str
-    turnId: str | None = None
-    turnExecutionId: str | None = None
+    turnId: str
+    turnExecutionId: str
     replyMessageId: str
     ownershipEpoch: int = 1
     assistantId: str
@@ -303,8 +326,9 @@ class AgentTurnRequest(BaseModel):
     effectivePrivacyModelBinding: LlmModelDescriptor | None = None
     effectivePrivacyMappingEnabled: bool = False
     trigger: SessionTrigger
-    recentMessages: list[SessionMessage] = Field(default_factory=list)
-    recentEvents: list[SessionEvent] = Field(default_factory=list)
+    messages: list[SessionMessage] = Field(default_factory=list)
+    contextEntries: list[AgentRuntimeContextEntry] = Field(default_factory=list)
+    transcriptBootstrap: bool = False
 
 
 class AgentTurnResult(BaseModel):

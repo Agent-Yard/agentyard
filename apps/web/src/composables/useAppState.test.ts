@@ -46,6 +46,12 @@ function runtimeDetail(messageIds: string[], sessionId = 'session-1'): SessionRu
       messageId,
       sessionId,
       sequence: index + 1,
+      turnId: `turn-${index + 1}`,
+      turnIndex: 0,
+      producerType: 'PLATFORM',
+      externalMessageId: null,
+      clientMessageId: null,
+      occurredAt: '2026-05-03T00:00:03Z',
       role: 'ASSISTANT',
       sender: {
         senderType: 'AGENT',

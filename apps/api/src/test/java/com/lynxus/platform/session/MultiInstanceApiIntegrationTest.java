@@ -17,6 +17,7 @@ import com.lynxus.contracts.session.SessionContracts.SessionEvent;
 import com.lynxus.contracts.session.SessionContracts.SessionEventType;
 import com.lynxus.contracts.session.SessionContracts.SessionMessage;
 import com.lynxus.contracts.session.SessionContracts.SessionMessageInput;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageProducerType;
 import com.lynxus.contracts.session.SessionContracts.SessionMessageRole;
 import com.lynxus.contracts.session.SessionContracts.SessionMessageSender;
 import com.lynxus.contracts.session.SessionContracts.SessionMessageSenderType;
@@ -850,6 +851,12 @@ class MultiInstanceApiIntegrationTest {
             "session-message-" + UUID.randomUUID(),
             sessionId,
             sequence,
+            "turn-synthetic-" + sequence,
+            0,
+            SessionMessageProducerType.PLATFORM,
+            null,
+            null,
+            now,
             SessionMessageRole.ASSISTANT,
             new SessionMessageSender(SessionMessageSenderType.AGENT, current.currentOwnerAgentId(), current.currentOwnerAgentId()),
             SessionMessageStatus.DELIVERED,
@@ -1168,6 +1175,12 @@ class MultiInstanceApiIntegrationTest {
                     message.messageId(),
                     workflowId,
                     sequence,
+                    "turn-" + message.messageId(),
+                    0,
+                    SessionMessageProducerType.EXTERNAL,
+                    null,
+                    null,
+                    now,
                     SessionMessageRole.USER,
                     new SessionMessageSender(SessionMessageSenderType.CUSTOMER, message.customerId(), message.customerId()),
                     SessionMessageStatus.SENT,

@@ -34,6 +34,7 @@ import com.lynxus.persistence.jooq.tables.SessionRuntimeEvent;
 import com.lynxus.persistence.jooq.tables.SessionRuntimeMessage;
 import com.lynxus.persistence.jooq.tables.SessionRuntimePlaybookRun;
 import com.lynxus.persistence.jooq.tables.SessionRuntimeSession;
+import com.lynxus.persistence.jooq.tables.SessionRuntimeTurn;
 import com.lynxus.persistence.jooq.tables.SharedStateRevision;
 
 import java.util.Arrays;
@@ -209,6 +210,11 @@ public class Public extends SchemaImpl {
     public final SessionRuntimeSession SESSION_RUNTIME_SESSION = SessionRuntimeSession.SESSION_RUNTIME_SESSION;
 
     /**
+     * The table <code>public.session_runtime_turn</code>.
+     */
+    public final SessionRuntimeTurn SESSION_RUNTIME_TURN = SessionRuntimeTurn.SESSION_RUNTIME_TURN;
+
+    /**
      * The table <code>public.shared_state_revision</code>.
      */
     public final SharedStateRevision SHARED_STATE_REVISION = SharedStateRevision.SHARED_STATE_REVISION;
@@ -266,6 +272,7 @@ public class Public extends SchemaImpl {
             SessionRuntimeMessage.SESSION_RUNTIME_MESSAGE,
             SessionRuntimePlaybookRun.SESSION_RUNTIME_PLAYBOOK_RUN,
             SessionRuntimeSession.SESSION_RUNTIME_SESSION,
+            SessionRuntimeTurn.SESSION_RUNTIME_TURN,
             SharedStateRevision.SHARED_STATE_REVISION
         );
     }

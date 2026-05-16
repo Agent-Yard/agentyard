@@ -114,6 +114,20 @@ public final class ChannelContracts {
         UNKNOWN
     }
 
+    public enum NormalizedChannelMessageRole {
+        USER,
+        ASSISTANT,
+        HUMAN_OPERATOR,
+        SYSTEM
+    }
+
+    public enum NormalizedChannelSenderType {
+        CUSTOMER,
+        AGENT,
+        HUMAN_OPERATOR,
+        SYSTEM
+    }
+
     public record ChannelProfile(
         String id,
         String providerType,
@@ -228,6 +242,56 @@ public final class ChannelContracts {
         String traceparent,
         String tracestate
     ) {
+    }
+
+    public record NormalizedChannelMessageSender(
+        NormalizedChannelSenderType senderType,
+        String senderId,
+        String senderName,
+        Map<String, Object> metadata
+    ) {
+        public NormalizedChannelMessageSender {
+            metadata = immutableObjectMap(metadata);
+        }
+    }
+
+    public record NormalizedChannelTurnMessage(
+        String externalEventId,
+        String externalMessageId,
+        Instant occurredAt,
+        NormalizedChannelMessageRole role,
+        NormalizedChannelMessageSender sender,
+        String type,
+        String text,
+        List<NormalizedChannelAttachment> attachments,
+        Map<String, Object> metadata
+    ) {
+        public NormalizedChannelTurnMessage {
+            attachments = attachments == null || attachments.isEmpty() ? List.of() : List.copyOf(attachments);
+            metadata = immutableObjectMap(metadata);
+        }
+    }
+
+    public record NormalizedChannelInboundTurn(
+        String providerType,
+        String channelProfileId,
+        String dedupKey,
+        String externalConversationId,
+        String externalUserId,
+        NormalizedChannelConversation conversation,
+        NormalizedChannelMessageSender sender,
+        List<NormalizedChannelTurnMessage> messages,
+        Map<String, Object> normalizedPayload,
+        Map<String, Object> rawPayload,
+        NormalizedChannelTraceContext traceContext,
+        Map<String, Object> metadata
+    ) {
+        public NormalizedChannelInboundTurn {
+            messages = messages == null || messages.isEmpty() ? List.of() : List.copyOf(messages);
+            normalizedPayload = requiredImmutableObjectMap(normalizedPayload, "normalizedPayload");
+            rawPayload = immutableObjectMap(rawPayload);
+            metadata = immutableObjectMap(metadata);
+        }
     }
 
     public record NormalizedChannelInboundEvent(
@@ -747,10 +811,12 @@ public final class ChannelContracts {
     public record ChannelRunJobResponse(
         ChannelRunJobResponseStatus status,
         String nextCursor,
+        List<NormalizedChannelInboundTurn> inboundTurns,
         List<NormalizedChannelInboundEvent> events,
         Map<String, Object> metadata
     ) {
         public ChannelRunJobResponse {
+            inboundTurns = inboundTurns == null || inboundTurns.isEmpty() ? List.of() : List.copyOf(inboundTurns);
             events = events == null || events.isEmpty() ? List.of() : List.copyOf(events);
             metadata = requiredImmutableObjectMap(metadata, "metadata");
         }

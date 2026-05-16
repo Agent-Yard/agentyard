@@ -1408,24 +1408,84 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/KnowledgeRetrievalPreviewResult'
-  /session-runtime/messages:
+  /session-runtime/turns:
     post:
-      summary: Send a user message into an existing session or start a session with the first message
+      summary: Send one public Web session turn with one or more user messages
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          description: Must equal request body turnDedupKey.
+          schema:
+            type: string
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SendSessionMessageRequest'
+              $ref: '#/components/schemas/SendSessionTurnRequest'
       responses:
         '200':
-          description: Updated or created session state
+          description: Session turn accepted or idempotently replayed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SessionRuntimeSession'
+                $ref: '#/components/schemas/SendSessionTurnResponse'
+        '400':
+          description: Invalid turn request
         '409':
-          description: Session is busy or rejected the message
+          description: Session is busy, draining, ended, or otherwise rejected before turn acceptance
+  /internal/session-runtime/import-turns:
+    post:
+      summary: Trusted import of one session turn with server-authoritative roles and senders
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          description: Must equal request body turnDedupKey.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrustedImportSessionTurnRequest'
+      responses:
+        '200':
+          description: Import turn accepted or idempotently replayed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendSessionTurnResponse'
+        '400':
+          description: Invalid import request
+        '409':
+          description: Target session is busy, draining, ended, or otherwise rejected before turn acceptance
+  /internal/session-runtime/channel-inbound-turns:
+    post:
+      summary: Accept a trusted channel inbound session turn from channel-gateway
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChannelInboundSessionTurnRequest'
+      responses:
+        '200':
+          description: Channel inbound turn accepted or idempotently replayed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelInboundSessionTurnResponse'
+        '400':
+          description: Invalid channel inbound turn request
+        '409':
+          description: Session is busy, draining, ended, or otherwise rejected before turn acceptance
   /session-runtime/sessions:
     get:
       summary: List session runtime sessions
@@ -3884,6 +3944,9 @@ components:
     SessionMessageBlockType:
       type: string
       enum: [TEXT, IMAGE, RICH_TEXT, CARD]
+    SessionMessageProducerType:
+      type: string
+      enum: [EXTERNAL, PLATFORM]
     RichTextFormat:
       type: string
       enum: [MARKDOWN]
@@ -3908,10 +3971,28 @@ components:
     PlaybookRunStatus:
       type: string
       enum: [RUNNING, WAITING, SUCCEEDED, FAILED, CANCELLED]
-    SendSessionMessageRequest:
+    WebSessionTurnMessageInput:
       type: object
-      required: [customerId, message]
-      description: Provide exactly one of sessionId or assistantId. sessionId sends into an existing session; assistantId starts or reuses an active session for the customer.
+      required: [blocks, metadata]
+      properties:
+        clientMessageId:
+          type: string
+          nullable: true
+        occurredAt:
+          type: string
+          format: date-time
+          nullable: true
+        blocks:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionMessageBlock'
+        metadata:
+          type: object
+          additionalProperties: true
+    SendSessionTurnRequest:
+      type: object
+      required: [customerId, turnDedupKey, messages, metadata]
+      description: Public Web turn request. Clients cannot declare message role or sender; API writes USER/CUSTOMER.
       properties:
         sessionId:
           type: string
@@ -3921,8 +4002,181 @@ components:
           nullable: true
         customerId:
           type: string
+        turnDedupKey:
+          type: string
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebSessionTurnMessageInput'
+        metadata:
+          type: object
+          additionalProperties: true
+    AcceptedSessionMessageAllocation:
+      type: object
+      required: [requestIndex, messageId, turnIndex]
+      properties:
+        requestIndex:
+          type: integer
+          minimum: 0
+        clientMessageId:
+          type: string
+          nullable: true
+        messageId:
+          type: string
+        turnIndex:
+          type: integer
+          minimum: 0
+    SendSessionTurnResponse:
+      type: object
+      required: [sessionId, turnId, status, acceptedMessageIds, acceptedMessageAllocations, duplicateExternalMessageIds]
+      properties:
+        sessionId:
+          type: string
+        turnId:
+          type: string
+        status:
+          $ref: '#/components/schemas/SessionMessageDeliveryStatus'
+        acceptedMessageIds:
+          type: array
+          items:
+            type: string
+        acceptedMessageAllocations:
+          type: array
+          items:
+            $ref: '#/components/schemas/AcceptedSessionMessageAllocation'
+        duplicateExternalMessageIds:
+          type: array
+          items:
+            type: string
+        reason:
+          type: string
+          nullable: true
+    ChannelInboundSessionTurnMessage:
+      type: object
+      required: [externalMessageId, role, sender, message, metadata]
+      properties:
+        externalEventId:
+          type: string
+          nullable: true
+        externalMessageId:
+          type: string
+        occurredAt:
+          type: string
+          format: date-time
+          nullable: true
+        role:
+          $ref: '#/components/schemas/SessionMessageRole'
+        sender:
+          $ref: '#/components/schemas/SessionMessageSender'
         message:
           $ref: '#/components/schemas/SessionMessageInput'
+        metadata:
+          type: object
+          additionalProperties: true
+    ChannelInboundSessionTurnRequest:
+      type: object
+      required: [channelProfileId, externalConversationId, dedupKey, assistantId, customerId, messages, metadata]
+      properties:
+        channelProfileId:
+          type: string
+        externalConversationId:
+          type: string
+        dedupKey:
+          type: string
+        assistantId:
+          type: string
+        customerId:
+          type: string
+        sessionId:
+          type: string
+          nullable: true
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChannelInboundSessionTurnMessage'
+        metadata:
+          type: object
+          additionalProperties: true
+    ChannelInboundSessionTurnResponse:
+      allOf:
+        - $ref: '#/components/schemas/SendSessionTurnResponse'
+    ImportSessionTarget:
+      oneOf:
+        - $ref: '#/components/schemas/ExistingSessionImportTarget'
+        - $ref: '#/components/schemas/WebIdentityImportTarget'
+        - $ref: '#/components/schemas/ChannelIdentityImportTarget'
+    ExistingSessionImportTarget:
+      type: object
+      required: [sessionId, customerId, assistantId]
+      properties:
+        sessionId:
+          type: string
+        customerId:
+          type: string
+        assistantId:
+          type: string
+    WebIdentityImportTarget:
+      type: object
+      required: [customerId, assistantId]
+      properties:
+        customerId:
+          type: string
+        assistantId:
+          type: string
+    ChannelIdentityImportTarget:
+      type: object
+      required: [channelProfileId, externalConversationId, customerId, assistantId]
+      properties:
+        channelProfileId:
+          type: string
+        externalConversationId:
+          type: string
+        customerId:
+          type: string
+        assistantId:
+          type: string
+    TrustedImportSessionTurnMessage:
+      type: object
+      required: [role, sender, message, metadata]
+      properties:
+        importMessageId:
+          type: string
+          nullable: true
+        externalMessageId:
+          type: string
+          nullable: true
+        occurredAt:
+          type: string
+          format: date-time
+          nullable: true
+        role:
+          $ref: '#/components/schemas/SessionMessageRole'
+        sender:
+          $ref: '#/components/schemas/SessionMessageSender'
+        message:
+          $ref: '#/components/schemas/SessionMessageInput'
+        metadata:
+          type: object
+          additionalProperties: true
+    TrustedImportSessionTurnRequest:
+      type: object
+      required: [target, turnDedupKey, importBatchId, sourceSystem, messages, metadata]
+      properties:
+        target:
+          $ref: '#/components/schemas/ImportSessionTarget'
+        turnDedupKey:
+          type: string
+        importBatchId:
+          type: string
+        sourceSystem:
+          type: string
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrustedImportSessionTurnMessage'
+        metadata:
+          type: object
+          additionalProperties: true
     HumanResumeRequest:
       type: object
       required: [playbookRunId]
@@ -4056,6 +4310,23 @@ components:
         sequence:
           type: integer
           format: int64
+        turnId:
+          type: string
+        turnIndex:
+          type: integer
+          minimum: 0
+        producerType:
+          $ref: '#/components/schemas/SessionMessageProducerType'
+        externalMessageId:
+          type: string
+          nullable: true
+        clientMessageId:
+          type: string
+          nullable: true
+        occurredAt:
+          type: string
+          format: date-time
+          nullable: true
         role:
           $ref: '#/components/schemas/SessionMessageRole'
         sender:

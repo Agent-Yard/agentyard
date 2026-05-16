@@ -6,6 +6,9 @@ package com.lynxus.channel.gateway.jooq;
 
 import com.lynxus.channel.gateway.jooq.tables.ChannelConversationBinding;
 import com.lynxus.channel.gateway.jooq.tables.ChannelInboundEvent;
+import com.lynxus.channel.gateway.jooq.tables.ChannelInboundMessageDedupe;
+import com.lynxus.channel.gateway.jooq.tables.ChannelInboundTurn;
+import com.lynxus.channel.gateway.jooq.tables.ChannelInboundTurnMessage;
 import com.lynxus.channel.gateway.jooq.tables.ChannelOutboundFinalCheckpoint;
 import com.lynxus.channel.gateway.jooq.tables.ChannelProfile;
 import com.lynxus.channel.gateway.jooq.tables.ChannelProfileJob;
@@ -42,6 +45,21 @@ public class Public extends SchemaImpl {
      * The table <code>public.channel_inbound_event</code>.
      */
     public final ChannelInboundEvent CHANNEL_INBOUND_EVENT = ChannelInboundEvent.CHANNEL_INBOUND_EVENT;
+
+    /**
+     * The table <code>public.channel_inbound_message_dedupe</code>.
+     */
+    public final ChannelInboundMessageDedupe CHANNEL_INBOUND_MESSAGE_DEDUPE = ChannelInboundMessageDedupe.CHANNEL_INBOUND_MESSAGE_DEDUPE;
+
+    /**
+     * The table <code>public.channel_inbound_turn</code>.
+     */
+    public final ChannelInboundTurn CHANNEL_INBOUND_TURN = ChannelInboundTurn.CHANNEL_INBOUND_TURN;
+
+    /**
+     * The table <code>public.channel_inbound_turn_message</code>.
+     */
+    public final ChannelInboundTurnMessage CHANNEL_INBOUND_TURN_MESSAGE = ChannelInboundTurnMessage.CHANNEL_INBOUND_TURN_MESSAGE;
 
     /**
      * The table <code>public.channel_outbound_final_checkpoint</code>.
@@ -86,6 +104,9 @@ public class Public extends SchemaImpl {
         return Arrays.asList(
             ChannelConversationBinding.CHANNEL_CONVERSATION_BINDING,
             ChannelInboundEvent.CHANNEL_INBOUND_EVENT,
+            ChannelInboundMessageDedupe.CHANNEL_INBOUND_MESSAGE_DEDUPE,
+            ChannelInboundTurn.CHANNEL_INBOUND_TURN,
+            ChannelInboundTurnMessage.CHANNEL_INBOUND_TURN_MESSAGE,
             ChannelOutboundFinalCheckpoint.CHANNEL_OUTBOUND_FINAL_CHECKPOINT,
             ChannelProfile.CHANNEL_PROFILE,
             ChannelProfileJob.CHANNEL_PROFILE_JOB,

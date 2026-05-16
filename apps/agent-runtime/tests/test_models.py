@@ -2,7 +2,7 @@ import unittest
 
 from pydantic import ValidationError
 
-from lynxus_agent_runtime.models import AgentDecision, ToolDescriptor
+from lynxus_agent_runtime.models import AgentDecision, AgentTurnRequest, ToolDescriptor
 
 
 def _text_message_input(text: str) -> dict:
@@ -167,6 +167,75 @@ class AgentDecisionModelTest(unittest.TestCase):
                 }
             )
 
+    def test_agent_turn_request_accepts_delta_contract(self) -> None:
+        request = AgentTurnRequest.model_validate(
+            {
+                "sessionId": "session-1",
+                "turnId": "turn-1",
+                "turnExecutionId": "turn-1:exec-1",
+                "replyMessageId": "session-message-reply-1",
+                "ownershipEpoch": 1,
+                "assistantId": "assistant-1",
+                "assistantReleaseVersion": "1.0.0",
+                "currentOwner": _agent_config("agent-1"),
+                "availableAgents": [_agent_config("agent-1")],
+                "availablePlaybooks": [],
+                "sharedState": {},
+                "effectivePrivacyMappingEnabled": False,
+                "trigger": {
+                    "triggerType": "USER_MESSAGE",
+                    "turnId": "turn-1",
+                    "eventId": "event-1",
+                    "payload": {},
+                },
+                "messages": [_session_message("msg-1", 1, "turn-1", 0, "hello")],
+                "contextEntries": [
+                    {
+                        "entryId": "event-1",
+                        "entryType": "SESSION_EVENT",
+                        "revision": 1,
+                        "occurredAt": "2026-05-01T00:00:00Z",
+                        "data": {"eventType": "HUMAN_RESUME_RECEIVED"},
+                    }
+                ],
+                "transcriptBootstrap": True,
+            }
+        )
+
+        self.assertEqual("turn-1", request.turnId)
+        self.assertEqual("session-message-reply-1", request.replyMessageId)
+        self.assertEqual(["msg-1"], [message.messageId for message in request.messages])
+        self.assertEqual("SESSION_EVENT", request.contextEntries[0].entryType)
+        self.assertTrue(request.transcriptBootstrap)
+
+    def test_agent_turn_request_rejects_removed_recent_window_fields(self) -> None:
+        payload = {
+            "sessionId": "session-1",
+            "turnId": "turn-1",
+            "turnExecutionId": "turn-1:exec-1",
+            "replyMessageId": "session-message-reply-1",
+            "assistantId": "assistant-1",
+            "assistantReleaseVersion": "1.0.0",
+            "currentOwner": _agent_config("agent-1"),
+            "trigger": {
+                "triggerType": "USER_MESSAGE",
+                "eventId": "event-1",
+                "triggerMessageId": "msg-1",
+            },
+            "recentMessages": [_session_message("msg-1", 1, "turn-1", 0, "hello")],
+            "recentEvents": [],
+        }
+
+        with self.assertRaises(ValidationError) as failure:
+            AgentTurnRequest.model_validate(payload)
+
+        errors = failure.exception.errors()
+        self.assertTrue(any(error["loc"] == ("recentMessages",) and error["type"] == "extra_forbidden" for error in errors))
+        self.assertTrue(any(error["loc"] == ("recentEvents",) and error["type"] == "extra_forbidden" for error in errors))
+        self.assertTrue(
+            any(error["loc"] == ("trigger", "triggerMessageId") and error["type"] == "extra_forbidden" for error in errors)
+        )
+
 
 def _retry_policy() -> dict:
     return {
@@ -177,4 +246,41 @@ def _retry_policy() -> dict:
         "backoffMultiplier": 1.0,
         "retryableCategories": [],
         "retryableErrorCodes": [],
+    }
+
+
+def _agent_config(agent_id: str) -> dict:
+    return {
+        "agentId": agent_id,
+        "name": "Owner Agent",
+        "role": "support",
+        "responsibility": "Handle the session",
+    }
+
+
+def _session_message(message_id: str, sequence: int, turn_id: str, turn_index: int, text: str) -> dict:
+    return {
+        "messageId": message_id,
+        "sessionId": "session-1",
+        "sequence": sequence,
+        "turnId": turn_id,
+        "turnIndex": turn_index,
+        "producerType": "EXTERNAL",
+        "externalMessageId": None,
+        "clientMessageId": f"client-{message_id}",
+        "occurredAt": "2026-05-01T00:00:00Z",
+        "role": "USER",
+        "sender": {
+            "senderType": "CUSTOMER",
+            "senderId": "customer-1",
+            "senderName": "Customer",
+        },
+        "status": "SENT",
+        "blocks": [{"type": "TEXT", "text": text}],
+        "metadata": {},
+        "relatedPlaybookRunId": None,
+        "relatedOwnerAgentId": None,
+        "sourceEventId": None,
+        "createdAt": "2026-05-01T00:00:01Z",
+        "updatedAt": "2026-05-01T00:00:01Z",
     }

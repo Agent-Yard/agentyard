@@ -16,9 +16,21 @@ public interface SessionRuntimeRepository {
 
     Optional<SessionRuntimeSessionDto> findActiveSession(String customerId, String assistantId);
 
+    SessionRuntimeStore.SessionRuntimeSessionData createOrReuseActiveSession(
+        SessionRuntimeStore.SessionRuntimeSessionData session
+    );
+
     Optional<SessionRuntimeChangeStamp> findSessionChangeStamp(String sessionId);
 
     void saveSession(SessionRuntimeSessionDto session);
+
+    void updateSessionProjection(SessionRuntimeStore.SessionRuntimeSessionData session);
+
+    Optional<SessionRuntimeStore.SessionRuntimeTurnData> findTurn(String turnId);
+
+    Optional<SessionRuntimeStore.SessionRuntimeTurnData> findTurnByDedupKey(String sessionId, String dedupKey);
+
+    SessionRuntimeStore.SessionRuntimeTurnData createOrReuseTurn(SessionRuntimeStore.SessionRuntimeTurnData turn);
 
     List<SessionMessage> listMessages(String sessionId);
 
@@ -35,6 +47,12 @@ public interface SessionRuntimeRepository {
     long nextEventSequence(String sessionId);
 
     void appendMessage(SessionMessage message);
+
+    List<SessionMessage> appendSessionMessages(
+        String sessionId,
+        String turnId,
+        List<SessionRuntimeStore.SessionMessageAppendData> messages
+    );
 
     void appendEvent(SessionEvent event);
 

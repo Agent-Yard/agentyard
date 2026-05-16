@@ -59,6 +59,11 @@ public final class SessionContracts {
         SYSTEM
     }
 
+    public enum SessionMessageProducerType {
+        EXTERNAL,
+        PLATFORM
+    }
+
     public enum SessionMessageBlockType {
         TEXT,
         IMAGE,
@@ -498,6 +503,12 @@ public final class SessionContracts {
         String messageId,
         String sessionId,
         long sequence,
+        String turnId,
+        int turnIndex,
+        SessionMessageProducerType producerType,
+        String externalMessageId,
+        String clientMessageId,
+        Instant occurredAt,
         SessionMessageRole role,
         SessionMessageSender sender,
         SessionMessageStatus status,
@@ -568,12 +579,31 @@ public final class SessionContracts {
 
     public record SessionTrigger(
         SessionTriggerType triggerType,
+        String turnId,
         String eventId,
-        String triggerMessageId,
         Map<String, Object> payload
     ) {
         public SessionTrigger {
             payload = immutableObjectMap(payload);
+        }
+    }
+
+    public enum AgentRuntimeContextEntryType {
+        SESSION_EVENT,
+        SHARED_STATE_SNAPSHOT,
+        SHARED_STATE_PATCH,
+        ACTIVE_PLAYBOOK_SUMMARY
+    }
+
+    public record AgentRuntimeContextEntry(
+        String entryId,
+        AgentRuntimeContextEntryType entryType,
+        long revision,
+        Instant occurredAt,
+        Map<String, Object> data
+    ) {
+        public AgentRuntimeContextEntry {
+            data = immutableObjectMap(data);
         }
     }
 
@@ -1682,15 +1712,16 @@ public final class SessionContracts {
         LlmModelDescriptor effectivePrivacyModelBinding,
         boolean effectivePrivacyMappingEnabled,
         SessionTrigger trigger,
-        List<SessionMessage> recentMessages,
-        List<SessionEvent> recentEvents
+        List<SessionMessage> messages,
+        List<AgentRuntimeContextEntry> contextEntries,
+        boolean transcriptBootstrap
     ) {
         public AgentTurnRequest {
             availableAgents = availableAgents == null ? List.of() : List.copyOf(availableAgents);
             availablePlaybooks = availablePlaybooks == null ? List.of() : List.copyOf(availablePlaybooks);
             sharedState = immutableObjectMap(sharedState);
-            recentMessages = recentMessages == null ? List.of() : List.copyOf(recentMessages);
-            recentEvents = recentEvents == null ? List.of() : List.copyOf(recentEvents);
+            messages = messages == null ? List.of() : List.copyOf(messages);
+            contextEntries = contextEntries == null ? List.of() : List.copyOf(contextEntries);
         }
     }
 
@@ -1761,11 +1792,120 @@ public final class SessionContracts {
         }
     }
 
+    public record WebSessionTurnMessageInput(
+        String clientMessageId,
+        Instant occurredAt,
+        List<Object> blocks,
+        Map<String, Object> metadata
+    ) {
+        public WebSessionTurnMessageInput {
+            blocks = blocks == null ? List.of() : List.copyOf(blocks);
+            metadata = immutableObjectMap(metadata);
+        }
+    }
+
+    public record SendSessionTurnRequest(
+        String sessionId,
+        String assistantId,
+        String customerId,
+        String turnDedupKey,
+        List<WebSessionTurnMessageInput> messages,
+        Map<String, Object> metadata
+    ) {
+        public SendSessionTurnRequest {
+            messages = messages == null ? List.of() : List.copyOf(messages);
+            metadata = immutableObjectMap(metadata);
+        }
+    }
+
+    public record AcceptedSessionMessageAllocation(
+        int requestIndex,
+        String clientMessageId,
+        String messageId,
+        int turnIndex
+    ) {
+    }
+
+    public record SendSessionTurnResponse(
+        String sessionId,
+        String turnId,
+        SessionMessageDeliveryStatus status,
+        List<String> acceptedMessageIds,
+        List<AcceptedSessionMessageAllocation> acceptedMessageAllocations,
+        List<String> duplicateExternalMessageIds,
+        String reason
+    ) {
+        public SendSessionTurnResponse {
+            acceptedMessageIds = acceptedMessageIds == null ? List.of() : List.copyOf(acceptedMessageIds);
+            acceptedMessageAllocations = acceptedMessageAllocations == null ? List.of() : List.copyOf(acceptedMessageAllocations);
+            duplicateExternalMessageIds = duplicateExternalMessageIds == null ? List.of() : List.copyOf(duplicateExternalMessageIds);
+        }
+    }
+
+    public record UserTurn(
+        String turnId,
+        String customerId,
+        String turnDedupKey,
+        List<SessionMessage> messages,
+        Map<String, Object> metadata
+    ) {
+        public UserTurn {
+            messages = messages == null ? List.of() : List.copyOf(messages);
+            metadata = immutableObjectMap(metadata);
+        }
+    }
+
     public record UserMessage(
         String messageId,
         String customerId,
         SessionMessageInput message
     ) {
+    }
+
+    public record ChannelInboundSessionTurnMessage(
+        String externalEventId,
+        String externalMessageId,
+        Instant occurredAt,
+        SessionMessageRole role,
+        SessionMessageSender sender,
+        SessionMessageInput message,
+        Map<String, Object> metadata
+    ) {
+        public ChannelInboundSessionTurnMessage {
+            metadata = immutableObjectMap(metadata);
+        }
+    }
+
+    public record ChannelInboundSessionTurnRequest(
+        String channelProfileId,
+        String externalConversationId,
+        String dedupKey,
+        String assistantId,
+        String customerId,
+        String sessionId,
+        List<ChannelInboundSessionTurnMessage> messages,
+        Map<String, Object> metadata
+    ) {
+        public ChannelInboundSessionTurnRequest {
+            messages = messages == null ? List.of() : List.copyOf(messages);
+            metadata = immutableObjectMap(metadata);
+        }
+    }
+
+    public record ChannelInboundSessionTurnResponse(
+        String sessionId,
+        String turnId,
+        SessionMessageDeliveryStatus status,
+        List<String> acceptedMessageIds,
+        List<AcceptedSessionMessageAllocation> acceptedMessageAllocations,
+        List<String> duplicateExternalMessageIds,
+        String reason
+    ) {
+        public ChannelInboundSessionTurnResponse {
+            acceptedMessageIds = acceptedMessageIds == null ? List.of() : List.copyOf(acceptedMessageIds);
+            acceptedMessageAllocations = acceptedMessageAllocations == null ? List.of() : List.copyOf(acceptedMessageAllocations);
+            duplicateExternalMessageIds = duplicateExternalMessageIds == null ? List.of() : List.copyOf(duplicateExternalMessageIds);
+        }
     }
 
     public record ChannelInboundSessionMessageRequest(
@@ -1792,6 +1932,59 @@ public final class SessionContracts {
         String sessionId,
         String reason
     ) {
+    }
+
+    public sealed interface ImportSessionTarget
+        permits ExistingSessionImportTarget, WebIdentityImportTarget, ChannelIdentityImportTarget {
+    }
+
+    public record ExistingSessionImportTarget(
+        String sessionId,
+        String customerId,
+        String assistantId
+    ) implements ImportSessionTarget {
+    }
+
+    public record WebIdentityImportTarget(
+        String customerId,
+        String assistantId
+    ) implements ImportSessionTarget {
+    }
+
+    public record ChannelIdentityImportTarget(
+        String channelProfileId,
+        String externalConversationId,
+        String customerId,
+        String assistantId
+    ) implements ImportSessionTarget {
+    }
+
+    public record TrustedImportSessionTurnMessage(
+        String importMessageId,
+        String externalMessageId,
+        Instant occurredAt,
+        SessionMessageRole role,
+        SessionMessageSender sender,
+        SessionMessageInput message,
+        Map<String, Object> metadata
+    ) {
+        public TrustedImportSessionTurnMessage {
+            metadata = immutableObjectMap(metadata);
+        }
+    }
+
+    public record TrustedImportSessionTurnRequest(
+        ImportSessionTarget target,
+        String turnDedupKey,
+        String importBatchId,
+        String sourceSystem,
+        List<TrustedImportSessionTurnMessage> messages,
+        Map<String, Object> metadata
+    ) {
+        public TrustedImportSessionTurnRequest {
+            messages = messages == null ? List.of() : List.copyOf(messages);
+            metadata = immutableObjectMap(metadata);
+        }
     }
 
     public record SessionStartRequest(

@@ -14,6 +14,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 
+import org.jooq.Check;
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.Index;
@@ -30,6 +31,7 @@ import org.jooq.TableField;
 import org.jooq.TableOptions;
 import org.jooq.UniqueKey;
 import org.jooq.impl.DSL;
+import org.jooq.impl.Internal;
 import org.jooq.impl.SQLDataType;
 import org.jooq.impl.TableImpl;
 
@@ -137,6 +139,37 @@ public class SessionRuntimeMessage extends TableImpl<SessionRuntimeMessageRecord
      */
     public final TableField<SessionRuntimeMessageRecord, Long> FINAL_SEQUENCE = createField(DSL.name("final_sequence"), SQLDataType.BIGINT.nullable(false).defaultValue(DSL.field(DSL.raw("nextval('channel_outbound_final_sequence'::regclass)"), SQLDataType.BIGINT)), this, "");
 
+    /**
+     * The column <code>public.session_runtime_message.turn_id</code>.
+     */
+    public final TableField<SessionRuntimeMessageRecord, String> TURN_ID = createField(DSL.name("turn_id"), SQLDataType.VARCHAR(64).nullable(false), this, "");
+
+    /**
+     * The column <code>public.session_runtime_message.turn_index</code>.
+     */
+    public final TableField<SessionRuntimeMessageRecord, Integer> TURN_INDEX = createField(DSL.name("turn_index"), SQLDataType.INTEGER.nullable(false), this, "");
+
+    /**
+     * The column <code>public.session_runtime_message.producer_type</code>.
+     */
+    public final TableField<SessionRuntimeMessageRecord, String> PRODUCER_TYPE = createField(DSL.name("producer_type"), SQLDataType.VARCHAR(32).nullable(false), this, "");
+
+    /**
+     * The column
+     * <code>public.session_runtime_message.external_message_id</code>.
+     */
+    public final TableField<SessionRuntimeMessageRecord, String> EXTERNAL_MESSAGE_ID = createField(DSL.name("external_message_id"), SQLDataType.VARCHAR(255), this, "");
+
+    /**
+     * The column <code>public.session_runtime_message.client_message_id</code>.
+     */
+    public final TableField<SessionRuntimeMessageRecord, String> CLIENT_MESSAGE_ID = createField(DSL.name("client_message_id"), SQLDataType.VARCHAR(255), this, "");
+
+    /**
+     * The column <code>public.session_runtime_message.occurred_at</code>.
+     */
+    public final TableField<SessionRuntimeMessageRecord, OffsetDateTime> OCCURRED_AT = createField(DSL.name("occurred_at"), SQLDataType.TIMESTAMPWITHTIMEZONE(6), this, "");
+
     private SessionRuntimeMessage(Name alias, Table<SessionRuntimeMessageRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -175,12 +208,20 @@ public class SessionRuntimeMessage extends TableImpl<SessionRuntimeMessageRecord
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_SESSION_RUNTIME_MESSAGE_FINAL_REPLAY, Indexes.IDX_SESSION_RUNTIME_MESSAGE_SESSION, Indexes.UK_SESSION_RUNTIME_MESSAGE_FINAL_SEQUENCE, Indexes.UK_SESSION_RUNTIME_MESSAGE_SEQUENCE);
+        return Arrays.asList(Indexes.IDX_SESSION_RUNTIME_MESSAGE_FINAL_REPLAY, Indexes.IDX_SESSION_RUNTIME_MESSAGE_OUTBOUND, Indexes.IDX_SESSION_RUNTIME_MESSAGE_SESSION, Indexes.IDX_SESSION_RUNTIME_MESSAGE_TURN, Indexes.UK_SESSION_RUNTIME_MESSAGE_EXTERNAL, Indexes.UK_SESSION_RUNTIME_MESSAGE_FINAL_SEQUENCE, Indexes.UK_SESSION_RUNTIME_MESSAGE_SEQUENCE, Indexes.UK_SESSION_RUNTIME_MESSAGE_TURN_INDEX);
     }
 
     @Override
     public UniqueKey<SessionRuntimeMessageRecord> getPrimaryKey() {
         return Keys.SESSION_RUNTIME_MESSAGE_PKEY;
+    }
+
+    @Override
+    public List<Check<SessionRuntimeMessageRecord>> getChecks() {
+        return Arrays.asList(
+            Internal.createCheck(this, DSL.name("ck_session_runtime_message_producer_type"), "(((producer_type)::text = ANY ((ARRAY['EXTERNAL'::character varying, 'PLATFORM'::character varying])::text[])))", true),
+            Internal.createCheck(this, DSL.name("ck_session_runtime_message_turn_index_nonnegative"), "((turn_index >= 0))", true)
+        );
     }
 
     @Override

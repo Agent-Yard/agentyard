@@ -57,6 +57,8 @@ export type NormalizedChannelEventType =
   | 'FILE_RECEIVED'
   | 'WEBHOOK_VERIFIED'
   | 'UNKNOWN';
+export type NormalizedChannelMessageRole = 'USER' | 'ASSISTANT' | 'HUMAN_OPERATOR' | 'SYSTEM';
+export type NormalizedChannelSenderType = 'CUSTOMER' | 'AGENT' | 'HUMAN_OPERATOR' | 'SYSTEM';
 export type CredentialCapabilityMode = 'REMOTE_LIFECYCLE' | 'CORE_ENCRYPTED_REFERENCE';
 
 export interface CredentialCapability {
@@ -408,6 +410,40 @@ export interface NormalizedChannelMessage {
 export interface NormalizedChannelTraceContext {
   traceparent: string;
   tracestate?: string | null;
+}
+
+export interface NormalizedChannelMessageSender {
+  senderType: NormalizedChannelSenderType;
+  senderId?: string | null;
+  senderName?: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface NormalizedChannelTurnMessage {
+  externalEventId?: string | null;
+  externalMessageId: string;
+  occurredAt?: string | null;
+  role: NormalizedChannelMessageRole;
+  sender?: NormalizedChannelMessageSender | null;
+  type?: string | null;
+  text?: string | null;
+  attachments: NormalizedChannelAttachment[];
+  metadata: Record<string, unknown>;
+}
+
+export interface NormalizedChannelInboundTurn {
+  providerType: string;
+  channelProfileId: string;
+  dedupKey: string;
+  externalConversationId: string;
+  externalUserId?: string | null;
+  conversation: NormalizedChannelConversation;
+  sender?: NormalizedChannelMessageSender | null;
+  messages: NormalizedChannelTurnMessage[];
+  normalizedPayload: Record<string, unknown>;
+  rawPayload?: Record<string, unknown> | null;
+  traceContext: NormalizedChannelTraceContext;
+  metadata?: Record<string, unknown> | null;
 }
 
 export interface NormalizedChannelInboundEvent {
@@ -765,6 +801,7 @@ export interface ChannelRunJobRequest {
 export interface ChannelRunJobResponse {
   status: ChannelRunJobResponseStatus;
   nextCursor?: string | null;
+  inboundTurns: NormalizedChannelInboundTurn[];
   events: NormalizedChannelInboundEvent[];
   metadata: Record<string, unknown>;
 }
@@ -975,6 +1012,7 @@ export type SessionMessageRole = 'USER' | 'ASSISTANT' | 'HUMAN_OPERATOR' | 'SYST
 export type SessionMessageStatus = 'SENT' | 'STREAMING' | 'DELIVERED' | 'FAILED';
 export type SessionMessageSenderType = 'CUSTOMER' | 'AGENT' | 'HUMAN_OPERATOR' | 'SYSTEM';
 export type SessionMessageBlockType = 'TEXT' | 'IMAGE' | 'RICH_TEXT' | 'CARD';
+export type SessionMessageProducerType = 'EXTERNAL' | 'PLATFORM';
 export type RichTextFormat = 'MARKDOWN';
 export type CardActionType = 'LINK';
 export type AgentDecisionAction =
@@ -1221,10 +1259,49 @@ export interface SessionMessageInput {
   metadata: Record<string, unknown>;
 }
 
+export interface WebSessionTurnMessageInput {
+  clientMessageId?: string | null;
+  occurredAt?: string | null;
+  blocks: SessionMessageBlock[];
+  metadata: Record<string, unknown>;
+}
+
+export interface SendSessionTurnRequest {
+  sessionId?: string | null;
+  assistantId?: string | null;
+  customerId: string;
+  turnDedupKey: string;
+  messages: WebSessionTurnMessageInput[];
+  metadata: Record<string, unknown>;
+}
+
+export interface AcceptedSessionMessageAllocation {
+  requestIndex: number;
+  clientMessageId?: string | null;
+  messageId: string;
+  turnIndex: number;
+}
+
+export interface SendSessionTurnResponse {
+  sessionId: string;
+  turnId: string;
+  status: SessionMessageDeliveryStatus;
+  acceptedMessageIds: string[];
+  acceptedMessageAllocations: AcceptedSessionMessageAllocation[];
+  duplicateExternalMessageIds: string[];
+  reason: string | null;
+}
+
 export interface SessionMessage {
   messageId: string;
   sessionId: string;
   sequence: number;
+  turnId: string;
+  turnIndex: number;
+  producerType: SessionMessageProducerType;
+  externalMessageId: string | null;
+  clientMessageId: string | null;
+  occurredAt: string | null;
   role: SessionMessageRole;
   sender: SessionMessageSender;
   status: SessionMessageStatus;
@@ -1277,9 +1354,23 @@ export interface ActivePlaybookSummary {
 
 export interface SessionTrigger {
   triggerType: SessionTriggerType;
+  turnId: string;
   eventId: string;
-  triggerMessageId: string | null;
   payload: Record<string, unknown>;
+}
+
+export type AgentRuntimeContextEntryType =
+  | 'SESSION_EVENT'
+  | 'SHARED_STATE_SNAPSHOT'
+  | 'SHARED_STATE_PATCH'
+  | 'ACTIVE_PLAYBOOK_SUMMARY';
+
+export interface AgentRuntimeContextEntry {
+  entryId: string;
+  entryType: AgentRuntimeContextEntryType;
+  revision: number;
+  occurredAt: string;
+  data: Record<string, unknown>;
 }
 
 export type PrivacyChannel =
@@ -1346,8 +1437,9 @@ export interface AgentTurnRequest {
   effectivePrivacyModelBinding: LlmModelDescriptor | null;
   effectivePrivacyMappingEnabled: boolean;
   trigger: SessionTrigger;
-  recentMessages: SessionMessage[];
-  recentEvents: SessionEvent[];
+  messages: SessionMessage[];
+  contextEntries: AgentRuntimeContextEntry[];
+  transcriptBootstrap: boolean;
 }
 
 export interface AgentTurnResult {
@@ -1529,6 +1621,14 @@ export interface SessionUserMessageUpdateResult {
   reason: string | null;
 }
 
+export interface UserTurn {
+  turnId: string;
+  customerId: string;
+  turnDedupKey: string;
+  messages: SessionMessage[];
+  metadata: Record<string, unknown>;
+}
+
 export interface UserMessage {
   messageId: string;
   customerId: string;
@@ -1567,6 +1667,79 @@ export interface HumanResumeRequest {
 export interface ExternalCallbackRequest {
   playbookRunId: string;
   payload: Record<string, unknown>;
+}
+
+export interface ChannelInboundSessionTurnMessage {
+  externalEventId?: string | null;
+  externalMessageId: string;
+  occurredAt?: string | null;
+  role: SessionMessageRole;
+  sender: SessionMessageSender;
+  message: SessionMessageInput;
+  metadata: Record<string, unknown>;
+}
+
+export interface ChannelInboundSessionTurnRequest {
+  channelProfileId: string;
+  externalConversationId: string;
+  dedupKey: string;
+  assistantId: string;
+  customerId: string;
+  sessionId?: string | null;
+  messages: ChannelInboundSessionTurnMessage[];
+  metadata: Record<string, unknown>;
+}
+
+export interface ChannelInboundSessionTurnResponse {
+  sessionId: string;
+  turnId: string;
+  status: SessionMessageDeliveryStatus;
+  acceptedMessageIds: string[];
+  acceptedMessageAllocations: AcceptedSessionMessageAllocation[];
+  duplicateExternalMessageIds: string[];
+  reason: string | null;
+}
+
+export type ImportSessionTarget =
+  | ExistingSessionImportTarget
+  | WebIdentityImportTarget
+  | ChannelIdentityImportTarget;
+
+export interface ExistingSessionImportTarget {
+  sessionId: string;
+  customerId: string;
+  assistantId: string;
+}
+
+export interface WebIdentityImportTarget {
+  customerId: string;
+  assistantId: string;
+}
+
+export interface ChannelIdentityImportTarget {
+  channelProfileId: string;
+  externalConversationId: string;
+  customerId: string;
+  assistantId: string;
+}
+
+export interface TrustedImportSessionTurnMessage {
+  importMessageId?: string | null;
+  externalMessageId?: string | null;
+  occurredAt?: string | null;
+  role: SessionMessageRole;
+  sender: SessionMessageSender;
+  message: SessionMessageInput;
+  metadata: Record<string, unknown>;
+}
+
+export interface TrustedImportSessionTurnRequest {
+  target: ImportSessionTarget;
+  turnDedupKey: string;
+  importBatchId: string;
+  sourceSystem: string;
+  messages: TrustedImportSessionTurnMessage[];
+  metadata: Record<string, unknown>;
 }
 
 export interface HumanOperatorReplyRequest {

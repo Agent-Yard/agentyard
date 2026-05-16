@@ -37,6 +37,13 @@ public class JooqSessionRuntimeRepository implements SessionRuntimeRepository {
     }
 
     @Override
+    public SessionRuntimeStore.SessionRuntimeSessionData createOrReuseActiveSession(
+        SessionRuntimeStore.SessionRuntimeSessionData session
+    ) {
+        return store.createOrReuseActiveSession(session);
+    }
+
+    @Override
     public Optional<SessionRuntimeChangeStamp> findSessionChangeStamp(String sessionId) {
         return store.findSessionChangeStamp(sessionId)
             .map(item -> new SessionRuntimeChangeStamp(
@@ -77,6 +84,26 @@ public class JooqSessionRuntimeRepository implements SessionRuntimeRepository {
     }
 
     @Override
+    public void updateSessionProjection(SessionRuntimeStore.SessionRuntimeSessionData session) {
+        store.updateSessionProjection(session);
+    }
+
+    @Override
+    public Optional<SessionRuntimeStore.SessionRuntimeTurnData> findTurn(String turnId) {
+        return store.findTurn(turnId);
+    }
+
+    @Override
+    public Optional<SessionRuntimeStore.SessionRuntimeTurnData> findTurnByDedupKey(String sessionId, String dedupKey) {
+        return store.findTurnByDedupKey(sessionId, dedupKey);
+    }
+
+    @Override
+    public SessionRuntimeStore.SessionRuntimeTurnData createOrReuseTurn(SessionRuntimeStore.SessionRuntimeTurnData turn) {
+        return store.createOrReuseTurn(turn);
+    }
+
+    @Override
     public List<SessionMessage> listMessages(String sessionId) {
         return store.listMessages(sessionId);
     }
@@ -108,6 +135,15 @@ public class JooqSessionRuntimeRepository implements SessionRuntimeRepository {
     @Override
     public void appendMessage(SessionMessage message) {
         store.appendMessage(message);
+    }
+
+    @Override
+    public List<SessionMessage> appendSessionMessages(
+        String sessionId,
+        String turnId,
+        List<SessionRuntimeStore.SessionMessageAppendData> messages
+    ) {
+        return store.appendSessionMessages(sessionId, turnId, messages);
     }
 
     @Override

@@ -249,6 +249,92 @@ public class SessionRuntimeMessageRecord extends UpdatableRecordImpl<SessionRunt
         return (Long) get(15);
     }
 
+    /**
+     * Setter for <code>public.session_runtime_message.turn_id</code>.
+     */
+    public void setTurnId(String value) {
+        set(16, value);
+    }
+
+    /**
+     * Getter for <code>public.session_runtime_message.turn_id</code>.
+     */
+    public String getTurnId() {
+        return (String) get(16);
+    }
+
+    /**
+     * Setter for <code>public.session_runtime_message.turn_index</code>.
+     */
+    public void setTurnIndex(Integer value) {
+        set(17, value);
+    }
+
+    /**
+     * Getter for <code>public.session_runtime_message.turn_index</code>.
+     */
+    public Integer getTurnIndex() {
+        return (Integer) get(17);
+    }
+
+    /**
+     * Setter for <code>public.session_runtime_message.producer_type</code>.
+     */
+    public void setProducerType(String value) {
+        set(18, value);
+    }
+
+    /**
+     * Getter for <code>public.session_runtime_message.producer_type</code>.
+     */
+    public String getProducerType() {
+        return (String) get(18);
+    }
+
+    /**
+     * Setter for
+     * <code>public.session_runtime_message.external_message_id</code>.
+     */
+    public void setExternalMessageId(String value) {
+        set(19, value);
+    }
+
+    /**
+     * Getter for
+     * <code>public.session_runtime_message.external_message_id</code>.
+     */
+    public String getExternalMessageId() {
+        return (String) get(19);
+    }
+
+    /**
+     * Setter for <code>public.session_runtime_message.client_message_id</code>.
+     */
+    public void setClientMessageId(String value) {
+        set(20, value);
+    }
+
+    /**
+     * Getter for <code>public.session_runtime_message.client_message_id</code>.
+     */
+    public String getClientMessageId() {
+        return (String) get(20);
+    }
+
+    /**
+     * Setter for <code>public.session_runtime_message.occurred_at</code>.
+     */
+    public void setOccurredAt(OffsetDateTime value) {
+        set(21, value);
+    }
+
+    /**
+     * Getter for <code>public.session_runtime_message.occurred_at</code>.
+     */
+    public OffsetDateTime getOccurredAt() {
+        return (OffsetDateTime) get(21);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -272,7 +358,7 @@ public class SessionRuntimeMessageRecord extends UpdatableRecordImpl<SessionRunt
     /**
      * Create a detached, initialised SessionRuntimeMessageRecord
      */
-    public SessionRuntimeMessageRecord(String messageId, String sessionId, Long sequence, String role, String senderType, String senderId, String senderName, String status, JSONB blocks, JSONB metadata, String relatedPlaybookRunId, String relatedOwnerAgentId, String sourceEventId, OffsetDateTime createdAt, OffsetDateTime updatedAt, Long finalSequence) {
+    public SessionRuntimeMessageRecord(String messageId, String sessionId, Long sequence, String role, String senderType, String senderId, String senderName, String status, JSONB blocks, JSONB metadata, String relatedPlaybookRunId, String relatedOwnerAgentId, String sourceEventId, OffsetDateTime createdAt, OffsetDateTime updatedAt, Long finalSequence, String turnId, Integer turnIndex, String producerType, String externalMessageId, String clientMessageId, OffsetDateTime occurredAt) {
         super(SessionRuntimeMessage.SESSION_RUNTIME_MESSAGE);
 
         setMessageId(messageId);
@@ -291,6 +377,12 @@ public class SessionRuntimeMessageRecord extends UpdatableRecordImpl<SessionRunt
         setCreatedAt(createdAt);
         setUpdatedAt(updatedAt);
         setFinalSequence(finalSequence);
+        setTurnId(turnId);
+        setTurnIndex(turnIndex);
+        setProducerType(producerType);
+        setExternalMessageId(externalMessageId);
+        setClientMessageId(clientMessageId);
+        setOccurredAt(occurredAt);
         resetChangedOnNotNull();
     }
 }

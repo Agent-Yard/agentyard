@@ -28,7 +28,7 @@ public class JooqSessionProjectionRepository {
     }
 
     public void saveSession(SessionPersistenceActivities.SessionRecord session) {
-        sessionStore.saveSession(new SessionRuntimeStore.SessionRuntimeSessionData(
+        sessionStore.updateSessionProjection(new SessionRuntimeStore.SessionRuntimeSessionData(
             session.id(),
             session.scenarioId(),
             session.title(),
