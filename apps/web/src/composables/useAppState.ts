@@ -120,7 +120,7 @@ export function useAppState(currentPageKey: Ref<PageKey>) {
     const current: RuntimeDraftMessage = existing ?? {
       sessionId: event.sessionId,
       turnId: event.turnId,
-      messageId: event.messageId,
+      replyMessageId: event.replyMessageId,
       text: '',
       failed: false,
       updatedAt: event.occurredAt,
@@ -278,12 +278,14 @@ export function reconcileRuntimeDraftsWithDetail(
   if (!durableMessageIds.size) {
     return drafts;
   }
-  return drafts.filter((draft) => draft.sessionId !== detail.session.id || !durableMessageIds.has(draft.messageId));
+  return drafts.filter((draft) => draft.sessionId !== detail.session.id || !durableMessageIds.has(draft.replyMessageId));
 }
 
 function sameRuntimeDraft(
   draft: RuntimeDraftMessage,
   event: Extract<SessionRuntimeStreamEvent, { type: 'SESSION_REPLY_DRAFT' }>,
 ) {
-  return draft.sessionId === event.sessionId && draft.messageId === event.messageId;
+  return draft.sessionId === event.sessionId
+    && draft.turnId === event.turnId
+    && draft.replyMessageId === event.replyMessageId;
 }

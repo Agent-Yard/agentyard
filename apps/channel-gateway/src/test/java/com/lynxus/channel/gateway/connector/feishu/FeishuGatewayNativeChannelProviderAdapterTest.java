@@ -680,7 +680,7 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
             ChannelOutboundFrameKind.TYPING_START,
             Instant.parse("2026-05-05T00:00:00Z"),
             frameId,
-            Map.of("messageId", messageId),
+            Map.of("replyMessageId", messageId),
             null
         );
     }
@@ -702,7 +702,7 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
             ChannelOutboundFrameKind.TYPING_STOP,
             Instant.parse("2026-05-05T00:00:00Z"),
             frameId,
-            Map.of("messageId", messageId),
+            Map.of("replyMessageId", messageId),
             null
         );
     }
@@ -725,7 +725,7 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
             Instant.parse("2026-05-05T00:00:00Z"),
             frameId,
             Map.of(
-                "messageId", messageId,
+                "replyMessageId", messageId,
                 "reason", reason
             ),
             null
@@ -753,7 +753,7 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
             Instant.parse("2026-05-05T00:00:00Z"),
             "profile-1:exec-1:" + sourceSeq + ":DRAFT_UPDATE",
             Map.of(
-                "messageId", messageId,
+                "replyMessageId", messageId,
                 "blockId", blockId,
                 "blockType", "TEXT",
                 "delta", delta
@@ -779,7 +779,7 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
             Instant.parse("2026-05-05T00:00:00Z"),
             "profile-1:exec-1:" + sourceSeq + ":DRAFT_COMPLETE",
             Map.of(
-                "messageId", "session-message-reply-1",
+                "replyMessageId", "session-message-reply-1",
                 "blockId", "reply-block-1",
                 "blockType", "TEXT",
                 "block", block

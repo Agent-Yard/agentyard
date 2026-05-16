@@ -26,9 +26,35 @@ public class SessionPersistenceActivitiesImpl implements SessionPersistenceActiv
     }
 
     @Override
-    public void appendMessage(SessionMessage message) {
-        repository.appendMessage(message);
-        changePublisher.publishSessionChanged(message.sessionId());
+    public PlatformTurnAllocation allocatePlatformTurn(
+        String sessionId,
+        String triggerType,
+        String dedupKey,
+        String sourceEventId,
+        java.util.Map<String, Object> metadata
+    ) {
+        var turn = repository.allocatePlatformTurn(sessionId, triggerType, dedupKey, sourceEventId, metadata);
+        String persistedSourceEventId = stringValue(turn.metadata().get("sourceEventId"));
+        changePublisher.publishSessionChanged(sessionId);
+        return new PlatformTurnAllocation(
+            turn.turnId(),
+            turn.sessionId(),
+            turn.triggerType(),
+            turn.dedupKey(),
+            persistedSourceEventId,
+            turn.metadata()
+        );
+    }
+
+    @Override
+    public List<SessionMessage> appendSessionMessages(
+        String sessionId,
+        String turnId,
+        List<SessionMessageAppendRecord> messages
+    ) {
+        List<SessionMessage> appended = repository.appendSessionMessages(sessionId, turnId, messages);
+        changePublisher.publishSessionChanged(sessionId);
+        return appended;
     }
 
     @Override
@@ -51,5 +77,13 @@ public class SessionPersistenceActivitiesImpl implements SessionPersistenceActiv
     public void savePlaybookRun(PlaybookRun playbookRun) {
         repository.savePlaybookRun(playbookRun);
         changePublisher.publishSessionChanged(playbookRun.sessionId());
+    }
+
+    private static String stringValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String text = String.valueOf(value);
+        return text.isBlank() ? null : text;
     }
 }

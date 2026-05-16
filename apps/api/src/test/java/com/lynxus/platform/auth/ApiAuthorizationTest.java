@@ -110,53 +110,44 @@ class ApiAuthorizationTest {
     void shouldAllowBusinessUserRuntimeRequest() throws Exception {
         try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(TestConfig.class, AuthSecurityConfiguration.class)) {
             SessionRuntimeService sessionRuntimeService = context.getBean(SessionRuntimeService.class);
-            when(sessionRuntimeService.sendMessage(any())).thenReturn(new SessionRuntimeDtos.SessionRuntimeSessionDto(
+            when(sessionRuntimeService.sendTurn(any(), any())).thenReturn(new com.lynxus.contracts.session.SessionContracts.SendSessionTurnResponse(
                 "session-1",
-                "scenario-1",
-                "默认会话",
-                "tester",
-                "assistant-1",
-                "助手",
-                "1.0.0",
-                "IDLE",
-                "agent-1",
-                "agent-1",
-                null,
-                false,
-                false,
-                false,
-                false,
-                java.util.Map.of(),
-                null,
-                Instant.parse("2026-04-01T00:00:00Z"),
-                Instant.parse("2026-04-01T00:00:00Z"),
-                null,
-                0L,
-                0L
+                "turn-1",
+                com.lynxus.contracts.session.SessionContracts.SessionMessageDeliveryStatus.ACCEPTED,
+                java.util.List.of("message-1"),
+                java.util.List.of(new com.lynxus.contracts.session.SessionContracts.AcceptedSessionMessageAllocation(0, "draft-1", "message-1", 0)),
+                java.util.List.of(),
+                null
             ));
 
             MockMvc mockMvc = mockMvc(context);
 
-            mockMvc.perform(post("/api/session-runtime/messages")
+            mockMvc.perform(post("/api/session-runtime/turns")
                     .with(user("business"))
                     .contentType(MediaType.APPLICATION_JSON)
+                    .header("Idempotency-Key", "turn-1")
                     .content("""
                         {
                           "assistantId": "assistant-1",
                           "customerId": "customer-1",
-                          "message": {
-                            "blocks": [
-                              {
-                                "type": "TEXT",
-                                "text": "你好"
-                              }
-                            ],
-                            "metadata": {}
-                          }
+                          "turnDedupKey": "turn-1",
+                          "messages": [
+                            {
+                              "clientMessageId": "draft-1",
+                              "blocks": [
+                                {
+                                  "type": "TEXT",
+                                  "text": "你好"
+                                }
+                              ],
+                              "metadata": {}
+                            }
+                          ],
+                          "metadata": {}
                         }
                         """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.id").value("session-1"));
+                .andExpect(jsonPath("$.data.sessionId").value("session-1"));
         }
     }
 

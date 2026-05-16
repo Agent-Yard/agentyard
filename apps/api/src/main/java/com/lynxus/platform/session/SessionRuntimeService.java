@@ -10,14 +10,29 @@ import com.lynxus.contracts.session.SessionContracts.ExternalCallbackSignal;
 import com.lynxus.contracts.session.SessionContracts.EndHumanHandoffSignal;
 import com.lynxus.contracts.session.SessionContracts.HumanResumeSignal;
 import com.lynxus.contracts.session.SessionContracts.HumanOperatorReplySignal;
-import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionMessageRequest;
-import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionMessageResponse;
+import com.lynxus.contracts.session.SessionContracts.AcceptedSessionMessageAllocation;
+import com.lynxus.contracts.session.SessionContracts.ChannelIdentityImportTarget;
+import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionTurnMessage;
+import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionTurnRequest;
+import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionTurnResponse;
+import com.lynxus.contracts.session.SessionContracts.ExistingSessionImportTarget;
+import com.lynxus.contracts.session.SessionContracts.ImportSessionTarget;
 import com.lynxus.contracts.session.SessionContracts.KnowledgeBindingDescriptor;
 import com.lynxus.contracts.session.SessionContracts.LlmModelDescriptor;
+import com.lynxus.contracts.session.SessionContracts.SendSessionTurnRequest;
+import com.lynxus.contracts.session.SessionContracts.SendSessionTurnResponse;
+import com.lynxus.contracts.session.SessionContracts.SessionMessage;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageDeliveryStatus;
 import com.lynxus.contracts.session.SessionContracts.SessionMessageInput;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageProducerType;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageRole;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageSender;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageSenderType;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageStatus;
 import com.lynxus.contracts.session.SessionContracts.SessionOwnerPolicy;
 import com.lynxus.contracts.session.SessionContracts.SessionPolicy;
 import com.lynxus.contracts.session.SessionContracts.SessionStartRequest;
+import com.lynxus.contracts.session.SessionContracts.SessionTriggerType;
 import com.lynxus.contracts.session.SessionContracts.SkillDescriptor;
 import com.lynxus.contracts.session.SessionContracts.ToolDescriptor;
 import com.lynxus.contracts.session.SessionContracts.ToolConnectorAccountSnapshot;
@@ -25,8 +40,13 @@ import com.lynxus.contracts.session.SessionContracts.ToolConnectorDescriptor;
 import com.lynxus.contracts.session.SessionContracts.ToolConnectorRetryMode;
 import com.lynxus.contracts.session.SessionContracts.ToolConnectorRuntimeRetryPolicy;
 import com.lynxus.contracts.session.SessionContracts.ToolOperationDescriptor;
-import com.lynxus.contracts.session.SessionContracts.UserMessage;
+import com.lynxus.contracts.session.SessionContracts.TrustedImportSessionTurnMessage;
+import com.lynxus.contracts.session.SessionContracts.TrustedImportSessionTurnRequest;
+import com.lynxus.contracts.session.SessionContracts.UserTurn;
+import com.lynxus.contracts.session.SessionContracts.WebIdentityImportTarget;
+import com.lynxus.contracts.session.SessionContracts.WebSessionTurnMessageInput;
 import com.lynxus.contracts.session.SessionContracts.AssistantSessionConfig;
+import com.lynxus.persistence.session.SessionRuntimeStore;
 import com.lynxus.platform.catalog.CatalogDtos.AssistantDto;
 import com.lynxus.platform.catalog.CatalogDtos.AssistantReleaseAgentDto;
 import com.lynxus.platform.catalog.CatalogDtos.AssistantReleaseDto;
@@ -44,13 +64,18 @@ import com.lynxus.platform.shared.redis.RedisSharedStateProperties;
 import com.lynxus.shared.redis.RedisJsonCodec;
 import com.lynxus.shared.redis.RedisKeyspace;
 import com.lynxus.shared.redis.RedisSharedStateMetrics;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.NoSuchElementException;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -68,6 +93,11 @@ public class SessionRuntimeService {
         "REMOTE_RATE_LIMITED",
         "UNKNOWN"
     );
+    private static final String ENTRY_SCOPE_WEB = SessionRuntimeStore.SessionEntryScope.WEB.name();
+    private static final String ENTRY_SCOPE_CHANNEL = SessionRuntimeStore.SessionEntryScope.CHANNEL.name();
+    private static final String TURN_STATUS_ALLOCATED_IDS = SessionRuntimeStore.SessionRuntimeTurnStatus.ALLOCATED_IDS.name();
+    private static final String TURN_STATUS_MESSAGES_APPENDED = SessionRuntimeStore.SessionRuntimeTurnStatus.MESSAGES_APPENDED.name();
+    private static final String TURN_STATUS_WORKFLOW_ACCEPTED = SessionRuntimeStore.SessionRuntimeTurnStatus.WORKFLOW_ACCEPTED.name();
 
     private final SessionWorkflowGateway sessionWorkflowGateway;
     private final CatalogService catalogService;
@@ -181,79 +211,352 @@ public class SessionRuntimeService {
         }
     }
 
-    public SessionRuntimeSessionDto sendMessage(SendSessionMessageRequest request) {
+    public SendSessionTurnResponse sendTurn(SendSessionTurnRequest request, String idempotencyKey) {
         if (request == null) {
-            throw new IllegalArgumentException("send message request is required");
+            throw new IllegalArgumentException("send turn request is required");
         }
+        String turnDedupKey = requireMatchingIdempotencyKey(idempotencyKey, request.turnDedupKey(), "turnDedupKey");
         String customerId = requireText(request.customerId(), "customerId");
-        boolean hasSessionId = hasText(request.sessionId());
-        boolean hasAssistantId = hasText(request.assistantId());
-        if (hasSessionId == hasAssistantId) {
-            throw new IllegalArgumentException("exactly one of sessionId or assistantId is required");
+        List<TurnMessageInput> messages = webTurnMessages(customerId, request.messages());
+        if (messages.isEmpty()) {
+            throw new IllegalArgumentException("messages are required");
         }
-        if (isBlankMessageInput(request.message())) {
-            throw new ConflictException("message content required");
-        }
-        if (hasSessionId) {
-            return sendMessageToExistingSession(requireText(request.sessionId(), "sessionId"), customerId, request.message());
-        }
-        String assistantId = requireText(request.assistantId(), "assistantId");
-        return dispatchLockService.withConversationLock(
-            customerId,
-            assistantId,
-            () -> createOrReuseSession(assistantId, customerId, request.message())
+        SessionRuntimeSessionDto session = resolveWebTurnSession(request, customerId, messages.getFirst().message());
+        return dispatchLockService.withSessionLock(
+            session.id(),
+            () -> acceptTurn(session, turnDedupKey, "USER_MESSAGE", messages, request.metadata())
         );
     }
 
-    private SessionRuntimeSessionDto sendMessageToExistingSession(String sessionId, String customerId, SessionMessageInput message) {
-        SessionRuntimeSessionDto existing = repository.findSession(sessionId).orElseThrow();
-        if (!customerId.equals(existing.customerId())) {
-            throw new IllegalArgumentException("customerId does not match session");
+    public SendSessionTurnResponse importTurn(TrustedImportSessionTurnRequest request, String idempotencyKey) {
+        if (request == null) {
+            throw new IllegalArgumentException("import turn request is required");
         }
-        SessionRuntimeSessionDto current = markEndedIfWorkflowClosed(existing);
-        if ("ENDED".equals(current.status())) {
-            return rolloverEndedSession(current, message);
+        String turnDedupKey = requireMatchingIdempotencyKey(idempotencyKey, request.turnDedupKey(), "turnDedupKey");
+        String sourceSystem = requireText(request.sourceSystem(), "sourceSystem");
+        String importBatchId = requireText(request.importBatchId(), "importBatchId");
+        List<TurnMessageInput> messages = trustedImportMessages(request.messages(), sourceSystem, importBatchId);
+        if (messages.isEmpty()) {
+            throw new IllegalArgumentException("messages are required");
         }
-        try {
-            return dispatchLockService.withSessionLock(sessionId, () -> sendMessageInternal(sessionId, customerId, message, current));
-        } catch (ConflictException error) {
-            if (!"session has ended".equals(error.getMessage())) {
-                throw error;
-            }
-            SessionRuntimeSessionDto latest = repository.findSession(sessionId)
-                .map(this::markEndedIfWorkflowClosed)
-                .orElse(current);
-            return rolloverEndedSession(latest, message);
-        }
+        SessionRuntimeSessionDto session = resolveImportSession(request.target(), messages.getFirst().message());
+        return dispatchLockService.withSessionLock(
+            session.id(),
+            () -> acceptTurn(session, turnDedupKey, "IMPORT_TURN", messages, request.metadata())
+        );
     }
 
-    public ChannelInboundSessionMessageResponse channelInboundMessage(
-        ChannelInboundSessionMessageRequest request,
+    public ChannelInboundSessionTurnResponse channelInboundTurn(
+        ChannelInboundSessionTurnRequest request,
         String idempotencyKey
     ) {
-        if (hasText(idempotencyKey) && request != null && hasText(request.dedupKey())
-            && !idempotencyKey.trim().equals(request.dedupKey().trim())) {
-            throw new IllegalArgumentException("Idempotency-Key must equal channelInbound.dedupKey");
+        if (request == null) {
+            throw new IllegalArgumentException("channel inbound turn request is required");
         }
-        String effectiveIdempotencyKey = firstNonBlank(idempotencyKey, request == null ? null : request.dedupKey());
-        String redisKey = redisKeyspace.idempotency(
-            "session-channel-inbound",
-            requireText(effectiveIdempotencyKey, "channelInbound.dedupKey")
+        String turnDedupKey = requireMatchingIdempotencyKey(idempotencyKey, request.dedupKey(), "channelInbound.dedupKey");
+        String channelProfileId = requireText(request.channelProfileId(), "channelInbound.channelProfileId");
+        String externalConversationId = requireText(request.externalConversationId(), "channelInbound.externalConversationId");
+        String customerId = requireText(request.customerId(), "channelInbound.customerId");
+        String assistantId = requireText(request.assistantId(), "channelInbound.assistantId");
+        List<TurnMessageInput> messages = channelTurnMessages(request, channelProfileId, externalConversationId);
+        if (messages.isEmpty()) {
+            throw new IllegalArgumentException("messages are required");
+        }
+        SessionRuntimeSessionDto session = resolveChannelTurnSession(
+            request.sessionId(),
+            channelProfileId,
+            externalConversationId,
+            customerId,
+            assistantId,
+            messages.getFirst().message()
         );
-        return idempotencyService.execute(
-            redisKey,
-            ChannelInboundSessionMessageResponse.class,
-            () -> channelInboundMessageInternal(request)
+        SendSessionTurnResponse response = dispatchLockService.withSessionLock(
+            session.id(),
+            () -> acceptTurn(session, turnDedupKey, "CHANNEL_INBOUND", messages, request.metadata())
         );
+        return new ChannelInboundSessionTurnResponse(
+            response.sessionId(),
+            response.turnId(),
+            response.status(),
+            response.acceptedMessageIds(),
+            response.acceptedMessageAllocations(),
+            response.duplicateExternalMessageIds(),
+            response.reason()
+        );
+    }
+
+    private SendSessionTurnResponse acceptTurn(
+        SessionRuntimeSessionDto session,
+        String turnDedupKey,
+        String triggerType,
+        List<TurnMessageInput> inputs,
+        Map<String, Object> metadata
+    ) {
+        Optional<SessionRuntimeStore.SessionRuntimeTurnData> existingTurn = repository.findTurnByDedupKey(session.id(), turnDedupKey);
+        if (existingTurn == null) {
+            existingTurn = Optional.empty();
+        }
+        if (existingTurn.isEmpty()) {
+            requireSessionAcceptsTurn(session);
+        }
+        Instant now = Instant.now();
+        SessionRuntimeStore.SessionRuntimeTurnData turn = repository.createOrReuseTurn(new SessionRuntimeStore.SessionRuntimeTurnData(
+            nextId("session-turn"),
+            session.id(),
+            turnDedupKey,
+            triggerType,
+            TURN_STATUS_ALLOCATED_IDS,
+            initialInputAllocations(inputs),
+            List.of(),
+            List.of(),
+            List.of(),
+            null,
+            metadata == null ? Map.of() : metadata,
+            now,
+            now,
+            null
+        ));
+
+        List<SessionMessage> turnMessages = repository.listMessagesForTurn(session.id(), turn.turnId());
+        if (TURN_STATUS_WORKFLOW_ACCEPTED.equals(turn.status())) {
+            return responseFromTurn(session.id(), turn, turnMessages, null);
+        }
+
+        TurnRecovery recovery = recoverTurn(session, turn, inputs, turnMessages);
+        if (!recovery.messagesToAppend().isEmpty()) {
+            List<SessionMessage> appended = repository.appendSessionMessages(
+                session.id(),
+                turn.turnId(),
+                recovery.messagesToAppend()
+            );
+            turnMessages = new ArrayList<>(turnMessages);
+            turnMessages.addAll(appended);
+        }
+        turnMessages = repository.listMessagesForTurn(session.id(), turn.turnId());
+        List<String> acceptedMessageIds = turnMessages.stream().map(SessionMessage::messageId).toList();
+        List<String> duplicateExternalMessageIds = recovery.duplicateExternalMessageIds();
+        turn = repository.updateTurnState(
+            session.id(),
+            turn.turnId(),
+            TURN_STATUS_MESSAGES_APPENDED,
+            acceptedMessageIds,
+            duplicateExternalMessageIds,
+            acceptedMessageIds,
+            turn.turnId(),
+            null
+        );
+        if (acceptedMessageIds.isEmpty()) {
+            return responseFromTurn(session.id(), turn, turnMessages, "duplicate messages ignored");
+        }
+
+        ensureWorkflowStarted(session);
+        try {
+            sessionWorkflowGateway.submitUserTurn(
+                session.id(),
+                turn.turnId(),
+                new UserTurn(turn.turnId(), session.customerId(), turn.dedupKey(), turnMessages, turn.metadata())
+            );
+        } catch (RuntimeException error) {
+            if (sessionWorkflowGateway.isWorkflowClosed(session.id())) {
+                markEnded(session, Instant.now());
+                throw new ConflictException("session has ended");
+            }
+            throw error;
+        }
+        turn = repository.updateTurnState(
+            session.id(),
+            turn.turnId(),
+            TURN_STATUS_WORKFLOW_ACCEPTED,
+            acceptedMessageIds,
+            duplicateExternalMessageIds,
+            acceptedMessageIds,
+            turn.turnId(),
+            null
+        );
+        return responseFromTurn(session.id(), turn, turnMessages, null);
+    }
+
+    private TurnRecovery recoverTurn(
+        SessionRuntimeSessionDto session,
+        SessionRuntimeStore.SessionRuntimeTurnData turn,
+        List<TurnMessageInput> inputs,
+        List<SessionMessage> existingTurnMessages
+    ) {
+        Map<Integer, TurnMessageInput> inputsByIndex = new LinkedHashMap<>();
+        for (TurnMessageInput input : inputs) {
+            inputsByIndex.put(input.requestIndex(), input);
+        }
+        Set<String> existingTurnMessageIds = new HashSet<>();
+        Set<String> existingTurnExternalIds = new HashSet<>();
+        for (SessionMessage message : existingTurnMessages) {
+            existingTurnMessageIds.add(message.messageId());
+            if (hasText(message.externalMessageId())) {
+                existingTurnExternalIds.add(message.externalMessageId());
+            }
+        }
+        Set<String> alreadyPersistedExternalIds = new HashSet<>();
+        for (SessionMessage message : repository.listMessages(session.id())) {
+            if (hasText(message.externalMessageId()) && !turn.turnId().equals(message.turnId())) {
+                alreadyPersistedExternalIds.add(message.externalMessageId());
+            }
+        }
+
+        Set<String> acceptedExternalIds = new HashSet<>(existingTurnExternalIds);
+        List<SessionRuntimeStore.SessionMessageAppendData> append = new ArrayList<>();
+        List<String> duplicateExternalMessageIds = new ArrayList<>();
+        for (Map<String, Object> allocation : turn.inputAllocations()) {
+            int requestIndex = intValue(allocation.get("requestIndex"));
+            String messageId = stringValue(allocation.get("messageId"));
+            String externalMessageId = stringValue(allocation.get("externalMessageId"));
+            if (existingTurnMessageIds.contains(messageId)) {
+                continue;
+            }
+            if (hasText(externalMessageId)) {
+                if (alreadyPersistedExternalIds.contains(externalMessageId) || acceptedExternalIds.contains(externalMessageId)) {
+                    duplicateExternalMessageIds.add(externalMessageId);
+                    continue;
+                }
+                acceptedExternalIds.add(externalMessageId);
+            }
+            TurnMessageInput input = inputsByIndex.get(requestIndex);
+            if (input == null) {
+                throw new IllegalArgumentException("turn replay is missing request index " + requestIndex);
+            }
+            append.add(toAppendData(messageId, externalMessageId, input));
+        }
+        return new TurnRecovery(append, duplicateExternalMessageIds);
+    }
+
+    private SessionRuntimeStore.SessionMessageAppendData toAppendData(
+        String messageId,
+        String externalMessageId,
+        TurnMessageInput input
+    ) {
+        Instant now = Instant.now();
+        return new SessionRuntimeStore.SessionMessageAppendData(
+            messageId,
+            SessionMessageProducerType.EXTERNAL,
+            externalMessageId,
+            input.clientMessageId(),
+            input.occurredAt(),
+            input.role(),
+            input.sender(),
+            SessionMessageStatus.SENT,
+            input.message().blocks(),
+            input.metadata(),
+            null,
+            null,
+            input.sourceEventId(),
+            now,
+            now
+        );
+    }
+
+    private List<Map<String, Object>> initialInputAllocations(List<TurnMessageInput> inputs) {
+        List<Map<String, Object>> allocations = new ArrayList<>(inputs.size());
+        for (TurnMessageInput input : inputs) {
+            Map<String, Object> allocation = new LinkedHashMap<>();
+            allocation.put("requestIndex", input.requestIndex());
+            allocation.put("messageId", nextId("session-message"));
+            putIfPresent(allocation, "externalMessageId", input.externalMessageId());
+            putIfPresent(allocation, "clientMessageId", input.clientMessageId());
+            allocations.add(allocation);
+        }
+        return allocations;
+    }
+
+    private SendSessionTurnResponse responseFromTurn(
+        String sessionId,
+        SessionRuntimeStore.SessionRuntimeTurnData turn,
+        List<SessionMessage> messages,
+        String reason
+    ) {
+        Map<String, SessionMessage> messagesById = new LinkedHashMap<>();
+        for (SessionMessage message : messages) {
+            messagesById.put(message.messageId(), message);
+        }
+        List<AcceptedSessionMessageAllocation> allocations = new ArrayList<>();
+        for (Map<String, Object> allocation : turn.inputAllocations()) {
+            String messageId = stringValue(allocation.get("messageId"));
+            SessionMessage message = messagesById.get(messageId);
+            if (message == null) {
+                continue;
+            }
+            allocations.add(new AcceptedSessionMessageAllocation(
+                intValue(allocation.get("requestIndex")),
+                stringValue(allocation.get("clientMessageId")),
+                messageId,
+                message.turnIndex()
+            ));
+        }
+        List<String> acceptedMessageIds = allocations.stream()
+            .map(AcceptedSessionMessageAllocation::messageId)
+            .toList();
+        return new SendSessionTurnResponse(
+            sessionId,
+            turn.turnId(),
+            SessionMessageDeliveryStatus.ACCEPTED,
+            acceptedMessageIds,
+            allocations,
+            turn.duplicateExternalMessageIds(),
+            reason
+        );
+    }
+
+    private void ensureWorkflowStarted(SessionRuntimeSessionDto session) {
+        if (sessionWorkflowGateway.isWorkflowOpen(session.id())) {
+            return;
+        }
+        AssistantDto assistant = catalogService.getAssistantRuntimeSnapshot(session.assistantId());
+        AssistantReleaseDto release = resolveAssistantRelease(assistant);
+        sessionWorkflowGateway.start(buildStartRequest(session, assistant, release));
+    }
+
+    private void requireSessionAcceptsTurn(SessionRuntimeSessionDto session) {
+        if ("ENDED".equals(session.status())) {
+            throw new ConflictException("session has ended");
+        }
+        if (session.draining()) {
+            throw new ConflictException("workflow draining");
+        }
+        if (session.agentTurnActive()) {
+            throw new ConflictException("session is busy");
+        }
     }
 
     public SessionRuntimeSessionDto humanResume(String sessionId, HumanResumeRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("human resume request is required");
+        }
         SessionRuntimeSessionDto existing = repository.findSession(sessionId).orElseThrow();
         requirePlaybookRunInSession(sessionId, request.playbookRunId());
         String operatorId = currentUserResolver.resolveCurrentUser().id();
+        String sourceEventId = firstNonBlank(
+            request.resumeEventId(),
+            stablePlatformEventId("human-resume", sessionId, request.playbookRunId(), operatorId, request.payload())
+        );
+        SessionRuntimeStore.SessionRuntimeTurnData turn = allocatePlatformTurn(
+            sessionId,
+            SessionTriggerType.HUMAN_RESUME,
+            sourceEventId,
+            sourceEventId,
+            Map.of(
+                "playbookRunId", request.playbookRunId(),
+                "operatorId", operatorId,
+                "payload", request.payload()
+            )
+        );
         sessionWorkflowGateway.humanResume(
             sessionId,
-            new HumanResumeSignal(sessionId, request.playbookRunId(), operatorId, request.payload())
+            new HumanResumeSignal(
+                sessionId,
+                turn.turnId(),
+                turn.dedupKey(),
+                sourceEventId,
+                request.playbookRunId(),
+                operatorId,
+                request.payload()
+            )
         );
         return awaitPersistedSession(sessionId, existing);
     }
@@ -263,12 +566,13 @@ public class SessionRuntimeService {
         return idempotencyService.execute(
             redisKeyspace.idempotency("session-external-callback", effectiveIdempotencyKey),
             SessionRuntimeSessionDto.class,
-            () -> externalCallbackInternal(sessionId, request)
+            () -> externalCallbackInternal(sessionId, request, effectiveIdempotencyKey)
         );
     }
 
     public SessionRuntimeSessionDto externalCallback(String sessionId, ExternalCallbackRequest request) {
-        return externalCallbackInternal(sessionId, request);
+        String effectiveIdempotencyKey = externalCallbackIdempotencyKeyFactory.resolve(sessionId, request, null);
+        return externalCallbackInternal(sessionId, request, effectiveIdempotencyKey);
     }
 
     public SessionRuntimeSessionDto endHumanHandoff(String sessionId) {
@@ -279,49 +583,50 @@ public class SessionRuntimeService {
     }
 
     public SessionRuntimeSessionDto humanOperatorReply(String sessionId, HumanOperatorReplyRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("human operator reply request is required");
+        }
         SessionRuntimeSessionDto existing = repository.findSession(sessionId).orElseThrow();
         String operatorId = currentUserResolver.resolveCurrentUser().id();
-        sessionWorkflowGateway.humanOperatorReply(
+        String operatorActionId = requireText(request.operatorActionId(), "operatorActionId");
+        SessionMessageInput message = requireMessageInput(request.message(), "message");
+        SessionRuntimeStore.SessionRuntimeTurnData turn = allocatePlatformTurn(
             sessionId,
-            new HumanOperatorReplySignal(sessionId, operatorId, request.message(), request.payload())
+            SessionTriggerType.HUMAN_OPERATOR_REPLY,
+            operatorActionId,
+            null,
+            Map.of(
+                "operatorActionId", operatorActionId,
+                "operatorId", operatorId,
+                "payload", request.payload()
+            )
         );
+        Instant now = Instant.now();
+        repository.appendSessionMessages(
+            sessionId,
+            turn.turnId(),
+            List.of(new SessionRuntimeStore.SessionMessageAppendData(
+                stablePlatformMessageId(turn.turnId(), "human-operator-reply"),
+                SessionMessageProducerType.PLATFORM,
+                null,
+                null,
+                now,
+                SessionMessageRole.HUMAN_OPERATOR,
+                new SessionMessageSender(SessionMessageSenderType.HUMAN_OPERATOR, operatorId, operatorId),
+                SessionMessageStatus.SENT,
+                message.blocks(),
+                message.metadata(),
+                existing.activePlaybookRunId(),
+                existing.currentOwnerAgentId(),
+                null,
+                now,
+                now
+            ))
+        );
+        if (changeNoticePublisher != null) {
+            changeNoticePublisher.publishSessionChanged(sessionId);
+        }
         return awaitPersistedSession(sessionId, existing);
-    }
-
-    private ChannelInboundSessionMessageResponse channelInboundMessageInternal(ChannelInboundSessionMessageRequest request) {
-        if (request == null) {
-            throw new IllegalArgumentException("channelInbound request is required");
-        }
-        String assistantId = requireText(request.assistantId(), "channelInbound.assistantId");
-        String customerId = requireText(request.customerId(), "channelInbound.customerId");
-        SessionMessageInput message = withChannelInboundMetadata(request);
-
-        SessionRuntimeSessionDto session;
-        if (hasText(request.sessionId())) {
-            try {
-                session = sendMessage(new SendSessionMessageRequest(request.sessionId(), null, customerId, message));
-            } catch (NoSuchElementException ignored) {
-                session = sendMessage(new SendSessionMessageRequest(null, assistantId, customerId, message));
-            }
-        } else {
-            session = sendMessage(new SendSessionMessageRequest(null, assistantId, customerId, message));
-        }
-        return new ChannelInboundSessionMessageResponse(session.id(), session.status());
-    }
-
-    private static SessionMessageInput withChannelInboundMetadata(ChannelInboundSessionMessageRequest request) {
-        SessionMessageInput source = request.message();
-        if (source == null) {
-            source = new SessionMessageInput(List.of(), Map.of());
-        }
-        Map<String, Object> metadata = new LinkedHashMap<>(source.metadata());
-        metadata.put("source", "channel-inbound");
-        metadata.put("channelProfileId", requireText(request.channelProfileId(), "channelInbound.channelProfileId"));
-        metadata.put("externalConversationId", requireText(request.externalConversationId(), "channelInbound.externalConversationId"));
-        metadata.put("dedupKey", requireText(request.dedupKey(), "channelInbound.dedupKey"));
-        putIfPresent(metadata, "externalMessageId", request.externalMessageId());
-        putIfPresent(metadata, "inboundEventId", request.inboundEventId());
-        return new SessionMessageInput(source.blocks(), metadata);
     }
 
     private SessionStartRequest buildStartRequest(
@@ -638,30 +943,108 @@ public class SessionRuntimeService {
         );
     }
 
-    private SessionRuntimeSessionDto createOrReuseSession(String assistantId, String customerId, SessionMessageInput openingMessage) {
-        AssistantDto assistant = catalogService.getAssistantRuntimeSnapshot(assistantId);
-        AssistantReleaseDto release = resolveAssistantRelease(assistant);
-        Optional<SessionRuntimeSessionDto> activeSession = findReusableActiveSession(customerId, assistant.id());
-        if (activeSession.isPresent()) {
-            SessionRuntimeSessionDto existing = activeSession.orElseThrow();
-            return dispatchLockService.withSessionLock(
-                existing.id(),
-                () -> sendMessageInternal(
-                    existing.id(),
-                    customerId,
-                    openingMessage,
-                    existing
-                )
+    private SessionRuntimeSessionDto resolveWebTurnSession(
+        SendSessionTurnRequest request,
+        String customerId,
+        SessionMessageInput openingMessage
+    ) {
+        if (hasText(request.sessionId())) {
+            SessionRuntimeSessionDto session = repository.findSession(requireText(request.sessionId(), "sessionId")).orElseThrow();
+            requireWebSessionIdentity(session, customerId, requireText(request.assistantId(), "assistantId"));
+            return requireExplicitSessionWorkflowAvailable(session);
+        }
+        String assistantId = requireText(request.assistantId(), "assistantId");
+        return createOrReuseActiveSession(
+            ENTRY_SCOPE_WEB,
+            null,
+            null,
+            customerId,
+            assistantId,
+            openingMessage
+        );
+    }
+
+    private SessionRuntimeSessionDto resolveImportSession(ImportSessionTarget target, SessionMessageInput openingMessage) {
+        if (target == null) {
+            throw new IllegalArgumentException("target is required");
+        }
+        if (target instanceof ExistingSessionImportTarget existingTarget) {
+            SessionRuntimeSessionDto session = repository.findSession(requireText(existingTarget.sessionId(), "target.sessionId"))
+                .orElseThrow();
+            requireSessionCustomerAssistant(
+                session,
+                requireText(existingTarget.customerId(), "target.customerId"),
+                requireText(existingTarget.assistantId(), "target.assistantId")
+            );
+            return requireExplicitSessionWorkflowAvailable(session);
+        }
+        if (target instanceof WebIdentityImportTarget webTarget) {
+            return createOrReuseActiveSession(
+                ENTRY_SCOPE_WEB,
+                null,
+                null,
+                requireText(webTarget.customerId(), "target.customerId"),
+                requireText(webTarget.assistantId(), "target.assistantId"),
+                openingMessage
             );
         }
+        if (target instanceof ChannelIdentityImportTarget channelTarget) {
+            return resolveChannelTurnSession(
+                null,
+                requireText(channelTarget.channelProfileId(), "target.channelProfileId"),
+                requireText(channelTarget.externalConversationId(), "target.externalConversationId"),
+                requireText(channelTarget.customerId(), "target.customerId"),
+                requireText(channelTarget.assistantId(), "target.assistantId"),
+                openingMessage
+            );
+        }
+        throw new IllegalArgumentException("unsupported import target");
+    }
 
+    private SessionRuntimeSessionDto resolveChannelTurnSession(
+        String sessionId,
+        String channelProfileId,
+        String externalConversationId,
+        String customerId,
+        String assistantId,
+        SessionMessageInput openingMessage
+    ) {
+        if (hasText(sessionId)) {
+            SessionRuntimeSessionDto session = repository.findSession(requireText(sessionId, "sessionId")).orElseThrow();
+            requireChannelSessionIdentity(session, channelProfileId, externalConversationId, customerId, assistantId);
+            return requireExplicitSessionWorkflowAvailable(session);
+        }
+        return createOrReuseActiveSession(
+            ENTRY_SCOPE_CHANNEL,
+            channelProfileId,
+            externalConversationId,
+            customerId,
+            assistantId,
+            openingMessage
+        );
+    }
+
+    private SessionRuntimeSessionDto createOrReuseActiveSession(
+        String entryScope,
+        String channelProfileId,
+        String externalConversationId,
+        String customerId,
+        String assistantId,
+        SessionMessageInput openingMessage
+    ) {
+        AssistantDto assistant = catalogService.getAssistantRuntimeSnapshot(assistantId);
+        AssistantReleaseDto release = resolveAssistantRelease(assistant);
         Instant now = Instant.now();
-        String sessionId = nextId("session-v2");
-        String title = summarizeTitle(openingMessage);
-        SessionRuntimeSessionDto bootstrap = new SessionRuntimeSessionDto(
-            sessionId,
+        Duration idleTimeout = release.sessionPolicy() == null
+            ? Duration.ofMinutes(30)
+            : parseDuration(release.sessionPolicy().idleTimeout(), Duration.ofMinutes(30));
+        SessionRuntimeStore.SessionRuntimeSessionData initialSession = new SessionRuntimeStore.SessionRuntimeSessionData(
+            nextId("session-v2"),
             assistant.scenarioId(),
-            title,
+            summarizeTitle(openingMessage),
+            entryScope,
+            channelProfileId,
+            externalConversationId,
             customerId,
             assistant.id(),
             assistant.name(),
@@ -675,32 +1058,321 @@ public class SessionRuntimeService {
             false,
             false,
             Map.of(),
-            now.plus(Duration.ofMinutes(30)),
+            1L,
+            0L,
+            now.plus(idleTimeout),
             now,
             now,
             null,
-            0,
-            0
+            0L,
+            0L
         );
-        sessionWorkflowGateway.start(buildStartRequest(bootstrap, assistant, release));
-        SessionRuntimeSessionDto updated = awaitPersistedSession(bootstrap.id(), bootstrap);
-        return dispatchLockService.withSessionLock(
-            updated.id(),
-            () -> sendMessageInternal(
-                updated.id(),
-                customerId,
-                openingMessage,
-                updated
-            )
+        Optional<SessionRuntimeSessionDto> active = findActiveSessionByIdentity(
+            entryScope,
+            channelProfileId,
+            externalConversationId,
+            customerId,
+            assistant.id()
+        );
+        if (active.isPresent()) {
+            SessionRuntimeSessionDto existing = active.orElseThrow();
+            if (!sessionWorkflowGateway.isWorkflowClosed(existing.id())) {
+                return existing;
+            }
+            markEnded(existing, Instant.now());
+        }
+        SessionRuntimeStore.SessionRuntimeSessionData persisted = repository.createOrReuseActiveSession(initialSession);
+        SessionRuntimeSessionDto session = toSessionDto(persisted);
+        if (!initialSession.id().equals(session.id()) && sessionWorkflowGateway.isWorkflowClosed(session.id())) {
+            markEnded(session, Instant.now());
+            persisted = repository.createOrReuseActiveSession(initialSession);
+            session = toSessionDto(persisted);
+        }
+        return session;
+    }
+
+    private Optional<SessionRuntimeSessionDto> findActiveSessionByIdentity(
+        String entryScope,
+        String channelProfileId,
+        String externalConversationId,
+        String customerId,
+        String assistantId
+    ) {
+        Optional<SessionRuntimeSessionDto> active;
+        if (ENTRY_SCOPE_CHANNEL.equals(entryScope)) {
+            active = repository.findActiveChannelSession(channelProfileId, externalConversationId, customerId, assistantId);
+        } else {
+            active = repository.findActiveSession(customerId, assistantId);
+        }
+        return active == null ? Optional.empty() : active;
+    }
+
+    private SessionRuntimeSessionDto requireExplicitSessionWorkflowAvailable(SessionRuntimeSessionDto session) {
+        if (sessionWorkflowGateway.isWorkflowClosed(session.id())) {
+            markEnded(session, Instant.now());
+            throw new ConflictException("session has ended");
+        }
+        return session;
+    }
+
+    private List<TurnMessageInput> webTurnMessages(
+        String customerId,
+        List<WebSessionTurnMessageInput> messages
+    ) {
+        if (messages == null || messages.isEmpty()) {
+            return List.of();
+        }
+        List<TurnMessageInput> result = new ArrayList<>();
+        for (int index = 0; index < messages.size(); index += 1) {
+            WebSessionTurnMessageInput message = messages.get(index);
+            if (message == null) {
+                throw new IllegalArgumentException("messages[" + index + "] is required");
+            }
+            SessionMessageInput input = new SessionMessageInput(message.blocks(), message.metadata());
+            if (isBlankMessageInput(input)) {
+                throw new ConflictException("message content required");
+            }
+            result.add(new TurnMessageInput(
+                index,
+                null,
+                message.clientMessageId(),
+                message.occurredAt(),
+                SessionMessageRole.USER,
+                new SessionMessageSender(SessionMessageSenderType.CUSTOMER, customerId, customerId),
+                input,
+                input.metadata(),
+                null
+            ));
+        }
+        return result;
+    }
+
+    private List<TurnMessageInput> trustedImportMessages(
+        List<TrustedImportSessionTurnMessage> messages,
+        String sourceSystem,
+        String importBatchId
+    ) {
+        if (messages == null || messages.isEmpty()) {
+            return List.of();
+        }
+        List<TurnMessageInput> result = new ArrayList<>();
+        for (int index = 0; index < messages.size(); index += 1) {
+            TrustedImportSessionTurnMessage message = messages.get(index);
+            if (message == null) {
+                throw new IllegalArgumentException("messages[" + index + "] is required");
+            }
+            String canonicalExternalMessageId = canonicalImportExternalMessageId(message, sourceSystem);
+            SessionMessageInput input = requireMessageInput(message.message(), "messages[" + index + "].message");
+            Map<String, Object> metadata = mergedMetadata(input.metadata(), message.metadata());
+            metadata.put("source", "trusted-import");
+            metadata.put("sourceSystem", sourceSystem);
+            metadata.put("importBatchId", importBatchId);
+            putIfPresent(metadata, "importMessageId", message.importMessageId());
+            result.add(new TurnMessageInput(
+                index,
+                canonicalExternalMessageId,
+                null,
+                message.occurredAt(),
+                requireRole(message.role(), "messages[" + index + "].role"),
+                requireSender(message.sender(), "messages[" + index + "].sender"),
+                input,
+                metadata,
+                null
+            ));
+        }
+        return result;
+    }
+
+    private List<TurnMessageInput> channelTurnMessages(
+        ChannelInboundSessionTurnRequest request,
+        String channelProfileId,
+        String externalConversationId
+    ) {
+        List<ChannelInboundSessionTurnMessage> messages = request.messages();
+        if (messages == null || messages.isEmpty()) {
+            return List.of();
+        }
+        List<TurnMessageInput> result = new ArrayList<>();
+        for (int index = 0; index < messages.size(); index += 1) {
+            ChannelInboundSessionTurnMessage message = messages.get(index);
+            if (message == null) {
+                throw new IllegalArgumentException("messages[" + index + "] is required");
+            }
+            String externalMessageId = requireText(message.externalMessageId(), "messages[" + index + "].externalMessageId");
+            SessionMessageInput input = requireMessageInput(message.message(), "messages[" + index + "].message");
+            Map<String, Object> metadata = mergedMetadata(input.metadata(), message.metadata());
+            metadata.put("source", "channel-inbound");
+            metadata.put("channelProfileId", channelProfileId);
+            metadata.put("externalConversationId", externalConversationId);
+            metadata.put("dedupKey", request.dedupKey());
+            putIfPresent(metadata, "externalEventId", message.externalEventId());
+            result.add(new TurnMessageInput(
+                index,
+                externalMessageId,
+                null,
+                message.occurredAt(),
+                requireRole(message.role(), "messages[" + index + "].role"),
+                requireSender(message.sender(), "messages[" + index + "].sender"),
+                input,
+                metadata,
+                message.externalEventId()
+            ));
+        }
+        return result;
+    }
+
+    private static SessionMessageInput requireMessageInput(SessionMessageInput input, String field) {
+        if (input == null) {
+            throw new IllegalArgumentException(field + " is required");
+        }
+        if (isBlankMessageInput(input)) {
+            throw new ConflictException("message content required");
+        }
+        return input;
+    }
+
+    private static SessionMessageRole requireRole(SessionMessageRole role, String field) {
+        if (role == null) {
+            throw new IllegalArgumentException(field + " is required");
+        }
+        return role;
+    }
+
+    private static SessionMessageSender requireSender(SessionMessageSender sender, String field) {
+        if (sender == null || sender.senderType() == null) {
+            throw new IllegalArgumentException(field + " is required");
+        }
+        return sender;
+    }
+
+    private static String canonicalImportExternalMessageId(
+        TrustedImportSessionTurnMessage message,
+        String sourceSystem
+    ) {
+        if (hasText(message.externalMessageId())) {
+            return message.externalMessageId().trim();
+        }
+        String importMessageId = requireText(message.importMessageId(), "importMessageId");
+        return sourceSystem + ":" + importMessageId;
+    }
+
+    private void requireWebSessionIdentity(
+        SessionRuntimeSessionDto session,
+        String customerId,
+        String assistantId
+    ) {
+        if (!ENTRY_SCOPE_WEB.equals(session.entryScope())
+            || hasText(session.channelProfileId())
+            || hasText(session.externalConversationId())) {
+            throw new IllegalArgumentException("session entry scope does not match Web target");
+        }
+        requireSessionCustomerAssistant(session, customerId, assistantId);
+    }
+
+    private void requireChannelSessionIdentity(
+        SessionRuntimeSessionDto session,
+        String channelProfileId,
+        String externalConversationId,
+        String customerId,
+        String assistantId
+    ) {
+        if (!ENTRY_SCOPE_CHANNEL.equals(session.entryScope())) {
+            throw new IllegalArgumentException("session entry scope does not match Channel target");
+        }
+        if (!channelProfileId.equals(session.channelProfileId())
+            || !externalConversationId.equals(session.externalConversationId())) {
+            throw new IllegalArgumentException("channel identity does not match session");
+        }
+        requireSessionCustomerAssistant(session, customerId, assistantId);
+    }
+
+    private void requireSessionCustomerAssistant(
+        SessionRuntimeSessionDto session,
+        String customerId,
+        String assistantId
+    ) {
+        if (!requireText(customerId, "customerId").equals(session.customerId())) {
+            throw new IllegalArgumentException("customerId does not match session");
+        }
+        if (hasText(assistantId) && !assistantId.trim().equals(session.assistantId())) {
+            throw new IllegalArgumentException("assistantId does not match session");
+        }
+    }
+
+    private static Map<String, Object> mergedMetadata(Map<String, Object> first, Map<String, Object> second) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        if (first != null) {
+            metadata.putAll(first);
+        }
+        if (second != null) {
+            metadata.putAll(second);
+        }
+        return metadata;
+    }
+
+    private static SessionRuntimeSessionDto toSessionDto(SessionRuntimeStore.SessionRuntimeSessionData session) {
+        return new SessionRuntimeSessionDto(
+            session.id(),
+            session.scenarioId(),
+            session.title(),
+            session.entryScope(),
+            session.channelProfileId(),
+            session.externalConversationId(),
+            session.customerId(),
+            session.assistantId(),
+            session.assistantName(),
+            session.assistantReleaseVersion(),
+            session.status(),
+            session.primaryAgentId(),
+            session.currentOwnerAgentId(),
+            session.activePlaybookRunId(),
+            session.agentTurnActive(),
+            session.sessionHumanHandoffActive(),
+            session.pendingOwnerReevaluation(),
+            session.draining(),
+            session.sharedState(),
+            session.sharedStateRevision(),
+            session.idleDeadline(),
+            session.createdAt(),
+            session.updatedAt(),
+            session.endedAt(),
+            session.latestMessageSequence(),
+            session.latestEventSequence()
         );
     }
 
-    private SessionRuntimeSessionDto externalCallbackInternal(String sessionId, ExternalCallbackRequest request) {
+    private SessionRuntimeSessionDto externalCallbackInternal(
+        String sessionId,
+        ExternalCallbackRequest request,
+        String effectiveIdempotencyKey
+    ) {
+        if (request == null) {
+            throw new IllegalArgumentException("external callback request is required");
+        }
         SessionRuntimeSessionDto existing = repository.findSession(sessionId).orElseThrow();
         requirePlaybookRunInSession(sessionId, request.playbookRunId());
+        String sourceEventId = stablePlatformEventId("external-callback", sessionId, effectiveIdempotencyKey);
+        SessionRuntimeStore.SessionRuntimeTurnData turn = allocatePlatformTurn(
+            sessionId,
+            SessionTriggerType.EXTERNAL_CALLBACK,
+            effectiveIdempotencyKey,
+            sourceEventId,
+            Map.of(
+                "playbookRunId", request.playbookRunId(),
+                "idempotencyKey", effectiveIdempotencyKey,
+                "payload", request.payload()
+            )
+        );
         sessionWorkflowGateway.externalCallback(
             sessionId,
-            new ExternalCallbackSignal(sessionId, request.playbookRunId(), request.payload())
+            new ExternalCallbackSignal(
+                sessionId,
+                turn.turnId(),
+                turn.dedupKey(),
+                sourceEventId,
+                request.playbookRunId(),
+                request.payload()
+            )
         );
         return awaitPersistedSession(sessionId, existing);
     }
@@ -726,65 +1398,19 @@ public class SessionRuntimeService {
         return Integer.parseInt(String.valueOf(rawValue));
     }
 
-    private Optional<SessionRuntimeSessionDto> findReusableActiveSession(String customerId, String assistantId) {
-        return repository.findActiveSession(customerId, assistantId)
-            .map(this::markEndedIfWorkflowClosed)
-            .filter(session -> !"ENDED".equals(session.status()));
-    }
-
-    private SessionRuntimeSessionDto sendMessageInternal(
-        String sessionId,
-        String customerId,
-        SessionMessageInput message,
-        SessionRuntimeSessionDto existingSession
-    ) {
-        SessionRuntimeSessionDto existing = existingSession == null
-            ? repository.findSession(sessionId).orElseThrow()
-            : existingSession;
-        SessionRuntimeSessionDto current = markEndedIfWorkflowClosed(existing);
-        if ("ENDED".equals(current.status())) {
-            throw new ConflictException("session has ended");
+    private static String stringValue(Object rawValue) {
+        if (rawValue == null) {
+            return null;
         }
-        if (current.draining()) {
-            throw new ConflictException("workflow draining");
-        }
-        try {
-            if (current.agentTurnActive()) {
-                throw new ConflictException("session is busy");
-            }
-            if (isBlankMessageInput(message)) {
-                throw new ConflictException("message content required");
-            }
-            sessionWorkflowGateway.submitUserMessage(
-                sessionId,
-                new UserMessage(nextId("session-message"), customerId, message)
-            );
-            return current;
-        } catch (RuntimeException error) {
-            if (!sessionWorkflowGateway.isWorkflowOpen(sessionId)) {
-                markEnded(current, Instant.now());
-                throw new ConflictException("session has ended");
-            }
-            throw error;
-        }
-    }
-
-    private SessionRuntimeSessionDto rolloverEndedSession(
-        SessionRuntimeSessionDto endedSession,
-        SessionMessageInput message
-    ) {
-        return dispatchLockService.withConversationLock(
-            endedSession.customerId(),
-            endedSession.assistantId(),
-            () -> createOrReuseSession(endedSession.assistantId(), endedSession.customerId(), message)
-        );
+        String value = String.valueOf(rawValue);
+        return value.isBlank() ? null : value;
     }
 
     private SessionRuntimeSessionDto markEndedIfWorkflowClosed(SessionRuntimeSessionDto existing) {
         if ("ENDED".equals(existing.status())) {
             return existing;
         }
-        if (!sessionWorkflowGateway.isWorkflowOpen(existing.id())) {
+        if (sessionWorkflowGateway.isWorkflowClosed(existing.id())) {
             return markEnded(existing, Instant.now());
         }
         return existing;
@@ -795,6 +1421,9 @@ public class SessionRuntimeService {
             existing.id(),
             existing.scenarioId(),
             existing.title(),
+            existing.entryScope(),
+            existing.channelProfileId(),
+            existing.externalConversationId(),
             existing.customerId(),
             existing.assistantId(),
             existing.assistantName(),
@@ -808,6 +1437,7 @@ public class SessionRuntimeService {
             false,
             existing.draining(),
             existing.sharedState(),
+            existing.sharedStateRevision(),
             null,
             existing.createdAt(),
             now,
@@ -858,6 +1488,22 @@ public class SessionRuntimeService {
         }
     }
 
+    private SessionRuntimeStore.SessionRuntimeTurnData allocatePlatformTurn(
+        String sessionId,
+        SessionTriggerType triggerType,
+        String dedupKey,
+        String sourceEventId,
+        Map<String, Object> metadata
+    ) {
+        return repository.allocatePlatformTurn(
+            sessionId,
+            triggerType.name(),
+            dedupKey,
+            sourceEventId,
+            metadata == null ? Map.of() : metadata
+        );
+    }
+
     private AssistantReleaseDto resolveAssistantRelease(AssistantDto assistant) {
         if (assistant.currentRelease() != null) {
             return assistant.currentRelease();
@@ -877,6 +1523,15 @@ public class SessionRuntimeService {
             throw new IllegalArgumentException(field + " is required");
         }
         return value.trim();
+    }
+
+    private static String requireMatchingIdempotencyKey(String idempotencyKey, String requestDedupKey, String requestField) {
+        String headerValue = requireText(idempotencyKey, "Idempotency-Key");
+        String bodyValue = requireText(requestDedupKey, requestField);
+        if (!headerValue.equals(bodyValue)) {
+            throw new IllegalArgumentException("Idempotency-Key must equal " + requestField);
+        }
+        return bodyValue;
     }
 
     private static boolean hasText(String value) {
@@ -960,5 +1615,53 @@ public class SessionRuntimeService {
 
     private static String nextId(String prefix) {
         return prefix + "-" + UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    private static String stablePlatformEventId(String source, Object... parts) {
+        return "session-event-" + sha256Hex(source + ":" + List.of(parts)).substring(0, 16);
+    }
+
+    private static String stablePlatformMessageId(String turnId, String purpose) {
+        return "session-message-" + sha256Hex(turnId + ":" + purpose).substring(0, 16);
+    }
+
+    private static String sha256Hex(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] encoded = digest.digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder builder = new StringBuilder(encoded.length * 2);
+            for (byte current : encoded) {
+                builder.append(String.format("%02x", current));
+            }
+            return builder.toString();
+        } catch (Exception error) {
+            throw new IllegalStateException("failed to hash platform turn key", error);
+        }
+    }
+
+    private record TurnMessageInput(
+        int requestIndex,
+        String externalMessageId,
+        String clientMessageId,
+        Instant occurredAt,
+        SessionMessageRole role,
+        SessionMessageSender sender,
+        SessionMessageInput message,
+        Map<String, Object> metadata,
+        String sourceEventId
+    ) {
+        private TurnMessageInput {
+            metadata = metadata == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(metadata));
+        }
+    }
+
+    private record TurnRecovery(
+        List<SessionRuntimeStore.SessionMessageAppendData> messagesToAppend,
+        List<String> duplicateExternalMessageIds
+    ) {
+        private TurnRecovery {
+            messagesToAppend = messagesToAppend == null ? List.of() : List.copyOf(messagesToAppend);
+            duplicateExternalMessageIds = duplicateExternalMessageIds == null ? List.of() : List.copyOf(duplicateExternalMessageIds);
+        }
     }
 }

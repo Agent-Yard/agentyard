@@ -1,7 +1,17 @@
 package com.lynxus.platform.session;
 
 import com.lynxus.contracts.session.SessionContracts.AgentTurnTransientFrame;
-import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionMessageRequest;
+import com.lynxus.contracts.session.SessionContracts.ChannelIdentityImportTarget;
+import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionTurnRequest;
+import com.lynxus.contracts.session.SessionContracts.ExistingSessionImportTarget;
+import com.lynxus.contracts.session.SessionContracts.ImportSessionTarget;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageInput;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageRole;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageSender;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageSenderType;
+import com.lynxus.contracts.session.SessionContracts.TrustedImportSessionTurnMessage;
+import com.lynxus.contracts.session.SessionContracts.TrustedImportSessionTurnRequest;
+import com.lynxus.contracts.session.SessionContracts.WebIdentityImportTarget;
 import com.lynxus.platform.integration.InternalRuntimeAuth;
 import com.lynxus.platform.shared.ApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
@@ -9,6 +19,9 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -39,14 +52,24 @@ public class InternalSessionRuntimeController {
         this.objectMapper = objectMapper;
     }
 
-    @PostMapping("/api/internal/session-runtime/channel-inbound")
-    public ApiResponse<?> channelInboundMessage(
-        @RequestBody ChannelInboundSessionMessageRequest request,
+    @PostMapping("/api/internal/session-runtime/channel-inbound-turns")
+    public ApiResponse<?> channelInboundTurn(
+        @RequestBody ChannelInboundSessionTurnRequest request,
         @RequestHeader(name = "Authorization", required = false) String authorization,
         @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey
     ) {
         internalRuntimeAuth.requireBearer(authorization);
-        return ApiResponse.ok(sessionRuntimeService.channelInboundMessage(request, idempotencyKey));
+        return ApiResponse.ok(sessionRuntimeService.channelInboundTurn(request, idempotencyKey));
+    }
+
+    @PostMapping("/api/internal/session-runtime/import-turns")
+    public ApiResponse<?> importTurn(
+        @RequestBody Map<String, Object> payload,
+        @RequestHeader(name = "Authorization", required = false) String authorization,
+        @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey
+    ) {
+        internalRuntimeAuth.requireBearer(authorization);
+        return ApiResponse.ok(sessionRuntimeService.importTurn(parseTrustedImportTurn(payload), idempotencyKey));
     }
 
     @PostMapping(
@@ -105,6 +128,118 @@ public class InternalSessionRuntimeController {
         } catch (JacksonException error) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid transient frame NDJSON at line " + lineNumber, error);
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static TrustedImportSessionTurnRequest parseTrustedImportTurn(Map<String, Object> payload) {
+        if (payload == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "import turn request is required");
+        }
+        ImportSessionTarget target = parseImportTarget(requiredMap(payload.get("target"), "target"));
+        List<TrustedImportSessionTurnMessage> messages = new ArrayList<>();
+        Object rawMessages = payload.get("messages");
+        if (rawMessages instanceof List<?> list) {
+            for (Object item : list) {
+                Map<String, Object> message = requiredMap(item, "messages[]");
+                messages.add(new TrustedImportSessionTurnMessage(
+                    optionalText(message.get("importMessageId")),
+                    optionalText(message.get("externalMessageId")),
+                    parseInstant(message.get("occurredAt")),
+                    SessionMessageRole.valueOf(requiredText(message.get("role"), "message.role")),
+                    parseSender(requiredMap(message.get("sender"), "message.sender")),
+                    parseMessageInput(requiredMap(message.get("message"), "message.message")),
+                    objectMap(message.get("metadata"))
+                ));
+            }
+        }
+        return new TrustedImportSessionTurnRequest(
+            target,
+            requiredText(payload.get("turnDedupKey"), "turnDedupKey"),
+            requiredText(payload.get("importBatchId"), "importBatchId"),
+            requiredText(payload.get("sourceSystem"), "sourceSystem"),
+            messages,
+            objectMap(payload.get("metadata"))
+        );
+    }
+
+    private static ImportSessionTarget parseImportTarget(Map<String, Object> target) {
+        if (hasText(target.get("sessionId"))) {
+            return new ExistingSessionImportTarget(
+                requiredText(target.get("sessionId"), "target.sessionId"),
+                requiredText(target.get("customerId"), "target.customerId"),
+                requiredText(target.get("assistantId"), "target.assistantId")
+            );
+        }
+        if (hasText(target.get("channelProfileId"))) {
+            return new ChannelIdentityImportTarget(
+                requiredText(target.get("channelProfileId"), "target.channelProfileId"),
+                requiredText(target.get("externalConversationId"), "target.externalConversationId"),
+                requiredText(target.get("customerId"), "target.customerId"),
+                requiredText(target.get("assistantId"), "target.assistantId")
+            );
+        }
+        return new WebIdentityImportTarget(
+            requiredText(target.get("customerId"), "target.customerId"),
+            requiredText(target.get("assistantId"), "target.assistantId")
+        );
+    }
+
+    @SuppressWarnings("unchecked")
+    private static SessionMessageInput parseMessageInput(Map<String, Object> message) {
+        Object blocks = message.get("blocks");
+        return new SessionMessageInput(
+            blocks instanceof List<?> list ? (List<Object>) list : List.of(),
+            objectMap(message.get("metadata"))
+        );
+    }
+
+    private static SessionMessageSender parseSender(Map<String, Object> sender) {
+        return new SessionMessageSender(
+            SessionMessageSenderType.valueOf(requiredText(sender.get("senderType"), "sender.senderType")),
+            optionalText(sender.get("senderId")),
+            optionalText(sender.get("senderName"))
+        );
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> requiredMap(Object value, String field) {
+        if (!(value instanceof Map<?, ?> map)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, field + " is required");
+        }
+        return (Map<String, Object>) map;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> objectMap(Object value) {
+        if (!(value instanceof Map<?, ?> map)) {
+            return Map.of();
+        }
+        return (Map<String, Object>) map;
+    }
+
+    private static Instant parseInstant(Object value) {
+        String text = optionalText(value);
+        return text == null ? null : Instant.parse(text);
+    }
+
+    private static String requiredText(Object value, String field) {
+        String text = optionalText(value);
+        if (text == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, field + " is required");
+        }
+        return text;
+    }
+
+    private static String optionalText(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String text = String.valueOf(value);
+        return text.isBlank() ? null : text;
+    }
+
+    private static boolean hasText(Object value) {
+        return optionalText(value) != null;
     }
 
     private static StreamFrameIngestScope requireSingleTurnExecution(

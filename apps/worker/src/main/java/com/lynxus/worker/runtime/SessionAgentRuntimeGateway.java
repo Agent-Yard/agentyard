@@ -249,7 +249,7 @@ public interface SessionAgentRuntimeGateway {
                                 context,
                                 lastSeq + 1,
                                 "INVALID_FINAL_OUTCOME",
-                                "FINAL_OUTCOME frame missing or invalid payload.messageId/payload.outcome",
+                                "FINAL_OUTCOME frame missing or invalid payload.replyMessageId/payload.outcome",
                                 error
                             );
                         }
@@ -318,8 +318,8 @@ public interface SessionAgentRuntimeGateway {
             if (!(frame.payload() instanceof FinalOutcomePayload payload) || payload.outcome() == null) {
                 throw new IllegalStateException("FINAL_OUTCOME frame missing payload.outcome");
             }
-            if (!context.replyMessageId().equals(payload.messageId())) {
-                throw new IllegalStateException("FINAL_OUTCOME payload.messageId does not match request replyMessageId");
+            if (!context.replyMessageId().equals(payload.replyMessageId())) {
+                throw new IllegalStateException("FINAL_OUTCOME payload.replyMessageId does not match request replyMessageId");
             }
             return payload.outcome();
         }
@@ -349,7 +349,7 @@ public interface SessionAgentRuntimeGateway {
                 StreamVisibility.OPERATOR,
                 Instant.now(),
                 Map.of(
-                    "messageId",
+                    "replyMessageId",
                     context.replyMessageId(),
                     "status",
                     success ? TurnCompletionStatus.SUCCEEDED : TurnCompletionStatus.FAILED
@@ -382,7 +382,7 @@ public interface SessionAgentRuntimeGateway {
                 Map.of(
                     "code",
                     code,
-                    "messageId",
+                    "replyMessageId",
                     context.replyMessageId(),
                     "message",
                     message,

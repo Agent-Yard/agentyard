@@ -9,9 +9,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import com.lynxus.contracts.session.SessionContracts.SessionMessageInput;
-import com.lynxus.contracts.session.SessionContracts.SessionUserMessageUpdateResult;
-import com.lynxus.contracts.session.SessionContracts.UserMessage;
+import com.lynxus.contracts.session.SessionContracts.UserTurn;
+import com.lynxus.contracts.session.SessionContracts.UserTurnAcceptedResult;
 import com.lynxus.platform.shared.ConflictException;
 import io.temporal.api.common.v1.WorkflowExecution;
 import io.temporal.client.UpdateOptions;
@@ -27,42 +26,43 @@ import org.mockito.ArgumentCaptor;
 
 class SessionWorkflowGatewayTest {
     @Test
-    void submitUserMessage_shouldWaitForAcceptedUpdateWithoutResult() {
+    void submitUserTurn_shouldWaitForAcceptedUpdateWithoutResult() {
         WorkflowClient workflowClient = mock(WorkflowClient.class);
         WorkflowStub workflowStub = mock(WorkflowStub.class);
         @SuppressWarnings("unchecked")
-        WorkflowUpdateHandle<SessionUserMessageUpdateResult> updateHandle = mock(WorkflowUpdateHandle.class);
+        WorkflowUpdateHandle<UserTurnAcceptedResult> updateHandle = mock(WorkflowUpdateHandle.class);
         SessionWorkflowGateway.TemporalSessionWorkflowGateway gateway = new SessionWorkflowGateway.TemporalSessionWorkflowGateway(
             workflowClient,
             "session-task-queue"
         );
-        UserMessage message = new UserMessage("msg-1", "customer-1", textMessageInput("hello"));
+        UserTurn turn = new UserTurn("turn-1", "customer-1", "dedup-1", List.of(), Map.of());
 
         when(workflowClient.newUntypedWorkflowStub("session-1")).thenReturn(workflowStub);
-        when(workflowStub.<SessionUserMessageUpdateResult>startUpdate(anyUpdateOptions(), eq(message))).thenReturn(updateHandle);
+        when(workflowStub.<UserTurnAcceptedResult>startUpdate(anyUpdateOptions(), eq(turn))).thenReturn(updateHandle);
 
-        gateway.submitUserMessage("session-1", message);
+        gateway.submitUserTurn("session-1", "turn-1", turn);
 
-        ArgumentCaptor<UpdateOptions<SessionUserMessageUpdateResult>> optionsCaptor = updateOptionsCaptor();
-        verify(workflowStub).startUpdate(optionsCaptor.capture(), eq(message));
-        assertEquals("submitUserMessage", optionsCaptor.getValue().getUpdateName());
+        ArgumentCaptor<UpdateOptions<UserTurnAcceptedResult>> optionsCaptor = updateOptionsCaptor();
+        verify(workflowStub).startUpdate(optionsCaptor.capture(), eq(turn));
+        assertEquals("submitUserTurn", optionsCaptor.getValue().getUpdateName());
+        assertEquals("turn-1", optionsCaptor.getValue().getUpdateId());
         assertEquals(WorkflowUpdateStage.ACCEPTED, optionsCaptor.getValue().getWaitForStage());
-        assertEquals(SessionUserMessageUpdateResult.class, optionsCaptor.getValue().getResultClass());
+        assertEquals(UserTurnAcceptedResult.class, optionsCaptor.getValue().getResultClass());
         verifyNoInteractions(updateHandle);
     }
 
     @Test
-    void submitUserMessage_shouldTranslateTemporalUpdateTimeoutIntoConflict() {
+    void submitUserTurn_shouldTranslateTemporalUpdateTimeoutIntoConflict() {
         WorkflowClient workflowClient = mock(WorkflowClient.class);
         WorkflowStub workflowStub = mock(WorkflowStub.class);
         SessionWorkflowGateway.TemporalSessionWorkflowGateway gateway = new SessionWorkflowGateway.TemporalSessionWorkflowGateway(
             workflowClient,
             "session-task-queue"
         );
-        UserMessage message = new UserMessage("msg-1", "customer-1", textMessageInput("hello"));
+        UserTurn turn = new UserTurn("turn-1", "customer-1", "dedup-1", List.of(), Map.of());
 
         when(workflowClient.newUntypedWorkflowStub("session-1")).thenReturn(workflowStub);
-        when(workflowStub.<SessionUserMessageUpdateResult>startUpdate(anyUpdateOptions(), eq(message))).thenThrow(
+        when(workflowStub.<UserTurnAcceptedResult>startUpdate(anyUpdateOptions(), eq(turn))).thenThrow(
             new WorkflowUpdateTimeoutOrCancelledException(
                 WorkflowExecution.newBuilder().setWorkflowId("session-1").setRunId("run-1").build(),
                 "update-1",
@@ -73,25 +73,18 @@ class SessionWorkflowGatewayTest {
 
         ConflictException error = assertThrows(
             ConflictException.class,
-            () -> gateway.submitUserMessage("session-1", message)
+            () -> gateway.submitUserTurn("session-1", "turn-1", turn)
         );
 
-        assertEquals("session message acceptance timed out", error.getMessage());
+        assertEquals("session turn acceptance timed out", error.getMessage());
     }
 
-    private static SessionMessageInput textMessageInput(String text) {
-        return new SessionMessageInput(
-            List.of(Map.of("type", "TEXT", "text", text)),
-            Map.of()
-        );
-    }
-
-    private static UpdateOptions<SessionUserMessageUpdateResult> anyUpdateOptions() {
+    private static UpdateOptions<UserTurnAcceptedResult> anyUpdateOptions() {
         return any();
     }
 
     @SuppressWarnings({ "rawtypes", "unchecked" })
-    private static ArgumentCaptor<UpdateOptions<SessionUserMessageUpdateResult>> updateOptionsCaptor() {
+    private static ArgumentCaptor<UpdateOptions<UserTurnAcceptedResult>> updateOptionsCaptor() {
         return ArgumentCaptor.forClass((Class) UpdateOptions.class);
     }
 }

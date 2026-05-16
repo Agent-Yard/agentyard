@@ -24,7 +24,7 @@ import com.lynxus.contracts.session.SessionContracts.SessionMessageSenderType;
 import com.lynxus.contracts.session.SessionContracts.SessionMessageStatus;
 import com.lynxus.contracts.session.SessionContracts.SessionSnapshot;
 import com.lynxus.contracts.session.SessionContracts.SessionStartRequest;
-import com.lynxus.contracts.session.SessionContracts.UserMessage;
+import com.lynxus.contracts.session.SessionContracts.UserTurn;
 import com.lynxus.platform.LynxusApiApplication;
 import com.lynxus.platform.auth.AuthModels;
 import com.lynxus.platform.auth.AuthProperties;
@@ -277,7 +277,7 @@ class MultiInstanceApiIntegrationTest {
     }
 
     @Test
-    void shouldSerializeConcurrentSendMessageCallsWithDistributedSessionLock() throws Exception {
+    void shouldSerializeConcurrentSendTurnCallsWithDistributedSessionLock() throws Exception {
         String sessionId = "session-lock-test";
         seedActiveSession(sessionId);
         SharedGatewayState.submitDelayMillis = 250L;
@@ -287,45 +287,57 @@ class MultiInstanceApiIntegrationTest {
             client,
             apiA.port(),
             "POST",
-            "/api/session-runtime/messages",
+            "/api/session-runtime/turns",
             """
                 {
                   "sessionId": "%s",
+                  "assistantId": "assistant-1",
                   "customerId": "customer-1",
-                  "message": {
-                    "blocks": [
-                      {
-                        "type": "TEXT",
-                        "text": "hello from instance a"
-                      }
-                    ],
-                    "metadata": {}
-                  }
+                  "turnDedupKey": "turn-lock-a",
+                  "messages": [
+                    {
+                      "clientMessageId": "draft-a",
+                      "blocks": [
+                        {
+                          "type": "TEXT",
+                          "text": "hello from instance a"
+                        }
+                      ],
+                      "metadata": {}
+                    }
+                  ],
+                  "metadata": {}
                 }
                 """.formatted(sessionId),
-            null
+            Map.of("Idempotency-Key", "turn-lock-a")
         );
         CompletableFuture<HttpResponse<String>> second = sendAsync(
             client,
             apiB.port(),
             "POST",
-            "/api/session-runtime/messages",
+            "/api/session-runtime/turns",
             """
                 {
                   "sessionId": "%s",
+                  "assistantId": "assistant-1",
                   "customerId": "customer-1",
-                  "message": {
-                    "blocks": [
-                      {
-                        "type": "TEXT",
-                        "text": "hello from instance b"
-                      }
-                    ],
-                    "metadata": {}
-                  }
+                  "turnDedupKey": "turn-lock-b",
+                  "messages": [
+                    {
+                      "clientMessageId": "draft-b",
+                      "blocks": [
+                        {
+                          "type": "TEXT",
+                          "text": "hello from instance b"
+                        }
+                      ],
+                      "metadata": {}
+                    }
+                  ],
+                  "metadata": {}
                 }
                 """.formatted(sessionId),
-            null
+            Map.of("Idempotency-Key", "turn-lock-b")
         );
 
         assertEquals(200, first.get(5, TimeUnit.SECONDS).statusCode());
@@ -1159,43 +1171,24 @@ class MultiInstanceApiIntegrationTest {
 
         @Override
         public void start(SessionStartRequest request) {
-            throw new UnsupportedOperationException("session start is not used in multi-instance tests");
+            // The API owns the session row in the turn refactor; start is an idempotent side effect here.
         }
 
         @Override
-        public void submitUserMessage(String workflowId, UserMessage message) {
+        public void submitUserTurn(String workflowId, String updateId, UserTurn turn) {
             SharedGatewayState.recordSubmitMessage(workflowId);
             SharedGatewayState.enterSubmitCriticalSection();
             try {
                 maybeDelaySubmit();
                 SessionRuntimeSessionDto current = repository.findSession(workflowId).orElseThrow();
-                long sequence = repository.nextMessageSequence(workflowId);
                 Instant now = Instant.now();
-                repository.appendMessage(new SessionMessage(
-                    message.messageId(),
-                    workflowId,
-                    sequence,
-                    "turn-" + message.messageId(),
-                    0,
-                    SessionMessageProducerType.EXTERNAL,
-                    null,
-                    null,
-                    now,
-                    SessionMessageRole.USER,
-                    new SessionMessageSender(SessionMessageSenderType.CUSTOMER, message.customerId(), message.customerId()),
-                    SessionMessageStatus.SENT,
-                    message.message().blocks(),
-                    message.message().metadata(),
-                    null,
-                    current.currentOwnerAgentId(),
-                    null,
-                    now,
-                    now
-                ));
                 repository.saveSession(new SessionRuntimeSessionDto(
                     current.id(),
                     current.scenarioId(),
                     current.title(),
+                    current.entryScope(),
+                    current.channelProfileId(),
+                    current.externalConversationId(),
                     current.customerId(),
                     current.assistantId(),
                     current.assistantName(),
@@ -1209,11 +1202,12 @@ class MultiInstanceApiIntegrationTest {
                     current.pendingOwnerReevaluation(),
                     current.draining(),
                     current.sharedState(),
+                    current.sharedStateRevision(),
                     current.idleDeadline(),
                     current.createdAt(),
                     now,
                     current.endedAt(),
-                    sequence,
+                    current.latestMessageSequence(),
                     current.latestEventSequence()
                 ));
                 changeNoticePublisher.publishSessionChanged(workflowId);
@@ -1245,6 +1239,11 @@ class MultiInstanceApiIntegrationTest {
         @Override
         public boolean isWorkflowOpen(String workflowId) {
             return repository.findSession(workflowId).isPresent();
+        }
+
+        @Override
+        public boolean isWorkflowClosed(String workflowId) {
+            return false;
         }
 
         @Override

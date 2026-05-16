@@ -152,9 +152,9 @@ class ChannelOutboundUpstreamRelaySupervisorTest {
 
         @Override
         void stream(StreamRequest request, StreamHandler handler) throws Exception {
-            handler.onFrame("1", nativeTransientFrame(ChannelOutboundFrameKind.TYPING_START, Map.of("messageId", "message-1")));
+            handler.onFrame("1", nativeTransientFrame(ChannelOutboundFrameKind.TYPING_START, Map.of("replyMessageId", "message-1")));
             handler.onFrame("2", nativeTransientFrame(ChannelOutboundFrameKind.DRAFT_UPDATE, Map.of(
-                "messageId", "message-1",
+                "replyMessageId", "message-1",
                 "blockId", "block-1",
                 "blockType", "TEXT",
                 "delta", "draft"

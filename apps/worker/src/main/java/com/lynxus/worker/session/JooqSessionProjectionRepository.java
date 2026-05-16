@@ -32,6 +32,9 @@ public class JooqSessionProjectionRepository {
             session.id(),
             session.scenarioId(),
             session.title(),
+            null,
+            null,
+            null,
             session.customerId(),
             session.assistantId(),
             session.assistantName(),
@@ -45,6 +48,8 @@ public class JooqSessionProjectionRepository {
             session.pendingOwnerReevaluation(),
             session.draining(),
             session.sharedState(),
+            1L,
+            session.sharedStateRevision(),
             session.idleDeadline(),
             session.createdAt(),
             session.updatedAt(),
@@ -65,8 +70,44 @@ public class JooqSessionProjectionRepository {
             ));
     }
 
-    public void appendMessage(SessionMessage message) {
-        sessionStore.appendMessage(message);
+    public List<SessionMessage> appendSessionMessages(
+        String sessionId,
+        String turnId,
+        List<SessionPersistenceActivities.SessionMessageAppendRecord> messages
+    ) {
+        return sessionStore.appendSessionMessages(
+            sessionId,
+            turnId,
+            messages.stream()
+                .map(message -> new SessionRuntimeStore.SessionMessageAppendData(
+                    message.messageId(),
+                    message.producerType(),
+                    message.externalMessageId(),
+                    message.clientMessageId(),
+                    message.occurredAt(),
+                    message.role(),
+                    message.sender(),
+                    message.status(),
+                    message.blocks(),
+                    message.metadata(),
+                    message.relatedPlaybookRunId(),
+                    message.relatedOwnerAgentId(),
+                    message.sourceEventId(),
+                    message.createdAt(),
+                    message.updatedAt()
+                ))
+                .toList()
+        );
+    }
+
+    public SessionRuntimeStore.SessionRuntimeTurnData allocatePlatformTurn(
+        String sessionId,
+        String triggerType,
+        String dedupKey,
+        String sourceEventId,
+        java.util.Map<String, Object> metadata
+    ) {
+        return sessionStore.allocatePlatformTurn(sessionId, triggerType, dedupKey, sourceEventId, metadata);
     }
 
     public void appendEvent(SessionEvent event) {

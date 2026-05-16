@@ -611,14 +611,14 @@ public final class ChannelContracts {
             throw new IllegalArgumentException("sourceSeq is required for transient frames");
         }
         switch (kind) {
-            case TYPING_START, TYPING_STOP, DRAFT_DISCARD -> requirePayloadFields(payload, "messageId");
+            case TYPING_START, TYPING_STOP, DRAFT_DISCARD -> requirePayloadFields(payload, "replyMessageId");
             case DRAFT_UPDATE -> {
-                requirePayloadFields(payload, "messageId", "blockId", "blockType");
+                requirePayloadFields(payload, "replyMessageId", "blockId", "blockType");
                 if ("TEXT".equals(payload.get("blockType"))) {
                     requirePayloadNonEmptyString(payload, "delta");
                 }
             }
-            case DRAFT_COMPLETE -> requirePayloadFields(payload, "messageId", "blockId", "blockType", "block");
+            case DRAFT_COMPLETE -> requirePayloadFields(payload, "replyMessageId", "blockId", "blockType", "block");
             default -> throw new IllegalArgumentException("unsupported channel outbound frame kind");
         }
     }

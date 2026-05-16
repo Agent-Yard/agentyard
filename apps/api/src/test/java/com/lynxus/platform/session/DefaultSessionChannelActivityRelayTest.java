@@ -34,7 +34,7 @@ class DefaultSessionChannelActivityRelayTest {
         DefaultSessionChannelActivityRelay relay = new DefaultSessionChannelActivityRelay(lookupService, framePublisher);
 
         relay.relay(frame(AgentTurnTransientFrameKind.REPLY_BLOCK_DELTA, StreamVisibility.CUSTOMER, 6, Map.of(
-            "messageId",
+            "replyMessageId",
             "session-message-reply-1",
             "blockId",
             "block-1",
@@ -54,7 +54,7 @@ class DefaultSessionChannelActivityRelayTest {
         assertEquals("channel-profile-1", frame.getValue().channelProfileId());
         assertEquals("provider.acme", frame.getValue().providerType());
         assertEquals("chat-1", frame.getValue().externalConversationId());
-        assertEquals("session-message-reply-1", frame.getValue().payload().get("messageId"));
+        assertEquals("session-message-reply-1", frame.getValue().payload().get("replyMessageId"));
         assertEquals("hello", frame.getValue().payload().get("delta"));
     }
 
@@ -66,7 +66,7 @@ class DefaultSessionChannelActivityRelayTest {
         DefaultSessionChannelActivityRelay relay = new DefaultSessionChannelActivityRelay(lookupService, framePublisher);
 
         relay.relay(frame(AgentTurnTransientFrameKind.REPLY_BLOCK_DELTA, StreamVisibility.CUSTOMER, 6, Map.of(
-            "messageId",
+            "replyMessageId",
             "session-message-reply-1",
             "blockId",
             "block-1",
@@ -90,7 +90,7 @@ class DefaultSessionChannelActivityRelayTest {
         DefaultSessionChannelActivityRelay relay = new DefaultSessionChannelActivityRelay(lookupService, framePublisher);
 
         relay.relay(frame(AgentTurnTransientFrameKind.REPLY_BLOCK_COMPLETED, StreamVisibility.CUSTOMER, 2, Map.of(
-            "messageId",
+            "replyMessageId",
             "session-message-reply-1",
             "blockId",
             "block-1",
@@ -103,7 +103,7 @@ class DefaultSessionChannelActivityRelayTest {
         assertEquals(ChannelOutboundFrameKind.DRAFT_COMPLETE, frame.getAllValues().get(0).kind());
         assertEquals("TEXT", frame.getAllValues().get(0).payload().get("blockType"));
         assertEquals(ChannelOutboundFrameKind.TYPING_STOP, frame.getAllValues().get(1).kind());
-        assertEquals(Map.of("messageId", "session-message-reply-1"), frame.getAllValues().get(1).payload());
+        assertEquals(Map.of("replyMessageId", "session-message-reply-1"), frame.getAllValues().get(1).payload());
     }
 
     @Test
@@ -117,7 +117,7 @@ class DefaultSessionChannelActivityRelayTest {
                 AgentTurnTransientFrameKind.TURN_STARTED,
                 StreamVisibility.OPERATOR,
                 1,
-                Map.of("messageId", "session-message-reply-1", "triggerType", "USER_MESSAGE")
+                Map.of("replyMessageId", "session-message-reply-1", "triggerType", "USER_MESSAGE", "inputMessageCount", 1)
             ));
 
         verify(framePublisher, never()).publishTransient(any());
@@ -130,7 +130,7 @@ class DefaultSessionChannelActivityRelayTest {
         DefaultSessionChannelActivityRelay relay = new DefaultSessionChannelActivityRelay(lookupService, framePublisher);
 
         relay.relay(frame(AgentTurnTransientFrameKind.REPLY_BLOCK_DELTA, StreamVisibility.OPERATOR, 6, Map.of(
-            "messageId",
+            "replyMessageId",
             "session-message-reply-1",
             "blockId",
             "block-1",

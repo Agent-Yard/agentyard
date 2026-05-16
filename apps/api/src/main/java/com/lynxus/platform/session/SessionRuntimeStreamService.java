@@ -457,7 +457,7 @@ public class SessionRuntimeStreamService {
             "TURN_STARTED",
             "STARTED",
             "已收到",
-            Map.of("messageId", payload.messageId())
+            Map.of("replyMessageId", payload.replyMessageId())
         );
     }
 
@@ -468,7 +468,7 @@ public class SessionRuntimeStreamService {
             "TURN_COMPLETED",
             payload.status().name(),
             payload.status() == TurnCompletionStatus.SUCCEEDED ? "处理完成" : "处理失败",
-            Map.of("messageId", payload.messageId())
+            Map.of("replyMessageId", payload.replyMessageId())
         );
     }
 
@@ -668,8 +668,8 @@ public class SessionRuntimeStreamService {
 
     private static void validateCustomerReplyDraft(AgentTurnTransientFrame frame) {
         if (frame.payload() instanceof ReplyBlockDeltaPayload payload) {
-            if (isBlank(payload.messageId()) || isBlank(payload.blockId())) {
-                throw badFrame("customer reply draft messageId and blockId are required");
+            if (isBlank(payload.replyMessageId()) || isBlank(payload.blockId())) {
+                throw badFrame("customer reply draft replyMessageId and blockId are required");
             }
             if (payload.blockType() != SessionMessageBlockType.TEXT) {
                 throw badFrame("customer reply draft only allows text blocks");
@@ -690,8 +690,8 @@ public class SessionRuntimeStreamService {
         if (!(frame.payload() instanceof ReplyBlockCompletedPayload payload)) {
             throw badFrame("customer reply completed payload type is required");
         }
-        if (isBlank(payload.messageId()) || isBlank(payload.blockId())) {
-            throw badFrame("customer reply completed messageId and blockId are required");
+        if (isBlank(payload.replyMessageId()) || isBlank(payload.blockId())) {
+            throw badFrame("customer reply completed replyMessageId and blockId are required");
         }
         Object block = payload.block();
         if (!(block instanceof Map<?, ?> blockMap)) {
@@ -760,13 +760,13 @@ public class SessionRuntimeStreamService {
 
     private static String replyMessageIdPayload(AgentTurnTransientFrame frame) {
         if (frame.payload() instanceof ReplyBlockDeltaPayload payload) {
-            return payload.messageId();
+            return payload.replyMessageId();
         }
         if (frame.payload() instanceof ReplyBlockCompletedPayload payload) {
-            return payload.messageId();
+            return payload.replyMessageId();
         }
-        if (frame.payload() instanceof ErrorPayload payload && payload.messageId() != null) {
-            return payload.messageId();
+        if (frame.payload() instanceof ErrorPayload payload && payload.replyMessageId() != null) {
+            return payload.replyMessageId();
         }
         return "draft:" + frame.turnId();
     }

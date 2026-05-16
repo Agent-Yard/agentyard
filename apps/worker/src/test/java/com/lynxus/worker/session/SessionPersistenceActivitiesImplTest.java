@@ -1,8 +1,10 @@
 package com.lynxus.worker.session;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.lynxus.contracts.session.SessionContracts.PlaybookRun;
 import com.lynxus.contracts.session.SessionContracts.PlaybookRunStatus;
@@ -10,10 +12,12 @@ import com.lynxus.contracts.session.SessionContracts.SessionActorType;
 import com.lynxus.contracts.session.SessionContracts.SessionEvent;
 import com.lynxus.contracts.session.SessionContracts.SessionEventType;
 import com.lynxus.contracts.session.SessionContracts.SessionMessage;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageProducerType;
 import com.lynxus.contracts.session.SessionContracts.SessionMessageRole;
 import com.lynxus.contracts.session.SessionContracts.SessionMessageSender;
 import com.lynxus.contracts.session.SessionContracts.SessionMessageSenderType;
 import com.lynxus.contracts.session.SessionContracts.SessionMessageStatus;
+import com.lynxus.persistence.session.SessionRuntimeStore;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -42,6 +46,7 @@ class SessionPersistenceActivitiesImplTest {
             false,
             false,
             Map.of(),
+            0L,
             null,
             Instant.parse("2026-04-21T00:00:00Z"),
             Instant.parse("2026-04-21T00:00:00Z"),
@@ -51,6 +56,12 @@ class SessionPersistenceActivitiesImplTest {
             "message-1",
             "session-1",
             1L,
+            "turn-1",
+            0,
+            SessionMessageProducerType.PLATFORM,
+            null,
+            null,
+            Instant.parse("2026-04-21T00:00:01Z"),
             SessionMessageRole.USER,
             new SessionMessageSender(SessionMessageSenderType.CUSTOMER, "customer-1", "customer-1"),
             SessionMessageStatus.SENT,
@@ -89,9 +100,57 @@ class SessionPersistenceActivitiesImplTest {
             Instant.parse("2026-04-21T00:00:02Z"),
             null
         );
+        SessionRuntimeStore.SessionRuntimeTurnData platformTurn = new SessionRuntimeStore.SessionRuntimeTurnData(
+            "turn-platform-1",
+            "session-1",
+            "dedup-platform-1",
+            "PLAYBOOK_COMPLETED",
+            "ALLOCATED_IDS",
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            null,
+            Map.of("sourceEventId", "persisted-event-1"),
+            Instant.parse("2026-04-21T00:00:02Z"),
+            Instant.parse("2026-04-21T00:00:02Z"),
+            null
+        );
+        when(repository.allocatePlatformTurn(
+            "session-1",
+            "PLAYBOOK_COMPLETED",
+            "dedup-platform-1",
+            "event-1",
+            Map.of("playbookRunId", "run-1")
+        )).thenReturn(platformTurn);
 
         activities.saveSession(session);
-        activities.appendMessage(message);
+        SessionPersistenceActivities.PlatformTurnAllocation allocation = activities.allocatePlatformTurn(
+            "session-1",
+            "PLAYBOOK_COMPLETED",
+            "dedup-platform-1",
+            "event-1",
+            Map.of("playbookRunId", "run-1")
+        );
+        assertEquals("persisted-event-1", allocation.sourceEventId());
+        var appendRecord = new SessionPersistenceActivities.SessionMessageAppendRecord(
+            message.messageId(),
+            message.producerType(),
+            message.externalMessageId(),
+            message.clientMessageId(),
+            message.occurredAt(),
+            message.role(),
+            message.sender(),
+            message.status(),
+            message.blocks(),
+            message.metadata(),
+            message.relatedPlaybookRunId(),
+            message.relatedOwnerAgentId(),
+            message.sourceEventId(),
+            message.createdAt(),
+            message.updatedAt()
+        );
+        activities.appendSessionMessages("session-1", "turn-1", List.of(appendRecord));
         activities.appendEvent(event);
         activities.appendLlmUsage(List.of(new SessionPersistenceActivities.LlmUsageRecord(
             "usage-1",
@@ -120,9 +179,16 @@ class SessionPersistenceActivitiesImplTest {
         )));
         activities.savePlaybookRun(playbookRun);
 
-        verify(publisher, times(4)).publishSessionChanged("session-1");
+        verify(publisher, times(5)).publishSessionChanged("session-1");
         verify(repository).saveSession(session);
-        verify(repository).appendMessage(message);
+        verify(repository).allocatePlatformTurn(
+            "session-1",
+            "PLAYBOOK_COMPLETED",
+            "dedup-platform-1",
+            "event-1",
+            Map.of("playbookRunId", "run-1")
+        );
+        verify(repository).appendSessionMessages("session-1", "turn-1", List.of(appendRecord));
         verify(repository).appendEvent(event);
         verify(repository).appendLlmUsage(List.of(new SessionPersistenceActivities.LlmUsageRecord(
             "usage-1",

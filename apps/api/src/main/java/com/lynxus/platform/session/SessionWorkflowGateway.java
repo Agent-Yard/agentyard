@@ -6,10 +6,11 @@ import com.lynxus.contracts.session.SessionContracts.HumanResumeSignal;
 import com.lynxus.contracts.session.SessionContracts.HumanOperatorReplySignal;
 import com.lynxus.contracts.session.SessionContracts.SessionSnapshot;
 import com.lynxus.contracts.session.SessionContracts.SessionStartRequest;
-import com.lynxus.contracts.session.SessionContracts.SessionUserMessageUpdateResult;
-import com.lynxus.contracts.session.SessionContracts.UserMessage;
+import com.lynxus.contracts.session.SessionContracts.UserTurn;
+import com.lynxus.contracts.session.SessionContracts.UserTurnAcceptedResult;
 import com.lynxus.contracts.session.SessionWorkflow;
 import com.lynxus.platform.shared.ConflictException;
+import io.temporal.client.WorkflowExecutionAlreadyStarted;
 import io.temporal.client.UpdateOptions;
 import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowUpdateStage;
@@ -22,11 +23,13 @@ import org.springframework.stereotype.Component;
 public interface SessionWorkflowGateway {
     void start(SessionStartRequest request);
 
-    void submitUserMessage(String workflowId, UserMessage message);
+    void submitUserTurn(String workflowId, String updateId, UserTurn turn);
 
     SessionSnapshot currentSnapshot(String workflowId);
 
     boolean isWorkflowOpen(String workflowId);
+
+    boolean isWorkflowClosed(String workflowId);
 
     void humanResume(String workflowId, HumanResumeSignal signal);
 
@@ -52,23 +55,28 @@ public interface SessionWorkflowGateway {
         @Override
         public void start(SessionStartRequest request) {
             SessionWorkflow workflow = newStartWorkflowStub(request.sessionId());
-            WorkflowClient.start(workflow::run, request);
+            try {
+                WorkflowClient.start(workflow::run, request);
+            } catch (WorkflowExecutionAlreadyStarted ignored) {
+                // Ensuring an already-started workflow is an idempotent success for send-turn recovery.
+            }
         }
 
         @Override
-        public void submitUserMessage(String workflowId, UserMessage message) {
+        public void submitUserTurn(String workflowId, String updateId, UserTurn turn) {
             WorkflowStub workflowStub = existingUntypedWorkflowStub(workflowId);
             try {
                 workflowStub.startUpdate(
-                    UpdateOptions.<SessionUserMessageUpdateResult>newBuilder()
-                        .setUpdateName("submitUserMessage")
+                    UpdateOptions.<UserTurnAcceptedResult>newBuilder()
+                        .setUpdateName("submitUserTurn")
+                        .setUpdateId(updateId)
                         .setWaitForStage(WorkflowUpdateStage.ACCEPTED)
-                        .setResultClass(SessionUserMessageUpdateResult.class)
+                        .setResultClass(UserTurnAcceptedResult.class)
                         .build(),
-                    message
+                    turn
                 );
             } catch (WorkflowUpdateTimeoutOrCancelledException error) {
-                throw new ConflictException("session message acceptance timed out");
+                throw new ConflictException("session turn acceptance timed out");
             }
         }
 
@@ -81,6 +89,15 @@ public interface SessionWorkflowGateway {
         public boolean isWorkflowOpen(String workflowId) {
             try {
                 return WorkflowStub.fromTyped(existingWorkflowStub(workflowId)).describe().getCloseTime() == null;
+            } catch (RuntimeException error) {
+                return false;
+            }
+        }
+
+        @Override
+        public boolean isWorkflowClosed(String workflowId) {
+            try {
+                return WorkflowStub.fromTyped(existingWorkflowStub(workflowId)).describe().getCloseTime() != null;
             } catch (RuntimeException error) {
                 return false;
             }

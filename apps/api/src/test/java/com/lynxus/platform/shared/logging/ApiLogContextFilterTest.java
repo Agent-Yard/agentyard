@@ -32,14 +32,15 @@ class ApiLogContextFilterTest {
     void shouldBindTraceUserSessionAndCustomerContextFromRequest() throws Exception {
         MockMvc mockMvc = mockMvc();
 
-        mockMvc.perform(post("/api/session-runtime/messages")
+        mockMvc.perform(post("/api/session-runtime/turns")
                 .contentType(MediaType.APPLICATION_JSON)
                 .header("traceparent", "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01")
                 .content("""
                     {
                       "sessionId": "session-1",
                       "customerId": "customer-1",
-                      "message": "你好"
+                      "turnDedupKey": "turn-1",
+                      "messages": []
                     }
                     """))
             .andExpect(status().isOk())
@@ -82,7 +83,7 @@ class ApiLogContextFilterTest {
 
     @RestController
     static class EchoController {
-        @PostMapping("/api/session-runtime/messages")
+        @PostMapping("/api/session-runtime/turns")
         Map<String, String> message(@RequestBody Map<String, Object> payload) {
             return snapshot();
         }

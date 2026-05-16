@@ -6,24 +6,24 @@ import java.util.Objects;
 record FeishuStreamingReplyCardKey(
     String channelProfileId,
     String sessionId,
-    String messageId
+    String replyMessageId
 ) {
     FeishuStreamingReplyCardKey {
         channelProfileId = requireText(channelProfileId, "channelProfileId");
         sessionId = requireText(sessionId, "sessionId");
-        messageId = requireText(messageId, "messageId");
+        replyMessageId = requireText(replyMessageId, "replyMessageId");
     }
 
     static FeishuStreamingReplyCardKey fromFrame(ChannelOutboundFrame frame) {
         Objects.requireNonNull(frame, "frame");
-        Object rawMessageId = frame.payload().get("messageId");
-        if (rawMessageId == null) {
-            rawMessageId = frame.payload().get("sessionMessageId");
+        Object rawReplyMessageId = frame.payload().get("replyMessageId");
+        if (rawReplyMessageId == null) {
+            rawReplyMessageId = frame.payload().get("sessionMessageId");
         }
         return new FeishuStreamingReplyCardKey(
             frame.channelProfileId(),
             frame.sessionId(),
-            rawMessageId == null ? null : String.valueOf(rawMessageId)
+            rawReplyMessageId == null ? null : String.valueOf(rawReplyMessageId)
         );
     }
 

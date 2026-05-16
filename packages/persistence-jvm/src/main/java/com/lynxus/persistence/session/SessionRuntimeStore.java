@@ -21,6 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.JSONB;
@@ -288,6 +289,74 @@ public final class SessionRuntimeStore {
             .orElseThrow(() -> new IllegalStateException("turn was not persisted: " + turn.turnId()));
     }
 
+    public SessionRuntimeTurnData allocatePlatformTurn(
+        String sessionId,
+        String triggerType,
+        String dedupKey,
+        String sourceEventId,
+        Map<String, Object> metadata
+    ) {
+        String effectiveSessionId = requireText(sessionId, "sessionId");
+        String effectiveTriggerType = requireText(triggerType, "triggerType");
+        String rawDedupKey = requireText(dedupKey, "dedupKey");
+        String effectiveDedupKey = platformDedupKey(effectiveTriggerType, rawDedupKey);
+        Map<String, Object> turnMetadata = new LinkedHashMap<>();
+        if (metadata != null) {
+            turnMetadata.putAll(metadata);
+        }
+        turnMetadata.put("platformDedupKey", rawDedupKey);
+        if (sourceEventId != null && !sourceEventId.isBlank()) {
+            turnMetadata.put("sourceEventId", sourceEventId.trim());
+        }
+        Instant now = Instant.now();
+        SessionRuntimeTurnData turn = createOrReuseTurn(new SessionRuntimeTurnData(
+            nextTurnId(),
+            effectiveSessionId,
+            effectiveDedupKey,
+            effectiveTriggerType,
+            SessionRuntimeTurnStatus.ALLOCATED_IDS.name(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            null,
+            turnMetadata,
+            now,
+            now,
+            null
+        ));
+        validatePlatformTurnReuse(turn, effectiveTriggerType);
+        return turn;
+    }
+
+    public SessionRuntimeTurnData updateTurnState(
+        String sessionId,
+        String turnId,
+        String status,
+        List<String> acceptedInputMessageIds,
+        List<String> duplicateExternalMessageIds,
+        List<String> messageIds,
+        String temporalUpdateId,
+        Instant completedAt
+    ) {
+        int updatedRows = dsl.update(SESSION_RUNTIME_TURN)
+            .set(SESSION_RUNTIME_TURN.STATUS, status)
+            .set(SESSION_RUNTIME_TURN.ACCEPTED_INPUT_MESSAGE_IDS, jsonbSupport.toJsonb(acceptedInputMessageIds == null ? List.of() : acceptedInputMessageIds))
+            .set(SESSION_RUNTIME_TURN.DUPLICATE_EXTERNAL_MESSAGE_IDS, jsonbSupport.toJsonb(duplicateExternalMessageIds == null ? List.of() : duplicateExternalMessageIds))
+            .set(SESSION_RUNTIME_TURN.MESSAGE_IDS, jsonbSupport.toJsonb(messageIds == null ? List.of() : messageIds))
+            .set(SESSION_RUNTIME_TURN.TEMPORAL_UPDATE_ID, temporalUpdateId)
+            .set(SESSION_RUNTIME_TURN.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(Instant.now()))
+            .set(SESSION_RUNTIME_TURN.COMPLETED_AT, JooqTimeSupport.toOffsetDateTime(completedAt))
+            .where(SESSION_RUNTIME_TURN.TURN_ID.eq(turnId))
+            .and(SESSION_RUNTIME_TURN.SESSION_ID.eq(sessionId))
+            .execute();
+        if (updatedRows == 0) {
+            throw new IllegalArgumentException("turn does not exist for session: " + turnId);
+        }
+        return findTurn(turnId)
+            .orElseThrow(() -> new IllegalStateException("turn was not persisted: " + turnId));
+    }
+
     public List<SessionMessage> appendSessionMessages(
         String sessionId,
         String turnId,
@@ -412,6 +481,14 @@ public final class SessionRuntimeStore {
         return dsl.selectFrom(SESSION_RUNTIME_MESSAGE)
             .where(SESSION_RUNTIME_MESSAGE.SESSION_ID.eq(sessionId))
             .orderBy(SESSION_RUNTIME_MESSAGE.SEQUENCE.asc(), SESSION_RUNTIME_MESSAGE.CREATED_AT.asc())
+            .fetch(this::mapMessage);
+    }
+
+    public List<SessionMessage> listMessagesForTurn(String sessionId, String turnId) {
+        return dsl.selectFrom(SESSION_RUNTIME_MESSAGE)
+            .where(SESSION_RUNTIME_MESSAGE.SESSION_ID.eq(sessionId))
+            .and(SESSION_RUNTIME_MESSAGE.TURN_ID.eq(turnId))
+            .orderBy(SESSION_RUNTIME_MESSAGE.TURN_INDEX.asc(), SESSION_RUNTIME_MESSAGE.SEQUENCE.asc())
             .fetch(this::mapMessage);
     }
 
@@ -833,6 +910,29 @@ public final class SessionRuntimeStore {
             throw new IllegalArgumentException(field + " is required");
         }
         return value.trim();
+    }
+
+    private static String platformDedupKey(String triggerType, String rawDedupKey) {
+        return "platform:" + triggerType + ":" + rawDedupKey;
+    }
+
+    private static void validatePlatformTurnReuse(SessionRuntimeTurnData turn, String triggerType) {
+        if (!triggerType.equals(turn.triggerType())) {
+            throw new IllegalStateException(
+                "platform turn dedup key collision: triggerType mismatch for " + turn.dedupKey()
+            );
+        }
+        if (!turn.inputAllocations().isEmpty()
+            || !turn.acceptedInputMessageIds().isEmpty()
+            || !turn.duplicateExternalMessageIds().isEmpty()) {
+            throw new IllegalStateException(
+                "platform turn dedup key collision: existing turn has external input allocation for " + turn.dedupKey()
+            );
+        }
+    }
+
+    private static String nextTurnId() {
+        return "session-turn-" + UUID.randomUUID().toString().substring(0, 8);
     }
 
     public enum SessionEntryScope {

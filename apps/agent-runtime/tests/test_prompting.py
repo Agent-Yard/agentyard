@@ -1,14 +1,12 @@
 import os
-import unittest
-import json
 import subprocess
 import sys
+import unittest
 from pathlib import Path
 
 os.environ.setdefault("LYNXUS_INTERNAL_AUTH_TOKEN", "test-internal-token")
 
 from lynxus_agent_runtime.models import AgentTurnRequest
-from lynxus_agent_runtime.privacy_contracts import PrivacyStrategy
 from lynxus_agent_runtime.prompting import (
     build_initial_runtime_messages,
     build_system_instruction,
@@ -17,7 +15,7 @@ from lynxus_agent_runtime.prompting import (
 )
 
 
-def _text_message(message_id: str, sequence: int, role: str, text: str) -> dict:
+def _text_message(message_id: str, sequence: int, role: str, text: str, *, turn_id: str = "turn-1") -> dict:
     sender_type = {
         "USER": "CUSTOMER",
         "ASSISTANT": "AGENT",
@@ -28,6 +26,12 @@ def _text_message(message_id: str, sequence: int, role: str, text: str) -> dict:
         "messageId": message_id,
         "sessionId": "session-1",
         "sequence": sequence,
+        "turnId": turn_id,
+        "turnIndex": sequence - 1,
+        "producerType": "EXTERNAL",
+        "externalMessageId": None,
+        "clientMessageId": None,
+        "occurredAt": f"2026-04-19T00:00:0{sequence}Z",
         "role": role,
         "sender": {
             "senderType": sender_type,
@@ -40,6 +44,56 @@ def _text_message(message_id: str, sequence: int, role: str, text: str) -> dict:
         "createdAt": f"2026-04-19T00:00:0{sequence}Z",
         "updatedAt": f"2026-04-19T00:00:0{sequence}Z",
     }
+
+
+def _context_entry(
+    entry_id: str,
+    entry_type: str,
+    revision: int,
+    occurred_at: str,
+    data: dict,
+) -> dict:
+    return {
+        "entryId": entry_id,
+        "entryType": entry_type,
+        "revision": revision,
+        "occurredAt": occurred_at,
+        "data": data,
+    }
+
+
+def _request_payload(**overrides) -> dict:
+    payload = {
+        "sessionId": "session-1",
+        "turnId": "turn-1",
+        "turnExecutionId": "turn-1:exec-1",
+        "replyMessageId": "session-message-reply-1",
+        "assistantId": "assistant-1",
+        "assistantReleaseVersion": "2026.04.19",
+        "currentOwner": {
+            "agentId": "agent-a",
+            "name": "Agent A",
+            "role": "support",
+            "responsibility": "help the customer",
+            "allowedActions": ["REPLY", "RUN_PLAYBOOK"],
+            "switchableOwnerAgentIds": ["agent-b"],
+            "playbookIds": ["pb-1"],
+        },
+        "availableAgents": [],
+        "availablePlaybooks": [{"playbookId": "pb-1", "name": "Playbook 1"}],
+        "sharedState": {"knownPreference": "email"},
+        "trigger": {
+            "triggerType": "USER_MESSAGE",
+            "turnId": "turn-1",
+            "eventId": None,
+            "payload": {"text": "hello"},
+        },
+        "messages": [_text_message("msg-1", 1, "USER", "hello")],
+        "contextEntries": [],
+        "transcriptBootstrap": False,
+    }
+    payload.update(overrides)
+    return payload
 
 
 class AgentRuntimePromptingTest(unittest.TestCase):
@@ -64,184 +118,180 @@ class AgentRuntimePromptingTest(unittest.TestCase):
         self.assertEqual("ok", result.stdout.strip(), result.stderr)
         self.assertEqual(0, result.returncode, result.stderr)
 
-    def test_should_build_prompt_instruction_and_runtime_context(self) -> None:
+    def test_should_build_prompt_instruction_and_delta_runtime_context(self) -> None:
         request = AgentTurnRequest.model_validate(
-            {
-                "sessionId": "session-1",
-                "replyMessageId": "session-message-reply-1",
-                "assistantId": "assistant-1",
-                "assistantReleaseVersion": "2026.04.19",
-                "currentOwner": {
-                    "agentId": "agent-a",
-                    "name": "Agent A",
-                    "role": "support",
-                    "responsibility": "help the customer",
-                    "allowedActions": ["REPLY", "RUN_PLAYBOOK"],
-                    "switchableOwnerAgentIds": ["agent-b"],
-                    "playbookIds": ["pb-1"],
-                },
-                "availableAgents": [],
-                "availablePlaybooks": [
-                    {
-                        "playbookId": "pb-1",
-                        "name": "Playbook 1",
-                    }
+            _request_payload(
+                messages=[
+                    _text_message("msg-2", 2, "USER", "second"),
+                    _text_message("msg-1", 1, "USER", "first"),
                 ],
-                "sharedState": {"knownPreference": "email"},
-                "trigger": {
-                    "triggerType": "USER_MESSAGE",
-                    "eventId": "evt-1",
-                    "triggerMessageId": "msg-2",
-                    "payload": {"text": "hello"},
-                },
-                "recentMessages": [
-                    _text_message("msg-1", 1, "USER", "hi"),
-                    _text_message("msg-2", 2, "USER", "hello"),
+                contextEntries=[
+                    _context_entry(
+                        "shared-state-patch:session-1:2",
+                        "SHARED_STATE_PATCH",
+                        2,
+                        "2026-04-19T00:00:04Z",
+                        {"patch": {"knownPreference": "email"}},
+                    ),
+                    _context_entry(
+                        "event-1",
+                        "SESSION_EVENT",
+                        1,
+                        "2026-04-19T00:00:03Z",
+                        {"eventType": "HUMAN_RESUME_RECEIVED", "payload": {"note": "resume"}},
+                    ),
                 ],
-                "recentEvents": [],
-            }
+            )
         )
 
         instruction = build_system_instruction(request)
         runtime_messages = build_initial_runtime_messages(request)
 
         self.assertIn("Function tools define the current owner capability boundary", instruction)
-        self.assertNotIn("Knowledge binding:", instruction)
-        self.assertNotIn("For factual questions about enterprises, products", instruction)
         self.assertIn("Use function tool names, parameter schemas, and parameter descriptions", instruction)
         self.assertIn("Use exactly one customer-visible output channel for the same reply content", instruction)
-        self.assertIn("For ordinary text or Markdown replies, write the reply directly as assistant content", instruction)
-        self.assertIn("Never describe tool calls, accepted tool results, state updates, message block writes", instruction)
-        self.assertIn("If a message block tool already wrote the complete customer reply", instruction)
-        self.assertFalse(any(message.content.startswith("Session trigger:") for message in runtime_messages))
-        self.assertEqual(runtime_messages[0].kind, "user_turn")
-        self.assertEqual(runtime_messages[0].content, "hi")
-        self.assertEqual(runtime_messages[1].privacy_source, "shared_state_slice")
-        self.assertEqual(runtime_messages[-1].kind, "user_turn")
-        self.assertEqual(runtime_messages[-1].content, "hello")
-        self.assertIn("You are the current session owner agent.", instruction)
+        self.assertNotIn("Knowledge binding:", instruction)
+        self.assertEqual(["system_event", "system_event", "user_turn", "user_turn"], [message.kind for message in runtime_messages])
+        self.assertIn("HUMAN_RESUME_RECEIVED", runtime_messages[0].content)
+        self.assertIn("SHARED_STATE_PATCH", runtime_messages[1].content)
+        self.assertEqual(["first", "second"], [message.content for message in runtime_messages[2:]])
         self.assertIn("Owner identity: Agent A", instruction)
 
-    def test_should_skip_privacy_for_empty_shared_state_slice(self) -> None:
+    def test_should_not_render_shared_state_without_context_entry(self) -> None:
+        request = AgentTurnRequest.model_validate(_request_payload(sharedState={"secret": "value"}, contextEntries=[]))
+
+        runtime_messages = build_turn_input_messages(request)
+
+        rendered = "\n".join(message.content for message in runtime_messages)
+        self.assertNotIn("secret", rendered)
+        self.assertEqual(["user_turn"], [message.kind for message in runtime_messages])
+        self.assertEqual("hello", runtime_messages[0].content)
+
+    def test_should_render_shared_state_snapshot_from_context_entry(self) -> None:
         request = AgentTurnRequest.model_validate(
-            {
-                "sessionId": "session-1",
-                "replyMessageId": "session-message-reply-1",
-                "assistantId": "assistant-1",
-                "assistantReleaseVersion": "2026.04.19",
-                "currentOwner": {
-                    "agentId": "agent-a",
-                    "name": "Agent A",
-                    "role": "support",
-                    "responsibility": "help the customer",
-                    "allowedActions": ["REPLY"],
-                },
-                "availableAgents": [],
-                "availablePlaybooks": [],
-                "sharedState": {},
-                "trigger": {
-                    "triggerType": "USER_MESSAGE",
-                    "eventId": "evt-1",
-                    "triggerMessageId": "msg-1",
-                    "payload": {"text": "hello"},
-                },
-                "recentMessages": [_text_message("msg-1", 1, "USER", "hello")],
-                "recentEvents": [],
-            }
+            _request_payload(
+                contextEntries=[
+                    _context_entry(
+                        "shared-state-snapshot:session-1:7",
+                        "SHARED_STATE_SNAPSHOT",
+                        7,
+                        "2026-04-19T00:00:02Z",
+                        {"sharedState": {"customerId": "customer-1", "knownPreference": "email"}},
+                    )
+                ]
+            )
         )
 
         runtime_messages = build_initial_runtime_messages(request)
-        shared_state_message = next(
-            message for message in runtime_messages if message.privacy_source == "shared_state_slice"
+        snapshot_message = runtime_messages[0]
+
+        self.assertEqual("system_event", snapshot_message.kind)
+        self.assertIn("SHARED_STATE_SNAPSHOT", snapshot_message.content)
+        self.assertIn('"knownPreference": "email"', snapshot_message.content)
+
+    def test_should_render_active_playbook_summary_from_context_entry(self) -> None:
+        request = AgentTurnRequest.model_validate(
+            _request_payload(
+                activePlaybook={
+                    "runId": "run-secret-1",
+                    "playbookId": "pb-active",
+                    "playbookName": "Active Refund Flow",
+                    "status": "RUNNING",
+                    "latestResult": {"summary": "ticket is open"},
+                },
+                contextEntries=[
+                    _context_entry(
+                        "active-playbook:run-secret-1:3",
+                        "ACTIVE_PLAYBOOK_SUMMARY",
+                        3,
+                        "2026-04-19T00:00:02Z",
+                        {
+                            "runId": "run-secret-1",
+                            "playbookId": "pb-active",
+                            "status": "RUNNING",
+                            "latestResult": {"summary": "ticket is open"},
+                        },
+                    )
+                ],
+            )
         )
 
-        self.assertIn('"sharedState": {}', shared_state_message.content)
-        self.assertEqual(PrivacyStrategy.SKIP, shared_state_message.privacy_strategy)
+        runtime_messages = build_initial_runtime_messages(request)
+        active_playbook_message = runtime_messages[0]
 
-    def test_should_not_repeat_shared_state_in_turn_input_messages(self) -> None:
+        self.assertIn("ACTIVE_PLAYBOOK_SUMMARY", active_playbook_message.content)
+        self.assertIn('"playbookId": "pb-active"', active_playbook_message.content)
+        self.assertIn('"summary": "ticket is open"', active_playbook_message.content)
+        self.assertIn('"runId": "run-secret-1"', active_playbook_message.content)
+
+    def test_should_add_knowledge_lookup_instruction_when_knowledge_is_enabled(self) -> None:
         request = AgentTurnRequest.model_validate(
-            {
-                "sessionId": "session-1",
-                "replyMessageId": "session-message-reply-1",
-                "assistantId": "assistant-1",
-                "assistantReleaseVersion": "2026.04.19",
-                "currentOwner": {
+            _request_payload(
+                currentOwner={
                     "agentId": "agent-a",
                     "name": "Agent A",
                     "role": "support",
                     "responsibility": "help the customer",
+                    "knowledgeEnabled": True,
+                    "knowledgeBaseId": "kb-1",
+                    "knowledgeBinding": {
+                        "knowledgeBaseId": "kb-1",
+                        "knowledgeBaseName": "Refund Knowledge",
+                        "knowledgeReleaseId": "kr-1",
+                        "knowledgeReleaseVersion": "1.0.0",
+                        "snapshotId": "snapshot-1",
+                        "defaultTopK": 5,
+                        "retrievalMode": "HYBRID",
+                        "minScore": 0.1,
+                    },
                     "allowedActions": ["REPLY"],
-                },
-                "availableAgents": [],
-                "availablePlaybooks": [],
-                "sharedState": {"knownPreference": "email"},
-                "trigger": {
-                    "triggerType": "USER_MESSAGE",
-                    "eventId": "evt-1",
-                    "triggerMessageId": "msg-1",
-                    "payload": {"text": "hello"},
-                },
-                "recentMessages": [_text_message("msg-1", 1, "USER", "hello")],
-                "recentEvents": [],
-            }
+                }
+            )
         )
 
-        turn_input_messages = build_turn_input_messages(request)
+        instruction = build_system_instruction(request)
 
-        self.assertFalse(any(message.privacy_source == "shared_state_slice" for message in turn_input_messages))
-        self.assertEqual(["user_turn"], [message.kind for message in turn_input_messages])
-        self.assertEqual("hello", turn_input_messages[0].content)
+        self.assertNotIn("Knowledge binding:", instruction)
+        self.assertNotIn("Refund Knowledge", instruction)
+        self.assertIn(
+            "For factual questions about enterprises, products, policies, or other domain facts, query the knowledge base first; do not answer from pretrained knowledge.",
+            instruction,
+        )
 
-    def test_should_reject_user_trigger_without_resolved_message(self) -> None:
-        base_payload = {
-            "sessionId": "session-1",
-            "replyMessageId": "session-message-reply-1",
-            "assistantId": "assistant-1",
-            "assistantReleaseVersion": "2026.04.19",
-            "currentOwner": {
-                "agentId": "agent-a",
-                "name": "Agent A",
-                "role": "support",
-                "responsibility": "help the customer",
-                "allowedActions": ["REPLY"],
-            },
-            "availableAgents": [],
-            "availablePlaybooks": [],
-            "sharedState": {},
-            "trigger": {
-                "triggerType": "USER_MESSAGE",
-                "eventId": "evt-1",
-                "triggerMessageId": "msg-missing",
-                "payload": {"text": "hello"},
-            },
-            "recentMessages": [_text_message("msg-1", 1, "USER", "hello")],
-            "recentEvents": [],
-        }
+    def test_should_not_add_knowledge_lookup_instruction_when_knowledge_is_disabled(self) -> None:
+        request = AgentTurnRequest.model_validate(
+            _request_payload(
+                currentOwner={
+                    "agentId": "agent-a",
+                    "name": "Agent A",
+                    "role": "support",
+                    "responsibility": "help the customer",
+                    "knowledgeEnabled": False,
+                    "knowledgeBaseId": "kb-1",
+                    "knowledgeBinding": {
+                        "knowledgeBaseId": "kb-1",
+                        "knowledgeBaseName": "Refund Knowledge",
+                        "knowledgeReleaseId": "kr-1",
+                        "knowledgeReleaseVersion": "1.0.0",
+                        "snapshotId": "snapshot-1",
+                        "defaultTopK": 5,
+                        "retrievalMode": "HYBRID",
+                        "minScore": 0.1,
+                    },
+                    "allowedActions": ["REPLY"],
+                }
+            )
+        )
 
-        request = AgentTurnRequest.model_validate(base_payload)
-        with self.assertRaisesRegex(ValueError, "USER_MESSAGE triggerMessageId does not resolve"):
-            build_initial_runtime_messages(request)
+        instruction = build_system_instruction(request)
 
-        payload_without_trigger_message_id = {
-            **base_payload,
-            "trigger": {
-                "triggerType": "USER_MESSAGE",
-                "eventId": "evt-1",
-                "payload": {"text": "hello"},
-            },
-        }
-        request_without_trigger_message_id = AgentTurnRequest.model_validate(payload_without_trigger_message_id)
-        with self.assertRaisesRegex(ValueError, "USER_MESSAGE trigger requires triggerMessageId"):
-            build_initial_runtime_messages(request_without_trigger_message_id)
+        self.assertNotIn("Knowledge binding:", instruction)
+        self.assertNotIn("For factual questions about enterprises, products", instruction)
 
     def test_should_keep_action_handles_and_structured_runtime_context_in_rendered_prompt(self) -> None:
         request = AgentTurnRequest.model_validate(
-            {
-                "sessionId": "session-1",
-                "replyMessageId": "session-message-reply-1",
-                "assistantId": "assistant-1",
-                "assistantReleaseVersion": "2026.04.19",
-                "currentOwner": {
+            _request_payload(
+                currentOwner={
                     "agentId": "agent-a",
                     "name": "Agent A",
                     "role": "support",
@@ -278,55 +328,30 @@ class AgentRuntimePromptingTest(unittest.TestCase):
                         }
                     ],
                 },
-                "availableAgents": [
-                    {
-                        "agentId": "agent-b",
-                        "name": "Agent B",
-                        "role": "ops",
-                        "responsibility": "take over escalations",
-                        "allowedActions": ["REPLY"],
-                    }
-                ],
-                "availablePlaybooks": [
-                    {
-                        "playbookId": "pb-1",
-                        "name": "Refund Playbook",
-                        "description": "Handle refunds.",
-                    }
-                ],
-                "activePlaybook": {
-                    "runId": "run-1",
-                    "playbookId": "pb-1",
-                    "playbookName": "Refund Playbook",
-                    "status": "RUNNING",
-                    "latestResult": {"customerId": "customer-1"},
-                },
-                "sharedState": {"customerId": "customer-1", "knownPreference": "email"},
-                "trigger": {
+                trigger={
                     "triggerType": "PLAYBOOK_COMPLETED",
+                    "turnId": "turn-1",
                     "eventId": "evt-2",
                     "payload": {"customerId": "customer-1", "playbookRunId": "run-1", "status": "SUCCEEDED"},
                 },
-                "recentMessages": [
-                    {
-                        **_text_message("msg-1", 1, "SYSTEM", ""),
-                        "blocks": [],
-                    }
+                messages=[],
+                contextEntries=[
+                    _context_entry(
+                        "evt-1",
+                        "SESSION_EVENT",
+                        1,
+                        "2026-04-19T00:00:01Z",
+                        {"eventType": "PLAYBOOK_STARTED", "payload": {"customerId": "customer-1", "runId": "run-1"}},
+                    ),
+                    _context_entry(
+                        "shared-state-snapshot:session-1:1",
+                        "SHARED_STATE_SNAPSHOT",
+                        1,
+                        "2026-04-19T00:00:02Z",
+                        {"sharedState": {"customerId": "customer-1", "knownPreference": "email"}},
+                    ),
                 ],
-                "recentEvents": [
-                    {
-                        "eventId": "evt-1",
-                        "sessionId": "session-1",
-                        "sequence": 1,
-                        "eventType": "PLAYBOOK_STARTED",
-                        "actorType": "AGENT",
-                        "actorId": "agent-a",
-                        "payload": {"customerId": "customer-1", "runId": "run-1"},
-                        "relatedPlaybookRunId": "run-1",
-                        "relatedOwnerAgentId": "agent-a",
-                    }
-                ],
-            }
+            )
         )
 
         rendered_messages = render_openai_streaming_messages(
@@ -343,291 +368,14 @@ class AgentRuntimePromptingTest(unittest.TestCase):
             rendered_messages[1]["content"],
         )
         self.assertFalse(any(message["role"] == "system" for message in rendered_messages[1:]))
-        system_reminder_messages = [
-            message
-            for message in rendered_messages[1:]
-            if str(message.get("content") or "").startswith("<system-reminder>")
-        ]
-        self.assertGreaterEqual(len(system_reminder_messages), 4)
-        self.assertTrue(
-            all(
-                str(message.get("content") or "").endswith("</system-reminder>")
-                for message in system_reminder_messages
-            )
-        )
-        for runtime_id in (
-            "session-1",
-            "assistant-1",
-            "evt-1",
-            "evt-2",
-            "msg-1",
-        ):
-            self.assertNotIn(runtime_id, rendered_prompt)
         self.assertIn("customer-1", rendered_prompt)
         self.assertIn("run-1", rendered_prompt)
-        self.assertIn("pb-1", rendered_prompt)
+        self.assertIn("knownPreference", rendered_prompt)
         self.assertNotIn("agent-b", rendered_prompt)
         self.assertNotIn("skill-ver-1", rendered_prompt)
         self.assertNotIn("tool-1", rendered_prompt)
-        self.assertNotIn("tool-ver-1", rendered_prompt)
         self.assertNotIn("Create a support ticket.", rendered_prompt)
-        self.assertNotIn('"eventId"', rendered_prompt)
-        self.assertIn('"customerId"', rendered_prompt)
-        self.assertIn("Use function tools for context reads", rendered_prompt)
-        self.assertIn("Refund Playbook", rendered_prompt)
-        self.assertIn("knownPreference", rendered_prompt)
 
-    def test_should_render_active_playbook_summary_without_path_filtering(self) -> None:
-        request = AgentTurnRequest.model_validate(
-            {
-                "sessionId": "session-1",
-                "replyMessageId": "session-message-reply-1",
-                "assistantId": "assistant-1",
-                "assistantReleaseVersion": "2026.04.19",
-                "currentOwner": {
-                    "agentId": "agent-a",
-                    "name": "Agent A",
-                    "role": "support",
-                    "responsibility": "help the customer",
-                    "allowedActions": ["REPLY"],
-                    "playbookIds": ["pb-active"],
-                },
-                "availableAgents": [],
-                "availablePlaybooks": [
-                    {
-                        "playbookId": "pb-active",
-                        "name": "Active Refund Flow",
-                    }
-                ],
-                "activePlaybook": {
-                    "runId": "run-secret-1",
-                    "playbookId": "pb-active",
-                    "playbookName": "Active Refund Flow",
-                    "status": "RUNNING",
-                    "latestResult": {
-                        "customerId": "customer-secret-1",
-                        "ticketId": "ticket-secret-1",
-                        "summary": "ticket is open",
-                    },
-                },
-                "sharedState": {},
-                "trigger": {
-                    "triggerType": "USER_MESSAGE",
-                    "eventId": "evt-1",
-                    "triggerMessageId": "msg-1",
-                    "payload": {"text": "hello"},
-                },
-                "recentMessages": [_text_message("msg-1", 1, "USER", "hello")],
-                "recentEvents": [],
-            }
-        )
 
-        runtime_messages = build_initial_runtime_messages(request)
-        active_playbook_message = next(
-            message for message in runtime_messages if message.content.startswith("Active playbook summary:")
-        )
-
-        self.assertIn('"playbookId": "pb-active"', active_playbook_message.content)
-        self.assertIn('"summary": "ticket is open"', active_playbook_message.content)
-        self.assertIn('"customerId": "customer-secret-1"', active_playbook_message.content)
-        self.assertIn('"ticketId": "ticket-secret-1"', active_playbook_message.content)
-        self.assertIn('"runId": "run-secret-1"', active_playbook_message.content)
-
-    def test_should_add_knowledge_lookup_instruction_when_knowledge_is_enabled(self) -> None:
-        request = AgentTurnRequest.model_validate(
-            {
-                "sessionId": "session-1",
-                "replyMessageId": "session-message-reply-1",
-                "assistantId": "assistant-1",
-                "assistantReleaseVersion": "2026.04.19",
-                "currentOwner": {
-                    "agentId": "agent-a",
-                    "name": "Agent A",
-                    "role": "support",
-                    "responsibility": "help the customer",
-                    "knowledgeEnabled": True,
-                    "knowledgeBaseId": "kb-1",
-                    "knowledgeBinding": {
-                        "knowledgeBaseId": "kb-1",
-                        "knowledgeBaseName": "Refund Knowledge",
-                        "knowledgeReleaseId": "kr-1",
-                        "knowledgeReleaseVersion": "1.0.0",
-                        "snapshotId": "snapshot-1",
-                        "defaultTopK": 5,
-                        "retrievalMode": "HYBRID",
-                        "minScore": 0.1,
-                    },
-                    "allowedActions": ["REPLY"],
-                },
-                "availableAgents": [],
-                "availablePlaybooks": [],
-                "sharedState": {},
-                "trigger": {
-                    "triggerType": "USER_MESSAGE",
-                    "eventId": "evt-1",
-                    "triggerMessageId": "msg-1",
-                    "payload": {"text": "hello"},
-                },
-                "recentMessages": [_text_message("msg-1", 1, "USER", "hello")],
-                "recentEvents": [],
-            }
-        )
-
-        instruction = build_system_instruction(request)
-
-        self.assertNotIn("Knowledge binding:", instruction)
-        self.assertNotIn("Refund Knowledge", instruction)
-        self.assertIn(
-            "For factual questions about enterprises, products, policies, or other domain facts, query the knowledge base first; do not answer from pretrained knowledge.",
-            instruction,
-        )
-
-    def test_should_not_add_knowledge_lookup_instruction_when_knowledge_is_disabled(self) -> None:
-        request = AgentTurnRequest.model_validate(
-            {
-                "sessionId": "session-1",
-                "replyMessageId": "session-message-reply-1",
-                "assistantId": "assistant-1",
-                "assistantReleaseVersion": "2026.04.19",
-                "currentOwner": {
-                    "agentId": "agent-a",
-                    "name": "Agent A",
-                    "role": "support",
-                    "responsibility": "help the customer",
-                    "knowledgeEnabled": False,
-                    "knowledgeBaseId": "kb-1",
-                    "knowledgeBinding": {
-                        "knowledgeBaseId": "kb-1",
-                        "knowledgeBaseName": "Refund Knowledge",
-                        "knowledgeReleaseId": "kr-1",
-                        "knowledgeReleaseVersion": "1.0.0",
-                        "snapshotId": "snapshot-1",
-                        "defaultTopK": 5,
-                        "retrievalMode": "HYBRID",
-                        "minScore": 0.1,
-                    },
-                    "allowedActions": ["REPLY"],
-                },
-                "availableAgents": [],
-                "availablePlaybooks": [],
-                "sharedState": {},
-                "trigger": {
-                    "triggerType": "USER_MESSAGE",
-                    "eventId": "evt-1",
-                    "triggerMessageId": "msg-1",
-                    "payload": {"text": "hello"},
-                },
-                "recentMessages": [_text_message("msg-1", 1, "USER", "hello")],
-                "recentEvents": [],
-            }
-        )
-
-        instruction = build_system_instruction(request)
-
-        self.assertNotIn("Knowledge binding:", instruction)
-        self.assertNotIn("For factual questions about enterprises, products", instruction)
-
-    def test_should_apply_memory_window_and_truncate_shared_state_view(self) -> None:
-        request = AgentTurnRequest.model_validate(
-            {
-                "sessionId": "session-1",
-                "replyMessageId": "session-message-reply-1",
-                "assistantId": "assistant-1",
-                "assistantReleaseVersion": "2026.04.19",
-                "currentOwner": {
-                    "agentId": "agent-a",
-                    "name": "Agent A",
-                    "role": "support",
-                    "responsibility": "help the customer",
-                    "memoryWindowSize": 2,
-                    "allowedActions": ["REPLY"],
-                },
-                "availableAgents": [],
-                "availablePlaybooks": [],
-                "sharedState": {f"key{i}": f"value{i}" for i in range(10)},
-                "trigger": {
-                    "triggerType": "USER_MESSAGE",
-                    "eventId": "evt-5",
-                    "triggerMessageId": "msg-5",
-                    "payload": {"text": "latest"},
-                },
-                "recentMessages": [_text_message(f"msg-{index}", index, "USER", f"msg-{index}") for index in range(1, 6)],
-                "recentEvents": [],
-            }
-        )
-
-        runtime_messages = build_initial_runtime_messages(request)
-
-        shared_state_message = next(
-            message for message in runtime_messages if message.privacy_source == "shared_state_slice"
-        )
-        shared_state_payload = json.loads(shared_state_message.content.split(":\n", 1)[1])
-        self.assertTrue(shared_state_payload["truncated"])
-        self.assertEqual([message.kind for message in runtime_messages[0:2]], ["user_turn", "user_turn"])
-        self.assertEqual([message.content for message in runtime_messages[0:2]], ["msg-3", "msg-4"])
-        self.assertEqual(runtime_messages[2].privacy_source, "shared_state_slice")
-
-    def test_should_render_recent_events_as_native_messages(self) -> None:
-        request = AgentTurnRequest.model_validate(
-            {
-                "sessionId": "session-1",
-                "replyMessageId": "session-message-reply-1",
-                "assistantId": "assistant-1",
-                "assistantReleaseVersion": "2026.04.19",
-                "currentOwner": {
-                    "agentId": "agent-a",
-                    "name": "Agent A",
-                    "role": "support",
-                    "responsibility": "help the customer",
-                    "allowedActions": ["REPLY"],
-                },
-                "availableAgents": [],
-                "availablePlaybooks": [],
-                "sharedState": {},
-                "trigger": {
-                    "triggerType": "PLAYBOOK_COMPLETED",
-                    "eventId": "evt-4",
-                    "payload": {"playbookRunId": "run-1", "status": "SUCCEEDED"},
-                },
-                "recentMessages": [
-                    _text_message("msg-1", 1, "USER", "我想退款"),
-                    _text_message("msg-2", 2, "ASSISTANT", "我来帮你处理"),
-                ],
-                "recentEvents": [
-                    {
-                        "eventId": "evt-3",
-                        "sessionId": "session-1",
-                        "sequence": 3,
-                        "eventType": "PLAYBOOK_STARTED",
-                        "actorType": "AGENT",
-                        "payload": {"runId": "run-1"},
-                    },
-                    {
-                        "eventId": "evt-4",
-                        "sessionId": "session-1",
-                        "sequence": 4,
-                        "eventType": "PLAYBOOK_COMPLETED",
-                        "actorType": "SYSTEM",
-                        "payload": {"playbookRunId": "run-1", "status": "SUCCEEDED"},
-                    },
-                ],
-            }
-        )
-
-        runtime_messages = build_initial_runtime_messages(request)
-
-        self.assertEqual(runtime_messages[0].kind, "user_turn")
-        self.assertEqual(runtime_messages[0].content, "我想退款")
-        self.assertEqual(runtime_messages[1].kind, "assistant_turn")
-        self.assertEqual(runtime_messages[1].content, "我来帮你处理")
-        self.assertEqual(runtime_messages[2].kind, "system_event")
-        self.assertIn("PLAYBOOK_STARTED", runtime_messages[2].content)
-        self.assertEqual(runtime_messages[3].privacy_source, "shared_state_slice")
-        self.assertEqual(runtime_messages[-1].kind, "system_event")
-        self.assertTrue(runtime_messages[-1].content.startswith("Session trigger event:"))
-        self.assertIn('"triggerType": "PLAYBOOK_COMPLETED"', runtime_messages[-1].content)
-        self.assertIn('"status": "SUCCEEDED"', runtime_messages[-1].content)
-        self.assertEqual(
-            1,
-            sum(1 for message in runtime_messages if '"triggerType": "PLAYBOOK_COMPLETED"' in message.content),
-        )
+if __name__ == "__main__":
+    unittest.main()

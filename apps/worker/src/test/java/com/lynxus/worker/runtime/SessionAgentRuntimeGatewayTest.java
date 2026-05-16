@@ -33,7 +33,7 @@ class SessionAgentRuntimeGatewayTest {
         AgentTurnStreamFrame frame = new ObjectMapper().readValue(customerDraftDeltaFrame(), AgentTurnStreamFrame.class);
 
         ReplyBlockDeltaPayload payload = assertInstanceOf(ReplyBlockDeltaPayload.class, frame.payload());
-        assertEquals("session-message-reply-1", payload.messageId());
+        assertEquals("session-message-reply-1", payload.replyMessageId());
         assertEquals("hello", payload.delta());
     }
 
@@ -88,7 +88,7 @@ class SessionAgentRuntimeGatewayTest {
             assertEquals(1.0, meterRegistry.get("lynxus.runtime_stream.missing_final_outcome").counter().count());
             org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"kind\":\"ERROR\"");
             org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"code\":\"MISSING_FINAL_OUTCOME\"");
-            org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"messageId\":\"session-message-reply-1\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"replyMessageId\":\"session-message-reply-1\"");
             org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"stage\":\"FINAL_OUTCOME_BUILD\"");
         } finally {
             server.stop(0);
@@ -261,7 +261,7 @@ class SessionAgentRuntimeGatewayTest {
             org.assertj.core.api.Assertions.assertThat(relayedLines.get(0)).contains("\"kind\":\"TURN_STARTED\"");
             org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"kind\":\"ERROR\"");
             org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"code\":\"INVALID_FINAL_OUTCOME\"");
-            org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"messageId\":\"session-message-reply-1\"");
+            org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"replyMessageId\":\"session-message-reply-1\"");
             org.assertj.core.api.Assertions.assertThat(relayedLines.get(1)).contains("\"frameId\":\"exec-1:3\"");
         } finally {
             server.stop(0);
@@ -499,9 +499,10 @@ class SessionAgentRuntimeGatewayTest {
             Map.of(),
             null,
             false,
-            new SessionTrigger(SessionTriggerType.USER_MESSAGE, "event-1", null, Map.of()),
+            new SessionTrigger(SessionTriggerType.USER_MESSAGE, "turn-1", null, Map.of()),
             List.of(),
-            List.of()
+            List.of(),
+            false
         );
     }
 
@@ -511,7 +512,7 @@ class SessionAgentRuntimeGatewayTest {
                 + "\"turnId\":\"turn-1\",\"turnExecutionId\":\"exec-1\",\"ownerAgentId\":\"agent-1\","
                 + "\"ownershipEpoch\":1,\"seq\":1,\"kind\":\"TURN_STARTED\",\"visibility\":\"OPERATOR\","
                 + "\"occurredAt\":\"2026-05-03T00:00:00Z\","
-                + "\"payload\":{\"messageId\":\"session-message-reply-1\",\"triggerType\":\"USER_MESSAGE\"}}"
+                + "\"payload\":{\"replyMessageId\":\"session-message-reply-1\",\"triggerType\":\"USER_MESSAGE\",\"inputMessageCount\":1}}"
         ).formatted(AgentTurnStreamFrame.PROTOCOL);
     }
 
@@ -519,9 +520,9 @@ class SessionAgentRuntimeGatewayTest {
         return finalOutcomeFrame(seq, includeOutcome, "session-message-reply-1");
     }
 
-    private static String finalOutcomeFrame(long seq, boolean includeOutcome, String messageId) {
+    private static String finalOutcomeFrame(long seq, boolean includeOutcome, String replyMessageId) {
         String payload = includeOutcome
-            ? "\"payload\":{\"messageId\":\"%s\",\"outcome\":{\"success\":false,\"failureReason\":\"done\",\"llmUsage\":[]}}".formatted(messageId)
+            ? "\"payload\":{\"replyMessageId\":\"%s\",\"outcome\":{\"success\":false,\"failureReason\":\"done\",\"llmUsage\":[]}}".formatted(replyMessageId)
             : "\"payload\":{}";
         return (
             "{\"protocol\":\"%s\",\"frameId\":\"exec-1:%d\",\"streamId\":\"stream-1\",\"sessionId\":\"session-1\","
@@ -541,7 +542,7 @@ class SessionAgentRuntimeGatewayTest {
                 + "\"turnId\":\"turn-1\",\"turnExecutionId\":\"exec-1\",\"ownerAgentId\":\"agent-1\","
                 + "\"ownershipEpoch\":1,\"seq\":1,\"kind\":\"REPLY_BLOCK_DELTA\",\"visibility\":\"CUSTOMER\","
                 + "\"occurredAt\":\"2026-05-03T00:00:01Z\","
-                + "\"payload\":{\"messageId\":\"session-message-reply-1\",\"blockId\":\"block-1\",\"blockType\":\"TEXT\",\"delta\":\"%s\"}}"
+                + "\"payload\":{\"replyMessageId\":\"session-message-reply-1\",\"blockId\":\"block-1\",\"blockType\":\"TEXT\",\"delta\":\"%s\"}}"
         ).formatted(AgentTurnStreamFrame.PROTOCOL, delta);
     }
 

@@ -159,7 +159,11 @@ public final class SessionContracts {
 
     public enum SessionTriggerType {
         USER_MESSAGE,
-        PLAYBOOK_COMPLETED
+        HUMAN_RESUME,
+        EXTERNAL_CALLBACK,
+        HUMAN_OPERATOR_REPLY,
+        PLAYBOOK_COMPLETED,
+        SYSTEM_OWNER_WAKEUP
     }
 
     public enum LlmUsageSourceType {
@@ -817,7 +821,11 @@ public final class SessionContracts {
         ErrorPayload {
     }
 
-    public record TurnStartedPayload(String messageId, SessionTriggerType triggerType) implements AgentTurnStreamPayload, AgentTurnTransientPayload {
+    public record TurnStartedPayload(
+        String replyMessageId,
+        SessionTriggerType triggerType,
+        int inputMessageCount
+    ) implements AgentTurnStreamPayload, AgentTurnTransientPayload {
     }
 
     public record ModelStartedPayload(String modelRoundId) implements AgentTurnStreamPayload, AgentTurnTransientPayload {
@@ -842,25 +850,25 @@ public final class SessionContracts {
     }
 
     public record ReplyBlockDeltaPayload(
-        String messageId,
+        String replyMessageId,
         String blockId,
         SessionMessageBlockType blockType,
         String delta
     ) implements AgentTurnStreamPayload, AgentTurnTransientPayload {
     }
 
-    public record ReplyBlockCompletedPayload(String messageId, String blockId, Object block) implements AgentTurnStreamPayload, AgentTurnTransientPayload {
+    public record ReplyBlockCompletedPayload(String replyMessageId, String blockId, Object block) implements AgentTurnStreamPayload, AgentTurnTransientPayload {
     }
 
-    public record FinalOutcomePayload(String messageId, AgentTurnExecutionOutcome outcome) implements AgentTurnStreamPayload {
+    public record FinalOutcomePayload(String replyMessageId, AgentTurnExecutionOutcome outcome) implements AgentTurnStreamPayload {
     }
 
-    public record TurnCompletedPayload(String messageId, TurnCompletionStatus status) implements AgentTurnTransientPayload {
+    public record TurnCompletedPayload(String replyMessageId, TurnCompletionStatus status) implements AgentTurnTransientPayload {
     }
 
     public record ErrorPayload(
         String code,
-        String messageId,
+        String replyMessageId,
         String message,
         StreamErrorStage stage,
         boolean retryable,
@@ -991,8 +999,11 @@ public final class SessionContracts {
     private static void validatePayloadContent(Object payload) {
         switch (payload) {
             case TurnStartedPayload turnStarted -> {
-                requirePayloadText(turnStarted.messageId(), "payload.messageId");
+                requirePayloadText(turnStarted.replyMessageId(), "payload.replyMessageId");
                 requirePayloadValue(turnStarted.triggerType(), "payload.triggerType");
+                if (turnStarted.inputMessageCount() < 0) {
+                    throw new IllegalArgumentException("payload.inputMessageCount must be non-negative");
+                }
             }
             case ModelStartedPayload modelStarted -> requirePayloadText(modelStarted.modelRoundId(), "payload.modelRoundId");
             case ModelCompletedPayload modelCompleted -> {
@@ -1012,7 +1023,7 @@ public final class SessionContracts {
                 requirePayloadValue(toolCompleted.status(), "payload.status");
             }
             case ReplyBlockDeltaPayload replyBlockDelta -> {
-                requirePayloadText(replyBlockDelta.messageId(), "payload.messageId");
+                requirePayloadText(replyBlockDelta.replyMessageId(), "payload.replyMessageId");
                 requirePayloadText(replyBlockDelta.blockId(), "payload.blockId");
                 if (replyBlockDelta.blockType() != SessionMessageBlockType.TEXT) {
                     throw new IllegalArgumentException("payload.blockType must be TEXT");
@@ -1020,21 +1031,21 @@ public final class SessionContracts {
                 requirePayloadNonEmptyString(replyBlockDelta.delta(), "payload.delta");
             }
             case ReplyBlockCompletedPayload replyBlockCompleted -> {
-                requirePayloadText(replyBlockCompleted.messageId(), "payload.messageId");
+                requirePayloadText(replyBlockCompleted.replyMessageId(), "payload.replyMessageId");
                 requirePayloadText(replyBlockCompleted.blockId(), "payload.blockId");
                 requirePayloadValue(replyBlockCompleted.block(), "payload.block");
             }
             case FinalOutcomePayload finalOutcome -> {
-                requirePayloadText(finalOutcome.messageId(), "payload.messageId");
+                requirePayloadText(finalOutcome.replyMessageId(), "payload.replyMessageId");
                 requirePayloadValue(finalOutcome.outcome(), "payload.outcome");
             }
             case TurnCompletedPayload turnCompleted -> {
-                requirePayloadText(turnCompleted.messageId(), "payload.messageId");
+                requirePayloadText(turnCompleted.replyMessageId(), "payload.replyMessageId");
                 requirePayloadValue(turnCompleted.status(), "payload.status");
             }
             case ErrorPayload errorPayload -> {
                 requirePayloadText(errorPayload.code(), "payload.code");
-                requirePayloadText(errorPayload.messageId(), "payload.messageId");
+                requirePayloadText(errorPayload.replyMessageId(), "payload.replyMessageId");
                 requirePayloadText(errorPayload.message(), "payload.message");
                 requirePayloadValue(errorPayload.stage(), "payload.stage");
             }
@@ -1067,10 +1078,16 @@ public final class SessionContracts {
         Map<String, Object> source = immutableObjectMap(payload);
         return switch (kind) {
             case TURN_STARTED -> {
-                requireMapFields(kind, source, Set.of("messageId", "triggerType"), Set.of("messageId", "triggerType"));
+                requireMapFields(
+                    kind,
+                    source,
+                    Set.of("replyMessageId", "triggerType", "inputMessageCount"),
+                    Set.of("replyMessageId", "triggerType", "inputMessageCount")
+                );
                 yield new TurnStartedPayload(
-                    requiredString(source, "messageId"),
-                    requiredEnum(source, "triggerType", SessionTriggerType.class)
+                    requiredString(source, "replyMessageId"),
+                    requiredEnum(source, "triggerType", SessionTriggerType.class),
+                    requiredInteger(source, "inputMessageCount")
                 );
             }
             case MODEL_STARTED -> {
@@ -1117,11 +1134,11 @@ public final class SessionContracts {
                 requireMapFields(
                     kind,
                     source,
-                    Set.of("messageId", "blockId", "blockType", "delta"),
-                    Set.of("messageId", "blockId", "blockType", "delta")
+                    Set.of("replyMessageId", "blockId", "blockType", "delta"),
+                    Set.of("replyMessageId", "blockId", "blockType", "delta")
                 );
                 yield new ReplyBlockDeltaPayload(
-                    requiredString(source, "messageId"),
+                    requiredString(source, "replyMessageId"),
                     requiredString(source, "blockId"),
                     requiredEnum(source, "blockType", SessionMessageBlockType.class),
                     requiredNonEmptyString(source, "delta")
@@ -1131,33 +1148,33 @@ public final class SessionContracts {
                 requireMapFields(
                     kind,
                     source,
-                    Set.of("messageId", "blockId", "block"),
-                    Set.of("messageId", "blockId", "block")
+                    Set.of("replyMessageId", "blockId", "block"),
+                    Set.of("replyMessageId", "blockId", "block")
                 );
                 yield new ReplyBlockCompletedPayload(
-                    requiredString(source, "messageId"),
+                    requiredString(source, "replyMessageId"),
                     requiredString(source, "blockId"),
                     requiredValue(source, "block")
                 );
             }
             case FINAL_OUTCOME -> {
-                requireMapFields(kind, source, Set.of("messageId", "outcome"), Set.of("messageId", "outcome"));
+                requireMapFields(kind, source, Set.of("replyMessageId", "outcome"), Set.of("replyMessageId", "outcome"));
                 Object outcome = requiredValue(source, "outcome");
                 if (!(outcome instanceof AgentTurnExecutionOutcome typedOutcome)) {
                     throw new IllegalArgumentException("FINAL_OUTCOME payload.outcome must be AgentTurnExecutionOutcome");
                 }
-                yield new FinalOutcomePayload(requiredString(source, "messageId"), typedOutcome);
+                yield new FinalOutcomePayload(requiredString(source, "replyMessageId"), typedOutcome);
             }
             case ERROR -> {
                 requireMapFields(
                     kind,
                     source,
-                    Set.of("code", "messageId", "message", "stage", "retryable"),
-                    Set.of("code", "messageId", "message", "stage", "retryable", "details")
+                    Set.of("code", "replyMessageId", "message", "stage", "retryable"),
+                    Set.of("code", "replyMessageId", "message", "stage", "retryable", "details")
                 );
                 yield new ErrorPayload(
                     requiredString(source, "code"),
-                    requiredString(source, "messageId"),
+                    requiredString(source, "replyMessageId"),
                     requiredString(source, "message"),
                     requiredEnum(source, "stage", StreamErrorStage.class),
                     requiredBoolean(source, "retryable"),
@@ -1177,10 +1194,16 @@ public final class SessionContracts {
         Map<String, Object> source = immutableObjectMap(payload);
         return switch (kind) {
             case TURN_STARTED -> {
-                requireMapFields(kind, source, Set.of("messageId", "triggerType"), Set.of("messageId", "triggerType"));
+                requireMapFields(
+                    kind,
+                    source,
+                    Set.of("replyMessageId", "triggerType", "inputMessageCount"),
+                    Set.of("replyMessageId", "triggerType", "inputMessageCount")
+                );
                 yield new TurnStartedPayload(
-                    requiredString(source, "messageId"),
-                    requiredEnum(source, "triggerType", SessionTriggerType.class)
+                    requiredString(source, "replyMessageId"),
+                    requiredEnum(source, "triggerType", SessionTriggerType.class),
+                    requiredInteger(source, "inputMessageCount")
                 );
             }
             case MODEL_STARTED -> {
@@ -1227,11 +1250,11 @@ public final class SessionContracts {
                 requireMapFields(
                     kind,
                     source,
-                    Set.of("messageId", "blockId", "blockType", "delta"),
-                    Set.of("messageId", "blockId", "blockType", "delta")
+                    Set.of("replyMessageId", "blockId", "blockType", "delta"),
+                    Set.of("replyMessageId", "blockId", "blockType", "delta")
                 );
                 yield new ReplyBlockDeltaPayload(
-                    requiredString(source, "messageId"),
+                    requiredString(source, "replyMessageId"),
                     requiredString(source, "blockId"),
                     requiredEnum(source, "blockType", SessionMessageBlockType.class),
                     requiredNonEmptyString(source, "delta")
@@ -1241,19 +1264,19 @@ public final class SessionContracts {
                 requireMapFields(
                     kind,
                     source,
-                    Set.of("messageId", "blockId", "block"),
-                    Set.of("messageId", "blockId", "block")
+                    Set.of("replyMessageId", "blockId", "block"),
+                    Set.of("replyMessageId", "blockId", "block")
                 );
                 yield new ReplyBlockCompletedPayload(
-                    requiredString(source, "messageId"),
+                    requiredString(source, "replyMessageId"),
                     requiredString(source, "blockId"),
                     requiredValue(source, "block")
                 );
             }
             case TURN_COMPLETED -> {
-                requireMapFields(kind, source, Set.of("messageId", "status"), Set.of("messageId", "status"));
+                requireMapFields(kind, source, Set.of("replyMessageId", "status"), Set.of("replyMessageId", "status"));
                 yield new TurnCompletedPayload(
-                    requiredString(source, "messageId"),
+                    requiredString(source, "replyMessageId"),
                     requiredEnum(source, "status", TurnCompletionStatus.class)
                 );
             }
@@ -1261,12 +1284,12 @@ public final class SessionContracts {
                 requireMapFields(
                     kind,
                     source,
-                    Set.of("code", "messageId", "message", "stage", "retryable"),
-                    Set.of("code", "messageId", "message", "stage", "retryable", "details")
+                    Set.of("code", "replyMessageId", "message", "stage", "retryable"),
+                    Set.of("code", "replyMessageId", "message", "stage", "retryable", "details")
                 );
                 yield new ErrorPayload(
                     requiredString(source, "code"),
-                    requiredString(source, "messageId"),
+                    requiredString(source, "replyMessageId"),
                     requiredString(source, "message"),
                     requiredEnum(source, "stage", StreamErrorStage.class),
                     requiredBoolean(source, "retryable"),
@@ -1287,8 +1310,8 @@ public final class SessionContracts {
                 kind,
                 payload,
                 TurnStartedPayload.class,
-                Set.of("messageId", "triggerType"),
-                Set.of("messageId", "triggerType")
+                Set.of("replyMessageId", "triggerType", "inputMessageCount"),
+                Set.of("replyMessageId", "triggerType", "inputMessageCount")
             );
             case MODEL_STARTED -> readPayload(
                 context,
@@ -1327,32 +1350,32 @@ public final class SessionContracts {
                 kind,
                 payload,
                 ReplyBlockDeltaPayload.class,
-                Set.of("messageId", "blockId", "blockType", "delta"),
-                Set.of("messageId", "blockId", "blockType", "delta")
+                Set.of("replyMessageId", "blockId", "blockType", "delta"),
+                Set.of("replyMessageId", "blockId", "blockType", "delta")
             );
             case REPLY_BLOCK_COMPLETED -> readPayload(
                 context,
                 kind,
                 payload,
                 ReplyBlockCompletedPayload.class,
-                Set.of("messageId", "blockId", "block"),
-                Set.of("messageId", "blockId", "block")
+                Set.of("replyMessageId", "blockId", "block"),
+                Set.of("replyMessageId", "blockId", "block")
             );
             case FINAL_OUTCOME -> readPayload(
                 context,
                 kind,
                 payload,
                 FinalOutcomePayload.class,
-                Set.of("messageId", "outcome"),
-                Set.of("messageId", "outcome")
+                Set.of("replyMessageId", "outcome"),
+                Set.of("replyMessageId", "outcome")
             );
             case ERROR -> readPayload(
                 context,
                 kind,
                 payload,
                 ErrorPayload.class,
-                Set.of("code", "messageId", "message", "stage", "retryable"),
-                Set.of("code", "messageId", "message", "stage", "retryable", "details")
+                Set.of("code", "replyMessageId", "message", "stage", "retryable"),
+                Set.of("code", "replyMessageId", "message", "stage", "retryable", "details")
             );
         };
     }
@@ -1368,8 +1391,8 @@ public final class SessionContracts {
                 kind,
                 payload,
                 TurnStartedPayload.class,
-                Set.of("messageId", "triggerType"),
-                Set.of("messageId", "triggerType")
+                Set.of("replyMessageId", "triggerType", "inputMessageCount"),
+                Set.of("replyMessageId", "triggerType", "inputMessageCount")
             );
             case MODEL_STARTED -> readPayload(
                 context,
@@ -1408,32 +1431,32 @@ public final class SessionContracts {
                 kind,
                 payload,
                 ReplyBlockDeltaPayload.class,
-                Set.of("messageId", "blockId", "blockType", "delta"),
-                Set.of("messageId", "blockId", "blockType", "delta")
+                Set.of("replyMessageId", "blockId", "blockType", "delta"),
+                Set.of("replyMessageId", "blockId", "blockType", "delta")
             );
             case REPLY_BLOCK_COMPLETED -> readPayload(
                 context,
                 kind,
                 payload,
                 ReplyBlockCompletedPayload.class,
-                Set.of("messageId", "blockId", "block"),
-                Set.of("messageId", "blockId", "block")
+                Set.of("replyMessageId", "blockId", "block"),
+                Set.of("replyMessageId", "blockId", "block")
             );
             case TURN_COMPLETED -> readPayload(
                 context,
                 kind,
                 payload,
                 TurnCompletedPayload.class,
-                Set.of("messageId", "status"),
-                Set.of("messageId", "status")
+                Set.of("replyMessageId", "status"),
+                Set.of("replyMessageId", "status")
             );
             case ERROR -> readPayload(
                 context,
                 kind,
                 payload,
                 ErrorPayload.class,
-                Set.of("code", "messageId", "message", "stage", "retryable"),
-                Set.of("code", "messageId", "message", "stage", "retryable", "details")
+                Set.of("code", "replyMessageId", "message", "stage", "retryable"),
+                Set.of("code", "replyMessageId", "message", "stage", "retryable", "details")
             );
         };
     }
@@ -1582,6 +1605,17 @@ public final class SessionContracts {
             return bool;
         }
         throw new IllegalArgumentException(field + " must be a boolean");
+    }
+
+    private static int requiredInteger(Map<String, Object> payload, String field) {
+        Object value = requiredValue(payload, field);
+        if (value instanceof Number number) {
+            int result = number.intValue();
+            if (result >= 0) {
+                return result;
+            }
+        }
+        throw new IllegalArgumentException(field + " must be a non-negative integer");
     }
 
     private static <T extends Enum<T>> T requiredEnum(Map<String, Object> payload, String field, Class<T> enumType) {
@@ -1855,6 +1889,14 @@ public final class SessionContracts {
         }
     }
 
+    public record UserTurnAcceptedResult(
+        String sessionId,
+        String turnId,
+        boolean idempotent,
+        String reason
+    ) {
+    }
+
     public record UserMessage(
         String messageId,
         String customerId,
@@ -2006,6 +2048,9 @@ public final class SessionContracts {
 
     public record HumanResumeSignal(
         String sessionId,
+        String turnId,
+        String turnDedupKey,
+        String sourceEventId,
         String playbookRunId,
         String operatorId,
         Map<String, Object> payload
@@ -2017,6 +2062,9 @@ public final class SessionContracts {
 
     public record ExternalCallbackSignal(
         String sessionId,
+        String turnId,
+        String turnDedupKey,
+        String sourceEventId,
         String playbookRunId,
         Map<String, Object> payload
     ) {
@@ -2027,6 +2075,9 @@ public final class SessionContracts {
 
     public record HumanOperatorReplySignal(
         String sessionId,
+        String turnId,
+        String turnDedupKey,
+        String sourceEventId,
         String operatorId,
         SessionMessageInput message,
         Map<String, Object> payload

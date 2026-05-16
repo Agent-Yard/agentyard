@@ -1,6 +1,7 @@
 package com.lynxus.platform.session;
 
 import com.lynxus.contracts.session.SessionContracts.StreamVisibility;
+import com.lynxus.contracts.session.SessionContracts.SendSessionTurnRequest;
 import com.lynxus.platform.auth.AuthModels.Role;
 import com.lynxus.platform.auth.CurrentUserResolver;
 import com.lynxus.platform.auth.RequireRuntimeAccess;
@@ -81,9 +82,12 @@ public class SessionRuntimeController {
         return ApiResponse.ok(sessionRuntimeService.getPrivacyMappingSummary(sessionId));
     }
 
-    @PostMapping("/messages")
-    public ApiResponse<?> sendMessage(@RequestBody SendSessionMessageRequest request) {
-        return ApiResponse.ok(sessionRuntimeService.sendMessage(request));
+    @PostMapping("/turns")
+    public ApiResponse<?> sendTurn(
+        @RequestBody SendSessionTurnRequest request,
+        @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
+    ) {
+        return ApiResponse.ok(sessionRuntimeService.sendTurn(request, idempotencyKey));
     }
 
     @PostMapping("/sessions/{sessionId}/human-resume")

@@ -2,7 +2,7 @@
 
 ## Current State
 
-- Current phase/task: Phase 2 Task 4 - Replace Public Send Message With Send Turn And Trusted Import Turn
+- Current phase/task: Phase 3 Task 8 - Replace Channel Message Event With Inbound Turn
 - Main role: coordinate subagent development/review cycles, maintain this ledger, run integration acceptance.
 - Development mode: one focused development subagent followed by one independent review subagent per task.
 - Source documents read:
@@ -33,7 +33,18 @@
 - Phase 1 Task 1 development completed and reviewed: `019e3156-5a9d-7711-8c0e-d23c24f3d27d` (Godel), `019e3162-b92a-7132-a0b8-517fd67505fa` (Euler). Both agents closed.
 - Phase 1 Task 2 development completed and reviewed: `019e3167-6a8a-7822-a4d2-f63183a4357b` (Singer), `019e316f-01be-7e33-bfea-978838fe1e33` (Tesla). Both agents closed.
 - Phase 1 Task 3 development completed and reviewed: `019e3172-81d1-74f1-b08c-09e120876e64` (Sagan), `019e317c-1da1-7ca1-bbfa-dc78f3597100` (Bacon). Both agents closed.
-- Phase 1 Foundation checkpoint passed in main. Preparing Phase 2 Task 4 after Phase 1 commit.
+- Phase 1 Foundation checkpoint passed and committed: `0727cbaa feat: add session turn persistence foundation`.
+- Phase 2 Task 4 development completed: `019e3182-4808-7632-ab99-4475ca336c5f` (Ampere).
+- Phase 2 Task 4 review failed: `019e3195-15a9-70f1-b0eb-81d2eab5fe91` (Aquinas), agent closed.
+- Phase 2 Task 4 development completed and reviewed after one fix loop: `019e3182-4808-7632-ab99-4475ca336c5f` (Ampere), `019e3195-15a9-70f1-b0eb-81d2eab5fe91` (Aquinas), `019e319f-fdaf-7642-8543-51b23d534dea` (Pasteur). Agents closed.
+- Phase 2 Task 5 development completed: `019e31a3-d4b4-75e3-8711-e63eb25c1827` (Dewey).
+- Phase 2 Task 5 review failed: `019e31b2-fbf2-78f2-95e3-91a534272e34` (Dirac), agent closed.
+- Phase 2 Task 5 development completed and reviewed after one fix loop: `019e31a3-d4b4-75e3-8711-e63eb25c1827` (Dewey), `019e31b2-fbf2-78f2-95e3-91a534272e34` (Dirac), `019e31bb-5319-7682-b038-448a3b71b971` (Leibniz). Agents closed.
+- Phase 2 Task 6 development completed and reviewed after one fix loop: `019e31be-a811-7750-82cd-dbfd4486c4e0` (Fermat), `019e31cd-67c8-7712-9dfd-bae0107000dc` (Meitner), replacement re-review `019e32fa-79a6-7053-9a29-7e3c6d2d75a5` (Boyle). Agents closed.
+- Phase 2 Task 7 development completed: `019e3300-f4f3-7040-94c4-d5447623f5e9` (Arendt).
+- Phase 2 Task 7 review failed: `019e331c-f8c0-7733-9d9b-74ef863d9558` (Wegener), agent closed.
+- Phase 2 Task 7 development completed and reviewed after one fix loop: `019e3300-f4f3-7040-94c4-d5447623f5e9` (Arendt), `019e331c-f8c0-7733-9d9b-74ef863d9558` (Wegener), `019e3327-3f0e-7a62-851a-f7f262c93be7` (Jason). Agents closed.
+- Phase 2 Runtime Core checkpoint passed in main. Preparing Phase 3 Task 8 after Phase 2 commit.
 
 ## Execution Plan Status
 
@@ -41,12 +52,12 @@
 - Phase 1 Task 2 - Add Session Turn Persistence Schema: passed review
 - Phase 1 Task 3 - Implement API-Owned Session Store, Unified Append And Turn Store: passed review
 - Foundation checkpoint: passed
-- Phase 2 Task 4 - Replace Public Send Message With Send Turn And Trusted Import Turn: pending development
-- Phase 2 Task 5 - Add Idempotent Workflow UserTurn Update: pending
-- Phase 2 Task 6 - Add Platform Turn Allocation For No-External-Input Flows: pending
-- Phase 2 Task 7 - Generate Context Entries And Migrate Agent Runtime To Delta Transcript: pending
-- Runtime Core checkpoint: pending
-- Phase 3 Task 8 - Replace Channel Message Event With Inbound Turn: pending
+- Phase 2 Task 4 - Replace Public Send Message With Send Turn And Trusted Import Turn: passed review
+- Phase 2 Task 5 - Add Idempotent Workflow UserTurn Update: passed review
+- Phase 2 Task 6 - Add Platform Turn Allocation For No-External-Input Flows: passed review
+- Phase 2 Task 7 - Generate Context Entries And Migrate Agent Runtime To Delta Transcript: passed review
+- Runtime Core checkpoint: passed
+- Phase 3 Task 8 - Replace Channel Message Event With Inbound Turn: pending development
 - Phase 3 Task 9 - Fix Channel Outbound Scope: pending
 - Phase 3 Task 10 - Migrate Web Runtime Client And UI: pending
 - Entry Points checkpoint: pending
@@ -60,6 +71,10 @@
 ## Documentation Questions / Potential Conflicts
 
 - None currently blocking.
+
+## Active Review Findings
+
+- None currently open.
 
 ## Cross-Phase Follow-Ups
 
@@ -116,3 +131,132 @@
   - `./gradlew :packages:persistence-jvm:verifyJooqGenerated :apps:channel-gateway:verifyJooqGenerated` passed.
   - `git diff --check` passed.
   - Old direct `appendMessage` call sites identified in `SessionRuntimeRepository`, `SessionRuntimeStore`, worker persistence activities/workflow, and API tests; migrate/remove in Tasks 5 and 11.
+- Phase 2 Task 4 development reported:
+  - `./gradlew :apps:api:test --tests '*SessionRuntimeServiceTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*MultiInstanceApiIntegrationTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*SessionWorkflowGatewayTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*InternalSessionRuntimeControllerTest*'` passed.
+  - `git diff --check` passed.
+- Phase 2 Task 4 review repeated verification and found implementation blockers:
+  - `./gradlew :apps:api:test --tests '*SessionRuntimeServiceTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*InternalSessionRuntimeControllerTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*MultiInstanceApiIntegrationTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*SessionWorkflowGatewayTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*ApiAuthorizationTest*' --tests '*ApiLogContextFilterTest*'` passed.
+  - `git diff --check` passed.
+- Phase 2 Task 4 fix development reported:
+  - `./gradlew :apps:api:test --tests '*SessionRuntimeServiceTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*MultiInstanceApiIntegrationTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*SessionWorkflowGatewayTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*InternalSessionRuntimeControllerTest*'` passed.
+  - `git diff --check` passed.
+- Phase 2 Task 4 re-review passed:
+  - `./gradlew :apps:api:test --tests '*SessionRuntimeServiceTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*MultiInstanceApiIntegrationTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*InternalSessionRuntimeControllerTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*SessionWorkflowGatewayTest*'` passed.
+  - `git diff --check` passed.
+- Phase 2 Task 5 development reported:
+  - `./gradlew :apps:worker:test --tests '*SessionWorkflowImplTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*SessionWorkflowGatewayTest*'` passed.
+  - `./gradlew :apps:worker:test --tests '*SessionPersistenceActivitiesImplTest*' --tests '*SessionAgentRuntimeGatewayTest*'` passed.
+  - `./gradlew :packages:contracts-jvm:test` passed.
+  - `git diff --check` passed.
+- Phase 2 Task 5 review found blockers:
+  - `./gradlew :apps:worker:test --tests '*SessionWorkflowImplTest*' --rerun-tasks` passed.
+  - `./gradlew :apps:api:test --tests '*SessionWorkflowGatewayTest*' --rerun-tasks` passed.
+  - `./gradlew :apps:worker:test --tests '*SessionPersistenceActivitiesImplTest*' --rerun-tasks` passed.
+  - `./gradlew :apps:worker:test --tests '*SessionAgentRuntimeGatewayTest*'` passed.
+  - `./gradlew :packages:contracts-jvm:test` passed.
+  - `git diff --check` passed.
+- Phase 2 Task 5 fix development reported:
+  - `./gradlew :apps:worker:test --tests '*SessionWorkflowImplTest*'` passed.
+  - `./gradlew :apps:worker:test --tests '*SessionPersistenceActivitiesImplTest*'` passed.
+  - `./gradlew :apps:worker:test --tests '*SessionAgentRuntimeGatewayTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*SessionWorkflowGatewayTest*'` passed.
+  - `./gradlew :packages:contracts-jvm:test` passed.
+  - `git diff --check` passed.
+- Phase 2 Task 5 re-review passed:
+  - `./gradlew :apps:worker:test --tests '*SessionWorkflowImplTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*SessionWorkflowGatewayTest*'` passed.
+  - `./gradlew :apps:worker:test --tests '*SessionPersistenceActivitiesImplTest*'` passed.
+  - `git diff --check` passed.
+- Phase 2 Task 6 development reported:
+  - `./gradlew :apps:worker:test --tests '*SessionWorkflowImplTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*SessionRuntimeServiceTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*SessionWorkflowGatewayTest*'` passed.
+  - `./gradlew :apps:worker:test --tests '*SessionPersistenceActivitiesImplTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*JooqSessionRuntimeRepositoryTest*'` passed.
+  - `./gradlew :packages:contracts-jvm:test` passed.
+  - `git diff --check` passed.
+- Phase 2 Task 6 review found blocker:
+  - `./gradlew :apps:worker:test --tests '*SessionWorkflowImplTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*SessionRuntimeServiceTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*SessionWorkflowGatewayTest*'` passed.
+  - `./gradlew :apps:worker:test --tests '*SessionPersistenceActivitiesImplTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*JooqSessionRuntimeRepositoryTest*'` passed.
+  - `./gradlew :packages:contracts-jvm:test` passed.
+  - `git diff --check` passed.
+- Phase 2 Task 6 fix development reported:
+  - `./gradlew :apps:api:test --tests '*JooqSessionRuntimeRepositoryTest*'` passed.
+  - `./gradlew :apps:worker:test --tests '*SessionPersistenceActivitiesImplTest*'` passed.
+  - `./gradlew :apps:worker:test --tests '*SessionWorkflowImplTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*SessionRuntimeServiceTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*SessionWorkflowGatewayTest*'` passed.
+  - `./gradlew :packages:contracts-jvm:test` passed.
+  - `git diff --check` passed.
+- Phase 2 Task 6 replacement re-review passed:
+  - `./gradlew :apps:api:test --tests '*JooqSessionRuntimeRepositoryTest*'` passed.
+  - `./gradlew :apps:worker:test --tests '*SessionPersistenceActivitiesImplTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*SessionRuntimeServiceTest*'` passed.
+  - `./gradlew :apps:worker:test --tests '*SessionWorkflowImplTest*'` passed.
+  - `git diff --check` passed.
+- Phase 2 Task 7 development reported:
+  - `uv run pytest apps/agent-runtime/tests/test_prompting.py -q` passed.
+  - `uv run pytest apps/agent-runtime/tests/test_transcript_store.py -q` passed.
+  - `uv run pytest apps/agent-runtime/tests/test_agent_turn_streaming.py -q` passed.
+  - `uv run pytest apps/agent-runtime/tests/test_models.py -q` passed.
+  - `./gradlew :apps:worker:test --tests '*SessionAgentRuntimeGatewayTest*'` passed.
+  - `./gradlew :apps:worker:test --tests '*SessionWorkflowImplTest*'` passed.
+  - `./gradlew :apps:worker:test --tests '*SessionPersistenceActivitiesImplTest*'` passed.
+  - `pnpm --filter @lynxus/web build` passed.
+  - Touched-path API/channel/contracts checks passed.
+  - `git diff --check` passed.
+  - Residual risk reported: missing patch history/retention detection is conservative; snapshots generated on bootstrap/provider rebuild/owner switch and patch count/size boundary, but no separate external history-retention detector yet.
+- Phase 2 Task 7 review found blocker:
+  - `uv run pytest apps/agent-runtime/tests/test_prompting.py -q` passed.
+  - `uv run pytest apps/agent-runtime/tests/test_transcript_store.py -q` passed.
+  - `uv run pytest apps/agent-runtime/tests/test_agent_turn_streaming.py -q` passed.
+  - `uv run pytest apps/agent-runtime/tests/test_models.py -q` passed.
+  - `./gradlew :apps:worker:test --tests '*SessionAgentRuntimeGatewayTest*'` passed.
+  - `./gradlew :apps:worker:test --tests '*SessionWorkflowImplTest*'` passed.
+  - `pnpm --filter @lynxus/web build` passed.
+  - `git diff --check` passed.
+- Phase 2 Task 7 fix development reported:
+  - `./gradlew :apps:worker:test --tests '*SessionWorkflowImplTest*'` passed.
+  - `./gradlew :apps:worker:test --tests '*SessionAgentRuntimeGatewayTest*'` passed.
+  - `uv run pytest apps/agent-runtime/tests/test_transcript_store.py -q` passed.
+  - `uv run pytest apps/agent-runtime/tests/test_prompting.py -q` passed.
+  - `uv run pytest apps/agent-runtime/tests/test_agent_turn_streaming.py -q` passed.
+  - `pnpm --filter @lynxus/web build` passed.
+  - `git diff --check` passed.
+- Phase 2 Task 7 re-review passed:
+  - `./gradlew :apps:worker:test --tests '*SessionWorkflowImplTest*'` passed.
+  - `./gradlew :apps:worker:test --tests '*SessionAgentRuntimeGatewayTest*'` passed.
+  - `uv run pytest apps/agent-runtime/tests/test_transcript_store.py -q` passed.
+  - `uv run pytest apps/agent-runtime/tests/test_prompting.py apps/agent-runtime/tests/test_agent_turn_streaming.py apps/agent-runtime/tests/test_models.py -q` passed.
+  - `git diff --check` passed.
+- Runtime Core checkpoint run in main:
+  - `./gradlew :apps:api:test --tests '*SessionRuntimeServiceTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*MultiInstanceApiIntegrationTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*InternalSessionRuntimeControllerTest*' --tests '*SessionWorkflowGatewayTest*'` initially failed because NDJSON fixture still used old stream payload; fixed test fixture to use `replyMessageId` and `inputMessageCount`, then passed.
+  - `./gradlew :apps:worker:test --tests '*SessionWorkflowImplTest*'` passed.
+  - `./gradlew :apps:worker:test --tests '*SessionPersistenceActivitiesImplTest*' --tests '*SessionAgentRuntimeGatewayTest*'` passed.
+  - `uv run pytest apps/agent-runtime/tests/test_prompting.py apps/agent-runtime/tests/test_transcript_store.py apps/agent-runtime/tests/test_agent_turn_streaming.py apps/agent-runtime/tests/test_models.py -q` passed.
+  - `pnpm --filter @lynxus/web build` passed.
+  - `./gradlew :packages:contracts-jvm:test` passed.
+  - `./gradlew :apps:api:test --tests '*DefaultSessionChannelActivityRelayTest*' --tests '*SessionRuntimeStreamServiceTest*'` passed.
+  - `./gradlew :apps:channel-gateway:test --tests '*GatewayNativeChannelOutboundFrameDispatcherTest*' --tests '*ChannelOutboundRelayComponentsTest*' --tests '*ChannelOutboundUpstreamRelaySupervisorTest*' --tests '*FeishuGatewayNativeChannelProviderAdapterTest*'` passed.
+  - `./gradlew :apps:worker:test --tests '*SessionAgentRuntimeGatewayTest*'` passed after diagnostic text fix from `payload.messageId` to `payload.replyMessageId`.
+  - `rg "payload\\.messageId|triggerMessageId|recentMessages|recentEvents|recent_messages|recent_events|list_recent_events" ...` shows only agent-runtime negative model tests for forbidden legacy fields.
+  - `git diff --check` passed.

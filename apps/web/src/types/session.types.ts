@@ -54,7 +54,7 @@ export type SessionStreamErrorEvent = ContractsSessionStreamErrorEvent;
 export interface RuntimeDraftMessage {
   sessionId: string;
   turnId: string;
-  messageId: string;
+  replyMessageId: string;
   text: string;
   failed: boolean;
   updatedAt: string;

@@ -58,7 +58,7 @@ class ChannelContractsTest {
             Instant.parse("2026-05-05T00:00:00Z"),
             "profile-1:exec-1:2:DRAFT_UPDATE",
             Map.of(
-                "messageId", "session-message-reply-1",
+                "replyMessageId", "session-message-reply-1",
                 "blockId", "reply-block-1",
                 "blockType", "TEXT",
                 "delta", delta

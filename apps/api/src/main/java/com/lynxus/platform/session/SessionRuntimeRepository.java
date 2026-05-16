@@ -16,6 +16,13 @@ public interface SessionRuntimeRepository {
 
     Optional<SessionRuntimeSessionDto> findActiveSession(String customerId, String assistantId);
 
+    Optional<SessionRuntimeSessionDto> findActiveChannelSession(
+        String channelProfileId,
+        String externalConversationId,
+        String customerId,
+        String assistantId
+    );
+
     SessionRuntimeStore.SessionRuntimeSessionData createOrReuseActiveSession(
         SessionRuntimeStore.SessionRuntimeSessionData session
     );
@@ -32,7 +39,28 @@ public interface SessionRuntimeRepository {
 
     SessionRuntimeStore.SessionRuntimeTurnData createOrReuseTurn(SessionRuntimeStore.SessionRuntimeTurnData turn);
 
+    SessionRuntimeStore.SessionRuntimeTurnData allocatePlatformTurn(
+        String sessionId,
+        String triggerType,
+        String dedupKey,
+        String sourceEventId,
+        java.util.Map<String, Object> metadata
+    );
+
     List<SessionMessage> listMessages(String sessionId);
+
+    List<SessionMessage> listMessagesForTurn(String sessionId, String turnId);
+
+    SessionRuntimeStore.SessionRuntimeTurnData updateTurnState(
+        String sessionId,
+        String turnId,
+        String status,
+        List<String> acceptedInputMessageIds,
+        List<String> duplicateExternalMessageIds,
+        List<String> messageIds,
+        String temporalUpdateId,
+        java.time.Instant completedAt
+    );
 
     List<SessionRuntimeStore.ChannelOutboundFinalMessageData> listChannelOutboundFinalMessages(
         String channelProfileId,

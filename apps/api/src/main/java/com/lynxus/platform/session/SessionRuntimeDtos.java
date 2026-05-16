@@ -31,6 +31,7 @@ public final class SessionRuntimeDtos {
 
     public record HumanResumeRequest(
         String playbookRunId,
+        String resumeEventId,
         Map<String, Object> payload
     ) {
         public HumanResumeRequest {
@@ -48,6 +49,7 @@ public final class SessionRuntimeDtos {
     }
 
     public record HumanOperatorReplyRequest(
+        String operatorActionId,
         SessionMessageInput message,
         Map<String, Object> payload
     ) {
@@ -60,6 +62,9 @@ public final class SessionRuntimeDtos {
         String id,
         String scenarioId,
         String title,
+        String entryScope,
+        String channelProfileId,
+        String externalConversationId,
         String customerId,
         String assistantId,
         String assistantName,
@@ -73,6 +78,7 @@ public final class SessionRuntimeDtos {
         boolean pendingOwnerReevaluation,
         boolean draining,
         Map<String, Object> sharedState,
+        long sharedStateRevision,
         Instant idleDeadline,
         Instant createdAt,
         Instant updatedAt,
@@ -81,7 +87,62 @@ public final class SessionRuntimeDtos {
         long latestEventSequence
     ) {
         public SessionRuntimeSessionDto {
+            entryScope = entryScope == null || entryScope.isBlank() ? "WEB" : entryScope;
             sharedState = immutableObjectMap(sharedState);
+        }
+
+        public SessionRuntimeSessionDto(
+            String id,
+            String scenarioId,
+            String title,
+            String customerId,
+            String assistantId,
+            String assistantName,
+            String assistantReleaseVersion,
+            String status,
+            String primaryAgentId,
+            String currentOwnerAgentId,
+            String activePlaybookRunId,
+            boolean agentTurnActive,
+            boolean sessionHumanHandoffActive,
+            boolean pendingOwnerReevaluation,
+            boolean draining,
+            Map<String, Object> sharedState,
+            Instant idleDeadline,
+            Instant createdAt,
+            Instant updatedAt,
+            Instant endedAt,
+            long latestMessageSequence,
+            long latestEventSequence
+        ) {
+            this(
+                id,
+                scenarioId,
+                title,
+                "WEB",
+                null,
+                null,
+                customerId,
+                assistantId,
+                assistantName,
+                assistantReleaseVersion,
+                status,
+                primaryAgentId,
+                currentOwnerAgentId,
+                activePlaybookRunId,
+                agentTurnActive,
+                sessionHumanHandoffActive,
+                pendingOwnerReevaluation,
+                draining,
+                sharedState,
+                0L,
+                idleDeadline,
+                createdAt,
+                updatedAt,
+                endedAt,
+                latestMessageSequence,
+                latestEventSequence
+            );
         }
     }
 

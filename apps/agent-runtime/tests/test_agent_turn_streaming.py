@@ -64,6 +64,7 @@ class FakeTranscriptStore:
         self.committed_entries_by_context = committed_entries_by_context or {}
         self.begin_contexts: list[object] = []
         self.load_contexts: list[object] = []
+        self.reset_contexts: list[tuple[object, str]] = []
         self.pending_entries: list[tuple[object, list[TranscriptEntry]]] = []
         self.committed_successes: list[tuple[object, AgentTurnExecutionOutcome, list[TranscriptEntry]]] = []
         self.failed: list[tuple[object, str]] = []
@@ -93,6 +94,9 @@ class FakeTranscriptStore:
             [],
         )
         return [dict(entry.content_json) for entry in entries if entry.provider_type == provider_type]
+
+    def reset_committed_provider_transcript_for_bootstrap(self, context, provider_type: str = "OPENAI_COMPATIBLE"):  # noqa: ANN001
+        self.reset_contexts.append((context, provider_type))
 
     def append_pending_entries(self, context, entries):  # noqa: ANN001
         self.pending_entries.append((context, list(entries)))
@@ -317,7 +321,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertFalse(final_frames[0]["payload"]["outcome"]["success"])
         self.assertIn("configured streaming model provider", final_frames[0]["payload"]["outcome"]["failureReason"])
         self.assertEqual("PROVIDER_STREAM_UNAVAILABLE", frames[-2]["payload"]["code"])
-        self.assertEqual("session-message-reply-1", frames[-2]["payload"]["messageId"])
+        self.assertEqual("session-message-reply-1", frames[-2]["payload"]["replyMessageId"])
         self.assertEqual("PROVIDER_STREAM", frames[-2]["payload"]["stage"])
         self.assertFalse(frames[-2]["payload"]["retryable"])
         self.assertEqual([], [frame for frame in frames if frame["kind"] == "REPLY_BLOCK_DELTA"])
@@ -358,9 +362,9 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual([], [frame for frame in frames if frame["kind"] == "REPLY_BLOCK_SNAPSHOT"])
         delta_frames = [frame for frame in frames if frame["kind"] == "REPLY_BLOCK_DELTA"]
         self.assertEqual(["已查到", "订单。"], [frame["payload"]["delta"] for frame in delta_frames])
-        self.assertTrue(all(frame["payload"]["messageId"] == "session-message-reply-1" for frame in delta_frames))
+        self.assertTrue(all(frame["payload"]["replyMessageId"] == "session-message-reply-1" for frame in delta_frames))
         completed_frames = [frame for frame in frames if frame["kind"] == "REPLY_BLOCK_COMPLETED"]
-        self.assertEqual(["session-message-reply-1"], [frame["payload"]["messageId"] for frame in completed_frames])
+        self.assertEqual(["session-message-reply-1"], [frame["payload"]["replyMessageId"] for frame in completed_frames])
         final_frame = frames[-1]
         self.assertEqual("FINAL_OUTCOME", final_frame["kind"])
         outcome = final_frame["payload"]["outcome"]
@@ -702,8 +706,9 @@ class AgentTurnStreamingTest(unittest.TestCase):
             any("You are the current session owner agent." in str(message.get("content") or "") for message in appended_messages)
         )
         self.assertFalse(any("Capabilities:" in str(message.get("content") or "") for message in appended_messages))
-        self.assertEqual(["user"], [message["role"] for message in appended_messages])
-        self.assertEqual("帮我发起退款", appended_messages[0]["content"])
+        self.assertEqual(["user", "user"], [message["role"] for message in appended_messages])
+        self.assertIn("SHARED_STATE_SNAPSHOT", appended_messages[0]["content"])
+        self.assertEqual("帮我发起退款", appended_messages[1]["content"])
         self.assertNotIn("Visible sharedState slice", "\n".join(str(message.get("content") or "") for message in appended_messages))
         self.assertNotIn("Session trigger:", "\n".join(str(message.get("content") or "") for message in appended_messages))
         replayed_assistant = messages[0]
@@ -713,8 +718,41 @@ class AgentTurnStreamingTest(unittest.TestCase):
         replayed_tool = messages[1]
         self.assertEqual("call-previous", replayed_tool["tool_call_id"])
         committed_entries = transcript_store.committed_successes[0][2]
-        self.assertEqual(["user", "assistant"], [entry.role for entry in committed_entries])
-        self.assertEqual(appended_messages[:1], [entry.content_json for entry in committed_entries[:1]])
+        self.assertEqual(["user", "user", "assistant"], [entry.role for entry in committed_entries])
+        self.assertEqual(appended_messages[:2], [entry.content_json for entry in committed_entries[:2]])
+
+    def test_should_reset_committed_transcript_before_bootstrap_replay(self) -> None:
+        request = request_payload()
+        request["turnId"] = "turn-bootstrap"
+        request["turnExecutionId"] = "exec-bootstrap"
+        request["transcriptBootstrap"] = True
+        transcript_store = FakeTranscriptStore()
+
+        def fake_stream(_settings, payload, *, idle_timeout_seconds):  # noqa: ANN001
+            return iter(
+                [
+                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta="bootstrapped"),
+                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
+                    OpenAiCompatibleStreamEvent(event_type="done"),
+                ]
+            )
+
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
+            with agent_runtime_client(transcript_store) as client:
+                response = client.post(
+                    "/agent-turns/execute-stream",
+                    json=request,
+                    headers={"Authorization": "Bearer test-internal-token"},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(1, len(transcript_store.begin_contexts))
+        self.assertEqual(1, len(transcript_store.reset_contexts))
+        self.assertEqual(1, len(transcript_store.load_contexts))
+        reset_context, reset_provider_type = transcript_store.reset_contexts[0]
+        self.assertEqual("exec-bootstrap", reset_context.turn_execution_id)
+        self.assertEqual("OPENAI_COMPATIBLE", reset_provider_type)
 
     def test_should_not_include_committed_transcript_from_different_owner_or_epoch(self) -> None:
         request = request_payload()
@@ -954,7 +992,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         committed_entries = transcript_store.committed_successes[0][2]
         self.assertEqual(["system", "user", "user"], [entry.role for entry in committed_entries[:3]])
         self.assertTrue(committed_entries[1].content_json["content"].startswith("<system-reminder>"))
-        self.assertIn("Visible sharedState slice", committed_entries[1].content_json["content"])
+        self.assertIn("SHARED_STATE_SNAPSHOT", committed_entries[1].content_json["content"])
         self.assertEqual({"role": "user", "content": "帮我发起退款"}, committed_entries[2].content_json)
         interaction_entries = committed_entries[3:]
         self.assertEqual(["assistant", "tool", "assistant", "tool"], [entry.role for entry in interaction_entries])
@@ -1125,7 +1163,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual(["system", "user", "user", "assistant"], [entry.role for entry in committed_entries])
         self.assertTrue(all(entry.provider_type == "OPENAI_COMPATIBLE" for entry in committed_entries))
         self.assertIn("You are the current session owner agent.", committed_entries[0].content_json["content"])
-        self.assertIn("Visible sharedState slice", committed_entries[1].content_json["content"])
+        self.assertIn("SHARED_STATE_SNAPSHOT", committed_entries[1].content_json["content"])
         self.assertNotIn("Session trigger:", "\n".join(str(entry.content_json.get("content") or "") for entry in committed_entries))
         self.assertEqual({"role": "user", "content": "帮我发起退款"}, committed_entries[2].content_json)
         self.assertEqual({"role": "assistant", "content": "final answer"}, committed_entries[3].content_json)

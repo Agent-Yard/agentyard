@@ -260,10 +260,10 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
             );
         } catch (RuntimeException error) {
             log.warn(
-                "failed to schedule empty Feishu streaming reply card cleanup: channelProfileId={}, sessionId={}, messageId={}",
+                "failed to schedule empty Feishu streaming reply card cleanup: channelProfileId={}, sessionId={}, replyMessageId={}",
                 key.channelProfileId(),
                 key.sessionId(),
-                key.messageId(),
+                key.replyMessageId(),
                 error
             );
         }
@@ -293,10 +293,10 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
             streamingCardStore.delete(state.key());
         } catch (RuntimeException error) {
             log.warn(
-                "failed to delete empty Feishu streaming reply card message: channelProfileId={}, sessionId={}, messageId={}, externalMessageId={}",
+                "failed to delete empty Feishu streaming reply card message: channelProfileId={}, sessionId={}, replyMessageId={}, externalMessageId={}",
                 state.key().channelProfileId(),
                 state.key().sessionId(),
-                state.key().messageId(),
+                state.key().replyMessageId(),
                 state.externalMessageId(),
                 error
             );
@@ -675,7 +675,7 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
             && feishuError.code() == FEISHU_STREAMING_MODE_CLOSED_CODE;
     }
 
-    private record DraftUpdateKey(String channelProfileId, String sessionId, String messageId, String blockId) {
+    private record DraftUpdateKey(String channelProfileId, String sessionId, String replyMessageId, String blockId) {
         private static DraftUpdateKey from(ChannelOutboundFrame frame) {
             if (frame.kind() != ChannelOutboundFrameKind.DRAFT_UPDATE) {
                 return null;
@@ -687,14 +687,14 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
             return new DraftUpdateKey(
                 frame.channelProfileId(),
                 frame.sessionId(),
-                textPayload(frame, "messageId").orElse(null),
+                textPayload(frame, "replyMessageId").orElse(null),
                 textPayload(frame, "blockId").orElse(null)
             );
         }
 
         private DraftUpdateKey {
-            if (messageId == null || blockId == null) {
-                throw new IllegalArgumentException("messageId and blockId are required for Feishu draft update coalescing");
+            if (replyMessageId == null || blockId == null) {
+                throw new IllegalArgumentException("replyMessageId and blockId are required for Feishu draft update coalescing");
             }
         }
     }

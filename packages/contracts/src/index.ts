@@ -517,25 +517,25 @@ export interface ChannelProviderOutboundCapability {
 }
 
 export interface ChannelOutboundTypingPayload {
-  messageId: string;
+  replyMessageId: string;
 }
 
 export interface ChannelOutboundDraftUpdatePayload {
-  messageId: string;
+  replyMessageId: string;
   blockId: string;
   blockType: string;
   delta?: string | null;
 }
 
 export interface ChannelOutboundDraftCompletePayload {
-  messageId: string;
+  replyMessageId: string;
   blockId: string;
   blockType: string;
   block: Record<string, unknown>;
 }
 
 export interface ChannelOutboundDraftDiscardPayload {
-  messageId: string;
+  replyMessageId: string;
   reason?: string | null;
 }
 
@@ -884,7 +884,7 @@ export interface SessionReplyDraftEvent {
   occurredAt: string;
   sessionId: string;
   turnId: string;
-  messageId: string;
+  replyMessageId: string;
   operation: 'DELTA' | 'COMPLETED' | 'DISCARD';
   blockId: string;
   blockType: SessionMessageBlockType;
@@ -1529,8 +1529,9 @@ export interface AgentTurnTransientFrame<K extends AgentTurnTransientFrameKind, 
 }
 
 export interface TurnStartedPayload {
-  messageId: string;
+  replyMessageId: string;
   triggerType: SessionTriggerType;
+  inputMessageCount: number;
 }
 
 export interface ModelStartedPayload {
@@ -1562,31 +1563,31 @@ export interface ToolCompletedPayload {
 }
 
 export interface ReplyBlockDeltaPayload {
-  messageId: string;
+  replyMessageId: string;
   blockId: string;
   blockType: 'TEXT';
   delta: string;
 }
 
 export interface ReplyBlockCompletedPayload {
-  messageId: string;
+  replyMessageId: string;
   blockId: string;
   block: SessionMessageBlock;
 }
 
 export interface FinalOutcomePayload {
-  messageId: string;
+  replyMessageId: string;
   outcome: AgentTurnExecutionOutcome;
 }
 
 export interface TurnCompletedPayload {
-  messageId: string;
+  replyMessageId: string;
   status: TurnCompletionStatus;
 }
 
 export interface ErrorPayload {
   code: string;
-  messageId: string;
+  replyMessageId: string;
   message: string;
   stage: StreamErrorStage;
   retryable: boolean;

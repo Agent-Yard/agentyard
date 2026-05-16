@@ -15,6 +15,7 @@ from lynxus_agent_runtime.transcript_store import (
     OwnerContextSequenceRecord,
     PostgresTranscriptStore,
     TranscriptCachePayload,
+    TranscriptBootstrapResetRecord,
     TranscriptEntry,
     TranscriptEntryRecord,
     TranscriptStoreSettings,
@@ -251,6 +252,127 @@ class TranscriptStoreSerializationTest(unittest.TestCase):
 
         self.assertEqual([], cache.puts)
         self.assertEqual([], cache.deletes)
+
+    def test_bootstrap_reset_should_delete_committed_provider_entries_once_and_record_marker(self) -> None:
+        context = _turn_context()
+        cache = _FakeTranscriptCache()
+        store = _sqlite_transcript_store(transcript_cache=cache)
+        openai_entry = TranscriptEntry(
+            role="assistant",
+            provider_type="OPENAI_COMPATIBLE",
+            content_json={"role": "assistant", "content": "old-openai"},
+            model_round_id="round-1",
+            seq=1,
+        )
+        anthropic_entry = TranscriptEntry(
+            role="assistant",
+            provider_type="ANTHROPIC",
+            content_json={"role": "assistant", "content": "old-anthropic"},
+            model_round_id="round-1",
+            seq=1,
+        )
+
+        store.begin_execution(context)
+        with store.session_factory() as session:
+            session.add(_transcript_entry_record(context, openai_entry, 1, "COMMITTED"))
+            session.add(_transcript_entry_record(context, anthropic_entry, 2, "COMMITTED"))
+            session.commit()
+
+        store.reset_committed_provider_transcript_for_bootstrap(context, "OPENAI_COMPATIBLE")
+
+        with store.session_factory() as session:
+            entries = session.query(TranscriptEntryRecord).order_by(TranscriptEntryRecord.transcript_seq.asc()).all()
+            marker = session.get(
+                TranscriptBootstrapResetRecord,
+                {"turn_execution_id": context.turn_execution_id, "provider_type": "OPENAI_COMPATIBLE"},
+            )
+
+        self.assertEqual(["ANTHROPIC"], [entry.provider_type for entry in entries])
+        self.assertIsNotNone(marker)
+        self.assertEqual("COMPLETED", marker.status)
+        self.assertEqual(context.session_id, marker.session_id)
+        self.assertEqual(context.owner_agent_id, marker.owner_agent_id)
+        self.assertEqual(context.ownership_epoch, marker.ownership_epoch)
+        self.assertEqual(context.execution_attempt_id, marker.execution_attempt_id)
+        self.assertEqual(1, marker.deleted_committed_entry_count)
+        self.assertIsNotNone(marker.reset_completed_at)
+        self.assertEqual([transcript_cache_key(context)], cache.deletes)
+
+    def test_bootstrap_reset_retry_should_not_delete_rebuilt_committed_entries(self) -> None:
+        context = _turn_context()
+        cache = _FakeTranscriptCache()
+        store = _sqlite_transcript_store(transcript_cache=cache)
+        old_entry = TranscriptEntry(
+            role="assistant",
+            provider_type="OPENAI_COMPATIBLE",
+            content_json={"role": "assistant", "content": "old"},
+            model_round_id="round-1",
+            seq=1,
+        )
+        rebuilt_entry = TranscriptEntry(
+            role="assistant",
+            provider_type="OPENAI_COMPATIBLE",
+            content_json={"role": "assistant", "content": "rebuilt"},
+            model_round_id="round-2",
+            seq=1,
+        )
+
+        store.begin_execution(context)
+        with store.session_factory() as session:
+            session.add(_transcript_entry_record(context, old_entry, 1, "COMMITTED"))
+            session.commit()
+        store.reset_committed_provider_transcript_for_bootstrap(context, "OPENAI_COMPATIBLE")
+        with store.session_factory() as session:
+            session.add(_transcript_entry_record(context, rebuilt_entry, 2, "COMMITTED"))
+            session.commit()
+
+        store.reset_committed_provider_transcript_for_bootstrap(context, "OPENAI_COMPATIBLE")
+
+        with store.session_factory() as session:
+            entries = session.query(TranscriptEntryRecord).all()
+            marker = session.get(
+                TranscriptBootstrapResetRecord,
+                {"turn_execution_id": context.turn_execution_id, "provider_type": "OPENAI_COMPATIBLE"},
+            )
+
+        self.assertEqual(["rebuilt"], [entry.content_json["content"] for entry in entries])
+        self.assertEqual(1, marker.deleted_committed_entry_count)
+        self.assertEqual([transcript_cache_key(context), transcript_cache_key(context)], cache.deletes)
+
+    def test_bootstrap_reset_should_be_forbidden_after_successful_execution(self) -> None:
+        context = _turn_context()
+        store = _sqlite_transcript_store()
+        store.begin_execution(context)
+        store.commit_success(
+            context,
+            AgentTurnExecutionOutcome(
+                success=True,
+                result=AgentTurnResult(decision=AgentDecision(action="NO_OP")),
+            ),
+            [],
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "successful turn execution cannot reset"):
+            store.reset_committed_provider_transcript_for_bootstrap(context, "OPENAI_COMPATIBLE")
+
+    def test_mark_failed_should_preserve_completed_bootstrap_reset_marker(self) -> None:
+        context = _turn_context()
+        store = _sqlite_transcript_store()
+        store.begin_execution(context)
+        store.reset_committed_provider_transcript_for_bootstrap(context, "OPENAI_COMPATIBLE")
+
+        store.mark_failed(context, "provider failed")
+
+        with store.session_factory() as session:
+            marker = session.get(
+                TranscriptBootstrapResetRecord,
+                {"turn_execution_id": context.turn_execution_id, "provider_type": "OPENAI_COMPATIBLE"},
+            )
+            turn = session.get(TurnExecutionRecord, context.turn_execution_id)
+
+        self.assertIsNotNone(marker)
+        self.assertEqual("COMPLETED", marker.status)
+        self.assertEqual("FAILED", turn.status)
 
     def test_should_set_retention_expiry_on_turn_execution_and_transcript_entries(self) -> None:
         store = _sqlite_transcript_store()

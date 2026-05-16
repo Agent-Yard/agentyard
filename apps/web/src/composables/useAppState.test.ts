@@ -5,11 +5,11 @@ import { api } from '../services/api';
 import type { CatalogSummary, RuntimeDraftMessage, SessionRuntimeDetail, UserSession } from '../types';
 import type { PageKey } from '../config/navigation';
 
-function runtimeDraft(messageId: string, sessionId = 'session-1'): RuntimeDraftMessage {
+function runtimeDraft(replyMessageId: string, sessionId = 'session-1'): RuntimeDraftMessage {
   return {
     sessionId,
-    turnId: `turn-${messageId}`,
-    messageId,
+    turnId: `turn-${replyMessageId}`,
+    replyMessageId,
     text: 'streaming',
     failed: false,
     updatedAt: '2026-05-03T00:00:02Z',
@@ -114,7 +114,7 @@ describe('useAppState runtime draft lifecycle', () => {
     ]);
   });
 
-  it('removes only the draft whose messageId has arrived in durable session detail', () => {
+  it('removes only the draft whose replyMessageId has arrived in durable session detail', () => {
     const finalizedDraft = runtimeDraft('session-message-reply-1');
     const liveDraft = runtimeDraft('session-message-reply-2');
     const otherSessionDraft = runtimeDraft('session-message-reply-1', 'session-2');

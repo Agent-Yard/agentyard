@@ -37,6 +37,16 @@ public class JooqSessionRuntimeRepository implements SessionRuntimeRepository {
     }
 
     @Override
+    public Optional<SessionRuntimeSessionDto> findActiveChannelSession(
+        String channelProfileId,
+        String externalConversationId,
+        String customerId,
+        String assistantId
+    ) {
+        return store.findActiveChannelSession(channelProfileId, externalConversationId, customerId, assistantId).map(this::toDto);
+    }
+
+    @Override
     public SessionRuntimeStore.SessionRuntimeSessionData createOrReuseActiveSession(
         SessionRuntimeStore.SessionRuntimeSessionData session
     ) {
@@ -61,6 +71,9 @@ public class JooqSessionRuntimeRepository implements SessionRuntimeRepository {
             session.id(),
             session.scenarioId(),
             session.title(),
+            session.entryScope(),
+            session.channelProfileId(),
+            session.externalConversationId(),
             session.customerId(),
             session.assistantId(),
             session.assistantName(),
@@ -74,6 +87,8 @@ public class JooqSessionRuntimeRepository implements SessionRuntimeRepository {
             session.pendingOwnerReevaluation(),
             session.draining(),
             session.sharedState(),
+            Math.max(1L, session.latestMessageSequence() + 1L),
+            session.sharedStateRevision(),
             session.idleDeadline(),
             session.createdAt(),
             session.updatedAt(),
@@ -104,8 +119,47 @@ public class JooqSessionRuntimeRepository implements SessionRuntimeRepository {
     }
 
     @Override
+    public SessionRuntimeStore.SessionRuntimeTurnData allocatePlatformTurn(
+        String sessionId,
+        String triggerType,
+        String dedupKey,
+        String sourceEventId,
+        java.util.Map<String, Object> metadata
+    ) {
+        return store.allocatePlatformTurn(sessionId, triggerType, dedupKey, sourceEventId, metadata);
+    }
+
+    @Override
+    public SessionRuntimeStore.SessionRuntimeTurnData updateTurnState(
+        String sessionId,
+        String turnId,
+        String status,
+        List<String> acceptedInputMessageIds,
+        List<String> duplicateExternalMessageIds,
+        List<String> messageIds,
+        String temporalUpdateId,
+        java.time.Instant completedAt
+    ) {
+        return store.updateTurnState(
+            sessionId,
+            turnId,
+            status,
+            acceptedInputMessageIds,
+            duplicateExternalMessageIds,
+            messageIds,
+            temporalUpdateId,
+            completedAt
+        );
+    }
+
+    @Override
     public List<SessionMessage> listMessages(String sessionId) {
         return store.listMessages(sessionId);
+    }
+
+    @Override
+    public List<SessionMessage> listMessagesForTurn(String sessionId, String turnId) {
+        return store.listMessagesForTurn(sessionId, turnId);
     }
 
     @Override
@@ -166,6 +220,9 @@ public class JooqSessionRuntimeRepository implements SessionRuntimeRepository {
             session.id(),
             session.scenarioId(),
             session.title(),
+            session.entryScope(),
+            session.channelProfileId(),
+            session.externalConversationId(),
             session.customerId(),
             session.assistantId(),
             session.assistantName(),
@@ -179,6 +236,7 @@ public class JooqSessionRuntimeRepository implements SessionRuntimeRepository {
             session.pendingOwnerReevaluation(),
             session.draining(),
             session.sharedState(),
+            session.sharedStateRevision(),
             session.idleDeadline(),
             session.createdAt(),
             session.updatedAt(),

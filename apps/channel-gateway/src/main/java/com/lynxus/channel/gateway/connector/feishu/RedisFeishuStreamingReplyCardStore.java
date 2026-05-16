@@ -69,7 +69,7 @@ final class RedisFeishuStreamingReplyCardStore implements FeishuStreamingReplyCa
         return keyspace.channelFeishuStreamingReplyCardState(
             key.channelProfileId(),
             hash(key.sessionId()),
-            hash(key.messageId())
+            hash(key.replyMessageId())
         );
     }
 

@@ -3,24 +3,17 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from .models import AgentTurnRequest
+from .models import AgentRuntimeContextEntry, AgentTurnRequest
 from .openai_adapter import render_openai_runtime_message, render_system_reminder
 from .privacy_contracts import PrivacyStrategy
 from .semantic import SemanticMessage
 from .tooling import resolve_knowledge_binding
 
-DEFAULT_EVENT_WINDOW = 8
-MAX_EVENT_WINDOW = 20
-DEFAULT_SHARED_STATE_KEY_WINDOW = 8
-DEFAULT_RUNTIME_BYTE_BUDGET = 6000
 ASSISTANT_HISTORY_PRIVACY_SOURCE = "assistant_history_message:v1"
 
 
 def build_turn_input_messages(request: AgentTurnRequest) -> list[SemanticMessage]:
-    return [
-        *_active_playbook_context_messages(request),
-        _trigger_message(request),
-    ]
+    return _delta_runtime_messages(request)
 
 
 def build_system_instruction(request: AgentTurnRequest) -> str:
@@ -56,60 +49,7 @@ def build_system_instruction(request: AgentTurnRequest) -> str:
 
 
 def build_initial_runtime_messages(request: AgentTurnRequest) -> list[SemanticMessage]:
-    event_window = _event_window_size(request)
-    runtime_messages: list[SemanticMessage] = []
-    runtime_messages.extend(_recent_message_messages(request, event_window))
-    runtime_messages.extend(_recent_event_messages(request, event_window))
-    runtime_messages.append(_shared_state_context_message(request, event_window))
-    runtime_messages.extend(_active_playbook_context_messages(request))
-    runtime_messages.append(_trigger_message(request))
-    return runtime_messages
-
-
-def _shared_state_context_message(request: AgentTurnRequest, event_window: int) -> SemanticMessage:
-    runtime_budget = DEFAULT_RUNTIME_BYTE_BUDGET
-    shared_state_view = _shared_state_view(request.sharedState, runtime_budget // 2, event_window)
-    shared_state_privacy_strategy = (
-        PrivacyStrategy.SKIP if not request.sharedState else PrivacyStrategy.RULES_THEN_PRIVATE_LLM
-    )
-    return SemanticMessage(
-        kind="system_event",
-        content="Visible sharedState slice (use get_shared_state tool if you need more keys):\n"
-        + json.dumps(shared_state_view, ensure_ascii=False),
-        privacy_strategy=shared_state_privacy_strategy,
-        privacy_source="shared_state_slice",
-    )
-
-
-def _active_playbook_context_messages(request: AgentTurnRequest) -> list[SemanticMessage]:
-    if request.activePlaybook is None:
-        return []
-    return [
-        SemanticMessage(
-            kind="system_event",
-            content="Active playbook summary:\n"
-            + json.dumps(request.activePlaybook.model_dump(mode="json"), ensure_ascii=False),
-            privacy_source=f"active_playbook:{request.activePlaybook.runId}",
-        )
-    ]
-
-
-def _trigger_message(request: AgentTurnRequest) -> SemanticMessage:
-    if request.trigger.triggerType == "USER_MESSAGE":
-        trigger_message = _find_trigger_message(request)
-        return _message_to_runtime_message(trigger_message)
-    return SemanticMessage(
-        kind="system_event",
-        content="Session trigger event:\n"
-        + json.dumps(
-            {
-                "triggerType": request.trigger.triggerType,
-                "payload": request.trigger.payload,
-            },
-            ensure_ascii=False,
-        ),
-        privacy_source=f"trigger:{request.trigger.eventId or request.trigger.triggerType}",
-    )
+    return _delta_runtime_messages(request)
 
 
 def render_openai_streaming_messages(
@@ -137,29 +77,55 @@ def loaded_skill_runtime_message(loaded_skills: list[dict[str, str]]) -> Semanti
     )
 
 
-def _recent_event_messages(request: AgentTurnRequest, event_window: int) -> list[SemanticMessage]:
-    history_events = [event for event in request.recentEvents if event.eventId != request.trigger.eventId]
-    return [_event_to_runtime_message(event) for event in history_events[-event_window:]]
+def _delta_runtime_messages(request: AgentTurnRequest) -> list[SemanticMessage]:
+    runtime_messages: list[SemanticMessage] = []
+    runtime_messages.extend(_context_entry_messages(request.contextEntries))
+    runtime_messages.extend(_message_to_runtime_message(message) for message in sorted(request.messages, key=lambda item: item.sequence))
+    if not runtime_messages and request.trigger.triggerType != "USER_MESSAGE":
+        runtime_messages.append(_trigger_context_message(request))
+    return runtime_messages
 
 
-def _recent_message_messages(request: AgentTurnRequest, event_window: int) -> list[SemanticMessage]:
-    trigger_message_id = request.trigger.triggerMessageId
-    history_messages = [message for message in request.recentMessages if message.messageId != trigger_message_id]
-    return [_message_to_runtime_message(message) for message in history_messages[-event_window:]]
+def _context_entry_messages(entries: list[AgentRuntimeContextEntry]) -> list[SemanticMessage]:
+    return [
+        _context_entry_to_runtime_message(entry)
+        for entry in sorted(entries, key=lambda item: (item.occurredAt or "", item.revision, item.entryId))
+    ]
 
 
-def _event_to_runtime_message(event: Any) -> SemanticMessage:
+def _context_entry_to_runtime_message(entry: AgentRuntimeContextEntry) -> SemanticMessage:
     return SemanticMessage(
         kind="system_event",
-        content=f"Session event {event.eventType}:\n"
+        content=f"Session context entry {entry.entryType}:\n"
         + json.dumps(
             {
-                "actorType": event.actorType,
-                "payload": event.payload,
+                "entryId": entry.entryId,
+                "entryType": entry.entryType,
+                "revision": entry.revision,
+                "occurredAt": entry.occurredAt,
+                "data": entry.data,
             },
             ensure_ascii=False,
         ),
-        privacy_source=f"event:{event.eventId}:{event.sequence}",
+        privacy_strategy=PrivacyStrategy.RULES_THEN_PRIVATE_LLM,
+        privacy_source=f"context_entry:{entry.entryType}:{entry.entryId}:{entry.revision}",
+    )
+
+
+def _trigger_context_message(request: AgentTurnRequest) -> SemanticMessage:
+    return SemanticMessage(
+        kind="system_event",
+        content="Session trigger context:\n"
+        + json.dumps(
+            {
+                "triggerType": request.trigger.triggerType,
+                "turnId": request.trigger.turnId,
+                "eventId": request.trigger.eventId,
+                "payload": request.trigger.payload,
+            },
+            ensure_ascii=False,
+        ),
+        privacy_source=f"trigger:{request.trigger.eventId or request.trigger.turnId or request.trigger.triggerType}",
     )
 
 
@@ -179,15 +145,6 @@ def _message_to_runtime_message(message: Any) -> SemanticMessage:
         content=_message_to_semantic_text(message),
         privacy_source=privacy_source,
     )
-
-
-def _find_trigger_message(request: AgentTurnRequest) -> Any:
-    if not request.trigger.triggerMessageId:
-        raise ValueError("USER_MESSAGE trigger requires triggerMessageId")
-    for message in request.recentMessages:
-        if message.messageId == request.trigger.triggerMessageId:
-            return message
-    raise ValueError(f"USER_MESSAGE triggerMessageId does not resolve: {request.trigger.triggerMessageId}")
 
 
 def _message_to_semantic_text(message: Any) -> str:
@@ -240,32 +197,3 @@ def _block_field(block: Any, field_name: str) -> Any:
 def _block_actions(block: Any) -> list[Any]:
     actions = _block_field(block, "actions") or []
     return [action.model_dump(mode="json") if hasattr(action, "model_dump") else action for action in actions]
-
-
-def _event_window_size(request: AgentTurnRequest) -> int:
-    raw_value = request.currentOwner.memoryWindowSize
-    if raw_value <= 0:
-        return DEFAULT_EVENT_WINDOW
-    return max(1, min(raw_value, MAX_EVENT_WINDOW))
-
-
-def _shared_state_view(shared_state: dict[str, Any], byte_budget: int, key_window: int) -> dict[str, Any]:
-    if not shared_state:
-        return {"sharedState": {}, "truncated": False}
-    visible: dict[str, Any] = {}
-    used_bytes = 0
-    key_limit = max(key_window or DEFAULT_SHARED_STATE_KEY_WINDOW, 1)
-    for key in sorted(shared_state.keys()):
-        candidate = {key: shared_state[key]}
-        candidate_bytes = len(json.dumps(candidate, ensure_ascii=False))
-        if visible and (len(visible) >= key_limit or used_bytes + candidate_bytes > byte_budget):
-            break
-        visible[key] = shared_state[key]
-        used_bytes += candidate_bytes
-    truncated = len(visible) < len(shared_state)
-    return {
-        "sharedState": visible,
-        "truncated": truncated,
-        "visibleKeys": list(visible.keys()),
-        "omittedKeyCount": max(0, len(shared_state) - len(visible)),
-    }

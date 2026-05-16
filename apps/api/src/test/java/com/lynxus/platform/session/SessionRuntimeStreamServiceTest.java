@@ -206,7 +206,7 @@ class SessionRuntimeStreamServiceTest {
                 + "\"turnId\":\"turn-1\",\"turnExecutionId\":\"exec-1\",\"ownerAgentId\":\"agent-1\","
                 + "\"ownershipEpoch\":1,\"seq\":2,\"kind\":\"FINAL_OUTCOME\",\"visibility\":\"INTERNAL\","
                 + "\"occurredAt\":\"2026-05-02T00:00:00Z\","
-                + "\"payload\":{\"messageId\":\"session-message-reply-1\","
+                + "\"payload\":{\"replyMessageId\":\"session-message-reply-1\","
                 + "\"outcome\":{\"success\":false,\"failureReason\":\"done\",\"llmUsage\":[]}}}"
         ).formatted(AgentTurnTransientFrame.PROTOCOL);
 
@@ -234,7 +234,7 @@ class SessionRuntimeStreamServiceTest {
             AgentTurnTransientFrameKind.TURN_STARTED,
             StreamVisibility.OPERATOR,
             Instant.parse("2026-05-02T00:00:00Z"),
-            Map.of("messageId", "session-message-reply-1", "triggerType", "USER_MESSAGE")
+            Map.of("replyMessageId", "session-message-reply-1", "triggerType", "USER_MESSAGE", "inputMessageCount", 1)
         );
 
         assertThrows(ResponseStatusException.class, () -> service.acceptStreamFrame(frame));
@@ -261,7 +261,7 @@ class SessionRuntimeStreamServiceTest {
             AgentTurnTransientFrameKind.TURN_STARTED,
             StreamVisibility.OPERATOR,
             2,
-            Map.of("messageId", "session-message-reply-1", "triggerType", "USER_MESSAGE")
+            Map.of("replyMessageId", "session-message-reply-1", "triggerType", "USER_MESSAGE", "inputMessageCount", 1)
         );
         service.acceptStreamFrame(frame);
 
@@ -289,7 +289,7 @@ class SessionRuntimeStreamServiceTest {
             AgentTurnTransientFrameKind.TURN_STARTED,
             StreamVisibility.OPERATOR,
             2,
-            Map.of("messageId", "session-message-reply-1", "triggerType", "USER_MESSAGE")
+            Map.of("replyMessageId", "session-message-reply-1", "triggerType", "USER_MESSAGE", "inputMessageCount", 1)
         );
         when(frameDeduplicator.claim(frame)).thenReturn(true, false);
         when(replayStore.append(any())).thenReturn(true);
@@ -322,7 +322,7 @@ class SessionRuntimeStreamServiceTest {
             AgentTurnTransientFrameKind.TURN_STARTED,
             StreamVisibility.OPERATOR,
             2,
-            Map.of("messageId", "session-message-reply-1", "triggerType", "USER_MESSAGE")
+            Map.of("replyMessageId", "session-message-reply-1", "triggerType", "USER_MESSAGE", "inputMessageCount", 1)
         )));
 
         verify(replayStore).append(argThat(event -> "SESSION_PROGRESS".equals(event.type())));
@@ -348,7 +348,7 @@ class SessionRuntimeStreamServiceTest {
             AgentTurnTransientFrameKind.TURN_STARTED,
             StreamVisibility.OPERATOR,
             1,
-            Map.of("messageId", "session-message-reply-1", "triggerType", "USER_MESSAGE"),
+            Map.of("replyMessageId", "session-message-reply-1", "triggerType", "USER_MESSAGE", "inputMessageCount", 1),
             Instant.parse("2026-05-02T00:00:00Z")
         ));
         service.acceptStreamFrame(frameAt(
@@ -359,7 +359,7 @@ class SessionRuntimeStreamServiceTest {
             Instant.parse("2026-05-02T00:00:01Z")
         ));
         service.acceptStreamFrame(frameAt(AgentTurnTransientFrameKind.REPLY_BLOCK_DELTA, StreamVisibility.CUSTOMER, 3, Map.of(
-            "messageId",
+            "replyMessageId",
             "session-message-reply-1",
             "blockId",
             "block-1",
@@ -369,7 +369,7 @@ class SessionRuntimeStreamServiceTest {
             "hi"
         ), Instant.parse("2026-05-02T00:00:02Z")));
         service.acceptStreamFrame(frameAt(AgentTurnTransientFrameKind.REPLY_BLOCK_COMPLETED, StreamVisibility.CUSTOMER, 4, Map.of(
-            "messageId",
+            "replyMessageId",
             "session-message-reply-1",
             "blockId",
             "block-1",
@@ -393,7 +393,7 @@ class SessionRuntimeStreamServiceTest {
         service.acceptStreamFrame(frame(AgentTurnTransientFrameKind.ERROR, StreamVisibility.OPERATOR, 5, Map.of(
             "code",
             "PROVIDER_STREAM_MALFORMED",
-            "messageId",
+            "replyMessageId",
             "session-message-reply-1",
             "message",
             "provider stream malformed",
@@ -422,7 +422,7 @@ class SessionRuntimeStreamServiceTest {
         when(replayStore.append(any())).thenReturn(true);
 
         service.acceptStreamFrame(frame(AgentTurnTransientFrameKind.REPLY_BLOCK_DELTA, StreamVisibility.CUSTOMER, 2, Map.of(
-            "messageId",
+            "replyMessageId",
             "session-message-reply-1",
             "blockId",
             "block-1",
@@ -434,7 +434,7 @@ class SessionRuntimeStreamServiceTest {
 
         verify(replayStore).append(argThat(event ->
             "SESSION_REPLY_DRAFT".equals(event.type())
-                && "session-message-reply-1".equals(event.messageId())
+                && "session-message-reply-1".equals(event.replyMessageId())
                 && "hi".equals(event.delta())
         ));
         verify(pubSubBus).publish(eq(keyspace.sseChannelSessionUpdated()), any());
@@ -449,7 +449,7 @@ class SessionRuntimeStreamServiceTest {
         when(replayStore.append(any())).thenReturn(true);
 
         service.acceptStreamFrame(frame(AgentTurnTransientFrameKind.REPLY_BLOCK_DELTA, StreamVisibility.CUSTOMER, 2, Map.of(
-            "messageId",
+            "replyMessageId",
             "session-message-reply-1",
             "blockId",
             "block-1",
@@ -461,7 +461,7 @@ class SessionRuntimeStreamServiceTest {
 
         verify(replayStore).append(argThat(event ->
             "SESSION_REPLY_DRAFT".equals(event.type())
-                && "session-message-reply-1".equals(event.messageId())
+                && "session-message-reply-1".equals(event.replyMessageId())
                 && "\n ".equals(event.delta())
         ));
         verify(pubSubBus).publish(eq(keyspace.sseChannelSessionUpdated()), any());
@@ -498,12 +498,12 @@ class SessionRuntimeStreamServiceTest {
         SessionRuntimeReplayStore replayStore = mock(SessionRuntimeReplayStore.class);
         RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);
         List<Map<String, Object>> sensitivePayloads = List.of(
-            Map.of("messageId", "session-message-reply-1", "blockId", "block-1", "blockType", "TEXT", "delta", "ok", "model", "gpt"),
-            Map.of("messageId", "session-message-reply-1", "blockId", "block-1", "blockType", "TEXT", "delta", "ok", "toolName", "lookup"),
-            Map.of("messageId", "session-message-reply-1", "blockId", "block-1", "blockType", "TEXT", "delta", "ok", "prompt", "raw prompt"),
-            Map.of("messageId", "session-message-reply-1", "blockId", "block-1", "blockType", "TEXT", "delta", "ok", "credential", "vault://secret"),
-            Map.of("messageId", "session-message-reply-1", "blockId", "block-1", "blockType", "TEXT", "delta", "ok", "privacy", Map.of("placeholder", "x")),
-            Map.of("messageId", "session-message-reply-1", "blockId", "block-1", "blockType", "TEXT", "delta", "ok", "system-reminder", "hidden")
+            Map.of("replyMessageId", "session-message-reply-1", "blockId", "block-1", "blockType", "TEXT", "delta", "ok", "model", "gpt"),
+            Map.of("replyMessageId", "session-message-reply-1", "blockId", "block-1", "blockType", "TEXT", "delta", "ok", "toolName", "lookup"),
+            Map.of("replyMessageId", "session-message-reply-1", "blockId", "block-1", "blockType", "TEXT", "delta", "ok", "prompt", "raw prompt"),
+            Map.of("replyMessageId", "session-message-reply-1", "blockId", "block-1", "blockType", "TEXT", "delta", "ok", "credential", "vault://secret"),
+            Map.of("replyMessageId", "session-message-reply-1", "blockId", "block-1", "blockType", "TEXT", "delta", "ok", "privacy", Map.of("placeholder", "x")),
+            Map.of("replyMessageId", "session-message-reply-1", "blockId", "block-1", "blockType", "TEXT", "delta", "ok", "system-reminder", "hidden")
         );
 
         for (int index = 0; index < sensitivePayloads.size(); index += 1) {
@@ -547,7 +547,7 @@ class SessionRuntimeStreamServiceTest {
         when(replayStore.append(any())).thenReturn(true);
 
         service.acceptStreamFrame(frame(AgentTurnTransientFrameKind.REPLY_BLOCK_COMPLETED, StreamVisibility.CUSTOMER, 2, Map.of(
-            "messageId",
+            "replyMessageId",
             "session-message-reply-1",
             "blockId",
             "block-1",
@@ -558,7 +558,7 @@ class SessionRuntimeStreamServiceTest {
         verify(replayStore).append(argThat(event ->
             "SESSION_REPLY_DRAFT".equals(event.type())
                 && StreamVisibility.CUSTOMER == event.visibility()
-                && "session-message-reply-1".equals(event.messageId())
+                && "session-message-reply-1".equals(event.replyMessageId())
                 && "block-1".equals(event.blockId())
                 && "这是一段最终回复。".equals(event.text())
         ));
@@ -576,7 +576,7 @@ class SessionRuntimeStreamServiceTest {
             StreamVisibility.CUSTOMER,
             2,
             Map.of(
-                "messageId",
+                "replyMessageId",
                 "session-message-reply-1",
                 "blockId",
                 "block-1",

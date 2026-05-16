@@ -34,6 +34,8 @@ class FakeLifespanTranscriptStore:
 def request_payload() -> dict:
     return {
         "sessionId": "session-1",
+        "turnId": "turn-1",
+        "turnExecutionId": "turn-1:exec-1",
         "replyMessageId": "session-message-reply-1",
         "assistantId": "assistant-1",
         "assistantReleaseVersion": "2026.04.19",
@@ -147,14 +149,20 @@ def request_payload() -> dict:
         "trigger": {
             "triggerType": "USER_MESSAGE",
             "eventId": "evt-1",
-            "triggerMessageId": "msg-1",
+            "turnId": "turn-1",
             "payload": {"text": "帮我发起退款"},
         },
-        "recentMessages": [
+        "messages": [
             {
                 "messageId": "msg-1",
                 "sessionId": "session-1",
                 "sequence": 1,
+                "turnId": "turn-1",
+                "turnIndex": 0,
+                "producerType": "EXTERNAL",
+                "externalMessageId": None,
+                "clientMessageId": "client-msg-1",
+                "occurredAt": "2026-04-19T00:00:01Z",
                 "role": "USER",
                 "sender": {
                     "senderType": "CUSTOMER",
@@ -168,7 +176,16 @@ def request_payload() -> dict:
                 "updatedAt": "2026-04-19T00:00:01Z",
             }
         ],
-        "recentEvents": [],
+        "contextEntries": [
+            {
+                "entryId": "shared-state-snapshot:session-1:1",
+                "entryType": "SHARED_STATE_SNAPSHOT",
+                "revision": 1,
+                "occurredAt": "2026-04-19T00:00:00Z",
+                "data": {"sharedState": {"knownPreference": "email"}},
+            }
+        ],
+        "transcriptBootstrap": False,
     }
 
 

@@ -139,8 +139,8 @@ final class DefaultSessionChannelActivityRelay implements SessionChannelActivity
         ChannelOutboundFrameKind frameKind
     ) {
         Map<String, Object> payload = new LinkedHashMap<>();
-        if (messageId(frame) != null) {
-            payload.put("messageId", messageId(frame));
+        if (replyMessageId(frame) != null) {
+            payload.put("replyMessageId", replyMessageId(frame));
         }
         String blockId = blockId(frame);
         if (blockId != null) {
@@ -160,7 +160,7 @@ final class DefaultSessionChannelActivityRelay implements SessionChannelActivity
             payload.putIfAbsent("blockType", blockTypeFromBlock(block));
         }
         if (frameKind == ChannelOutboundFrameKind.TYPING_START || frameKind == ChannelOutboundFrameKind.TYPING_STOP) {
-            payload.keySet().retainAll(java.util.Set.of("messageId"));
+            payload.keySet().retainAll(java.util.Set.of("replyMessageId"));
         }
         if (frameKind == ChannelOutboundFrameKind.DRAFT_DISCARD && frame.payload() instanceof ErrorPayload errorPayload) {
             payload.put("reason", errorPayload.code());
@@ -168,21 +168,21 @@ final class DefaultSessionChannelActivityRelay implements SessionChannelActivity
         return Map.copyOf(payload);
     }
 
-    private static String messageId(AgentTurnTransientFrame frame) {
+    private static String replyMessageId(AgentTurnTransientFrame frame) {
         if (frame.payload() instanceof ReplyBlockDeltaPayload payload) {
-            return payload.messageId();
+            return payload.replyMessageId();
         }
         if (frame.payload() instanceof ReplyBlockCompletedPayload payload) {
-            return payload.messageId();
+            return payload.replyMessageId();
         }
         if (frame.payload() instanceof ErrorPayload payload) {
-            return payload.messageId();
+            return payload.replyMessageId();
         }
         if (frame.payload() instanceof TurnStartedPayload payload) {
-            return payload.messageId();
+            return payload.replyMessageId();
         }
         if (frame.payload() instanceof TurnCompletedPayload payload) {
-            return payload.messageId();
+            return payload.replyMessageId();
         }
         return null;
     }

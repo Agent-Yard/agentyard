@@ -1,6 +1,7 @@
 package com.lynxus.platform.session;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -9,6 +10,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.lynxus.contracts.session.SessionContracts.AgentTurnTransientFrame;
+import com.lynxus.contracts.session.SessionContracts.SendSessionTurnResponse;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageDeliveryStatus;
+import com.lynxus.contracts.session.SessionContracts.TrustedImportSessionTurnRequest;
 import com.lynxus.platform.integration.InternalRuntimeAuth;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
@@ -16,6 +20,70 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import tools.jackson.databind.ObjectMapper;
 
 class InternalSessionRuntimeControllerTest {
+    @Test
+    void shouldAcceptTrustedImportTurnJsonWithoutTargetDiscriminator() throws Exception {
+        SessionRuntimeService sessionRuntimeService = mock(SessionRuntimeService.class);
+        when(sessionRuntimeService.importTurn(any(), eq("turn-1"))).thenReturn(new SendSessionTurnResponse(
+            "session-1",
+            "turn-1",
+            SessionMessageDeliveryStatus.ACCEPTED,
+            java.util.List.of("message-1"),
+            java.util.List.of(),
+            java.util.List.of(),
+            null
+        ));
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new InternalSessionRuntimeController(
+            sessionRuntimeService,
+            mock(SessionRuntimeStreamService.class),
+            new InternalRuntimeAuth("internal-token"),
+            new ObjectMapper()
+        )).build();
+
+        mockMvc.perform(post("/api/internal/session-runtime/import-turns")
+                .header("Authorization", "Bearer internal-token")
+                .header("Idempotency-Key", "turn-1")
+                .contentType("application/json")
+                .content("""
+                    {
+                      "target": {
+                        "sessionId": "session-1",
+                        "customerId": "customer-1",
+                        "assistantId": "ast-1"
+                      },
+                      "turnDedupKey": "turn-1",
+                      "importBatchId": "batch-1",
+                      "sourceSystem": "crm",
+                      "messages": [
+                        {
+                          "importMessageId": "import-1",
+                          "occurredAt": "2026-04-01T00:00:00Z",
+                          "role": "ASSISTANT",
+                          "sender": {
+                            "senderType": "AGENT",
+                            "senderId": "agent-1",
+                            "senderName": "Agent"
+                          },
+                          "message": {
+                            "blocks": [
+                              {
+                                "type": "TEXT",
+                                "text": "历史回复"
+                              }
+                            ],
+                            "metadata": {}
+                          },
+                          "metadata": {}
+                        }
+                      ],
+                      "metadata": {}
+                    }
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.sessionId").value("session-1"));
+
+        verify(sessionRuntimeService).importTurn(any(TrustedImportSessionTurnRequest.class), eq("turn-1"));
+    }
+
     @Test
     void shouldIngestTransientFramesFromNdjsonUpload() throws Exception {
         SessionRuntimeStreamService streamService = mock(SessionRuntimeStreamService.class);
@@ -61,7 +129,8 @@ class InternalSessionRuntimeControllerTest {
                 + "\"turnId\":\"%s\",\"turnExecutionId\":\"%s\",\"ownerAgentId\":\"agent-1\","
                 + "\"ownershipEpoch\":1,\"seq\":%d,\"kind\":\"TURN_STARTED\",\"visibility\":\"OPERATOR\","
                 + "\"occurredAt\":\"2026-05-03T00:00:00Z\","
-                + "\"payload\":{\"messageId\":\"session-message-reply-1\",\"triggerType\":\"USER_MESSAGE\"}}"
+                + "\"payload\":{\"replyMessageId\":\"session-message-reply-1\",\"triggerType\":\"USER_MESSAGE\","
+                + "\"inputMessageCount\":1}}"
         ).formatted(AgentTurnTransientFrame.PROTOCOL, turnExecutionId, seq, turnId, turnExecutionId, seq);
     }
 }

@@ -275,22 +275,22 @@ def _context_tool_specs(request: AgentTurnRequest) -> list[RuntimeToolSpec]:
             },
         ),
         _semantic_tool(
-            "list_recent_events",
-            "Read recent session events for additional runtime context.",
+            "list_context_entries",
+            "Read current turn context entries supplied by the workflow.",
             {
                 "type": "object",
                 "properties": {
                     "limit": {"type": "integer", "minimum": 1, "maximum": 20},
-                    "event_types": {"type": "array", "items": {"type": "string"}},
+                    "entry_types": {"type": "array", "items": {"type": "string"}},
                 },
                 "additionalProperties": False,
             },
             {
                 "type": "object",
                 "properties": {
-                    "events": {"type": "array", "items": {"type": "object"}},
+                    "contextEntries": {"type": "array", "items": {"type": "object"}},
                 },
-                "required": ["events"],
+                "required": ["contextEntries"],
                 "additionalProperties": False,
             },
         ),
@@ -405,7 +405,7 @@ def _context_tool_specs(request: AgentTurnRequest) -> list[RuntimeToolSpec]:
         "list_available_agents": _list_available_agents,
         "list_available_playbooks": _list_available_playbooks,
         "get_active_playbook": _get_active_playbook,
-        "list_recent_events": _list_recent_events,
+        "list_context_entries": _list_context_entries,
         "get_shared_state": _get_shared_state,
         _KNOWLEDGE_SEARCH_TOOL: _knowledge_search_context,
         _KNOWLEDGE_READ_TOOL: _knowledge_read_context,
@@ -774,17 +774,18 @@ def _list_available_playbooks(request: AgentTurnRequest, arguments: dict[str, An
     return {"playbooks": playbooks}
 
 
-def _list_recent_events(request: AgentTurnRequest, arguments: dict[str, Any]) -> dict[str, Any]:
+def _list_context_entries(request: AgentTurnRequest, arguments: dict[str, Any]) -> dict[str, Any]:
     raw_limit = arguments.get("limit", 8)
     try:
         limit = max(1, min(int(raw_limit), 20))
     except (TypeError, ValueError):
         limit = 8
-    event_types = {str(item) for item in (arguments.get("event_types") or []) if str(item).strip()}
-    events = request.recentEvents
-    if event_types:
-        events = [event for event in events if event.eventType in event_types]
-    return {"events": [event.model_dump(mode="json") for event in events[-limit:]]}
+    entry_types = {str(item) for item in (arguments.get("entry_types") or []) if str(item).strip()}
+    entries = request.contextEntries
+    if entry_types:
+        entries = [entry for entry in entries if entry.entryType in entry_types]
+    entries = sorted(entries, key=lambda item: (item.occurredAt or "", item.revision, item.entryId))
+    return {"contextEntries": [entry.model_dump(mode="json") for entry in entries[-limit:]]}
 
 
 def _get_shared_state(request: AgentTurnRequest, arguments: dict[str, Any]) -> dict[str, Any]:

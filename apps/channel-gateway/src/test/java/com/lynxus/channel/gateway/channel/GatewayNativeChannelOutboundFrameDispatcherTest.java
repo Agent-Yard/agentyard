@@ -520,7 +520,7 @@ class GatewayNativeChannelOutboundFrameDispatcherTest {
             Instant.parse("2026-05-05T00:00:00Z"),
             frameId,
             Map.of(
-                "messageId", "message-1",
+                "replyMessageId", "message-1",
                 "blockId", "block-1",
                 "blockType", "TEXT",
                 "delta", delta

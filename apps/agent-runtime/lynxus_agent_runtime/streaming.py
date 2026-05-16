@@ -177,12 +177,18 @@ async def stream_agent_turn(
             yield writer.frame(
                 kind="FINAL_OUTCOME",
                 visibility="INTERNAL",
-                payload={"messageId": writer.reply_message_id, "outcome": cached_outcome.model_dump(mode="json")},
+                payload={"replyMessageId": writer.reply_message_id, "outcome": cached_outcome.model_dump(mode="json")},
             )
             return
 
     provider = _resolve_llm_stream_provider(request)
     if transcript_store is not None and provider is not None:
+        if request.transcriptBootstrap:
+            await run_in_threadpool(
+                transcript_store.reset_committed_provider_transcript_for_bootstrap,
+                turn_context,
+                provider.provider_type,
+            )
         replay_messages = await run_in_threadpool(
             transcript_store.load_committed_provider_messages,
             turn_context,
@@ -192,7 +198,11 @@ async def stream_agent_turn(
     yield writer.frame(
         kind="TURN_STARTED",
         visibility="OPERATOR",
-        payload={"messageId": writer.reply_message_id, "triggerType": request.trigger.triggerType},
+        payload={
+            "replyMessageId": writer.reply_message_id,
+            "triggerType": request.trigger.triggerType,
+            "inputMessageCount": len(request.messages),
+        },
     )
 
     if provider is None:
@@ -205,7 +215,7 @@ async def stream_agent_turn(
             visibility="OPERATOR",
             payload={
                 "code": "PROVIDER_STREAM_UNAVAILABLE",
-                "messageId": writer.reply_message_id,
+                "replyMessageId": writer.reply_message_id,
                 "message": message,
                 "stage": "PROVIDER_STREAM",
                 "retryable": False,
@@ -215,7 +225,7 @@ async def stream_agent_turn(
         yield writer.frame(
             kind="FINAL_OUTCOME",
             visibility="INTERNAL",
-            payload={"messageId": writer.reply_message_id, "outcome": outcome.model_dump(mode="json")},
+            payload={"replyMessageId": writer.reply_message_id, "outcome": outcome.model_dump(mode="json")},
         )
         return
 
@@ -309,7 +319,7 @@ async def _stream_via_openai_compatible(
                             kind="REPLY_BLOCK_DELTA",
                             visibility="CUSTOMER",
                             payload={
-                                "messageId": writer.reply_message_id,
+                                "replyMessageId": writer.reply_message_id,
                                 "blockId": block_id,
                                 "blockType": "TEXT",
                                 "delta": customer_delta,
@@ -324,7 +334,7 @@ async def _stream_via_openai_compatible(
                     kind="REPLY_BLOCK_DELTA",
                     visibility="CUSTOMER",
                     payload={
-                        "messageId": writer.reply_message_id,
+                        "replyMessageId": writer.reply_message_id,
                         "blockId": block_id,
                         "blockType": "TEXT",
                         "delta": customer_tail,
@@ -452,7 +462,7 @@ async def _stream_via_openai_compatible(
                     kind="REPLY_BLOCK_COMPLETED",
                     visibility="CUSTOMER",
                     payload={
-                        "messageId": writer.reply_message_id,
+                        "replyMessageId": writer.reply_message_id,
                         "blockId": block_id,
                         "block": block.model_dump(mode="json"),
                     },
@@ -464,7 +474,7 @@ async def _stream_via_openai_compatible(
                 visibility="OPERATOR",
                 payload={
                     "code": "FINAL_OUTCOME_REJECTED",
-                    "messageId": writer.reply_message_id,
+                    "replyMessageId": writer.reply_message_id,
                     "message": failure_reason,
                     "stage": "FINAL_OUTCOME_BUILD",
                     "retryable": False,
@@ -474,7 +484,7 @@ async def _stream_via_openai_compatible(
         yield writer.frame(
             kind="FINAL_OUTCOME",
             visibility="INTERNAL",
-            payload={"messageId": writer.reply_message_id, "outcome": outcome.model_dump(mode="json")},
+            payload={"replyMessageId": writer.reply_message_id, "outcome": outcome.model_dump(mode="json")},
         )
     except OpenAiCompatibleStreamError as error:
         outcome = AgentTurnExecutionOutcome(
@@ -489,7 +499,7 @@ async def _stream_via_openai_compatible(
             visibility="OPERATOR",
             payload={
                 "code": _provider_stream_error_code(error),
-                "messageId": writer.reply_message_id,
+                "replyMessageId": writer.reply_message_id,
                 "message": outcome.failureReason,
                 "stage": "PROVIDER_STREAM",
                 "retryable": isinstance(error, OpenAiCompatibleStreamIdleTimeoutError),
@@ -499,7 +509,7 @@ async def _stream_via_openai_compatible(
         yield writer.frame(
             kind="FINAL_OUTCOME",
             visibility="INTERNAL",
-            payload={"messageId": writer.reply_message_id, "outcome": outcome.model_dump(mode="json")},
+            payload={"replyMessageId": writer.reply_message_id, "outcome": outcome.model_dump(mode="json")},
         )
     except Exception as error:  # noqa: BLE001
         outcome = AgentTurnExecutionOutcome(
@@ -514,7 +524,7 @@ async def _stream_via_openai_compatible(
             visibility="OPERATOR",
             payload={
                 "code": "PROVIDER_STREAM_FAILED",
-                "messageId": writer.reply_message_id,
+                "replyMessageId": writer.reply_message_id,
                 "message": outcome.failureReason,
                 "stage": "PROVIDER_STREAM",
                 "retryable": True,
@@ -524,7 +534,7 @@ async def _stream_via_openai_compatible(
         yield writer.frame(
             kind="FINAL_OUTCOME",
             visibility="INTERNAL",
-            payload={"messageId": writer.reply_message_id, "outcome": outcome.model_dump(mode="json")},
+            payload={"replyMessageId": writer.reply_message_id, "outcome": outcome.model_dump(mode="json")},
         )
     finally:
         privacy_pipeline.close()

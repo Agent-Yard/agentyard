@@ -218,9 +218,16 @@ class SessionMessage(BaseModel):
 class SessionTrigger(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    triggerType: Literal["USER_MESSAGE", "PLAYBOOK_COMPLETED"]
+    triggerType: Literal[
+        "USER_MESSAGE",
+        "HUMAN_RESUME",
+        "EXTERNAL_CALLBACK",
+        "HUMAN_OPERATOR_REPLY",
+        "PLAYBOOK_COMPLETED",
+        "SYSTEM_OWNER_WAKEUP",
+    ]
     turnId: str
-    eventId: str
+    eventId: str | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -368,31 +375,32 @@ AgentTurnStreamFrameKind = Literal[
 
 
 class TurnStartedPayload(BaseModel):
-    messageId: str
+    replyMessageId: str
     triggerType: str
+    inputMessageCount: int = 0
 
 
 class ReplyBlockDeltaPayload(BaseModel):
-    messageId: str
+    replyMessageId: str
     blockId: str
     blockType: Literal["TEXT"]
     delta: str
 
 
 class ReplyBlockCompletedPayload(BaseModel):
-    messageId: str
+    replyMessageId: str
     blockId: str
     block: SessionMessageBlock
 
 
 class FinalOutcomePayload(BaseModel):
-    messageId: str
+    replyMessageId: str
     outcome: AgentTurnExecutionOutcome
 
 
 class ErrorPayload(BaseModel):
     code: str
-    messageId: str
+    replyMessageId: str
     message: str
     stage: Literal[
         "PROVIDER_STREAM",

@@ -458,6 +458,99 @@ class JooqSessionRuntimeRepositoryTest {
     }
 
     @Test
+    void allocatePlatformTurnRestoresSameTurnWithEmptyInputAndMessageIds() {
+        Instant now = Instant.parse("2026-05-03T00:00:00Z");
+        repository.createOrReuseActiveSession(storeSession("session-platform-turn-1", "WEB", null, null, "customer-1", "assistant-1", now));
+
+        SessionRuntimeStore.SessionRuntimeTurnData first = repository.allocatePlatformTurn(
+            "session-platform-turn-1",
+            "PLAYBOOK_COMPLETED",
+            "session-event-1",
+            "session-event-1",
+            Map.of("playbookRunId", "run-1")
+        );
+        SessionRuntimeStore.SessionRuntimeTurnData replay = repository.allocatePlatformTurn(
+            "session-platform-turn-1",
+            "PLAYBOOK_COMPLETED",
+            "session-event-1",
+            "session-event-1",
+            Map.of("playbookRunId", "run-1", "ignoredReplayField", true)
+        );
+
+        assertEquals(first.turnId(), replay.turnId());
+        assertEquals("platform:PLAYBOOK_COMPLETED:session-event-1", replay.dedupKey());
+        assertEquals("ALLOCATED_IDS", replay.status());
+        assertEquals(List.of(), replay.inputAllocations());
+        assertEquals(List.of(), replay.acceptedInputMessageIds());
+        assertEquals(List.of(), replay.messageIds());
+        assertEquals("session-event-1", replay.metadata().get("sourceEventId"));
+        assertEquals("session-event-1", replay.metadata().get("platformDedupKey"));
+        assertEquals("run-1", replay.metadata().get("playbookRunId"));
+    }
+
+    @Test
+    void allocatePlatformTurnDoesNotReuseExternalInputTurnWithSameRawDedupKey() {
+        Instant now = Instant.parse("2026-05-03T00:00:00Z");
+        repository.createOrReuseActiveSession(storeSession("session-platform-turn-2", "WEB", null, null, "customer-1", "assistant-1", now));
+        repository.createOrReuseTurn(turn(
+            "turn-user-raw-collision",
+            "session-platform-turn-2",
+            "session-event-1",
+            List.of(Map.of(
+                "requestIndex", 0,
+                "messageId", "message-user-1",
+                "clientMessageId", "client-1"
+            )),
+            List.of("message-user-1"),
+            now
+        ));
+
+        SessionRuntimeStore.SessionRuntimeTurnData platformTurn = repository.allocatePlatformTurn(
+            "session-platform-turn-2",
+            "PLAYBOOK_COMPLETED",
+            "session-event-1",
+            "session-event-1",
+            Map.of("playbookRunId", "run-1")
+        );
+
+        assertEquals("turn-user-raw-collision", repository.findTurnByDedupKey("session-platform-turn-2", "session-event-1").orElseThrow().turnId());
+        assertEquals("platform:PLAYBOOK_COMPLETED:session-event-1", platformTurn.dedupKey());
+        assertTrue(!"turn-user-raw-collision".equals(platformTurn.turnId()));
+        assertEquals(List.of(), platformTurn.acceptedInputMessageIds());
+    }
+
+    @Test
+    void allocatePlatformTurnRejectsCanonicalCollisionWithExternalInputTurn() {
+        Instant now = Instant.parse("2026-05-03T00:00:00Z");
+        repository.createOrReuseActiveSession(storeSession("session-platform-turn-3", "WEB", null, null, "customer-1", "assistant-1", now));
+        repository.createOrReuseTurn(turn(
+            "turn-user-canonical-collision",
+            "session-platform-turn-3",
+            "platform:PLAYBOOK_COMPLETED:session-event-1",
+            List.of(Map.of(
+                "requestIndex", 0,
+                "messageId", "message-user-1",
+                "clientMessageId", "client-1"
+            )),
+            List.of("message-user-1"),
+            now
+        ));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, () -> repository.allocatePlatformTurn(
+            "session-platform-turn-3",
+            "PLAYBOOK_COMPLETED",
+            "session-event-1",
+            "session-event-1",
+            Map.of("playbookRunId", "run-1")
+        ));
+
+        assertEquals(
+            "platform turn dedup key collision: triggerType mismatch for platform:PLAYBOOK_COMPLETED:session-event-1",
+            error.getMessage()
+        );
+    }
+
+    @Test
     void appendSessionMessagesAllocatesSequenceTurnIndexAndUpdatesTurnMessageIds() {
         Instant now = Instant.parse("2026-05-03T00:00:00Z");
         repository.createOrReuseActiveSession(storeSession("session-append-1", "WEB", null, null, "customer-1", "assistant-1", now));

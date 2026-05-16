@@ -229,12 +229,12 @@ class ChannelOutboundRelayComponentsTest {
     }
 
     private static ChannelOutboundFrame typingFrame() {
-        return transientFrame(ChannelOutboundFrameKind.TYPING_START, Map.of("messageId", "message-1"));
+        return transientFrame(ChannelOutboundFrameKind.TYPING_START, Map.of("replyMessageId", "message-1"));
     }
 
     private static ChannelOutboundFrame draftFrame() {
         return transientFrame(ChannelOutboundFrameKind.DRAFT_UPDATE, Map.of(
-            "messageId", "message-1",
+            "replyMessageId", "message-1",
             "blockId", "block-1",
             "blockType", "TEXT",
             "delta", "hello"

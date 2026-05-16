@@ -179,6 +179,13 @@ class TranscriptStore(Protocol):
     ) -> list[dict[str, Any]]:
         ...
 
+    def reset_committed_provider_transcript_for_bootstrap(
+        self,
+        context: TurnExecutionContext,
+        provider_type: str = "OPENAI_COMPATIBLE",
+    ) -> None:
+        ...
+
     def append_pending_entries(self, context: TurnExecutionContext, entries: list[TranscriptEntry]) -> None:
         ...
 
@@ -264,6 +271,22 @@ class OwnerContextSequenceRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
 
+class TranscriptBootstrapResetRecord(Base):
+    __tablename__ = "transcript_bootstrap_reset"
+
+    turn_execution_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    provider_type: Mapped[str] = mapped_column(String(64), primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(128), index=True)
+    owner_agent_id: Mapped[str] = mapped_column(String(128), index=True)
+    ownership_epoch: Mapped[int] = mapped_column(Integer, index=True)
+    execution_attempt_id: Mapped[str] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    deleted_committed_entry_count: Mapped[int] = mapped_column(Integer, default=0)
+    reset_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    reset_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class PostgresTranscriptStore:
     def __init__(
         self,
@@ -317,6 +340,24 @@ class PostgresTranscriptStore:
                     "create unique index if not exists uq_transcript_context_seq "
                     "on transcript_entry "
                     "(session_id, owner_agent_id, ownership_epoch, transcript_seq)"
+                )
+            )
+            connection.execute(
+                text(
+                    "create table if not exists transcript_bootstrap_reset ("
+                    "turn_execution_id varchar(128) not null,"
+                    "provider_type varchar(64) not null,"
+                    "session_id varchar(128) not null,"
+                    "owner_agent_id varchar(128) not null,"
+                    "ownership_epoch integer not null,"
+                    "execution_attempt_id varchar(128) not null,"
+                    "status varchar(32) not null,"
+                    "deleted_committed_entry_count integer not null default 0,"
+                    "reset_started_at timestamp with time zone not null,"
+                    "reset_completed_at timestamp with time zone,"
+                    "failure_reason text,"
+                    "primary key (turn_execution_id, provider_type)"
+                    ")"
                 )
             )
 
@@ -399,6 +440,72 @@ class PostgresTranscriptStore:
             ),
         )
         return messages
+
+    def reset_committed_provider_transcript_for_bootstrap(
+        self,
+        context: TurnExecutionContext,
+        provider_type: str = "OPENAI_COMPATIBLE",
+    ) -> None:
+        normalized_provider_type = normalize_provider_type(provider_type)
+        completed_at = now_utc()
+        deleted_count = 0
+        with self.session_factory() as session:
+            record = session.get(TurnExecutionRecord, context.turn_execution_id, with_for_update=True)
+            if record is None:
+                raise RuntimeError("turn execution is not RUNNING")
+            _assert_same_context(record, context)
+            if record.status == "SUCCEEDED":
+                raise RuntimeError("successful turn execution cannot reset transcript bootstrap")
+            if record.status != "RUNNING":
+                raise RuntimeError("turn execution is not RUNNING")
+            _assert_current_attempt(record, context)
+            reset_marker = session.get(
+                TranscriptBootstrapResetRecord,
+                {
+                    "turn_execution_id": context.turn_execution_id,
+                    "provider_type": normalized_provider_type,
+                },
+                with_for_update=True,
+            )
+            if reset_marker is None or reset_marker.status != "COMPLETED":
+                committed_entries = session.scalars(
+                    select(TranscriptEntryRecord).where(
+                        TranscriptEntryRecord.session_id == context.session_id,
+                        TranscriptEntryRecord.owner_agent_id == context.owner_agent_id,
+                        TranscriptEntryRecord.ownership_epoch == context.ownership_epoch,
+                        TranscriptEntryRecord.provider_type == normalized_provider_type,
+                        TranscriptEntryRecord.status == "COMMITTED",
+                    )
+                ).all()
+                deleted_count = len(committed_entries)
+                for entry in committed_entries:
+                    session.delete(entry)
+                if reset_marker is None:
+                    session.add(
+                        TranscriptBootstrapResetRecord(
+                            turn_execution_id=context.turn_execution_id,
+                            provider_type=normalized_provider_type,
+                            session_id=context.session_id,
+                            owner_agent_id=context.owner_agent_id,
+                            ownership_epoch=context.ownership_epoch,
+                            execution_attempt_id=context.execution_attempt_id,
+                            status="COMPLETED",
+                            deleted_committed_entry_count=deleted_count,
+                            reset_started_at=completed_at,
+                            reset_completed_at=completed_at,
+                        )
+                    )
+                else:
+                    _assert_same_reset_context(reset_marker, context)
+                    reset_marker.execution_attempt_id = context.execution_attempt_id
+                    reset_marker.status = "COMPLETED"
+                    reset_marker.deleted_committed_entry_count = deleted_count
+                    reset_marker.reset_completed_at = completed_at
+                    reset_marker.failure_reason = None
+            else:
+                _assert_same_reset_context(reset_marker, context)
+            session.commit()
+        self._delete_transcript_cache(context)
 
     def append_pending_entries(self, context: TurnExecutionContext, entries: list[TranscriptEntry]) -> None:
         if not entries:
@@ -579,6 +686,7 @@ class PostgresTranscriptStore:
             connection.execute(text("select count(*) from turn_execution")).scalar_one()
             connection.execute(text("select count(*) from transcript_entry")).scalar_one()
             connection.execute(text("select count(*) from owner_context_sequence")).scalar_one()
+            connection.execute(text("select count(*) from transcript_bootstrap_reset")).scalar_one()
         return {"backend": "postgresql", "schema": DEFAULT_SCHEMA_NAME}
 
     def close(self) -> None:
@@ -830,6 +938,15 @@ def _assert_same_context(record: TurnExecutionRecord, context: TurnExecutionCont
 def _assert_current_attempt(record: TurnExecutionRecord, context: TurnExecutionContext) -> None:
     if record.current_execution_attempt_id != context.execution_attempt_id:
         raise RuntimeError("turn execution attempt is no longer current")
+
+
+def _assert_same_reset_context(record: TranscriptBootstrapResetRecord, context: TurnExecutionContext) -> None:
+    if (
+        record.session_id != context.session_id
+        or record.owner_agent_id != context.owner_agent_id
+        or record.ownership_epoch != context.ownership_epoch
+    ):
+        raise RuntimeError("transcript bootstrap reset marker exists for a different owner-context")
 
 
 def _owner_context_sequence_id(context: TurnExecutionContext) -> str:
