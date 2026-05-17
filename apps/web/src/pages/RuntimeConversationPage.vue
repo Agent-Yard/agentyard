@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, nextTick, reactive, ref, watch } from 'vue';
 import PageHeadActions from '../components/PageHeadActions.vue';
 import { api } from '../services/api';
 import { renderMarkdown } from '../utils/markdown';
@@ -17,6 +17,32 @@ import type {
   SessionRuntimeDetail,
   SessionRuntimeSession,
 } from '../types';
+
+type RuntimeDetailPanel = 'session' | 'privacy' | 'progress' | 'events' | 'playbooks' | 'shared-state';
+type ChatSide = 'left' | 'right' | 'center';
+
+type ChatTimelineItem =
+  | {
+    kind: 'message';
+    id: string;
+    sortTime: string;
+    side: ChatSide;
+    message: SessionMessage;
+  }
+  | {
+    kind: 'user-draft';
+    id: string;
+    sortTime: string;
+    side: 'right';
+    draft: RuntimeUserDraftMessage;
+  }
+  | {
+    kind: 'reply-draft';
+    id: string;
+    sortTime: string;
+    side: 'left';
+    draft: RuntimeReplyDraftMessage;
+  };
 
 const props = defineProps<{
   scenarios: Scenario[];
@@ -47,6 +73,8 @@ const createForm = reactive({
 const createModalOpen = ref(false);
 const messageDraft = ref('');
 const privacySummary = ref<PrivacyMappingSummary | null>(null);
+const activePanel = ref<RuntimeDetailPanel | null>(null);
+const messageScrollRef = ref<HTMLElement | null>(null);
 
 const currentSession = computed(() =>
   props.sessions.find((item) => item.id === props.selectedSessionId) ?? props.sessions[0] ?? null,
@@ -79,6 +107,97 @@ const availableAssistants = computed(() =>
 const createSelectedAssistant = computed(() =>
   props.assistants.find((item) => item.id === createForm.assistantId) ?? null,
 );
+const activePanelOpen = computed(() => activePanel.value !== null);
+const activePanelTitle = computed(() => {
+  switch (activePanel.value) {
+    case 'session':
+      return 'Session 状态';
+    case 'privacy':
+      return '隐私映射';
+    case 'progress':
+      return '实时进度';
+    case 'events':
+      return 'Session Events';
+    case 'playbooks':
+      return 'Playbook Runs';
+    case 'shared-state':
+      return '共享状态';
+    default:
+      return '';
+  }
+});
+
+const chatTimeline = computed<ChatTimelineItem[]>(() => {
+  const messages = (currentDetail.value?.messages ?? []).map((message): ChatTimelineItem => ({
+    kind: 'message',
+    id: message.messageId,
+    sortTime: message.occurredAt ?? message.createdAt,
+    side: messageSide(message),
+    message,
+  }));
+  const userDrafts = currentUserDrafts.value.map((draft): ChatTimelineItem => ({
+    kind: 'user-draft',
+    id: `${draft.turnDedupKey}:${draft.clientMessageId}`,
+    sortTime: draft.updatedAt,
+    side: 'right',
+    draft,
+  }));
+  const replyDrafts = currentReplyDrafts.value.map((draft): ChatTimelineItem => ({
+    kind: 'reply-draft',
+    id: `${draft.turnId}:${draft.replyMessageId}`,
+    sortTime: draft.updatedAt,
+    side: 'left',
+    draft,
+  }));
+  return [...messages, ...userDrafts, ...replyDrafts].sort((left, right) =>
+    left.sortTime.localeCompare(right.sortTime) || left.id.localeCompare(right.id),
+  );
+});
+
+const statusPanelItems = computed(() => [
+  {
+    key: 'session' as const,
+    marker: 'S',
+    label: 'Session',
+    value: currentSession.value?.status ?? '无会话',
+    tone: currentSession.value?.draining ? 'danger' : 'default',
+  },
+  {
+    key: 'privacy' as const,
+    marker: '隐',
+    label: '隐私',
+    value: privacySummary.value?.enabled ? `${privacySummary.value.placeholderCount} placeholder` : '未开启',
+    tone: privacySummary.value?.blockedEventCount ? 'warning' : 'default',
+  },
+  {
+    key: 'progress' as const,
+    marker: '进',
+    label: '进度',
+    value: currentProgress.value.at(-1)?.title ?? '暂无进度',
+    tone: currentProgress.value.at(-1)?.status === 'FAILED' ? 'danger' : 'default',
+  },
+  {
+    key: 'playbooks' as const,
+    marker: 'P',
+    label: 'Playbook',
+    value: currentSession.value?.activePlaybookRunId ?? `${currentDetail.value?.playbookRuns.length ?? 0} 条记录`,
+    tone: currentSession.value?.activePlaybookRunId ? 'active' : 'default',
+  },
+  {
+    key: 'events' as const,
+    marker: '事',
+    label: '事件',
+    value: `${currentSession.value?.latestEventSequence ?? 0} latest`,
+    tone: 'default',
+  },
+  {
+    key: 'shared-state' as const,
+    marker: '{}',
+    label: '状态',
+    value: `${Object.keys(currentSession.value?.sharedState ?? {}).length} keys`,
+    tone: 'default',
+  },
+]);
 
 watch(
   () => props.scenarios,
@@ -123,9 +242,22 @@ watch(
   async (sessionId) => {
     if (!sessionId) {
       privacySummary.value = null;
+      activePanel.value = null;
       return;
     }
     privacySummary.value = await api.getRuntimeSessionPrivacyMappingSummary(sessionId);
+  },
+  { immediate: true },
+);
+
+watch(
+  () => chatTimeline.value.map((item) => `${item.id}:${item.sortTime}`).join('|'),
+  async () => {
+    await nextTick();
+    const container = messageScrollRef.value;
+    if (container) {
+      container.scrollTop = container.scrollHeight;
+    }
   },
   { immediate: true },
 );
@@ -200,6 +332,17 @@ function selectSession(sessionId: string) {
   emit('selectSession', sessionId);
 }
 
+function openPanel(panel: RuntimeDetailPanel) {
+  if (!currentSession.value) {
+    return;
+  }
+  activePanel.value = panel;
+}
+
+function closePanel() {
+  activePanel.value = null;
+}
+
 function statusColor(status: string) {
   switch (status) {
     case 'ACTIVE':
@@ -270,6 +413,16 @@ function messageSender(message: SessionMessage) {
   return message.sender.senderName ?? message.sender.senderId ?? message.sender.senderType;
 }
 
+function messageSide(message: SessionMessage): ChatSide {
+  if (message.role === 'USER') {
+    return 'right';
+  }
+  if (message.role === 'SYSTEM') {
+    return 'center';
+  }
+  return 'left';
+}
+
 function playbookSummary(run: PlaybookRun) {
   const result = Object.keys(run.result ?? {}).length ? JSON.stringify(run.result, null, 2) : '无';
   return `${run.playbookId} · ${run.status}${run.waitingReason ? ` · ${run.waitingReason}` : ''}\n结果: ${result}`;
@@ -277,6 +430,10 @@ function playbookSummary(run: PlaybookRun) {
 
 function formatSharedState(value: Record<string, unknown> | null | undefined) {
   return JSON.stringify(value ?? {}, null, 2);
+}
+
+function formatMessageTime(value: string | null | undefined) {
+  return value ?? '无时间';
 }
 </script>
 
@@ -291,232 +448,264 @@ function formatSharedState(value: Record<string, unknown> | null | undefined) {
     </a-button>
   </PageHeadActions>
 
-  <a-row :gutter="[16, 16]">
-    <a-col :span="7">
-      <a-card title="Session 列表">
-        <template #extra>
-          <a-tag class="console-accent-tag">{{ sessions.length }} 个会话</a-tag>
-        </template>
-        <a-list :data-source="sessions">
-          <template #renderItem="{ item }">
-            <a-list-item
-              class="clickable-item"
-              :class="{ 'graph-list-item--active': props.selectedSessionId === item.id }"
-              @click="selectSession(item.id)"
-            >
-              <a-list-item-meta
-                :title="item.title"
-                :description="`${item.assistantName} · ${item.status} · owner ${item.currentOwnerAgentId}`"
-              />
-            </a-list-item>
-          </template>
-        </a-list>
-      </a-card>
-    </a-col>
+  <div class="runtime-im">
+    <aside class="runtime-im__sessions">
+      <div class="runtime-panel-head">
+        <div>
+          <div class="runtime-panel-head__label">Sessions</div>
+          <strong>会话切换</strong>
+        </div>
+        <a-tag class="console-accent-tag">{{ sessions.length }}</a-tag>
+      </div>
 
-    <a-col :span="17">
-      <a-space direction="vertical" size="large" style="width: 100%">
-        <a-card v-if="currentSession" :title="currentSession.title">
-          <template #extra>
-            <a-space>
-              <a-tag class="console-accent-tag">{{ currentSession.assistantName }}</a-tag>
-              <a-tag>{{ currentScenario?.name ?? currentSession.scenarioId }}</a-tag>
-              <a-tag :color="statusColor(currentSession.status)">{{ currentSession.status }}</a-tag>
-              <a-tag v-if="currentSession.sessionHumanHandoffActive" color="warning">HANDOFF</a-tag>
-              <a-tag v-if="currentSession.draining" color="error">DRAINING</a-tag>
-            </a-space>
-          </template>
+      <div v-if="sessions.length" class="runtime-session-list">
+        <button
+          v-for="item in sessions"
+          :key="item.id"
+          type="button"
+          class="runtime-session-item"
+          :class="{ 'runtime-session-item--active': currentSession?.id === item.id }"
+          @click="selectSession(item.id)"
+        >
+          <span class="runtime-session-item__top">
+            <strong>{{ item.title }}</strong>
+            <a-tag :color="statusColor(item.status)">{{ item.status }}</a-tag>
+          </span>
+          <span class="runtime-session-item__meta">{{ item.assistantName }} · owner {{ item.currentOwnerAgentId }}</span>
+          <span class="runtime-session-item__foot">{{ item.updatedAt }} · #{{ item.latestMessageSequence }}</span>
+        </button>
+      </div>
+      <a-empty v-else class="runtime-empty" description="暂无 Session" />
+    </aside>
 
-          <a-descriptions :column="2" bordered size="small">
-            <a-descriptions-item label="当前 Owner">{{ currentSession.currentOwnerAgentId }}</a-descriptions-item>
-            <a-descriptions-item label="Primary Agent">{{ currentSession.primaryAgentId }}</a-descriptions-item>
-            <a-descriptions-item label="Active Playbook">{{ currentSession.activePlaybookRunId ?? '无' }}</a-descriptions-item>
-            <a-descriptions-item label="Idle Deadline">{{ currentSession.idleDeadline ?? '无' }}</a-descriptions-item>
-            <a-descriptions-item label="最新消息序号">{{ currentSession.latestMessageSequence }}</a-descriptions-item>
-            <a-descriptions-item label="最新事件序号">{{ currentSession.latestEventSequence }}</a-descriptions-item>
-            <a-descriptions-item label="共享状态">
-              <pre class="runtime-json">{{ formatSharedState(currentSession.sharedState) }}</pre>
-            </a-descriptions-item>
-          </a-descriptions>
-
-          <a-form layout="vertical" style="margin-top: 16px">
-            <a-form-item label="发送消息">
-              <a-textarea
-                v-model:value="messageDraft"
-                :rows="4"
-                :disabled="isCurrentSessionSending"
-                placeholder="输入用户消息"
-              />
-            </a-form-item>
-            <a-button type="primary" :loading="isCurrentSessionSending" @click="submitMessage">
-              {{ isCurrentSessionSending ? '发送中...' : '发送消息' }}
-            </a-button>
-          </a-form>
-        </a-card>
-
-        <a-card v-if="currentSession" title="隐私映射">
-          <a-descriptions :column="2" bordered size="small">
-            <a-descriptions-item label="是否开启">{{ privacySummary?.enabled ? '开启' : '关闭' }}</a-descriptions-item>
-            <a-descriptions-item label="映射模型">{{ privacySummary?.privacyModelName ?? '未配置' }}</a-descriptions-item>
-            <a-descriptions-item label="Placeholder 总量">{{ privacySummary?.placeholderCount ?? 0 }}</a-descriptions-item>
-            <a-descriptions-item label="阻断次数">{{ privacySummary?.blockedEventCount ?? 0 }}</a-descriptions-item>
-            <a-descriptions-item label="未解析占位符">{{ privacySummary?.unresolvedPlaceholderCount ?? 0 }}</a-descriptions-item>
-            <a-descriptions-item label="最近处理时间">
-              {{ privacySummary?.lastProcessedAt ?? '无' }}
-            </a-descriptions-item>
-            <a-descriptions-item label="实体分布" :span="2">
-              <pre class="runtime-json">{{ JSON.stringify(privacySummary?.entityTypeBreakdown ?? {}, null, 2) }}</pre>
-            </a-descriptions-item>
-          </a-descriptions>
-        </a-card>
-
-        <a-card v-if="currentDetail" title="Messages">
-          <a-list :data-source="currentDetail.messages">
-            <template #renderItem="{ item }">
-              <a-list-item>
-                <div style="width: 100%">
-                  <div class="timeline-title">
-                    <strong>#{{ item.sequence }} {{ messageTitle(item) }}</strong>
-                  </div>
-                  <div class="timeline-meta">
-                    {{ item.createdAt }} · {{ messageSender(item) }}{{ item.relatedOwnerAgentId ? ` · owner ${item.relatedOwnerAgentId}` : '' }}
-                  </div>
-                  <div class="message-blocks">
-                    <template v-for="(block, index) in item.blocks" :key="`${item.messageId}-${index}`">
-                      <pre v-if="block.type === 'TEXT'" class="runtime-json">{{ block.text }}</pre>
-                      <img
-                        v-else-if="block.type === 'IMAGE'"
-                        :src="block.url"
-                        :alt="block.alt ?? 'image'"
-                        class="runtime-message-image"
-                      />
-                      <div v-else-if="block.type === 'RICH_TEXT'" class="runtime-markdown" v-html="renderMarkdown(block.content)" />
-                      <a-card v-else-if="block.type === 'CARD'" size="small" class="runtime-message-card">
-                        <template #title>{{ block.cardType }} · {{ block.version }}</template>
-                        <pre class="runtime-json">{{ JSON.stringify(block.data ?? {}, null, 2) }}</pre>
-                        <a-space v-if="block.actions?.length">
-                          <a-button
-                            v-for="(action, actionIndex) in block.actions"
-                            :key="`${item.messageId}-${index}-${actionIndex}`"
-                            type="link"
-                            :href="action.url"
-                            target="_blank"
-                          >
-                            {{ action.label }}
-                          </a-button>
-                        </a-space>
-                      </a-card>
-                    </template>
-                  </div>
-                </div>
-              </a-list-item>
-            </template>
-          </a-list>
-          <div v-if="currentUserDrafts.length || currentReplyDrafts.length" class="runtime-drafts">
-            <div
-              v-for="draft in currentUserDrafts"
-              :key="`${draft.turnDedupKey}:${draft.clientMessageId}`"
-              class="runtime-draft runtime-draft--user"
-              :class="{ 'runtime-draft--failed': draft.failed }"
-            >
-              <div class="timeline-title">
-                <strong>用户消息草稿</strong>
-              </div>
-              <div class="timeline-meta">
-                {{ draft.updatedAt }}{{ draft.turnIndex != null ? ` · turn #${draft.turnIndex}` : '' }}
-              </div>
-              <div class="message-blocks">
-                <template v-for="(block, index) in draft.blocks" :key="`${draft.clientMessageId}-${index}`">
-                  <pre v-if="block.type === 'TEXT'" class="runtime-json">{{ block.text }}</pre>
-                  <img
-                    v-else-if="block.type === 'IMAGE'"
-                    :src="block.url"
-                    :alt="block.alt ?? 'image'"
-                    class="runtime-message-image"
-                  />
-                  <div v-else-if="block.type === 'RICH_TEXT'" class="runtime-markdown" v-html="renderMarkdown(block.content)" />
-                  <a-card v-else-if="block.type === 'CARD'" size="small" class="runtime-message-card">
-                    <template #title>{{ block.cardType }} · {{ block.version }}</template>
-                    <pre class="runtime-json">{{ JSON.stringify(block.data ?? {}, null, 2) }}</pre>
-                    <a-space v-if="block.actions?.length">
-                      <a-button
-                        v-for="(action, actionIndex) in block.actions"
-                        :key="`${draft.clientMessageId}-${index}-${actionIndex}`"
-                        type="link"
-                        :href="action.url"
-                        target="_blank"
-                      >
-                        {{ action.label }}
-                      </a-button>
-                    </a-space>
-                  </a-card>
-                </template>
-              </div>
-            </div>
-            <div
-              v-for="draft in currentReplyDrafts"
-              :key="`${draft.turnId}:${draft.replyMessageId}`"
-              class="runtime-draft"
-              :class="{ 'runtime-draft--failed': draft.failed }"
-            >
-              <div class="timeline-title">
-                <strong>助手回复草稿</strong>
-              </div>
-              <div class="timeline-meta">{{ draft.updatedAt }}</div>
-              <pre class="runtime-json">{{ draft.text }}</pre>
+    <main class="runtime-im__chat" :class="{ 'runtime-im__chat--empty': !currentSession }">
+      <template v-if="currentSession">
+        <header class="runtime-chat-head">
+          <div class="runtime-chat-head__copy">
+            <h2>{{ currentSession.title }}</h2>
+            <div class="runtime-chat-head__meta">
+              <span>{{ currentSession.assistantName }}</span>
+              <span>{{ currentScenario?.name ?? currentSession.scenarioId }}</span>
+              <span>customer {{ currentSession.customerId }}</span>
             </div>
           </div>
-        </a-card>
+          <div class="runtime-chat-head__tags">
+            <a-tag :color="statusColor(currentSession.status)">{{ currentSession.status }}</a-tag>
+            <a-tag v-if="currentSession.sessionHumanHandoffActive" color="warning">HANDOFF</a-tag>
+            <a-tag v-if="currentSession.draining" color="error">DRAINING</a-tag>
+          </div>
+        </header>
 
-        <a-card v-if="currentProgress.length" title="实时进度">
-          <a-timeline>
-            <a-timeline-item
-              v-for="event in currentProgress"
-              :key="event.id"
-              :color="event.status === 'FAILED' ? 'red' : event.status === 'SUCCEEDED' ? 'green' : 'blue'"
+        <section ref="messageScrollRef" class="runtime-message-scroll" aria-label="会话消息记录">
+          <div v-if="chatTimeline.length" class="runtime-message-list">
+            <article
+              v-for="item in chatTimeline"
+              :key="item.id"
+              class="runtime-chat-row"
+              :class="[`runtime-chat-row--${item.side}`, { 'runtime-chat-row--draft-failed': item.kind !== 'message' && item.draft.failed }]"
             >
-              <div class="timeline-title">
-                <strong>{{ event.title }}</strong>
+              <div v-if="item.kind === 'message' && item.side === 'center'" class="runtime-system-message">
+                <span>{{ messageTitle(item.message) }}</span>
+                <div class="runtime-system-message__body">
+                  <template v-for="(block, index) in item.message.blocks" :key="`${item.message.messageId}-${index}`">
+                    <span v-if="block.type === 'TEXT'">{{ block.text }}</span>
+                    <span v-else-if="block.type === 'RICH_TEXT'" v-html="renderMarkdown(block.content)" />
+                    <span v-else>{{ block.type }}</span>
+                  </template>
+                </div>
+                <small>{{ formatMessageTime(item.message.createdAt) }}</small>
               </div>
-              <div class="timeline-meta">{{ event.occurredAt }} · {{ event.phase }}</div>
-            </a-timeline-item>
-          </a-timeline>
-        </a-card>
 
-        <a-card v-if="currentDetail" title="Session Events">
-          <a-timeline>
-            <a-timeline-item v-for="event in currentDetail.events" :key="event.eventId" :color="statusColor(event.eventType)">
-              <div class="timeline-title">
-                <strong>#{{ event.sequence }} {{ eventTitle(event) }}</strong>
-              </div>
-              <div class="timeline-meta">
-                {{ event.createdAt }} · {{ event.actorType }}{{ event.relatedOwnerAgentId ? ` · owner ${event.relatedOwnerAgentId}` : '' }}
-              </div>
-              <pre class="runtime-json">{{ eventSummary(event) }}</pre>
-            </a-timeline-item>
-          </a-timeline>
-        </a-card>
+              <div v-else class="runtime-chat-bubble">
+                <div class="runtime-chat-bubble__meta">
+                  <strong v-if="item.kind === 'message'">{{ messageTitle(item.message) }}</strong>
+                  <strong v-else-if="item.kind === 'user-draft'">用户消息草稿</strong>
+                  <strong v-else>助手回复中</strong>
+                  <span v-if="item.kind === 'message'">
+                    {{ formatMessageTime(item.message.createdAt) }} · {{ messageSender(item.message) }}
+                  </span>
+                  <span v-else>
+                    {{ formatMessageTime(item.draft.updatedAt) }}{{ item.draft.failed ? ' · 失败' : ' · pending' }}
+                  </span>
+                </div>
 
-        <a-card v-if="currentDetail" title="Playbook Runs">
-          <a-list :data-source="currentDetail.playbookRuns">
-            <template #renderItem="{ item }">
-              <a-list-item>
-                <a-list-item-meta
-                  :title="`${item.playbookId} · ${item.runId}`"
-                  :description="playbookSummary(item)"
-                />
-                <template #actions>
-                  <a-tag :color="statusColor(item.status)">{{ item.status }}</a-tag>
-                </template>
-              </a-list-item>
+                <div v-if="item.kind === 'message'" class="message-blocks">
+                  <template v-for="(block, index) in item.message.blocks" :key="`${item.message.messageId}-${index}`">
+                    <pre v-if="block.type === 'TEXT'" class="runtime-text-block">{{ block.text }}</pre>
+                    <img
+                      v-else-if="block.type === 'IMAGE'"
+                      :src="block.url"
+                      :alt="block.alt ?? 'image'"
+                      class="runtime-message-image"
+                    />
+                    <div v-else-if="block.type === 'RICH_TEXT'" class="runtime-markdown" v-html="renderMarkdown(block.content)" />
+                    <a-card v-else-if="block.type === 'CARD'" size="small" class="runtime-message-card">
+                      <template #title>{{ block.cardType }} · {{ block.version }}</template>
+                      <pre class="runtime-json">{{ JSON.stringify(block.data ?? {}, null, 2) }}</pre>
+                      <a-space v-if="block.actions?.length" wrap>
+                        <a-button
+                          v-for="(action, actionIndex) in block.actions"
+                          :key="`${item.message.messageId}-${index}-${actionIndex}`"
+                          type="link"
+                          :href="action.url"
+                          target="_blank"
+                        >
+                          {{ action.label }}
+                        </a-button>
+                      </a-space>
+                    </a-card>
+                  </template>
+                </div>
+
+                <div v-else-if="item.kind === 'user-draft'" class="message-blocks">
+                  <template v-for="(block, index) in item.draft.blocks" :key="`${item.draft.clientMessageId}-${index}`">
+                    <pre v-if="block.type === 'TEXT'" class="runtime-text-block">{{ block.text }}</pre>
+                    <img
+                      v-else-if="block.type === 'IMAGE'"
+                      :src="block.url"
+                      :alt="block.alt ?? 'image'"
+                      class="runtime-message-image"
+                    />
+                    <div v-else-if="block.type === 'RICH_TEXT'" class="runtime-markdown" v-html="renderMarkdown(block.content)" />
+                    <a-card v-else-if="block.type === 'CARD'" size="small" class="runtime-message-card">
+                      <template #title>{{ block.cardType }} · {{ block.version }}</template>
+                      <pre class="runtime-json">{{ JSON.stringify(block.data ?? {}, null, 2) }}</pre>
+                    </a-card>
+                  </template>
+                </div>
+
+                <pre v-else class="runtime-text-block">{{ item.draft.text }}</pre>
+              </div>
+            </article>
+          </div>
+          <a-empty v-else class="runtime-empty" description="当前 Session 暂无消息" />
+        </section>
+
+        <footer class="runtime-composer">
+          <a-textarea
+            v-model:value="messageDraft"
+            :rows="3"
+            :disabled="isCurrentSessionSending"
+            placeholder="输入用户消息"
+          />
+          <div class="runtime-composer__actions">
+            <span>{{ currentSession.currentOwnerAgentId }} · {{ currentSession.latestMessageSequence }} messages</span>
+            <a-button type="primary" :loading="isCurrentSessionSending" :disabled="!messageDraft.trim()" @click="submitMessage">
+              {{ isCurrentSessionSending ? '发送中...' : '发送' }}
+            </a-button>
+          </div>
+        </footer>
+      </template>
+
+      <a-empty v-else description="选择或启动一个 Session 后开始对话" />
+    </main>
+
+    <aside class="runtime-im__status">
+      <div class="runtime-panel-head runtime-panel-head--compact">
+        <div>
+          <div class="runtime-panel-head__label">Status</div>
+          <strong>运行状态</strong>
+        </div>
+      </div>
+
+      <div class="runtime-status-list">
+        <button
+          v-for="item in statusPanelItems"
+          :key="item.key"
+          type="button"
+          class="runtime-status-button"
+          :class="[`runtime-status-button--${item.tone}`]"
+          :disabled="!currentSession"
+          @click="openPanel(item.key)"
+        >
+          <span class="runtime-status-button__icon">{{ item.marker }}</span>
+          <span class="runtime-status-button__copy">
+            <strong>{{ item.label }}</strong>
+            <small>{{ item.value }}</small>
+          </span>
+        </button>
+      </div>
+    </aside>
+  </div>
+
+  <a-drawer
+    :open="activePanelOpen"
+    :title="activePanelTitle"
+    width="520px"
+    placement="right"
+    @close="closePanel"
+  >
+    <template v-if="currentSession">
+      <a-descriptions v-if="activePanel === 'session'" :column="1" bordered size="small">
+        <a-descriptions-item label="状态">{{ currentSession.status }}</a-descriptions-item>
+        <a-descriptions-item label="当前 Owner">{{ currentSession.currentOwnerAgentId }}</a-descriptions-item>
+        <a-descriptions-item label="Primary Agent">{{ currentSession.primaryAgentId }}</a-descriptions-item>
+        <a-descriptions-item label="Active Playbook">{{ currentSession.activePlaybookRunId ?? '无' }}</a-descriptions-item>
+        <a-descriptions-item label="Idle Deadline">{{ currentSession.idleDeadline ?? '无' }}</a-descriptions-item>
+        <a-descriptions-item label="最新消息序号">{{ currentSession.latestMessageSequence }}</a-descriptions-item>
+        <a-descriptions-item label="最新事件序号">{{ currentSession.latestEventSequence }}</a-descriptions-item>
+        <a-descriptions-item label="创建时间">{{ currentSession.createdAt }}</a-descriptions-item>
+        <a-descriptions-item label="更新时间">{{ currentSession.updatedAt }}</a-descriptions-item>
+      </a-descriptions>
+
+      <a-descriptions v-else-if="activePanel === 'privacy'" :column="1" bordered size="small">
+        <a-descriptions-item label="是否开启">{{ privacySummary?.enabled ? '开启' : '关闭' }}</a-descriptions-item>
+        <a-descriptions-item label="映射模型">{{ privacySummary?.privacyModelName ?? '未配置' }}</a-descriptions-item>
+        <a-descriptions-item label="Placeholder 总量">{{ privacySummary?.placeholderCount ?? 0 }}</a-descriptions-item>
+        <a-descriptions-item label="阻断次数">{{ privacySummary?.blockedEventCount ?? 0 }}</a-descriptions-item>
+        <a-descriptions-item label="未解析占位符">{{ privacySummary?.unresolvedPlaceholderCount ?? 0 }}</a-descriptions-item>
+        <a-descriptions-item label="最近处理时间">{{ privacySummary?.lastProcessedAt ?? '无' }}</a-descriptions-item>
+        <a-descriptions-item label="实体分布">
+          <pre class="runtime-json">{{ JSON.stringify(privacySummary?.entityTypeBreakdown ?? {}, null, 2) }}</pre>
+        </a-descriptions-item>
+      </a-descriptions>
+
+      <a-timeline v-else-if="activePanel === 'progress' && currentProgress.length">
+        <a-timeline-item
+          v-for="event in currentProgress"
+          :key="event.id"
+          :color="event.status === 'FAILED' ? 'red' : event.status === 'SUCCEEDED' ? 'green' : 'blue'"
+        >
+          <div class="timeline-title">
+            <strong>{{ event.title }}</strong>
+          </div>
+          <div class="timeline-meta">{{ event.occurredAt }} · {{ event.phase }}</div>
+          <pre v-if="event.detail" class="runtime-json">{{ JSON.stringify(event.detail, null, 2) }}</pre>
+        </a-timeline-item>
+      </a-timeline>
+      <a-empty v-else-if="activePanel === 'progress'" description="暂无实时进度" />
+
+      <a-timeline v-else-if="activePanel === 'events' && currentDetail?.events.length">
+        <a-timeline-item v-for="event in currentDetail.events" :key="event.eventId" :color="statusColor(event.eventType)">
+          <div class="timeline-title">
+            <strong>#{{ event.sequence }} {{ eventTitle(event) }}</strong>
+          </div>
+          <div class="timeline-meta">
+            {{ event.createdAt }} · {{ event.actorType }}{{ event.relatedOwnerAgentId ? ` · owner ${event.relatedOwnerAgentId}` : '' }}
+          </div>
+          <pre class="runtime-json">{{ eventSummary(event) }}</pre>
+        </a-timeline-item>
+      </a-timeline>
+      <a-empty v-else-if="activePanel === 'events'" description="暂无事件" />
+
+      <a-list v-else-if="activePanel === 'playbooks' && currentDetail?.playbookRuns.length" :data-source="currentDetail.playbookRuns">
+        <template #renderItem="{ item }">
+          <a-list-item>
+            <a-list-item-meta
+              :title="`${item.playbookId} · ${item.runId}`"
+              :description="playbookSummary(item)"
+            />
+            <template #actions>
+              <a-tag :color="statusColor(item.status)">{{ item.status }}</a-tag>
             </template>
-          </a-list>
-        </a-card>
+          </a-list-item>
+        </template>
+      </a-list>
+      <a-empty v-else-if="activePanel === 'playbooks'" description="暂无 Playbook Run" />
 
-        <a-empty v-if="!currentSession" description="暂无 Session" />
-      </a-space>
-    </a-col>
-  </a-row>
+      <pre v-else-if="activePanel === 'shared-state'" class="runtime-json runtime-json--panel">{{ formatSharedState(currentSession.sharedState) }}</pre>
+    </template>
+  </a-drawer>
 
   <a-modal
     :open="createModalOpen"
@@ -586,6 +775,377 @@ function formatSharedState(value: Record<string, unknown> | null | undefined) {
 </template>
 
 <style scoped>
+.runtime-im {
+  display: grid;
+  grid-template-columns: 280px minmax(480px, 1fr) 188px;
+  gap: 14px;
+  min-height: calc(100vh - 196px);
+  height: calc(100vh - 196px);
+  min-width: 0;
+}
+
+.runtime-im__sessions,
+.runtime-im__chat,
+.runtime-im__status {
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: rgba(252, 251, 248, 0.88);
+  box-shadow: var(--shadow-sm);
+}
+
+.runtime-im__sessions,
+.runtime-im__status {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.runtime-im__chat {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.54);
+}
+
+.runtime-im__chat--empty {
+  align-items: center;
+  justify-content: center;
+}
+
+.runtime-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 58px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.runtime-panel-head--compact {
+  min-height: 56px;
+}
+
+.runtime-panel-head strong {
+  display: block;
+  color: var(--ink);
+  font-size: var(--text-body);
+}
+
+.runtime-panel-head__label {
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.runtime-session-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.runtime-session-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 0.18s ease,
+    background-color 0.18s ease;
+}
+
+.runtime-session-item:hover,
+.runtime-session-item--active {
+  border-color: var(--line);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.runtime-session-item--active {
+  border-left: 2px solid var(--accent);
+}
+
+.runtime-session-item__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.runtime-session-item__top strong {
+  min-width: 0;
+  color: var(--ink);
+  font-size: var(--text-secondary);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.runtime-session-item__meta,
+.runtime-session-item__foot {
+  color: var(--ink-faint);
+  font-size: var(--text-caption);
+  overflow-wrap: anywhere;
+}
+
+.runtime-session-item__foot {
+  font-family: var(--font-mono);
+}
+
+.runtime-chat-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(252, 251, 248, 0.86);
+}
+
+.runtime-chat-head__copy {
+  min-width: 0;
+}
+
+.runtime-chat-head h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.runtime-chat-head__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--ink-faint);
+  font-size: var(--text-caption);
+}
+
+.runtime-chat-head__meta span + span::before {
+  content: '/';
+  margin-right: 8px;
+  color: var(--ink-ghost);
+}
+
+.runtime-chat-head__tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.runtime-message-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px;
+}
+
+.runtime-message-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.runtime-chat-row {
+  display: flex;
+  width: 100%;
+}
+
+.runtime-chat-row--left {
+  justify-content: flex-start;
+}
+
+.runtime-chat-row--right {
+  justify-content: flex-end;
+}
+
+.runtime-chat-row--center {
+  justify-content: center;
+}
+
+.runtime-chat-bubble {
+  width: fit-content;
+  max-width: min(72%, 760px);
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: rgba(252, 251, 248, 0.94);
+}
+
+.runtime-chat-row--right .runtime-chat-bubble {
+  border-color: var(--accent-line);
+  background: color-mix(in srgb, var(--accent-tint) 52%, white);
+}
+
+.runtime-chat-row--draft-failed .runtime-chat-bubble {
+  border-color: rgba(191, 77, 57, 0.34);
+  background: var(--err-tint);
+}
+
+.runtime-chat-bubble__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--ink-faint);
+  font-size: var(--text-caption);
+}
+
+.runtime-chat-bubble__meta strong {
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+
+.runtime-system-message {
+  width: min(72%, 640px);
+  padding: 8px 12px;
+  border: 1px dashed var(--line);
+  border-radius: var(--r-sm);
+  background: rgba(238, 235, 229, 0.66);
+  color: var(--ink-soft);
+  text-align: center;
+}
+
+.runtime-system-message span,
+.runtime-system-message small {
+  display: block;
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+}
+
+.runtime-system-message__body {
+  margin: 4px 0;
+  overflow-wrap: anywhere;
+}
+
+.runtime-composer {
+  border-top: 1px solid var(--line);
+  padding: 12px 14px;
+  background: rgba(252, 251, 248, 0.92);
+}
+
+.runtime-composer :deep(.ant-input) {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.runtime-composer__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.runtime-composer__actions span {
+  min-width: 0;
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  overflow-wrap: anywhere;
+}
+
+.runtime-status-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.runtime-status-button {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  min-height: 56px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.58);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 0.18s ease,
+    background-color 0.18s ease;
+}
+
+.runtime-status-button:hover:not(:disabled),
+.runtime-status-button--active {
+  border-color: var(--accent-line);
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.runtime-status-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.runtime-status-button--warning {
+  border-color: rgba(186, 124, 34, 0.28);
+}
+
+.runtime-status-button--danger {
+  border-color: rgba(191, 77, 57, 0.28);
+}
+
+.runtime-status-button__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: rgba(252, 251, 248, 0.92);
+  color: var(--accent-ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-weight: 700;
+}
+
+.runtime-status-button__copy {
+  min-width: 0;
+}
+
+.runtime-status-button__copy strong,
+.runtime-status-button__copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-status-button__copy strong {
+  color: var(--ink);
+  font-size: var(--text-secondary);
+}
+
+.runtime-status-button__copy small {
+  color: var(--ink-faint);
+  font-size: var(--text-caption);
+}
+
 .timeline-title {
   margin-bottom: 4px;
 }
@@ -595,40 +1155,29 @@ function formatSharedState(value: Record<string, unknown> | null | undefined) {
   margin-bottom: 8px;
 }
 
-.runtime-json {
+.runtime-json,
+.runtime-text-block {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
+.runtime-json--panel {
+  padding: 12px;
+  border: 1px solid var(--line-faint);
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.72);
+}
+
 .message-blocks {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-}
-
-.runtime-drafts {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-top: 16px;
-}
-
-.runtime-draft {
-  padding: 12px;
-  border: 1px solid rgba(22, 119, 255, 0.2);
-  border-radius: 8px;
-  background: rgba(22, 119, 255, 0.04);
-}
-
-.runtime-draft--failed {
-  border-color: rgba(255, 77, 79, 0.3);
-  background: rgba(255, 77, 79, 0.04);
+  gap: 10px;
 }
 
 .runtime-message-image {
   max-width: 100%;
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   border: 1px solid rgba(5, 5, 5, 0.08);
 }
 
@@ -647,6 +1196,13 @@ function formatSharedState(value: Record<string, unknown> | null | undefined) {
   margin: 0 0 12px;
 }
 
+.runtime-markdown :deep(p:last-child),
+.runtime-markdown :deep(ul:last-child),
+.runtime-markdown :deep(ol:last-child),
+.runtime-markdown :deep(pre:last-child) {
+  margin-bottom: 0;
+}
+
 .runtime-markdown :deep(ul),
 .runtime-markdown :deep(ol) {
   padding-left: 20px;
@@ -661,7 +1217,7 @@ function formatSharedState(value: Record<string, unknown> | null | undefined) {
 .runtime-markdown :deep(pre) {
   padding: 12px;
   overflow-x: auto;
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   background: #fafafa;
   border: 1px solid rgba(5, 5, 5, 0.06);
 }
@@ -684,6 +1240,10 @@ function formatSharedState(value: Record<string, unknown> | null | undefined) {
 
 .runtime-message-card {
   width: 100%;
+}
+
+.runtime-empty {
+  margin: auto;
 }
 
 .customer-id-row {
@@ -722,5 +1282,29 @@ function formatSharedState(value: Record<string, unknown> | null | undefined) {
 
 .customer-id-row :deep(.ant-btn) {
   padding-inline: 18px;
+}
+
+@media (max-width: 1280px) {
+  .runtime-im {
+    grid-template-columns: 240px minmax(420px, 1fr) 160px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .runtime-im {
+    grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+    height: auto;
+    min-height: calc(100vh - 196px);
+  }
+
+  .runtime-im__status {
+    grid-column: 1 / -1;
+    min-height: 0;
+  }
+
+  .runtime-status-list {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 </style>
