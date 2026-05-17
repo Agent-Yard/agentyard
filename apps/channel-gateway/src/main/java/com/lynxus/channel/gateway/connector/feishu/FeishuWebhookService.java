@@ -131,6 +131,7 @@ public class FeishuWebhookService {
         String externalConversationId = requireText(readString(normalizedPayload.get("externalConversationId")), "feishu externalConversationId");
         String externalMessageId = requireText(readString(normalizedPayload.get("externalMessageId")), "feishu externalMessageId");
         String externalUserId = readString(normalizedPayload.get("externalUserId"));
+        String senderName = firstNonBlank(readString(normalizedPayload.get("senderName")), externalUserId);
         String text = extractMessageText(rawPayload);
         return new NormalizedChannelInboundTurn(
             PROVIDER,
@@ -142,7 +143,7 @@ public class FeishuWebhookService {
             new NormalizedChannelMessageSender(
                 NormalizedChannelSenderType.CUSTOMER,
                 externalUserId,
-                null,
+                senderName,
                 Map.of()
             ),
             java.util.List.of(new NormalizedChannelTurnMessage(
@@ -217,6 +218,13 @@ public class FeishuWebhookService {
         );
         if (externalUserId != null) {
             normalized.put("externalUserId", externalUserId);
+        }
+        String senderName = firstNonBlank(
+            readNestedString(body, "event", "sender", "sender_id", "user_id"),
+            externalUserId
+        );
+        if (senderName != null) {
+            normalized.put("senderName", senderName);
         }
         String timestamp = firstNonBlank(headers.get("X-Lark-Request-Timestamp"), headers.get("X-Request-Timestamp"));
         if (timestamp != null) {

@@ -154,6 +154,9 @@ public class NormalizedChannelTurnIngestService {
         if (turn.traceContext() == null || !NormalizedChannelEventValidator.hasText(turn.traceContext().traceparent())) {
             throw new IllegalArgumentException("normalizedTurn.traceContext.traceparent is required");
         }
+        if (turn.sender() != null) {
+            validateSender(turn.sender(), "normalizedTurn.sender");
+        }
         if (turn.messages().isEmpty()) {
             throw new IllegalArgumentException("normalizedTurn.messages is required");
         }
@@ -172,7 +175,17 @@ public class NormalizedChannelTurnIngestService {
             if (message.sender() == null && turn.sender() == null) {
                 throw new IllegalArgumentException("normalizedTurn.messages[" + index + "].sender is required");
             }
+            if (message.sender() != null) {
+                validateSender(message.sender(), "normalizedTurn.messages[" + index + "].sender");
+            }
         }
+    }
+
+    private static void validateSender(NormalizedChannelMessageSender sender, String field) {
+        if (sender.senderType() == null) {
+            throw new IllegalArgumentException(field + ".senderType is required");
+        }
+        NormalizedChannelEventValidator.requireText(sender.senderName(), field + ".senderName");
     }
 
     private ChannelGatewayProfile requireProfile(NormalizedChannelInboundTurn turn) {

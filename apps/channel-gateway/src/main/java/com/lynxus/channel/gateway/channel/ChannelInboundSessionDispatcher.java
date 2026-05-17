@@ -332,11 +332,17 @@ public class ChannelInboundSessionDispatcher {
     }
 
     private static SessionMessageSender toSessionSender(NormalizedChannelMessageSender sender) {
-        NormalizedChannelSenderType senderType = sender == null ? NormalizedChannelSenderType.CUSTOMER : sender.senderType();
+        if (sender == null) {
+            throw new IllegalArgumentException("channelInbound.message.sender is required");
+        }
+        NormalizedChannelSenderType senderType = sender.senderType();
+        if (senderType == null) {
+            throw new IllegalArgumentException("channelInbound.message.sender.senderType is required");
+        }
         return new SessionMessageSender(
             SessionMessageSenderType.valueOf(senderType.name()),
-            sender == null ? null : sender.senderId(),
-            sender == null ? null : sender.senderName()
+            sender.senderId(),
+            requireText(sender.senderName(), "channelInbound.message.sender.senderName")
         );
     }
 
@@ -560,6 +566,13 @@ public class ChannelInboundSessionDispatcher {
 
     private static boolean hasText(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private static String requireText(String value, String field) {
+        if (!hasText(value)) {
+            throw new IllegalArgumentException(field + " is required");
+        }
+        return value.trim();
     }
 
     private record DispatchPlan(

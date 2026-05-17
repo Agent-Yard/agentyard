@@ -197,7 +197,7 @@ public class InternalSessionRuntimeController {
         return new SessionMessageSender(
             SessionMessageSenderType.valueOf(requiredText(sender.get("senderType"), "sender.senderType")),
             optionalText(sender.get("senderId")),
-            optionalText(sender.get("senderName"))
+            requiredText(sender.get("senderName"), "sender.senderName")
         );
     }
 

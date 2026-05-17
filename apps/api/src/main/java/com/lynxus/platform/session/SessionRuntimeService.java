@@ -1272,10 +1272,17 @@ public class SessionRuntimeService {
     }
 
     private static SessionMessageSender requireSender(SessionMessageSender sender, String field) {
-        if (sender == null || sender.senderType() == null) {
+        if (sender == null) {
             throw new IllegalArgumentException(field + " is required");
         }
-        return sender;
+        if (sender.senderType() == null) {
+            throw new IllegalArgumentException(field + ".senderType is required");
+        }
+        return new SessionMessageSender(
+            sender.senderType(),
+            hasText(sender.senderId()) ? sender.senderId().trim() : null,
+            requireText(sender.senderName(), field + ".senderName")
+        );
     }
 
     private static String canonicalImportExternalMessageId(

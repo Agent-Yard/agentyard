@@ -187,6 +187,32 @@ class ChannelInboundSessionDispatcherTest {
     }
 
     @Test
+    void ingestRejectsMissingSenderNameBeforeDispatch() {
+        NormalizedChannelInboundTurn turn = new NormalizedChannelInboundTurn(
+            PROVIDER_TYPE,
+            "channel-profile-1",
+            "feishu:turn:missing-sender-name",
+            "chat-1",
+            "user-1",
+            new NormalizedChannelConversation("chat-1", "P2P", null, Map.of()),
+            new NormalizedChannelMessageSender(NormalizedChannelSenderType.CUSTOMER, "user-1", null, Map.of()),
+            List.of(message("evt-1", "msg-1", "hello", List.of())),
+            Map.of("externalConversationId", "chat-1"),
+            Map.of("raw", "payload"),
+            new NormalizedChannelTraceContext("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01", null),
+            Map.of("source", "test")
+        );
+
+        IllegalArgumentException error = assertThrows(
+            IllegalArgumentException.class,
+            () -> ingestService.ingest(turn, headers(turn.dedupKey()))
+        );
+
+        assertEquals("normalizedTurn.sender.senderName is required", error.getMessage());
+        assertEquals(0, runtimeClient.requests.size());
+    }
+
+    @Test
     void mixedDuplicateAndNewTurnDispatchesOnlyNewMessage() {
         ChannelInboundSessionDispatcher dispatcher = new ChannelInboundSessionDispatcher(repository, runtimeClient);
         NormalizedChannelInboundTurn first = turn("feishu:turn:first", List.of(message("evt-1", "msg-1", "hello", List.of())));

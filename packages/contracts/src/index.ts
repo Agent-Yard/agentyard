@@ -425,7 +425,7 @@ export interface NormalizedChannelTraceContext {
 export interface NormalizedChannelMessageSender {
   senderType: NormalizedChannelSenderType;
   senderId?: string | null;
-  senderName?: string | null;
+  senderName: string;
   metadata: Record<string, unknown>;
 }
 
@@ -1231,7 +1231,7 @@ export interface PlaybookConfig {
 export interface SessionMessageSender {
   senderType: SessionMessageSenderType;
   senderId: string | null;
-  senderName: string | null;
+  senderName: string;
 }
 
 export interface TextMessageBlock {

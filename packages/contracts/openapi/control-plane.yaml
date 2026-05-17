@@ -4206,6 +4206,7 @@ components:
           additionalProperties: true
     SessionMessageSender:
       type: object
+      required: [senderType, senderName]
       properties:
         senderType:
           $ref: '#/components/schemas/SessionMessageSenderType'
@@ -4214,7 +4215,6 @@ components:
           nullable: true
         senderName:
           type: string
-          nullable: true
     TextMessageBlock:
       type: object
       required: [type, text]

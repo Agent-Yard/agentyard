@@ -38,6 +38,7 @@ class FeishuInboundEventServiceTest {
 
     private ChannelAdminRepository repository;
     private CapturingReactionClient reactionClient;
+    private CapturingRuntimeClient runtimeClient;
     private FeishuInboundEventService service;
 
     @BeforeAll
@@ -55,7 +56,8 @@ class FeishuInboundEventServiceTest {
         database.reset();
         repository = new ChannelAdminRepository(database.dsl(), new ObjectMapper());
         reactionClient = new CapturingReactionClient();
-        ChannelInboundSessionDispatcher dispatcher = new ChannelInboundSessionDispatcher(repository, new CapturingRuntimeClient());
+        runtimeClient = new CapturingRuntimeClient();
+        ChannelInboundSessionDispatcher dispatcher = new ChannelInboundSessionDispatcher(repository, runtimeClient);
         service = new FeishuInboundEventService(
             new NormalizedChannelTurnIngestService(repository, registrationService()),
             dispatcher,
@@ -81,6 +83,7 @@ class FeishuInboundEventServiceTest {
         assertEquals("oc_123", binding.externalConversationId());
         assertEquals("ou_123", binding.externalUserId());
         assertEquals("assistant-1", binding.assistantId());
+        assertEquals("user_123", runtimeClient.requests.getFirst().messages().getFirst().sender().senderName());
         assertEquals(List.of("om_123:Typing"), reactionClient.added);
     }
 
@@ -178,8 +181,11 @@ class FeishuInboundEventServiceTest {
     }
 
     private static final class CapturingRuntimeClient implements ChannelSessionRuntimeClient {
+        private final List<ChannelInboundSessionTurnRequest> requests = new ArrayList<>();
+
         @Override
         public ChannelInboundSessionTurnResponse dispatchInboundTurn(ChannelInboundSessionTurnRequest request) {
+            requests.add(request);
             return new ChannelInboundSessionTurnResponse(
                 "session-feishu",
                 "turn-session-feishu",

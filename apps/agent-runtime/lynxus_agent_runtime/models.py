@@ -148,7 +148,7 @@ class ActivePlaybookSummary(BaseModel):
 class SessionMessageSender(BaseModel):
     senderType: Literal["CUSTOMER", "AGENT", "HUMAN_OPERATOR", "SYSTEM"]
     senderId: str | None = None
-    senderName: str | None = None
+    senderName: str
 
 
 class TextMessageBlock(BaseModel):

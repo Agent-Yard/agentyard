@@ -42,6 +42,7 @@ final class FeishuInboundEventService {
         String messageId = requireText(message.messageId(), "feishu message.message_id");
         String chatId = requireText(message.chatId(), "feishu message.chat_id");
         String senderId = firstNonBlank(message.senderOpenId(), message.senderUserId(), message.senderUnionId());
+        String senderName = firstNonBlank(message.senderUserId(), senderId);
         String dedupKey = "feishu:message:" + shortHash(message.channelProfileId()) + ":" + shortHash(messageId);
         String traceId = randomHex(32);
         String spanId = randomHex(16);
@@ -56,7 +57,7 @@ final class FeishuInboundEventService {
             new NormalizedChannelMessageSender(
                 NormalizedChannelSenderType.CUSTOMER,
                 senderId,
-                null,
+                senderName,
                 senderMetadata(message)
             ),
             List.of(new NormalizedChannelTurnMessage(
@@ -101,6 +102,7 @@ final class FeishuInboundEventService {
         payload.put("externalConversationId", message.chatId());
         payload.put("externalMessageId", message.messageId());
         putIfPresent(payload, "externalUserId", firstNonBlank(message.senderOpenId(), message.senderUserId(), message.senderUnionId()));
+        putIfPresent(payload, "senderName", firstNonBlank(message.senderUserId(), message.senderOpenId(), message.senderUnionId()));
         putIfPresent(payload, "chatType", message.chatType());
         putIfPresent(payload, "createTime", message.createTime());
         return Map.copyOf(payload);

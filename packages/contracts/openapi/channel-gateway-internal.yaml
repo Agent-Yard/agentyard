@@ -700,6 +700,7 @@ components:
       type: object
       required:
         - senderType
+        - senderName
         - metadata
       properties:
         senderType:
@@ -709,7 +710,6 @@ components:
           nullable: true
         senderName:
           type: string
-          nullable: true
         metadata:
           type: object
           additionalProperties: true

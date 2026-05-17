@@ -44,6 +44,7 @@ class FeishuWebhookControllerTest {
     private MockMvc mockMvc;
     private ChannelAdminRepository repository;
     private FakeFeishuIntegrationAccountRuntimeProvider accountRuntimeProvider;
+    private CapturingRuntimeClient runtimeClient;
 
     @BeforeAll
     static void startDatabase() throws Exception {
@@ -73,12 +74,13 @@ class FeishuWebhookControllerTest {
                 Map.of("verificationToken", "verify-token")
             )
         );
+        runtimeClient = new CapturingRuntimeClient();
         FeishuWebhookService feishuWebhookService = new FeishuWebhookService(
             channelAdminService,
             objectMapper,
             accountRuntimeProvider,
             new NormalizedChannelTurnIngestService(repository, registrationService()),
-            new ChannelInboundSessionDispatcher(repository, new CapturingRuntimeClient())
+            new ChannelInboundSessionDispatcher(repository, runtimeClient)
         );
         mockMvc = MockMvcBuilders.standaloneSetup(new FeishuWebhookController(feishuWebhookService))
             .setControllerAdvice(new ApiExceptionHandler())
@@ -184,7 +186,8 @@ class FeishuWebhookControllerTest {
                 "open_chat_id": "oc_123",
                 "sender": {
                   "sender_id": {
-                    "open_id": "ou_123"
+                    "open_id": "ou_123",
+                    "user_id": "user_123"
                   }
                 },
                 "message": {
@@ -215,6 +218,7 @@ class FeishuWebhookControllerTest {
         String channelProfileId = repository.listProfiles().getFirst().id();
         assertEquals(0, repository.listInboundEvents(channelProfileId).size());
         assertEquals(1, database.dsl().fetchCount(CHANNEL_INBOUND_TURN));
+        assertEquals("user_123", runtimeClient.requests.getFirst().messages().getFirst().sender().senderName());
     }
 
     private static ExtensionRegistrationService registrationService() {
@@ -226,8 +230,11 @@ class FeishuWebhookControllerTest {
     }
 
     private static final class CapturingRuntimeClient implements ChannelSessionRuntimeClient {
+        private final List<ChannelInboundSessionTurnRequest> requests = new java.util.ArrayList<>();
+
         @Override
         public ChannelInboundSessionTurnResponse dispatchInboundTurn(ChannelInboundSessionTurnRequest request) {
+            requests.add(request);
             return new ChannelInboundSessionTurnResponse(
                 "session-feishu",
                 "turn-session-feishu",

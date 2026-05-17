@@ -18,6 +18,8 @@ import com.lynxus.contracts.session.SessionContracts.HumanOperatorReplySignal;
 import com.lynxus.contracts.session.SessionContracts.HumanResumeSignal;
 import com.lynxus.contracts.runtime.WorkflowContracts.VersionStatus;
 import com.lynxus.contracts.session.SessionContracts.AcceptedSessionMessageAllocation;
+import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionTurnMessage;
+import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionTurnRequest;
 import com.lynxus.contracts.session.SessionContracts.ExistingSessionImportTarget;
 import com.lynxus.contracts.session.SessionContracts.PlaybookRun;
 import com.lynxus.contracts.session.SessionContracts.PlaybookRunStatus;
@@ -163,6 +165,26 @@ class SessionRuntimeServiceTest {
 
         assertEquals("Idempotency-Key must equal turnDedupKey", error.getMessage());
         verify(repository, never()).createOrReuseTurn(any());
+    }
+
+    @Test
+    void channelInboundTurnRequiresSenderNameBeforeTurnAllocation() {
+        SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
+        SessionRuntimeService service = new SessionRuntimeService(
+            mock(SessionWorkflowGateway.class),
+            mock(CatalogService.class),
+            repository,
+            new SessionDispatchLockService()
+        );
+
+        IllegalArgumentException error = assertThrows(
+            IllegalArgumentException.class,
+            () -> service.channelInboundTurn(channelInboundRequest(null), "dedup-1")
+        );
+
+        assertEquals("messages[0].sender.senderName is required", error.getMessage());
+        verify(repository, never()).createOrReuseTurn(any());
+        verify(repository, never()).appendSessionMessages(any(), any(), anyList());
     }
 
     @Test
@@ -840,6 +862,27 @@ class SessionRuntimeServiceTest {
 
     private static WebSessionTurnMessageInput webMessage(String clientMessageId, String text) {
         return new WebSessionTurnMessageInput(clientMessageId, Instant.parse("2026-04-01T00:00:00Z"), textBlocks(text), Map.of());
+    }
+
+    private static ChannelInboundSessionTurnRequest channelInboundRequest(String senderName) {
+        return new ChannelInboundSessionTurnRequest(
+            "channel-profile-1",
+            "conversation-1",
+            "dedup-1",
+            "ast-1",
+            "customer-1",
+            null,
+            List.of(new ChannelInboundSessionTurnMessage(
+                "event-1",
+                "message-1",
+                Instant.parse("2026-04-01T00:00:00Z"),
+                SessionMessageRole.USER,
+                new SessionMessageSender(SessionMessageSenderType.CUSTOMER, "customer-1", senderName),
+                textMessageInput("hello"),
+                Map.of()
+            )),
+            Map.of()
+        );
     }
 
     private static TrustedImportSessionTurnMessage importMessage(

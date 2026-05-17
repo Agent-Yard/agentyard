@@ -2,6 +2,7 @@ package com.lynxus.channel.gateway.channel;
 
 import com.lynxus.channel.gateway.shared.ApiResponse;
 import com.lynxus.contracts.http.HttpUrls;
+import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionTurnMessage;
 import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionTurnRequest;
 import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionTurnResponse;
 import java.net.http.HttpClient;
@@ -49,9 +50,10 @@ final class DefaultChannelSessionRuntimeClient implements ChannelSessionRuntimeC
 
     @Override
     public ChannelInboundSessionTurnResponse dispatchInboundTurn(ChannelInboundSessionTurnRequest request) {
+        validateRequest(request);
         try {
             HttpRequest httpRequest = HttpRequest.newBuilder()
-                .uri(HttpUrls.join(apiBaseUrl, "/api/internal/session-runtime/channel-inbound-turns"))
+                .uri(HttpUrls.join(apiBaseUrl, "/internal/session-runtime/channel-inbound-turns"))
                 .timeout(REQUEST_TIMEOUT)
                 .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(request)))
                 .header("Content-Type", "application/json")
@@ -86,5 +88,28 @@ final class DefaultChannelSessionRuntimeClient implements ChannelSessionRuntimeC
             throw new IllegalArgumentException(field + " is required");
         }
         return value.trim();
+    }
+
+    private static void validateRequest(ChannelInboundSessionTurnRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("channelInbound request is required");
+        }
+        if (request.messages() == null || request.messages().isEmpty()) {
+            throw new IllegalArgumentException("channelInbound.messages are required");
+        }
+        for (int index = 0; index < request.messages().size(); index += 1) {
+            ChannelInboundSessionTurnMessage message = request.messages().get(index);
+            String messageField = "channelInbound.messages[" + index + "]";
+            if (message == null) {
+                throw new IllegalArgumentException(messageField + " is required");
+            }
+            if (message.sender() == null) {
+                throw new IllegalArgumentException(messageField + ".sender is required");
+            }
+            if (message.sender().senderType() == null) {
+                throw new IllegalArgumentException(messageField + ".sender.senderType is required");
+            }
+            requireText(message.sender().senderName(), messageField + ".sender.senderName");
+        }
     }
 }

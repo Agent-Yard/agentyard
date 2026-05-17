@@ -1825,7 +1825,7 @@
       "NormalizedChannelMessageSender": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["senderType", "metadata"],
+        "required": ["senderType", "senderName", "metadata"],
         "properties": {
           "senderType": {
             "$ref": "#/components/schemas/NormalizedChannelSenderType"
@@ -1834,7 +1834,7 @@
             "type": ["string", "null"]
           },
           "senderName": {
-            "type": ["string", "null"]
+            "type": "string"
           },
           "metadata": {
             "$ref": "#/components/schemas/JsonObject"
