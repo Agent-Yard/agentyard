@@ -72,6 +72,9 @@ class SessionRuntimeServiceTest {
         installTurnRepositoryBehavior(repository, List.of());
         when(catalogService.getAssistantRuntimeSnapshot("ast-1")).thenReturn(assistant("ast-1"));
         when(repository.createOrReuseActiveSession(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(repository.findSession(any())).thenAnswer(invocation ->
+            java.util.Optional.of(session(invocation.getArgument(0), "IDLE", false, false))
+        );
 
         SendSessionTurnResponse response = service.sendTurn(
             new SendSessionTurnRequest(
@@ -187,6 +190,38 @@ class SessionRuntimeServiceTest {
     }
 
     @Test
+    void sendTurn_reloadsSessionInsideLockBeforePreflightAndTurnAllocation() {
+        SessionWorkflowGateway gateway = mock(SessionWorkflowGateway.class);
+        SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
+        SessionRuntimeService service = new SessionRuntimeService(
+            gateway,
+            mock(CatalogService.class),
+            repository,
+            new SessionDispatchLockService()
+        );
+        when(repository.findSession("session-1")).thenReturn(
+            java.util.Optional.of(session("session-1", "IDLE", false, false)),
+            java.util.Optional.of(session("session-1", "IDLE", true, false))
+        );
+        when(repository.findTurnByDedupKey("session-1", "turn-key-1")).thenReturn(java.util.Optional.empty());
+
+        ConflictException error = assertThrows(
+            ConflictException.class,
+            () -> service.sendTurn(
+                new SendSessionTurnRequest("session-1", "ast-1", "customer-1", "turn-key-1", List.of(webMessage("draft-1", "hello")), Map.of()),
+                "turn-key-1"
+            )
+        );
+
+        assertEquals("session is busy", error.getMessage());
+        verify(repository, never()).createOrReuseTurn(any());
+        verify(repository, never()).appendSessionMessages(any(), any(), anyList());
+        verify(repository, never()).updateTurnState(any(), any(), any(), anyList(), anyList(), anyList(), any(), any());
+        verify(gateway, never()).start(any());
+        verify(gateway, never()).submitUserTurn(any(), any(), any());
+    }
+
+    @Test
     void sendTurn_requiresAssistantIdForExplicitWebSession() {
         SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
         SessionRuntimeService service = new SessionRuntimeService(
@@ -250,6 +285,9 @@ class SessionRuntimeServiceTest {
         when(repository.findActiveSession("customer-1", "ast-1")).thenReturn(java.util.Optional.of(closedActive));
         when(gateway.isWorkflowClosed("session-closed")).thenReturn(true);
         when(repository.createOrReuseActiveSession(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(repository.findSession(any())).thenAnswer(invocation ->
+            java.util.Optional.of(session(invocation.getArgument(0), "IDLE", false, false))
+        );
         installTurnRepositoryBehavior(repository, List.of());
 
         SendSessionTurnResponse response = service.sendTurn(
@@ -432,6 +470,102 @@ class SessionRuntimeServiceTest {
             any(),
             eq(null)
         );
+    }
+
+    @Test
+    void sendTurn_retrySubmitsOnlyAllocatedInputMessagesWhenTurnAlreadyHasPlatformReplies() {
+        SessionWorkflowGateway gateway = mock(SessionWorkflowGateway.class);
+        SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
+        SessionRuntimeService service = new SessionRuntimeService(
+            gateway,
+            mock(CatalogService.class),
+            repository,
+            new SessionDispatchLockService()
+        );
+        Instant now = Instant.parse("2026-04-01T00:00:00Z");
+        SessionRuntimeStore.SessionRuntimeTurnData existingTurn = new SessionRuntimeStore.SessionRuntimeTurnData(
+            "turn-1",
+            "session-1",
+            "turn-key-1",
+            "USER_MESSAGE",
+            "MESSAGES_APPENDED",
+            List.of(Map.of("requestIndex", 0, "messageId", "input-message-1", "clientMessageId", "draft-1")),
+            List.of("input-message-1"),
+            List.of(),
+            List.of("input-message-1", "reply-message-1"),
+            "turn-1",
+            Map.of("source", "retry-test"),
+            now,
+            now,
+            null
+        );
+        List<SessionMessage> turnMessages = List.of(
+            externalTurnMessage("session-1", "turn-1", "input-message-1", 0, null, "draft-1", "hello"),
+            platformTurnMessage("session-1", "turn-1", "reply-message-1", 1, "platform reply")
+        );
+
+        when(repository.findSession("session-1")).thenReturn(java.util.Optional.of(session("session-1", "IDLE", false, false)));
+        when(repository.findTurnByDedupKey("session-1", "turn-key-1")).thenReturn(java.util.Optional.of(existingTurn));
+        when(repository.createOrReuseTurn(any())).thenReturn(existingTurn);
+        when(repository.listMessagesForTurn("session-1", "turn-1")).thenReturn(turnMessages);
+        when(repository.listMessages("session-1")).thenReturn(turnMessages);
+        when(repository.updateTurnState(any(), any(), any(), anyList(), anyList(), anyList(), any(), any())).thenAnswer(invocation ->
+            new SessionRuntimeStore.SessionRuntimeTurnData(
+                invocation.getArgument(1),
+                invocation.getArgument(0),
+                existingTurn.dedupKey(),
+                existingTurn.triggerType(),
+                invocation.getArgument(2),
+                existingTurn.inputAllocations(),
+                invocation.getArgument(3),
+                invocation.getArgument(4),
+                invocation.getArgument(5),
+                invocation.getArgument(6),
+                existingTurn.metadata(),
+                existingTurn.createdAt(),
+                now,
+                invocation.getArgument(7)
+            )
+        );
+        when(gateway.isWorkflowOpen("session-1")).thenReturn(true);
+
+        SendSessionTurnResponse response = service.sendTurn(
+            new SendSessionTurnRequest(
+                "session-1",
+                "ast-1",
+                "customer-1",
+                "turn-key-1",
+                List.of(webMessage("draft-1", "hello")),
+                Map.of()
+            ),
+            "turn-key-1"
+        );
+
+        assertEquals(List.of("input-message-1"), response.acceptedMessageIds());
+        verify(repository, never()).appendSessionMessages(any(), any(), anyList());
+        verify(repository).updateTurnState(
+            eq("session-1"),
+            eq("turn-1"),
+            eq("MESSAGES_APPENDED"),
+            eq(List.of("input-message-1")),
+            eq(List.of()),
+            eq(List.of("input-message-1", "reply-message-1")),
+            eq("turn-1"),
+            eq(null)
+        );
+        verify(repository).updateTurnState(
+            eq("session-1"),
+            eq("turn-1"),
+            eq("WORKFLOW_ACCEPTED"),
+            eq(List.of("input-message-1")),
+            eq(List.of()),
+            eq(List.of("input-message-1", "reply-message-1")),
+            eq("turn-1"),
+            eq(null)
+        );
+        verify(gateway).submitUserTurn(eq("session-1"), eq("turn-1"), argThat(turn ->
+            turn.messages().size() == 1 && "input-message-1".equals(turn.messages().getFirst().messageId())
+        ));
     }
 
     @Test
@@ -729,21 +863,64 @@ class SessionRuntimeServiceTest {
     }
 
     private static SessionMessage existingExternalMessage(String sessionId, String messageId, String externalMessageId) {
+        return externalTurnMessage(sessionId, "previous-turn", messageId, 0, externalMessageId, null, "existing");
+    }
+
+    private static SessionMessage externalTurnMessage(
+        String sessionId,
+        String turnId,
+        String messageId,
+        int turnIndex,
+        String externalMessageId,
+        String clientMessageId,
+        String text
+    ) {
         Instant now = Instant.parse("2026-04-01T00:00:00Z");
         return new SessionMessage(
             messageId,
             sessionId,
             1L,
-            "previous-turn",
-            0,
+            turnId,
+            turnIndex,
             SessionMessageProducerType.EXTERNAL,
             externalMessageId,
-            null,
+            clientMessageId,
             now,
             SessionMessageRole.USER,
             new SessionMessageSender(SessionMessageSenderType.CUSTOMER, "customer-1", "Customer"),
             SessionMessageStatus.SENT,
-            textBlocks("existing"),
+            textBlocks(text),
+            Map.of(),
+            null,
+            null,
+            null,
+            now,
+            now
+        );
+    }
+
+    private static SessionMessage platformTurnMessage(
+        String sessionId,
+        String turnId,
+        String messageId,
+        int turnIndex,
+        String text
+    ) {
+        Instant now = Instant.parse("2026-04-01T00:00:00Z");
+        return new SessionMessage(
+            messageId,
+            sessionId,
+            2L,
+            turnId,
+            turnIndex,
+            SessionMessageProducerType.PLATFORM,
+            null,
+            null,
+            now,
+            SessionMessageRole.ASSISTANT,
+            new SessionMessageSender(SessionMessageSenderType.AGENT, "agent-1", "Agent"),
+            SessionMessageStatus.SENT,
+            textBlocks(text),
             Map.of(),
             null,
             null,

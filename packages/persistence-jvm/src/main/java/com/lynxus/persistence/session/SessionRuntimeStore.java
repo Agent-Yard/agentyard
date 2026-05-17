@@ -526,34 +526,6 @@ public final class SessionRuntimeStore {
             .execute();
     }
 
-    public void appendMessage(SessionMessage message) {
-        dsl.insertInto(SESSION_RUNTIME_MESSAGE)
-            .set(SESSION_RUNTIME_MESSAGE.MESSAGE_ID, message.messageId())
-            .set(SESSION_RUNTIME_MESSAGE.SESSION_ID, message.sessionId())
-            .set(SESSION_RUNTIME_MESSAGE.SEQUENCE, message.sequence())
-            .set(SESSION_RUNTIME_MESSAGE.TURN_ID, message.turnId())
-            .set(SESSION_RUNTIME_MESSAGE.TURN_INDEX, message.turnIndex())
-            .set(SESSION_RUNTIME_MESSAGE.PRODUCER_TYPE, message.producerType().name())
-            .set(SESSION_RUNTIME_MESSAGE.EXTERNAL_MESSAGE_ID, message.externalMessageId())
-            .set(SESSION_RUNTIME_MESSAGE.CLIENT_MESSAGE_ID, message.clientMessageId())
-            .set(SESSION_RUNTIME_MESSAGE.OCCURRED_AT, JooqTimeSupport.toOffsetDateTime(message.occurredAt()))
-            .set(SESSION_RUNTIME_MESSAGE.ROLE, message.role().name())
-            .set(SESSION_RUNTIME_MESSAGE.SENDER_TYPE, message.sender().senderType().name())
-            .set(SESSION_RUNTIME_MESSAGE.SENDER_ID, message.sender().senderId())
-            .set(SESSION_RUNTIME_MESSAGE.SENDER_NAME, message.sender().senderName())
-            .set(SESSION_RUNTIME_MESSAGE.STATUS, message.status().name())
-            .set(SESSION_RUNTIME_MESSAGE.BLOCKS, jsonbSupport.toJsonb(message.blocks() == null ? List.of() : message.blocks()))
-            .set(SESSION_RUNTIME_MESSAGE.METADATA, jsonbSupport.toJsonb(message.metadata() == null ? Map.of() : message.metadata()))
-            .set(SESSION_RUNTIME_MESSAGE.RELATED_PLAYBOOK_RUN_ID, message.relatedPlaybookRunId())
-            .set(SESSION_RUNTIME_MESSAGE.RELATED_OWNER_AGENT_ID, message.relatedOwnerAgentId())
-            .set(SESSION_RUNTIME_MESSAGE.SOURCE_EVENT_ID, message.sourceEventId())
-            .set(SESSION_RUNTIME_MESSAGE.CREATED_AT, JooqTimeSupport.toOffsetDateTime(message.createdAt()))
-            .set(SESSION_RUNTIME_MESSAGE.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(message.updatedAt()))
-            .onConflict(SESSION_RUNTIME_MESSAGE.MESSAGE_ID)
-            .doNothing()
-            .execute();
-    }
-
     private Optional<SessionRuntimeSessionData> findActiveSessionByIdentity(SessionRuntimeSessionData session) {
         if (SessionEntryScope.CHANNEL.name().equals(session.entryScope())) {
             return findActiveChannelSession(

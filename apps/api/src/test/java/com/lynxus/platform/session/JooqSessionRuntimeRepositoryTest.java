@@ -140,7 +140,7 @@ class JooqSessionRuntimeRepositoryTest {
         );
 
         repository.saveSession(session);
-        repository.appendMessage(message);
+        appendSingleSessionMessage(message);
         repository.appendEvent(event);
         repository.savePlaybookRun(playbookRun);
 
@@ -167,21 +167,21 @@ class JooqSessionRuntimeRepositoryTest {
         insertSessionRow("session-2", "CHANNEL", "channel-profile-1", "chat-2", "customer-2", "assistant-1", "ACTIVE");
         insertSnapshot("binding-1", "session-1", "channel-profile-1", "customer-1", "assistant-1", "chat-1", now);
         insertSnapshot("binding-2", "session-2", "channel-profile-1", "customer-2", "assistant-1", "chat-2", now);
-        repository.appendMessage(message(
+        appendSingleSessionMessage(message(
             "message-final-1",
             "session-1",
             1L,
             SessionMessageRole.ASSISTANT,
             Instant.parse("2026-05-02T00:00:10Z")
         ));
-        repository.appendMessage(message(
+        appendSingleSessionMessage(message(
             "message-final-2",
             "session-2",
             1L,
             SessionMessageRole.ASSISTANT,
             Instant.parse("2026-05-02T00:00:01Z")
         ));
-        repository.appendMessage(message(
+        appendSingleSessionMessage(message(
             "message-user-3",
             "session-2",
             2L,
@@ -214,7 +214,7 @@ class JooqSessionRuntimeRepositoryTest {
             "chat-stale-snapshot",
             now
         );
-        repository.appendMessage(message(
+        appendSingleSessionMessage(message(
             "message-platform-assistant",
             "session-platform",
             1L,
@@ -222,7 +222,7 @@ class JooqSessionRuntimeRepositoryTest {
             SessionMessageProducerType.PLATFORM,
             now.plusSeconds(1)
         ));
-        repository.appendMessage(message(
+        appendSingleSessionMessage(message(
             "message-external-assistant",
             "session-external",
             1L,
@@ -230,7 +230,7 @@ class JooqSessionRuntimeRepositoryTest {
             SessionMessageProducerType.EXTERNAL,
             now.plusSeconds(2)
         ));
-        repository.appendMessage(message(
+        appendSingleSessionMessage(message(
             "message-web-platform",
             "session-web",
             1L,
@@ -238,7 +238,7 @@ class JooqSessionRuntimeRepositoryTest {
             SessionMessageProducerType.PLATFORM,
             now.plusSeconds(3)
         ));
-        repository.appendMessage(message(
+        appendSingleSessionMessage(message(
             "message-stale-snapshot-platform",
             "session-stale-snapshot",
             1L,
@@ -830,6 +830,34 @@ class JooqSessionRuntimeRepositoryTest {
             occurredAt.plusMillis(1),
             occurredAt.plusMillis(1)
         );
+    }
+
+    private void appendSingleSessionMessage(SessionMessage message) {
+        repository.createOrReuseTurn(turn(
+            message.turnId(),
+            message.sessionId(),
+            "dedup-" + message.messageId(),
+            List.of(),
+            List.of(),
+            message.createdAt()
+        ));
+        repository.appendSessionMessages(message.sessionId(), message.turnId(), List.of(new SessionRuntimeStore.SessionMessageAppendData(
+            message.messageId(),
+            message.producerType(),
+            message.externalMessageId(),
+            message.clientMessageId(),
+            message.occurredAt(),
+            message.role(),
+            message.sender(),
+            message.status(),
+            message.blocks(),
+            message.metadata(),
+            message.relatedPlaybookRunId(),
+            message.relatedOwnerAgentId(),
+            message.sourceEventId(),
+            message.createdAt(),
+            message.updatedAt()
+        )));
     }
 
     private static SessionMessage message(

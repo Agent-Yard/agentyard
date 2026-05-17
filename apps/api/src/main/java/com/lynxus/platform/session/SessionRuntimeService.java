@@ -297,6 +297,7 @@ public class SessionRuntimeService {
             existingTurn = Optional.empty();
         }
         if (existingTurn.isEmpty()) {
+            session = latestSessionForNewTurn(session);
             requireSessionAcceptsTurn(session);
         }
         Instant now = Instant.now();
@@ -333,7 +334,9 @@ public class SessionRuntimeService {
             turnMessages.addAll(appended);
         }
         turnMessages = repository.listMessagesForTurn(session.id(), turn.turnId());
-        List<String> acceptedMessageIds = turnMessages.stream().map(SessionMessage::messageId).toList();
+        List<SessionMessage> acceptedInputMessages = acceptedInputMessagesForTurn(turn, turnMessages);
+        List<String> acceptedMessageIds = acceptedInputMessages.stream().map(SessionMessage::messageId).toList();
+        List<String> turnMessageIds = turnMessages.stream().map(SessionMessage::messageId).toList();
         List<String> duplicateExternalMessageIds = recovery.duplicateExternalMessageIds();
         turn = repository.updateTurnState(
             session.id(),
@@ -341,7 +344,7 @@ public class SessionRuntimeService {
             TURN_STATUS_MESSAGES_APPENDED,
             acceptedMessageIds,
             duplicateExternalMessageIds,
-            acceptedMessageIds,
+            turnMessageIds,
             turn.turnId(),
             null
         );
@@ -354,7 +357,7 @@ public class SessionRuntimeService {
             sessionWorkflowGateway.submitUserTurn(
                 session.id(),
                 turn.turnId(),
-                new UserTurn(turn.turnId(), session.customerId(), turn.dedupKey(), turnMessages, turn.metadata())
+                new UserTurn(turn.turnId(), session.customerId(), turn.dedupKey(), acceptedInputMessages, turn.metadata())
             );
         } catch (RuntimeException error) {
             if (sessionWorkflowGateway.isWorkflowClosed(session.id())) {
@@ -369,11 +372,19 @@ public class SessionRuntimeService {
             TURN_STATUS_WORKFLOW_ACCEPTED,
             acceptedMessageIds,
             duplicateExternalMessageIds,
-            acceptedMessageIds,
+            turnMessageIds,
             turn.turnId(),
             null
         );
         return responseFromTurn(session.id(), turn, turnMessages, null);
+    }
+
+    private SessionRuntimeSessionDto latestSessionForNewTurn(SessionRuntimeSessionDto session) {
+        Optional<SessionRuntimeSessionDto> latest = repository.findSession(session.id());
+        if (latest == null) {
+            throw new IllegalStateException("session reload returned null");
+        }
+        return latest.orElseThrow(() -> new IllegalStateException("session cannot be reloaded"));
     }
 
     private TurnRecovery recoverTurn(
@@ -386,11 +397,15 @@ public class SessionRuntimeService {
         for (TurnMessageInput input : inputs) {
             inputsByIndex.put(input.requestIndex(), input);
         }
+        Set<String> allocatedInputMessageIds = new HashSet<>();
+        for (Map<String, Object> allocation : turn.inputAllocations()) {
+            allocatedInputMessageIds.add(stringValue(allocation.get("messageId")));
+        }
         Set<String> existingTurnMessageIds = new HashSet<>();
         Set<String> existingTurnExternalIds = new HashSet<>();
         for (SessionMessage message : existingTurnMessages) {
             existingTurnMessageIds.add(message.messageId());
-            if (hasText(message.externalMessageId())) {
+            if (allocatedInputMessageIds.contains(message.messageId()) && hasText(message.externalMessageId())) {
                 existingTurnExternalIds.add(message.externalMessageId());
             }
         }
@@ -425,6 +440,24 @@ public class SessionRuntimeService {
             append.add(toAppendData(messageId, externalMessageId, input));
         }
         return new TurnRecovery(append, duplicateExternalMessageIds);
+    }
+
+    private List<SessionMessage> acceptedInputMessagesForTurn(
+        SessionRuntimeStore.SessionRuntimeTurnData turn,
+        List<SessionMessage> turnMessages
+    ) {
+        Map<String, SessionMessage> messagesById = new LinkedHashMap<>();
+        for (SessionMessage message : turnMessages) {
+            messagesById.put(message.messageId(), message);
+        }
+        List<SessionMessage> acceptedInputMessages = new ArrayList<>();
+        for (Map<String, Object> allocation : turn.inputAllocations()) {
+            SessionMessage message = messagesById.get(stringValue(allocation.get("messageId")));
+            if (message != null) {
+                acceptedInputMessages.add(message);
+            }
+        }
+        return acceptedInputMessages;
     }
 
     private SessionRuntimeStore.SessionMessageAppendData toAppendData(

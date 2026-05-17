@@ -2646,8 +2646,8 @@ components:
           type: object
           additionalProperties: true
           description: >
-            Kind-specific payload. TYPING_* requires messageId. DRAFT_UPDATE requires messageId/blockId/blockType
-            and TEXT delta. DRAFT_COMPLETE requires messageId/blockId/blockType/block and only closes draft state.
+            Kind-specific payload. TYPING_* requires replyMessageId. DRAFT_UPDATE requires replyMessageId/blockId/blockType
+            and TEXT delta. DRAFT_COMPLETE requires replyMessageId/blockId/blockType/block and only closes draft state.
             FINAL_DELIVERY requires sessionMessageId/messageSequence/messageBlocks and is the only official external send action.
         traceContext:
           $ref: '#/components/schemas/NormalizedChannelTraceContext'
@@ -4550,7 +4550,7 @@ components:
           additionalProperties: true
     SessionReplyDraftEvent:
       type: object
-      required: [id, type, occurredAt, sessionId, turnId, messageId, operation, blockId, blockType]
+      required: [id, type, occurredAt, sessionId, turnId, replyMessageId, operation, blockId, blockType]
       properties:
         id:
           type: string
@@ -4564,7 +4564,7 @@ components:
           type: string
         turnId:
           type: string
-        messageId:
+        replyMessageId:
           type: string
         operation:
           type: string
@@ -4959,9 +4959,9 @@ components:
     TurnStartedPayload:
       type: object
       additionalProperties: false
-      required: [messageId, triggerType]
+      required: [replyMessageId, triggerType]
       properties:
-        messageId:
+        replyMessageId:
           type: string
         triggerType:
           $ref: '#/components/schemas/SessionTriggerType'
@@ -5025,9 +5025,9 @@ components:
     ReplyBlockDeltaPayload:
       type: object
       additionalProperties: false
-      required: [messageId, blockId, blockType, delta]
+      required: [replyMessageId, blockId, blockType, delta]
       properties:
-        messageId:
+        replyMessageId:
           type: string
         blockId:
           type: string
@@ -5039,9 +5039,9 @@ components:
     ReplyBlockCompletedPayload:
       type: object
       additionalProperties: false
-      required: [messageId, blockId, block]
+      required: [replyMessageId, blockId, block]
       properties:
-        messageId:
+        replyMessageId:
           type: string
         blockId:
           type: string
@@ -5050,9 +5050,9 @@ components:
     FinalOutcomePayload:
       type: object
       additionalProperties: false
-      required: [messageId, outcome]
+      required: [replyMessageId, outcome]
       properties:
-        messageId:
+        replyMessageId:
           type: string
         outcome:
           $ref: '#/components/schemas/AgentTurnExecutionOutcome'
@@ -5062,20 +5062,20 @@ components:
     TurnCompletedPayload:
       type: object
       additionalProperties: false
-      required: [messageId, status]
+      required: [replyMessageId, status]
       properties:
-        messageId:
+        replyMessageId:
           type: string
         status:
           $ref: '#/components/schemas/TurnCompletionStatus'
     ErrorPayload:
       type: object
       additionalProperties: false
-      required: [code, messageId, message, stage, retryable]
+      required: [code, replyMessageId, message, stage, retryable]
       properties:
         code:
           type: string
-        messageId:
+        replyMessageId:
           type: string
         message:
           type: string

@@ -74,8 +74,6 @@ public interface SessionRuntimeRepository {
 
     long nextEventSequence(String sessionId);
 
-    void appendMessage(SessionMessage message);
-
     List<SessionMessage> appendSessionMessages(
         String sessionId,
         String turnId,

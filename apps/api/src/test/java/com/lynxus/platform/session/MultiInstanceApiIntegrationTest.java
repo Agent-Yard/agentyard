@@ -29,6 +29,7 @@ import com.lynxus.platform.LynxusApiApplication;
 import com.lynxus.platform.auth.AuthModels;
 import com.lynxus.platform.auth.AuthProperties;
 import com.lynxus.platform.knowledge.KnowledgeWorkflowGateway;
+import com.lynxus.persistence.session.SessionRuntimeStore;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -857,14 +858,16 @@ class MultiInstanceApiIntegrationTest {
         SessionRuntimeRepository repository = instance.bean(SessionRuntimeRepository.class);
         SessionRuntimeChangeNoticePublisher publisher = instance.bean(SessionRuntimeChangeNoticePublisher.class);
         SessionRuntimeSessionDto current = repository.findSession(sessionId).orElseThrow();
-        long sequence = repository.nextMessageSequence(sessionId);
         Instant now = Instant.now();
-        repository.appendMessage(new SessionMessage(
-            "session-message-" + UUID.randomUUID(),
+        SessionRuntimeStore.SessionRuntimeTurnData turn = repository.allocatePlatformTurn(
             sessionId,
-            sequence,
-            "turn-synthetic-" + sequence,
-            0,
+            "SYNTHETIC_SESSION_UPDATE",
+            "synthetic-update-" + UUID.randomUUID(),
+            null,
+            Map.of()
+        );
+        SessionMessage appended = repository.appendSessionMessages(sessionId, turn.turnId(), List.of(new SessionRuntimeStore.SessionMessageAppendData(
+            "session-message-" + UUID.randomUUID(),
             SessionMessageProducerType.PLATFORM,
             null,
             null,
@@ -879,7 +882,7 @@ class MultiInstanceApiIntegrationTest {
             null,
             now,
             now
-        ));
+        ))).getFirst();
         repository.saveSession(new SessionRuntimeSessionDto(
             current.id(),
             current.scenarioId(),
@@ -901,7 +904,7 @@ class MultiInstanceApiIntegrationTest {
             current.createdAt(),
             now,
             current.endedAt(),
-            sequence,
+            appended.sequence(),
             current.latestEventSequence()
         ));
         publisher.publishSessionChanged(sessionId);

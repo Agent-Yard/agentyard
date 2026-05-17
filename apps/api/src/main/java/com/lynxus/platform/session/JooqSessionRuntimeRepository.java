@@ -187,11 +187,6 @@ public class JooqSessionRuntimeRepository implements SessionRuntimeRepository {
     }
 
     @Override
-    public void appendMessage(SessionMessage message) {
-        store.appendMessage(message);
-    }
-
-    @Override
     public List<SessionMessage> appendSessionMessages(
         String sessionId,
         String turnId,
