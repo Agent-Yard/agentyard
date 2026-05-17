@@ -1897,13 +1897,6 @@ public final class SessionContracts {
     ) {
     }
 
-    public record UserMessage(
-        String messageId,
-        String customerId,
-        SessionMessageInput message
-    ) {
-    }
-
     public record ChannelInboundSessionTurnMessage(
         String externalEventId,
         String externalMessageId,
@@ -1948,32 +1941,6 @@ public final class SessionContracts {
             acceptedMessageAllocations = acceptedMessageAllocations == null ? List.of() : List.copyOf(acceptedMessageAllocations);
             duplicateExternalMessageIds = duplicateExternalMessageIds == null ? List.of() : List.copyOf(duplicateExternalMessageIds);
         }
-    }
-
-    public record ChannelInboundSessionMessageRequest(
-        String channelProfileId,
-        String externalConversationId,
-        String externalMessageId,
-        String inboundEventId,
-        String dedupKey,
-        String assistantId,
-        String customerId,
-        String sessionId,
-        SessionMessageInput message
-    ) {
-    }
-
-    public record ChannelInboundSessionMessageResponse(
-        String sessionId,
-        String status
-    ) {
-    }
-
-    public record SessionUserMessageUpdateResult(
-        SessionMessageDeliveryStatus status,
-        String sessionId,
-        String reason
-    ) {
     }
 
     public sealed interface ImportSessionTarget

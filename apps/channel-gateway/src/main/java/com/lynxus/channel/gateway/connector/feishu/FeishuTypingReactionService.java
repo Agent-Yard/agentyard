@@ -2,11 +2,8 @@ package com.lynxus.channel.gateway.connector.feishu;
 
 import com.lynxus.channel.gateway.channel.ChannelAdminRepository;
 import com.lynxus.channel.gateway.channel.ChannelInboundSessionDispatchObserver;
-import com.lynxus.channel.gateway.channel.ChannelInboundSessionDispatcher.ChannelInboundSessionDispatchResult;
 import com.lynxus.channel.gateway.channel.ChannelInboundTurnIngestResult;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
-import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelInboundEvent;
-import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelInboundEventResult;
 import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelInboundTurn;
 import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelInboundTurnResult;
 import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelTurnMessage;
@@ -38,17 +35,6 @@ final class FeishuTypingReactionService implements ChannelInboundSessionDispatch
         this.reactionClient = reactionClient;
     }
 
-    void beginInboundTypingReaction(NormalizedChannelInboundEvent event) {
-        if (!isFeishuMessage(event)) {
-            return;
-        }
-        Optional<ChannelGatewayProfile> profile = repository.findProfile(event.channelProfileId());
-        if (profile.isEmpty()) {
-            return;
-        }
-        beginInboundTypingReaction(profile.orElseThrow(), event);
-    }
-
     void beginInboundTypingReaction(NormalizedChannelInboundTurn turn) {
         if (!isFeishuTurn(turn)) {
             return;
@@ -58,58 +44,6 @@ final class FeishuTypingReactionService implements ChannelInboundSessionDispatch
             return;
         }
         beginInboundTypingReaction(profile.orElseThrow(), turn);
-    }
-
-    private void beginInboundTypingReaction(ChannelGatewayProfile profile, NormalizedChannelInboundEvent event) {
-        if (!hasText(profile.accountId())) {
-            return;
-        }
-        FeishuMessageReactionClient.FeishuAddReactionResult created;
-        try {
-            FeishuAppCredential credential = credentialProvider.resolve(profile.accountId());
-            created = reactionClient.addReaction(new FeishuMessageReactionClient.FeishuAddReactionCommand(
-                credential,
-                event.externalMessageId(),
-                TYPING_EMOJI_TYPE
-            ));
-        } catch (RuntimeException error) {
-            log.warn(
-                "failed to add Feishu typing reaction: channelProfileId={}, externalMessageId={}, dedupKey={}",
-                event.channelProfileId(),
-                event.externalMessageId(),
-                event.dedupKey(),
-                error
-            );
-            return;
-        }
-
-        String sessionId = repository.findBindingByProfileAndExternalConversation(
-            event.channelProfileId(),
-            event.externalConversationId()
-        ).map(binding -> trimToNull(binding.sessionId())).orElse(null);
-        FeishuTypingReactionState state = new FeishuTypingReactionState(
-            profile.id(),
-            event.externalConversationId(),
-            event.externalMessageId(),
-            event.dedupKey(),
-            sessionId,
-            created.reactionId()
-        );
-        try {
-            boolean saved = reactionStore.saveIfAbsent(state);
-            if (!saved) {
-                deleteUntrackedReaction(profile, event.externalMessageId(), created.reactionId());
-            }
-        } catch (RuntimeException error) {
-            deleteUntrackedReaction(profile, event.externalMessageId(), created.reactionId());
-            log.warn(
-                "failed to save Feishu typing reaction state in Redis: channelProfileId={}, externalMessageId={}, dedupKey={}",
-                event.channelProfileId(),
-                event.externalMessageId(),
-                event.dedupKey(),
-                error
-            );
-        }
     }
 
     private void beginInboundTypingReaction(ChannelGatewayProfile profile, NormalizedChannelInboundTurn turn) {
@@ -201,41 +135,6 @@ final class FeishuTypingReactionService implements ChannelInboundSessionDispatch
     }
 
     @Override
-    public void afterDispatchSucceeded(
-        NormalizedChannelInboundEvent event,
-        NormalizedChannelInboundEventResult ingestResult,
-        ChannelInboundSessionDispatchResult dispatchResult
-    ) {
-        if (!isFeishuMessage(event) || dispatchResult == null || !hasText(dispatchResult.sessionId())) {
-            return;
-        }
-        reactionStore.attachSessionByDedupKey(
-            event.channelProfileId(),
-            event.dedupKey(),
-            dispatchResult.sessionId()
-        );
-    }
-
-    @Override
-    public void afterDispatchFailed(
-        NormalizedChannelInboundEvent event,
-        NormalizedChannelInboundEventResult ingestResult,
-        RuntimeException error
-    ) {
-        if (!isFeishuMessage(event)) {
-            return;
-        }
-        Optional<ChannelGatewayProfile> profile = repository.findProfile(event.channelProfileId());
-        if (profile.isEmpty()) {
-            return;
-        }
-        reactionStore.claimByDedupKey(
-            event.channelProfileId(),
-            event.dedupKey()
-        ).ifPresent(state -> deleteClaimedReaction(profile.orElseThrow(), state));
-    }
-
-    @Override
     public void deleteTypingReactionOnFirstOutboundFrame(
         ChannelGatewayProfile profile,
         String sessionId,
@@ -298,15 +197,6 @@ final class FeishuTypingReactionService implements ChannelInboundSessionDispatch
                 error
             );
         }
-    }
-
-    private static boolean isFeishuMessage(NormalizedChannelInboundEvent event) {
-        return event != null
-            && FeishuGatewayNativeChannelProviderAdapter.PROVIDER_TYPE.equals(event.providerType())
-            && hasText(event.channelProfileId())
-            && hasText(event.externalConversationId())
-            && hasText(event.externalMessageId())
-            && hasText(event.dedupKey());
     }
 
     private static boolean isFeishuTurn(NormalizedChannelInboundTurn turn) {

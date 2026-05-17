@@ -37,8 +37,8 @@ class InternalNormalizedChannelEventControllerTest {
                 .header(LynxusExtensionHeaders.DESCRIPTOR_ID, "enterprise.acme.internal-im")
                 .header(LynxusExtensionHeaders.TRACE_ID, "trace-1")
                 .header(LynxusExtensionHeaders.REQUEST_ID, "request-1")
-                .header(LynxusExtensionHeaders.IDEMPOTENCY_KEY, "enterprise.acme.internal-im:message:msg-1")
-                .content(validMessageRequest()))
+                .header(LynxusExtensionHeaders.IDEMPOTENCY_KEY, "enterprise.acme.internal-im:webhook:verified")
+                .content(validEventRequest()))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.eventId").value("channel-inbound-event-1"))
             .andExpect(jsonPath("$.data.duplicate").value(false));
@@ -49,7 +49,7 @@ class InternalNormalizedChannelEventControllerTest {
         assertEquals(0, event.getValue().normalizedPayload().size());
         assertEquals("acme-channel-provider", headers.getValue().registrationId());
         assertEquals("CHANNEL_PROVIDER", headers.getValue().descriptorType());
-        assertEquals("enterprise.acme.internal-im:message:msg-1", headers.getValue().idempotencyKey());
+        assertEquals("enterprise.acme.internal-im:webhook:verified", headers.getValue().idempotencyKey());
     }
 
     @Test
@@ -61,7 +61,7 @@ class InternalNormalizedChannelEventControllerTest {
 
         mockMvc.perform(post("/internal/channel-events/normalized")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(validMessageRequest().replace("\"normalizedPayload\": {},\n", "")))
+                .content(validEventRequest().replace("\"normalizedPayload\": {},\n", "")))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.detail").value("normalized event request.normalizedPayload is required"));
 
@@ -77,7 +77,7 @@ class InternalNormalizedChannelEventControllerTest {
 
         mockMvc.perform(post("/internal/channel-events/normalized")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(validMessageRequest().replace("\"normalizedPayload\": {}", "\"normalizedPayload\": null")))
+                .content(validEventRequest().replace("\"normalizedPayload\": {}", "\"normalizedPayload\": null")))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.detail").value("normalized event request.normalizedPayload must be an object"));
 
@@ -94,12 +94,28 @@ class InternalNormalizedChannelEventControllerTest {
 
         mockMvc.perform(post("/internal/channel-events/normalized")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(validMessageRequest()))
+                .content(validEventRequest()))
             .andExpect(status().isOk());
 
         ArgumentCaptor<NormalizedChannelInboundEvent> event = ArgumentCaptor.forClass(NormalizedChannelInboundEvent.class);
         verify(service).ingest(event.capture(), any());
         assertEquals(0, event.getValue().normalizedPayload().size());
+    }
+
+    @Test
+    void rejectsLegacyMessageClassEventBeforeIngestService() throws Exception {
+        NormalizedChannelEventIngestService service = mock(NormalizedChannelEventIngestService.class);
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new InternalNormalizedChannelEventController(service, new ObjectMapper()))
+            .setControllerAdvice(new ApiExceptionHandler())
+            .build();
+
+        mockMvc.perform(post("/internal/channel-events/normalized")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(legacyMessageRequest()))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.detail").value("normalized event request is invalid"));
+
+        verify(service, never()).ingest(any(), any());
     }
 
     @Test
@@ -128,7 +144,25 @@ class InternalNormalizedChannelEventControllerTest {
             .andExpect(jsonPath("$.detail").value("normalized event request must not contain externalSecretRef"));
     }
 
-    private static String validMessageRequest() {
+    private static String validEventRequest() {
+        return """
+            {
+              "providerType": "enterprise.acme.internal-im",
+              "channelProfileId": "channel-profile-1",
+              "eventType": "WEBHOOK_VERIFIED",
+              "externalEventId": "evt-verified",
+              "dedupKey": "enterprise.acme.internal-im:webhook:verified",
+              "normalizedPayload": {},
+              "rawPayload": {},
+              "traceContext": {
+                "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+              },
+              "metadata": {}
+            }
+            """;
+    }
+
+    private static String legacyMessageRequest() {
         return """
             {
               "providerType": "enterprise.acme.internal-im",
@@ -139,30 +173,10 @@ class InternalNormalizedChannelEventControllerTest {
               "externalMessageId": "msg-1",
               "externalUserId": "user-1",
               "dedupKey": "enterprise.acme.internal-im:message:msg-1",
-              "conversation": {
-                "externalConversationId": "chat-1",
-                "type": "GROUP",
-                "title": "Support",
-                "metadata": {}
-              },
-              "sender": {
-                "externalUserId": "user-1",
-                "displayName": "Alice",
-                "metadata": {}
-              },
-              "message": {
-                "externalMessageId": "msg-1",
-                "type": "TEXT",
-                "text": "hello",
-                "attachments": [],
-                "metadata": {}
-              },
               "normalizedPayload": {},
-              "rawPayload": {},
               "traceContext": {
                 "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
-              },
-              "metadata": {}
+              }
             }
             """;
     }

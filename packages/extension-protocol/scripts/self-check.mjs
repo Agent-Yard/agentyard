@@ -464,6 +464,7 @@ function checkOpenApi() {
   }
 
   assertNormalizedEventAcceptedOpenApi(openApi);
+  assertMessageClassInboundUsesTurnOpenApi(openApi);
 
   const descriptorPaths = [
     "/tools/invoke",
@@ -507,6 +508,14 @@ function checkOpenApi() {
 function assertNormalizedEventAcceptedOpenApi(openApi) {
   const accepted = openApi.components.schemas.NormalizedEventAccepted?.properties?.accepted;
   assert(accepted?.const === true, "OpenAPI NormalizedEventAccepted.accepted must use const: true");
+}
+
+function assertMessageClassInboundUsesTurnOpenApi(openApi) {
+  const eventTypes = openApi.components.schemas.NormalizedChannelInboundEvent?.properties?.eventType?.enum ?? [];
+  assert(!eventTypes.includes("MESSAGE_RECEIVED"), "OpenAPI NormalizedChannelInboundEvent must not accept MESSAGE_RECEIVED");
+  assert(!eventTypes.includes("FILE_RECEIVED"), "OpenAPI NormalizedChannelInboundEvent must not accept FILE_RECEIVED");
+  const turnMessages = openApi.components.schemas.NormalizedChannelInboundTurn?.properties?.messages?.items?.$ref;
+  assert(turnMessages === "#/components/schemas/NormalizedChannelTurnMessage", "OpenAPI message-class inbound must use NormalizedChannelInboundTurn.messages");
 }
 
 function operationHeaders(openApi, pathName, method) {

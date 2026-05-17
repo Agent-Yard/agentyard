@@ -560,13 +560,6 @@ public class ChannelInboundSessionDispatcher {
         return value != null && !value.isBlank();
     }
 
-    public record ChannelInboundSessionDispatchResult(
-        String inboundEventId,
-        String sessionId,
-        String bindingId
-    ) {
-    }
-
     private record DispatchPlan(
         List<ChannelInboundTurnMessageAudit> allMessages,
         List<ChannelInboundTurnMessageAudit> messagesToDispatch

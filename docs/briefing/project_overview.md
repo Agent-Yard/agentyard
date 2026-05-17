@@ -64,7 +64,7 @@ Lynxus 当前的解法，是把这些问题收束到统一平台结构中：
 - 一个 `session` 对应一条主 Temporal workflow
 - assistant 显式配置唯一 `primaryAgentId`
 - 运行时始终只有一个 `currentOwnerAgentId`
-- 用户消息通过 `/api/session-runtime/messages` 进入当前 session；请求可携带 `sessionId` 发送到已有 session，或携带 `assistantId` 用首条消息启动 / 复用 session
+- 用户输入通过 `/api/session-runtime/turns` 进入当前 session；一次 turn 可包含多条 message 和 blocks，请求可携带 `sessionId` 发送到已有 session，或携带 `assistantId` 用首个 turn 启动 / 复用 session
 - owner 只能返回以下控制动作：
   - `REPLY`
   - `NO_OP`
@@ -78,6 +78,8 @@ Lynxus 当前的解法，是把这些问题收束到统一平台结构中：
 运行态权威投影已经收敛为：
 
 - `session_runtime_session`
+- `session_runtime_turn`
+- `session_runtime_message`
 - `session_runtime_event`
 - `session_runtime_playbook_run`
 
@@ -85,7 +87,7 @@ Lynxus 当前的解法，是把这些问题收束到统一平台结构中：
 
 - 当前 owner
 - 当前 shared state
-- session event 时间线
+- turn / message / session event 时间线
 - playbook run 列表
 - handoff / idle / draining 等会话状态
 

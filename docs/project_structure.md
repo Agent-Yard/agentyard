@@ -137,6 +137,8 @@ demo/                 演示素材目录，不参与当前主实现说明
 当前主要运行对象包括：
 
 - `Session`
+- `Turn`
+- `SessionMessage`
 - `SessionEvent`
 - `PlaybookRun`
 - `sharedState`
@@ -144,6 +146,8 @@ demo/                 演示素材目录，不参与当前主实现说明
 其中：
 
 - `Session` 持有当前 owner、handoff、idle deadline 与活跃 playbook 等权威状态
+- `Turn` 是一次后端处理批次，也是幂等、agent execution 归属和 outbound 投递的边界
+- `SessionMessage` 按 `turn -> messages -> blocks` 记录用户可见消息，`sequence` 和 `turnIndex` 由持久化统一 append 入口分配
 - `SessionEvent` 记录用户消息、owner 回复、owner switch、playbook 等待/恢复/完成、handoff 开始/结束等事实
 - `PlaybookRun` 记录一次 playbook 执行实例的输入、结果、等待原因与终态
 
@@ -156,7 +160,7 @@ demo/                 演示素材目录，不参与当前主实现说明
 当前助手运行采用“两层能力模型”：
 
 - `Owner Agent`
-  - 接收用户消息或系统触发
+  - 接收当前 turn 的 messages/contextEntries 或系统触发
   - 执行单轮推理
   - 通过最终 outcome 决定 `REPLY / NO_OP / SWITCH_OWNER / RUN_PLAYBOOK / SESSION_HUMAN_HANDOFF / SECURITY_BLOCK`
   - 可在任意 action 中携带完整 `replyMessage`

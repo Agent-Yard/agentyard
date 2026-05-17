@@ -2,16 +2,10 @@ package com.lynxus.channel.gateway.channel;
 
 import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelEventType;
 import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelInboundEvent;
-import java.util.EnumSet;
 import java.util.regex.Pattern;
 
 final class NormalizedChannelEventValidator {
     private static final Pattern DEDUP_KEY_PATTERN = Pattern.compile("[A-Za-z0-9._:-]{1,128}");
-    private static final EnumSet<NormalizedChannelEventType> MESSAGE_EVENTS = EnumSet.of(
-        NormalizedChannelEventType.MESSAGE_RECEIVED,
-        NormalizedChannelEventType.FILE_RECEIVED
-    );
-
     private NormalizedChannelEventValidator() {
     }
 
@@ -30,23 +24,6 @@ final class NormalizedChannelEventValidator {
     static void validateEventTypeMatrix(NormalizedChannelInboundEvent event) {
         validateEnvelope(event);
         switch (event.eventType()) {
-            case MESSAGE_RECEIVED -> {
-                requireConversation(event);
-                requireSender(event);
-                requireMessage(event);
-                requireTopLevelExternalConversationId(event);
-                requireTopLevelExternalMessageId(event);
-            }
-            case FILE_RECEIVED -> {
-                requireConversation(event);
-                requireSender(event);
-                requireMessage(event);
-                if (event.message().attachments().isEmpty()) {
-                    throw new IllegalArgumentException("normalizedEvent.message.attachments is required for FILE_RECEIVED");
-                }
-                requireTopLevelExternalConversationId(event);
-                requireTopLevelExternalMessageId(event);
-            }
             case MESSAGE_UPDATED -> {
                 requireConversation(event);
                 requireMessage(event);
@@ -86,10 +63,6 @@ final class NormalizedChannelEventValidator {
             }
         }
         validateNestedIdConsistency(event);
-    }
-
-    static boolean triggersSessionBinding(NormalizedChannelInboundEvent event) {
-        return event.eventType() != null && MESSAGE_EVENTS.contains(event.eventType());
     }
 
     static void validateDedupKey(String dedupKey) {

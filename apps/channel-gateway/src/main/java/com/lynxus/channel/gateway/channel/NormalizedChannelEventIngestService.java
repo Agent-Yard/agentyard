@@ -33,9 +33,6 @@ public class NormalizedChannelEventIngestService {
         validateHeaders(event, headers);
         NormalizedChannelEventValidator.validateEventTypeMatrix(event);
         ChannelGatewayProfile profile = requireProfile(event);
-        if (NormalizedChannelEventValidator.triggersSessionBinding(event)) {
-            throw new IllegalArgumentException("message-class channel inbound must use /internal/channel-turns/normalized");
-        }
 
         ChannelInboundEvent existing = repository.findInboundEventByDedupKey(event.dedupKey()).orElse(null);
         if (existing != null) {

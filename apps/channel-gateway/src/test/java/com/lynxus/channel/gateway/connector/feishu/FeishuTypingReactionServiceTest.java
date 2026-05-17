@@ -11,12 +11,12 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBindingS
 import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileStatus;
 import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelConversation;
-import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelEventType;
-import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelInboundEvent;
-import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelInboundEventResult;
-import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelMessage;
-import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelSender;
+import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelInboundTurn;
+import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelMessageRole;
+import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelMessageSender;
+import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelSenderType;
 import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelTraceContext;
+import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelTurnMessage;
 import com.lynxus.shared.redis.RedisKeyspace;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -67,9 +67,9 @@ class FeishuTypingReactionServiceTest {
     @Test
     void inboundMessageCreatesTypingReactionAndFirstOutboundFrameDeletesIt() {
         saveBinding("session-1");
-        NormalizedChannelInboundEvent event = inboundEvent("dedup-1", "om_1");
+        NormalizedChannelInboundTurn turn = inboundTurn("dedup-1", "om_1");
 
-        service.beginInboundTypingReaction(event);
+        service.beginInboundTypingReaction(turn);
         service.deleteTypingReactionOnFirstOutboundFrame(profile(), "session-1", "oc_1");
         service.deleteTypingReactionOnFirstOutboundFrame(profile(), "session-1", "oc_1");
 
@@ -80,9 +80,9 @@ class FeishuTypingReactionServiceTest {
     @Test
     void firstOutboundFrameFallsBackToConversationBeforeSessionIsAttached() {
         saveBinding(null);
-        NormalizedChannelInboundEvent event = inboundEvent("dedup-3", "om_3");
+        NormalizedChannelInboundTurn turn = inboundTurn("dedup-3", "om_3");
 
-        service.beginInboundTypingReaction(event);
+        service.beginInboundTypingReaction(turn);
         service.deleteTypingReactionOnFirstOutboundFrame(profile(), "session-1", "oc_1");
 
         assertEquals(List.of("om_3:Typing"), reactionClient.added);
@@ -91,10 +91,10 @@ class FeishuTypingReactionServiceTest {
 
     @Test
     void dispatchFailureDeletesReactionBeforeSessionIsAttached() {
-        NormalizedChannelInboundEvent event = inboundEvent("dedup-2", "om_2");
-        service.beginInboundTypingReaction(event);
+        NormalizedChannelInboundTurn turn = inboundTurn("dedup-2", "om_2");
+        service.beginInboundTypingReaction(turn);
 
-        service.afterDispatchFailed(event, new NormalizedChannelInboundEventResult("event-1", false), new IllegalStateException("busy"));
+        service.afterDispatchFailed(turn, null, new IllegalStateException("busy"));
 
         assertEquals(List.of("om_2:Typing"), reactionClient.added);
         assertEquals(List.of("om_2:reaction-1"), reactionClient.deleted);
@@ -139,21 +139,33 @@ class FeishuTypingReactionServiceTest {
         ));
     }
 
-    private static NormalizedChannelInboundEvent inboundEvent(String dedupKey, String messageId) {
+    private static NormalizedChannelInboundTurn inboundTurn(String dedupKey, String messageId) {
         Instant now = Instant.parse("2026-05-05T00:00:00Z");
-        return new NormalizedChannelInboundEvent(
+        NormalizedChannelMessageSender sender = new NormalizedChannelMessageSender(
+            NormalizedChannelSenderType.CUSTOMER,
+            "ou_1",
+            null,
+            Map.of()
+        );
+        return new NormalizedChannelInboundTurn(
             FeishuGatewayNativeChannelProviderAdapter.PROVIDER_TYPE,
             "channel-profile-feishu",
-            NormalizedChannelEventType.MESSAGE_RECEIVED,
             dedupKey,
-            messageId,
             "oc_1",
-            messageId,
             "ou_1",
-            now,
             new NormalizedChannelConversation("oc_1", "p2p", null, Map.of()),
-            new NormalizedChannelSender("ou_1", null, Map.of()),
-            new NormalizedChannelMessage(messageId, "TEXT", "hello", List.of(), Map.of()),
+            sender,
+            List.of(new NormalizedChannelTurnMessage(
+                messageId,
+                messageId,
+                now,
+                NormalizedChannelMessageRole.USER,
+                sender,
+                "TEXT",
+                "hello",
+                List.of(),
+                Map.of()
+            )),
             Map.of(),
             Map.of(),
             new NormalizedChannelTraceContext("00-00000000000000000000000000000000-0000000000000000-01", null),

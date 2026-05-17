@@ -118,14 +118,12 @@ public final class ChannelContracts {
     }
 
     public enum NormalizedChannelEventType {
-        MESSAGE_RECEIVED,
         MESSAGE_UPDATED,
         MESSAGE_DELETED,
         CONVERSATION_UPDATED,
         MEMBER_JOINED,
         MEMBER_LEFT,
         REACTION_ADDED,
-        FILE_RECEIVED,
         WEBHOOK_VERIFIED,
         UNKNOWN
     }

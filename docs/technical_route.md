@@ -28,7 +28,7 @@ Tool Connector 与 Channel Provider 通过 `packages/extension-protocol` 定义�
 
 当前执行核心已经不是旧的图编排 runtime，而是一条：
 
-`AssistantRelease -> SessionWorkflow -> owner agent turn -> optional PlaybookWorkflow -> session event / playbook run projection`
+`AssistantRelease -> session turn -> SessionWorkflow -> owner agent execution -> optional PlaybookWorkflow -> session message / event / playbook run projection`
 
 的闭环。
 
@@ -36,6 +36,7 @@ Tool Connector 与 Channel Provider 通过 `packages/extension-protocol` 定义�
 
 - 一个 `session` 对应一条主 `Temporal workflow`
 - assistant 显式配置唯一 `primaryAgentId`，运行时维护唯一 `currentOwnerAgentId`
+- 外部输入统一进入 `/api/session-runtime/turns`；一次 turn 可以包含多条 message，API 负责 DB-backed idempotency、session row 创建/复用和统一 append
 - owner agent 只负责单轮推理与动作决策，动作收敛为：
   - `REPLY`
   - `NO_OP`
@@ -45,12 +46,12 @@ Tool Connector 与 Channel Provider 通过 `packages/extension-protocol` 定义�
   - `SECURITY_BLOCK`
 - 强业务流程统一下沉为 `playbook` child workflow
 - 轻量认知能力不再建模为独立 workflow，而是 owner agent 在单轮推理内通过 tool / knowledge / skill 完成
-- 运行态权威模型收敛为 `session_runtime_session / session_runtime_event / session_runtime_playbook_run`
+- 运行态权威模型收敛为 `session_runtime_session / session_runtime_turn / session_runtime_message / session_runtime_event / session_runtime_playbook_run`
 
 ## 当前实现边界
 
 - 已移除 `LangGraph`，不再以多节点 agent 图作为主运行模型
-- 控制面公开的运行入口收敛到 `/api/session-runtime/...`
+- 控制面公开的消息写入口只保留 turn 模型；Channel message-class inbound 使用 `/internal/channel-turns/normalized`，非消息 channel event 继续进入 `channel_inbound_event`
 - 当前前端运行态优先走 session 级 SSE，轮询作为 fallback；但长 session 分页、派生视图和更细粒度订阅仍未补齐
 - external interaction 只作为 playbook 的等待点与恢复来源，不再保留独立 runtime 主模型
 

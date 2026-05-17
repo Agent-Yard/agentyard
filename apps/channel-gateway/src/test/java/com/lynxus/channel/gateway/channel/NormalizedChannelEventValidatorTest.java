@@ -17,44 +17,6 @@ import org.junit.jupiter.api.Test;
 
 class NormalizedChannelEventValidatorTest {
     @Test
-    void acceptsMessageReceivedWithRequiredConversationSenderMessageAndIds() {
-        assertDoesNotThrow(() -> NormalizedChannelEventValidator.validateEventTypeMatrix(messageEvent(
-            NormalizedChannelEventType.MESSAGE_RECEIVED
-        )));
-    }
-
-    @Test
-    void requiresAttachmentForFileReceived() {
-        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () ->
-            NormalizedChannelEventValidator.validateEventTypeMatrix(messageEvent(NormalizedChannelEventType.FILE_RECEIVED))
-        );
-
-        assertEquals("normalizedEvent.message.attachments is required for FILE_RECEIVED", error.getMessage());
-    }
-
-    @Test
-    void acceptsFileReceivedWithAttachment() {
-        assertDoesNotThrow(() -> NormalizedChannelEventValidator.validateEventTypeMatrix(new NormalizedChannelInboundEvent(
-            "feishu",
-            "channel-profile-1",
-            NormalizedChannelEventType.FILE_RECEIVED,
-            "feishu:file:msg-1",
-            "evt-1",
-            "chat-1",
-            "msg-1",
-            "user-1",
-            null,
-            conversation("chat-1"),
-            sender("user-1"),
-            message("msg-1", List.of(new NormalizedChannelAttachment("att-1", "file-1", "report.pdf", "application/pdf", null, 20L, Map.of()))),
-            Map.of(),
-            Map.of(),
-            traceContext(),
-            Map.of()
-        )));
-    }
-
-    @Test
     void forbidsMessageOnConversationUpdated() {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () ->
             NormalizedChannelEventValidator.validateEventTypeMatrix(new NormalizedChannelInboundEvent(
@@ -112,16 +74,16 @@ class NormalizedChannelEventValidatorTest {
             NormalizedChannelEventValidator.validateEventTypeMatrix(new NormalizedChannelInboundEvent(
                 "feishu",
                 "channel-profile-1",
-                NormalizedChannelEventType.MESSAGE_RECEIVED,
-                "feishu:message:msg-1",
+                NormalizedChannelEventType.CONVERSATION_UPDATED,
+                "feishu:conversation:chat-1",
                 "evt-1",
                 "chat-1",
-                "msg-1",
-                "user-1",
+                null,
+                null,
                 null,
                 conversation("chat-other"),
-                sender("user-1"),
-                message("msg-1", List.of()),
+                null,
+                null,
                 Map.of(),
                 Map.of(),
                 traceContext(),
@@ -156,27 +118,6 @@ class NormalizedChannelEventValidatorTest {
         );
 
         assertEquals("normalizedEvent.dedupKey must match [A-Za-z0-9._:-]{1,128}", error.getMessage());
-    }
-
-    private static NormalizedChannelInboundEvent messageEvent(NormalizedChannelEventType eventType) {
-        return new NormalizedChannelInboundEvent(
-            "feishu",
-            "channel-profile-1",
-            eventType,
-            "feishu:message:msg-1",
-            "evt-1",
-            "chat-1",
-            "msg-1",
-            "user-1",
-            null,
-            conversation("chat-1"),
-            sender("user-1"),
-            message("msg-1", List.of()),
-            Map.of(),
-            Map.of(),
-            traceContext(),
-            Map.of()
-        );
     }
 
     private static NormalizedChannelConversation conversation(String externalConversationId) {

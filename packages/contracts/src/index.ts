@@ -59,14 +59,12 @@ export type ChannelProviderJobStatus = 'ACTIVE' | 'RUNNING' | 'PAUSED' | 'DISABL
 export type ChannelProviderJobRunStatus = 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'TIMED_OUT';
 export type ChannelRunJobResponseStatus = 'SUCCEEDED' | 'NOOP';
 export type NormalizedChannelEventType =
-  | 'MESSAGE_RECEIVED'
   | 'MESSAGE_UPDATED'
   | 'MESSAGE_DELETED'
   | 'CONVERSATION_UPDATED'
   | 'MEMBER_JOINED'
   | 'MEMBER_LEFT'
   | 'REACTION_ADDED'
-  | 'FILE_RECEIVED'
   | 'WEBHOOK_VERIFIED'
   | 'UNKNOWN';
 export type NormalizedChannelMessageRole = 'USER' | 'ASSISTANT' | 'HUMAN_OPERATOR' | 'SYSTEM';
@@ -1638,24 +1636,12 @@ export type AgentTurnTransientIngressFrame =
   | AgentTurnTransientFrame<'TURN_COMPLETED', TurnCompletedPayload>
   | AgentTurnTransientFrame<'ERROR', ErrorPayload>;
 
-export interface SessionUserMessageUpdateResult {
-  status: SessionMessageDeliveryStatus;
-  sessionId: string;
-  reason: string | null;
-}
-
 export interface UserTurn {
   turnId: string;
   customerId: string;
   turnDedupKey: string;
   messages: SessionMessage[];
   metadata: Record<string, unknown>;
-}
-
-export interface UserMessage {
-  messageId: string;
-  customerId: string;
-  message: SessionMessageInput;
 }
 
 export interface SessionStartRequest {
