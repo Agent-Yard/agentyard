@@ -712,6 +712,68 @@ html[data-lang="en"] .footer-cn-name {
   align-self: flex-start;
 }
 
+/* ---------- Demos ---------- */
+
+.demos-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+}
+
+.demo-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-strong);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.demo-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--teal);
+  box-shadow: var(--shadow-md);
+}
+
+.demo-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+}
+
+.demo-frame iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #000;
+}
+
+.demo-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px 20px 20px;
+}
+
+.demo-meta h3 {
+  margin: 0;
+  font-size: 1.04rem;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+}
+
+.demo-meta p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+  font-size: 0.92rem;
+}
+
 /* ---------- Extension ---------- */
 
 .pill {
@@ -910,6 +972,10 @@ html[data-lang="en"] .footer-cn-name {
   .docs-grid {
     grid-template-columns: 1fr 1fr;
   }
+
+  .demos-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 640px) {
@@ -959,6 +1025,7 @@ html[data-lang="en"] .footer-cn-name {
   .problem-grid,
   .extension-layout,
   .docs-grid,
+  .demos-grid,
   .arch-flow {
     grid-template-columns: 1fr;
   }
