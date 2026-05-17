@@ -26,8 +26,7 @@ class InternalNormalizedChannelEventControllerTest {
     void passesDescriptorTraceAndIdempotencyHeadersToIngestService() throws Exception {
         NormalizedChannelEventIngestService service = mock(NormalizedChannelEventIngestService.class);
         when(service.ingest(any(), any())).thenReturn(new NormalizedChannelInboundEventResult("channel-inbound-event-1", false));
-        ChannelInboundSessionDispatcher dispatcher = mock(ChannelInboundSessionDispatcher.class);
-        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new InternalNormalizedChannelEventController(service, dispatcher, new ObjectMapper()))
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new InternalNormalizedChannelEventController(service, new ObjectMapper()))
             .setControllerAdvice(new ApiExceptionHandler())
             .build();
 
@@ -47,7 +46,6 @@ class InternalNormalizedChannelEventControllerTest {
         ArgumentCaptor<NormalizedChannelEventHeaders> headers = ArgumentCaptor.forClass(NormalizedChannelEventHeaders.class);
         ArgumentCaptor<NormalizedChannelInboundEvent> event = ArgumentCaptor.forClass(NormalizedChannelInboundEvent.class);
         verify(service).ingest(event.capture(), headers.capture());
-        verify(dispatcher).dispatchAsync(event.getValue(), new NormalizedChannelInboundEventResult("channel-inbound-event-1", false));
         assertEquals(0, event.getValue().normalizedPayload().size());
         assertEquals("acme-channel-provider", headers.getValue().registrationId());
         assertEquals("CHANNEL_PROVIDER", headers.getValue().descriptorType());
@@ -57,7 +55,7 @@ class InternalNormalizedChannelEventControllerTest {
     @Test
     void rejectsMissingNormalizedPayloadBeforeIngestService() throws Exception {
         NormalizedChannelEventIngestService service = mock(NormalizedChannelEventIngestService.class);
-        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new InternalNormalizedChannelEventController(service, mock(ChannelInboundSessionDispatcher.class), new ObjectMapper()))
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new InternalNormalizedChannelEventController(service, new ObjectMapper()))
             .setControllerAdvice(new ApiExceptionHandler())
             .build();
 
@@ -73,7 +71,7 @@ class InternalNormalizedChannelEventControllerTest {
     @Test
     void rejectsNullNormalizedPayloadBeforeIngestService() throws Exception {
         NormalizedChannelEventIngestService service = mock(NormalizedChannelEventIngestService.class);
-        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new InternalNormalizedChannelEventController(service, mock(ChannelInboundSessionDispatcher.class), new ObjectMapper()))
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new InternalNormalizedChannelEventController(service, new ObjectMapper()))
             .setControllerAdvice(new ApiExceptionHandler())
             .build();
 
@@ -90,7 +88,7 @@ class InternalNormalizedChannelEventControllerTest {
     void acceptsExplicitEmptyNormalizedPayload() throws Exception {
         NormalizedChannelEventIngestService service = mock(NormalizedChannelEventIngestService.class);
         when(service.ingest(any(), any())).thenReturn(new NormalizedChannelInboundEventResult("channel-inbound-event-1", false));
-        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new InternalNormalizedChannelEventController(service, mock(ChannelInboundSessionDispatcher.class), new ObjectMapper()))
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new InternalNormalizedChannelEventController(service, new ObjectMapper()))
             .setControllerAdvice(new ApiExceptionHandler())
             .build();
 
@@ -107,7 +105,7 @@ class InternalNormalizedChannelEventControllerTest {
     @Test
     void rejectsTopLevelExternalSecretRefBeforeIngestService() throws Exception {
         NormalizedChannelEventIngestService service = mock(NormalizedChannelEventIngestService.class);
-        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new InternalNormalizedChannelEventController(service, mock(ChannelInboundSessionDispatcher.class), new ObjectMapper()))
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new InternalNormalizedChannelEventController(service, new ObjectMapper()))
             .setControllerAdvice(new ApiExceptionHandler())
             .build();
 

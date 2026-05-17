@@ -3,9 +3,13 @@ package com.lynxus.channel.gateway.connector.feishu;
 import com.lynxus.channel.gateway.channel.ChannelAdminRepository;
 import com.lynxus.channel.gateway.channel.ChannelInboundSessionDispatchObserver;
 import com.lynxus.channel.gateway.channel.ChannelInboundSessionDispatcher.ChannelInboundSessionDispatchResult;
+import com.lynxus.channel.gateway.channel.ChannelInboundTurnIngestResult;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelInboundEventResult;
+import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelInboundTurn;
+import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelInboundTurnResult;
+import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelTurnMessage;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,6 +47,17 @@ final class FeishuTypingReactionService implements ChannelInboundSessionDispatch
             return;
         }
         beginInboundTypingReaction(profile.orElseThrow(), event);
+    }
+
+    void beginInboundTypingReaction(NormalizedChannelInboundTurn turn) {
+        if (!isFeishuTurn(turn)) {
+            return;
+        }
+        Optional<ChannelGatewayProfile> profile = repository.findProfile(turn.channelProfileId());
+        if (profile.isEmpty()) {
+            return;
+        }
+        beginInboundTypingReaction(profile.orElseThrow(), turn);
     }
 
     private void beginInboundTypingReaction(ChannelGatewayProfile profile, NormalizedChannelInboundEvent event) {
@@ -95,6 +110,94 @@ final class FeishuTypingReactionService implements ChannelInboundSessionDispatch
                 error
             );
         }
+    }
+
+    private void beginInboundTypingReaction(ChannelGatewayProfile profile, NormalizedChannelInboundTurn turn) {
+        NormalizedChannelTurnMessage firstMessage = firstMessage(turn);
+        if (firstMessage == null || !hasText(profile.accountId())) {
+            return;
+        }
+        FeishuMessageReactionClient.FeishuAddReactionResult created;
+        try {
+            FeishuAppCredential credential = credentialProvider.resolve(profile.accountId());
+            created = reactionClient.addReaction(new FeishuMessageReactionClient.FeishuAddReactionCommand(
+                credential,
+                firstMessage.externalMessageId(),
+                TYPING_EMOJI_TYPE
+            ));
+        } catch (RuntimeException error) {
+            log.warn(
+                "failed to add Feishu typing reaction: channelProfileId={}, externalMessageId={}, dedupKey={}",
+                turn.channelProfileId(),
+                firstMessage.externalMessageId(),
+                turn.dedupKey(),
+                error
+            );
+            return;
+        }
+
+        String sessionId = repository.findBindingByProfileAndExternalConversation(
+            turn.channelProfileId(),
+            turn.externalConversationId()
+        ).map(binding -> trimToNull(binding.sessionId())).orElse(null);
+        FeishuTypingReactionState state = new FeishuTypingReactionState(
+            profile.id(),
+            turn.externalConversationId(),
+            firstMessage.externalMessageId(),
+            turn.dedupKey(),
+            sessionId,
+            created.reactionId()
+        );
+        try {
+            boolean saved = reactionStore.saveIfAbsent(state);
+            if (!saved) {
+                deleteUntrackedReaction(profile, firstMessage.externalMessageId(), created.reactionId());
+            }
+        } catch (RuntimeException error) {
+            deleteUntrackedReaction(profile, firstMessage.externalMessageId(), created.reactionId());
+            log.warn(
+                "failed to save Feishu typing reaction state in Redis: channelProfileId={}, externalMessageId={}, dedupKey={}",
+                turn.channelProfileId(),
+                firstMessage.externalMessageId(),
+                turn.dedupKey(),
+                error
+            );
+        }
+    }
+
+    @Override
+    public void afterDispatchSucceeded(
+        NormalizedChannelInboundTurn turn,
+        ChannelInboundTurnIngestResult ingestResult,
+        NormalizedChannelInboundTurnResult dispatchResult
+    ) {
+        if (!isFeishuTurn(turn) || dispatchResult == null || !hasText(dispatchResult.sessionId())) {
+            return;
+        }
+        reactionStore.attachSessionByDedupKey(
+            turn.channelProfileId(),
+            turn.dedupKey(),
+            dispatchResult.sessionId()
+        );
+    }
+
+    @Override
+    public void afterDispatchFailed(
+        NormalizedChannelInboundTurn turn,
+        ChannelInboundTurnIngestResult ingestResult,
+        RuntimeException error
+    ) {
+        if (!isFeishuTurn(turn)) {
+            return;
+        }
+        Optional<ChannelGatewayProfile> profile = repository.findProfile(turn.channelProfileId());
+        if (profile.isEmpty()) {
+            return;
+        }
+        reactionStore.claimByDedupKey(
+            turn.channelProfileId(),
+            turn.dedupKey()
+        ).ifPresent(state -> deleteClaimedReaction(profile.orElseThrow(), state));
     }
 
     @Override
@@ -204,6 +307,24 @@ final class FeishuTypingReactionService implements ChannelInboundSessionDispatch
             && hasText(event.externalConversationId())
             && hasText(event.externalMessageId())
             && hasText(event.dedupKey());
+    }
+
+    private static boolean isFeishuTurn(NormalizedChannelInboundTurn turn) {
+        NormalizedChannelTurnMessage firstMessage = firstMessage(turn);
+        return turn != null
+            && FeishuGatewayNativeChannelProviderAdapter.PROVIDER_TYPE.equals(turn.providerType())
+            && hasText(turn.channelProfileId())
+            && hasText(turn.externalConversationId())
+            && firstMessage != null
+            && hasText(firstMessage.externalMessageId())
+            && hasText(turn.dedupKey());
+    }
+
+    private static NormalizedChannelTurnMessage firstMessage(NormalizedChannelInboundTurn turn) {
+        if (turn == null || turn.messages().isEmpty()) {
+            return null;
+        }
+        return turn.messages().getFirst();
     }
 
     private static boolean hasText(String value) {

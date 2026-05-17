@@ -163,10 +163,10 @@ class JooqSessionRuntimeRepositoryTest {
     @Test
     void listsChannelOutboundFinalMessagesByFinalSequenceNotCreatedAt() {
         Instant now = Instant.parse("2026-05-02T00:00:00Z");
-        repository.saveSession(session("session-1", "assistant-1", now));
-        repository.saveSession(session("session-2", "assistant-1", now));
-        insertSnapshot("binding-1", "session-1", "channel-profile-1", "assistant-1", "chat-1", now);
-        insertSnapshot("binding-2", "session-2", "channel-profile-1", "assistant-1", "chat-2", now);
+        insertSessionRow("session-1", "CHANNEL", "channel-profile-1", "chat-1", "customer-1", "assistant-1", "ACTIVE");
+        insertSessionRow("session-2", "CHANNEL", "channel-profile-1", "chat-2", "customer-2", "assistant-1", "ACTIVE");
+        insertSnapshot("binding-1", "session-1", "channel-profile-1", "customer-1", "assistant-1", "chat-1", now);
+        insertSnapshot("binding-2", "session-2", "channel-profile-1", "customer-2", "assistant-1", "chat-2", now);
         repository.appendMessage(message(
             "message-final-1",
             "session-1",
@@ -193,6 +193,65 @@ class JooqSessionRuntimeRepositoryTest {
 
         assertEquals(List.of("message-final-1", "message-final-2"), messages.stream().map(item -> item.messageId()).toList());
         assertTrue(messages.get(0).finalSequence() < messages.get(1).finalSequence());
+    }
+
+    @Test
+    void channelOutboundFinalMessagesOnlyIncludePlatformMessagesOnSynchronizedChannelIdentity() {
+        Instant now = Instant.parse("2026-05-02T00:00:00Z");
+        insertSessionRow("session-platform", "CHANNEL", "channel-profile-1", "chat-platform", "customer-1", "assistant-1", "ACTIVE");
+        insertSessionRow("session-external", "CHANNEL", "channel-profile-1", "chat-external", "customer-2", "assistant-1", "ACTIVE");
+        insertSessionRow("session-web", "WEB", null, null, "customer-3", "assistant-1", "ACTIVE");
+        insertSessionRow("session-stale-snapshot", "CHANNEL", "channel-profile-1", "chat-authoritative", "customer-4", "assistant-1", "ACTIVE");
+        insertSnapshot("binding-platform", "session-platform", "channel-profile-1", "customer-1", "assistant-1", "chat-platform", now);
+        insertSnapshot("binding-external", "session-external", "channel-profile-1", "customer-2", "assistant-1", "chat-external", now);
+        insertSnapshot("binding-web", "session-web", "channel-profile-1", "customer-3", "assistant-1", "chat-web", now);
+        insertSnapshot(
+            "binding-stale",
+            "session-stale-snapshot",
+            "channel-profile-1",
+            "customer-4",
+            "assistant-1",
+            "chat-stale-snapshot",
+            now
+        );
+        repository.appendMessage(message(
+            "message-platform-assistant",
+            "session-platform",
+            1L,
+            SessionMessageRole.ASSISTANT,
+            SessionMessageProducerType.PLATFORM,
+            now.plusSeconds(1)
+        ));
+        repository.appendMessage(message(
+            "message-external-assistant",
+            "session-external",
+            1L,
+            SessionMessageRole.ASSISTANT,
+            SessionMessageProducerType.EXTERNAL,
+            now.plusSeconds(2)
+        ));
+        repository.appendMessage(message(
+            "message-web-platform",
+            "session-web",
+            1L,
+            SessionMessageRole.ASSISTANT,
+            SessionMessageProducerType.PLATFORM,
+            now.plusSeconds(3)
+        ));
+        repository.appendMessage(message(
+            "message-stale-snapshot-platform",
+            "session-stale-snapshot",
+            1L,
+            SessionMessageRole.ASSISTANT,
+            SessionMessageProducerType.PLATFORM,
+            now.plusSeconds(4)
+        ));
+
+        var messages = repository.listChannelOutboundFinalMessages("channel-profile-1", 0L, 10);
+
+        assertEquals(List.of("message-platform-assistant"), messages.stream().map(item -> item.messageId()).toList());
+        assertEquals("chat-platform", messages.getFirst().externalConversationId());
+        assertEquals("assistant-1", messages.getFirst().assistantId());
     }
 
     @Test
@@ -773,30 +832,20 @@ class JooqSessionRuntimeRepositoryTest {
         );
     }
 
-    private static SessionRuntimeDtos.SessionRuntimeSessionDto session(String sessionId, String assistantId, Instant now) {
-        return new SessionRuntimeDtos.SessionRuntimeSessionDto(
+    private static SessionMessage message(
+        String messageId,
+        String sessionId,
+        long sequence,
+        SessionMessageRole role,
+        Instant createdAt
+    ) {
+        return message(
+            messageId,
             sessionId,
-            "scenario-1",
-            "session " + sessionId,
-            "customer-" + sessionId,
-            assistantId,
-            "Assistant",
-            "1.0.0",
-            "ACTIVE",
-            "agent-1",
-            "agent-1",
-            null,
-            false,
-            false,
-            false,
-            false,
-            Map.of(),
-            null,
-            now,
-            now,
-            null,
-            0L,
-            0L
+            sequence,
+            role,
+            role == SessionMessageRole.USER ? SessionMessageProducerType.EXTERNAL : SessionMessageProducerType.PLATFORM,
+            createdAt
         );
     }
 
@@ -805,6 +854,7 @@ class JooqSessionRuntimeRepositoryTest {
         String sessionId,
         long sequence,
         SessionMessageRole role,
+        SessionMessageProducerType producerType,
         Instant createdAt
     ) {
         return new SessionMessage(
@@ -813,7 +863,7 @@ class JooqSessionRuntimeRepositoryTest {
             sequence,
             "turn-" + messageId,
             0,
-            role == SessionMessageRole.USER ? SessionMessageProducerType.EXTERNAL : SessionMessageProducerType.PLATFORM,
+            producerType,
             null,
             null,
             createdAt,
@@ -834,6 +884,7 @@ class JooqSessionRuntimeRepositoryTest {
         String bindingId,
         String sessionId,
         String channelProfileId,
+        String customerId,
         String assistantId,
         String externalConversationId,
         Instant now
@@ -844,6 +895,7 @@ class JooqSessionRuntimeRepositoryTest {
             .set(CHANNEL_SESSION_BINDING_SNAPSHOT.CHANNEL_PROFILE_ID, channelProfileId)
             .set(CHANNEL_SESSION_BINDING_SNAPSHOT.PROVIDER_TYPE, "provider.acme")
             .set(CHANNEL_SESSION_BINDING_SNAPSHOT.EXTERNAL_CONVERSATION_ID, externalConversationId)
+            .set(CHANNEL_SESSION_BINDING_SNAPSHOT.CUSTOMER_ID, customerId)
             .set(CHANNEL_SESSION_BINDING_SNAPSHOT.ASSISTANT_ID, assistantId)
             .set(CHANNEL_SESSION_BINDING_SNAPSHOT.BINDING_STATUS, "ACTIVE")
             .set(CHANNEL_SESSION_BINDING_SNAPSHOT.PROFILE_STATUS, "ACTIVE")

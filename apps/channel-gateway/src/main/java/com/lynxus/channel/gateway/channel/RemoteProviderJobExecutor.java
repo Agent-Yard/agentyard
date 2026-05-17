@@ -7,6 +7,7 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelRunJobPayload;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelRunJobRequest;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelRunJobResponse;
 import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelInboundEvent;
+import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelInboundTurn;
 import com.lynxus.extension.sdk.protocol.DescriptorType;
 import com.lynxus.extension.sdk.protocol.LynxusExtensionHttp;
 import java.net.http.HttpClient;
@@ -22,6 +23,7 @@ import tools.jackson.databind.ObjectMapper;
 public class RemoteProviderJobExecutor implements ProviderJobExecutor {
     private final ChannelProviderRegistry registry;
     private final NormalizedChannelEventIngestService ingestService;
+    private final NormalizedChannelTurnIngestService turnIngestService;
     private final ChannelInboundSessionDispatcher sessionDispatcher;
     private final ObjectMapper objectMapper;
     private final String internalAuthToken;
@@ -31,16 +33,18 @@ public class RemoteProviderJobExecutor implements ProviderJobExecutor {
     public RemoteProviderJobExecutor(
         ChannelProviderRegistry registry,
         NormalizedChannelEventIngestService ingestService,
+        NormalizedChannelTurnIngestService turnIngestService,
         ChannelInboundSessionDispatcher sessionDispatcher,
         ObjectMapper objectMapper,
         @Qualifier("internalAuthToken") String internalAuthToken
     ) {
-        this(registry, ingestService, sessionDispatcher, objectMapper, internalAuthToken, HttpClient.newHttpClient());
+        this(registry, ingestService, turnIngestService, sessionDispatcher, objectMapper, internalAuthToken, HttpClient.newHttpClient());
     }
 
     RemoteProviderJobExecutor(
         ChannelProviderRegistry registry,
         NormalizedChannelEventIngestService ingestService,
+        NormalizedChannelTurnIngestService turnIngestService,
         ChannelInboundSessionDispatcher sessionDispatcher,
         ObjectMapper objectMapper,
         String internalAuthToken,
@@ -48,6 +52,7 @@ public class RemoteProviderJobExecutor implements ProviderJobExecutor {
     ) {
         this.registry = registry;
         this.ingestService = ingestService;
+        this.turnIngestService = turnIngestService;
         this.sessionDispatcher = sessionDispatcher;
         this.objectMapper = objectMapper;
         this.internalAuthToken = internalAuthToken;
@@ -96,6 +101,20 @@ public class RemoteProviderJobExecutor implements ProviderJobExecutor {
         }
         ChannelRunJobResponse body = objectMapper.readValue(response.body(), ChannelRunJobResponse.class);
         int ingested = 0;
+        for (NormalizedChannelInboundTurn turn : body.inboundTurns()) {
+            var ingestResult = turnIngestService.ingest(turn, new NormalizedChannelEventHeaders(
+                descriptor.registrationId(),
+                DescriptorType.CHANNEL_PROVIDER.wireValue(),
+                descriptor.providerType(),
+                traceIds.traceId(),
+                TraceIds.nextRequestId(),
+                turn.dedupKey()
+            ));
+            var dispatchResult = sessionDispatcher.dispatch(turn, ingestResult);
+            if (dispatchResult.status() != com.lynxus.contracts.channel.ChannelContracts.ChannelInboundTurnStatus.DUPLICATE) {
+                ingested++;
+            }
+        }
         for (NormalizedChannelInboundEvent event : body.events()) {
             var ingestResult = ingestService.ingest(event, new NormalizedChannelEventHeaders(
                 descriptor.registrationId(),
@@ -105,7 +124,6 @@ public class RemoteProviderJobExecutor implements ProviderJobExecutor {
                 TraceIds.nextRequestId(),
                 event.dedupKey()
             ));
-            sessionDispatcher.dispatchAsync(event, ingestResult);
             if (!ingestResult.duplicate()) {
                 ingested++;
             }

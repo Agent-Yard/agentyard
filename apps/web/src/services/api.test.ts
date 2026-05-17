@@ -85,13 +85,16 @@ describe('api client', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(
-      api.sendRuntimeSessionMessage({
+      api.sendRuntimeSessionTurn({
         sessionId: 'session-1',
         customerId: 'customer-1',
-        message: {
+        turnDedupKey: 'web-turn:session-1:retry',
+        messages: [{
+          clientMessageId: 'client-message-1',
           blocks: [{ type: 'TEXT', text: '第二条消息' }],
           metadata: {},
-        },
+        }],
+        metadata: {},
       }),
     ).rejects.toThrow('session has an active workflow');
     expect(fetchMock).toHaveBeenCalledOnce();
@@ -162,33 +165,22 @@ describe('api client', () => {
     );
   });
 
-  it('posts runtime session creation to the session-runtime endpoint', async () => {
+  it('posts runtime turns with the turn dedup key as idempotency key', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({
         data: {
-          id: 'session-1',
-          scenarioId: 'scenario-1',
-          title: '默认会话',
           sessionId: 'session-1',
-          customerId: 'customer-1',
-          assistantId: 'assistant-1',
-          assistantName: '助手',
-          assistantReleaseVersion: '1.0.0',
-          status: 'ACTIVE',
-          primaryAgentId: 'agent-1',
-          currentOwnerAgentId: 'agent-1',
-          activePlaybookRunId: null,
-          agentTurnActive: false,
-          sessionHumanHandoffActive: false,
-          pendingOwnerReevaluation: false,
-          draining: false,
-          sharedState: {},
-          idleDeadline: null,
-          createdAt: '2026-04-01T00:00:00Z',
-          updatedAt: '2026-04-01T00:00:00Z',
-          endedAt: null,
-          latestMessageSequence: 0,
-          latestEventSequence: 0,
+          turnId: 'turn-1',
+          status: 'ACCEPTED',
+          acceptedMessageIds: ['message-1'],
+          acceptedMessageAllocations: [{
+            requestIndex: 0,
+            clientMessageId: 'client-message-1',
+            messageId: 'message-1',
+            turnIndex: 0,
+          }],
+          duplicateExternalMessageIds: [],
+          reason: null,
         },
       }), {
         status: 200,
@@ -197,31 +189,43 @@ describe('api client', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    await api.sendRuntimeSessionMessage({
+    await api.sendRuntimeSessionTurn({
       assistantId: 'assistant-1',
       customerId: 'customer-1',
-      message: {
+      turnDedupKey: 'web-turn:assistant-1:abc',
+      messages: [{
+        clientMessageId: 'client-message-1',
         blocks: [{ type: 'TEXT', text: '你好' }],
         metadata: {},
-      },
+      }],
+      metadata: {},
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/session-runtime/messages',
+      '/api/session-runtime/turns',
       expect.objectContaining({
         credentials: 'include',
-        headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
+        headers: expect.objectContaining({
+          'Content-Type': 'application/json',
+          'Idempotency-Key': 'web-turn:assistant-1:abc',
+        }),
         method: 'POST',
         body: JSON.stringify({
           assistantId: 'assistant-1',
           customerId: 'customer-1',
-          message: {
+          turnDedupKey: 'web-turn:assistant-1:abc',
+          messages: [{
+            clientMessageId: 'client-message-1',
             blocks: [{ type: 'TEXT', text: '你好' }],
             metadata: {},
-          },
+          }],
+          metadata: {},
         }),
       }),
     );
+    const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(JSON.stringify(requestBody)).not.toContain('role');
+    expect(JSON.stringify(requestBody)).not.toContain('sender');
   });
 
   it('queries channel admin profiles through the control-plane api', async () => {

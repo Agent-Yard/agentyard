@@ -5,13 +5,18 @@ import static org.mockito.Mockito.mock;
 
 import com.lynxus.channel.gateway.channel.ChannelAdminRepository;
 import com.lynxus.channel.gateway.channel.ChannelInboundSessionDispatcher;
-import com.lynxus.channel.gateway.channel.NormalizedChannelEventIngestService;
+import com.lynxus.channel.gateway.channel.ChannelSessionRuntimeClient;
+import com.lynxus.channel.gateway.channel.NormalizedChannelTurnIngestService;
 import com.lynxus.channel.gateway.extension.ExtensionRegistrationProperties;
 import com.lynxus.channel.gateway.extension.ExtensionRegistrationService;
 import com.lynxus.channel.gateway.testing.EmbeddedPostgresTestDatabase;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelAssistantBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileStatus;
+import com.lynxus.contracts.session.SessionContracts.AcceptedSessionMessageAllocation;
+import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionTurnRequest;
+import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionTurnResponse;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageDeliveryStatus;
 import com.lynxus.shared.redis.RedisKeyspace;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -25,6 +30,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import tools.jackson.databind.ObjectMapper;
+
+import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_INBOUND_TURN;
 
 class FeishuInboundEventServiceTest {
     private static EmbeddedPostgresTestDatabase database;
@@ -48,9 +55,10 @@ class FeishuInboundEventServiceTest {
         database.reset();
         repository = new ChannelAdminRepository(database.dsl(), new ObjectMapper());
         reactionClient = new CapturingReactionClient();
+        ChannelInboundSessionDispatcher dispatcher = new ChannelInboundSessionDispatcher(repository, new CapturingRuntimeClient());
         service = new FeishuInboundEventService(
-            new NormalizedChannelEventIngestService(repository, registrationService()),
-            mock(ChannelInboundSessionDispatcher.class),
+            new NormalizedChannelTurnIngestService(repository, registrationService()),
+            dispatcher,
             new FeishuTypingReactionService(
                 repository,
                 new InMemoryTypingReactionStore(),
@@ -65,12 +73,9 @@ class FeishuInboundEventServiceTest {
     void ingestsLongConnectionTextMessageAndCreatesConversationBinding() {
         service.ingestTextMessage(message("om_123", "hello"));
 
-        assertEquals(1, repository.listInboundEvents("channel-profile-feishu").size());
-        var inboundEvent = repository.listInboundEvents("channel-profile-feishu").getFirst();
-        assertEquals("feishu", inboundEvent.providerType());
-        assertEquals("MESSAGE_RECEIVED", inboundEvent.eventType());
-        assertEquals("oc_123", inboundEvent.externalConversationId());
-        assertEquals("om_123", inboundEvent.externalMessageId());
+        var inboundTurn = database.dsl().selectFrom(CHANNEL_INBOUND_TURN).fetchOne();
+        assertEquals("feishu", inboundTurn.getProviderType());
+        assertEquals("oc_123", inboundTurn.getExternalConversationId());
         assertEquals(1, repository.listBindings("channel-profile-feishu").size());
         var binding = repository.listBindings("channel-profile-feishu").getFirst();
         assertEquals("oc_123", binding.externalConversationId());
@@ -84,7 +89,7 @@ class FeishuInboundEventServiceTest {
         service.ingestTextMessage(message("om_123", "hello"));
         service.ingestTextMessage(message("om_123", "hello"));
 
-        assertEquals(1, repository.listInboundEvents("channel-profile-feishu").size());
+        assertEquals(1, database.dsl().fetchCount(CHANNEL_INBOUND_TURN));
         assertEquals(1, repository.listBindings("channel-profile-feishu").size());
         assertEquals(List.of("om_123:Typing"), reactionClient.added);
     }
@@ -169,6 +174,21 @@ class FeishuInboundEventServiceTest {
         @Override
         Optional<FeishuTypingReactionState> claimByDedupKey(String channelProfileId, String dedupKey) {
             return Optional.ofNullable(byDedupKey.remove(dedupKey));
+        }
+    }
+
+    private static final class CapturingRuntimeClient implements ChannelSessionRuntimeClient {
+        @Override
+        public ChannelInboundSessionTurnResponse dispatchInboundTurn(ChannelInboundSessionTurnRequest request) {
+            return new ChannelInboundSessionTurnResponse(
+                "session-feishu",
+                "turn-session-feishu",
+                SessionMessageDeliveryStatus.ACCEPTED,
+                List.of("session-message-feishu"),
+                List.of(new AcceptedSessionMessageAllocation(0, null, "session-message-feishu", 0)),
+                List.of(),
+                null
+            );
         }
     }
 

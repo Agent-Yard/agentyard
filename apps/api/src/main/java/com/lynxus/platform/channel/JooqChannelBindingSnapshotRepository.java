@@ -13,6 +13,7 @@ import org.jooq.Record;
 import org.springframework.stereotype.Repository;
 
 import static com.lynxus.persistence.jooq.Tables.CHANNEL_SESSION_BINDING_SNAPSHOT;
+import static com.lynxus.persistence.jooq.Tables.SESSION_RUNTIME_SESSION;
 
 @Repository
 public class JooqChannelBindingSnapshotRepository {
@@ -67,9 +68,13 @@ public class JooqChannelBindingSnapshotRepository {
     }
 
     public Optional<ChannelOutboundBindingSnapshot> findActiveBySessionId(String sessionId) {
-        List<ChannelOutboundBindingSnapshot> rows = dsl.selectFrom(CHANNEL_SESSION_BINDING_SNAPSHOT)
+        List<ChannelOutboundBindingSnapshot> rows = dsl.select(CHANNEL_SESSION_BINDING_SNAPSHOT.fields())
+            .from(CHANNEL_SESSION_BINDING_SNAPSHOT)
+            .join(SESSION_RUNTIME_SESSION)
+            .on(SESSION_RUNTIME_SESSION.ID.eq(CHANNEL_SESSION_BINDING_SNAPSHOT.SESSION_ID))
             .where(CHANNEL_SESSION_BINDING_SNAPSHOT.SESSION_ID.eq(requireText(sessionId, "sessionId")))
             .and(activeSnapshotCondition())
+            .and(activeSessionChannelIdentityMatchesSnapshot())
             .orderBy(CHANNEL_SESSION_BINDING_SNAPSHOT.UPDATED_AT.desc(), CHANNEL_SESSION_BINDING_SNAPSHOT.BINDING_ID.asc())
             .limit(2)
             .fetch(this::map);
@@ -124,6 +129,15 @@ public class JooqChannelBindingSnapshotRepository {
         return CHANNEL_SESSION_BINDING_SNAPSHOT.BINDING_STATUS.eq(ACTIVE)
             .and(CHANNEL_SESSION_BINDING_SNAPSHOT.PROFILE_STATUS.eq(ChannelProfileStatus.ACTIVE.name()))
             .and(CHANNEL_SESSION_BINDING_SNAPSHOT.SESSION_ID.isNotNull());
+    }
+
+    private static org.jooq.Condition activeSessionChannelIdentityMatchesSnapshot() {
+        return SESSION_RUNTIME_SESSION.ENTRY_SCOPE.eq("CHANNEL")
+            .and(SESSION_RUNTIME_SESSION.STATUS.ne("ENDED"))
+            .and(SESSION_RUNTIME_SESSION.CHANNEL_PROFILE_ID.eq(CHANNEL_SESSION_BINDING_SNAPSHOT.CHANNEL_PROFILE_ID))
+            .and(SESSION_RUNTIME_SESSION.EXTERNAL_CONVERSATION_ID.eq(CHANNEL_SESSION_BINDING_SNAPSHOT.EXTERNAL_CONVERSATION_ID))
+            .and(SESSION_RUNTIME_SESSION.CUSTOMER_ID.eq(CHANNEL_SESSION_BINDING_SNAPSHOT.CUSTOMER_ID))
+            .and(SESSION_RUNTIME_SESSION.ASSISTANT_ID.eq(CHANNEL_SESSION_BINDING_SNAPSHOT.ASSISTANT_ID));
     }
 
     private ChannelOutboundBindingSnapshot map(Record record) {

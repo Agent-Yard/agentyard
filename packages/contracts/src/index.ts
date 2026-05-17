@@ -34,6 +34,18 @@ export type IntegrationAccountCredentialStatus =
 export type ChannelProfileStatus = 'ACTIVE' | 'INACTIVE';
 export type ChannelConversationBindingStatus = 'ACTIVE' | 'ARCHIVED';
 export type ChannelInboundEventStatus = 'RECEIVED' | 'REJECTED';
+export type ChannelInboundTurnStatus =
+  | 'RECEIVED'
+  | 'DUPLICATE'
+  | 'DISPATCHED'
+  | 'PARTIALLY_DISPATCHED'
+  | 'REJECTED'
+  | 'FAILED';
+export type ChannelInboundTurnMessageStatus =
+  | 'RECEIVED'
+  | 'DUPLICATE'
+  | 'ACCEPTED'
+  | 'REJECTED';
 export type ChannelOutboundFrameKind =
   | 'TYPING_START'
   | 'TYPING_STOP'
@@ -468,6 +480,16 @@ export interface NormalizedChannelInboundEvent {
 export interface NormalizedChannelInboundEventResult {
   eventId: string;
   duplicate: boolean;
+}
+
+export interface NormalizedChannelInboundTurnResult {
+  turnId: string;
+  sessionId: string | null;
+  status: ChannelInboundTurnStatus;
+  duplicate: boolean;
+  acceptedMessageIds: string[];
+  duplicateExternalMessageIds: string[];
+  reason: string | null;
 }
 
 export interface ChannelConversationBinding {

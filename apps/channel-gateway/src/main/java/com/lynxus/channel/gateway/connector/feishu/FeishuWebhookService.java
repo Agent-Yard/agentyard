@@ -1,9 +1,21 @@
 package com.lynxus.channel.gateway.connector.feishu;
 
 import com.lynxus.channel.gateway.channel.ChannelAdminService;
+import com.lynxus.channel.gateway.channel.ChannelInboundSessionDispatcher;
+import com.lynxus.channel.gateway.channel.NormalizedChannelEventHeaders;
+import com.lynxus.channel.gateway.channel.NormalizedChannelTurnIngestService;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEventStatus;
+import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelConversation;
+import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelInboundTurn;
+import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelMessageRole;
+import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelMessageSender;
+import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelSenderType;
+import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelTraceContext;
+import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelTurnMessage;
+import com.lynxus.extension.sdk.protocol.DescriptorType;
+import com.lynxus.extension.sdk.registration.ExtensionRegistrationLoader;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Comparator;
@@ -22,15 +34,21 @@ public class FeishuWebhookService {
     private final ChannelAdminService channelAdminService;
     private final ObjectMapper objectMapper;
     private final FeishuIntegrationAccountRuntimeProvider accountRuntimeProvider;
+    private final NormalizedChannelTurnIngestService turnIngestService;
+    private final ChannelInboundSessionDispatcher sessionDispatcher;
 
     public FeishuWebhookService(
         ChannelAdminService channelAdminService,
         ObjectMapper objectMapper,
-        FeishuIntegrationAccountRuntimeProvider accountRuntimeProvider
+        FeishuIntegrationAccountRuntimeProvider accountRuntimeProvider,
+        NormalizedChannelTurnIngestService turnIngestService,
+        ChannelInboundSessionDispatcher sessionDispatcher
     ) {
         this.channelAdminService = channelAdminService;
         this.objectMapper = objectMapper;
         this.accountRuntimeProvider = accountRuntimeProvider;
+        this.turnIngestService = turnIngestService;
+        this.sessionDispatcher = sessionDispatcher;
     }
 
     public Object handleWebhook(Map<String, Object> payload, Map<String, String> headers) {
@@ -53,6 +71,23 @@ public class FeishuWebhookService {
 
         Map<String, Object> normalizedPayload = normalizePayload(body, headers, appId);
         String dedupKey = dedupKey(normalizedPayload, body);
+        if (isMessageEvent(normalizedPayload)) {
+            NormalizedChannelInboundTurn turn = toInboundTurn(profileAccount.profile(), normalizedPayload, body, dedupKey, headers);
+            var ingestResult = turnIngestService.ingest(turn, new NormalizedChannelEventHeaders(
+                ExtensionRegistrationLoader.CORE_CHANNEL_GATEWAY_REGISTRATION_ID,
+                DescriptorType.CHANNEL_PROVIDER.wireValue(),
+                PROVIDER,
+                traceIdFromHeaders(headers),
+                firstNonBlank(readString(normalizedPayload.get("externalEventId")), dedupKey),
+                dedupKey
+            ));
+            var dispatchResult = sessionDispatcher.dispatch(turn, ingestResult);
+            return Map.of(
+                "status", dispatchResult.status().name(),
+                "turnId", dispatchResult.turnId(),
+                "duplicate", dispatchResult.duplicate()
+            );
+        }
         ChannelInboundEvent existing = channelAdminService.findInboundEventByDedupKey(dedupKey);
         if (existing != null) {
             return Map.of(
@@ -83,6 +118,48 @@ public class FeishuWebhookService {
             "status", "ok",
             "eventId", event.eventId(),
             "duplicate", false
+        );
+    }
+
+    private NormalizedChannelInboundTurn toInboundTurn(
+        ChannelGatewayProfile profile,
+        Map<String, Object> normalizedPayload,
+        Map<String, Object> rawPayload,
+        String dedupKey,
+        Map<String, String> headers
+    ) {
+        String externalConversationId = requireText(readString(normalizedPayload.get("externalConversationId")), "feishu externalConversationId");
+        String externalMessageId = requireText(readString(normalizedPayload.get("externalMessageId")), "feishu externalMessageId");
+        String externalUserId = readString(normalizedPayload.get("externalUserId"));
+        String text = extractMessageText(rawPayload);
+        return new NormalizedChannelInboundTurn(
+            PROVIDER,
+            profile.id(),
+            dedupKey,
+            externalConversationId,
+            externalUserId,
+            new NormalizedChannelConversation(externalConversationId, readNestedString(rawPayload, "event", "message", "chat_type"), null, Map.of()),
+            new NormalizedChannelMessageSender(
+                NormalizedChannelSenderType.CUSTOMER,
+                externalUserId,
+                null,
+                Map.of()
+            ),
+            java.util.List.of(new NormalizedChannelTurnMessage(
+                readString(normalizedPayload.get("externalEventId")),
+                externalMessageId,
+                occurredAt(firstNonBlank(headers.get("X-Lark-Request-Timestamp"), headers.get("X-Request-Timestamp"))),
+                NormalizedChannelMessageRole.USER,
+                null,
+                "TEXT",
+                requireText(text, "feishu message text"),
+                java.util.List.of(),
+                Map.of("eventType", readString(normalizedPayload.get("eventType")))
+            )),
+            normalizedPayload,
+            rawPayload,
+            new NormalizedChannelTraceContext("00-" + traceIdFromHeaders(headers) + "-0000000000000001-01", null),
+            Map.of("source", "feishu-webhook")
         );
     }
 
@@ -240,6 +317,54 @@ public class FeishuWebhookService {
             .filter(candidate -> !candidate.isEmpty())
             .findFirst()
             .orElse(null);
+    }
+
+    private static boolean isMessageEvent(Map<String, Object> normalizedPayload) {
+        return "im.message.receive_v1".equals(readString(normalizedPayload.get("eventType")));
+    }
+
+    private String extractMessageText(Map<String, Object> rawPayload) {
+        String content = firstNonBlank(
+            readNestedString(rawPayload, "event", "message", "content"),
+            readNestedString(rawPayload, "event", "message", "text"),
+            readNestedString(rawPayload, "event", "text")
+        );
+        if (content == null) {
+            return null;
+        }
+        try {
+            Object decoded = objectMapper.readValue(content, Object.class);
+            if (decoded instanceof Map<?, ?> map) {
+                return firstNonBlank(readString(map.get("text")), readString(map.get("content")));
+            }
+        } catch (Exception ignored) {
+            // Feishu text content can be plain text in some webhook variants.
+        }
+        return content;
+    }
+
+    private static Instant occurredAt(String value) {
+        String text = value == null ? null : value.trim();
+        if (text == null || text.isEmpty()) {
+            return Instant.now();
+        }
+        try {
+            long epoch = Long.parseLong(text);
+            return epoch > 100_000_000_000L ? Instant.ofEpochMilli(epoch) : Instant.ofEpochSecond(epoch);
+        } catch (NumberFormatException error) {
+            return Instant.now();
+        }
+    }
+
+    private static String traceIdFromHeaders(Map<String, String> headers) {
+        String seed = firstNonBlank(
+            headers.get("X-Lynxus-Trace-Id"),
+            headers.get("X-Lark-Request-Nonce"),
+            headers.get("X-Lark-Request-Timestamp"),
+            "feishu-webhook"
+        );
+        String hex = Integer.toHexString(seed.hashCode()).replace("-", "");
+        return (hex + "00000000000000000000000000000000").substring(0, 32);
     }
 
     private static String requireText(String value, String field) {

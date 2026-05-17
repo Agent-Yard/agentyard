@@ -2,7 +2,7 @@
 
 ## Current State
 
-- Current phase/task: Phase 3 Task 8 - Replace Channel Message Event With Inbound Turn
+- Current phase/task: Phase 4 Task 11 - Remove Old Single Message Path
 - Main role: coordinate subagent development/review cycles, maintain this ledger, run integration acceptance.
 - Development mode: one focused development subagent followed by one independent review subagent per task.
 - Source documents read:
@@ -44,7 +44,16 @@
 - Phase 2 Task 7 development completed: `019e3300-f4f3-7040-94c4-d5447623f5e9` (Arendt).
 - Phase 2 Task 7 review failed: `019e331c-f8c0-7733-9d9b-74ef863d9558` (Wegener), agent closed.
 - Phase 2 Task 7 development completed and reviewed after one fix loop: `019e3300-f4f3-7040-94c4-d5447623f5e9` (Arendt), `019e331c-f8c0-7733-9d9b-74ef863d9558` (Wegener), `019e3327-3f0e-7a62-851a-f7f262c93be7` (Jason). Agents closed.
-- Phase 2 Runtime Core checkpoint passed in main. Preparing Phase 3 Task 8 after Phase 2 commit.
+- Phase 2 Runtime Core checkpoint passed and committed: `1fe4fc68 feat: migrate session runtime to turns`.
+- Phase 3 Task 8 development completed: `019e332e-e708-79f0-bf0d-a65f058169fd` (Boole).
+- Phase 3 Task 8 review failed: `019e334a-16c5-7af2-9b38-0af110881dd0` (Copernicus), agent closed.
+- Phase 3 Task 8 development completed and reviewed after one fix loop: `019e332e-e708-79f0-bf0d-a65f058169fd` (Boole), `019e334a-16c5-7af2-9b38-0af110881dd0` (Copernicus), `019e3353-457c-7cb2-96b9-f9f30051cd13` (Laplace). Agents closed.
+- Phase 3 Task 9 development completed and reviewed: `019e3355-f7f4-7b61-bb40-4cc61f140912` (Euclid), `019e335b-7ee7-7833-9baa-725a58e88877` (James). Agents closed.
+- Phase 3 Task 10 development completed: `019e335f-8f96-7cb3-b2fc-54ffae9bddf3` (Noether).
+- Phase 3 Task 10 review failed: `019e336b-3b98-71c0-ad66-09762e1cb04e` (Nash), agent closed.
+- Phase 3 Task 10 development completed and reviewed after one fix loop: `019e335f-8f96-7cb3-b2fc-54ffae9bddf3` (Noether), `019e336b-3b98-71c0-ad66-09762e1cb04e` (Nash), `019e3370-4707-7323-86ad-96b31bac1d47` (Hilbert). Agents closed.
+- Phase 3 Entry Points checkpoint passed; phase commit pending.
+- Active: Phase 4 Task 11 pending assignment.
 
 ## Execution Plan Status
 
@@ -57,10 +66,10 @@
 - Phase 2 Task 6 - Add Platform Turn Allocation For No-External-Input Flows: passed review
 - Phase 2 Task 7 - Generate Context Entries And Migrate Agent Runtime To Delta Transcript: passed review
 - Runtime Core checkpoint: passed
-- Phase 3 Task 8 - Replace Channel Message Event With Inbound Turn: pending development
-- Phase 3 Task 9 - Fix Channel Outbound Scope: pending
-- Phase 3 Task 10 - Migrate Web Runtime Client And UI: pending
-- Entry Points checkpoint: pending
+- Phase 3 Task 8 - Replace Channel Message Event With Inbound Turn: passed review
+- Phase 3 Task 9 - Fix Channel Outbound Scope: passed review
+- Phase 3 Task 10 - Migrate Web Runtime Client And UI: passed review
+- Entry Points checkpoint: passed
 - Phase 4 Task 11 - Remove Old Single Message Path: pending
 - Final checkpoint: pending
 
@@ -259,4 +268,84 @@
   - `./gradlew :apps:channel-gateway:test --tests '*GatewayNativeChannelOutboundFrameDispatcherTest*' --tests '*ChannelOutboundRelayComponentsTest*' --tests '*ChannelOutboundUpstreamRelaySupervisorTest*' --tests '*FeishuGatewayNativeChannelProviderAdapterTest*'` passed.
   - `./gradlew :apps:worker:test --tests '*SessionAgentRuntimeGatewayTest*'` passed after diagnostic text fix from `payload.messageId` to `payload.replyMessageId`.
   - `rg "payload\\.messageId|triggerMessageId|recentMessages|recentEvents|recent_messages|recent_events|list_recent_events" ...` shows only agent-runtime negative model tests for forbidden legacy fields.
+  - `git diff --check` passed.
+- Phase 3 Task 8 development reported:
+  - `./gradlew :apps:channel-gateway:test --tests '*NormalizedChannel*'` passed.
+  - `./gradlew :apps:channel-gateway:test --tests '*ChannelInboundSessionDispatcherTest*'` passed.
+  - `./gradlew :apps:channel-gateway:test --tests '*RemoteProviderJobExecutorTest*'` passed.
+  - `./gradlew :apps:channel-gateway:test --tests '*FeishuWebhook*' --tests '*FeishuInboundEventServiceTest*'` passed.
+  - `./gradlew :packages:extension-sdk-jvm:test` passed.
+  - `uv run pytest packages/extension-sdk-python/tests/test_extension_protocol_contract.py -q` passed.
+  - `uv run pytest packages/extension-sdk-python/tests/test_http_helpers_contract.py -q` passed.
+  - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+  - `git diff --check` passed.
+- Phase 3 Task 8 review found blockers:
+  - `./gradlew :apps:channel-gateway:test --tests '*NormalizedChannel*'` passed.
+  - `./gradlew :apps:channel-gateway:test --tests '*ChannelInboundSessionDispatcherTest*'` passed.
+  - `./gradlew :apps:channel-gateway:test --tests '*RemoteProviderJobExecutorTest*'` passed.
+  - `./gradlew :packages:extension-sdk-jvm:test` passed.
+  - `uv run pytest packages/extension-sdk-python/tests/test_extension_protocol_contract.py -q` passed.
+  - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+  - `git diff --check` passed.
+- Phase 3 Task 8 fix development reported:
+  - `./gradlew :apps:channel-gateway:test --tests '*NormalizedChannel*'` passed.
+  - `./gradlew :apps:channel-gateway:test --tests '*ChannelInboundSessionDispatcherTest*'` passed.
+  - `./gradlew :apps:channel-gateway:test --tests '*RemoteProviderJobExecutorTest*'` passed.
+  - `./gradlew :packages:extension-sdk-jvm:test` passed.
+  - `uv run pytest packages/extension-sdk-python/tests/test_extension_protocol_contract.py -q` passed.
+  - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+  - `git diff --check` passed.
+- Phase 3 Task 8 re-review passed:
+  - `./gradlew :apps:channel-gateway:test --tests '*NormalizedChannel*'` passed.
+  - `./gradlew :apps:channel-gateway:test --tests '*ChannelInboundSessionDispatcherTest*'` passed.
+  - `./gradlew :apps:channel-gateway:test --tests '*RemoteProviderJobExecutorTest*'` passed.
+  - `git diff --check` passed.
+- Phase 3 Task 9 development reported:
+  - `./gradlew :apps:api:test --tests '*ChannelOutboundFramePublisherTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*SessionChannelOutboundRelayTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*DefaultSessionChannelActivityRelayTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*JooqSessionRuntimeRepositoryTest*' --tests '*JooqChannelBindingSnapshotRepositoryTest*'` passed.
+  - `git diff --check` passed.
+- Phase 3 Task 9 review passed:
+  - `./gradlew :apps:api:test --tests '*ChannelOutboundFramePublisherTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*SessionChannelOutboundRelayTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*DefaultSessionChannelActivityRelayTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*JooqSessionRuntimeRepositoryTest*' --tests '*JooqChannelBindingSnapshotRepositoryTest*'` passed.
+  - `./gradlew :apps:api:test --tests '*ChannelBindingSnapshotLookupServiceTest*'` passed.
+  - `git diff --check` passed.
+- Phase 3 Task 10 development reported:
+  - `pnpm --filter @lynxus/web test` passed.
+  - `pnpm --filter @lynxus/web build` passed.
+  - `git diff --check` passed.
+  - `rg "/api/session-runtime/messages|sendRuntimeSessionMessage" apps/web/src` returned no results.
+  - `rg "acceptedMessageIds" apps/web/src --glob '!*.test.ts'` returned no results.
+- Phase 3 Task 10 review found blocker:
+  - `pnpm --filter @lynxus/web test` passed.
+  - `pnpm --filter @lynxus/web build` passed.
+  - `rg "/api/session-runtime/messages|sendRuntimeSessionMessage" apps/web/src` returned no results.
+  - `rg "acceptedMessageIds" apps/web/src --glob '!*.test.ts'` returned no results.
+  - `git diff --check` passed.
+- Phase 3 Task 10 fix development reported:
+  - `pnpm --filter @lynxus/web test` passed.
+  - `pnpm --filter @lynxus/web build` passed.
+  - `rg "/api/session-runtime/messages|sendRuntimeSessionMessage" apps/web/src` returned no results.
+  - `rg "acceptedMessageIds" apps/web/src --glob '!*.test.ts'` returned no results.
+  - `git diff --check` passed.
+- Phase 3 Task 10 re-review passed:
+  - `pnpm --filter @lynxus/web test` passed.
+  - `pnpm --filter @lynxus/web build` passed.
+  - `rg "/api/session-runtime/messages|sendRuntimeSessionMessage" apps/web/src` returned no results.
+  - `rg "acceptedMessageIds" apps/web/src --glob '!*.test.ts'` returned no results.
+  - `git diff --check` passed.
+- Entry Points checkpoint run in main:
+  - `pnpm --filter @lynxus/web test` passed.
+  - `pnpm --filter @lynxus/web build` passed.
+  - `./gradlew :apps:channel-gateway:test --tests '*NormalizedChannel*' --tests '*ChannelInboundSessionDispatcherTest*' --tests '*RemoteProviderJobExecutorTest*'` passed.
+  - `./gradlew :packages:extension-sdk-jvm:test` passed.
+  - `uv run pytest packages/extension-sdk-python/tests/test_extension_protocol_contract.py -q` passed.
+  - `pnpm --filter @lynxus/extension-protocol self-check` passed.
+  - `./gradlew :apps:api:test --tests '*ChannelOutboundFramePublisherTest*' --tests '*SessionChannelOutboundRelayTest*' --tests '*DefaultSessionChannelActivityRelayTest*' --tests '*JooqChannelBindingSnapshotRepositoryTest*'` passed.
+  - `rg "/api/session-runtime/messages|sendRuntimeSessionMessage|acceptedMessageIds" apps/web/src --glob '!*.test.ts'` returned no results.
+  - `rg "ChannelInboundSessionMessageRequest|ChannelInboundSessionMessageResponse|NormalizedChannelInboundEvent.*message|channel_inbound_event" apps packages docs --glob '!docs/develop_record/**'` showed expected Task 11 cleanup candidates plus channel event storage references.
+  - `rg "triggerMessageId|recentMessages|recentEvents|recent_messages|recent_events|list_recent_events" apps packages docs --glob '!docs/develop_record/**'` showed only todo/doing docs and agent-runtime negative model tests.
   - `git diff --check` passed.

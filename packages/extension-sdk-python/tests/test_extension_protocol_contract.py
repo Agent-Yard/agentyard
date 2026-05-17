@@ -101,6 +101,7 @@ def test_header_constants_match_openapi_operation_groups() -> None:
         "invokeToolConnector",
         "runChannelProviderJob",
         "ingestNormalizedChannelEvent",
+        "ingestNormalizedChannelTurn",
     }:
         assert _operation_header_names(openapi, operation_id) == DESCRIPTOR_LEVEL_REQUIRED_HEADERS
 

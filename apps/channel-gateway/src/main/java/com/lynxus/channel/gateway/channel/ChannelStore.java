@@ -9,6 +9,11 @@ import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBindingStatus;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEventStatus;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundTurnMessageStatus;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundTurnStatus;
+import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelAttachment;
+import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelMessageRole;
+import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelMessageSender;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundBindingSnapshot;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundConsumerKind;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundFrameCheckpoint;
@@ -28,18 +33,26 @@ import java.util.Optional;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
+import org.jooq.JSONB;
 import org.jooq.Record;
 import org.jooq.impl.DSL;
+import tools.jackson.core.type.TypeReference;
 
 import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_PROFILE;
 import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_CONVERSATION_BINDING;
 import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_INBOUND_EVENT;
+import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_INBOUND_MESSAGE_DEDUPE;
+import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_INBOUND_TURN;
+import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_INBOUND_TURN_MESSAGE;
 import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_OUTBOUND_FINAL_CHECKPOINT;
 import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_PROFILE_JOB;
 import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_PROFILE_JOB_RUN;
 import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_PROFILE_TEMPLATE_BINDING;
 
 final class ChannelStore {
+    private static final TypeReference<List<NormalizedChannelAttachment>> ATTACHMENT_LIST = new TypeReference<>() {
+    };
+
     private final DSLContext dsl;
     private final JooqJsonbSupport jsonbSupport;
 
@@ -353,6 +366,151 @@ final class ChannelStore {
             .doNothing()
             .execute();
         return rows == 1;
+    }
+
+    Optional<ChannelInboundTurnAudit> findInboundTurnByDedupKey(String dedupKey) {
+        return dsl.selectFrom(CHANNEL_INBOUND_TURN)
+            .where(CHANNEL_INBOUND_TURN.DEDUP_KEY.eq(dedupKey))
+            .fetchOptional(this::mapInboundTurn);
+    }
+
+    boolean saveInboundTurnIfAbsent(ChannelInboundTurnAudit turn) {
+        int rows = dsl.insertInto(CHANNEL_INBOUND_TURN)
+            .set(CHANNEL_INBOUND_TURN.TURN_ID, turn.turnId())
+            .set(CHANNEL_INBOUND_TURN.CHANNEL_PROFILE_ID, turn.channelProfileId())
+            .set(CHANNEL_INBOUND_TURN.PROVIDER_TYPE, turn.providerType())
+            .set(CHANNEL_INBOUND_TURN.DEDUP_KEY, turn.dedupKey())
+            .set(CHANNEL_INBOUND_TURN.EXTERNAL_CONVERSATION_ID, turn.externalConversationId())
+            .set(CHANNEL_INBOUND_TURN.EXTERNAL_USER_ID, turn.externalUserId())
+            .set(CHANNEL_INBOUND_TURN.NORMALIZED_PAYLOAD, jsonbSupport.toJsonb(turn.normalizedPayload() == null ? Map.of() : turn.normalizedPayload()))
+            .set(CHANNEL_INBOUND_TURN.RAW_PAYLOAD, jsonbSupport.toJsonb(turn.rawPayload() == null ? Map.of() : turn.rawPayload()))
+            .set(CHANNEL_INBOUND_TURN.TRACE_CONTEXT, jsonbSupport.toJsonb(turn.traceContext() == null ? Map.of() : turn.traceContext()))
+            .set(CHANNEL_INBOUND_TURN.METADATA, jsonbSupport.toJsonb(turn.metadata() == null ? Map.of() : turn.metadata()))
+            .set(CHANNEL_INBOUND_TURN.STATUS, turn.status().name())
+            .set(CHANNEL_INBOUND_TURN.SESSION_ID, turn.sessionId())
+            .set(CHANNEL_INBOUND_TURN.CREATED_AT, JooqTimeSupport.toOffsetDateTime(turn.createdAt()))
+            .set(CHANNEL_INBOUND_TURN.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(turn.updatedAt()))
+            .onConflict(CHANNEL_INBOUND_TURN.DEDUP_KEY)
+            .doNothing()
+            .execute();
+        return rows == 1;
+    }
+
+    boolean saveInboundTurnMessageIfAbsent(ChannelInboundTurnMessageAudit message) {
+        int rows = dsl.insertInto(CHANNEL_INBOUND_TURN_MESSAGE)
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.TURN_ID, message.turnId())
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.CHANNEL_PROFILE_ID, message.channelProfileId())
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.EXTERNAL_CONVERSATION_ID, message.externalConversationId())
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.REQUEST_INDEX, message.requestIndex())
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.EXTERNAL_EVENT_ID, message.externalEventId())
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.EXTERNAL_MESSAGE_ID, message.externalMessageId())
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.OCCURRED_AT, JooqTimeSupport.toOffsetDateTime(message.occurredAt()))
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.ROLE, message.role().name())
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.SENDER, jsonbSupport.toJsonb(message.sender()))
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.MESSAGE_TYPE, message.messageType())
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.TEXT, message.text())
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.ATTACHMENTS, jsonbSupport.toJsonb(message.attachments() == null ? List.of() : message.attachments()))
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.METADATA, jsonbSupport.toJsonb(message.metadata() == null ? Map.of() : message.metadata()))
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.STATUS, message.status().name())
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.SESSION_MESSAGE_ID, message.sessionMessageId())
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.DUPLICATE_OF_TURN_ID, message.duplicateOfTurnId())
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.CREATED_AT, JooqTimeSupport.toOffsetDateTime(message.createdAt()))
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(message.updatedAt()))
+            .onConflict(CHANNEL_INBOUND_TURN_MESSAGE.TURN_ID, CHANNEL_INBOUND_TURN_MESSAGE.REQUEST_INDEX)
+            .doNothing()
+            .execute();
+        return rows == 1;
+    }
+
+    List<ChannelInboundTurnMessageAudit> listInboundTurnMessages(String turnId) {
+        return dsl.selectFrom(CHANNEL_INBOUND_TURN_MESSAGE)
+            .where(CHANNEL_INBOUND_TURN_MESSAGE.TURN_ID.eq(turnId))
+            .orderBy(CHANNEL_INBOUND_TURN_MESSAGE.REQUEST_INDEX.asc())
+            .fetch(this::mapInboundTurnMessage);
+    }
+
+    boolean claimInboundMessageDedupe(
+        String channelProfileId,
+        String externalConversationId,
+        String externalMessageId,
+        String firstTurnId,
+        int firstRequestIndex,
+        Instant now
+    ) {
+        int rows = dsl.insertInto(CHANNEL_INBOUND_MESSAGE_DEDUPE)
+            .set(CHANNEL_INBOUND_MESSAGE_DEDUPE.CHANNEL_PROFILE_ID, channelProfileId)
+            .set(CHANNEL_INBOUND_MESSAGE_DEDUPE.EXTERNAL_CONVERSATION_ID, externalConversationId)
+            .set(CHANNEL_INBOUND_MESSAGE_DEDUPE.EXTERNAL_MESSAGE_ID, externalMessageId)
+            .set(CHANNEL_INBOUND_MESSAGE_DEDUPE.FIRST_TURN_ID, firstTurnId)
+            .set(CHANNEL_INBOUND_MESSAGE_DEDUPE.FIRST_REQUEST_INDEX, firstRequestIndex)
+            .set(CHANNEL_INBOUND_MESSAGE_DEDUPE.CREATED_AT, JooqTimeSupport.toOffsetDateTime(now))
+            .onConflict(
+                CHANNEL_INBOUND_MESSAGE_DEDUPE.CHANNEL_PROFILE_ID,
+                CHANNEL_INBOUND_MESSAGE_DEDUPE.EXTERNAL_CONVERSATION_ID,
+                CHANNEL_INBOUND_MESSAGE_DEDUPE.EXTERNAL_MESSAGE_ID
+            )
+            .doNothing()
+            .execute();
+        return rows == 1;
+    }
+
+    Optional<ChannelInboundMessageDedupeAudit> findInboundMessageDedupe(
+        String channelProfileId,
+        String externalConversationId,
+        String externalMessageId
+    ) {
+        return dsl.selectFrom(CHANNEL_INBOUND_MESSAGE_DEDUPE)
+            .where(CHANNEL_INBOUND_MESSAGE_DEDUPE.CHANNEL_PROFILE_ID.eq(channelProfileId))
+            .and(CHANNEL_INBOUND_MESSAGE_DEDUPE.EXTERNAL_CONVERSATION_ID.eq(externalConversationId))
+            .and(CHANNEL_INBOUND_MESSAGE_DEDUPE.EXTERNAL_MESSAGE_ID.eq(externalMessageId))
+            .fetchOptional(this::mapInboundMessageDedupe);
+    }
+
+    void updateInboundTurnStatus(String turnId, ChannelInboundTurnStatus status, String sessionId, Instant now) {
+        dsl.update(CHANNEL_INBOUND_TURN)
+            .set(CHANNEL_INBOUND_TURN.STATUS, status.name())
+            .set(CHANNEL_INBOUND_TURN.SESSION_ID, sessionId)
+            .set(CHANNEL_INBOUND_TURN.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(now))
+            .where(CHANNEL_INBOUND_TURN.TURN_ID.eq(turnId))
+            .execute();
+    }
+
+    void updateInboundTurnMessageStatus(
+        String turnId,
+        int requestIndex,
+        ChannelInboundTurnMessageStatus status,
+        String sessionMessageId,
+        String duplicateOfTurnId,
+        Instant now
+    ) {
+        var update = dsl.update(CHANNEL_INBOUND_TURN_MESSAGE)
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.STATUS, status.name())
+            .set(CHANNEL_INBOUND_TURN_MESSAGE.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(now));
+        if (sessionMessageId != null) {
+            update.set(CHANNEL_INBOUND_TURN_MESSAGE.SESSION_MESSAGE_ID, sessionMessageId);
+        }
+        if (duplicateOfTurnId != null) {
+            update.set(CHANNEL_INBOUND_TURN_MESSAGE.DUPLICATE_OF_TURN_ID, duplicateOfTurnId);
+        }
+        update.where(CHANNEL_INBOUND_TURN_MESSAGE.TURN_ID.eq(turnId))
+            .and(CHANNEL_INBOUND_TURN_MESSAGE.REQUEST_INDEX.eq(requestIndex))
+            .execute();
+    }
+
+    void updateInboundMessageDedupeSession(
+        String channelProfileId,
+        String externalConversationId,
+        String externalMessageId,
+        String sessionId,
+        String sessionMessageId
+    ) {
+        dsl.update(CHANNEL_INBOUND_MESSAGE_DEDUPE)
+            .set(CHANNEL_INBOUND_MESSAGE_DEDUPE.SESSION_ID, sessionId)
+            .set(CHANNEL_INBOUND_MESSAGE_DEDUPE.SESSION_MESSAGE_ID, sessionMessageId)
+            .where(CHANNEL_INBOUND_MESSAGE_DEDUPE.CHANNEL_PROFILE_ID.eq(channelProfileId))
+            .and(CHANNEL_INBOUND_MESSAGE_DEDUPE.EXTERNAL_CONVERSATION_ID.eq(externalConversationId))
+            .and(CHANNEL_INBOUND_MESSAGE_DEDUPE.EXTERNAL_MESSAGE_ID.eq(externalMessageId))
+            .execute();
     }
 
     List<ChannelOutboundFrameCheckpoint> listOutboundFinalCheckpoints(String channelProfileId) {
@@ -869,6 +1027,66 @@ final class ChannelStore {
             JooqTimeSupport.toInstant(record.get(CHANNEL_INBOUND_EVENT.CREATED_AT)),
             JooqTimeSupport.toInstant(record.get(CHANNEL_INBOUND_EVENT.UPDATED_AT))
         );
+    }
+
+    private ChannelInboundTurnAudit mapInboundTurn(Record record) {
+        return new ChannelInboundTurnAudit(
+            record.get(CHANNEL_INBOUND_TURN.TURN_ID),
+            record.get(CHANNEL_INBOUND_TURN.CHANNEL_PROFILE_ID),
+            record.get(CHANNEL_INBOUND_TURN.PROVIDER_TYPE),
+            record.get(CHANNEL_INBOUND_TURN.DEDUP_KEY),
+            record.get(CHANNEL_INBOUND_TURN.EXTERNAL_CONVERSATION_ID),
+            record.get(CHANNEL_INBOUND_TURN.EXTERNAL_USER_ID),
+            jsonbSupport.readObjectMap(record.get(CHANNEL_INBOUND_TURN.NORMALIZED_PAYLOAD)),
+            jsonbSupport.readObjectMap(record.get(CHANNEL_INBOUND_TURN.RAW_PAYLOAD)),
+            jsonbSupport.readObjectMap(record.get(CHANNEL_INBOUND_TURN.TRACE_CONTEXT)),
+            jsonbSupport.readObjectMap(record.get(CHANNEL_INBOUND_TURN.METADATA)),
+            ChannelInboundTurnStatus.valueOf(record.get(CHANNEL_INBOUND_TURN.STATUS)),
+            record.get(CHANNEL_INBOUND_TURN.SESSION_ID),
+            JooqTimeSupport.toInstant(record.get(CHANNEL_INBOUND_TURN.CREATED_AT)),
+            JooqTimeSupport.toInstant(record.get(CHANNEL_INBOUND_TURN.UPDATED_AT))
+        );
+    }
+
+    private ChannelInboundTurnMessageAudit mapInboundTurnMessage(Record record) {
+        return new ChannelInboundTurnMessageAudit(
+            record.get(CHANNEL_INBOUND_TURN_MESSAGE.TURN_ID),
+            record.get(CHANNEL_INBOUND_TURN_MESSAGE.CHANNEL_PROFILE_ID),
+            record.get(CHANNEL_INBOUND_TURN_MESSAGE.EXTERNAL_CONVERSATION_ID),
+            record.get(CHANNEL_INBOUND_TURN_MESSAGE.REQUEST_INDEX),
+            record.get(CHANNEL_INBOUND_TURN_MESSAGE.EXTERNAL_EVENT_ID),
+            record.get(CHANNEL_INBOUND_TURN_MESSAGE.EXTERNAL_MESSAGE_ID),
+            JooqTimeSupport.toInstant(record.get(CHANNEL_INBOUND_TURN_MESSAGE.OCCURRED_AT)),
+            NormalizedChannelMessageRole.valueOf(record.get(CHANNEL_INBOUND_TURN_MESSAGE.ROLE)),
+            jsonbSupport.read(record.get(CHANNEL_INBOUND_TURN_MESSAGE.SENDER), NormalizedChannelMessageSender.class),
+            record.get(CHANNEL_INBOUND_TURN_MESSAGE.MESSAGE_TYPE),
+            record.get(CHANNEL_INBOUND_TURN_MESSAGE.TEXT),
+            readAttachmentList(record.get(CHANNEL_INBOUND_TURN_MESSAGE.ATTACHMENTS)),
+            jsonbSupport.readObjectMap(record.get(CHANNEL_INBOUND_TURN_MESSAGE.METADATA)),
+            ChannelInboundTurnMessageStatus.valueOf(record.get(CHANNEL_INBOUND_TURN_MESSAGE.STATUS)),
+            record.get(CHANNEL_INBOUND_TURN_MESSAGE.SESSION_MESSAGE_ID),
+            record.get(CHANNEL_INBOUND_TURN_MESSAGE.DUPLICATE_OF_TURN_ID),
+            JooqTimeSupport.toInstant(record.get(CHANNEL_INBOUND_TURN_MESSAGE.CREATED_AT)),
+            JooqTimeSupport.toInstant(record.get(CHANNEL_INBOUND_TURN_MESSAGE.UPDATED_AT))
+        );
+    }
+
+    private ChannelInboundMessageDedupeAudit mapInboundMessageDedupe(Record record) {
+        return new ChannelInboundMessageDedupeAudit(
+            record.get(CHANNEL_INBOUND_MESSAGE_DEDUPE.CHANNEL_PROFILE_ID),
+            record.get(CHANNEL_INBOUND_MESSAGE_DEDUPE.EXTERNAL_CONVERSATION_ID),
+            record.get(CHANNEL_INBOUND_MESSAGE_DEDUPE.EXTERNAL_MESSAGE_ID),
+            record.get(CHANNEL_INBOUND_MESSAGE_DEDUPE.FIRST_TURN_ID),
+            record.get(CHANNEL_INBOUND_MESSAGE_DEDUPE.FIRST_REQUEST_INDEX),
+            record.get(CHANNEL_INBOUND_MESSAGE_DEDUPE.SESSION_ID),
+            record.get(CHANNEL_INBOUND_MESSAGE_DEDUPE.SESSION_MESSAGE_ID),
+            JooqTimeSupport.toInstant(record.get(CHANNEL_INBOUND_MESSAGE_DEDUPE.CREATED_AT))
+        );
+    }
+
+    private List<NormalizedChannelAttachment> readAttachmentList(JSONB value) {
+        List<NormalizedChannelAttachment> attachments = jsonbSupport.read(value, ATTACHMENT_LIST);
+        return attachments == null || attachments.isEmpty() ? List.of() : List.copyOf(attachments);
     }
 
     private ChannelOutboundFrameCheckpoint mapOutboundFinalCheckpoint(Record record) {

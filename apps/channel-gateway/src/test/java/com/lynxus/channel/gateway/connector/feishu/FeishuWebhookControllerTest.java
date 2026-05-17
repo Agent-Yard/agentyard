@@ -7,6 +7,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.lynxus.channel.gateway.channel.ChannelAdminRepository;
 import com.lynxus.channel.gateway.channel.ChannelAdminService;
+import com.lynxus.channel.gateway.channel.ChannelInboundSessionDispatcher;
+import com.lynxus.channel.gateway.channel.ChannelSessionRuntimeClient;
+import com.lynxus.channel.gateway.channel.NormalizedChannelTurnIngestService;
 import com.lynxus.channel.gateway.extension.ChannelGatewayDescriptorProvider;
 import com.lynxus.channel.gateway.extension.ChannelProviderRegistryLoader;
 import com.lynxus.channel.gateway.extension.ExtensionManifestFetcher;
@@ -16,7 +19,13 @@ import com.lynxus.channel.gateway.extension.RuntimeChannelProviderRegistry;
 import com.lynxus.channel.gateway.shared.ApiExceptionHandler;
 import com.lynxus.channel.gateway.testing.EmbeddedPostgresTestDatabase;
 import com.lynxus.contracts.channel.ChannelContracts.CreateChannelProfileInternalRequest;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelAssistantBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProfileAccountSnapshot;
+import com.lynxus.contracts.session.SessionContracts.AcceptedSessionMessageAllocation;
+import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionTurnRequest;
+import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionTurnResponse;
+import com.lynxus.contracts.session.SessionContracts.SessionMessageDeliveryStatus;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -26,6 +35,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import tools.jackson.databind.ObjectMapper;
+
+import static com.lynxus.channel.gateway.jooq.Tables.CHANNEL_INBOUND_TURN;
 
 class FeishuWebhookControllerTest {
     private static EmbeddedPostgresTestDatabase database;
@@ -65,7 +76,9 @@ class FeishuWebhookControllerTest {
         FeishuWebhookService feishuWebhookService = new FeishuWebhookService(
             channelAdminService,
             objectMapper,
-            accountRuntimeProvider
+            accountRuntimeProvider,
+            new NormalizedChannelTurnIngestService(repository, registrationService()),
+            new ChannelInboundSessionDispatcher(repository, new CapturingRuntimeClient())
         );
         mockMvc = MockMvcBuilders.standaloneSetup(new FeishuWebhookController(feishuWebhookService))
             .setControllerAdvice(new ApiExceptionHandler())
@@ -77,7 +90,7 @@ class FeishuWebhookControllerTest {
             null,
             true,
             Map.of(),
-            null,
+            new ChannelAssistantBinding("assistant-1", null),
             new ChannelProfileAccountSnapshot("integration-account-1", null)
         ));
     }
@@ -175,7 +188,8 @@ class FeishuWebhookControllerTest {
                   }
                 },
                 "message": {
-                  "message_id": "om_123"
+                  "message_id": "om_123",
+                  "content": "{\\"text\\":\\"hello\\"}"
                 }
               },
               "token": "verify-token"
@@ -187,7 +201,7 @@ class FeishuWebhookControllerTest {
                 .header("X-Lark-Request-Timestamp", "1710000000")
                 .content(payload))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.status").value("ok"))
+            .andExpect(jsonPath("$.status").value("DISPATCHED"))
             .andExpect(jsonPath("$.duplicate").value(false));
 
         mockMvc.perform(post("/connectors/feishu/webhook")
@@ -195,12 +209,35 @@ class FeishuWebhookControllerTest {
                 .header("X-Lark-Request-Timestamp", "1710000000")
                 .content(payload))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.status").value("ok"))
+            .andExpect(jsonPath("$.status").value("DISPATCHED"))
             .andExpect(jsonPath("$.duplicate").value(true));
 
         String channelProfileId = repository.listProfiles().getFirst().id();
-        assertEquals(1, repository.listInboundEvents(channelProfileId).size());
-        assertEquals("evt_001", repository.listInboundEvents(channelProfileId).getFirst().externalEventId());
+        assertEquals(0, repository.listInboundEvents(channelProfileId).size());
+        assertEquals(1, database.dsl().fetchCount(CHANNEL_INBOUND_TURN));
+    }
+
+    private static ExtensionRegistrationService registrationService() {
+        return new ExtensionRegistrationService(
+            new ExtensionRegistrationProperties(null),
+            "http://channel-gateway.example.com",
+            "http://agent-runtime.example.com"
+        );
+    }
+
+    private static final class CapturingRuntimeClient implements ChannelSessionRuntimeClient {
+        @Override
+        public ChannelInboundSessionTurnResponse dispatchInboundTurn(ChannelInboundSessionTurnRequest request) {
+            return new ChannelInboundSessionTurnResponse(
+                "session-feishu",
+                "turn-session-feishu",
+                SessionMessageDeliveryStatus.ACCEPTED,
+                List.of("session-message-feishu"),
+                List.of(new AcceptedSessionMessageAllocation(0, null, "session-message-feishu", 0)),
+                List.of(),
+                null
+            );
+        }
     }
 
     private static final class FakeFeishuIntegrationAccountRuntimeProvider implements FeishuIntegrationAccountRuntimeProvider {

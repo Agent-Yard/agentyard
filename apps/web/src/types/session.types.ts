@@ -7,11 +7,17 @@ import type {
   SessionReplyDraftEvent as ContractsSessionReplyDraftEvent,
   SessionRuntimeStreamEvent as ContractsSessionRuntimeStreamEvent,
   SessionStreamErrorEvent as ContractsSessionStreamErrorEvent,
+  SendSessionTurnRequest as ContractsSendSessionTurnRequest,
+  SendSessionTurnResponse as ContractsSendSessionTurnResponse,
+  WebSessionTurnMessageInput as ContractsWebSessionTurnMessageInput,
 } from '../../../../packages/contracts/src';
 
 export type SessionEvent = ContractsSessionEvent;
 export type SessionMessage = ContractsSessionMessage;
 export type SessionMessageInput = ContractsSessionMessageInput;
+export type WebSessionTurnMessageInput = ContractsWebSessionTurnMessageInput;
+export type SendSessionTurnPayload = ContractsSendSessionTurnRequest;
+export type SendSessionTurnResponse = ContractsSendSessionTurnResponse;
 export type PlaybookRun = ContractsPlaybookRun;
 
 export interface SessionRuntimeSession {
@@ -51,7 +57,8 @@ export type SessionProgressEvent = ContractsSessionProgressEvent;
 export type SessionReplyDraftEvent = ContractsSessionReplyDraftEvent;
 export type SessionStreamErrorEvent = ContractsSessionStreamErrorEvent;
 
-export interface RuntimeDraftMessage {
+export interface RuntimeReplyDraftMessage {
+  draftType: 'REPLY';
   sessionId: string;
   turnId: string;
   replyMessageId: string;
@@ -59,6 +66,23 @@ export interface RuntimeDraftMessage {
   failed: boolean;
   updatedAt: string;
 }
+
+export interface RuntimeUserDraftMessage {
+  draftType: 'USER';
+  sessionId: string | null;
+  turnDedupKey: string;
+  clientMessageId: string;
+  requestIndex: number;
+  turnId: string | null;
+  messageId: string | null;
+  turnIndex: number | null;
+  blocks: SessionMessage['blocks'];
+  failed: boolean;
+  submittedAt: string;
+  updatedAt: string;
+}
+
+export type RuntimeDraftMessage = RuntimeReplyDraftMessage | RuntimeUserDraftMessage;
 
 export interface PrivacyMappingSummary {
   enabled: boolean;
@@ -71,13 +95,6 @@ export interface PrivacyMappingSummary {
   unresolvedPlaceholderCount: number;
   blockedEventCount: number;
   lastProcessedAt: string | null;
-}
-
-export interface SendSessionMessagePayload {
-  sessionId?: string | null;
-  assistantId?: string | null;
-  customerId: string;
-  message: SessionMessageInput;
 }
 
 export interface HumanOperatorReplyPayload {

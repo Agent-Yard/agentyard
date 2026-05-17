@@ -19,7 +19,12 @@ const state = useAppState(currentPageKey);
 const catalogActions = useCatalogActions(state, state.refresh, state.errorMessage);
 const runtimeActions = useRuntimeActions(
   state,
-  { upsertRuntimeSession: state.upsertRuntimeSession },
+  {
+    applyRuntimeSessionDetail: state.applyRuntimeSessionDetail,
+    addRuntimeUserDrafts: state.addRuntimeUserDrafts,
+    reconcileRuntimeUserDrafts: state.reconcileRuntimeUserDrafts,
+    markRuntimeUserDraftsFailed: state.markRuntimeUserDraftsFailed,
+  },
   state.refresh,
   state.errorMessage,
 );

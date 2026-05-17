@@ -107,6 +107,7 @@ def test_openapi_default_error_responses_use_extension_error_schema() -> None:
         "revokeCredential",
         "validateCredential",
         "ingestNormalizedChannelEvent",
+        "ingestNormalizedChannelTurn",
     }:
         assert _default_response_ref(openapi, operation_id) == "#/components/responses/ExtensionErrorResponse"
 

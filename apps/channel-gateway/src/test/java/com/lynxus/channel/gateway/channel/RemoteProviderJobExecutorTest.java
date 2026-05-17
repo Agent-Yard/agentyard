@@ -2,15 +2,21 @@ package com.lynxus.channel.gateway.channel;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.lynxus.channel.gateway.extension.ChannelGatewayDescriptorProvider;
 import com.lynxus.channel.gateway.extension.ChannelProviderRegistryLoader;
 import com.lynxus.channel.gateway.extension.ExtensionRegistrationProperties;
 import com.lynxus.channel.gateway.extension.ExtensionRegistrationService;
 import com.lynxus.channel.gateway.extension.RuntimeChannelProviderRegistry;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundTurnStatus;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobScheduleConfig;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelProviderJobScheduleType;
+import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelInboundTurn;
+import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelInboundTurnResult;
 import com.lynxus.extension.sdk.common.LynxusCanonicalJson;
 import com.lynxus.extension.sdk.protocol.JsonDocuments;
 import com.lynxus.extension.sdk.protocol.LynxusExtensionHeaders;
@@ -27,6 +33,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import tools.jackson.databind.ObjectMapper;
 
 class RemoteProviderJobExecutorTest {
@@ -43,6 +50,7 @@ class RemoteProviderJobExecutorTest {
                 {
                   "status": "NOOP",
                   "nextCursor": "cursor-2",
+                  "inboundTurns": [],
                   "events": [],
                   "metadata": {"providerStatus": "ok"}
                 }
@@ -54,33 +62,13 @@ class RemoteProviderJobExecutorTest {
             RemoteProviderJobExecutor executor = new RemoteProviderJobExecutor(
                 registry,
                 mock(NormalizedChannelEventIngestService.class),
+                mock(NormalizedChannelTurnIngestService.class),
                 mock(ChannelInboundSessionDispatcher.class),
                 new ObjectMapper(),
                 "internal-token",
                 java.net.http.HttpClient.newHttpClient()
             );
-            ProviderJobClaim claim = new ProviderJobClaim(
-                "channel-job-1",
-                "channel-job-run-1",
-                "channel-job-run:channel-job-run-1",
-                "channel-profile-1",
-                "enterprise.acme.jobs",
-                Map.of("region", "apac"),
-                "vault://secret-ref",
-                "PULL_MESSAGES",
-                new ChannelProviderJobScheduleConfig(
-                    ChannelProviderJobScheduleType.INTERVAL,
-                    60,
-                    null,
-                    "UTC",
-                    45,
-                    Map.of("cursorMode", "incremental")
-                ),
-                "cursor-1",
-                Instant.parse("2026-04-25T00:00:00Z"),
-                Instant.parse("2026-04-25T00:00:01Z"),
-                45
-            );
+            ProviderJobClaim claim = claim();
 
             ProviderJobExecutionResult result = executor.run(claim);
 
@@ -100,6 +88,95 @@ class RemoteProviderJobExecutorTest {
             assertEquals(Map.of("cursorMode", "incremental"), payload.get("jobConfig"));
             assertEquals("2026-04-25T00:00:00Z", payload.get("scheduledAt"));
             assertFalse(requestBody.get().containsKey("accountId"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void ingestsInboundTurnsAndDispatchesThemSynchronously() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/extension/manifest", exchange -> writeJson(exchange, 200, manifest(channelDescriptor())));
+        server.createContext("/channel/run-job", exchange -> writeJson(exchange, 200, """
+            {
+              "status": "SUCCEEDED",
+              "nextCursor": null,
+              "inboundTurns": [
+                {
+                  "providerType": "enterprise.acme.jobs",
+                  "channelProfileId": "channel-profile-1",
+                  "dedupKey": "enterprise.acme.jobs:turn:1",
+                  "externalConversationId": "chat-1",
+                  "externalUserId": "user-1",
+                  "conversation": {
+                    "externalConversationId": "chat-1",
+                    "type": "GROUP",
+                    "title": "Support",
+                    "metadata": {}
+                  },
+                  "sender": {
+                    "senderType": "CUSTOMER",
+                    "senderId": "user-1",
+                    "senderName": "Alice",
+                    "metadata": {}
+                  },
+                  "messages": [
+                    {
+                      "externalEventId": "evt-1",
+                      "externalMessageId": "msg-1",
+                      "occurredAt": "2026-04-25T00:00:01Z",
+                      "role": "USER",
+                      "type": "TEXT",
+                      "text": "hello",
+                      "attachments": [],
+                      "metadata": {}
+                    }
+                  ],
+                  "normalizedPayload": {"kind": "message"},
+                  "rawPayload": {},
+                  "traceContext": {
+                    "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+                  },
+                  "metadata": {}
+                }
+              ],
+              "events": [],
+              "metadata": {"providerStatus": "ok"}
+            }
+            """));
+        server.start();
+        try {
+            NormalizedChannelTurnIngestService turnIngestService = mock(NormalizedChannelTurnIngestService.class);
+            ChannelInboundSessionDispatcher dispatcher = mock(ChannelInboundSessionDispatcher.class);
+            when(dispatcher.dispatch(any(), any())).thenReturn(new NormalizedChannelInboundTurnResult(
+                "channel-inbound-turn-1",
+                "session-1",
+                ChannelInboundTurnStatus.DISPATCHED,
+                false,
+                List.of("session-message-1"),
+                List.of(),
+                null
+            ));
+            RemoteProviderJobExecutor executor = new RemoteProviderJobExecutor(
+                registry("http://localhost:" + server.getAddress().getPort()),
+                mock(NormalizedChannelEventIngestService.class),
+                turnIngestService,
+                dispatcher,
+                new ObjectMapper(),
+                "internal-token",
+                java.net.http.HttpClient.newHttpClient()
+            );
+
+            ProviderJobExecutionResult result = executor.run(claim());
+
+            assertEquals(1, result.eventsIngested());
+            ArgumentCaptor<NormalizedChannelInboundTurn> turn = ArgumentCaptor.forClass(NormalizedChannelInboundTurn.class);
+            ArgumentCaptor<NormalizedChannelEventHeaders> headers = ArgumentCaptor.forClass(NormalizedChannelEventHeaders.class);
+            verify(turnIngestService).ingest(turn.capture(), headers.capture());
+            verify(dispatcher).dispatch(turn.getValue(), null);
+            assertEquals("enterprise.acme.jobs:turn:1", headers.getValue().idempotencyKey());
+            assertEquals("chat-1", turn.getValue().externalConversationId());
+            assertEquals("msg-1", turn.getValue().messages().getFirst().externalMessageId());
         } finally {
             server.stop(0);
         }
@@ -142,6 +219,31 @@ class RemoteProviderJobExecutorTest {
         } catch (IOException exception) {
             throw new AssertionError(exception);
         }
+    }
+
+    private static ProviderJobClaim claim() {
+        return new ProviderJobClaim(
+            "channel-job-1",
+            "channel-job-run-1",
+            "channel-job-run:channel-job-run-1",
+            "channel-profile-1",
+            "enterprise.acme.jobs",
+            Map.of("region", "apac"),
+            "vault://secret-ref",
+            "PULL_MESSAGES",
+            new ChannelProviderJobScheduleConfig(
+                ChannelProviderJobScheduleType.INTERVAL,
+                60,
+                null,
+                "UTC",
+                45,
+                Map.of("cursorMode", "incremental")
+            ),
+            "cursor-1",
+            Instant.parse("2026-04-25T00:00:00Z"),
+            Instant.parse("2026-04-25T00:00:01Z"),
+            45
+        );
     }
 
     private static String manifest(Map<String, Object> channelDescriptor) {

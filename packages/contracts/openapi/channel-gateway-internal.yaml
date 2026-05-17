@@ -869,16 +869,41 @@ components:
           type: string
         duplicate:
           type: boolean
+    ChannelInboundTurnStatus:
+      type: string
+      enum: [RECEIVED, DUPLICATE, DISPATCHED, PARTIALLY_DISPATCHED, REJECTED, FAILED]
+    ChannelInboundTurnMessageStatus:
+      type: string
+      enum: [RECEIVED, DUPLICATE, ACCEPTED, REJECTED]
     NormalizedChannelInboundTurnResult:
       type: object
       required:
         - turnId
+        - status
         - duplicate
+        - acceptedMessageIds
+        - duplicateExternalMessageIds
       properties:
         turnId:
           type: string
+        sessionId:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/ChannelInboundTurnStatus'
         duplicate:
           type: boolean
+        acceptedMessageIds:
+          type: array
+          items:
+            type: string
+        duplicateExternalMessageIds:
+          type: array
+          items:
+            type: string
+        reason:
+          type: string
+          nullable: true
     ApiResponseNormalizedChannelInboundEventResult:
       type: object
       properties:

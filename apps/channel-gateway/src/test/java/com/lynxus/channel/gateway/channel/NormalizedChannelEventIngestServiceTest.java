@@ -57,30 +57,25 @@ class NormalizedChannelEventIngestServiceTest {
     }
 
     @Test
-    void ingestsMessageReceivedAndCreatesConversationBindingFromProfileAssistantSnapshot() {
+    void rejectsMessageReceivedBecauseMessageClassInboundUsesTurnEndpoint() {
         createProfile("channel-profile-1", PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, new ChannelAssistantBinding("assistant-1", null));
 
-        NormalizedChannelInboundEventResult result = service.ingest(messageEvent(
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> service.ingest(messageEvent(
             "channel-profile-1",
             NormalizedChannelEventType.MESSAGE_RECEIVED,
             "enterprise.acme.internal-im:message:msg-1"
-        ), validHeaders("enterprise.acme.internal-im:message:msg-1"));
+        ), validHeaders("enterprise.acme.internal-im:message:msg-1")));
 
-        assertFalse(result.duplicate());
-        assertEquals(1, repository.listInboundEvents("channel-profile-1").size());
-        assertEquals(1, repository.listBindings("channel-profile-1").size());
-        var binding = repository.listBindings("channel-profile-1").getFirst();
-        assertEquals("chat-1", binding.externalConversationId());
-        assertEquals("user-1", binding.externalUserId());
-        assertEquals("assistant-1", binding.assistantId());
-        assertEquals("user-1", binding.customerId());
+        assertEquals("message-class channel inbound must use /internal/channel-turns/normalized", error.getMessage());
+        assertEquals(0, repository.listInboundEvents("channel-profile-1").size());
+        assertEquals(0, repository.listBindings("channel-profile-1").size());
     }
 
     @Test
-    void ingestsFileReceivedAndCreatesBinding() {
+    void rejectsFileReceivedBecauseMessageClassInboundUsesTurnEndpoint() {
         createProfile("channel-profile-1", PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, new ChannelAssistantBinding("assistant-1", null));
 
-        service.ingest(new NormalizedChannelInboundEvent(
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> service.ingest(new NormalizedChannelInboundEvent(
             PROVIDER_TYPE,
             "channel-profile-1",
             NormalizedChannelEventType.FILE_RECEIVED,
@@ -103,20 +98,17 @@ class NormalizedChannelEventIngestServiceTest {
             Map.of(),
             traceContext(),
             Map.of()
-        ), validHeaders("enterprise.acme.internal-im:file:msg-1"));
+        ), validHeaders("enterprise.acme.internal-im:file:msg-1")));
 
-        assertEquals(1, repository.listInboundEvents("channel-profile-1").size());
-        assertEquals(1, repository.listBindings("channel-profile-1").size());
+        assertEquals("message-class channel inbound must use /internal/channel-turns/normalized", error.getMessage());
+        assertEquals(0, repository.listInboundEvents("channel-profile-1").size());
+        assertEquals(0, repository.listBindings("channel-profile-1").size());
     }
 
     @Test
-    void duplicateDedupKeyReturnsExistingEventAndDoesNotCreateSecondBinding() {
+    void duplicateDedupKeyReturnsExistingNonMessageEvent() {
         createProfile("channel-profile-1", PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, new ChannelAssistantBinding("assistant-1", null));
-        NormalizedChannelInboundEvent event = messageEvent(
-            "channel-profile-1",
-            NormalizedChannelEventType.MESSAGE_RECEIVED,
-            "enterprise.acme.internal-im:message:msg-1"
-        );
+        NormalizedChannelInboundEvent event = webhookVerifiedEvent("channel-profile-1", "enterprise.acme.internal-im:webhook:verified");
         NormalizedChannelInboundEventResult first = service.ingest(event, validHeaders(event.dedupKey()));
         NormalizedChannelInboundEventResult second = service.ingest(event, validHeaders(event.dedupKey()));
 
@@ -124,47 +116,43 @@ class NormalizedChannelEventIngestServiceTest {
         assertTrue(second.duplicate());
         assertEquals(first.eventId(), second.eventId());
         assertEquals(1, repository.listInboundEvents("channel-profile-1").size());
-        assertEquals(1, repository.listBindings("channel-profile-1").size());
+        assertEquals(0, repository.listBindings("channel-profile-1").size());
     }
 
     @Test
-    void duplicateDedupKeyStillValidatesRequestedProfileBeforeReturningExistingEvent() {
+    void duplicateDedupKeyStillValidatesRequestedProfileBeforeReturningExistingNonMessageEvent() {
         createProfile("channel-profile-1", PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, new ChannelAssistantBinding("assistant-1", null));
         createProfile("inactive-profile", PROVIDER_TYPE, ChannelProfileStatus.INACTIVE, true, new ChannelAssistantBinding("assistant-1", null));
         createProfile("disabled-profile", PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, false, new ChannelAssistantBinding("assistant-1", null));
         createProfile("mismatch-profile", TICKET_PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, new ChannelAssistantBinding("assistant-1", null));
-        NormalizedChannelInboundEvent original = messageEvent(
-            "channel-profile-1",
-            NormalizedChannelEventType.MESSAGE_RECEIVED,
-            "enterprise.acme.internal-im:message:msg-1"
-        );
+        NormalizedChannelInboundEvent original = webhookVerifiedEvent("channel-profile-1", "enterprise.acme.internal-im:webhook:verified");
         service.ingest(original, validHeaders(original.dedupKey()));
 
         assertEquals(
             "channel profile is not ACTIVE: inactive-profile",
             assertThrows(IllegalArgumentException.class, () -> service.ingest(
-                messageEvent("inactive-profile", NormalizedChannelEventType.MESSAGE_RECEIVED, original.dedupKey()),
+                webhookVerifiedEvent("inactive-profile", original.dedupKey()),
                 validHeaders(original.dedupKey())
             )).getMessage()
         );
         assertEquals(
             "channel profile inbound is disabled: disabled-profile",
             assertThrows(IllegalArgumentException.class, () -> service.ingest(
-                messageEvent("disabled-profile", NormalizedChannelEventType.MESSAGE_RECEIVED, original.dedupKey()),
+                webhookVerifiedEvent("disabled-profile", original.dedupKey()),
                 validHeaders(original.dedupKey())
             )).getMessage()
         );
         assertEquals(
             "channel profile providerType does not match normalizedEvent.providerType",
             assertThrows(IllegalArgumentException.class, () -> service.ingest(
-                messageEvent("mismatch-profile", NormalizedChannelEventType.MESSAGE_RECEIVED, original.dedupKey()),
+                webhookVerifiedEventWithProvider(PROVIDER_TYPE, "mismatch-profile", original.dedupKey()),
                 validHeaders(original.dedupKey())
             )).getMessage()
         );
         assertEquals(
             "channel profile not found: missing-profile",
             assertThrows(java.util.NoSuchElementException.class, () -> service.ingest(
-                messageEvent("missing-profile", NormalizedChannelEventType.MESSAGE_RECEIVED, original.dedupKey()),
+                webhookVerifiedEvent("missing-profile", original.dedupKey()),
                 validHeaders(original.dedupKey())
             )).getMessage()
         );
@@ -172,28 +160,24 @@ class NormalizedChannelEventIngestServiceTest {
     }
 
     @Test
-    void duplicateDedupKeyRejectsDifferentEventSurface() {
+    void duplicateDedupKeyRejectsDifferentNonMessageEventSurface() {
         createProfile("channel-profile-1", PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, new ChannelAssistantBinding("assistant-1", null));
         createProfile("channel-profile-2", PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, new ChannelAssistantBinding("assistant-1", null));
         createProfile("ticket-profile", TICKET_PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, new ChannelAssistantBinding("assistant-1", null));
-        NormalizedChannelInboundEvent original = messageEvent(
-            "channel-profile-1",
-            NormalizedChannelEventType.MESSAGE_RECEIVED,
-            "enterprise.acme.internal-im:message:msg-1"
-        );
+        NormalizedChannelInboundEvent original = webhookVerifiedEvent("channel-profile-1", "enterprise.acme.internal-im:webhook:verified");
         service.ingest(original, validHeaders(original.dedupKey()));
 
         assertEquals(
             "normalized event dedupKey already belongs to a different event surface",
             assertThrows(IllegalArgumentException.class, () -> service.ingest(
-                messageEvent("channel-profile-2", NormalizedChannelEventType.MESSAGE_RECEIVED, original.dedupKey()),
+                webhookVerifiedEvent("channel-profile-2", original.dedupKey()),
                 validHeaders(original.dedupKey())
             )).getMessage()
         );
         assertEquals(
             "normalized event dedupKey already belongs to a different event surface",
             assertThrows(IllegalArgumentException.class, () -> service.ingest(
-                messageEventWithProvider(TICKET_PROVIDER_TYPE, "ticket-profile", NormalizedChannelEventType.MESSAGE_RECEIVED, original.dedupKey()),
+                webhookVerifiedEventWithProvider(TICKET_PROVIDER_TYPE, "ticket-profile", original.dedupKey()),
                 validHeaders(TICKET_PROVIDER_TYPE, original.dedupKey())
             )).getMessage()
         );
@@ -349,7 +333,7 @@ class NormalizedChannelEventIngestServiceTest {
             validHeaders("enterprise.acme.internal-im:message:msg-1")
         ));
 
-        assertEquals("channel profile assistantBinding.assistantId is required for inbound message events", error.getMessage());
+        assertEquals("message-class channel inbound must use /internal/channel-turns/normalized", error.getMessage());
         assertEquals(0, repository.listInboundEvents("channel-profile-1").size());
     }
 
@@ -422,6 +406,35 @@ class NormalizedChannelEventIngestServiceTest {
             sender("user-1"),
             new NormalizedChannelMessage("msg-1", "TEXT", "hello", List.of(), Map.of()),
             Map.of("text", "hello"),
+            Map.of(),
+            traceContext(),
+            Map.of()
+        );
+    }
+
+    private static NormalizedChannelInboundEvent webhookVerifiedEvent(String channelProfileId, String dedupKey) {
+        return webhookVerifiedEventWithProvider(PROVIDER_TYPE, channelProfileId, dedupKey);
+    }
+
+    private static NormalizedChannelInboundEvent webhookVerifiedEventWithProvider(
+        String providerType,
+        String channelProfileId,
+        String dedupKey
+    ) {
+        return new NormalizedChannelInboundEvent(
+            providerType,
+            channelProfileId,
+            NormalizedChannelEventType.WEBHOOK_VERIFIED,
+            dedupKey,
+            "evt-verified",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            Map.of("verified", true),
             Map.of(),
             traceContext(),
             Map.of()

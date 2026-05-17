@@ -1,9 +1,6 @@
 package com.lynxus.channel.gateway.channel;
 
 import com.lynxus.channel.gateway.extension.ExtensionRegistrationService;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelAssistantBinding;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
-import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBindingStatus;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEventStatus;
@@ -12,7 +9,6 @@ import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelInboundEve
 import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelInboundEventResult;
 import com.lynxus.extension.sdk.protocol.DescriptorType;
 import java.time.Instant;
-import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -38,7 +34,7 @@ public class NormalizedChannelEventIngestService {
         NormalizedChannelEventValidator.validateEventTypeMatrix(event);
         ChannelGatewayProfile profile = requireProfile(event);
         if (NormalizedChannelEventValidator.triggersSessionBinding(event)) {
-            requireAssistantBinding(profile);
+            throw new IllegalArgumentException("message-class channel inbound must use /internal/channel-turns/normalized");
         }
 
         ChannelInboundEvent existing = repository.findInboundEventByDedupKey(event.dedupKey()).orElse(null);
@@ -65,9 +61,6 @@ public class NormalizedChannelEventIngestService {
         );
         boolean inserted = repository.transactionResult(transactionalRepository -> {
             boolean insertedEvent = transactionalRepository.saveInboundEventIfAbsent(savedEvent);
-            if (insertedEvent && NormalizedChannelEventValidator.triggersSessionBinding(event)) {
-                createOrUpdateConversationBinding(transactionalRepository, profile, event, now);
-            }
             return insertedEvent;
         });
         if (!inserted) {
@@ -133,50 +126,12 @@ public class NormalizedChannelEventIngestService {
         return profile;
     }
 
-    private void createOrUpdateConversationBinding(
-        ChannelAdminRepository repository,
-        ChannelGatewayProfile profile,
-        NormalizedChannelInboundEvent event,
-        Instant now
-    ) {
-        ChannelAssistantBinding assistantBinding = requireAssistantBinding(profile);
-        ChannelConversationBinding existing = repository.findBindingByProfileAndExternalConversation(
-            profile.id(),
-            event.externalConversationId()
-        ).orElse(null);
-        String customerId = NormalizedChannelEventValidator.hasText(event.externalUserId())
-            ? event.externalUserId()
-            : event.externalConversationId();
-        ChannelConversationBinding binding = new ChannelConversationBinding(
-            existing == null ? nextId("channel-binding") : existing.id(),
-            profile.id(),
-            event.externalConversationId(),
-            event.externalUserId(),
-            assistantBinding.assistantId(),
-            customerId,
-            existing == null ? null : existing.sessionId(),
-            ChannelConversationBindingStatus.ACTIVE,
-            Map.of(),
-            existing == null ? now : existing.createdAt(),
-            now
-        );
-        repository.saveBindingForConversation(binding);
-    }
-
     private static void requireSameEventSurface(ChannelInboundEvent existing, NormalizedChannelInboundEvent event) {
         if (!existing.channelProfileId().equals(event.channelProfileId())
             || !existing.providerType().equals(event.providerType())
             || !existing.eventType().equals(event.eventType().name())) {
             throw new IllegalArgumentException("normalized event dedupKey already belongs to a different event surface");
         }
-    }
-
-    private static ChannelAssistantBinding requireAssistantBinding(ChannelGatewayProfile profile) {
-        ChannelAssistantBinding assistantBinding = profile.assistantBinding();
-        if (assistantBinding == null || !NormalizedChannelEventValidator.hasText(assistantBinding.assistantId())) {
-            throw new IllegalArgumentException("channel profile assistantBinding.assistantId is required for inbound message events");
-        }
-        return assistantBinding;
     }
 
     private static String nextId(String prefix) {

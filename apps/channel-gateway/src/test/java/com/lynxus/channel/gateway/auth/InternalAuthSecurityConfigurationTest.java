@@ -15,8 +15,10 @@ import com.lynxus.channel.gateway.channel.ChannelOutboundExtensionStreamService;
 import com.lynxus.channel.gateway.channel.ChannelOutboundExtensionSubscriptionService;
 import com.lynxus.channel.gateway.channel.ChannelInboundSessionDispatcher;
 import com.lynxus.channel.gateway.channel.InternalNormalizedChannelEventController;
+import com.lynxus.channel.gateway.channel.InternalNormalizedChannelTurnController;
 import com.lynxus.channel.gateway.channel.InternalChannelAdminController;
 import com.lynxus.channel.gateway.channel.NormalizedChannelEventIngestService;
+import com.lynxus.channel.gateway.channel.NormalizedChannelTurnIngestService;
 import com.lynxus.channel.gateway.connector.feishu.FeishuWebhookController;
 import com.lynxus.channel.gateway.connector.feishu.FeishuWebhookService;
 import com.lynxus.channel.gateway.extension.ChannelGatewayDescriptorProvider;
@@ -180,6 +182,7 @@ class InternalAuthSecurityConfigurationTest {
         return MockMvcBuilders.standaloneSetup(
                 context.getBean(InternalChannelAdminController.class),
                 context.getBean(InternalNormalizedChannelEventController.class),
+                context.getBean(InternalNormalizedChannelTurnController.class),
                 context.getBean(FeishuWebhookController.class),
                 context.getBean(ExtensionManifestController.class),
                 context.getBean(ChannelOutboundExtensionController.class)
@@ -200,10 +203,18 @@ class InternalAuthSecurityConfigurationTest {
         @Bean
         InternalNormalizedChannelEventController internalNormalizedChannelEventController(
             NormalizedChannelEventIngestService ingestService,
+            ObjectMapper objectMapper
+        ) {
+            return new InternalNormalizedChannelEventController(ingestService, objectMapper);
+        }
+
+        @Bean
+        InternalNormalizedChannelTurnController internalNormalizedChannelTurnController(
+            NormalizedChannelTurnIngestService ingestService,
             ChannelInboundSessionDispatcher dispatcher,
             ObjectMapper objectMapper
         ) {
-            return new InternalNormalizedChannelEventController(ingestService, dispatcher, objectMapper);
+            return new InternalNormalizedChannelTurnController(ingestService, dispatcher, objectMapper);
         }
 
         @Bean
@@ -253,6 +264,11 @@ class InternalAuthSecurityConfigurationTest {
         @Bean
         NormalizedChannelEventIngestService normalizedChannelEventIngestService() {
             return mock(NormalizedChannelEventIngestService.class);
+        }
+
+        @Bean
+        NormalizedChannelTurnIngestService normalizedChannelTurnIngestService() {
+            return mock(NormalizedChannelTurnIngestService.class);
         }
 
         @Bean

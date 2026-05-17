@@ -1,7 +1,10 @@
 import { computed, onBeforeUnmount, ref, watch, type Ref } from 'vue';
 import type {
   CatalogSummary,
+  RuntimeReplyDraftMessage,
   RuntimeDraftMessage,
+  RuntimeUserDraftMessage,
+  SendSessionTurnResponse,
   SessionProgressEvent,
   SessionRuntimeDetail,
   SessionRuntimeStreamEvent,
@@ -100,11 +103,7 @@ export function useAppState(currentPageKey: Ref<PageKey>) {
         ...runtimeProgress.value,
         progress,
       ].slice(-80);
-      runtimeDrafts.value = runtimeDrafts.value.map((draft) =>
-        draft.sessionId === event.sessionId && draft.turnId === event.turnId
-          ? { ...draft, failed: true, updatedAt: event.occurredAt }
-          : draft,
-      );
+      runtimeDrafts.value = markRuntimeDraftsForStreamError(runtimeDrafts.value, event);
     }
   }
 
@@ -112,12 +111,13 @@ export function useAppState(currentPageKey: Ref<PageKey>) {
     if (event.blockType !== 'TEXT') {
       return;
     }
-    const existing = runtimeDrafts.value.find((draft) => sameRuntimeDraft(draft, event));
+    const existing = runtimeDrafts.value.find((draft): draft is RuntimeReplyDraftMessage => sameRuntimeDraft(draft, event));
     if (event.operation === 'DISCARD') {
       runtimeDrafts.value = runtimeDrafts.value.filter((draft) => !sameRuntimeDraft(draft, event));
       return;
     }
     const current: RuntimeDraftMessage = existing ?? {
+      draftType: 'REPLY',
       sessionId: event.sessionId,
       turnId: event.turnId,
       replyMessageId: event.replyMessageId,
@@ -131,6 +131,23 @@ export function useAppState(currentPageKey: Ref<PageKey>) {
       ...runtimeDrafts.value.filter((draft) => !sameRuntimeDraft(draft, event)),
       next,
     ];
+  }
+
+  function addRuntimeUserDrafts(drafts: RuntimeUserDraftMessage[]) {
+    runtimeDrafts.value = mergeRuntimeUserDrafts(runtimeDrafts.value, drafts);
+  }
+
+  function reconcileRuntimeUserDrafts(response: SendSessionTurnResponse, turnDedupKey: string) {
+    runtimeDrafts.value = reconcileRuntimeDraftsWithTurnAcceptance(runtimeDrafts.value, response, turnDedupKey);
+  }
+
+  function markRuntimeUserDraftsFailed(turnDedupKey: string, updatedAt = new Date().toISOString()) {
+    runtimeDrafts.value = runtimeDrafts.value.map((draft) => {
+      if (draft.draftType !== 'USER' || draft.turnDedupKey !== turnDedupKey) {
+        return draft;
+      }
+      return { ...draft, failed: true, updatedAt };
+    });
   }
 
   function stopRuntimePolling() {
@@ -266,8 +283,68 @@ export function useAppState(currentPageKey: Ref<PageKey>) {
     findSessionById,
     upsertRuntimeSession,
     applyRuntimeSessionDetail,
+    addRuntimeUserDrafts,
+    reconcileRuntimeUserDrafts,
+    markRuntimeUserDraftsFailed,
     refresh,
   };
+}
+
+export function mergeRuntimeUserDrafts(
+  currentDrafts: RuntimeDraftMessage[],
+  incomingDrafts: RuntimeUserDraftMessage[],
+): RuntimeDraftMessage[] {
+  if (!incomingDrafts.length) {
+    return currentDrafts;
+  }
+  const incomingByKey = new Map(incomingDrafts.map((draft) => [userDraftKey(draft), draft]));
+  const merged = currentDrafts.map((draft) => {
+    if (draft.draftType !== 'USER') {
+      return draft;
+    }
+    return incomingByKey.get(userDraftKey(draft)) ?? draft;
+  });
+  const existingKeys = new Set(merged.filter(isUserDraft).map(userDraftKey));
+  for (const draft of incomingDrafts) {
+    if (!existingKeys.has(userDraftKey(draft))) {
+      merged.push(draft);
+      existingKeys.add(userDraftKey(draft));
+    }
+  }
+  return merged;
+}
+
+export function reconcileRuntimeDraftsWithTurnAcceptance(
+  drafts: RuntimeDraftMessage[],
+  response: SendSessionTurnResponse,
+  turnDedupKey: string,
+): RuntimeDraftMessage[] {
+  const allocationsByClientMessageId = new Map(
+    response.acceptedMessageAllocations
+      .filter((allocation) => allocation.clientMessageId)
+      .map((allocation) => [allocation.clientMessageId!, allocation]),
+  );
+  const allocationsByRequestIndex = new Map(
+    response.acceptedMessageAllocations.map((allocation) => [allocation.requestIndex, allocation]),
+  );
+  return drafts.map((draft) => {
+    if (draft.draftType !== 'USER' || draft.turnDedupKey !== turnDedupKey) {
+      return draft;
+    }
+    const allocation = allocationsByClientMessageId.get(draft.clientMessageId)
+      ?? allocationsByRequestIndex.get(draft.requestIndex);
+    if (!allocation) {
+      return { ...draft, sessionId: response.sessionId, turnId: response.turnId, failed: false };
+    }
+    return {
+      ...draft,
+      sessionId: response.sessionId,
+      turnId: response.turnId,
+      messageId: allocation.messageId,
+      turnIndex: allocation.turnIndex,
+      failed: false,
+    };
+  });
 }
 
 export function reconcileRuntimeDraftsWithDetail(
@@ -275,17 +352,55 @@ export function reconcileRuntimeDraftsWithDetail(
   detail: SessionRuntimeDetail,
 ): RuntimeDraftMessage[] {
   const durableMessageIds = new Set(detail.messages.map((message) => message.messageId));
-  if (!durableMessageIds.size) {
+  const durableClientMessageIds = new Set(
+    detail.messages
+      .map((message) => message.clientMessageId)
+      .filter((clientMessageId): clientMessageId is string => !!clientMessageId),
+  );
+  if (!durableMessageIds.size && !durableClientMessageIds.size) {
     return drafts;
   }
-  return drafts.filter((draft) => draft.sessionId !== detail.session.id || !durableMessageIds.has(draft.replyMessageId));
+  return drafts.filter((draft) => {
+    if (draft.sessionId !== detail.session.id) {
+      return true;
+    }
+    if (draft.draftType === 'REPLY') {
+      return !durableMessageIds.has(draft.replyMessageId);
+    }
+    return !(
+      (draft.messageId && durableMessageIds.has(draft.messageId))
+      || durableClientMessageIds.has(draft.clientMessageId)
+    );
+  });
+}
+
+export function markRuntimeDraftsForStreamError(
+  drafts: RuntimeDraftMessage[],
+  event: Extract<SessionRuntimeStreamEvent, { type: 'SESSION_STREAM_ERROR' }>,
+): RuntimeDraftMessage[] {
+  return drafts.map((draft) =>
+    draft.draftType === 'REPLY'
+      && draft.sessionId === event.sessionId
+      && draft.turnId === event.turnId
+      ? { ...draft, failed: true, updatedAt: event.occurredAt }
+      : draft,
+  );
 }
 
 function sameRuntimeDraft(
   draft: RuntimeDraftMessage,
   event: Extract<SessionRuntimeStreamEvent, { type: 'SESSION_REPLY_DRAFT' }>,
-) {
-  return draft.sessionId === event.sessionId
+): draft is RuntimeReplyDraftMessage {
+  return draft.draftType === 'REPLY'
+    && draft.sessionId === event.sessionId
     && draft.turnId === event.turnId
     && draft.replyMessageId === event.replyMessageId;
+}
+
+function isUserDraft(draft: RuntimeDraftMessage): draft is RuntimeUserDraftMessage {
+  return draft.draftType === 'USER';
+}
+
+function userDraftKey(draft: RuntimeUserDraftMessage) {
+  return `${draft.turnDedupKey}:${draft.clientMessageId}`;
 }

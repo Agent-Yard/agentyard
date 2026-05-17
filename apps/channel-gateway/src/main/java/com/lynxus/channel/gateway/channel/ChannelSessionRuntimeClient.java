@@ -1,8 +1,8 @@
 package com.lynxus.channel.gateway.channel;
 
-import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionMessageRequest;
-import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionMessageResponse;
+import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionTurnRequest;
+import com.lynxus.contracts.session.SessionContracts.ChannelInboundSessionTurnResponse;
 
-interface ChannelSessionRuntimeClient {
-    ChannelInboundSessionMessageResponse dispatchInboundMessage(ChannelInboundSessionMessageRequest request);
+public interface ChannelSessionRuntimeClient {
+    ChannelInboundSessionTurnResponse dispatchInboundTurn(ChannelInboundSessionTurnRequest request);
 }

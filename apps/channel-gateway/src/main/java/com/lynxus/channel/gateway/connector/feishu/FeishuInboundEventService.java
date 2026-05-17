@@ -2,13 +2,14 @@ package com.lynxus.channel.gateway.connector.feishu;
 
 import com.lynxus.channel.gateway.channel.ChannelInboundSessionDispatcher;
 import com.lynxus.channel.gateway.channel.NormalizedChannelEventHeaders;
-import com.lynxus.channel.gateway.channel.NormalizedChannelEventIngestService;
+import com.lynxus.channel.gateway.channel.NormalizedChannelTurnIngestService;
 import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelConversation;
-import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelEventType;
-import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelInboundEvent;
-import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelMessage;
-import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelSender;
+import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelInboundTurn;
+import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelMessageRole;
+import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelMessageSender;
+import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelSenderType;
 import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelTraceContext;
+import com.lynxus.contracts.channel.ChannelContracts.NormalizedChannelTurnMessage;
 import com.lynxus.extension.sdk.protocol.DescriptorType;
 import com.lynxus.extension.sdk.registration.ExtensionRegistrationLoader;
 import java.nio.charset.StandardCharsets;
@@ -23,12 +24,12 @@ import org.springframework.stereotype.Service;
 
 @Service
 final class FeishuInboundEventService {
-    private final NormalizedChannelEventIngestService ingestService;
+    private final NormalizedChannelTurnIngestService ingestService;
     private final ChannelInboundSessionDispatcher sessionDispatcher;
     private final FeishuTypingReactionService typingReactionService;
 
     FeishuInboundEventService(
-        NormalizedChannelEventIngestService ingestService,
+        NormalizedChannelTurnIngestService ingestService,
         ChannelInboundSessionDispatcher sessionDispatcher,
         FeishuTypingReactionService typingReactionService
     ) {
@@ -45,27 +46,36 @@ final class FeishuInboundEventService {
         String traceId = randomHex(32);
         String spanId = randomHex(16);
         Map<String, Object> normalizedPayload = normalizedPayload(message);
-        NormalizedChannelInboundEvent event = new NormalizedChannelInboundEvent(
+        NormalizedChannelInboundTurn turn = new NormalizedChannelInboundTurn(
             FeishuGatewayNativeChannelProviderAdapter.PROVIDER_TYPE,
             requireText(message.channelProfileId(), "channelProfileId"),
-            NormalizedChannelEventType.MESSAGE_RECEIVED,
             dedupKey,
-            firstNonBlank(message.eventId(), message.requestId(), messageId),
             chatId,
-            messageId,
             senderId,
-            occurredAt(message.createTime()),
             new NormalizedChannelConversation(chatId, message.chatType(), null, conversationMetadata(message)),
-            new NormalizedChannelSender(senderId, null, senderMetadata(message)),
-            new NormalizedChannelMessage(messageId, "TEXT", requireText(message.text(), "feishu text"), List.of(), Map.of(
-                "messageType", "text"
+            new NormalizedChannelMessageSender(
+                NormalizedChannelSenderType.CUSTOMER,
+                senderId,
+                null,
+                senderMetadata(message)
+            ),
+            List.of(new NormalizedChannelTurnMessage(
+                firstNonBlank(message.eventId(), message.requestId(), messageId),
+                messageId,
+                occurredAt(message.createTime()),
+                NormalizedChannelMessageRole.USER,
+                null,
+                "TEXT",
+                requireText(message.text(), "feishu text"),
+                List.of(),
+                Map.of("messageType", "text")
             )),
             normalizedPayload,
             message.rawPayload(),
             new NormalizedChannelTraceContext("00-" + traceId + "-" + spanId + "-01", null),
             Map.of("source", "feishu-long-connection")
         );
-        var result = ingestService.ingest(event, new NormalizedChannelEventHeaders(
+        var ingestResult = ingestService.ingest(turn, new NormalizedChannelEventHeaders(
             ExtensionRegistrationLoader.CORE_CHANNEL_GATEWAY_REGISTRATION_ID,
             DescriptorType.CHANNEL_PROVIDER.wireValue(),
             FeishuGatewayNativeChannelProviderAdapter.PROVIDER_TYPE,
@@ -73,10 +83,10 @@ final class FeishuInboundEventService {
             firstNonBlank(message.requestId(), UUID.randomUUID().toString()),
             dedupKey
         ));
-        if (!result.duplicate() && typingReactionService != null) {
-            typingReactionService.beginInboundTypingReaction(event);
+        if (!ingestResult.duplicateDedupKey() && typingReactionService != null) {
+            typingReactionService.beginInboundTypingReaction(turn);
         }
-        sessionDispatcher.dispatchAsync(event, result);
+        sessionDispatcher.dispatch(turn, ingestResult);
     }
 
     private static Map<String, Object> normalizedPayload(FeishuInboundTextMessage message) {

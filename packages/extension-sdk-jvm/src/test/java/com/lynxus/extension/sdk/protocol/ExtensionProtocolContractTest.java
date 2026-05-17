@@ -99,7 +99,8 @@ final class ExtensionProtocolContractTest {
         for (String operationId : List.of(
             "invokeToolConnector",
             "runChannelProviderJob",
-            "ingestNormalizedChannelEvent"
+            "ingestNormalizedChannelEvent",
+            "ingestNormalizedChannelTurn"
         )) {
             assertEquals(
                 LynxusExtensionHeaders.DESCRIPTOR_LEVEL_REQUIRED_HEADERS,
@@ -211,7 +212,8 @@ final class ExtensionProtocolContractTest {
             "rotateCredential",
             "revokeCredential",
             "validateCredential",
-            "ingestNormalizedChannelEvent"
+            "ingestNormalizedChannelEvent",
+            "ingestNormalizedChannelTurn"
         )) {
             assertEquals("#/components/responses/ExtensionErrorResponse", defaultResponseRef(openApi, operationId), operationId);
         }

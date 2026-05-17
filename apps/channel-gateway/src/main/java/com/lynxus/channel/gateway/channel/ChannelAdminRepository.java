@@ -4,6 +4,8 @@ import com.lynxus.channel.gateway.jooqsupport.JooqJsonbSupport;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundEvent;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundTurnMessageStatus;
+import com.lynxus.contracts.channel.ChannelContracts.ChannelInboundTurnStatus;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundBindingSnapshot;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundBindingSnapshotPage;
 import com.lynxus.contracts.channel.ChannelContracts.ChannelOutboundFrameCheckpoint;
@@ -111,6 +113,79 @@ public class ChannelAdminRepository {
 
     public boolean saveInboundEventIfAbsent(ChannelInboundEvent event) {
         return store.saveInboundEventIfAbsent(event);
+    }
+
+    public Optional<ChannelInboundTurnAudit> findInboundTurnByDedupKey(String dedupKey) {
+        return store.findInboundTurnByDedupKey(dedupKey);
+    }
+
+    public boolean saveInboundTurnIfAbsent(ChannelInboundTurnAudit turn) {
+        return store.saveInboundTurnIfAbsent(turn);
+    }
+
+    public boolean saveInboundTurnMessageIfAbsent(ChannelInboundTurnMessageAudit message) {
+        return store.saveInboundTurnMessageIfAbsent(message);
+    }
+
+    public List<ChannelInboundTurnMessageAudit> listInboundTurnMessages(String turnId) {
+        return store.listInboundTurnMessages(turnId);
+    }
+
+    public boolean claimInboundMessageDedupe(
+        String channelProfileId,
+        String externalConversationId,
+        String externalMessageId,
+        String firstTurnId,
+        int firstRequestIndex,
+        Instant now
+    ) {
+        return store.claimInboundMessageDedupe(
+            channelProfileId,
+            externalConversationId,
+            externalMessageId,
+            firstTurnId,
+            firstRequestIndex,
+            now
+        );
+    }
+
+    public Optional<ChannelInboundMessageDedupeAudit> findInboundMessageDedupe(
+        String channelProfileId,
+        String externalConversationId,
+        String externalMessageId
+    ) {
+        return store.findInboundMessageDedupe(channelProfileId, externalConversationId, externalMessageId);
+    }
+
+    public void updateInboundTurnStatus(String turnId, ChannelInboundTurnStatus status, String sessionId, Instant now) {
+        store.updateInboundTurnStatus(turnId, status, sessionId, now);
+    }
+
+    public void updateInboundTurnMessageStatus(
+        String turnId,
+        int requestIndex,
+        ChannelInboundTurnMessageStatus status,
+        String sessionMessageId,
+        String duplicateOfTurnId,
+        Instant now
+    ) {
+        store.updateInboundTurnMessageStatus(turnId, requestIndex, status, sessionMessageId, duplicateOfTurnId, now);
+    }
+
+    public void updateInboundMessageDedupeSession(
+        String channelProfileId,
+        String externalConversationId,
+        String externalMessageId,
+        String sessionId,
+        String sessionMessageId
+    ) {
+        store.updateInboundMessageDedupeSession(
+            channelProfileId,
+            externalConversationId,
+            externalMessageId,
+            sessionId,
+            sessionMessageId
+        );
     }
 
     public List<ChannelOutboundFrameCheckpoint> listOutboundFinalCheckpoints(String channelProfileId) {

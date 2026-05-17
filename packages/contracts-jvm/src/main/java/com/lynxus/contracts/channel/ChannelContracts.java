@@ -64,6 +64,22 @@ public final class ChannelContracts {
         REJECTED
     }
 
+    public enum ChannelInboundTurnStatus {
+        RECEIVED,
+        DUPLICATE,
+        DISPATCHED,
+        PARTIALLY_DISPATCHED,
+        REJECTED,
+        FAILED
+    }
+
+    public enum ChannelInboundTurnMessageStatus {
+        RECEIVED,
+        DUPLICATE,
+        ACCEPTED,
+        REJECTED
+    }
+
     public static final String CHANNEL_OUTBOUND_FRAME_PROTOCOL = "lynxus.channel-outbound-frame.v1";
     public static final String CHANNEL_OUTBOUND_FRAME_ACK_PROTOCOL = "lynxus.channel-outbound-frame-ack.v1";
 
@@ -323,6 +339,25 @@ public final class ChannelContracts {
         String eventId,
         boolean duplicate
     ) {
+    }
+
+    public record NormalizedChannelInboundTurnResult(
+        String turnId,
+        String sessionId,
+        ChannelInboundTurnStatus status,
+        boolean duplicate,
+        List<String> acceptedMessageIds,
+        List<String> duplicateExternalMessageIds,
+        String reason
+    ) {
+        public NormalizedChannelInboundTurnResult {
+            acceptedMessageIds = acceptedMessageIds == null || acceptedMessageIds.isEmpty()
+                ? List.of()
+                : List.copyOf(acceptedMessageIds);
+            duplicateExternalMessageIds = duplicateExternalMessageIds == null || duplicateExternalMessageIds.isEmpty()
+                ? List.of()
+                : List.copyOf(duplicateExternalMessageIds);
+        }
     }
 
     public record ChannelConversationBinding(

@@ -8,6 +8,8 @@ import type {
   PrivacyMappingSummary,
   PlaybookRun,
   RuntimeDraftMessage,
+  RuntimeReplyDraftMessage,
+  RuntimeUserDraftMessage,
   Scenario,
   SessionEvent,
   SessionMessage,
@@ -33,7 +35,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   selectSession: [sessionId: string];
   startSession: [payload: { assistantId: string; customerId: string; openingMessage: string }];
-  sendMessage: [payload: { sessionId: string; customerId: string; message: string }];
+  sendMessage: [payload: { sessionId: string; customerId: string; assistantId: string; message: string }];
 }>();
 
 const createForm = reactive({
@@ -52,8 +54,17 @@ const currentSession = computed(() =>
 const currentDetail = computed(() =>
   props.sessionDetail?.session.id === currentSession.value?.id ? props.sessionDetail : null,
 );
-const currentDrafts = computed(() =>
-  currentSession.value ? props.runtimeDrafts.filter((draft) => draft.sessionId === currentSession.value?.id) : [],
+const currentUserDrafts = computed(() =>
+  currentSession.value
+    ? props.runtimeDrafts.filter((draft): draft is RuntimeUserDraftMessage =>
+      draft.draftType === 'USER' && draft.sessionId === currentSession.value?.id)
+    : [],
+);
+const currentReplyDrafts = computed(() =>
+  currentSession.value
+    ? props.runtimeDrafts.filter((draft): draft is RuntimeReplyDraftMessage =>
+      draft.draftType === 'REPLY' && draft.sessionId === currentSession.value?.id)
+    : [],
 );
 const currentProgress = computed(() =>
   currentSession.value ? props.runtimeProgress.filter((event) => event.sessionId === currentSession.value?.id).slice(-12) : [],
@@ -179,6 +190,7 @@ function submitMessage() {
   emit('sendMessage', {
     sessionId: currentSession.value.id,
     customerId: currentSession.value.customerId,
+    assistantId: currentSession.value.assistantId,
     message: messageDraft.value.trim(),
   });
   messageDraft.value = '';
@@ -400,9 +412,49 @@ function formatSharedState(value: Record<string, unknown> | null | undefined) {
               </a-list-item>
             </template>
           </a-list>
-          <div v-if="currentDrafts.length" class="runtime-drafts">
+          <div v-if="currentUserDrafts.length || currentReplyDrafts.length" class="runtime-drafts">
             <div
-              v-for="draft in currentDrafts"
+              v-for="draft in currentUserDrafts"
+              :key="`${draft.turnDedupKey}:${draft.clientMessageId}`"
+              class="runtime-draft runtime-draft--user"
+              :class="{ 'runtime-draft--failed': draft.failed }"
+            >
+              <div class="timeline-title">
+                <strong>用户消息草稿</strong>
+              </div>
+              <div class="timeline-meta">
+                {{ draft.updatedAt }}{{ draft.turnIndex != null ? ` · turn #${draft.turnIndex}` : '' }}
+              </div>
+              <div class="message-blocks">
+                <template v-for="(block, index) in draft.blocks" :key="`${draft.clientMessageId}-${index}`">
+                  <pre v-if="block.type === 'TEXT'" class="runtime-json">{{ block.text }}</pre>
+                  <img
+                    v-else-if="block.type === 'IMAGE'"
+                    :src="block.url"
+                    :alt="block.alt ?? 'image'"
+                    class="runtime-message-image"
+                  />
+                  <div v-else-if="block.type === 'RICH_TEXT'" class="runtime-markdown" v-html="renderMarkdown(block.content)" />
+                  <a-card v-else-if="block.type === 'CARD'" size="small" class="runtime-message-card">
+                    <template #title>{{ block.cardType }} · {{ block.version }}</template>
+                    <pre class="runtime-json">{{ JSON.stringify(block.data ?? {}, null, 2) }}</pre>
+                    <a-space v-if="block.actions?.length">
+                      <a-button
+                        v-for="(action, actionIndex) in block.actions"
+                        :key="`${draft.clientMessageId}-${index}-${actionIndex}`"
+                        type="link"
+                        :href="action.url"
+                        target="_blank"
+                      >
+                        {{ action.label }}
+                      </a-button>
+                    </a-space>
+                  </a-card>
+                </template>
+              </div>
+            </div>
+            <div
+              v-for="draft in currentReplyDrafts"
               :key="`${draft.turnId}:${draft.replyMessageId}`"
               class="runtime-draft"
               :class="{ 'runtime-draft--failed': draft.failed }"

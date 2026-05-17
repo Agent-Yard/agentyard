@@ -49,7 +49,8 @@ import type {
   ResourceVersion,
   ReferenceObjectType,
   Scenario,
-  SendSessionMessagePayload,
+  SendSessionTurnPayload,
+  SendSessionTurnResponse,
   SessionRuntimeDetail,
   SessionRuntimeStreamEvent,
   PrivacyMappingSummary,
@@ -378,8 +379,11 @@ export const api = {
   },
   getRuntimeSessionPrivacyMappingSummary: (sessionId: string) =>
     request<PrivacyMappingSummary>(`/session-runtime/sessions/${sessionId}/privacy-mapping-summary`),
-  sendRuntimeSessionMessage: (payload: SendSessionMessagePayload) =>
-    request<SessionRuntimeSession>('/session-runtime/messages', jsonOptions('POST', payload)),
+  sendRuntimeSessionTurn: (payload: SendSessionTurnPayload) =>
+    request<SendSessionTurnResponse>(
+      '/session-runtime/turns',
+      jsonOptions('POST', payload, { 'Idempotency-Key': payload.turnDedupKey }),
+    ),
   humanReplyRuntimeSession: (sessionId: string, payload: HumanOperatorReplyPayload) =>
     request<SessionRuntimeSession>(`/session-runtime/sessions/${sessionId}/human-reply`, jsonOptions('POST', payload)),
   resumeRuntimePlaybookWithHuman: (sessionId: string, payload: { playbookRunId: string; payload?: Record<string, unknown> }) =>

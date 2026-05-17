@@ -424,7 +424,8 @@ function checkOpenApi() {
     "/credentials/rotate",
     "/credentials/revoke",
     "/credentials/validate",
-    "/internal/channel-events/normalized"
+    "/internal/channel-events/normalized",
+    "/internal/channel-turns/normalized"
   ];
   for (const requiredPath of requiredPaths) {
     assert(hasOwn(openApi.paths, requiredPath), `OpenAPI missing path ${requiredPath}`);
@@ -451,6 +452,8 @@ function checkOpenApi() {
     "ValidateCredentialResponse",
     "RevokeCredentialResponse",
     "NormalizedChannelInboundEvent",
+    "NormalizedChannelInboundTurn",
+    "NormalizedChannelInboundTurnResult",
     "ExtensionError",
     "TraceContext",
     "IdempotencyKey",
@@ -462,7 +465,12 @@ function checkOpenApi() {
 
   assertNormalizedEventAcceptedOpenApi(openApi);
 
-  const descriptorPaths = ["/tools/invoke", "/channel/run-job", "/internal/channel-events/normalized"];
+  const descriptorPaths = [
+    "/tools/invoke",
+    "/channel/run-job",
+    "/internal/channel-events/normalized",
+    "/internal/channel-turns/normalized"
+  ];
   for (const descriptorPath of descriptorPaths) {
     const headers = operationHeaders(openApi, descriptorPath, "post");
     for (const header of [
