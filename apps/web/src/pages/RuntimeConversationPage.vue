@@ -21,6 +21,16 @@ import type {
 type RuntimeDetailPanel = 'session' | 'privacy' | 'progress' | 'events' | 'playbooks' | 'shared-state';
 type ChatSide = 'left' | 'right' | 'center';
 
+interface RuntimeProcessTimelineItem {
+  id: string;
+  source: '实时' | '事件' | 'Playbook';
+  occurredAt: string;
+  phase: string;
+  status: string;
+  title: string;
+  detail: Record<string, unknown>;
+}
+
 type ChatTimelineItem =
   | {
     kind: 'message';
@@ -115,7 +125,7 @@ const activePanelTitle = computed(() => {
     case 'privacy':
       return '隐私映射';
     case 'progress':
-      return '实时进度';
+      return '运行过程';
     case 'events':
       return 'Session Events';
     case 'playbooks':
@@ -154,6 +164,45 @@ const chatTimeline = computed<ChatTimelineItem[]>(() => {
   );
 });
 
+const processTimeline = computed<RuntimeProcessTimelineItem[]>(() => {
+  const progressItems = currentProgress.value.map((event): RuntimeProcessTimelineItem => ({
+    id: event.id,
+    source: '实时',
+    occurredAt: event.occurredAt,
+    phase: event.phase,
+    status: event.status,
+    title: event.title,
+    detail: event.detail ?? {},
+  }));
+  const eventItems = (currentDetail.value?.events ?? []).map((event): RuntimeProcessTimelineItem => ({
+    id: event.eventId,
+    source: '事件',
+    occurredAt: event.createdAt,
+    phase: event.eventType,
+    status: processStatusFromEvent(event),
+    title: `#${event.sequence} ${eventTitle(event)}`,
+    detail: event.payload ?? {},
+  }));
+  const playbookItems = (currentDetail.value?.playbookRuns ?? []).map((run): RuntimeProcessTimelineItem => ({
+    id: `playbook:${run.runId}:${run.updatedAt}`,
+    source: 'Playbook',
+    occurredAt: run.updatedAt,
+    phase: run.playbookId,
+    status: run.status,
+    title: `${run.playbookId} · ${run.status}`,
+    detail: {
+      runId: run.runId,
+      ownerAgentId: run.ownerAgentId,
+      waitingReason: run.waitingReason,
+      failureReason: run.failureReason,
+      result: run.result,
+    },
+  }));
+  return [...eventItems, ...playbookItems, ...progressItems]
+    .sort((left, right) => left.occurredAt.localeCompare(right.occurredAt) || left.id.localeCompare(right.id))
+    .slice(-80);
+});
+
 const statusPanelItems = computed(() => [
   {
     key: 'session' as const,
@@ -173,8 +222,8 @@ const statusPanelItems = computed(() => [
     key: 'progress' as const,
     marker: '进',
     label: '进度',
-    value: currentProgress.value.at(-1)?.title ?? '暂无进度',
-    tone: currentProgress.value.at(-1)?.status === 'FAILED' ? 'danger' : 'default',
+    value: processTimeline.value.at(-1)?.title ?? '暂无运行过程',
+    tone: processStatusTone(processTimeline.value.at(-1)?.status),
   },
   {
     key: 'playbooks' as const,
@@ -392,6 +441,54 @@ function eventSummary(event: SessionEvent) {
     return reason;
   }
   return JSON.stringify(event.payload ?? {}, null, 2);
+}
+
+function processStatusFromEvent(event: SessionEvent) {
+  if (event.eventType === 'PLAYBOOK_COMPLETED') {
+    const status = event.payload?.status;
+    return typeof status === 'string' && status ? status : 'SUCCEEDED';
+  }
+  if (event.eventType === 'PLAYBOOK_WAITING') {
+    return 'WAITING';
+  }
+  if (
+    event.eventType === 'AGENT_TURN_FAILED'
+    || event.eventType === 'AGENT_DECISION_REJECTED'
+    || event.eventType === 'USER_MESSAGE_SECURITY_BLOCKED'
+  ) {
+    return 'FAILED';
+  }
+  return 'RECORDED';
+}
+
+function processTimelineColor(item: RuntimeProcessTimelineItem) {
+  if (item.status === 'FAILED' || item.status === 'CANCELLED') {
+    return 'red';
+  }
+  if (item.status === 'SUCCEEDED') {
+    return 'green';
+  }
+  if (item.status === 'WAITING') {
+    return 'orange';
+  }
+  return item.source === '实时' ? 'blue' : 'gray';
+}
+
+function processStatusTone(status: string | undefined) {
+  if (status === 'FAILED' || status === 'CANCELLED') {
+    return 'danger';
+  }
+  if (status === 'WAITING') {
+    return 'warning';
+  }
+  if (status === 'STARTED' || status === 'RUNNING') {
+    return 'active';
+  }
+  return 'default';
+}
+
+function hasProcessDetail(item: RuntimeProcessTimelineItem) {
+  return Object.keys(item.detail ?? {}).some((key) => item.detail[key] != null);
 }
 
 function messageTitle(message: SessionMessage) {
@@ -660,20 +757,21 @@ function formatMessageTime(value: string | null | undefined) {
         </a-descriptions-item>
       </a-descriptions>
 
-      <a-timeline v-else-if="activePanel === 'progress' && currentProgress.length">
+      <a-timeline v-else-if="activePanel === 'progress' && processTimeline.length">
         <a-timeline-item
-          v-for="event in currentProgress"
-          :key="event.id"
-          :color="event.status === 'FAILED' ? 'red' : event.status === 'SUCCEEDED' ? 'green' : 'blue'"
+          v-for="item in processTimeline"
+          :key="item.id"
+          :color="processTimelineColor(item)"
         >
-          <div class="timeline-title">
-            <strong>{{ event.title }}</strong>
+          <div class="timeline-title runtime-process-title">
+            <strong>{{ item.title }}</strong>
+            <a-tag>{{ item.source }}</a-tag>
           </div>
-          <div class="timeline-meta">{{ event.occurredAt }} · {{ event.phase }}</div>
-          <pre v-if="event.detail" class="runtime-json">{{ JSON.stringify(event.detail, null, 2) }}</pre>
+          <div class="timeline-meta">{{ item.occurredAt }} · {{ item.phase }} · {{ item.status }}</div>
+          <pre v-if="hasProcessDetail(item)" class="runtime-json">{{ JSON.stringify(item.detail, null, 2) }}</pre>
         </a-timeline-item>
       </a-timeline>
-      <a-empty v-else-if="activePanel === 'progress'" description="暂无实时进度" />
+      <a-empty v-else-if="activePanel === 'progress'" description="暂无运行过程" />
 
       <a-timeline v-else-if="activePanel === 'events' && currentDetail?.events.length">
         <a-timeline-item v-for="event in currentDetail.events" :key="event.eventId" :color="statusColor(event.eventType)">
@@ -1148,6 +1246,13 @@ function formatMessageTime(value: string | null | undefined) {
 
 .timeline-title {
   margin-bottom: 4px;
+}
+
+.runtime-process-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .timeline-meta {
