@@ -29,6 +29,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -40,6 +41,7 @@ public class ChannelInboundSessionDispatcher {
     private final ChannelBindingSnapshotRefreshHintClient bindingSnapshotRefreshHintClient;
     private final List<ChannelInboundSessionDispatchObserver> observers;
 
+    @Autowired
     public ChannelInboundSessionDispatcher(
         ChannelAdminRepository repository,
         ChannelSessionRuntimeClient sessionRuntimeClient,
