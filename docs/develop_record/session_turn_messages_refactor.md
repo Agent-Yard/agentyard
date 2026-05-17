@@ -1,6 +1,6 @@
-# Messages Refactor TODO
+# Session Turn Messages Refactor Record
 
-> 这份顶层文档只保留“多消息一次 turn”重构的执行入口。详细方案已拆到 [`messages_refactor/`](messages_refactor/) 专项目录。
+> 这份归档文档保留“多消息一次 turn”重构的目标、决策和验收口径。详细方案已拆到 [`session_turn_messages_refactor/`](session_turn_messages_refactor/) 专项目录。
 > 目标不是兼容旧单消息链路，而是直接把 session-runtime、channel gateway、agent-runtime、web、contracts 收敛到 turn -> messages -> blocks 模型。
 
 ## 1. 目标
@@ -21,12 +21,12 @@
 
 ## 2. 专项文档
 
-- [00 Architecture Decisions](messages_refactor/00_architecture_decisions.md)：已经定下来的边界、状态机和阻断问题修正
-- [01 Execution Plan](messages_refactor/01_execution_plan.md)：按依赖拆分的执行阶段、任务、验收和检查点
-- [02 Contracts And Persistence](messages_refactor/02_contracts_and_persistence.md)：API、contracts、DB schema、统一 append 入口和幂等恢复
-- [03 Workflow And Agent Runtime](messages_refactor/03_workflow_and_agent_runtime.md)：Temporal workflow、agent-runtime delta、transcript bootstrap reset
-- [04 Channel And Web](messages_refactor/04_channel_and_web.md)：channel inbound turn、outbound 过滤、Web 客户端迁移
-- [05 Verification Matrix](messages_refactor/05_verification_matrix.md)：测试矩阵、验证命令和完成口径
+- [00 Architecture Decisions](session_turn_messages_refactor/00_architecture_decisions.md)：已经定下来的边界、状态机和阻断问题修正
+- [01 Execution Plan](session_turn_messages_refactor/01_execution_plan.md)：按依赖拆分的执行阶段、任务、验收和检查点
+- [02 Contracts And Persistence](session_turn_messages_refactor/02_contracts_and_persistence.md)：API、contracts、DB schema、统一 append 入口和幂等恢复
+- [03 Workflow And Agent Runtime](session_turn_messages_refactor/03_workflow_and_agent_runtime.md)：Temporal workflow、agent-runtime delta、transcript bootstrap reset
+- [04 Channel And Web](session_turn_messages_refactor/04_channel_and_web.md)：channel inbound turn、outbound 过滤、Web 客户端迁移
+- [05 Verification Matrix](session_turn_messages_refactor/05_verification_matrix.md)：测试矩阵、验证命令和完成口径
 
 ## 3. 执行顺序
 
