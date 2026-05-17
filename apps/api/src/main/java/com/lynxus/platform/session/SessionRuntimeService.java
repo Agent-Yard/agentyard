@@ -98,6 +98,7 @@ public class SessionRuntimeService {
     private static final String TURN_STATUS_ALLOCATED_IDS = SessionRuntimeStore.SessionRuntimeTurnStatus.ALLOCATED_IDS.name();
     private static final String TURN_STATUS_MESSAGES_APPENDED = SessionRuntimeStore.SessionRuntimeTurnStatus.MESSAGES_APPENDED.name();
     private static final String TURN_STATUS_WORKFLOW_ACCEPTED = SessionRuntimeStore.SessionRuntimeTurnStatus.WORKFLOW_ACCEPTED.name();
+    private static final String TURN_STATUS_FAILED = SessionRuntimeStore.SessionRuntimeTurnStatus.FAILED.name();
 
     private final SessionWorkflowGateway sessionWorkflowGateway;
     private final CatalogService catalogService;
@@ -338,45 +339,73 @@ public class SessionRuntimeService {
         List<String> acceptedMessageIds = acceptedInputMessages.stream().map(SessionMessage::messageId).toList();
         List<String> turnMessageIds = turnMessages.stream().map(SessionMessage::messageId).toList();
         List<String> duplicateExternalMessageIds = recovery.duplicateExternalMessageIds();
-        turn = repository.updateTurnState(
-            session.id(),
-            turn.turnId(),
+        turn = updateTurnState(
+            session,
+            turn,
             TURN_STATUS_MESSAGES_APPENDED,
             acceptedMessageIds,
             duplicateExternalMessageIds,
             turnMessageIds,
-            turn.turnId(),
             null
         );
         if (acceptedMessageIds.isEmpty()) {
             return responseFromTurn(session.id(), turn, turnMessages, "duplicate messages ignored");
         }
 
-        ensureWorkflowStarted(session);
         try {
+            ensureWorkflowStarted(session);
             sessionWorkflowGateway.submitUserTurn(
                 session.id(),
                 turn.turnId(),
                 new UserTurn(turn.turnId(), session.customerId(), turn.dedupKey(), acceptedInputMessages, turn.metadata())
             );
         } catch (RuntimeException error) {
+            turn = updateTurnState(
+                session,
+                turn,
+                TURN_STATUS_FAILED,
+                acceptedMessageIds,
+                duplicateExternalMessageIds,
+                turnMessageIds,
+                Instant.now()
+            );
             if (sessionWorkflowGateway.isWorkflowClosed(session.id())) {
                 markEnded(session, Instant.now());
                 throw new ConflictException("session has ended");
             }
             throw error;
         }
-        turn = repository.updateTurnState(
-            session.id(),
-            turn.turnId(),
+        turn = updateTurnState(
+            session,
+            turn,
             TURN_STATUS_WORKFLOW_ACCEPTED,
             acceptedMessageIds,
             duplicateExternalMessageIds,
             turnMessageIds,
-            turn.turnId(),
             null
         );
         return responseFromTurn(session.id(), turn, turnMessages, null);
+    }
+
+    private SessionRuntimeStore.SessionRuntimeTurnData updateTurnState(
+        SessionRuntimeSessionDto session,
+        SessionRuntimeStore.SessionRuntimeTurnData turn,
+        String status,
+        List<String> acceptedInputMessageIds,
+        List<String> duplicateExternalMessageIds,
+        List<String> messageIds,
+        Instant completedAt
+    ) {
+        return repository.updateTurnState(
+            session.id(),
+            turn.turnId(),
+            status,
+            acceptedInputMessageIds,
+            duplicateExternalMessageIds,
+            messageIds,
+            turn.turnId(),
+            completedAt
+        );
     }
 
     private SessionRuntimeSessionDto latestSessionForNewTurn(SessionRuntimeSessionDto session) {

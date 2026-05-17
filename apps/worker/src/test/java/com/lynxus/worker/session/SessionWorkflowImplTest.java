@@ -891,6 +891,7 @@ class SessionWorkflowImplTest {
             waitForMessage(environment, persistence, SessionMessageRole.SYSTEM);
             SessionEvent failureEvent = latestEventOfType(persistence.events(), SessionEventType.AGENT_TURN_FAILED);
             SessionMessage failureMessage = latestMessageOfRole(persistence.messages(), SessionMessageRole.SYSTEM);
+            assertEquals(1, activities.replyMessageIds().size());
             assertEquals(activities.replyMessageIds().getFirst(), failureMessage.messageId());
             assertEquals(failureMessage.messageId(), failureEvent.relatedMessageId());
             assertEquals(failureEvent.eventId(), failureMessage.sourceEventId());

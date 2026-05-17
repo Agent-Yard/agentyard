@@ -493,7 +493,7 @@ class SessionRuntimeServiceTest {
     }
 
     @Test
-    void sendTurn_preservesTurnAllocationWhenWorkflowRejectsBeforeAcceptedStage() {
+    void sendTurn_marksTurnFailedWhenWorkflowRejectsBeforeAcceptedStage() {
         SessionWorkflowGateway gateway = mock(SessionWorkflowGateway.class);
         CatalogService catalogService = mock(CatalogService.class);
         SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
@@ -530,6 +530,77 @@ class SessionRuntimeServiceTest {
             anyList(),
             any(),
             eq(null)
+        );
+        verify(repository).updateTurnState(
+            eq("session-1"),
+            any(),
+            eq("FAILED"),
+            anyList(),
+            eq(List.of()),
+            anyList(),
+            any(),
+            any(Instant.class)
+        );
+        verify(repository, never()).updateTurnState(
+            eq("session-1"),
+            any(),
+            eq("WORKFLOW_ACCEPTED"),
+            anyList(),
+            anyList(),
+            anyList(),
+            any(),
+            eq(null)
+        );
+    }
+
+    @Test
+    void sendTurn_marksTurnFailedWhenWorkflowSubmissionThrowsTechnicalFailure() {
+        SessionWorkflowGateway gateway = mock(SessionWorkflowGateway.class);
+        CatalogService catalogService = mock(CatalogService.class);
+        SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
+        SessionRuntimeService service = new SessionRuntimeService(
+            gateway,
+            catalogService,
+            repository,
+            new SessionDispatchLockService()
+        );
+        SessionRuntimeDtos.SessionRuntimeSessionDto session = session("session-1", "IDLE", false, false);
+        when(repository.findSession("session-1")).thenReturn(java.util.Optional.of(session));
+        when(catalogService.getAssistantRuntimeSnapshot("ast-1")).thenReturn(assistant("ast-1"));
+        when(gateway.isWorkflowOpen("session-1")).thenReturn(true);
+        doThrow(new RuntimeException("temporal unavailable"))
+            .when(gateway)
+            .submitUserTurn(eq("session-1"), any(), any(UserTurn.class));
+        installTurnRepositoryBehavior(repository, List.of());
+
+        RuntimeException error = assertThrows(
+            RuntimeException.class,
+            () -> service.sendTurn(
+                new SendSessionTurnRequest("session-1", "ast-1", "customer-1", "turn-key-1", List.of(webMessage("draft-1", "hello")), Map.of()),
+                "turn-key-1"
+            )
+        );
+
+        assertEquals("temporal unavailable", error.getMessage());
+        verify(repository).updateTurnState(
+            eq("session-1"),
+            any(),
+            eq("MESSAGES_APPENDED"),
+            anyList(),
+            eq(List.of()),
+            anyList(),
+            any(),
+            eq(null)
+        );
+        verify(repository).updateTurnState(
+            eq("session-1"),
+            any(),
+            eq("FAILED"),
+            anyList(),
+            eq(List.of()),
+            anyList(),
+            any(),
+            any(Instant.class)
         );
         verify(repository, never()).updateTurnState(
             eq("session-1"),

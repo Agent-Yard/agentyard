@@ -129,10 +129,7 @@ public class SessionWorkflowImpl implements SessionWorkflow {
                 .setStartToCloseTimeout(activityStartToCloseTimeout)
                 .setRetryOptions(
                     RetryOptions.newBuilder()
-                        .setMaximumAttempts(3)
-                        .setInitialInterval(Duration.ofSeconds(1))
-                        .setMaximumInterval(Duration.ofSeconds(10))
-                        .setBackoffCoefficient(2.0)
+                        .setMaximumAttempts(1)
                         .build()
                 )
                 .build()
