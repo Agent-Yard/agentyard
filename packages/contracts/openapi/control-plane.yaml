@@ -2647,7 +2647,8 @@ components:
           additionalProperties: true
           description: >
             Kind-specific payload. TYPING_* requires replyMessageId. DRAFT_UPDATE requires replyMessageId/blockId/blockType
-            and TEXT delta. DRAFT_COMPLETE requires replyMessageId/blockId/blockType/block and only closes draft state.
+            and TEXT delta. DRAFT_COMPLETE requires replyMessageId/blockId/blockType/block and completes the referenced
+            draft block without stopping typing or streaming. TYPING_STOP closes transient typing/streaming state.
             FINAL_DELIVERY requires sessionMessageId/messageSequence/messageBlocks and is the only official external send action.
         traceContext:
           $ref: '#/components/schemas/NormalizedChannelTraceContext'

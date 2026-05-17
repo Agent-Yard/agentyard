@@ -258,8 +258,7 @@ async def _stream_via_openai_compatible(
     usage_tracker = LlmUsageTracker()
     outcome_accumulator = _StreamingOutcomeAccumulator(request)
     text_guard = _CustomerTextStreamGuard()
-    reply_block_started = False
-    block_id = "reply-block-1"
+    next_reply_block_index = 1
     privacy_pipeline = build_privacy_pipeline(request, usage_tracker)
     customer_restorer = _ChunkSafePrivacyRestorer(privacy_pipeline)
     try:
@@ -292,6 +291,16 @@ async def _stream_via_openai_compatible(
         max_steps = _max_streaming_tool_steps()
         for step in range(max_steps + 1):
             model_round_id = f"{writer.turn_execution_id}:round-{step}"
+            round_block_id: str | None = None
+            round_customer_text_parts: list[str] = []
+
+            def current_round_block_id() -> str:
+                nonlocal next_reply_block_index, round_block_id
+                if round_block_id is None:
+                    round_block_id = f"reply-block-{next_reply_block_index}"
+                    next_reply_block_index += 1
+                return round_block_id
+
             usage_tracker.set_tool_loop_step(step)
             payload["messages"] = provider_messages
             yield writer.frame(
@@ -312,9 +321,9 @@ async def _stream_via_openai_compatible(
                 round_accumulator.apply(event)
                 if event.event_type == "content_delta" and event.delta:
                     customer_delta = customer_restorer.accept(text_guard.accept(event.delta))
-                    if customer_delta and not reply_block_started:
-                        reply_block_started = True
                     if customer_delta:
+                        block_id = current_round_block_id()
+                        round_customer_text_parts.append(customer_delta)
                         yield writer.frame(
                             kind="REPLY_BLOCK_DELTA",
                             visibility="CUSTOMER",
@@ -327,9 +336,9 @@ async def _stream_via_openai_compatible(
                         )
             message = round_accumulator.build_message()
             customer_tail = customer_restorer.flush()
-            if customer_tail and not reply_block_started:
-                reply_block_started = True
             if customer_tail:
+                block_id = current_round_block_id()
+                round_customer_text_parts.append(customer_tail)
                 yield writer.frame(
                     kind="REPLY_BLOCK_DELTA",
                     visibility="CUSTOMER",
@@ -357,8 +366,19 @@ async def _stream_via_openai_compatible(
                     llmUsage=usage_tracker.entries(),
                 )
                 break
-            if message.content:
-                outcome_accumulator.append_assistant_text(message.content)
+            round_customer_text = "".join(round_customer_text_parts)
+            if round_customer_text.strip():
+                block_id = current_round_block_id()
+                outcome_accumulator.append_assistant_text(round_customer_text)
+                yield writer.frame(
+                    kind="REPLY_BLOCK_COMPLETED",
+                    visibility="CUSTOMER",
+                    payload={
+                        "replyMessageId": writer.reply_message_id,
+                        "blockId": block_id,
+                        "block": {"type": "TEXT", "text": round_customer_text},
+                    },
+                )
             assistant_provider_message = _provider_message_from_stream_message(message)
             if message.tool_calls:
                 provider_messages.append(assistant_provider_message)
@@ -454,18 +474,6 @@ async def _stream_via_openai_compatible(
                     transcript_store.mark_failed,
                     turn_context,
                     outcome.failureReason or "openai-compatible provider stream failed",
-                )
-        if reply_block_started and outcome.success and outcome.result is not None:
-            block = outcome.result.decision.replyMessage.blocks[0] if outcome.result.decision.replyMessage else None
-            if block is not None:
-                yield writer.frame(
-                    kind="REPLY_BLOCK_COMPLETED",
-                    visibility="CUSTOMER",
-                    payload={
-                        "replyMessageId": writer.reply_message_id,
-                        "blockId": block_id,
-                        "block": block.model_dump(mode="json"),
-                    },
                 )
         if not outcome.success:
             failure_reason = outcome.failureReason or "agent turn rejected"

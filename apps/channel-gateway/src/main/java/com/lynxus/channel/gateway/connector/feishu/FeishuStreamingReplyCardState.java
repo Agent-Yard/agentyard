@@ -1,6 +1,8 @@
 package com.lynxus.channel.gateway.connector.feishu;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 record FeishuStreamingReplyCardState(
     FeishuStreamingReplyCardKey key,
@@ -8,7 +10,7 @@ record FeishuStreamingReplyCardState(
     String cardId,
     String externalMessageId,
     String elementId,
-    String content,
+    List<FeishuStreamingReplyCardBlock> blocks,
     int sequence,
     Long lastSourceSeq,
     boolean closed,
@@ -21,7 +23,7 @@ record FeishuStreamingReplyCardState(
         externalConversationId = requireText(externalConversationId, "externalConversationId");
         cardId = requireText(cardId, "cardId");
         elementId = requireText(elementId, "elementId");
-        content = content == null ? "" : content;
+        blocks = blocks == null ? List.of() : List.copyOf(blocks);
         if (sequence < 0) {
             throw new IllegalArgumentException("Feishu streaming reply card sequence must be non-negative");
         }
@@ -31,14 +33,59 @@ record FeishuStreamingReplyCardState(
         updatedAt = updatedAt == null ? Instant.now() : updatedAt;
     }
 
-    FeishuStreamingReplyCardState withContent(String value, int sequence, Long lastSourceSeq, Instant updatedAt) {
+    String content() {
+        return FeishuReplyMarkdownRenderer.render(blocks);
+    }
+
+    FeishuStreamingReplyCardState withDraftDelta(
+        String blockId,
+        String blockType,
+        String delta,
+        int sequence,
+        Long lastSourceSeq,
+        Instant updatedAt
+    ) {
+        FeishuStreamingReplyCardBlock candidate = new FeishuStreamingReplyCardBlock(blockId, blockType, "", false)
+            .appendDelta(delta);
+        List<FeishuStreamingReplyCardBlock> nextBlocks = new ArrayList<>();
+        boolean replaced = false;
+        for (FeishuStreamingReplyCardBlock block : blocks) {
+            if (block.blockId().equals(candidate.blockId())) {
+                nextBlocks.add(block.appendDelta(delta));
+                replaced = true;
+            } else {
+                nextBlocks.add(block);
+            }
+        }
+        if (!replaced) {
+            nextBlocks.add(candidate);
+        }
+        return withBlocks(nextBlocks, sequence, lastSourceSeq, updatedAt);
+    }
+
+    FeishuStreamingReplyCardState withCompletedBlock(
+        FeishuStreamingReplyCardBlock completedBlock,
+        int sequence,
+        Long lastSourceSeq,
+        Instant updatedAt
+    ) {
+        List<FeishuStreamingReplyCardBlock> nextBlocks = upsert(completedBlock);
+        return withBlocks(nextBlocks, sequence, lastSourceSeq, updatedAt);
+    }
+
+    FeishuStreamingReplyCardState withBlocks(
+        List<FeishuStreamingReplyCardBlock> blocks,
+        int sequence,
+        Long lastSourceSeq,
+        Instant updatedAt
+    ) {
         return new FeishuStreamingReplyCardState(
             key,
             externalConversationId,
             cardId,
             externalMessageId,
             elementId,
-            value,
+            blocks,
             sequence,
             lastSourceSeq,
             closed,
@@ -53,12 +100,29 @@ record FeishuStreamingReplyCardState(
             cardId,
             externalMessageId,
             elementId,
-            content,
+            blocks,
             sequence,
             lastSourceSeq,
             true,
             updatedAt
         );
+    }
+
+    private List<FeishuStreamingReplyCardBlock> upsert(FeishuStreamingReplyCardBlock candidate) {
+        List<FeishuStreamingReplyCardBlock> nextBlocks = new ArrayList<>();
+        boolean replaced = false;
+        for (FeishuStreamingReplyCardBlock block : blocks) {
+            if (block.blockId().equals(candidate.blockId())) {
+                nextBlocks.add(candidate);
+                replaced = true;
+            } else {
+                nextBlocks.add(block);
+            }
+        }
+        if (!replaced) {
+            nextBlocks.add(candidate);
+        }
+        return nextBlocks;
     }
 
     private static String requireText(String value, String field) {

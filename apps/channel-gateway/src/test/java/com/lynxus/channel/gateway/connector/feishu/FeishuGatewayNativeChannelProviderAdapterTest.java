@@ -86,7 +86,7 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
         assertEquals("account-1", credentialProvider.accountId);
         assertEquals(1, messageSender.createCardCommands.size());
         assertTrue(messageSender.createCardCommands.getFirst().cardJson().contains("\"schema\":\"2.0\""));
-        assertTrue(messageSender.createCardCommands.getFirst().cardJson().contains("\"content\":\"hello\\nworld\""));
+        assertTrue(messageSender.createCardCommands.getFirst().cardJson().contains("\"content\":\"hello\\n\\nworld\""));
         assertEquals("chat_id", messageSender.sendCardCommands.getFirst().receiveIdType());
         assertEquals("chat-1", messageSender.sendCardCommands.getFirst().receiveId());
         assertEquals("card-1", messageSender.sendCardCommands.getFirst().cardId());
@@ -153,7 +153,7 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
     }
 
     @Test
-    void draftUpdatePreservesWhitespaceOnlyDeltaOnPreparedStreamingCard() {
+    void draftUpdateRendersWhitespaceOnlyDeltaAsBlankContent() {
         CapturingMessageSender messageSender = new CapturingMessageSender();
         InMemoryStreamingCardStore store = new InMemoryStreamingCardStore();
         FeishuGatewayNativeChannelProviderAdapter adapter = new FeishuGatewayNativeChannelProviderAdapter(
@@ -168,9 +168,9 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
         adapter.consumeOutboundFrame(profile(), draftUpdateFrame(2L, "\n "));
 
         assertEquals(1, messageSender.updateTextCommands.size());
-        assertEquals("\n ", messageSender.updateTextCommands.getFirst().content());
+        assertEquals("", messageSender.updateTextCommands.getFirst().content());
         FeishuStreamingReplyCardState state = store.find(FeishuStreamingReplyCardKey.fromFrame(draftUpdateFrame(2L, "ignored"))).orElseThrow();
-        assertEquals("\n ", state.content());
+        assertEquals("", state.content());
         assertEquals(1, state.sequence());
         assertEquals(2L, state.lastSourceSeq());
     }
@@ -268,7 +268,7 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
     }
 
     @Test
-    void typingStopDoesNotDeletePreparedCardAfterWhitespaceDraftDelta() throws Exception {
+    void typingStopDeletesPreparedCardAfterWhitespaceOnlyDraftDelta() throws Exception {
         CapturingMessageSender messageSender = new CapturingMessageSender();
         InMemoryStreamingCardStore store = new InMemoryStreamingCardStore();
         FeishuStreamingReplyCardProperties properties = streamingProperties(Duration.ZERO);
@@ -287,11 +287,11 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
             adapter.consumeOutboundFrame(profile(), draftUpdateFrame(2L, "\n "));
             adapter.consumeOutboundFrame(profile(), typingStopFrameWithMessageId(5L, "session-message-reply-1"));
 
-            assertFalse(messageSender.deleteMessageCalled.await(100, TimeUnit.MILLISECONDS));
-            assertEquals(0, messageSender.deleteMessageCommands.size());
-            FeishuStreamingReplyCardState state = store.find(FeishuStreamingReplyCardKey.fromFrame(typingFrameWithMessageId("session-message-reply-1"))).orElseThrow();
-            assertTrue(state.closed());
-            assertEquals("\n ", state.content());
+            waitUntil(() -> messageSender.deleteMessageCommands.size() == 1);
+
+            assertEquals("external-card-message-1", messageSender.deleteMessageCommands.getFirst().externalMessageId());
+            assertEquals(1, messageSender.updateSettingsCommands.size());
+            assertTrue(store.find(FeishuStreamingReplyCardKey.fromFrame(typingFrameWithMessageId("session-message-reply-1"))).isEmpty());
         } finally {
             adapter.shutdown();
         }
@@ -370,7 +370,7 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
     }
 
     @Test
-    void draftCompleteClosesStreamingModeWithoutCreatingAnotherCard() {
+    void draftCompleteCalibratesBlockWithoutClosingStreamingMode() {
         CapturingMessageSender messageSender = new CapturingMessageSender();
         InMemoryStreamingCardStore store = new InMemoryStreamingCardStore();
         FeishuGatewayNativeChannelProviderAdapter adapter = new FeishuGatewayNativeChannelProviderAdapter(
@@ -381,15 +381,83 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
             new ObjectMapper()
         );
 
-        adapter.consumeOutboundFrame(profile(), draftUpdateFrame(2L, "hello"));
+        adapter.consumeOutboundFrame(profile(), draftUpdateFrame(2L, "hel"));
         adapter.consumeOutboundFrame(profile(), draftCompleteFrame(4L, Map.of("type", "TEXT", "text", "hello")));
 
         assertEquals(1, messageSender.createCardCommands.size());
-        assertEquals(1, messageSender.updateSettingsCommands.size());
-        assertTrue(messageSender.updateSettingsCommands.getFirst().settings().contains("\"streaming_mode\":false"));
-        assertEquals(1, messageSender.updateSettingsCommands.getFirst().sequence());
+        assertEquals(1, messageSender.updateTextCommands.size());
+        assertEquals("hello", messageSender.updateTextCommands.getFirst().content());
+        assertEquals(0, messageSender.updateSettingsCommands.size());
         FeishuStreamingReplyCardState state = store.find(FeishuStreamingReplyCardKey.fromFrame(draftUpdateFrame(4L, "ignored"))).orElseThrow();
+        assertFalse(state.closed());
+        assertEquals("hello", state.content());
+        assertEquals(1, state.sequence());
+        assertEquals(4L, state.lastSourceSeq());
+    }
+
+    @Test
+    void draftUpdateAppendsMultipleBlocksOnOneStreamingCard() {
+        CapturingMessageSender messageSender = new CapturingMessageSender();
+        InMemoryStreamingCardStore store = new InMemoryStreamingCardStore();
+        FeishuGatewayNativeChannelProviderAdapter adapter = new FeishuGatewayNativeChannelProviderAdapter(
+            new CapturingCredentialProvider(),
+            messageSender,
+            FeishuTypingReactionLifecycle.NOOP,
+            store,
+            new ObjectMapper()
+        );
+
+        adapter.consumeOutboundFrame(profile(), draftUpdateFrame(2L, "hello", "session-message-reply-1", "reply-block-1"));
+        adapter.consumeOutboundFrame(profile(), draftCompleteFrame(
+            3L,
+            "reply-block-1",
+            Map.of("type", "TEXT", "text", "hello")
+        ));
+        adapter.consumeOutboundFrame(profile(), draftUpdateFrame(4L, "world", "session-message-reply-1", "reply-block-2"));
+
+        assertEquals(1, messageSender.createCardCommands.size());
+        assertEquals(1, messageSender.sendCardCommands.size());
+        assertEquals(1, messageSender.updateTextCommands.size());
+        assertEquals("hello\n\nworld", messageSender.updateTextCommands.getFirst().content());
+        assertEquals(0, messageSender.updateSettingsCommands.size());
+        FeishuStreamingReplyCardState state = store.find(FeishuStreamingReplyCardKey.fromFrame(draftUpdateFrame(4L, "ignored"))).orElseThrow();
+        assertFalse(state.closed());
+        assertEquals("hello\n\nworld", state.content());
+    }
+
+    @Test
+    void typingStopClosesMultiBlockStreamingCardWithoutOverwritingContent() {
+        CapturingMessageSender messageSender = new CapturingMessageSender();
+        InMemoryStreamingCardStore store = new InMemoryStreamingCardStore();
+        FeishuGatewayNativeChannelProviderAdapter adapter = new FeishuGatewayNativeChannelProviderAdapter(
+            new CapturingCredentialProvider(),
+            messageSender,
+            FeishuTypingReactionLifecycle.NOOP,
+            store,
+            new ObjectMapper()
+        );
+
+        adapter.consumeOutboundFrame(profile(), draftUpdateFrame(2L, "hello", "session-message-reply-1", "reply-block-1"));
+        adapter.consumeOutboundFrame(profile(), draftCompleteFrame(
+            3L,
+            "reply-block-1",
+            Map.of("type", "TEXT", "text", "hello")
+        ));
+        adapter.consumeOutboundFrame(profile(), draftUpdateFrame(4L, "world", "session-message-reply-1", "reply-block-2"));
+        adapter.consumeOutboundFrame(profile(), draftCompleteFrame(
+            5L,
+            "reply-block-2",
+            Map.of("type", "TEXT", "text", "world")
+        ));
+        adapter.consumeOutboundFrame(profile(), typingStopFrameWithMessageId(6L, "session-message-reply-1"));
+
+        assertEquals(1, messageSender.createCardCommands.size());
+        assertEquals(1, messageSender.updateTextCommands.size());
+        assertEquals("hello\n\nworld", messageSender.updateTextCommands.getFirst().content());
+        assertEquals(1, messageSender.updateSettingsCommands.size());
+        FeishuStreamingReplyCardState state = store.find(FeishuStreamingReplyCardKey.fromFrame(draftUpdateFrame(6L, "ignored"))).orElseThrow();
         assertTrue(state.closed());
+        assertEquals("hello\n\nworld", state.content());
     }
 
     @Test
@@ -484,15 +552,16 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
         );
 
         messageSender.failUpdateText = false;
-        adapter.consumeOutboundFrame(profile(), draftUpdateFrame(2L, "hello"));
-        messageSender.failUpdateSettings = true;
+        adapter.consumeOutboundFrame(profile(), draftUpdateFrame(2L, "hel"));
+        messageSender.failUpdateText = true;
 
         adapter.consumeOutboundFrame(profile(), draftCompleteFrame(4L, Map.of("type", "TEXT", "text", "hello")));
 
-        assertEquals(1, messageSender.updateSettingsCommands.size());
+        assertEquals(1, messageSender.updateTextCommands.size());
+        assertEquals(0, messageSender.updateSettingsCommands.size());
         FeishuStreamingReplyCardState state = store.find(FeishuStreamingReplyCardKey.fromFrame(draftUpdateFrame(4L, "ignored"))).orElseThrow();
         assertTrue(state.closed());
-        assertEquals("hello", state.content());
+        assertEquals("hel", state.content());
     }
 
     @Test
@@ -625,7 +694,9 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
     private static ChannelOutboundFrame finalFrame() {
         return finalFrameWithMessageId("message-1", List.of(
             Map.of("type", "TEXT", "text", "hello"),
-            Map.of("type", "TEXT", "text", "world")
+            Map.of("type", "TEXT", "text", "   "),
+            Map.of("type", "IMAGE", "url", "https://example.invalid/image.png"),
+            Map.of("type", "RICH_TEXT", "content", "world")
         ));
     }
 
@@ -763,6 +834,10 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
     }
 
     private static ChannelOutboundFrame draftCompleteFrame(long sourceSeq, Map<String, Object> block) {
+        return draftCompleteFrame(sourceSeq, "reply-block-1", block);
+    }
+
+    private static ChannelOutboundFrame draftCompleteFrame(long sourceSeq, String blockId, Map<String, Object> block) {
         return new ChannelOutboundFrame(
             ChannelContracts.CHANNEL_OUTBOUND_FRAME_PROTOCOL,
             "profile-1:exec-1:" + sourceSeq + ":DRAFT_COMPLETE",
@@ -780,7 +855,7 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
             "profile-1:exec-1:" + sourceSeq + ":DRAFT_COMPLETE",
             Map.of(
                 "replyMessageId", "session-message-reply-1",
-                "blockId", "reply-block-1",
+                "blockId", blockId,
                 "blockType", "TEXT",
                 "block", block
             ),

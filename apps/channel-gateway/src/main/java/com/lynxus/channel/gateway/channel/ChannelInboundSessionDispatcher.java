@@ -105,6 +105,14 @@ public class ChannelInboundSessionDispatcher {
         } catch (ChannelInboundSessionRejectedException error) {
             NormalizedChannelInboundTurnResult result = markRejected(audit, error.getMessage(), ingestResult.duplicateDedupKey());
             notifyDispatchFailed(turn, ingestResult, error);
+            log.warn(
+                "session runtime rejected channel inbound turn: channelProfileId={}, externalConversationId={}, turnId={}, dedupKey={}, reason={}",
+                audit.channelProfileId(),
+                audit.externalConversationId(),
+                audit.turnId(),
+                audit.dedupKey(),
+                error.getMessage()
+            );
             return result;
         } catch (RuntimeException error) {
             NormalizedChannelInboundTurnResult result = markFailed(audit, error.getMessage(), ingestResult.duplicateDedupKey());

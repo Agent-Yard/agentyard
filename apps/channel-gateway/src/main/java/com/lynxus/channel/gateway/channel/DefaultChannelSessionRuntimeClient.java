@@ -63,7 +63,9 @@ final class DefaultChannelSessionRuntimeClient implements ChannelSessionRuntimeC
             HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() >= 400 && response.statusCode() < 500) {
                 throw new ChannelInboundSessionRejectedException(
-                    "session runtime rejected channel inbound turn with HTTP " + response.statusCode()
+                    "session runtime rejected channel inbound turn with HTTP "
+                        + response.statusCode()
+                        + responseBodySummary(response.body())
                 );
             }
             if (response.statusCode() < 200 || response.statusCode() > 299) {
@@ -88,6 +90,15 @@ final class DefaultChannelSessionRuntimeClient implements ChannelSessionRuntimeC
             throw new IllegalArgumentException(field + " is required");
         }
         return value.trim();
+    }
+
+    private static String responseBodySummary(String body) {
+        if (body == null || body.isBlank()) {
+            return "";
+        }
+        String normalized = body.replace('\n', ' ').replace('\r', ' ').trim();
+        int maxLength = 300;
+        return ": " + (normalized.length() > maxLength ? normalized.substring(0, maxLength) + "..." : normalized);
     }
 
     private static void validateRequest(ChannelInboundSessionTurnRequest request) {

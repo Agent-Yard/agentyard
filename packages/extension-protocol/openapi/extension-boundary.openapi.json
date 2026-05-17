@@ -1406,7 +1406,7 @@
           },
           "payload": {
             "$ref": "#/components/schemas/JsonObject",
-            "description": "Kind-specific payload. The JSON Schema assets define illegal kind/payload combinations."
+            "description": "Kind-specific payload. DRAFT_COMPLETE completes the referenced draft block without stopping typing/streaming; TYPING_STOP closes transient typing/streaming state. The JSON Schema assets define illegal kind/payload combinations."
           },
           "traceContext": {
             "$ref": "#/components/schemas/TraceContext"
@@ -1460,6 +1460,7 @@
       "ChannelOutboundDraftCompletePayload": {
         "type": "object",
         "additionalProperties": false,
+        "description": "Completes the referenced transient draft block without stopping typing/streaming or representing formal external message delivery.",
         "required": ["messageId", "blockId", "blockType", "block"],
         "properties": {
           "messageId": {

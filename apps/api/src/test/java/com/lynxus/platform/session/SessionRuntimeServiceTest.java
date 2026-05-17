@@ -369,6 +369,55 @@ class SessionRuntimeServiceTest {
     }
 
     @Test
+    void channelInboundTurnCreatesNewSessionWhenBindingSessionEnded() {
+        SessionWorkflowGateway gateway = mock(SessionWorkflowGateway.class);
+        CatalogService catalogService = mock(CatalogService.class);
+        SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
+        SessionRuntimeService service = new SessionRuntimeService(
+            gateway,
+            catalogService,
+            repository,
+            new SessionDispatchLockService()
+        );
+        SessionRuntimeDtos.SessionRuntimeSessionDto endedBindingSession = channelSession("session-ended", "ENDED", false, false);
+        when(repository.findSession(any())).thenAnswer(invocation -> {
+            String sessionId = invocation.getArgument(0);
+            if ("session-ended".equals(sessionId)) {
+                return java.util.Optional.of(endedBindingSession);
+            }
+            return java.util.Optional.of(channelSession(sessionId, "IDLE", false, false));
+        });
+        when(repository.findActiveChannelSession("channel-profile-1", "conversation-1", "customer-1", "ast-1"))
+            .thenReturn(java.util.Optional.empty());
+        when(catalogService.getAssistantRuntimeSnapshot("ast-1")).thenReturn(assistant("ast-1"));
+        when(repository.createOrReuseActiveSession(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        installTurnRepositoryBehavior(repository, List.of());
+
+        var response = service.channelInboundTurn(
+            channelInboundRequest("Customer", "session-ended"),
+            "dedup-1"
+        );
+
+        assertNotEquals("session-ended", response.sessionId());
+        assertEquals(SessionMessageDeliveryStatus.ACCEPTED, response.status());
+        assertEquals(1, response.acceptedMessageAllocations().size());
+        verify(repository).createOrReuseActiveSession(argThat(session ->
+            "CHANNEL".equals(session.entryScope())
+                && "channel-profile-1".equals(session.channelProfileId())
+                && "conversation-1".equals(session.externalConversationId())
+                && "customer-1".equals(session.customerId())
+                && "ast-1".equals(session.assistantId())
+        ));
+        verify(repository).appendSessionMessages(eq(response.sessionId()), eq(response.turnId()), argThat(messages ->
+            messages.size() == 1
+                && messages.getFirst().producerType() == SessionMessageProducerType.EXTERNAL
+                && "message-1".equals(messages.getFirst().externalMessageId())
+        ));
+        verify(gateway).start(any());
+        verify(gateway).submitUserTurn(eq(response.sessionId()), eq(response.turnId()), any(UserTurn.class));
+    }
+
+    @Test
     void importTurn_appendsOnlyNewMessagesAndReportsDuplicateExternalIds() {
         SessionWorkflowGateway gateway = mock(SessionWorkflowGateway.class);
         CatalogService catalogService = mock(CatalogService.class);
@@ -865,13 +914,17 @@ class SessionRuntimeServiceTest {
     }
 
     private static ChannelInboundSessionTurnRequest channelInboundRequest(String senderName) {
+        return channelInboundRequest(senderName, null);
+    }
+
+    private static ChannelInboundSessionTurnRequest channelInboundRequest(String senderName, String sessionId) {
         return new ChannelInboundSessionTurnRequest(
             "channel-profile-1",
             "conversation-1",
             "dedup-1",
             "ast-1",
             "customer-1",
-            null,
+            sessionId,
             List.of(new ChannelInboundSessionTurnMessage(
                 "event-1",
                 "message-1",
@@ -1018,6 +1071,43 @@ class SessionRuntimeServiceTest {
             null,
             latestMessageSequence,
             latestEventSequence
+        );
+    }
+
+    private static SessionRuntimeDtos.SessionRuntimeSessionDto channelSession(
+        String sessionId,
+        String status,
+        boolean agentTurnActive,
+        boolean draining
+    ) {
+        Instant now = Instant.parse("2026-04-01T00:00:00Z");
+        return new SessionRuntimeDtos.SessionRuntimeSessionDto(
+            sessionId,
+            "scn-1",
+            "title",
+            "CHANNEL",
+            "channel-profile-1",
+            "conversation-1",
+            "customer-1",
+            "ast-1",
+            "Assistant",
+            "1.0.0",
+            status,
+            "agent-1",
+            "agent-1",
+            null,
+            agentTurnActive,
+            false,
+            false,
+            draining,
+            Map.of(),
+            0L,
+            now.plus(Duration.ofMinutes(30)),
+            now,
+            now,
+            "ENDED".equals(status) ? now : null,
+            0L,
+            0L
         );
     }
 

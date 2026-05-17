@@ -83,7 +83,7 @@ class DefaultSessionChannelActivityRelayTest {
     }
 
     @Test
-    void publishesReplyBlockCompletedAsDraftCompleteThenTypingStop() {
+    void publishesReplyBlockCompletedAsDraftCompleteOnly() {
         ChannelBindingSnapshotLookupService lookupService = mock(ChannelBindingSnapshotLookupService.class);
         ChannelOutboundFramePublisher framePublisher = mock(ChannelOutboundFramePublisher.class);
         when(lookupService.findActiveBySession("session-1")).thenReturn(Optional.of(snapshot()));
@@ -99,9 +99,62 @@ class DefaultSessionChannelActivityRelayTest {
         )));
 
         ArgumentCaptor<ChannelOutboundFrame> frame = ArgumentCaptor.forClass(ChannelOutboundFrame.class);
+        verify(framePublisher).publishTransient(frame.capture());
+        assertEquals(ChannelOutboundFrameKind.DRAFT_COMPLETE, frame.getValue().kind());
+        assertEquals("channel-profile-1:exec-1:2:DRAFT_COMPLETE", frame.getValue().frameId());
+        assertEquals("session-message-reply-1", frame.getValue().payload().get("replyMessageId"));
+        assertEquals("block-1", frame.getValue().payload().get("blockId"));
+        assertEquals("TEXT", frame.getValue().payload().get("blockType"));
+        assertEquals(Map.of("type", "TEXT", "text", "done"), frame.getValue().payload().get("block"));
+    }
+
+    @Test
+    void publishesTurnCompletedAsTypingStop() {
+        ChannelBindingSnapshotLookupService lookupService = mock(ChannelBindingSnapshotLookupService.class);
+        ChannelOutboundFramePublisher framePublisher = mock(ChannelOutboundFramePublisher.class);
+        when(lookupService.findActiveBySession("session-1")).thenReturn(Optional.of(snapshot()));
+        DefaultSessionChannelActivityRelay relay = new DefaultSessionChannelActivityRelay(lookupService, framePublisher);
+
+        relay.relay(frame(AgentTurnTransientFrameKind.TURN_COMPLETED, StreamVisibility.OPERATOR, 3, Map.of(
+            "replyMessageId",
+            "session-message-reply-1",
+            "status",
+            "SUCCEEDED"
+        )));
+
+        ArgumentCaptor<ChannelOutboundFrame> frame = ArgumentCaptor.forClass(ChannelOutboundFrame.class);
+        verify(framePublisher).publishTransient(frame.capture());
+        assertEquals(ChannelOutboundFrameKind.TYPING_STOP, frame.getValue().kind());
+        assertEquals(Map.of("replyMessageId", "session-message-reply-1"), frame.getValue().payload());
+    }
+
+    @Test
+    void publishesErrorAsDraftDiscardThenTypingStop() {
+        ChannelBindingSnapshotLookupService lookupService = mock(ChannelBindingSnapshotLookupService.class);
+        ChannelOutboundFramePublisher framePublisher = mock(ChannelOutboundFramePublisher.class);
+        when(lookupService.findActiveBySession("session-1")).thenReturn(Optional.of(snapshot()));
+        DefaultSessionChannelActivityRelay relay = new DefaultSessionChannelActivityRelay(lookupService, framePublisher);
+
+        relay.relay(frame(AgentTurnTransientFrameKind.ERROR, StreamVisibility.OPERATOR, 4, Map.of(
+            "code",
+            "PROVIDER_STREAM_FAILED",
+            "replyMessageId",
+            "session-message-reply-1",
+            "message",
+            "boom",
+            "stage",
+            "PROVIDER_STREAM",
+            "retryable",
+            true
+        )));
+
+        ArgumentCaptor<ChannelOutboundFrame> frame = ArgumentCaptor.forClass(ChannelOutboundFrame.class);
         verify(framePublisher, org.mockito.Mockito.times(2)).publishTransient(frame.capture());
-        assertEquals(ChannelOutboundFrameKind.DRAFT_COMPLETE, frame.getAllValues().get(0).kind());
-        assertEquals("TEXT", frame.getAllValues().get(0).payload().get("blockType"));
+        assertEquals(ChannelOutboundFrameKind.DRAFT_DISCARD, frame.getAllValues().get(0).kind());
+        assertEquals(
+            Map.of("replyMessageId", "session-message-reply-1", "reason", "PROVIDER_STREAM_FAILED"),
+            frame.getAllValues().get(0).payload()
+        );
         assertEquals(ChannelOutboundFrameKind.TYPING_STOP, frame.getAllValues().get(1).kind());
         assertEquals(Map.of("replyMessageId", "session-message-reply-1"), frame.getAllValues().get(1).payload());
     }

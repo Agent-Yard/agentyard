@@ -91,7 +91,7 @@ final class DefaultSessionChannelActivityRelay implements SessionChannelActivity
         return switch (frame.kind()) {
             case TURN_STARTED -> List.of(ChannelOutboundFrameKind.TYPING_START);
             case REPLY_BLOCK_DELTA -> customerOnly(frame, ChannelOutboundFrameKind.DRAFT_UPDATE);
-            case REPLY_BLOCK_COMPLETED -> List.of(ChannelOutboundFrameKind.DRAFT_COMPLETE, ChannelOutboundFrameKind.TYPING_STOP);
+            case REPLY_BLOCK_COMPLETED -> customerOnly(frame, ChannelOutboundFrameKind.DRAFT_COMPLETE);
             case TURN_COMPLETED -> List.of(ChannelOutboundFrameKind.TYPING_STOP);
             case ERROR -> List.of(ChannelOutboundFrameKind.DRAFT_DISCARD, ChannelOutboundFrameKind.TYPING_STOP);
             case MODEL_STARTED,

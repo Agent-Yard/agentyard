@@ -72,6 +72,43 @@ class DefaultChannelSessionRuntimeClientTest {
     }
 
     @Test
+    void dispatchInboundTurnIncludesRejectedResponseBodySummary() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/api/internal/session-runtime/channel-inbound-turns", exchange -> {
+            try {
+                byte[] body = "{\"detail\":\"session has ended\"}".getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().add("Content-Type", "application/problem+json");
+                exchange.sendResponseHeaders(409, body.length);
+                exchange.getResponseBody().write(body);
+            } finally {
+                exchange.close();
+            }
+        });
+        server.start();
+        try {
+            DefaultChannelSessionRuntimeClient client = new DefaultChannelSessionRuntimeClient(
+                objectMapper,
+                "http://127.0.0.1:" + server.getAddress().getPort() + "/api",
+                "token",
+                HttpClient.newHttpClient()
+            );
+
+            ChannelInboundSessionRejectedException error = assertThrows(
+                ChannelInboundSessionRejectedException.class,
+                () -> client.dispatchInboundTurn(request())
+            );
+
+            assertEquals(
+                "session runtime rejected channel inbound turn with HTTP 409: {\"detail\":\"session has ended\"}",
+                error.getMessage()
+            );
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void dispatchInboundTurnRejectsMissingSenderNameBeforeHttp() {
         DefaultChannelSessionRuntimeClient client = new DefaultChannelSessionRuntimeClient(
             new ObjectMapper(),

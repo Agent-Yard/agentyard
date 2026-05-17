@@ -218,7 +218,7 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
             return;
         }
         FeishuAppCredential credential = credentialProvider.resolve(profile.accountId());
-        createStreamingCardIfAbsent(profile, frame, key, credential, "", INITIAL_STREAMING_REPLY_PLACEHOLDER);
+        createStreamingCardIfAbsent(profile, frame, key, credential, List.of(), INITIAL_STREAMING_REPLY_PLACEHOLDER);
     }
 
     private void consumeTypingStop(ChannelGatewayProfile profile, ChannelOutboundFrame frame) {
@@ -309,6 +309,9 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
         if (delta == null || delta.isEmpty()) {
             return;
         }
+        String blockId = textPayload(frame, "blockId")
+            .orElseThrow(() -> new IllegalArgumentException("Feishu draft update blockId is required"));
+        String blockType = textPayload(frame, "blockType").orElse("TEXT");
         FeishuStreamingReplyCardKey key = FeishuStreamingReplyCardKey.fromFrame(frame);
         Optional<FeishuStreamingReplyCardState> existing = streamingCardStore.find(key);
         if (existing.isEmpty()) {
@@ -319,15 +322,31 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
         }
         FeishuAppCredential credential = credentialProvider.resolve(profile.accountId());
         if (existing.isEmpty()) {
-            createStreamingCardIfAbsent(profile, frame, key, credential, delta, delta);
+            FeishuStreamingReplyCardBlock block = new FeishuStreamingReplyCardBlock(blockId, blockType, delta, false);
+            createStreamingCardIfAbsent(
+                profile,
+                frame,
+                key,
+                credential,
+                List.of(block),
+                FeishuReplyMarkdownRenderer.render(List.of(block))
+            );
             return;
         }
         FeishuStreamingReplyCardState state = existing.orElseThrow();
         if (state.closed()) {
             return;
         }
-        String content = state.content() + delta;
         int sequence = state.sequence() + 1;
+        FeishuStreamingReplyCardState next = state.withDraftDelta(
+            blockId,
+            blockType,
+            delta,
+            sequence,
+            advanceSourceSeq(state, frame),
+            frame.occurredAt()
+        );
+        String content = next.content();
         try {
             messageSender.updateCardText(new FeishuMessageSender.FeishuUpdateCardTextCommand(
                 credential,
@@ -344,7 +363,7 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
             }
             throw error;
         }
-        streamingCardStore.save(state.withContent(content, sequence, advanceSourceSeq(state, frame), frame.occurredAt()));
+        streamingCardStore.save(next);
     }
 
     private FeishuStreamingReplyCardState createStreamingCardIfAbsent(
@@ -352,7 +371,7 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
         ChannelOutboundFrame frame,
         FeishuStreamingReplyCardKey key,
         FeishuAppCredential credential,
-        String initialContent,
+        List<FeishuStreamingReplyCardBlock> initialBlocks,
         String displayContent
     ) {
         try (FeishuStreamingReplyCardReadiness.Reservation _ = streamingCardReadiness.begin(key)) {
@@ -360,7 +379,7 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
             if (existing.isPresent()) {
                 return existing.orElseThrow();
             }
-            return createStreamingCard(profile, frame, key, credential, initialContent, displayContent);
+            return createStreamingCard(profile, frame, key, credential, initialBlocks, displayContent);
         }
     }
 
@@ -369,7 +388,7 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
         ChannelOutboundFrame frame,
         FeishuStreamingReplyCardKey key,
         FeishuAppCredential credential,
-        String initialContent,
+        List<FeishuStreamingReplyCardBlock> initialBlocks,
         String displayContent
     ) {
         FeishuMessageSender.FeishuCreateCardResult card = messageSender.createCard(
@@ -393,7 +412,7 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
             card.cardId(),
             message.externalMessageId(),
             FeishuCardJsonFactory.STREAMING_MARKDOWN_ELEMENT_ID,
-            initialContent,
+            initialBlocks,
             0,
             frame.sourceSeq(),
             false,
@@ -404,8 +423,78 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
     }
 
     private void consumeDraftComplete(ChannelGatewayProfile profile, ChannelOutboundFrame frame) {
-        closeExistingStreamingCard(profile, frame, completedBlockText(profile, frame))
-            .ifPresent(state -> schedulePreparedEmptyCardDeletionIfBlank(profile, state));
+        requireStreamingDependencies();
+        String blockId = textPayload(frame, "blockId")
+            .orElseThrow(() -> new IllegalArgumentException("Feishu draft complete blockId is required"));
+        Optional<FeishuStreamingReplyCardBlock> completedBlock = FeishuReplyMarkdownRenderer.completedBlock(
+            profile,
+            frame,
+            blockId,
+            frame.payload().get("block")
+        );
+        if (completedBlock.isEmpty()) {
+            return;
+        }
+        FeishuStreamingReplyCardKey key = FeishuStreamingReplyCardKey.fromFrame(frame);
+        Optional<FeishuStreamingReplyCardState> existing = streamingCardStore.find(key);
+        if (existing.isEmpty()) {
+            existing = streamingCardReadiness.awaitReady(key, () -> streamingCardStore.find(key));
+        }
+        if (existing.isPresent() && alreadyProcessed(existing.orElseThrow(), frame)) {
+            return;
+        }
+        FeishuAppCredential credential = credentialProvider.resolve(profile.accountId());
+        if (existing.isEmpty()) {
+            FeishuStreamingReplyCardBlock block = completedBlock.orElseThrow();
+            createStreamingCardIfAbsent(
+                profile,
+                frame,
+                key,
+                credential,
+                List.of(block),
+                FeishuReplyMarkdownRenderer.render(List.of(block))
+            );
+            return;
+        }
+        FeishuStreamingReplyCardState state = existing.orElseThrow();
+        if (state.closed()) {
+            return;
+        }
+        FeishuStreamingReplyCardState nextWithoutSequence = state.withCompletedBlock(
+            completedBlock.orElseThrow(),
+            state.sequence(),
+            advanceSourceSeq(state, frame),
+            frame.occurredAt()
+        );
+        String content = nextWithoutSequence.content();
+        if (content.equals(state.content())) {
+            streamingCardStore.save(nextWithoutSequence);
+            return;
+        }
+        int sequence = state.sequence() + 1;
+        FeishuStreamingReplyCardState next = state.withCompletedBlock(
+            completedBlock.orElseThrow(),
+            sequence,
+            advanceSourceSeq(state, frame),
+            frame.occurredAt()
+        );
+        try {
+            messageSender.updateCardText(new FeishuMessageSender.FeishuUpdateCardTextCommand(
+                credential,
+                state.cardId(),
+                state.elementId(),
+                content,
+                sequence,
+                feishuUuid(frame, "text")
+            ));
+        } catch (RuntimeException error) {
+            if (isFeishuStreamingModeClosed(error)) {
+                streamingCardStore.save(state.closed(sequence, advanceSourceSeq(state, frame), frame.occurredAt()));
+                return;
+            }
+            throw error;
+        }
+        streamingCardStore.save(next);
     }
 
     private void consumeDraftDiscard(ChannelGatewayProfile profile, ChannelOutboundFrame frame) {
@@ -414,14 +503,14 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
     }
 
     private void consumeFinalDelivery(ChannelGatewayProfile profile, ChannelOutboundFrame frame) {
-        Optional<String> text = finalText(profile, frame);
+        Optional<FeishuRenderedReplyBlocks> renderedBlocks = FeishuReplyMarkdownRenderer.finalDeliveryBlocks(profile, frame);
         FeishuStreamingReplyCardKey key = FeishuStreamingReplyCardKey.fromFrame(frame);
         Optional<FeishuStreamingReplyCardState> existing = streamingCardStore == null ? Optional.empty() : streamingCardStore.find(key);
         if (existing.isPresent()) {
-            closeExistingStreamingCard(profile, frame, text);
+            closeExistingStreamingCard(profile, frame, renderedBlocks);
             return;
         }
-        if (text.isEmpty()) {
+        if (renderedBlocks.isEmpty()) {
             return;
         }
         requireStreamingDependencies();
@@ -429,7 +518,7 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
         FeishuMessageSender.FeishuCreateCardResult card = messageSender.createCard(
             new FeishuMessageSender.FeishuCreateCardCommand(
                 credential,
-                FeishuCardJsonFactory.finalReplyCard(objectMapper, text.orElseThrow())
+                FeishuCardJsonFactory.finalReplyCard(objectMapper, renderedBlocks.orElseThrow().markdown())
             )
         );
         messageSender.sendInteractiveCard(new FeishuMessageSender.FeishuSendInteractiveCardCommand(
@@ -444,7 +533,7 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
     private Optional<FeishuStreamingReplyCardState> closeExistingStreamingCard(
         ChannelGatewayProfile profile,
         ChannelOutboundFrame frame,
-        Optional<String> finalContent
+        Optional<FeishuRenderedReplyBlocks> finalContent
     ) {
         if (streamingCardStore == null) {
             return Optional.empty();
@@ -456,20 +545,20 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
         FeishuStreamingReplyCardState state = existing.orElseThrow();
         if (alreadyProcessed(state, frame)
             && state.closed()
-            && (finalContent.isEmpty() || finalContent.orElseThrow().equals(state.content()))) {
+            && (finalContent.isEmpty() || finalContent.orElseThrow().markdown().equals(state.content()))) {
             return Optional.of(state);
         }
         requireStreamingDependencies();
         FeishuAppCredential credential = credentialProvider.resolve(profile.accountId());
         FeishuStreamingReplyCardState current = state;
-        if (finalContent.isPresent() && !finalContent.orElseThrow().equals(current.content())) {
+        if (finalContent.isPresent() && !finalContent.orElseThrow().markdown().equals(current.content())) {
             int contentSequence = current.sequence() + 1;
             try {
                 messageSender.updateCardText(new FeishuMessageSender.FeishuUpdateCardTextCommand(
                     credential,
                     current.cardId(),
                     current.elementId(),
-                    finalContent.orElseThrow(),
+                    finalContent.orElseThrow().markdown(),
                     contentSequence,
                     feishuUuid(frame, "text")
                 ));
@@ -481,7 +570,19 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
                 }
                 throw error;
             }
-            current = current.withContent(finalContent.orElseThrow(), contentSequence, advanceSourceSeq(current, frame), frame.occurredAt());
+            current = current.withBlocks(
+                finalContent.orElseThrow().blocks(),
+                contentSequence,
+                advanceSourceSeq(current, frame),
+                frame.occurredAt()
+            );
+        } else if (finalContent.isPresent()) {
+            current = current.withBlocks(
+                finalContent.orElseThrow().blocks(),
+                current.sequence(),
+                advanceSourceSeq(current, frame),
+                frame.occurredAt()
+            );
         }
         if (!current.closed()) {
             int closeSequence = current.sequence() + 1;
@@ -762,88 +863,4 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
         }
     }
 
-    private static Optional<String> completedBlockText(ChannelGatewayProfile profile, ChannelOutboundFrame frame) {
-        Object rawBlock = frame.payload().get("block");
-        if (!(rawBlock instanceof Map<?, ?> block)) {
-            return Optional.empty();
-        }
-        return blockText(profile, frame, block, 0);
-    }
-
-    private static Optional<String> finalText(ChannelGatewayProfile profile, ChannelOutboundFrame frame) {
-        Object rawBlocks = frame.payload().get("messageBlocks");
-        if (!(rawBlocks instanceof List<?> blocks) || blocks.isEmpty()) {
-            log.info(
-                "skipping Feishu native final delivery with no renderable message blocks: channelProfileId={}, frameId={}, sessionId={}, sessionMessageId={}",
-                frame.channelProfileId(),
-                frame.frameId(),
-                frame.sessionId(),
-                frame.payload().get("sessionMessageId")
-            );
-            return Optional.empty();
-        }
-        List<String> parts = new ArrayList<>();
-        int index = 0;
-        for (Object rawBlock : blocks) {
-            int blockIndex = index++;
-            if (!(rawBlock instanceof Map<?, ?> block)) {
-                log.info(
-                    "skipping unsupported Feishu native final block: channelProfileId={}, frameId={}, sessionId={}, sessionMessageId={}, blockIndex={}, blockType={}",
-                    frame.channelProfileId(),
-                    frame.frameId(),
-                    frame.sessionId(),
-                    frame.payload().get("sessionMessageId"),
-                    blockIndex,
-                    "UNKNOWN"
-                );
-                continue;
-            }
-            Optional<String> text = blockText(profile, frame, block, blockIndex);
-            if (text.isPresent()) {
-                parts.add(text.orElseThrow());
-                continue;
-            }
-        }
-        if (parts.isEmpty()) {
-            log.info(
-                "skipping Feishu native final delivery with no text content: channelProfileId={}, providerType={}, frameId={}, sessionId={}, sessionMessageId={}",
-                profile.id(),
-                profile.providerType(),
-                frame.frameId(),
-                frame.sessionId(),
-                frame.payload().get("sessionMessageId")
-            );
-            return Optional.empty();
-        }
-        return Optional.of(String.join("\n", parts));
-    }
-
-    private static Optional<String> blockText(
-        ChannelGatewayProfile profile,
-        ChannelOutboundFrame frame,
-        Map<?, ?> block,
-        int blockIndex
-    ) {
-        Object rawType = block.get("type");
-        String type = rawType == null ? "TEXT" : String.valueOf(rawType);
-        if ("TEXT".equals(type)) {
-            Object text = block.get("text");
-            return text instanceof String value && !value.isBlank() ? Optional.of(value) : Optional.empty();
-        }
-        if ("RICH_TEXT".equals(type)) {
-            Object content = block.get("content");
-            return content instanceof String value && !value.isBlank() ? Optional.of(value) : Optional.empty();
-        }
-        log.info(
-            "skipping unsupported Feishu native final block: channelProfileId={}, providerType={}, frameId={}, sessionId={}, sessionMessageId={}, blockIndex={}, blockType={}",
-            profile.id(),
-            profile.providerType(),
-            frame.frameId(),
-            frame.sessionId(),
-            frame.payload().get("sessionMessageId"),
-            blockIndex,
-            type
-        );
-        return Optional.empty();
-    }
 }

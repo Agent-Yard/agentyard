@@ -136,7 +136,7 @@
         "required": ["kind"]
       },
       "then": {
-        "description": "DRAFT_COMPLETE only completes or closes transient draft state. It never represents formal external message delivery.",
+        "description": "DRAFT_COMPLETE completes the referenced transient draft block without stopping typing/streaming. It never represents formal external message delivery.",
         "required": ["turnId", "turnExecutionId", "sourceSeq"],
         "not": {
           "required": ["finalSequence"]

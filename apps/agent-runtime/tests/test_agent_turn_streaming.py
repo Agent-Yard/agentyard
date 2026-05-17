@@ -378,6 +378,78 @@ class AgentTurnStreamingTest(unittest.TestCase):
         self.assertEqual("OPENAI_COMPATIBLE", committed_entries[-1].provider_type)
         self.assertEqual({"role": "assistant", "content": "已查到订单。"}, committed_entries[-1].content_json)
 
+    def test_should_allocate_reply_block_per_visible_model_round(self) -> None:
+        request = request_payload()
+        request["turnId"] = "turn-multi-block"
+        request["turnExecutionId"] = "exec-multi-block"
+        transcript_store = FakeTranscriptStore()
+        captured_payloads: list[dict] = []
+
+        def fake_stream(_settings, payload, *, idle_timeout_seconds):  # noqa: ANN001
+            captured_payloads.append(payload)
+            if len(captured_payloads) == 1:
+                return iter(
+                    [
+                        OpenAiCompatibleStreamEvent(event_type="content_delta", delta="先查一下。"),
+                        OpenAiCompatibleStreamEvent(
+                            event_type="tool_call_delta",
+                            tool_call_index=0,
+                            tool_call_id="call-skill-1",
+                            tool_name="read_skill",
+                            arguments_delta=json.dumps({"skillId": "skill-ver-1"}, ensure_ascii=False),
+                        ),
+                        OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
+                        OpenAiCompatibleStreamEvent(event_type="done"),
+                    ]
+                )
+            if len(captured_payloads) == 2:
+                return iter(
+                    [
+                        OpenAiCompatibleStreamEvent(
+                            event_type="tool_call_delta",
+                            tool_call_index=0,
+                            tool_call_id="call-skill-2",
+                            tool_name="read_skill",
+                            arguments_delta=json.dumps({"skillId": "skill-ver-1"}, ensure_ascii=False),
+                        ),
+                        OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
+                        OpenAiCompatibleStreamEvent(event_type="done"),
+                    ]
+                )
+            return iter(
+                [
+                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta="最终答复。"),
+                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
+                    OpenAiCompatibleStreamEvent(event_type="done"),
+                ]
+            )
+
+        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
+        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
+            with agent_runtime_client(transcript_store) as client:
+                response = client.post(
+                    "/agent-turns/execute-stream",
+                    json=request,
+                    headers={"Authorization": "Bearer test-internal-token"},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(3, len(captured_payloads))
+        frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
+        delta_frames = [frame for frame in frames if frame["kind"] == "REPLY_BLOCK_DELTA"]
+        self.assertEqual(["reply-block-1", "reply-block-2"], [frame["payload"]["blockId"] for frame in delta_frames])
+        self.assertEqual(["先查一下。", "最终答复。"], [frame["payload"]["delta"] for frame in delta_frames])
+        completed_frames = [frame for frame in frames if frame["kind"] == "REPLY_BLOCK_COMPLETED"]
+        self.assertEqual(["reply-block-1", "reply-block-2"], [frame["payload"]["blockId"] for frame in completed_frames])
+        self.assertEqual(["先查一下。", "最终答复。"], [frame["payload"]["block"]["text"] for frame in completed_frames])
+
+        outcome = frames[-1]["payload"]["outcome"]
+        self.assertTrue(outcome["success"])
+        self.assertEqual(
+            ["先查一下。", "最终答复。"],
+            [block["text"] for block in outcome["result"]["decision"]["replyMessage"]["blocks"]],
+        )
+
     def test_should_return_cached_successful_final_outcome_without_calling_provider(self) -> None:
         request = request_payload()
         request["turnId"] = "turn-1"
@@ -585,6 +657,8 @@ class AgentTurnStreamingTest(unittest.TestCase):
         final_outcome = frames[-1]["payload"]["outcome"]
         final_text = final_outcome["result"]["decision"]["replyMessage"]["blocks"][0]["text"]
         self.assertEqual("Hello Alice Johnson, your phone is 13812345678.", final_text)
+        completed_frames = [frame for frame in frames if frame["kind"] == "REPLY_BLOCK_COMPLETED"]
+        self.assertEqual(["Hello Alice Johnson, your phone is 13812345678."], [frame["payload"]["block"]["text"] for frame in completed_frames])
         self.assertEqual(
             {"MODEL_FINAL_RESPONSE": privacy_pipeline.restore_count},
             final_outcome["result"]["mappingTelemetry"]["restoreCountByChannel"],

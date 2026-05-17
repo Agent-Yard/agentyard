@@ -1045,7 +1045,9 @@ public class SessionRuntimeService {
         if (hasText(sessionId)) {
             SessionRuntimeSessionDto session = repository.findSession(requireText(sessionId, "sessionId")).orElseThrow();
             requireChannelSessionIdentity(session, channelProfileId, externalConversationId, customerId, assistantId);
-            return requireExplicitSessionWorkflowAvailable(session);
+            if (!channelBindingSessionEnded(session)) {
+                return session;
+            }
         }
         return createOrReuseActiveSession(
             ENTRY_SCOPE_CHANNEL,
@@ -1055,6 +1057,17 @@ public class SessionRuntimeService {
             assistantId,
             openingMessage
         );
+    }
+
+    private boolean channelBindingSessionEnded(SessionRuntimeSessionDto session) {
+        if ("ENDED".equals(session.status())) {
+            return true;
+        }
+        if (sessionWorkflowGateway.isWorkflowClosed(session.id())) {
+            markEnded(session, Instant.now());
+            return true;
+        }
+        return false;
     }
 
     private SessionRuntimeSessionDto createOrReuseActiveSession(

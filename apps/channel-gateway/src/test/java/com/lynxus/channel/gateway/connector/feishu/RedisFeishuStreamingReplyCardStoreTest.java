@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 
 import com.lynxus.shared.redis.RedisKeyspace;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -64,7 +65,7 @@ class RedisFeishuStreamingReplyCardStoreTest {
             "card-1",
             "external-message-1",
             "markdown_1",
-            "hello",
+            List.of(new FeishuStreamingReplyCardBlock("reply-block-1", "TEXT", "hello", false)),
             2,
             5L,
             false,
