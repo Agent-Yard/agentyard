@@ -21,8 +21,8 @@
 
   <text x="170" y="172" font-family="Inter, system-ui, sans-serif" font-size="44" font-weight="800" fill="#17211d">Lynxus</text>
 
-  <text x="80" y="290" font-family="Inter, system-ui, sans-serif" font-size="68" font-weight="800" fill="#17211d">Governed enterprise</text>
-  <text x="80" y="370" font-family="Inter, system-ui, sans-serif" font-size="68" font-weight="800" fill="#17211d">agent platform.</text>
+  <text x="80" y="290" font-family="Inter, system-ui, sans-serif" font-size="68" font-weight="800" fill="#17211d">Governed Enterprise</text>
+  <text x="80" y="370" font-family="Inter, system-ui, sans-serif" font-size="68" font-weight="800" fill="#17211d">Agent Platform.</text>
 
   <text x="80" y="440" font-family="Inter, system-ui, sans-serif" font-size="26" font-weight="500" fill="#5c6761">Release-driven · Session-first · Recoverable workflows</text>
 

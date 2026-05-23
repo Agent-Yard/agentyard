@@ -17,9 +17,9 @@ Lynxus 把外部接入面收敛为两类 descriptor：
 
 - **Channel Gateway**：channel provider 运行时调用方与 outbound frame 提供方
 - **Agent Runtime**：tool connector 运行时调用方
-- **Control Plane API**：descriptor 聚合、Web/控制面入口、可选 credential lifecycle 调用方
+- **Agent Control Plane API**：descriptor 聚合、Web/控制面入口、可选 credential lifecycle 调用方
 
-Control Plane API 不是 runtime invocation 中转层。Tool invoke、channel `runJob`、channel outbound frame stream 全部由对应的 runtime 角色直接调用 extension。
+Agent Control Plane API 不是 runtime invocation 中转层。Tool invoke、channel `runJob`、channel outbound frame stream 全部由对应的 runtime 角色直接调用 extension。
 
 ## 2. Extension service 形态与最小职责
 

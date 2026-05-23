@@ -2,10 +2,10 @@ export const SITE_URL = "https://zephor5.github.io/lynxus/";
 
 export const TRANSLATIONS = {
   zh: {
-    pageTitle: "Lynxus 灵枢 | 治理型企业智能体平台",
+    pageTitle: "Lynxus 灵枢 | 治理型企业智能体中台",
     metaDescription:
-      "灵枢（Lynxus）是一个开源的、以发布为中心的智能体平台，提供受治理的扩展、可观测的会话与可恢复的业务工作流。",
-    ogTitle: "Lynxus 灵枢 — 治理型企业智能体平台",
+      "灵枢（Lynxus）是一个开源的、以发布为中心的智能体中台，提供受治理的扩展、可观测的会话与可恢复的业务工作流。",
+    ogTitle: "Lynxus 灵枢 — 治理型企业智能体中台",
     ogDescription:
       "以发布为中心治理智能体、连接业务系统、运行可恢复工作流，并实时观测每一次会话。",
     "skip-link": "跳到主内容",
@@ -29,10 +29,10 @@ export const TRANSLATIONS = {
     "demo-1-p": "控制台里跑通一次最简单的会话。",
     "demo-2-h": "后台演示",
     "demo-2-p": "业务域、助手、智能体、知识库、资源与发布快照的治理面走查。",
-    "hero-eyebrow": "开源企业级智能体平台",
+    "hero-eyebrow": "开源企业级智能体中台",
     "hero-cn-name": "灵枢",
     "hero-lede":
-      "以发布为中心的智能体平台：治理智能体配置、连接业务系统、运行可恢复工作流，并实时观测每一次会话。",
+      "以发布为中心的智能体中台：治理智能体配置、连接业务系统、运行可恢复工作流，并实时观测每一次会话。",
     "btn-view-source": "查看源码",
     "btn-quick-start": "快速上手",
     "fact-status-label": "状态",
@@ -130,10 +130,10 @@ export const TRANSLATIONS = {
   en: {
     pageTitle: "Lynxus | Governed Enterprise Agent Platform",
     metaDescription:
-      "Lynxus is an open-source, release-driven agent platform for governed extensions, observable sessions, and recoverable business workflows.",
+      "Lynxus is an open-source Enterprise Agent Platform for governed extensions, observable sessions, and recoverable business workflows.",
     ogTitle: "Lynxus — Governed Enterprise Agent Platform",
     ogDescription:
-      "A release-driven platform for governing agents, connecting business systems, running recoverable workflows, and observing every session as it happens.",
+      "A release-driven Enterprise Agent Platform for governing agents, connecting business systems, running recoverable workflows, and observing every session as it happens.",
     "skip-link": "Skip to content",
     "aria-primary-nav": "Primary navigation",
     "aria-brand-home": "Lynxus home",
@@ -155,10 +155,10 @@ export const TRANSLATIONS = {
     "demo-1-p": "A minimal session running through the console.",
     "demo-2-h": "Console tour",
     "demo-2-p": "A tour of business domains, assistants, agents, knowledge bases, resources, and release snapshots.",
-    "hero-eyebrow": "Open-source enterprise agent platform",
+    "hero-eyebrow": "Open-source Enterprise Agent Platform",
     "hero-cn-name": "",
     "hero-lede":
-      "A release-driven platform for governing agents, connecting business systems, running recoverable workflows, and observing every session as it happens.",
+      "A release-driven Enterprise Agent Platform for governing agents, connecting business systems, running recoverable workflows, and observing every session as it happens.",
     "btn-view-source": "View source",
     "btn-quick-start": "Quick start",
     "fact-status-label": "Status",
@@ -198,7 +198,7 @@ export const TRANSLATIONS = {
     "model-check-3": "Agents decide; playbooks execute structured business flows.",
     "runtime-eyebrow": "Runtime architecture",
     "runtime-title": "Session-first execution with recoverable workflows.",
-    "arch-1-tag": "Control plane",
+    "arch-1-tag": "Agent Control Plane",
     "arch-1-h": "Release assembly",
     "arch-1-p":
       "Spring Boot APIs assemble releases, govern catalogs, and expose session-runtime views.",

@@ -6,7 +6,7 @@
 
 更贴切的描述是：
 
-- 默认单租户的企业智能体平台原型
+- 默认单租户的企业智能体中台原型
 - 以 assistant release 为配置锚点的运行系统
 - 以 `session workflow + owner agent + playbook workflow` 为核心主线的代码底座
 

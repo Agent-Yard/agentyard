@@ -1,9 +1,9 @@
 灵枢 Lynxus
 =========
 
-> 让企业以最小成本拥有可治理、可发布、可观测的智能体平台。
+> 让企业以最小成本拥有可治理、可发布、可观测的智能体中台。
 >
-> *An enterprise-grade, release-driven agent platform — currently in active development.*
+> *A release-driven Enterprise Agent Platform — currently in active development.*
 
 [![CI](https://github.com/Zephor5/lynxus/actions/workflows/ci.yml/badge.svg)](https://github.com/Zephor5/lynxus/actions/workflows/ci.yml)
 ![status](https://img.shields.io/badge/status-alpha-orange)
@@ -33,7 +33,7 @@ https://github.com/user-attachments/assets/86013c3e-986d-45f5-986b-d4db57312507
 
 ## 它解决什么问题
 
-企业落地智能体平台普遍卡在三件事：自建成本太高、业务系统接入太重、跑起来后不可观测/不可治理。Lynxus 的设计取舍围绕这三点展开：
+企业落地智能体中台普遍卡在三件事：自建成本太高、业务系统接入太重、跑起来后不可观测/不可治理。Lynxus 的设计取舍围绕这三点展开：
 
 - **配置即契约**：业务域 / 业务场景 / 助手 / 智能体 / 知识库 / 资源都是一级治理对象，发布即冻结快照，运行态只消费 release。
 - **协议化业务接入**：Tool Connector 与 Channel Provider 通过统一的 *Extension Plane* 协议接入，业务系统的鉴权、签名、长连接细节不再泄漏到 Agent / Playbook / Session。
