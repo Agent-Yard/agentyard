@@ -112,7 +112,7 @@
     if (!isCompact()) {
       const title = slides[current]?.dataset.title;
       if (title) {
-        document.title = `Lynxus 灵枢 项目汇报 — ${title}`;
+        document.title = `AgentYard 项目汇报 — ${title}`;
       }
     }
   }

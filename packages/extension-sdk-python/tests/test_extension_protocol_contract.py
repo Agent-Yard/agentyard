@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from lynxus_extension_sdk.protocol import (
+from agentyard_extension_sdk.protocol import (
     CHANNEL_OUTBOUND_FRAMES_ACK_PATH,
     CHANNEL_OUTBOUND_FRAMES_STREAM_PATH,
     CHANNEL_OUTBOUND_FRAME_SUBSCRIPTIONS_PATH,
@@ -182,7 +182,7 @@ def test_channel_outbound_ack_schema_forbids_provider_response_and_credential_fi
     validator = Draft202012Validator(schema)
 
     ack = {
-        "protocol": "lynxus.channel-outbound-frame-ack.v1",
+        "protocol": "agentyard.channel-outbound-frame-ack.v1",
         "channelProfileId": "channel-profile-1",
         "providerType": "enterprise.acme.im",
         "frameId": "channel-profile-1:session-1:message-1:FINAL_DELIVERY",
@@ -252,7 +252,7 @@ def _operation_header_names(openapi: dict[str, object], operation_id: str) -> fr
 
 def _base_frame(**overrides: object) -> dict[str, object]:
     frame: dict[str, object] = {
-        "protocol": "lynxus.channel-outbound-frame.v1",
+        "protocol": "agentyard.channel-outbound-frame.v1",
         "frameId": "channel-profile-1:exec-1:7:DRAFT_COMPLETE",
         "channelProfileId": "channel-profile-1",
         "providerType": "enterprise.acme.im",

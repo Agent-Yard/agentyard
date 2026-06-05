@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Lynxus Channel Gateway Internal API
+  title: AgentYard Channel Gateway Internal API
   version: 1.0.0
 servers:
   - url: http://127.0.0.1:8082
@@ -12,8 +12,8 @@ paths:
         - $ref: '#/components/parameters/ExtensionRegistrationIdHeader'
         - $ref: '#/components/parameters/ExtensionDescriptorTypeHeader'
         - $ref: '#/components/parameters/ExtensionDescriptorIdHeader'
-        - $ref: '#/components/parameters/LynxusTraceIdHeader'
-        - $ref: '#/components/parameters/LynxusRequestIdHeader'
+        - $ref: '#/components/parameters/AgentYardTraceIdHeader'
+        - $ref: '#/components/parameters/AgentYardRequestIdHeader'
         - $ref: '#/components/parameters/IdempotencyKeyHeader'
       requestBody:
         required: true
@@ -41,8 +41,8 @@ paths:
         - $ref: '#/components/parameters/ExtensionRegistrationIdHeader'
         - $ref: '#/components/parameters/ExtensionDescriptorTypeHeader'
         - $ref: '#/components/parameters/ExtensionDescriptorIdHeader'
-        - $ref: '#/components/parameters/LynxusTraceIdHeader'
-        - $ref: '#/components/parameters/LynxusRequestIdHeader'
+        - $ref: '#/components/parameters/AgentYardTraceIdHeader'
+        - $ref: '#/components/parameters/AgentYardRequestIdHeader'
         - $ref: '#/components/parameters/IdempotencyKeyHeader'
       requestBody:
         required: true
@@ -464,32 +464,32 @@ components:
   parameters:
     ExtensionRegistrationIdHeader:
       in: header
-      name: X-Lynxus-Extension-Registration-Id
+      name: X-AgentYard-Extension-Registration-Id
       required: true
       schema:
         type: string
     ExtensionDescriptorTypeHeader:
       in: header
-      name: X-Lynxus-Extension-Descriptor-Type
+      name: X-AgentYard-Extension-Descriptor-Type
       required: true
       schema:
         type: string
         enum: [CHANNEL_PROVIDER]
     ExtensionDescriptorIdHeader:
       in: header
-      name: X-Lynxus-Extension-Descriptor-Id
+      name: X-AgentYard-Extension-Descriptor-Id
       required: true
       schema:
         type: string
-    LynxusTraceIdHeader:
+    AgentYardTraceIdHeader:
       in: header
-      name: X-Lynxus-Trace-Id
+      name: X-AgentYard-Trace-Id
       required: true
       schema:
         type: string
-    LynxusRequestIdHeader:
+    AgentYardRequestIdHeader:
       in: header
-      name: X-Lynxus-Request-Id
+      name: X-AgentYard-Request-Id
       required: true
       schema:
         type: string

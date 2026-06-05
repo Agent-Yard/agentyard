@@ -10,13 +10,13 @@
     {
       "name": "site",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@lynxus/site", "dev", "--port", "5173", "--strictPort"],
+      "runtimeArgs": ["--filter", "@agentyard/site", "dev", "--port", "5173", "--strictPort"],
       "port": 5173
     },
     {
       "name": "site-preview",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@lynxus/site", "preview", "--port", "4173", "--strictPort"],
+      "runtimeArgs": ["--filter", "@agentyard/site", "preview", "--port", "4173", "--strictPort"],
       "port": 4173
     }
   ]

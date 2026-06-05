@@ -12,7 +12,7 @@ COPY packages/extension-protocol/pyproject.toml packages/extension-protocol/pypr
 COPY packages/extension-sdk-python/pyproject.toml packages/extension-sdk-python/pyproject.toml
 COPY packages/python-common/pyproject.toml packages/python-common/pyproject.toml
 
-RUN uv export --quiet --frozen --package lynxus-knowledge-service --no-dev --no-emit-workspace --format requirements-txt --output-file /requirements.txt
+RUN uv export --quiet --frozen --package agentyard-knowledge-service --no-dev --no-emit-workspace --format requirements-txt --output-file /requirements.txt
 
 FROM ghcr.io/astral-sh/uv:python3.11-bookworm AS builder
 
@@ -28,10 +28,10 @@ COPY packages/extension-protocol/pyproject.toml packages/extension-protocol/pypr
 COPY packages/extension-sdk-python/pyproject.toml packages/extension-sdk-python/pyproject.toml
 COPY packages/python-common/pyproject.toml packages/python-common/pyproject.toml
 COPY packages/python-common/src packages/python-common/src
-COPY apps/knowledge-service/lynxus_knowledge_service apps/knowledge-service/lynxus_knowledge_service
+COPY apps/knowledge-service/agentyard_knowledge_service apps/knowledge-service/agentyard_knowledge_service
 
-RUN uv build --package lynxus-python-common --out-dir /dist
-RUN uv build --package lynxus-knowledge-service --out-dir /dist
+RUN uv build --package agentyard-python-common --out-dir /dist
+RUN uv build --package agentyard-knowledge-service --out-dir /dist
 
 FROM python:3.11-slim
 
@@ -54,4 +54,4 @@ RUN pip install --no-cache-dir --no-deps /dist/*.whl && rm -rf /dist /requiremen
 
 EXPOSE 8091
 
-ENTRYPOINT ["uvicorn", "lynxus_knowledge_service.main:app", "--host", "0.0.0.0", "--port", "8091"]
+ENTRYPOINT ["uvicorn", "agentyard_knowledge_service.main:app", "--host", "0.0.0.0", "--port", "8091"]

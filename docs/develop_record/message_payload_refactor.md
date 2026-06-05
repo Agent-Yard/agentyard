@@ -10,7 +10,7 @@
 
 ### Key Changes
 - 公共契约统一：
-  在 [packages/contracts/src/index.ts](/Users/eric/projects/lynxus/packages/contracts/src/index.ts) 和 OpenAPI 中新增消息 payload 类型体系：
+  在 [packages/contracts/src/index.ts](/Users/eric/projects/agentyard/packages/contracts/src/index.ts) 和 OpenAPI 中新增消息 payload 类型体系：
   `ConversationPayloadType = TEXT | EXTERNAL_INTERACTION`；
   `TextMessagePayload` 至少包含 `text`；
   `ExternalInteractionMessagePayload` 对齐现有设计文中的卡片语义。
@@ -28,7 +28,7 @@
   placeholder assistant message、final reply、failure/system message 都以 `TEXT` payload 生成；
   为未来 `EXTERNAL_INTERACTION` 保留显式 builder，不允许直接塞 JSON 文本。
 - 运行时上下文同步升级：
-  [packages/contracts-jvm/src/main/java/com/lynxus/contracts/runtime/WorkflowContracts.java](/Users/eric/projects/lynxus/packages/contracts-jvm/src/main/java/com/lynxus/contracts/runtime/WorkflowContracts.java) 中的 `SessionMessageSnapshot` 改为携带 `payloadType + payload + content`；
+  [packages/contracts-jvm/src/main/java/com/agentyard/contracts/runtime/WorkflowContracts.java](/Users/eric/projects/agentyard/packages/contracts-jvm/src/main/java/com/agentyard/contracts/runtime/WorkflowContracts.java) 中的 `SessionMessageSnapshot` 改为携带 `payloadType + payload + content`；
   `SessionContext.latestMessage` 从纯字符串改为同样的消息快照；
   `WorkflowStartRequest.question` 继续保留为规范化文本，用于检索与 prompt 主问题，不把“消息 refactor”扩散成所有 workflow 输入都多态化。
 - worker / agent-runtime 对齐：

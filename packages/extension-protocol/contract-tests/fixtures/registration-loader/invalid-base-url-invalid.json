@@ -1,9 +1,9 @@
 {
   "name": "baseUrl cannot contain userinfo query or fragment",
-  "operatorYaml": "lynxus:\n  extensions:\n    services:\n      - registrationId: acme-channel-provider\n        baseUrl: https://user:pass@acme-channel-provider:8080/lynxus?debug=true#fragment\n        exposes:\n          channelProviderTypes:\n            - enterprise.acme.internal-im\n        auth:\n          type: INTERNAL_TOKEN\n",
+  "operatorYaml": "agentyard:\n  extensions:\n    services:\n      - registrationId: acme-channel-provider\n        baseUrl: https://user:pass@acme-channel-provider:8080/agentyard?debug=true#fragment\n        exposes:\n          channelProviderTypes:\n            - enterprise.acme.internal-im\n        auth:\n          type: INTERNAL_TOKEN\n",
   "environment": {
-    "LYNXUS_AGENT_RUNTIME_BASE_URL": "http://agent-runtime:8080",
-    "LYNXUS_CHANNEL_GATEWAY_BASE_URL": "http://channel-gateway:8080"
+    "AGENTYARD_AGENT_RUNTIME_BASE_URL": "http://agent-runtime:8080",
+    "AGENTYARD_CHANNEL_GATEWAY_BASE_URL": "http://channel-gateway:8080"
   },
   "expectedErrorCode": "REGISTRATION_CONFIG_INVALID"
 }

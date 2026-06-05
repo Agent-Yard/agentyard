@@ -44,7 +44,7 @@ Channel Profile 不由 manifest 自动生成。管理员通过 Web / API 创建 
 创建成功后，Web 必须展示可复制的 `channelProfileId`。对于 remote channel provider，Web / runbook 的首选配置路径是把 `channelProfileId` 放进 provider public webhook URL path，例如：
 
 ```text
-https://{provider-public-host}/webhooks/lynxus/profiles/{channelProfileId}
+https://{provider-public-host}/webhooks/agentyard/profiles/{channelProfileId}
 ```
 
 `{provider-public-host}` 来自企业 extension 的部署 / runbook，不来自 registration `baseUrl`，Web 不暴露 extension internal URL。若外部系统不支持按对象配置独立 webhook URL，管理员才在 provider 私有配置 / 私有管理入口中维护 `external identity -> channelProfileId` 映射。Web 只展示 `channelProfileId`、profile 状态和配置指引，不定义 provider 私有映射管理协议。

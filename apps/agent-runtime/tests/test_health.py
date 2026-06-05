@@ -5,9 +5,9 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-os.environ.setdefault("LYNXUS_INTERNAL_AUTH_TOKEN", "test-internal-token")
+os.environ.setdefault("AGENTYARD_INTERNAL_AUTH_TOKEN", "test-internal-token")
 
-from lynxus_agent_runtime.main import app
+from agentyard_agent_runtime.main import app
 
 
 class FakeRedisClient:
@@ -70,15 +70,15 @@ class AgentRuntimeHealthTest(unittest.TestCase):
         fake_redis_client = FakeRedisClient([True, True])
         fake_transcript_store = FakeTranscriptStore([{"backend": "postgresql", "schema": "public"}])
 
-        with patch("lynxus_agent_runtime.main.create_redis_client", return_value=fake_redis_client):
-            with patch("lynxus_agent_runtime.main.create_transcript_store", return_value=fake_transcript_store):
+        with patch("agentyard_agent_runtime.main.create_redis_client", return_value=fake_redis_client):
+            with patch("agentyard_agent_runtime.main.create_transcript_store", return_value=fake_transcript_store):
                 with TestClient(app) as client:
                     response = client.get("/healthz")
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["status"], "UP")
-        self.assertEqual(payload["service"], "lynxus-agent-runtime")
+        self.assertEqual(payload["service"], "agentyard-agent-runtime")
         self.assertEqual(payload["dependencies"]["redis"]["status"], "UP")
         self.assertEqual(payload["dependencies"]["redis"]["host"], "127.0.0.1")
         self.assertEqual(payload["dependencies"]["database"]["status"], "UP")
@@ -88,8 +88,8 @@ class AgentRuntimeHealthTest(unittest.TestCase):
         fake_redis_client = FakeRedisClient([True, RuntimeError("redis unavailable")])
         fake_transcript_store = FakeTranscriptStore([{"backend": "postgresql", "schema": "public"}])
 
-        with patch("lynxus_agent_runtime.main.create_redis_client", return_value=fake_redis_client):
-            with patch("lynxus_agent_runtime.main.create_transcript_store", return_value=fake_transcript_store):
+        with patch("agentyard_agent_runtime.main.create_redis_client", return_value=fake_redis_client):
+            with patch("agentyard_agent_runtime.main.create_transcript_store", return_value=fake_transcript_store):
                 with TestClient(app) as client:
                     response = client.get("/healthz")
 
@@ -104,8 +104,8 @@ class AgentRuntimeHealthTest(unittest.TestCase):
         fake_redis_client = FakeRedisClient([True, True])
         fake_transcript_store = FakeTranscriptStore([RuntimeError("postgres unavailable")])
 
-        with patch("lynxus_agent_runtime.main.create_redis_client", return_value=fake_redis_client):
-            with patch("lynxus_agent_runtime.main.create_transcript_store", return_value=fake_transcript_store):
+        with patch("agentyard_agent_runtime.main.create_redis_client", return_value=fake_redis_client):
+            with patch("agentyard_agent_runtime.main.create_transcript_store", return_value=fake_transcript_store):
                 with TestClient(app) as client:
                     response = client.get("/healthz")
 
@@ -122,8 +122,8 @@ class AgentRuntimeHealthTest(unittest.TestCase):
             [RuntimeError("relation owner_context_sequence does not exist")]
         )
 
-        with patch("lynxus_agent_runtime.main.create_redis_client", return_value=fake_redis_client):
-            with patch("lynxus_agent_runtime.main.create_transcript_store", return_value=fake_transcript_store):
+        with patch("agentyard_agent_runtime.main.create_redis_client", return_value=fake_redis_client):
+            with patch("agentyard_agent_runtime.main.create_transcript_store", return_value=fake_transcript_store):
                 with TestClient(app) as client:
                     response = client.get("/healthz")
 

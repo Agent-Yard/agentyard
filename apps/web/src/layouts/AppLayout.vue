@@ -65,8 +65,7 @@ provide(pageHeadActionsKey, pageHeadActions);
           <span class="console-brand-mark__dot"></span>
         </div>
         <div class="console-topbar__brand-copy">
-          <span class="console-topbar__brand-cn">灵枢</span>
-          <span class="console-topbar__brand-en">LYNXUS</span>
+          <span class="console-topbar__brand-en">AGENTYARD</span>
         </div>
       </div>
 
@@ -146,7 +145,7 @@ provide(pageHeadActionsKey, pageHeadActions);
       </nav>
 
       <div class="console-sidebar__foot">
-        <div>lynxus console</div>
+        <div>agentyard console</div>
         <div>{{ activeSectionKey || 'console' }} · {{ environmentLabel }}</div>
         <div>{{ session.userId }}</div>
       </div>

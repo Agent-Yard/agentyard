@@ -64,7 +64,7 @@ tasks.register<JavaExec>("generateJooq") {
     description = "Generate jOOQ classes from the API Flyway-managed PostgreSQL schema."
     dependsOn("codegenClasses")
     classpath = sourceSets["codegen"].runtimeClasspath
-    mainClass.set("com.lynxus.persistence.codegen.JooqCodegenMain")
+    mainClass.set("com.agentyard.persistence.codegen.JooqCodegenMain")
     args(rootProject.projectDir.absolutePath, generatedJooqDir.asFile.absolutePath)
     inputs.dir(rootProject.file("apps/api/src/main/resources/db/migration"))
     outputs.dir(generatedJooqDir)
@@ -75,7 +75,7 @@ tasks.register<JavaExec>("generateJooqVerification") {
     description = "Generate jOOQ classes into a temporary directory for verification."
     dependsOn("codegenClasses")
     classpath = sourceSets["codegen"].runtimeClasspath
-    mainClass.set("com.lynxus.persistence.codegen.JooqCodegenMain")
+    mainClass.set("com.agentyard.persistence.codegen.JooqCodegenMain")
     args(rootProject.projectDir.absolutePath, verificationJooqDir.get().asFile.absolutePath)
     inputs.dir(rootProject.file("apps/api/src/main/resources/db/migration"))
     outputs.dir(verificationJooqDir)

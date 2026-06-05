@@ -1,4 +1,4 @@
-rootProject.name = "lynxus"
+rootProject.name = "agentyard"
 
 pluginManagement {
     repositories {

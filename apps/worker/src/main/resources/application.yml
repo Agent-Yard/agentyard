@@ -1,20 +1,20 @@
 spring:
   application:
-    name: lynxus-worker
+    name: agentyard-worker
   datasource:
-    url: ${LYNXUS_CORE_DATASOURCE_URL:jdbc:postgresql://127.0.0.1:5432/lynxus_core}
-    username: ${SPRING_DATASOURCE_USERNAME:lynxus}
-    password: ${SPRING_DATASOURCE_PASSWORD:lynxus}
+    url: ${AGENTYARD_CORE_DATASOURCE_URL:jdbc:postgresql://127.0.0.1:5432/agentyard_core}
+    username: ${SPRING_DATASOURCE_USERNAME:agentyard}
+    password: ${SPRING_DATASOURCE_PASSWORD:agentyard}
   data:
     redis:
-      host: ${LYNXUS_REDIS_HOST:127.0.0.1}
-      port: ${LYNXUS_REDIS_PORT:6379}
-      database: ${LYNXUS_REDIS_DATABASE:0}
-      username: ${LYNXUS_REDIS_USERNAME:}
-      password: ${LYNXUS_REDIS_PASSWORD:lynxus}
+      host: ${AGENTYARD_REDIS_HOST:127.0.0.1}
+      port: ${AGENTYARD_REDIS_PORT:6379}
+      database: ${AGENTYARD_REDIS_DATABASE:0}
+      username: ${AGENTYARD_REDIS_USERNAME:}
+      password: ${AGENTYARD_REDIS_PASSWORD:agentyard}
       ssl:
-        enabled: ${LYNXUS_REDIS_SSL_ENABLED:false}
-      timeout: ${LYNXUS_REDIS_TIMEOUT:3s}
+        enabled: ${AGENTYARD_REDIS_SSL_ENABLED:false}
+      timeout: ${AGENTYARD_REDIS_TIMEOUT:3s}
 
 logging:
   structured:
@@ -28,26 +28,26 @@ logging:
         service: ${spring.application.name}
 
 server:
-  port: ${LYNXUS_WORKER_PORT:8081}
+  port: ${AGENTYARD_WORKER_PORT:8081}
 
-lynxus:
+agentyard:
   shared-state:
-    instance-id: ${LYNXUS_INSTANCE_ID:}
+    instance-id: ${AGENTYARD_INSTANCE_ID:}
   agent-runtime:
-    base-url: ${LYNXUS_AGENT_RUNTIME_BASE_URL:http://127.0.0.1:8090}
+    base-url: ${AGENTYARD_AGENT_RUNTIME_BASE_URL:http://127.0.0.1:8090}
   api:
-    base-url: ${LYNXUS_API_BASE_URL:http://127.0.0.1:8080/api}
+    base-url: ${AGENTYARD_API_BASE_URL:http://127.0.0.1:8080/api}
   sandbox:
-    base-url: ${LYNXUS_SANDBOX_BASE_URL:http://127.0.0.1:8092}
+    base-url: ${AGENTYARD_SANDBOX_BASE_URL:http://127.0.0.1:8092}
   knowledge-service:
-    base-url: ${LYNXUS_KNOWLEDGE_SERVICE_BASE_URL:http://127.0.0.1:8091}
+    base-url: ${AGENTYARD_KNOWLEDGE_SERVICE_BASE_URL:http://127.0.0.1:8091}
   internal-auth:
-    token: ${LYNXUS_INTERNAL_AUTH_TOKEN}
+    token: ${AGENTYARD_INTERNAL_AUTH_TOKEN}
   redis:
-    health-check-enabled: ${LYNXUS_REDIS_HEALTH_CHECK_ENABLED:true}
-    key-prefix: ${LYNXUS_REDIS_KEY_PREFIX:lynxus}
+    health-check-enabled: ${AGENTYARD_REDIS_HEALTH_CHECK_ENABLED:true}
+    key-prefix: ${AGENTYARD_REDIS_KEY_PREFIX:agentyard}
   temporal:
-    target: ${LYNXUS_TEMPORAL_TARGET:127.0.0.1:7233}
-    namespace: ${LYNXUS_TEMPORAL_NAMESPACE:default}
-    task-queue: ${LYNXUS_TEMPORAL_TASK_QUEUE:lynxus-customer-ops}
-    activity-start-to-close-timeout: ${LYNXUS_TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT:PT2M}
+    target: ${AGENTYARD_TEMPORAL_TARGET:127.0.0.1:7233}
+    namespace: ${AGENTYARD_TEMPORAL_NAMESPACE:default}
+    task-queue: ${AGENTYARD_TEMPORAL_TASK_QUEUE:agentyard-customer-ops}
+    activity-start-to-close-timeout: ${AGENTYARD_TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT:PT2M}

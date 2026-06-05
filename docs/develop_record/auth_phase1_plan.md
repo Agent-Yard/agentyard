@@ -9,18 +9,18 @@
 - API 已接入 Spring Security + OAuth2 Client，请求级鉴权由统一 security filter chain 承担
 - 新增 `GET /api/auth/login`、`POST /api/auth/logout`，浏览器通过 HttpOnly session cookie 访问 `/api`
 - `/api/auth/session` 只在已认证时返回当前平台用户会话；未认证时返回 `401`
-- API 启动时会同步本地 bootstrap admin 账户，确保其用户名与 `lynxus.auth.bootstrap.username` 配置一致
+- API 启动时会同步本地 bootstrap admin 账户，确保其用户名与 `agentyard.auth.bootstrap.username` 配置一致
 - 外部身份已扩展为 `issuer + subject`，本地用户 provisioning 按 `(external_issuer, external_subject)` 识别唯一身份
 - `CurrentUserResolver`、`ExternalIdentityValidator`、`UserProvisioningService` 已用于真实 OIDC 登录链路
 - API 已启用 method security；治理类写接口通过可复用 RBAC 注解收敛到 `PLATFORM_ADMIN / DOMAIN_ADMIN / DEVELOPER`
 - `BUSINESS_USER` 保留运行态访问与目录只读，不允许目录治理写操作
-- API、Worker、Agent Runtime、Knowledge Service 的内部 HTTP 调用统一要求 `Authorization: Bearer <LYNXUS_INTERNAL_AUTH_TOKEN>`
+- API、Worker、Agent Runtime、Knowledge Service 的内部 HTTP 调用统一要求 `Authorization: Bearer <AGENTYARD_INTERNAL_AUTH_TOKEN>`
 - 新增认证配置：
-  - `lynxus.auth.bootstrap.username`
-  - `lynxus.auth.default-role`
-  - `lynxus.auth.dev-bootstrap-enabled`
-  - `lynxus.auth.login-success-path`
-  - `lynxus.internal-auth.token`
+  - `agentyard.auth.bootstrap.username`
+  - `agentyard.auth.default-role`
+  - `agentyard.auth.dev-bootstrap-enabled`
+  - `agentyard.auth.login-success-path`
+  - `agentyard.internal-auth.token`
 
 ## 当前边界
 

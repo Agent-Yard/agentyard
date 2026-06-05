@@ -1,4 +1,4 @@
-# Lynxus 当前代码框架
+# AgentYard 当前代码框架
 
 ## 阶段定位
 
@@ -6,7 +6,7 @@
 
 更贴切的描述是：
 
-- 默认单租户的企业智能体中台原型
+- 默认单租户的智能体系统原型
 - 以 assistant release 为配置锚点的运行系统
 - 以 `session workflow + owner agent + playbook workflow` 为核心主线的代码底座
 
@@ -97,11 +97,11 @@ Java core 数据访问当前以 `Flyway + jOOQ + packages/persistence-jvm` 为�
 
 ## Worker 与 Runtime 分工
 
-- `apps/worker/src/main/java/com/lynxus/worker/session`
+- `apps/worker/src/main/java/com/agentyard/worker/session`
   - 负责 `SessionWorkflowImpl`
   - 负责 `PlaybookWorkflowImpl`
   - 负责 session / playbook 持久化 activity
-- `apps/worker/src/main/java/com/lynxus/worker/runtime`
+- `apps/worker/src/main/java/com/agentyard/worker/runtime`
   - 负责通过 HTTP 调用 Python `agent-runtime`、`knowledge-service` 与 sandbox
 - `apps/agent-runtime`
   - 负责执行单个 owner agent 的一轮推理

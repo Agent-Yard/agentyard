@@ -30,13 +30,13 @@ function parseOptionalNumber(value?: string): number | undefined {
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, WORKSPACE_ROOT, '');
-  const apiProxyTarget = env.LYNXUS_WEB_DEV_PROXY_TARGET || 'http://127.0.0.1:8080';
-  const webPort = Number(env.LYNXUS_WEB_PORT || 5173);
-  const allowedHosts = parseCsv(env.LYNXUS_WEB_ALLOWED_HOSTS);
-  const hmrProtocol = env.LYNXUS_WEB_HMR_PROTOCOL?.trim();
-  const hmrHost = env.LYNXUS_WEB_HMR_HOST?.trim();
-  const hmrPort = parseOptionalNumber(env.LYNXUS_WEB_HMR_PORT);
-  const hmrClientPort = parseOptionalNumber(env.LYNXUS_WEB_HMR_CLIENT_PORT);
+  const apiProxyTarget = env.AGENTYARD_WEB_DEV_PROXY_TARGET || 'http://127.0.0.1:8080';
+  const webPort = Number(env.AGENTYARD_WEB_PORT || 5173);
+  const allowedHosts = parseCsv(env.AGENTYARD_WEB_ALLOWED_HOSTS);
+  const hmrProtocol = env.AGENTYARD_WEB_HMR_PROTOCOL?.trim();
+  const hmrHost = env.AGENTYARD_WEB_HMR_HOST?.trim();
+  const hmrPort = parseOptionalNumber(env.AGENTYARD_WEB_HMR_PORT);
+  const hmrClientPort = parseOptionalNumber(env.AGENTYARD_WEB_HMR_CLIENT_PORT);
   const shouldConfigureHmr = Boolean(hmrProtocol || hmrHost || hmrPort || hmrClientPort);
 
   return {

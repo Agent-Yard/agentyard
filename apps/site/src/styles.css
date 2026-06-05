@@ -239,25 +239,6 @@ h1 {
   letter-spacing: -0.02em;
 }
 
-.hero-cn-name {
-  margin: -10px 0 18px;
-  color: var(--teal-dark);
-  font-size: clamp(1.1rem, 1.6vw, 1.35rem);
-  font-weight: 700;
-  letter-spacing: 0.32em;
-  text-indent: 0.32em;
-}
-
-html[data-lang="en"] .hero-cn-name,
-html[data-lang="en"] .footer-cn-name {
-  display: none;
-}
-
-.footer-cn-name {
-  color: var(--muted);
-  font-weight: 600;
-}
-
 .hero-lede {
   width: min(680px, 100%);
   margin: 0 auto;

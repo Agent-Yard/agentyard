@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from lynxus_extension_sdk.protocol import (
+from agentyard_extension_sdk.protocol import (
     DESCRIPTOR_ID_HEADER,
     DESCRIPTOR_TYPE_HEADER,
     IDEMPOTENCY_KEY_HEADER,

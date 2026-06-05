@@ -1,6 +1,6 @@
 import unittest
 
-from lynxus_agent_runtime.openai_compatible import (
+from agentyard_agent_runtime.openai_compatible import (
     OpenAiCompatibleStreamAccumulator,
     OpenAiCompatibleStreamIdleTimeoutError,
     OpenAiCompatibleStreamMalformedError,

@@ -1,0 +1,46 @@
+package com.agentyard.worker.session;
+
+import com.agentyard.contracts.session.SessionRuntimeChangeNotice;
+import com.agentyard.worker.shared.redis.WorkerSharedStateProperties;
+import com.agentyard.shared.redis.RedisJsonCodec;
+import com.agentyard.shared.redis.RedisKeyspace;
+import com.agentyard.shared.redis.RedisPubSubBus;
+import java.time.Instant;
+import org.springframework.stereotype.Component;
+
+@Component
+public class SessionRuntimeChangePublisher {
+    private final JooqSessionProjectionRepository repository;
+    private final RedisPubSubBus pubSubBus;
+    private final RedisKeyspace keyspace;
+    private final RedisJsonCodec codec;
+    private final WorkerSharedStateProperties properties;
+
+    public SessionRuntimeChangePublisher(
+        JooqSessionProjectionRepository repository,
+        RedisPubSubBus pubSubBus,
+        RedisKeyspace keyspace,
+        RedisJsonCodec codec,
+        WorkerSharedStateProperties properties
+    ) {
+        this.repository = repository;
+        this.pubSubBus = pubSubBus;
+        this.keyspace = keyspace;
+        this.codec = codec;
+        this.properties = properties;
+    }
+
+    public void publishSessionChanged(String sessionId) {
+        repository.findSessionChangeStamp(sessionId).ifPresent(this::publish);
+    }
+
+    private void publish(JooqSessionProjectionRepository.SessionRuntimeChangeStamp stamp) {
+        SessionRuntimeChangeNotice notice = new SessionRuntimeChangeNotice(
+            stamp.sessionId(),
+            stamp.fingerprint(),
+            Instant.now(),
+            properties.instanceId()
+        );
+        pubSubBus.publish(keyspace.sseChannelSessionChanged(), codec.write(notice));
+    }
+}

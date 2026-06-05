@@ -4,11 +4,11 @@
   "expectedErrorCode": "TRACE_CONTEXT_REQUIRED",
   "headers": {
     "Authorization": "Bearer internal-token",
-    "X-Lynxus-Extension-Registration-Id": "acme-connectors",
-    "X-Lynxus-Extension-Descriptor-Type": "TOOL_CONNECTOR",
-    "X-Lynxus-Extension-Descriptor-Id": "enterprise.acme.crm",
-    "X-Lynxus-Trace-Id": "4bf92f3577b34da6a3ce929d0e0e4736",
-    "X-Lynxus-Request-Id": "request-2",
+    "X-AgentYard-Extension-Registration-Id": "acme-connectors",
+    "X-AgentYard-Extension-Descriptor-Type": "TOOL_CONNECTOR",
+    "X-AgentYard-Extension-Descriptor-Id": "enterprise.acme.crm",
+    "X-AgentYard-Trace-Id": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "X-AgentYard-Request-Id": "request-2",
     "Idempotency-Key": "tool-call-2"
   },
   "request": {

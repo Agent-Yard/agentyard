@@ -8,8 +8,8 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from lynxus_agent_runtime.models import AgentDecision, AgentTurnExecutionOutcome, AgentTurnResult
-from lynxus_agent_runtime.transcript_store import (
+from agentyard_agent_runtime.models import AgentDecision, AgentTurnExecutionOutcome, AgentTurnResult
+from agentyard_agent_runtime.transcript_store import (
     Base,
     DEFAULT_SCHEMA_NAME,
     OwnerContextSequenceRecord,
@@ -35,7 +35,7 @@ class TranscriptStoreSerializationTest(unittest.TestCase):
             settings = TranscriptStoreSettings.from_env()
 
         self.assertEqual(
-            "postgresql+psycopg://lynxus:lynxus@127.0.0.1:5432/lynxus_agent_runtime",
+            "postgresql+psycopg://agentyard:agentyard@127.0.0.1:5432/agentyard_agent_runtime",
             settings.database_url,
         )
 

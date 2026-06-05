@@ -1,11 +1,11 @@
 [project]
-name = "lynxus-extension-sdk"
+name = "agentyard-extension-sdk"
 version = "0.1.0"
-description = "Python SDK skeleton for Lynxus Extension Plane implementations"
+description = "Python SDK skeleton for AgentYard Extension Plane implementations"
 requires-python = ">=3.11"
 dependencies = [
     "jsonschema>=4.25.1,<5",
-    "lynxus-extension-protocol",
+    "agentyard-extension-protocol",
     "pyyaml>=6.0.3,<7",
     "referencing>=0.36,<1",
 ]
@@ -15,7 +15,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/lynxus_extension_sdk"]
+packages = ["src/agentyard_extension_sdk"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

@@ -22,7 +22,7 @@ function goToDevBootstrapLogin() {
   <div class="login-screen">
     <div class="login-card">
       <span class="login-card__eyebrow">OIDC Sign-In</span>
-      <a-typography-title :level="2">登录 Lynxus 控制台</a-typography-title>
+      <a-typography-title :level="2">登录 AgentYard 控制台</a-typography-title>
       <a-typography-paragraph type="secondary" class="login-card__meta">
         控制台认证已切换为 API 托管会话。浏览器不会持久化 access token，登录完成后只通过同域 HttpOnly session cookie 访问 `/api`。
       </a-typography-paragraph>

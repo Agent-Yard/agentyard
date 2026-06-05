@@ -57,9 +57,9 @@
 
 - 已改内容：
   - 新增 JVM 共享契约：
-    - `packages/contracts-jvm/src/main/java/com/lynxus/contracts/session/SessionContracts.java`
-    - `packages/contracts-jvm/src/main/java/com/lynxus/contracts/session/SessionWorkflow.java`
-    - `packages/contracts-jvm/src/main/java/com/lynxus/contracts/session/PlaybookWorkflow.java`
+    - `packages/contracts-jvm/src/main/java/com/agentyard/contracts/session/SessionContracts.java`
+    - `packages/contracts-jvm/src/main/java/com/agentyard/contracts/session/SessionWorkflow.java`
+    - `packages/contracts-jvm/src/main/java/com/agentyard/contracts/session/PlaybookWorkflow.java`
   - 扩展 TS 共享契约：
     - `packages/contracts/src/index.ts`
     - 新增 `SessionSnapshot / SessionEvent / PlaybookRun / AgentTurnRequestV2 / AgentTurnResultV2` 等类型
@@ -82,7 +82,7 @@
   - catalog service
   - assistant/agent 配置页
 - 验证：
-  - `./gradlew :packages:contracts-jvm:compileJava :apps:worker:compileJava :apps:api:test --tests com.lynxus.platform.catalog.CatalogReferenceProjectionTest` 通过
+  - `./gradlew :packages:contracts-jvm:compileJava :apps:worker:compileJava :apps:api:test --tests com.agentyard.platform.catalog.CatalogReferenceProjectionTest` 通过
   - `pnpm --dir apps/web lint` 通过
 - 当前结论：
   - 阶段 B 已完成第一批基础改造，但尚未完成：
@@ -119,7 +119,7 @@
     - `SessionWorkflow`
     - `PlaybookWorkflow`
     - `AgentTurnActivities`
-  - `apps/agent-runtime/lynxus_agent_runtime/main.py`
+  - `apps/agent-runtime/agentyard_agent_runtime/main.py`
     - 新增 `/agent-turns/execute`
     - 新增 V2 agent-turn / session / playbook 请求响应模型
 - 当前实现状态：
@@ -201,7 +201,7 @@
     - `ApiAuthorizationTest`、`ApiLogContextFilterTest`、`ApiLogContextFilter` 已切到 `/api/session-runtime/...`
 - 验证：
   - `pnpm --dir apps/web lint` 通过
-  - `./gradlew :apps:api:test --tests com.lynxus.platform.auth.ApiAuthorizationTest --tests com.lynxus.platform.shared.logging.ApiLogContextFilterTest :apps:api:compileJava` 通过
+  - `./gradlew :apps:api:test --tests com.agentyard.platform.auth.ApiAuthorizationTest --tests com.agentyard.platform.shared.logging.ApiLogContextFilterTest :apps:api:compileJava` 通过
 - 当前结论：
   - 旧 runtime API/controller/service/repository/web 页面不再留在主工程中
   - 剩余主要旧逻辑集中在：
@@ -248,7 +248,7 @@
   - `docs/architecture`
     - `external-interaction-integration.md` 重写为 session/playbook 语义，明确旧 `ExternalInteractionTask` 模型不再作为当前架构基准
 - 验证：
-  - `./gradlew :packages:contracts-jvm:compileJava :apps:worker:compileJava :apps:api:test --tests com.lynxus.platform.catalog.CatalogServiceTest --tests com.lynxus.platform.catalog.CatalogReferenceProjectionTest` 通过
+  - `./gradlew :packages:contracts-jvm:compileJava :apps:worker:compileJava :apps:api:test --tests com.agentyard.platform.catalog.CatalogServiceTest --tests com.agentyard.platform.catalog.CatalogReferenceProjectionTest` 通过
   - `pnpm --dir apps/web lint` 通过
   - 仓内搜索 `AssistantRunWorkflow / GraphSnapshot / DecisionType / ResumeIntervention / WorkflowInstance / ConversationSession / orchestration runtime` 等旧关键字时，主工程有效代码已清空；剩余提及仅限执行文档与必要的“旧模型已废弃”说明
 - 当前结论：
@@ -295,14 +295,14 @@
     - create/send/resume/callback/handoff reply 后统一改为“发命令 -> 读库”
     - 关闭 workflow 时仅保留 `ENDED` 收口补偿
   - `infra`
-    - `postgres-bootstrap` 和 dev compose 默认数据库名已改为 `lynxus_core`
-    - worker dev compose 已补 datasource 指向 `lynxus_core`
+    - `postgres-bootstrap` 和 dev compose 默认数据库名已改为 `agentyard_core`
+    - worker dev compose 已补 datasource 指向 `agentyard_core`
 - 验证：
-  - `./gradlew :packages:contracts-jvm:compileJava :apps:worker:compileJava :apps:api:test --tests com.lynxus.platform.session.SessionRuntimeServiceTest :apps:api:compileJava` 通过
+  - `./gradlew :packages:contracts-jvm:compileJava :apps:worker:compileJava :apps:api:test --tests com.agentyard.platform.session.SessionRuntimeServiceTest :apps:api:compileJava` 通过
 - 当前结论：
   - “API 拉 `currentProjection()` 同步控制面”的旧思路已退出主路径
   - worker 已成为 `session / session_event / playbook_run` 的主动持久化执行者
-  - shared core DB 的默认口径已切到 `lynxus_core`
+  - shared core DB 的默认口径已切到 `agentyard_core`
 - 下一步：
   - 进入 playbook 执行层改造
   - 先补 `STEP -> sandbox` 和 `TOOL_TASK -> runtime capability`
@@ -347,7 +347,7 @@
     - 删除 TS 中遗留的 `SessionProjection` 死类型
     - 补齐 `PlaybookStartRequest.ownerAgent` 与 playbook tool task 对应类型
 - 验证：
-  - `./gradlew :packages:contracts-jvm:compileJava :apps:worker:compileJava :apps:api:test --tests com.lynxus.platform.session.SessionRuntimeServiceTest --tests com.lynxus.platform.catalog.CatalogServiceTest --tests com.lynxus.platform.catalog.CatalogReferenceProjectionTest :apps:api:compileJava` 通过
+  - `./gradlew :packages:contracts-jvm:compileJava :apps:worker:compileJava :apps:api:test --tests com.agentyard.platform.session.SessionRuntimeServiceTest --tests com.agentyard.platform.catalog.CatalogServiceTest --tests com.agentyard.platform.catalog.CatalogReferenceProjectionTest :apps:api:compileJava` 通过
   - `uv run pytest apps/agent-runtime/tests/test_internal_auth.py apps/agent-runtime/tests/test_prompting.py apps/agent-runtime/tests/test_decisioning_loop.py apps/agent-runtime/tests/test_playbook_tool_task.py -q` 通过
   - `pnpm --dir apps/web lint` 通过
   - `rg -n "AssistantRunWorkflow|GraphSnapshot|ResumeIntervention|ConversationSession|LangGraph|AssistantOrchestration|currentProjection\\(" apps packages -g '!**/build/**' -S` 无命中
@@ -358,23 +358,23 @@
 ### 记录 033：补齐 `.env` sample 对新增配置的同步
 
 - 触发原因：
-  - 最终收口后复核发现 `.env.example` / `.env.dev.example` 仍残留旧 `lynxus_api` 数据库名，且未补入 sandbox 相关 sample 配置
+  - 最终收口后复核发现 `.env.example` / `.env.dev.example` 仍残留旧 `agentyard_api` 数据库名，且未补入 sandbox 相关 sample 配置
 - 已改内容：
   - `.env.example`
-    - `SPRING_DATASOURCE_URL` 改为 `lynxus_core`
-    - 新增 `LYNXUS_SANDBOX_BASE_URL`
-    - 新增 `LYNXUS_IMAGE_SANDBOX`
+    - `SPRING_DATASOURCE_URL` 改为 `agentyard_core`
+    - 新增 `AGENTYARD_SANDBOX_BASE_URL`
+    - 新增 `AGENTYARD_IMAGE_SANDBOX`
   - `.env.dev.example`
-    - `SPRING_DATASOURCE_URL` 改为 `lynxus_core`
-    - 新增 `LYNXUS_SANDBOX_BASE_URL`
-    - 新增 `LYNXUS_IMAGE_SANDBOX`
+    - `SPRING_DATASOURCE_URL` 改为 `agentyard_core`
+    - 新增 `AGENTYARD_SANDBOX_BASE_URL`
+    - 新增 `AGENTYARD_IMAGE_SANDBOX`
 - 当前结论：
   - sample 配置文件已与当前实现口径重新对齐
 
 ### 记录 034：清理文档中的旧数据库名口径
 
 - 触发原因：
-  - 复查发现仓内对外说明文档仍有 `lynxus_api` 旧口径，和当前 `lynxus_core` 实现不一致
+  - 复查发现仓内对外说明文档仍有 `agentyard_api` 旧口径，和当前 `agentyard_core` 实现不一致
 - 已改内容：
   - `README.md`
   - `docs/architecture/local-development.md`
@@ -382,7 +382,7 @@
   - `infra/local/docker-compose.yml`
   - `infra/local/postgres-bootstrap/init-databases.sh`
 - 当前结论：
-  - 仓内剩余 `lynxus_api` 命中仅保留在 `docs/doing` 的历史执行记录中，不再出现在当前实现、环境变量名或运行文档里
+  - 仓内剩余 `agentyard_api` 命中仅保留在 `docs/doing` 的历史执行记录中，不再出现在当前实现、环境变量名或运行文档里
 
 ### 记录 035：修复 worker 启动时的 Temporal activity interface 注册失败
 
@@ -390,8 +390,8 @@
   - worker 启动时报错：`Class doesn't implement any non empty interface annotated with @ActivityInterface`
   - 根因是新加的 `SessionPersistenceActivities` 缺少 `@ActivityInterface`；`PlaybookNodeActivities` 也存在同类遗漏
 - 已改内容：
-  - `apps/worker/src/main/java/com/lynxus/worker/session/SessionPersistenceActivities.java`
-  - `apps/worker/src/main/java/com/lynxus/worker/session/PlaybookNodeActivities.java`
+  - `apps/worker/src/main/java/com/agentyard/worker/session/SessionPersistenceActivities.java`
+  - `apps/worker/src/main/java/com/agentyard/worker/session/PlaybookNodeActivities.java`
 - 验证：
   - `./gradlew :apps:worker:compileJava` 通过
 - 当前结论：
@@ -400,7 +400,7 @@
 ### 记录 012：为 session workflow 骨架补上第一层状态机 guardrail
 
 - 已改内容：
-  - `apps/worker/src/main/java/com/lynxus/worker/session/SessionWorkflowImpl.java`
+  - `apps/worker/src/main/java/com/agentyard/worker/session/SessionWorkflowImpl.java`
     - 为 `submitUserMessage` 增加 `playbook active / human handoff active / draining` 拒绝条件
     - 对 `SWITCH_OWNER / RUN_PLAYBOOK / SESSION_HUMAN_HANDOFF` 增加 owner/action/playbook 级校验，不再无条件接受 agent-runtime 决策
     - `humanResume / externalCallback / endHumanHandoff` 现在会清理对应运行态并标记 `pendingOwnerReevaluation`
@@ -409,7 +409,7 @@
   - 删除旧链后，新的 session workflow 仍然过于骨架化；若不先补最基本的 guardrail，后续继续填事件与 child workflow 时会把非法状态直接带进主链
 - 验证：
   - `./gradlew :apps:worker:compileJava :packages:contracts-jvm:compileJava` 通过
-  - `./gradlew :apps:api:test --tests com.lynxus.platform.catalog.CatalogServiceTest --tests com.lynxus.platform.catalog.CatalogReferenceProjectionTest` 通过
+  - `./gradlew :apps:api:test --tests com.agentyard.platform.catalog.CatalogServiceTest --tests com.agentyard.platform.catalog.CatalogReferenceProjectionTest` 通过
   - `pnpm --dir apps/web lint` 通过
 - 当前结论：
   - session workflow 仍未达到设计文档完整状态，但已经不再是“完全无校验的 happy-path skeleton”
@@ -460,7 +460,7 @@
     - TS contracts 与 OpenAPI 补上 `SessionProjection`、`HumanResumeRequest`、`ExternalCallbackRequest` 与新增 session-runtime 入口
 - 验证：
   - `./gradlew :packages:contracts-jvm:compileJava :apps:worker:compileJava :apps:api:compileJava` 通过
-  - `./gradlew :packages:contracts-jvm:compileJava :apps:worker:compileJava :apps:api:test --tests com.lynxus.platform.catalog.CatalogServiceTest --tests com.lynxus.platform.catalog.CatalogReferenceProjectionTest :apps:api:compileJava` 通过
+  - `./gradlew :packages:contracts-jvm:compileJava :apps:worker:compileJava :apps:api:test --tests com.agentyard.platform.catalog.CatalogServiceTest --tests com.agentyard.platform.catalog.CatalogReferenceProjectionTest :apps:api:compileJava` 通过
   - `pnpm --dir apps/web lint` 通过
 - 当前结论：
   - session-runtime 已不再只是“session snapshot + API 侧猜测事件”
@@ -578,7 +578,7 @@
     - `Assistant` / `AssistantRelease` 已包含 `playbooks`
     - `AgentPage` 现在从当前 assistant 的真实 `playbooks` 列表里选择 `playbookIds`，不再是盲填
 - 验证：
-  - `./gradlew :packages:contracts-jvm:compileJava :apps:worker:compileJava :apps:api:test --tests com.lynxus.platform.catalog.CatalogServiceTest --tests com.lynxus.platform.catalog.CatalogReferenceProjectionTest :apps:api:compileJava` 通过
+  - `./gradlew :packages:contracts-jvm:compileJava :apps:worker:compileJava :apps:api:test --tests com.agentyard.platform.catalog.CatalogServiceTest --tests com.agentyard.platform.catalog.CatalogReferenceProjectionTest :apps:api:compileJava` 通过
   - `uv run pytest apps/agent-runtime/tests/test_internal_auth.py apps/agent-runtime/tests/test_prompting.py -q` 通过
   - `pnpm --dir apps/web lint` 通过
 - 当前结论：
@@ -630,7 +630,7 @@
     - playbook 删除已切到统一 deletion preview 流
     - reference presentation 已补上 playbook relation label 与 object label
 - 验证：
-  - `./gradlew :apps:api:test --tests com.lynxus.platform.catalog.CatalogServiceTest --tests com.lynxus.platform.catalog.CatalogReferenceProjectionTest :apps:api:compileJava` 通过
+  - `./gradlew :apps:api:test --tests com.agentyard.platform.catalog.CatalogServiceTest --tests com.agentyard.platform.catalog.CatalogReferenceProjectionTest :apps:api:compileJava` 通过
   - `pnpm --dir apps/web lint` 通过
 - 设计核查新发现：
   - 最终逐节对照设计文档时，发现 API 侧还缺少 `sessionId / 对话绑定键` 串行投递锁
@@ -659,7 +659,7 @@
       - 覆盖已结束 session 的 `ENDED` 落盘
       - 覆盖关闭 workflow 上的消息拒绝
 - 验证：
-  - `./gradlew :packages:contracts-jvm:compileJava :apps:worker:compileJava :apps:api:test --tests com.lynxus.platform.session.SessionRuntimeServiceTest --tests com.lynxus.platform.catalog.CatalogServiceTest --tests com.lynxus.platform.catalog.CatalogReferenceProjectionTest :apps:api:compileJava` 通过
+  - `./gradlew :packages:contracts-jvm:compileJava :apps:worker:compileJava :apps:api:test --tests com.agentyard.platform.session.SessionRuntimeServiceTest --tests com.agentyard.platform.catalog.CatalogServiceTest --tests com.agentyard.platform.catalog.CatalogReferenceProjectionTest :apps:api:compileJava` 通过
   - `uv run pytest apps/agent-runtime/tests/test_internal_auth.py apps/agent-runtime/tests/test_prompting.py -q` 通过
   - `pnpm --dir apps/web lint` 通过
   - `rg -n "LangGraph|AssistantRunWorkflow|ConversationSession|ResumeIntervention|WorkflowInstance|GraphSnapshot|DecisionType|AssistantOrchestration" apps packages -S` 无命中
@@ -762,7 +762,7 @@
       - 更新当前边界说明，反映真实 descriptor 注入与消费已完成
 - 验证：
   - `uv run pytest apps/agent-runtime/tests/test_internal_auth.py apps/agent-runtime/tests/test_prompting.py apps/agent-runtime/tests/test_decisioning_loop.py -q` 通过
-  - `./gradlew :packages:contracts-jvm:compileJava :apps:worker:compileJava :apps:api:test --tests com.lynxus.platform.session.SessionRuntimeServiceTest :apps:api:compileJava` 通过
+  - `./gradlew :packages:contracts-jvm:compileJava :apps:worker:compileJava :apps:api:test --tests com.agentyard.platform.session.SessionRuntimeServiceTest :apps:api:compileJava` 通过
   - `pnpm --dir apps/web lint` 通过
 - 当前结论：
   - tool / skill 已完成从前端配置、catalog 发布冻结、API 注入到 runtime 真消费的闭环
@@ -803,13 +803,13 @@
     - `prompting.py` / `README.md` 同步反映 knowledge binding 与远程检索边界
   - 测试：
     - `apps/agent-runtime/tests/test_decisioning_loop.py` 覆盖 knowledge search/read 远程调用链
-    - `apps/api/src/test/java/com/lynxus/platform/session/SessionRuntimeServiceTest.java` 校验冻结 knowledge binding 已注入 workflow start request
+    - `apps/api/src/test/java/com/agentyard/platform/session/SessionRuntimeServiceTest.java` 校验冻结 knowledge binding 已注入 workflow start request
 - 原因：
   - 用户明确要求保留“runtime 远程调用检索”的系统边界
   - 需要把此前设计文档中的“合并 knowledge-service”表述与当前实现彻底对齐
 - 验证：
   - `uv run pytest apps/agent-runtime/tests/test_internal_auth.py apps/agent-runtime/tests/test_prompting.py apps/agent-runtime/tests/test_decisioning_loop.py -q` 通过
-  - `./gradlew :packages:contracts-jvm:compileJava :apps:worker:compileJava :apps:api:test --tests com.lynxus.platform.session.SessionRuntimeServiceTest :apps:api:compileJava` 通过
+  - `./gradlew :packages:contracts-jvm:compileJava :apps:worker:compileJava :apps:api:test --tests com.agentyard.platform.session.SessionRuntimeServiceTest :apps:api:compileJava` 通过
   - `pnpm --dir apps/web lint` 通过
 - 当前结论：
   - knowledge 检索已形成“前端配置/发布冻结 -> API 注入 -> runtime builtin tools -> knowledge-service 远程读取”的真实闭环
@@ -831,10 +831,10 @@
 ### 记录 028：完成 knowledge builtin tools 按需注入收口
 
 - 已改内容：
-  - `apps/agent-runtime/lynxus_agent_runtime/tooling.py`
+  - `apps/agent-runtime/agentyard_agent_runtime/tooling.py`
     - 新增统一的 `resolve_knowledge_binding(...)`
     - builtin knowledge tool 暴露、owner capability 回显、knowledge tool 执行均改为基于 effective binding 判定
-  - `apps/agent-runtime/lynxus_agent_runtime/prompting.py`
+  - `apps/agent-runtime/agentyard_agent_runtime/prompting.py`
     - prompt capabilities 中的 `knowledgeBinding` 改为基于 effective binding 暴露
   - 测试：
     - `apps/agent-runtime/tests/test_decisioning_loop.py`
@@ -846,7 +846,7 @@
   - 若配置脏数据导致 `knowledgeEnabled=false` 但 request 仍带 binding，则 runtime 不暴露、不提示、也不允许执行 knowledge builtin tools
 - 验证：
   - `uv run pytest apps/agent-runtime/tests/test_internal_auth.py apps/agent-runtime/tests/test_prompting.py apps/agent-runtime/tests/test_decisioning_loop.py -q` 通过
-  - `uv run python -m compileall apps/agent-runtime/lynxus_agent_runtime` 通过
+  - `uv run python -m compileall apps/agent-runtime/agentyard_agent_runtime` 通过
 - 当前结论：
   - knowledge builtin tools 已满足“按需注入”目标
   - `docs/doing` 已恢复最终验收完成状态

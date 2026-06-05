@@ -4,6 +4,6 @@
   "expectedErrorCode": null,
   "headers": {
     "Authorization": "Bearer internal-token",
-    "X-Lynxus-Extension-Registration-Id": "acme-extension"
+    "X-AgentYard-Extension-Registration-Id": "acme-extension"
   }
 }

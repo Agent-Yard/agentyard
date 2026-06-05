@@ -286,7 +286,7 @@
 
 ### Finding 8: 当前实现观察
 
-- 已查看 `apps/agent-runtime/lynxus_agent_runtime/main.py` 与相关测试
+- 已查看 `apps/agent-runtime/agentyard_agent_runtime/main.py` 与相关测试
 - 当前实现的关键事实：
   - prompt 已拆成 `system_prompt` + `instruction_block` + `capability_block` + `runtime_context_block`
   - `instruction_block` 基本稳定，描述输出 schema、决策规则、sessionStatePatch 语义

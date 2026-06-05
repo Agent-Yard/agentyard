@@ -19,7 +19,7 @@
     <circle cx="54" cy="14" r="5" fill="#0d746e"/>
   </g>
 
-  <text x="170" y="172" font-family="Inter, system-ui, sans-serif" font-size="44" font-weight="800" fill="#17211d">Lynxus</text>
+  <text x="170" y="172" font-family="Inter, system-ui, sans-serif" font-size="44" font-weight="800" fill="#17211d">AgentYard</text>
 
   <text x="80" y="290" font-family="Inter, system-ui, sans-serif" font-size="68" font-weight="800" fill="#17211d">Governed Enterprise</text>
   <text x="80" y="370" font-family="Inter, system-ui, sans-serif" font-size="68" font-weight="800" fill="#17211d">Agent Platform.</text>

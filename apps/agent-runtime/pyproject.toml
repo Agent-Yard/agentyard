@@ -1,14 +1,14 @@
 [project]
-name = "lynxus-agent-runtime"
+name = "agentyard-agent-runtime"
 version = "0.1.0"
-description = "Lynxus Python execution runtime"
+description = "AgentYard Python execution runtime"
 requires-python = ">=3.11"
 dependencies = [
     "cryptography==45.0.4",
     "fastapi",
     "httpx==0.28.1",
-    "lynxus-extension-sdk",
-    "lynxus-python-common",
+    "agentyard-extension-sdk",
+    "agentyard-python-common",
     "pydantic",
     "psycopg[binary]==3.2.6",
     "redis[hiredis]==6.0.0",
@@ -22,7 +22,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["lynxus_agent_runtime"]
+packages = ["agentyard_agent_runtime"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

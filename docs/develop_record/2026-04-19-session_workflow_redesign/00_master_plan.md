@@ -30,7 +30,7 @@
     - `STEP` 由 worker 通过受限 sandbox 执行
     - `TOOL_TASK` 不在 worker 直接执行，统一走 agent-runtime 的 tool/runtime capability 执行链
     - `session / session_event / playbook_run` 由 worker 主动持久化
-    - worker 与 api 共用同一核心库，默认库名收敛为 `lynxus_core`
+    - worker 与 api 共用同一核心库，默认库名收敛为 `agentyard_core`
     - `sharedState` 最终口径固定为扁平 KV
 
 ## 2. 主干计划

@@ -3,9 +3,9 @@ import json
 import os
 import unittest
 
-from lynxus_agent_runtime.data_security.store import SessionPrivacyMapStore
-from lynxus_agent_runtime.privacy_contracts import PrivacyPolicy, PrivacyStrategy
-from lynxus_agent_runtime.privacy_pipeline import PrivacyPipeline
+from agentyard_agent_runtime.data_security.store import SessionPrivacyMapStore
+from agentyard_agent_runtime.privacy_contracts import PrivacyPolicy, PrivacyStrategy
+from agentyard_agent_runtime.privacy_pipeline import PrivacyPipeline
 
 
 class _FakeRedis:
@@ -78,7 +78,7 @@ class _FakeRedis:
 
 class SessionPrivacyMapStoreTest(unittest.TestCase):
     def setUp(self) -> None:
-        os.environ["LYNXUS_PRIVACY_SESSION_STORE_ENCRYPTION_KEY"] = "test-secret-key"
+        os.environ["AGENTYARD_PRIVACY_SESSION_STORE_ENCRYPTION_KEY"] = "test-secret-key"
         self.policy = PrivacyPolicy(
             session_id="session-1",
             assistant_id="assistant-1",
@@ -88,7 +88,7 @@ class SessionPrivacyMapStoreTest(unittest.TestCase):
         )
 
     def tearDown(self) -> None:
-        os.environ.pop("LYNXUS_PRIVACY_SESSION_STORE_ENCRYPTION_KEY", None)
+        os.environ.pop("AGENTYARD_PRIVACY_SESSION_STORE_ENCRYPTION_KEY", None)
 
     def test_should_reuse_existing_mapping_for_same_value(self) -> None:
         store = SessionPrivacyMapStore(self.policy, redis_client=_FakeRedis())

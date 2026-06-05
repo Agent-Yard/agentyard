@@ -4,10 +4,10 @@ import sys
 import unittest
 from pathlib import Path
 
-os.environ.setdefault("LYNXUS_INTERNAL_AUTH_TOKEN", "test-internal-token")
+os.environ.setdefault("AGENTYARD_INTERNAL_AUTH_TOKEN", "test-internal-token")
 
-from lynxus_agent_runtime.models import AgentTurnRequest
-from lynxus_agent_runtime.prompting import (
+from agentyard_agent_runtime.models import AgentTurnRequest
+from agentyard_agent_runtime.prompting import (
     build_initial_runtime_messages,
     build_system_instruction,
     build_turn_input_messages,
@@ -103,9 +103,9 @@ class AgentRuntimePromptingTest(unittest.TestCase):
                 sys.executable,
                 "-c",
                 (
-                    "import lynxus_agent_runtime.prompting; "
-                    "import lynxus_agent_runtime.semantic; "
-                    "from lynxus_agent_runtime.privacy_pipeline import PrivacyPipeline, build_privacy_pipeline; "
+                    "import agentyard_agent_runtime.prompting; "
+                    "import agentyard_agent_runtime.semantic; "
+                    "from agentyard_agent_runtime.privacy_pipeline import PrivacyPipeline, build_privacy_pipeline; "
                     "print('ok')"
                 ),
             ],

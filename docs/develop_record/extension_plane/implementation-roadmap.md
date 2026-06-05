@@ -15,7 +15,7 @@
 1. `packages/extension-protocol`。
 2. extension 边界协议的 OpenAPI / JSON Schema 事实源；Web-facing API 与 core -> core internal API 仍归 `packages/contracts/openapi/*`。
 3. service-level manifest envelope、channel provider descriptor、tool connector descriptor、credential lifecycle DTO、`ExtensionError`、auth / trace header 契约。
-4. `LynxusCanonicalJson` helper 设计：基于 RFC 8785/JCS 的确定性排序和字符串规则，但面向 descriptor / registration digest 场景收窄输入 profile；不引入第三方 JCS 库作为信任根。
+4. `AgentYardCanonicalJson` helper 设计：基于 RFC 8785/JCS 的确定性排序和字符串规则，但面向 descriptor / registration digest 场景收窄输入 profile；不引入第三方 JCS 库作为信任根。
 5. protocol self-check 命令，校验 schema、examples、fixtures、digest 和 cross-schema consistency。
 6. UI schema sibling 字段、JSON Pointer 引用规则、静态 options 校验和 UI / JSON Schema 冲突检测 fixtures。
 7. Web schema-driven form 的第一版实现边界文档：Ant Design Vue 薄渲染层 + Ajv 2020 validation，不引入重型 form generator。
@@ -54,7 +54,7 @@
 2. `agent-runtime` 不再维护第二套 manifest envelope / canonical JSON / `ExtensionError` 解析实现。
 3. SDK 如采用手写 facade，必须被 OpenAPI / JSON Schema contract tests 完整约束。
 4. JSON Schema validation 由运行时 validator 执行，不通过生成代码实现。
-5. canonical JSON、duplicate key 检测、Lynxus canonical JSON profile 输入约束和 digest 计算由 SDK hand-written helper + fixtures 约束，不由 generator 生成，也不引入第三方 JCS 库作为信任根。
+5. canonical JSON、duplicate key 检测、AgentYard canonical JSON profile 输入约束和 digest 计算由 SDK hand-written helper + fixtures 约束，不由 generator 生成，也不引入第三方 JCS 库作为信任根。
 
 禁止提前做：
 
@@ -150,7 +150,7 @@
 
 验收：
 
-1. credential endpoints 可选语义、固定常量密钥语义、account 级短时排他、无 `Idempotency-Key` / `idempotencyKey`、无 `X-Lynxus-Extension-*` header、无 logical operation 幂等恢复、无 token refresh / status sync 被 contract tests 覆盖。
+1. credential endpoints 可选语义、固定常量密钥语义、account 级短时排他、无 `Idempotency-Key` / `idempotencyKey`、无 `X-AgentYard-Extension-*` header、无 logical operation 幂等恢复、无 token refresh / status sync 被 contract tests 覆盖。
 2. Integration Account create / update contract tests 覆盖 `subjectType + subjectId` descriptor 查找、`accountConfigSchema` 成功 / 失败、descriptor 不存在和 registry not ready 错误映射；create with credential 覆盖先生成 account id，再按 descriptor 模式调用 extension `createCredential` 或写入 Core-owned encrypted reference secret。
 3. Core-owned encrypted reference secret tests 覆盖 credential 加密存储、fingerprint 生成、internal runtime resolver 解密返回、Web/API read DTO 不回显密文 / 明文、remote extension 无法调用 resolver。
 4. Integration Account tests 覆盖创建时 `name` 必填、credential lifecycle response 不定义 metadata、不回填 / 覆盖 `name`，且额外 metadata 字段被忽略、不保存、不展示。
@@ -321,7 +321,7 @@ Rename checklist：
 
 1. sample overlay 演示同一个 internal token Secret 投影到 core service 与 enterprise extension service。
 2. smoke check 覆盖 runtime owner validation、API aggregate validation、core preset service `/health/ready`、enterprise extension `/extension/health` 和 enterprise extension `/health/ready`。
-3. smoke check 覆盖 enterprise extension 缺少 `LYNXUS_INTERNAL_TOKEN_FILE` 或 token Secret 未挂载时的 auth failure 样例。
+3. smoke check 覆盖 enterprise extension 缺少 `AGENTYARD_INTERNAL_TOKEN_FILE` 或 token Secret 未挂载时的 auth failure 样例。
 
 禁止提前做：
 
@@ -338,7 +338,7 @@ Rename checklist：
 6. 定义 service-level manifest envelope 与 `GET /extension/manifest`
 7. 定义可选固定常量密钥的 credential create / rotate / revoke / validate protocol；descriptor 可以不暴露 credential endpoints，由 extension 私有配置 / 私有存储维护 credential；credential lifecycle 不使用 `Idempotency-Key` / `idempotencyKey`，不引入 token refresh endpoint、provider-driven rotation 或后台 status sync
 8. 定义统一 error model、auth header、trace header
-9. 定义 `LynxusCanonicalJson` 序列化 helper、输入 profile、`sha256:<lowercase-hex>` digest 规则和跨语言 fixtures
+9. 定义 `AgentYardCanonicalJson` 序列化 helper、输入 profile、`sha256:<lowercase-hex>` digest 规则和跨语言 fixtures
 10. 定义并测试 `baseUrl` URL 规范化：允许 path prefix，host 小写，默认端口归一，移除 trailing slash，禁止 userinfo / query / fragment；normalized `baseUrl` 同时用于 `registrationConfigDigest` 和运行时 HTTP 调用
 11. 基于 OpenAPI / JSON Schema 生成或约束 Java SDK 的 DTO、协议常量、manifest 校验入口、canonical JSON 实现和 HTTP client / server 辅助契约
 12. 基于 OpenAPI / JSON Schema 生成或约束 Python SDK 的 DTO / 类型、协议常量、manifest 校验入口、canonical JSON 实现、HTTP client / server 辅助契约和 pytest contract helpers
@@ -427,7 +427,7 @@ Extension Plane 改造已经不只是 `ChannelProviderType` enum -> string。当
 
 ### 6.1 Contracts / OpenAPI / SDK
 
-1. `packages/contracts-jvm/src/main/java/com/lynxus/contracts/channel/ChannelContracts.java`
+1. `packages/contracts-jvm/src/main/java/com/agentyard/contracts/channel/ChannelContracts.java`
 2. `packages/contracts/src/index.ts`
 3. `packages/contracts/openapi/control-plane.yaml`
 4. `packages/extension-protocol`
@@ -447,12 +447,12 @@ Extension Plane 改造已经不只是 `ChannelProviderType` enum -> string。当
 
 1. API-owned migration 只放 control-plane tables：`apps/api/src/main/resources/db/migration/*`
 2. Channel runtime migration 只放 `channel-gateway`：`apps/channel-gateway/src/main/resources/db/migration/*`
-3. `channel-gateway` 默认使用独立 PostgreSQL database / schema 边界，当前 datasource 指向 `lynxus_channel_gateway`，不与 API / worker 的 `lynxus_core` 共享 `public` schema
+3. `channel-gateway` 默认使用独立 PostgreSQL database / schema 边界，当前 datasource 指向 `agentyard_channel_gateway`，不与 API / worker 的 `agentyard_core` 共享 `public` schema
 4. `channel-gateway` Flyway history table 使用 `channel_gateway_schema_history`，不复用 API 的 `flyway_schema_history`
-5. API / worker 公共 jOOQ generated schema 由 `packages/persistence-jvm/src/codegen/java/com/lynxus/persistence/codegen/JooqCodegenMain.java` 生成，只读取 API migration root
-6. `channel-gateway` 自己维护 jOOQ codegen 和 generated schema，生成包为 `com.lynxus.channel.gateway.jooq`，只读取 `apps/channel-gateway/src/main/resources/db/migration`
+5. API / worker 公共 jOOQ generated schema 由 `packages/persistence-jvm/src/codegen/java/com/agentyard/persistence/codegen/JooqCodegenMain.java` 生成，只读取 API migration root
+6. `channel-gateway` 自己维护 jOOQ codegen 和 generated schema，生成包为 `com.agentyard.channel.gateway.jooq`，只读取 `apps/channel-gateway/src/main/resources/db/migration`
 7. `packages/persistence-jvm` 只作为 API / worker 的公共 persistence 模块，不承载 channel runtime generated schema、repository 或 business store API
-8. Channel runtime repository / store 归属 `apps/channel-gateway/src/main/java/com/lynxus/channel/gateway/channel/*`
+8. Channel runtime repository / store 归属 `apps/channel-gateway/src/main/java/com/agentyard/channel/gateway/channel/*`
 9. API channel admin 不直连 channel runtime 表，只通过 `ChannelGatewayClient` 调 `channel-gateway` internal API
 10. API-owned：integration account 相关 repository / store
 11. API-owned：`integration_account` 增加 `subject_type`
@@ -473,8 +473,8 @@ Extension Plane 改造已经不只是 `ChannelProviderType` enum -> string。当
 
 ### 6.3 Channel Gateway
 
-1. `apps/channel-gateway/src/main/java/com/lynxus/channel/gateway/channel/*`
-2. `apps/channel-gateway/src/main/java/com/lynxus/channel/gateway/connector/feishu/*`
+1. `apps/channel-gateway/src/main/java/com/agentyard/channel/gateway/channel/*`
+2. `apps/channel-gateway/src/main/java/com/agentyard/channel/gateway/connector/feishu/*`
 3. channel-gateway tests
 4. `ChannelProviderRegistry`
 5. gateway-native provider adapter interface
@@ -537,12 +537,12 @@ Extension Plane 改造已经不只是 `ChannelProviderType` enum -> string。当
 
 ### 6.5 Agent Runtime / Tool Runtime
 
-1. `apps/agent-runtime/lynxus_agent_runtime/tool_connectors.py` 现有 connector 入口适配
+1. `apps/agent-runtime/agentyard_agent_runtime/tool_connectors.py` 现有 connector 入口适配
 2. `packages/extension-sdk-python` 提供协议 DTO / 类型、manifest envelope、canonical JSON、`ExtensionError` 解析、JSON Schema validator 和 pytest helpers
-3. `apps/agent-runtime/lynxus_agent_runtime/extension_protocol*` 仅保留 runtime adapter 薄封装，不重复实现 SDK 已提供的协议能力
-4. `apps/agent-runtime/lynxus_agent_runtime/descriptor_provider*` 内部 `DescriptorProvider`，聚合 built-in connector descriptor
-5. `apps/agent-runtime/lynxus_agent_runtime/remote_connector*` remote adapter、HTTP client、timeout / retry / circuit breaker
-6. `apps/agent-runtime/lynxus_agent_runtime/server*` 或等价 HTTP 模块暴露 `GET /extension/manifest`
+3. `apps/agent-runtime/agentyard_agent_runtime/extension_protocol*` 仅保留 runtime adapter 薄封装，不重复实现 SDK 已提供的协议能力
+4. `apps/agent-runtime/agentyard_agent_runtime/descriptor_provider*` 内部 `DescriptorProvider`，聚合 built-in connector descriptor
+5. `apps/agent-runtime/agentyard_agent_runtime/remote_connector*` remote adapter、HTTP client、timeout / retry / circuit breaker
+6. `apps/agent-runtime/agentyard_agent_runtime/server*` 或等价 HTTP 模块暴露 `GET /extension/manifest`
 7. `ToolConnectorRegistry`
 8. `RemoteToolConnectorAdapter`
 9. `RemoteToolInvokeRequest`
@@ -592,7 +592,7 @@ Extension Plane 改造已经不只是 `ChannelProviderType` enum -> string。当
 18. `channel-gateway` active-active / rolling restart 语义 tests：provider job lock TTL、`RUNNING` job crash recovery、in-flight outbound failure state、无 leader 接管
 19. `agent-runtime` 通过 Python SDK 跑 canonical JSON / manifest / `ExtensionError` fixtures，与 Java SDK 使用同一份协议样本
 20. Channel Profile assistant binding tests：API 在 create / update 时拒绝不可见 / 不可发布 / 已归档 assistant；`channel-gateway` ingest 不直读 assistant / scenario 状态、不回 API 实时校验；后续对话或 control-plane 操作引用失效 assistant / scenario 时由 API 返回结构化业务错误
-21. canonical JSON fixture / manifest digest contract tests：覆盖 `LynxusCanonicalJson` 输入 profile、duplicate key 拒绝、safe integer 边界、float/decimal/exponent 拒绝、Unicode / escape、非 ASCII key 排序、大整数字符串化；fixture、算法或 digest 输入字段变更必须同时通过 protocol self-check、Java SDK、Python SDK 和 `agent-runtime` CI
+21. canonical JSON fixture / manifest digest contract tests：覆盖 `AgentYardCanonicalJson` 输入 profile、duplicate key 拒绝、safe integer 边界、float/decimal/exponent 拒绝、Unicode / escape、非 ASCII key 排序、大整数字符串化；fixture、算法或 digest 输入字段变更必须同时通过 protocol self-check、Java SDK、Python SDK 和 `agent-runtime` CI
 
 #### 6.8 Docs / Deploy
 
@@ -617,7 +617,7 @@ Extension Plane 改造已经不只是 `ChannelProviderType` enum -> string。当
 4. `channel-gateway` / `agent-runtime` 必须实现 `/extension/manifest` HTTP endpoint，与 enterprise extension 走同一套协议
 5. core preset registration（`core-channel-gateway` / `core-agent-runtime`）由 core 自动注入，operator yaml 不允许声明或重写
 6. API 拉取全部 registration 并做 full manifest validation；runtime owner 只拉取自身 descriptor 类型相关的 registration，`agent-runtime` 不依赖 channel-only extension，`channel-gateway` 不依赖 tool-only extension
-7. canonical JSON 序列化算法固定采用 `LynxusCanonicalJson` helper，输入限制为 descriptor / registration digest 场景的安全 profile，digest 固定为 `sha256:<lowercase-hex>`；跨语言（Java SDK、Python SDK 与 `agent-runtime` 对 Python SDK 的使用）必须对同一份输入产出 byte-for-byte 相同的 canonical bytes 和 digest；fixture、算法或 digest 输入字段变更必须同时通过 protocol self-check、Java SDK、Python SDK 和 `agent-runtime` CI
+7. canonical JSON 序列化算法固定采用 `AgentYardCanonicalJson` helper，输入限制为 descriptor / registration digest 场景的安全 profile，digest 固定为 `sha256:<lowercase-hex>`；跨语言（Java SDK、Python SDK 与 `agent-runtime` 对 Python SDK 的使用）必须对同一份输入产出 byte-for-byte 相同的 canonical bytes 和 digest；fixture、算法或 digest 输入字段变更必须同时通过 protocol self-check、Java SDK、Python SDK 和 `agent-runtime` CI
 8. Credential lifecycle 是 descriptor 可选能力且只处理固定常量密钥；不使用 `Idempotency-Key` / `idempotencyKey`；任何 access token refresh / OAuth refresh token 轮换都属于 extension 私有实现，不进入 Core provider job、runtime owner 或 API 后台任务
 9. Remote runtime invocation 只传 release snapshot / channel runtime profile 中已有的可选 `externalSecretRef`；Core 内部 `accountId` 只用于 snapshot 物化、校验和 internal credential resolver；不回 API 拉取 credential 数据或账号状态；缺少 credential 不作为 core runtime 协议错误
 10. `channel-gateway` 多副本部署固定为 active-active；Postgres 是 channel runtime state 权威，Redis 只用于 provider job lock，outbound delivery 不进入调度模型

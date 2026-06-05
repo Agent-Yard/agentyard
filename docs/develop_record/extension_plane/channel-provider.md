@@ -181,11 +181,11 @@ channel runtime 表。
 3. `channel-gateway` 不直读 API-owned tables；profile 在创建 / 更新时由 API / channel admin 链路校验已选择的 Integration Account 和 assistant / scenario 引用，并把当时已有的 `externalSecretRef` 写入 channel runtime profile；未选择 account 或未通过 Core 配置 credential 时不写入对应字段
 4. 不采用 `channel-gateway` 完全无状态、所有 channel runtime 读写经 API 转发的模式
 5. 当前实现中 `channel-gateway` 使用独立 PostgreSQL database / schema 边界，默认 datasource 指向
-   `lynxus_channel_gateway`，不与 API / worker 的 `lynxus_core` 共享 `public` schema
+   `agentyard_channel_gateway`，不与 API / worker 的 `agentyard_core` 共享 `public` schema
 6. `channel-gateway` Flyway history table 固定为 `channel_gateway_schema_history`，不复用 API 的
    `flyway_schema_history`
 7. `channel-gateway` 自己维护 jOOQ codegen 和 generated schema，生成包为
-   `com.lynxus.channel.gateway.jooq`，只读取 `apps/channel-gateway/src/main/resources/db/migration`
+   `com.agentyard.channel.gateway.jooq`，只读取 `apps/channel-gateway/src/main/resources/db/migration`
 8. `packages/persistence-jvm` 是 API / worker 的公共 persistence 模块，只读取 API migration，不包含
    channel runtime jOOQ schema、channel runtime repository 或 channel business store
 9. 如果某些部署把 API、worker、`channel-gateway` 放在同一个物理 PostgreSQL 实例中，也必须保持
@@ -563,7 +563,7 @@ external webhook
 2. 私有工单系统
 3. 复杂签名 / 解密 / challenge
 4. 需要访问企业内网、Vault、审计系统
-5. 客户不希望 webhook 直接打到 Lynxus core
+5. 客户不希望 webhook 直接打到 AgentYard core
 
 ### 4.3 Channel Gateway Internal Endpoint
 
@@ -593,7 +593,7 @@ Channel Profile 与 remote provider 的映射建立规则：
 3. 首选方式是 remote provider 的 public webhook URL path 直接携带 `channelProfileId`，例如：
 
 ```text
-POST https://{provider-public-host}/webhooks/lynxus/profiles/{channelProfileId}
+POST https://{provider-public-host}/webhooks/agentyard/profiles/{channelProfileId}
 ```
 
 4. `channelProfileId` 不是 secret，不能替代外部 webhook 鉴权；remote provider 仍必须校验外部系统 webhook 的签名、token、source IP 或私有 signing secret
@@ -733,13 +733,13 @@ UNKNOWN
 
 1. `rawPayload` 只能保存脱敏后的原始 payload
 2. 未脱敏原文只能保存在 extension 私有审计 / 存储中；Core 不接收、不保存 raw payload / raw error / raw response 的 opaque ref，也不通过协议反查原文
-3. 跨边界排障只使用 `traceContext.traceparent`、`X-Lynxus-Trace-Id`、`X-Lynxus-Request-Id`、`providerType`、`channelProfileId`、`dedupKey` 等 correlation 字段拼接 Core 日志和 extension 私有日志
+3. 跨边界排障只使用 `traceContext.traceparent`、`X-AgentYard-Trace-Id`、`X-AgentYard-Request-Id`、`providerType`、`channelProfileId`、`dedupKey` 等 correlation 字段拼接 Core 日志和 extension 私有日志
 4. `normalizedPayload` / `metadata` 不得携带 credential、token、签名密钥或外部系统私密字段
 
 内部鉴权规则：
 
 1. remote provider 调 `POST /internal/channel-events/normalized` 必须使用 Extension Plane 统一 internal auth 机制
-2. 请求必须带 `Authorization`、`X-Lynxus-Extension-Registration-Id`、`X-Lynxus-Extension-Descriptor-Type: CHANNEL_PROVIDER`、`X-Lynxus-Extension-Descriptor-Id`、`X-Lynxus-Trace-Id`、`X-Lynxus-Request-Id` 和 `Idempotency-Key`
+2. 请求必须带 `Authorization`、`X-AgentYard-Extension-Registration-Id`、`X-AgentYard-Extension-Descriptor-Type: CHANNEL_PROVIDER`、`X-AgentYard-Extension-Descriptor-Id`、`X-AgentYard-Trace-Id`、`X-AgentYard-Request-Id` 和 `Idempotency-Key`
 3. `Idempotency-Key` 必须严格等于 event `dedupKey`，字段格式引用 `extension-protocol.md §2.0`
 4. `channel-gateway` 必须校验 `registrationId` 与 `providerType` 属于当前静态注册白名单
 5. `channel-gateway` 必须校验 `channelProfileId` 存在、启用，且其 `provider_type` 等于请求中的 `providerType`
@@ -873,7 +873,7 @@ POST {provider.endpoints.sendOutbound}
 }
 ```
 
-`externalSecretRef`、`idempotencyKey` 和 `traceContext` 的字段规则引用 `extension-protocol.md §2.0`。`externalSecretRef` 是可选字段，仅当 channel runtime profile 已固化 Core-managed credential ref 时发送。`payload.messageBlock` 是 Lynxus session message block，不是 provider-native payload。`resolvedTemplate` 只在该 message type / subtype 需要外部模板时出现。
+`externalSecretRef`、`idempotencyKey` 和 `traceContext` 的字段规则引用 `extension-protocol.md §2.0`。`externalSecretRef` 是可选字段，仅当 channel runtime profile 已固化 Core-managed credential ref 时发送。`payload.messageBlock` 是 AgentYard session message block，不是 provider-native payload。`resolvedTemplate` 只在该 message type / subtype 需要外部模板时出现。
 
 External template binding 与 outbound 转换边界：
 

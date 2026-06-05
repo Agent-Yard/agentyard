@@ -1,6 +1,6 @@
 # agent-runtime
 
-`agent-runtime` 是 Lynxus 的 Python 执行运行时，负责执行单个 owner agent 的单轮推理。
+`agent-runtime` 是 AgentYard 的 Python 执行运行时，负责执行单个 owner agent 的单轮推理。
 
 当前职责包括：
 
@@ -25,11 +25,11 @@ pnpm local:agent-runtime
 也可以直接运行该服务或单测：
 
 ```bash
-uv run --package lynxus-agent-runtime uvicorn lynxus_agent_runtime.main:app --reload --host 127.0.0.1 --port 8090
-uv run --directory apps/agent-runtime --package lynxus-agent-runtime pytest tests/test_internal_auth.py
+uv run --package agentyard-agent-runtime uvicorn agentyard_agent_runtime.main:app --reload --host 127.0.0.1 --port 8090
+uv run --directory apps/agent-runtime --package agentyard-agent-runtime pytest tests/test_internal_auth.py
 ```
 
-[`scripts/local/agent-runtime.sh`](../../scripts/local/agent-runtime.sh) 会直接使用 `uv run --package lynxus-agent-runtime ...`，因此需要先安装 `uv` 并在仓库根目录执行 `uv sync --all-packages`。
+[`scripts/local/agent-runtime.sh`](../../scripts/local/agent-runtime.sh) 会直接使用 `uv run --package agentyard-agent-runtime ...`，因此需要先安装 `uv` 并在仓库根目录执行 `uv sync --all-packages`。
 
 ## 接口
 
@@ -44,21 +44,21 @@ uv run --directory apps/agent-runtime --package lynxus-agent-runtime pytest test
 
 运行时会通过脚本自动加载根目录 `.env` / `.env.local`，以及 `apps/agent-runtime/.env` / `.env.local`。
 
-本地排查模型调用时，把 `LYNXUS_AGENT_RUNTIME_LOG_LEVEL=DEBUG` 写入 `.env.local`；runtime 会输出每次 OpenAI-compatible LLM 调用的请求 URL、headers（密钥脱敏）、原始 payload、响应状态和原始响应 body。
+本地排查模型调用时，把 `AGENTYARD_AGENT_RUNTIME_LOG_LEVEL=DEBUG` 写入 `.env.local`；runtime 会输出每次 OpenAI-compatible LLM 调用的请求 URL、headers（密钥脱敏）、原始 payload、响应状态和原始响应 body。
 
 Extension registration 使用和 API / `channel-gateway` 相同的输入：
 
-- `LYNXUS_EXTENSION_REGISTRATION_FILE`
-- `LYNXUS_CHANNEL_GATEWAY_BASE_URL`
-- `LYNXUS_AGENT_RUNTIME_BASE_URL`
+- `AGENTYARD_EXTENSION_REGISTRATION_FILE`
+- `AGENTYARD_CHANNEL_GATEWAY_BASE_URL`
+- `AGENTYARD_AGENT_RUNTIME_BASE_URL`
 
 Transcript store 使用 agent-runtime 独立数据库，表位于默认 `public` schema：
 
-- `LYNXUS_AGENT_RUNTIME_DATABASE_URL`
-- `LYNXUS_AGENT_RUNTIME_TURN_EXECUTION_RETENTION_SECONDS`
-- `LYNXUS_AGENT_RUNTIME_TRANSCRIPT_ENTRY_RETENTION_SECONDS`
-- `LYNXUS_AGENT_RUNTIME_RETENTION_SWEEP_LIMIT`
-- `LYNXUS_AGENT_RUNTIME_TRANSCRIPT_CACHE_TTL_SECONDS`
+- `AGENTYARD_AGENT_RUNTIME_DATABASE_URL`
+- `AGENTYARD_AGENT_RUNTIME_TURN_EXECUTION_RETENTION_SECONDS`
+- `AGENTYARD_AGENT_RUNTIME_TRANSCRIPT_ENTRY_RETENTION_SECONDS`
+- `AGENTYARD_AGENT_RUNTIME_RETENTION_SWEEP_LIMIT`
+- `AGENTYARD_AGENT_RUNTIME_TRANSCRIPT_CACHE_TTL_SECONDS`
 
 模型资源常用的密钥变量包括：
 
@@ -69,12 +69,12 @@ Transcript store 使用 agent-runtime 独立数据库，表位于默认 `public`
 
 如果要接 OpenAI-compatible 网关，还可以配置：
 
-- `LYNXUS_OPENAI_COMPATIBLE_BASE_URL`
-- `LYNXUS_OPENAI_COMPATIBLE_MODEL_ID`
-- `LYNXUS_OPENAI_COMPATIBLE_API_KEY_ENV_VAR`
-- `LYNXUS_OPENAI_COMPATIBLE_ORGANIZATION`
-- `LYNXUS_OPENAI_COMPATIBLE_PROJECT`
-- `LYNXUS_OPENAI_COMPATIBLE_REGION`
+- `AGENTYARD_OPENAI_COMPATIBLE_BASE_URL`
+- `AGENTYARD_OPENAI_COMPATIBLE_MODEL_ID`
+- `AGENTYARD_OPENAI_COMPATIBLE_API_KEY_ENV_VAR`
+- `AGENTYARD_OPENAI_COMPATIBLE_ORGANIZATION`
+- `AGENTYARD_OPENAI_COMPATIBLE_PROJECT`
+- `AGENTYARD_OPENAI_COMPATIBLE_REGION`
 
 ## 当前边界
 

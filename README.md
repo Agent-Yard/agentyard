@@ -1,11 +1,11 @@
-灵枢 Lynxus
+AgentYard
 =========
 
-> 让企业以最小成本拥有可治理、可发布、可观测的智能体中台。
+> 让企业以最小成本拥有可治理、可发布、可观测的智能体系统。
 >
-> *A release-driven Enterprise Agent Platform — currently in active development.*
+> *A release-driven agent system — currently in active development.*
 
-[![CI](https://github.com/Zephor5/lynxus/actions/workflows/ci.yml/badge.svg)](https://github.com/Zephor5/lynxus/actions/workflows/ci.yml)
+[![CI](https://github.com/Agent-Yard/agentyard/actions/workflows/ci.yml/badge.svg)](https://github.com/Agent-Yard/agentyard/actions/workflows/ci.yml)
 ![status](https://img.shields.io/badge/status-alpha-orange)
 ![java](https://img.shields.io/badge/java-25-blue)
 ![spring](https://img.shields.io/badge/spring--boot-4.0.6-6db33f)
@@ -17,9 +17,9 @@
 
 ## 项目状态
 
-Lynxus 当前处于活跃开发期 (alpha)。代码已经走通了 **控制面 → 发布快照 → Temporal 长流程 → Python agent runtime** 的真实主链路，但仍保留若干原型边界：默认单租户、开发态保留 bootstrap 登录旁路、运维与生产治理仍在补齐。**接口、数据结构、配置项均可能在小版本之间发生不兼容变更**，文档可能短暂落后于代码，请以源码为准。
+AgentYard 当前处于活跃开发期 (alpha)。代码已经走通了 **控制面 → 发布快照 → Temporal 长流程 → Python agent runtime** 的真实主链路，但仍保留若干原型边界：默认单租户、开发态保留 bootstrap 登录旁路、运维与生产治理仍在补齐。**接口、数据结构、配置项均可能在小版本之间发生不兼容变更**，文档可能短暂落后于代码，请以源码为准。
 
-如果你正在评估是否引入 Lynxus，建议先以本地联调和概念学习为目标，生产化使用请关注后续里程碑。
+如果你正在评估是否引入 AgentYard，建议先以本地联调和概念学习为目标，生产化使用请关注后续里程碑。
 
 ## 演示视频
 
@@ -33,7 +33,7 @@ https://github.com/user-attachments/assets/86013c3e-986d-45f5-986b-d4db57312507
 
 ## 它解决什么问题
 
-企业落地智能体中台普遍卡在三件事：自建成本太高、业务系统接入太重、跑起来后不可观测/不可治理。Lynxus 的设计取舍围绕这三点展开：
+企业落地智能体系统普遍卡在三件事：自建成本太高、业务系统接入太重、跑起来后不可观测/不可治理。AgentYard 的设计取舍围绕这三点展开：
 
 - **配置即契约**：业务域 / 业务场景 / 助手 / 智能体 / 知识库 / 资源都是一级治理对象，发布即冻结快照，运行态只消费 release。
 - **协议化业务接入**：Tool Connector 与 Channel Provider 通过统一的 *Extension Plane* 协议接入，业务系统的鉴权、签名、长连接细节不再泄漏到 Agent / Playbook / Session。
@@ -126,7 +126,7 @@ flowchart TB
     Gateway --- PG
 ```
 
-*Extension Plane* 是协议与注册边界（`packages/extension-protocol`），不是单独的核心运行面。外部 Extension Service 通过 `/extension/manifest` 声明 Channel Provider 与 Tool Connector；Channel Provider 侧由 `channel-gateway` 接收 normalized inbound、提供 outbound frame stream / ACK 边界，Tool Connector 侧由 `agent-runtime` 直接发起 tool invoke。核心服务自动注册由 `LYNXUS_CHANNEL_GATEWAY_BASE_URL` / `LYNXUS_AGENT_RUNTIME_BASE_URL` 提供，运营方扩展通过 `LYNXUS_EXTENSION_REGISTRATION_FILE` 加载。
+*Extension Plane* 是协议与注册边界（`packages/extension-protocol`），不是单独的核心运行面。外部 Extension Service 通过 `/extension/manifest` 声明 Channel Provider 与 Tool Connector；Channel Provider 侧由 `channel-gateway` 接收 normalized inbound、提供 outbound frame stream / ACK 边界，Tool Connector 侧由 `agent-runtime` 直接发起 tool invoke。核心服务自动注册由 `AGENTYARD_CHANNEL_GATEWAY_BASE_URL` / `AGENTYARD_AGENT_RUNTIME_BASE_URL` 提供，运营方扩展通过 `AGENTYARD_EXTENSION_REGISTRATION_FILE` 加载。
 
 ## 仓库结构
 
@@ -191,7 +191,7 @@ docker compose up -d
 ```
 
 依赖包含 PostgreSQL（自带 `pgvector` / `pg_trgm`）、MinIO、Redis、Temporal 与 sandbox。
-PostgreSQL 启动时会自动准备 `lynxus_core`、`lynxus_channel_gateway`、`lynxus_knowledge`、`lynxus_agent_runtime` 四个库，分别给 API/worker、channel-gateway、knowledge service、agent-runtime 使用。
+PostgreSQL 启动时会自动准备 `agentyard_core`、`agentyard_channel_gateway`、`agentyard_knowledge`、`agentyard_agent_runtime` 四个库，分别给 API/worker、channel-gateway、knowledge service、agent-runtime 使用。
 
 ### 2. 准备环境变量
 
@@ -247,35 +247,35 @@ pnpm local:web
 OpenAI 兼容 endpoint 示例：
 
 ```bash
-LYNXUS_OPENAI_COMPATIBLE_BASE_URL=http://localhost:11434/v1
-LYNXUS_OPENAI_COMPATIBLE_MODEL_ID=custom-compatible-model
-LYNXUS_OPENAI_COMPATIBLE_API_KEY_ENV_VAR=OPENAI_COMPATIBLE_API_KEY
+AGENTYARD_OPENAI_COMPATIBLE_BASE_URL=http://localhost:11434/v1
+AGENTYARD_OPENAI_COMPATIBLE_MODEL_ID=custom-compatible-model
+AGENTYARD_OPENAI_COMPATIBLE_API_KEY_ENV_VAR=OPENAI_COMPATIBLE_API_KEY
 OPENAI_COMPATIBLE_API_KEY=your-token-if-needed
 ```
 
 知识服务的 embedding provider 单独配置：
 
 ```bash
-LYNXUS_KNOWLEDGE_EMBEDDING_BASE_URL=http://localhost:11434/v1
-LYNXUS_KNOWLEDGE_EMBEDDING_MODEL=nomic-embed-text
-LYNXUS_KNOWLEDGE_EMBEDDING_API_KEY=your-token-if-needed
-LYNXUS_KNOWLEDGE_EMBEDDING_DIMENSIONS=768
+AGENTYARD_KNOWLEDGE_EMBEDDING_BASE_URL=http://localhost:11434/v1
+AGENTYARD_KNOWLEDGE_EMBEDDING_MODEL=nomic-embed-text
+AGENTYARD_KNOWLEDGE_EMBEDDING_API_KEY=your-token-if-needed
+AGENTYARD_KNOWLEDGE_EMBEDDING_DIMENSIONS=768
 ```
 
 如果模型响应较慢，可同步调大 worker 的 Temporal activity 超时：
 
 ```bash
-LYNXUS_TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT=PT2M
+AGENTYARD_TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT=PT2M
 ```
 
 仓库未提供 demo seed；业务域、资源与知识库需通过控制台或 API 显式创建。
 
 ### 6. 构建前端与站点
 
-根目录 `pnpm build` 会顺序构建控制台 `@lynxus/web` 与静态项目站点 `@lynxus/site`。本地运行主链路的 `pnpm local` 只启动控制台 `apps/web`，不会启动 `apps/site`；如需调试站点，可单独执行：
+根目录 `pnpm build` 会顺序构建控制台 `@agentyard/web` 与静态项目站点 `@agentyard/site`。本地运行主链路的 `pnpm local` 只启动控制台 `apps/web`，不会启动 `apps/site`；如需调试站点，可单独执行：
 
 ```bash
-pnpm --filter @lynxus/site dev
+pnpm --filter @agentyard/site dev
 ```
 
 ### 7. 远程 / 共享开发环境
@@ -315,12 +315,12 @@ CI 在 `.github/workflows/ci.yml` 中分别跑 Java / Node / Python 三套检查
 
 关键契约与实现入口：
 
-- [`SessionContracts.java`](packages/contracts-jvm/src/main/java/com/lynxus/contracts/session/SessionContracts.java)
-- [`CatalogService.java`](apps/api/src/main/java/com/lynxus/platform/catalog/CatalogService.java)
-- [`SessionRuntimeService.java`](apps/api/src/main/java/com/lynxus/platform/session/SessionRuntimeService.java)
-- [`SessionWorkflowImpl.java`](apps/worker/src/main/java/com/lynxus/worker/session/SessionWorkflowImpl.java)
-- [`PlaybookWorkflowImpl.java`](apps/worker/src/main/java/com/lynxus/worker/session/PlaybookWorkflowImpl.java)
-- [`agent-runtime/main.py`](apps/agent-runtime/lynxus_agent_runtime/main.py)
+- [`SessionContracts.java`](packages/contracts-jvm/src/main/java/com/agentyard/contracts/session/SessionContracts.java)
+- [`CatalogService.java`](apps/api/src/main/java/com/agentyard/platform/catalog/CatalogService.java)
+- [`SessionRuntimeService.java`](apps/api/src/main/java/com/agentyard/platform/session/SessionRuntimeService.java)
+- [`SessionWorkflowImpl.java`](apps/worker/src/main/java/com/agentyard/worker/session/SessionWorkflowImpl.java)
+- [`PlaybookWorkflowImpl.java`](apps/worker/src/main/java/com/agentyard/worker/session/PlaybookWorkflowImpl.java)
+- [`agent-runtime/main.py`](apps/agent-runtime/agentyard_agent_runtime/main.py)
 
 ## 文档索引
 
@@ -356,5 +356,5 @@ CI 在 `.github/workflows/ci.yml` 中分别跑 Java / Node / Python 三套检查
 
 ## 联系方式
 
-- 仓库：<https://github.com/Zephor5/lynxus>
-- 反馈与建议：[GitHub Issues](https://github.com/Zephor5/lynxus/issues)
+- 仓库：<https://github.com/Agent-Yard/agentyard>
+- 反馈与建议：[GitHub Issues](https://github.com/Agent-Yard/agentyard/issues)

@@ -29,7 +29,7 @@ Web 控制台不使用 Docker Compose。`apps/web` 构建为静态资源，由�
 推荐目标机器布局：
 
 ```text
-/opt/lynxus/
+/opt/agentyard/
   common/
   test/
     compose/
@@ -62,13 +62,13 @@ docker compose --env-file test/.env -f test/compose/api.yml up -d
 发布流水线构建：
 
 ```bash
-VITE_API_BASE_URL=/api VITE_DEPLOY_ENV=test pnpm --filter @lynxus/web build
+VITE_API_BASE_URL=/api VITE_DEPLOY_ENV=test pnpm --filter @agentyard/web build
 ```
 
 将 `apps/web/dist/` 发布到 Web/Nginx 机器，例如：
 
 ```text
-/opt/lynxus/web/
+/opt/agentyard/web/
 ```
 
 Nginx 负责：
@@ -103,7 +103,7 @@ PostgreSQL 可以使用已有/托管服务，也可以作为独立模块发布�
    docker compose --env-file test/.env -f test/compose/postgres.yml up -d
    ```
 
-   需要等待 `postgres-bootstrap` 成功退出。它负责创建 `lynxus_core`、`lynxus_channel_gateway`、`lynxus_knowledge`、`lynxus_agent_runtime`、`temporal`、`temporal_visibility`，并启用知识库扩展。
+   需要等待 `postgres-bootstrap` 成功退出。它负责创建 `agentyard_core`、`agentyard_channel_gateway`、`agentyard_knowledge`、`agentyard_agent_runtime`、`temporal`、`temporal_visibility`，并启用知识库扩展。
 
 2. Temporal
 
@@ -139,7 +139,7 @@ PostgreSQL 可以使用已有/托管服务，也可以作为独立模块发布�
 
 7. Web 静态资源与 Nginx
 
-如果使用已有或托管 PostgreSQL，则部署侧必须提前准备好 `lynxus_core`、`lynxus_channel_gateway`、`lynxus_knowledge`、`lynxus_agent_runtime`、`temporal`、`temporal_visibility`，并在 `lynxus_knowledge` 中启用 `vector` 和 `pg_trgm`。
+如果使用已有或托管 PostgreSQL，则部署侧必须提前准备好 `agentyard_core`、`agentyard_channel_gateway`、`agentyard_knowledge`、`agentyard_agent_runtime`、`temporal`、`temporal_visibility`，并在 `agentyard_knowledge` 中启用 `vector` 和 `pg_trgm`。
 
 ## 依赖矩阵
 
@@ -147,18 +147,18 @@ PostgreSQL 可以使用已有/托管服务，也可以作为独立模块发布�
 | --- | --- |
 | postgres | 持久化磁盘 |
 | temporal | PostgreSQL `temporal`、`temporal_visibility` |
-| sandbox | 无 Lynxus 服务依赖 |
-| channel-gateway | PostgreSQL `lynxus_channel_gateway` |
-| knowledge-service | PostgreSQL `lynxus_knowledge`、S3-compatible object storage、embedding provider |
-| agent-runtime | PostgreSQL `lynxus_agent_runtime`、Redis、API URL、Knowledge Service URL、按需配置模型供应商密钥 |
-| worker | PostgreSQL `lynxus_core`、Redis、Temporal、Agent Runtime、Knowledge Service、Sandbox |
-| api | PostgreSQL `lynxus_core`、Redis、Temporal、Knowledge Service、Channel Gateway、OIDC |
+| sandbox | 无 AgentYard 服务依赖 |
+| channel-gateway | PostgreSQL `agentyard_channel_gateway` |
+| knowledge-service | PostgreSQL `agentyard_knowledge`、S3-compatible object storage、embedding provider |
+| agent-runtime | PostgreSQL `agentyard_agent_runtime`、Redis、API URL、Knowledge Service URL、按需配置模型供应商密钥 |
+| worker | PostgreSQL `agentyard_core`、Redis、Temporal、Agent Runtime、Knowledge Service、Sandbox |
+| api | PostgreSQL `agentyard_core`、Redis、Temporal、Knowledge Service、Channel Gateway、OIDC |
 | web | Nginx 下的 `/api`、`/oauth2`、`/login/oauth2` 反向代理 |
 
 ## PostgreSQL 要求
 
 使用 PostgreSQL 16+，推荐 PostgreSQL 17。
-运行态数据源 URL 按服务域配置：`api` 和 `worker` 使用 `LYNXUS_CORE_DATASOURCE_URL`，`channel-gateway` 使用 `LYNXUS_CHANNEL_GATEWAY_DATASOURCE_URL`，`agent-runtime` 使用 `LYNXUS_AGENT_RUNTIME_DATABASE_URL`。不要在部署 env 文件中设置共享的 `SPRING_DATASOURCE_URL`，否则它会覆盖所有 Spring Boot 服务的数据源。
+运行态数据源 URL 按服务域配置：`api` 和 `worker` 使用 `AGENTYARD_CORE_DATASOURCE_URL`，`channel-gateway` 使用 `AGENTYARD_CHANNEL_GATEWAY_DATASOURCE_URL`，`agent-runtime` 使用 `AGENTYARD_AGENT_RUNTIME_DATABASE_URL`。不要在部署 env 文件中设置共享的 `SPRING_DATASOURCE_URL`，否则它会覆盖所有 Spring Boot 服务的数据源。
 
 Knowledge database 必须具备：
 
@@ -169,14 +169,14 @@ Knowledge database 必须具备：
 
 自建测试 PostgreSQL 时，`postgres` 模块会启动 PostgreSQL，并通过 [`deploy/common/postgres-bootstrap/init-databases.sh`](../../deploy/common/postgres-bootstrap/init-databases.sh) 这个一次性 bootstrap 创建：
 
-- `lynxus_core`
-- `lynxus_channel_gateway`
-- `lynxus_knowledge`
-- `lynxus_agent_runtime`
+- `agentyard_core`
+- `agentyard_channel_gateway`
+- `agentyard_knowledge`
+- `agentyard_agent_runtime`
 - `temporal`
 - `temporal_visibility`
 
-同时会在 `lynxus_knowledge` 中启用：
+同时会在 `agentyard_knowledge` 中启用：
 
 - `vector`
 - `pg_trgm`
@@ -186,9 +186,9 @@ Knowledge database 必须具备：
 测试环境复用已有 Redis 时，必须配置环境级隔离：
 
 ```dotenv
-LYNXUS_REDIS_KEY_PREFIX=lynxus:test
-LYNXUS_SESSION_REDIS_NAMESPACE=lynxus:test:session:http
-LYNXUS_PRIVACY_SESSION_STORE_KEY_PREFIX=lynxus:test:privacy:session
+AGENTYARD_REDIS_KEY_PREFIX=agentyard:test
+AGENTYARD_SESSION_REDIS_NAMESPACE=agentyard:test:session:http
+AGENTYARD_PRIVACY_SESSION_STORE_KEY_PREFIX=agentyard:test:privacy:session
 ```
 
 不要仅依赖 Redis database index 做环境隔离。

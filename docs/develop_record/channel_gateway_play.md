@@ -82,7 +82,7 @@
 - `apps/web -> apps/api` 继续沿用现有登录态
 - `apps/api` 的 `channel-admin` 读接口使用 `@RequireGovernanceAccess`
 - 写接口使用 `@RequireGovernanceWrite`
-- `apps/api -> channel-gateway` 使用现有 `lynxus.internal-auth.token`
+- `apps/api -> channel-gateway` 使用现有 `agentyard.internal-auth.token`
 - `channel-gateway /internal/**` 仅接受内部 Bearer token
 - `channel-gateway /connectors/**` 不走内部 token，走 provider 自身校验逻辑
 
@@ -90,10 +90,10 @@
 
 新增配置：
 
-- `LYNXUS_CHANNEL_GATEWAY_PORT`
-- `LYNXUS_CHANNEL_GATEWAY_BASE_URL`
+- `AGENTYARD_CHANNEL_GATEWAY_PORT`
+- `AGENTYARD_CHANNEL_GATEWAY_BASE_URL`
 - 复用 `SPRING_DATASOURCE_*`
-- 复用 `LYNXUS_INTERNAL_AUTH_TOKEN`
+- 复用 `AGENTYARD_INTERNAL_AUTH_TOKEN`
 
 新增运行接入：
 
@@ -109,7 +109,7 @@
 
 同时在 `apps/api` 中新增：
 
-- `lynxus.channel-gateway.base-url`
+- `agentyard.channel-gateway.base-url`
 - `ChannelGatewayClient`
 - `channel-admin` controller/service/dto
 - 对 `packages/contracts` / `apps/web` 的 TS 类型与 API client 占位同步，但不建页面、不改菜单

@@ -73,7 +73,7 @@ tasks.register<JavaExec>("generateJooq") {
     description = "Generate channel-gateway jOOQ classes from its Flyway-managed PostgreSQL schema."
     dependsOn("codegenClasses")
     classpath = sourceSets["codegen"].runtimeClasspath
-    mainClass.set("com.lynxus.channel.gateway.codegen.ChannelGatewayJooqCodegenMain")
+    mainClass.set("com.agentyard.channel.gateway.codegen.ChannelGatewayJooqCodegenMain")
     args(rootProject.projectDir.absolutePath, generatedJooqDir.asFile.absolutePath)
     inputs.dir(rootProject.file("apps/channel-gateway/src/main/resources/db/migration"))
     outputs.dir(generatedJooqDir)
@@ -84,7 +84,7 @@ tasks.register<JavaExec>("generateJooqVerification") {
     description = "Generate channel-gateway jOOQ classes into a temporary directory for verification."
     dependsOn("codegenClasses")
     classpath = sourceSets["codegen"].runtimeClasspath
-    mainClass.set("com.lynxus.channel.gateway.codegen.ChannelGatewayJooqCodegenMain")
+    mainClass.set("com.agentyard.channel.gateway.codegen.ChannelGatewayJooqCodegenMain")
     args(rootProject.projectDir.absolutePath, verificationJooqDir.get().asFile.absolutePath)
     inputs.dir(rootProject.file("apps/channel-gateway/src/main/resources/db/migration"))
     outputs.dir(verificationJooqDir)

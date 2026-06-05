@@ -30,7 +30,7 @@ packages/extension-protocol/
 
 packages/extension-sdk-jvm/
   src/main/java/
-    com/lynxus/extension/sdk/
+    com/agentyard/extension/sdk/
       common/
       channel/
       tool/
@@ -39,7 +39,7 @@ packages/extension-sdk-jvm/
   src/test/java/
 
 packages/extension-sdk-python/
-  src/lynxus_extension_sdk/
+  src/agentyard_extension_sdk/
     common/
     channel/
     tool/
@@ -94,7 +94,7 @@ packages/extension-sdk-python/
 4. remote provider 推送 `/internal/channel-events/normalized`
 
 Credential lifecycle create / rotate / revoke / validate 不使用 `Idempotency-Key`，也不在 request envelope
-中携带 `idempotencyKey`。Core API 只对同一个 `integration_account.id` 做短时排他，失败后由用户手动再次提交新的 credential lifecycle 请求。credential lifecycle 的排障关联使用 `traceContext`、`X-Lynxus-Trace-Id` 和 `X-Lynxus-Request-Id`。
+中携带 `idempotencyKey`。Core API 只对同一个 `integration_account.id` 做短时排他，失败后由用户手动再次提交新的 credential lifecycle 请求。credential lifecycle 的排障关联使用 `traceContext`、`X-AgentYard-Trace-Id` 和 `X-AgentYard-Request-Id`。
 
 ### `traceContext`
 
@@ -102,7 +102,7 @@ Credential lifecycle create / rotate / revoke / validate 不使用 `Idempotency-
 2. 至少包含 `traceparent` string；可选 `tracestate` string、`baggage` object
 3. core / extension 必须透传，不允许覆盖 upstream `traceparent`
 4. 所有 descriptor-level request envelope 必须携带 `traceContext.traceparent`
-5. service-level endpoint（`/extension/manifest`、remote extension 的 `/extension/health`、`/health/live`、`/health/ready`）没有 request envelope，不要求 `traceContext`，也不要求 `X-Lynxus-Trace-Id` / `X-Lynxus-Request-Id`
+5. service-level endpoint（`/extension/manifest`、remote extension 的 `/extension/health`、`/health/live`、`/health/ready`）没有 request envelope，不要求 `traceContext`，也不要求 `X-AgentYard-Trace-Id` / `X-AgentYard-Request-Id`
 
 ### `externalSecretRef`
 
@@ -184,18 +184,18 @@ Endpoint path 规则：
 4. declared path 必须以 `/` 开头
 5. declared path 不允许包含 scheme、host、userinfo、fragment 或 query string
 6. 静态注册项 `baseUrl` 允许 path prefix；Core 调用 descriptor endpoint 时使用 normalized `baseUrl` 的 path prefix 与 declared path 拼接
-7. 拼接规则是 `normalizedBaseUrlWithoutTrailingSlash + declaredPath`；例如 `https://ext.example.com/lynxus` + `/tools/invoke` 得到 `https://ext.example.com/lynxus/tools/invoke`
+7. 拼接规则是 `normalizedBaseUrlWithoutTrailingSlash + declaredPath`；例如 `https://ext.example.com/agentyard` + `/tools/invoke` 得到 `https://ext.example.com/agentyard/tools/invoke`
 8. Core 调用 endpoint 时只允许使用静态注册项 normalized `baseUrl` + declared path
 9. extension manifest 不能覆盖或追加 invocation host
 
 Manifest endpoint auth：
 
 1. `/extension/manifest` HTTP 调用必须携带 `deployment-and-governance.md §5` 定义的 service-level internal auth header（`Authorization`）
-2. 调用方应该携带 `X-Lynxus-Extension-Registration-Id` 作为部署观测上下文，便于 extension service 日志和排障定位；extension service 不得把该 header 当作授权事实源
-3. `/extension/manifest` 是 service-level endpoint，调用前没有唯一 descriptor；调用方不得要求或发送 `X-Lynxus-Extension-Descriptor-Type` / `X-Lynxus-Extension-Descriptor-Id`
+2. 调用方应该携带 `X-AgentYard-Extension-Registration-Id` 作为部署观测上下文，便于 extension service 日志和排障定位；extension service 不得把该 header 当作授权事实源
+3. `/extension/manifest` 是 service-level endpoint，调用前没有唯一 descriptor；调用方不得要求或发送 `X-AgentYard-Extension-Descriptor-Type` / `X-AgentYard-Extension-Descriptor-Id`
 4. descriptor 白名单、允许暴露哪些 `providerType` / `connectorType`、以及 manifest 返回内容是否匹配 registration，始终由 Core 侧静态 registration config 校验
 5. core runtime service 自加载本服务 preset 时走内部 `DescriptorProvider`，不发起 HTTP，也不需要 header
-6. manifest fetch 不属于 mutating invocation，不强制 `Idempotency-Key`，也不要求 `X-Lynxus-Trace-Id` / `X-Lynxus-Request-Id`
+6. manifest fetch 不属于 mutating invocation，不强制 `Idempotency-Key`，也不要求 `X-AgentYard-Trace-Id` / `X-AgentYard-Request-Id`
 
 Descriptor source 规则：
 
@@ -238,10 +238,10 @@ Credential lifecycle request 共享字段：
 
 1. 四个 request body 都必须携带 `descriptor`、`account` 和 `traceContext`
 2. `descriptor.type` 固定为 `TOOL_CONNECTOR` / `CHANNEL_PROVIDER`，`descriptor.id` 固定为对应 `connectorType` / `providerType`
-3. `descriptor` 是 credential lifecycle request body 内唯一 descriptor 身份事实源；HTTP header 不携带 `X-Lynxus-Extension-*`
+3. `descriptor` 是 credential lifecycle request body 内唯一 descriptor 身份事实源；HTTP header 不携带 `X-AgentYard-Extension-*`
 4. `account.config` 必填但可为空 object；它是 Core 已按 descriptor `accountConfigSchema` 校验过的非敏感 account config
 5. request 不携带 Core 内部 `accountId`；remote extension 只使用 `externalSecretRef` 作为 credential handle
-6. `traceContext.traceparent` 必填；`X-Lynxus-Trace-Id` 必须与该 trace 同源
+6. `traceContext.traceparent` 必填；`X-AgentYard-Trace-Id` 必须与该 trace 同源
 7. request 不携带 `idempotencyKey`，HTTP header 也不携带 `Idempotency-Key`
 
 Credential lifecycle success response 共享字段：
@@ -635,7 +635,7 @@ JSON Schema 是 manifest / config / UI schema 的唯一源：
 2. Python SDK 使用 `datamodel-code-generator` 从 `packages/extension-protocol` OpenAPI / JSON Schema 生成 Pydantic v2 model；生成目录固定在 Python build 目录，例如 `packages/extension-sdk-python/build/generated/*`
 3. Python SDK 当前不采用 `openapi-python-client` 生成完整 client package；HTTP client / server helper 由 SDK 手写薄封装，内部使用生成模型或被 contract tests 约束的手写 facade
 4. JSON Schema validation 不通过生成代码实现；Java / Python SDK 直接使用运行时 JSON Schema validator 校验 manifest、config、UI schema 和 examples
-5. canonical JSON、duplicate key 检测、Lynxus canonical JSON profile 输入约束和 digest 计算是 SDK 手写 shared helper，通过跨语言 fixtures 约束，不由 OpenAPI / JSON Schema generator 生成；当前阶段不引入第三方 JCS 库作为信任根
+5. canonical JSON、duplicate key 检测、AgentYard canonical JSON profile 输入约束和 digest 计算是 SDK 手写 shared helper，通过跨语言 fixtures 约束，不由 OpenAPI / JSON Schema generator 生成；当前阶段不引入第三方 JCS 库作为信任根
 
 生成代码规则：
 
@@ -887,7 +887,7 @@ enterprise extension repo
 4. 企业 extension CI 必须跑 contract tests 后才能发布 image
 5. core reference extensions 必须跑同样 contract tests，作为样板实现
 6. contract tests 只验证协议符合性，不验证业务正确性
-7. canonical JSON 固定采用 `LynxusCanonicalJson` helper：基于 RFC 8785/JCS 的确定性 object key 排序、字符串转义和 UTF-8 bytes 输出思路，但输入收窄为 descriptor / registration digest 场景的安全 profile；digest 为 `sha256` over UTF-8 canonical bytes，输出形态 `sha256:<lowercase-hex>`
+7. canonical JSON 固定采用 `AgentYardCanonicalJson` helper：基于 RFC 8785/JCS 的确定性 object key 排序、字符串转义和 UTF-8 bytes 输出思路，但输入收窄为 descriptor / registration digest 场景的安全 profile；digest 为 `sha256` over UTF-8 canonical bytes，输出形态 `sha256:<lowercase-hex>`
 8. Java SDK 与 Python SDK 各自实现 helper，不引入第三方 JCS 库作为信任根；允许复用 Jackson 3 / Python 标准库 `json` 做 tokenization，但 canonical bytes emitter、duplicate key rejection、number/profile validation 必须由 SDK helper 统一负责
 9. canonical JSON fixtures 是 descriptor digest 和 registry startup validation 的硬门禁；fixtures 必须覆盖 JSON Schema 内嵌对象、默认值、Unicode / escape、非 ASCII key 排序、数组内对象、空 object / array、safe integer 边界、float/decimal/exponent 拒绝、duplicate key 拒绝、大整数字符串化和 digest 输入字段
 10. 任何 canonical JSON fixture、算法或 manifest digest 输入字段改动，必须同时通过 protocol self-check、Java SDK contract tests、Python SDK contract tests 和 `apps/agent-runtime` 对 Python SDK 的复用测试
@@ -1008,16 +1008,16 @@ EXTENSION_API_VERSION_INCOMPATIBLE
 Java 发布坐标：
 
 ```text
-group: com.lynxus
-artifact: lynxus-extension-sdk-jvm
+group: com.agentyard
+artifact: agentyard-extension-sdk-jvm
 version: <sdkVersion>
 ```
 
 Python 发布坐标：
 
 ```text
-distribution: lynxus-extension-sdk-python
-import package: lynxus_extension_sdk
+distribution: agentyard-extension-sdk-python
+import package: agentyard_extension_sdk
 version: <sdkVersion>
 ```
 

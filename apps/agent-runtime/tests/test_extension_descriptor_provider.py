@@ -6,8 +6,8 @@ from typing import Any
 from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
-from lynxus_extension_sdk.common import canonical_bytes
-from lynxus_extension_sdk.registration import (
+from agentyard_extension_sdk.common import canonical_bytes
+from agentyard_extension_sdk.registration import (
     CORE_AGENT_RUNTIME_REGISTRATION_ID,
     ExtensionRegistration,
     ExtensionRegistrationSet,
@@ -16,20 +16,20 @@ from lynxus_extension_sdk.registration import (
     RegistrationExposes,
     RegistrationSource,
 )
-from lynxus_extension_sdk.tool import tool_connector_definition_digest
+from agentyard_extension_sdk.tool import tool_connector_definition_digest
 
 from runtime_fixtures import FakeLifespanTranscriptStore
 
-os.environ.setdefault("LYNXUS_INTERNAL_AUTH_TOKEN", "test-internal-token")
+os.environ.setdefault("AGENTYARD_INTERNAL_AUTH_TOKEN", "test-internal-token")
 
-from lynxus_agent_runtime.descriptor_provider import (  # noqa: E402
+from agentyard_agent_runtime.descriptor_provider import (  # noqa: E402
     BUILT_IN_TOOL_CONNECTOR_DESCRIPTOR_IDS,
     DescriptorProvider,
 )
-from lynxus_agent_runtime.extension_protocol import validate_manifest_against_protocol_schema  # noqa: E402
-from lynxus_agent_runtime.extension_registry import load_tool_connector_registry, validate_tool_connector_registry  # noqa: E402
-from lynxus_agent_runtime.extension_registry import fetch_remote_manifest  # noqa: E402
-from lynxus_agent_runtime.main import app  # noqa: E402
+from agentyard_agent_runtime.extension_protocol import validate_manifest_against_protocol_schema  # noqa: E402
+from agentyard_agent_runtime.extension_registry import load_tool_connector_registry, validate_tool_connector_registry  # noqa: E402
+from agentyard_agent_runtime.extension_registry import fetch_remote_manifest  # noqa: E402
+from agentyard_agent_runtime.main import app  # noqa: E402
 
 
 class FakeRedisClient:
@@ -42,8 +42,8 @@ class FakeRedisClient:
 
 @contextmanager
 def agent_runtime_client():
-    with patch("lynxus_agent_runtime.main.create_redis_client", return_value=FakeRedisClient()):
-        with patch("lynxus_agent_runtime.main.create_transcript_store", return_value=FakeLifespanTranscriptStore()):
+    with patch("agentyard_agent_runtime.main.create_redis_client", return_value=FakeRedisClient()):
+        with patch("agentyard_agent_runtime.main.create_transcript_store", return_value=FakeLifespanTranscriptStore()):
             with TestClient(app) as client:
                 yield client
 
@@ -354,7 +354,7 @@ def test_validation_endpoint_returns_503_when_registry_is_not_ready() -> None:
         "manifestErrors": [],
     }
 
-    with patch("lynxus_agent_runtime.main.validate_tool_connector_registry", return_value=validation_result):
+    with patch("agentyard_agent_runtime.main.validate_tool_connector_registry", return_value=validation_result):
         with agent_runtime_client() as client:
             client.app.state.tool_connector_registry = None
             response = client.get(
@@ -383,7 +383,7 @@ def test_remote_manifest_fetch_uses_sdk_manifest_url_and_service_headers() -> No
             observed["timeout"] = timeout
             return FakeResponse()
 
-    with patch("lynxus_agent_runtime.extension_registry.shared_http_client_for_url", return_value=FakeClient()):
+    with patch("agentyard_agent_runtime.extension_registry.shared_http_client_for_url", return_value=FakeClient()):
         content = fetch_remote_manifest(registration)
 
     assert content == b'{"ok":true}'
@@ -391,7 +391,7 @@ def test_remote_manifest_fetch_uses_sdk_manifest_url_and_service_headers() -> No
         "url": "https://extensions.example.test/enterprise-tools/extension/manifest",
         "headers": {
             "Authorization": "Bearer test-internal-token",
-            "X-Lynxus-Extension-Registration-Id": "enterprise-tools",
+            "X-AgentYard-Extension-Registration-Id": "enterprise-tools",
         },
         "timeout": 5,
     }

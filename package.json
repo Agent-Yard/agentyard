@@ -1,5 +1,5 @@
 {
-  "name": "lynxus",
+  "name": "agentyard",
   "private": true,
   "version": "0.1.0",
   "packageManager": "pnpm@9.12.0",
@@ -26,10 +26,10 @@
     "dev:source:agent-runtime": "./scripts/dev/agent-runtime.sh",
     "dev:source:web": "./scripts/dev/web.sh",
     "build": "pnpm build:web && pnpm build:site",
-    "build:web": "pnpm --filter @lynxus/web build",
-    "build:site": "pnpm --filter @lynxus/site build",
+    "build:web": "pnpm --filter @agentyard/web build",
+    "build:site": "pnpm --filter @agentyard/site build",
     "lint": "pnpm lint:web",
-    "test:web": "pnpm --filter @lynxus/web test",
-    "lint:web": "pnpm --filter @lynxus/web lint"
+    "test:web": "pnpm --filter @agentyard/web test",
+    "lint:web": "pnpm --filter @agentyard/web lint"
   }
 }

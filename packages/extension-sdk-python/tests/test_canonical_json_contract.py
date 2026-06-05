@@ -6,13 +6,13 @@ from urllib.parse import urlsplit
 
 import pytest
 
-from lynxus_extension_sdk.common.canonical_json import (
+from agentyard_extension_sdk.common.canonical_json import (
     CanonicalJsonError,
     _parse_json_text,
     canonical_bytes,
     sha256_digest,
 )
-from lynxus_extension_sdk.common.definition_digest import (
+from agentyard_extension_sdk.common.definition_digest import (
     channel_provider_definition_digest,
     channel_provider_definition_digest_input,
     tool_connector_definition_digest,

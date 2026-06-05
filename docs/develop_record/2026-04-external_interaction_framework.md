@@ -1,6 +1,6 @@
 # External Interaction 设计方案
 
-这份文档用于规划 Lynxus 运行态中的通用 external interaction 能力。
+这份文档用于规划 AgentYard 运行态中的通用 external interaction 能力。
 
 这里的 external interaction 指：
 
@@ -71,10 +71,10 @@
 
 ### 2.3 当前代码位置
 
-- runtime DTO: `apps/api/src/main/java/com/lynxus/platform/runtime/RuntimeDtos.java`
-- runtime service: `apps/api/src/main/java/com/lynxus/platform/runtime/RuntimeService.java`
-- workflow contracts: `packages/contracts-jvm/src/main/java/com/lynxus/contracts/runtime/WorkflowContracts.java`
-- workflow impl: `apps/worker/src/main/java/com/lynxus/worker/workflow/AssistantRunWorkflowImpl.java`
+- runtime DTO: `apps/api/src/main/java/com/agentyard/platform/runtime/RuntimeDtos.java`
+- runtime service: `apps/api/src/main/java/com/agentyard/platform/runtime/RuntimeService.java`
+- workflow contracts: `packages/contracts-jvm/src/main/java/com/agentyard/contracts/runtime/WorkflowContracts.java`
+- workflow impl: `apps/worker/src/main/java/com/agentyard/worker/workflow/AssistantRunWorkflowImpl.java`
 - runtime page: `apps/web/src/pages/RuntimeConversationPage.vue`
 - workflow page: `apps/web/src/pages/WorkflowPage.vue`
 - web app shell: `apps/web/src/App.vue`
@@ -293,7 +293,7 @@ workflow 不需要为每种外部动作单独发明状态。
 
 - `packages/contracts/src/index.ts`
 - `packages/contracts/openapi/control-plane.yaml`
-- `packages/contracts-jvm/src/main/java/com/lynxus/contracts/runtime/WorkflowContracts.java`
+- `packages/contracts-jvm/src/main/java/com/agentyard/contracts/runtime/WorkflowContracts.java`
 
 ### 8.2 Runtime DTO 层
 
@@ -321,7 +321,7 @@ workflow 不需要为每种外部动作单独发明状态。
 
 涉及文件：
 
-- `apps/api/src/main/java/com/lynxus/platform/runtime/RuntimeDtos.java`
+- `apps/api/src/main/java/com/agentyard/platform/runtime/RuntimeDtos.java`
 
 ### 8.3 Runtime Service 层
 
@@ -351,8 +351,8 @@ workflow 不需要为每种外部动作单独发明状态。
 
 涉及文件：
 
-- `apps/api/src/main/java/com/lynxus/platform/runtime/RuntimeController.java`
-- `apps/api/src/main/java/com/lynxus/platform/runtime/RuntimeService.java`
+- `apps/api/src/main/java/com/agentyard/platform/runtime/RuntimeController.java`
+- `apps/api/src/main/java/com/agentyard/platform/runtime/RuntimeService.java`
 
 ### 8.4 Workflow 层
 
@@ -368,9 +368,9 @@ workflow 不需要为每种外部动作单独发明状态。
 
 涉及文件：
 
-- `packages/contracts-jvm/src/main/java/com/lynxus/contracts/runtime/WorkflowContracts.java`
-- `apps/worker/src/main/java/com/lynxus/worker/workflow/AssistantRunWorkflowImpl.java`
-- `apps/api/src/main/java/com/lynxus/platform/runtime/AssistantRunWorkflowGateway.java`
+- `packages/contracts-jvm/src/main/java/com/agentyard/contracts/runtime/WorkflowContracts.java`
+- `apps/worker/src/main/java/com/agentyard/worker/workflow/AssistantRunWorkflowImpl.java`
+- `apps/api/src/main/java/com/agentyard/platform/runtime/AssistantRunWorkflowGateway.java`
 
 ### 8.5 Web 层
 

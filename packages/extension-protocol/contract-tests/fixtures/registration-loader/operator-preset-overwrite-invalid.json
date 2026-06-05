@@ -1,9 +1,9 @@
 {
   "name": "operator yaml cannot declare or overwrite a core preset registration",
-  "operatorYaml": "lynxus:\n  extensions:\n    services:\n      - registrationId: core-channel-gateway\n        baseUrl: http://fake-channel-gateway:8080\n        exposes:\n          channelProviderTypes:\n            - enterprise.fake\n        auth:\n          type: INTERNAL_TOKEN\n",
+  "operatorYaml": "agentyard:\n  extensions:\n    services:\n      - registrationId: core-channel-gateway\n        baseUrl: http://fake-channel-gateway:8080\n        exposes:\n          channelProviderTypes:\n            - enterprise.fake\n        auth:\n          type: INTERNAL_TOKEN\n",
   "environment": {
-    "LYNXUS_AGENT_RUNTIME_BASE_URL": "http://agent-runtime:8080",
-    "LYNXUS_CHANNEL_GATEWAY_BASE_URL": "http://channel-gateway:8080"
+    "AGENTYARD_AGENT_RUNTIME_BASE_URL": "http://agent-runtime:8080",
+    "AGENTYARD_CHANNEL_GATEWAY_BASE_URL": "http://channel-gateway:8080"
   },
   "expectedErrorCode": "REGISTRATION_CONFIG_INVALID"
 }

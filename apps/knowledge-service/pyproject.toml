@@ -1,11 +1,11 @@
 [project]
-name = "lynxus-knowledge-service"
+name = "agentyard-knowledge-service"
 version = "0.1.0"
-description = "Lynxus knowledge base service"
+description = "AgentYard knowledge base service"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi",
-    "lynxus-python-common",
+    "agentyard-python-common",
     "minio==7.2.15",
     "psycopg[binary]==3.2.6",
     "pydantic",
@@ -21,4 +21,4 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["lynxus_knowledge_service"]
+packages = ["agentyard_knowledge_service"]

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://lynxus.dev/schemas/extension-protocol/ui-field.schema.json",
-  "title": "Lynxus UI field schema",
+  "$id": "https://agentyard.dev/schemas/extension-protocol/ui-field.schema.json",
+  "title": "AgentYard UI field schema",
   "type": "array",
   "items": {
     "type": "object",

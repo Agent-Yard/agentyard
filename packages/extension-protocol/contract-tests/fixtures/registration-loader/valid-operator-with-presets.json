@@ -1,21 +1,21 @@
 {
   "name": "valid operator yaml merges core presets, resolves placeholders, normalizes urls, sorts descriptors, and excludes tokens",
-  "operatorYaml": "lynxus:\n  extensions:\n    services:\n      - registrationId: acme-business-connectors\n        baseUrl: ${ACME_CONNECTOR_URL}\n        exposes:\n          toolConnectorTypes:\n            - enterprise.acme.erp\n            - enterprise.acme.crm\n            - enterprise.acme.crm\n        auth:\n          type: INTERNAL_TOKEN\n      - registrationId: acme-channel-provider\n        baseUrl: HTTP://Channel.Example.com:80/lynxus/\n        exposes:\n          channelProviderTypes:\n            - enterprise.acme.ticket\n            - enterprise.acme.internal-im\n        auth:\n          type: INTERNAL_TOKEN\n",
-  "variantOperatorYaml": "lynxus:\n  extensions:\n    services:\n      - registrationId: acme-channel-provider\n        baseUrl: http://channel.example.com/lynxus\n        exposes:\n          channelProviderTypes:\n            - enterprise.acme.internal-im\n            - enterprise.acme.ticket\n        auth:\n          type: INTERNAL_TOKEN\n      - registrationId: acme-business-connectors\n        baseUrl: https://tools.example.com/extensions\n        exposes:\n          toolConnectorTypes:\n            - enterprise.acme.crm\n            - enterprise.acme.erp\n        auth:\n          type: INTERNAL_TOKEN\n",
+  "operatorYaml": "agentyard:\n  extensions:\n    services:\n      - registrationId: acme-business-connectors\n        baseUrl: ${ACME_CONNECTOR_URL}\n        exposes:\n          toolConnectorTypes:\n            - enterprise.acme.erp\n            - enterprise.acme.crm\n            - enterprise.acme.crm\n        auth:\n          type: INTERNAL_TOKEN\n      - registrationId: acme-channel-provider\n        baseUrl: HTTP://Channel.Example.com:80/agentyard/\n        exposes:\n          channelProviderTypes:\n            - enterprise.acme.ticket\n            - enterprise.acme.internal-im\n        auth:\n          type: INTERNAL_TOKEN\n",
+  "variantOperatorYaml": "agentyard:\n  extensions:\n    services:\n      - registrationId: acme-channel-provider\n        baseUrl: http://channel.example.com/agentyard\n        exposes:\n          channelProviderTypes:\n            - enterprise.acme.internal-im\n            - enterprise.acme.ticket\n        auth:\n          type: INTERNAL_TOKEN\n      - registrationId: acme-business-connectors\n        baseUrl: https://tools.example.com/extensions\n        exposes:\n          toolConnectorTypes:\n            - enterprise.acme.crm\n            - enterprise.acme.erp\n        auth:\n          type: INTERNAL_TOKEN\n",
   "environment": {
     "ACME_CONNECTOR_URL": "https://TOOLS.Example.com:443/extensions/",
-    "LYNXUS_AGENT_RUNTIME_BASE_URL": "https://Agent-Runtime.Example.COM:443/runtime/",
-    "LYNXUS_CHANNEL_GATEWAY_BASE_URL": "HTTP://Channel-Gateway.Example.COM:80/core/",
-    "LYNXUS_INTERNAL_TOKEN": "token-one"
+    "AGENTYARD_AGENT_RUNTIME_BASE_URL": "https://Agent-Runtime.Example.COM:443/runtime/",
+    "AGENTYARD_CHANNEL_GATEWAY_BASE_URL": "HTTP://Channel-Gateway.Example.COM:80/core/",
+    "AGENTYARD_INTERNAL_TOKEN": "token-one"
   },
   "alternateEnvironment": {
     "ACME_CONNECTOR_URL": "https://tools.example.com/extensions",
-    "LYNXUS_AGENT_RUNTIME_BASE_URL": "https://agent-runtime.example.com/runtime",
-    "LYNXUS_CHANNEL_GATEWAY_BASE_URL": "http://channel-gateway.example.com/core",
-    "LYNXUS_INTERNAL_TOKEN": "token-two"
+    "AGENTYARD_AGENT_RUNTIME_BASE_URL": "https://agent-runtime.example.com/runtime",
+    "AGENTYARD_CHANNEL_GATEWAY_BASE_URL": "http://channel-gateway.example.com/core",
+    "AGENTYARD_INTERNAL_TOKEN": "token-two"
   },
   "expected": {
-    "registrationConfigDigest": "sha256:6a1c736345905758be7d45d5a7a29ce69b6d3c8ef5dca362a4a92e0548c92b03",
+    "registrationConfigDigest": "sha256:7ccac7dd7216cc7d2b27da1ec0b320963c26f3e76f84f9aad407713f43e2803c",
     "canonicalInput": {
       "services": [
         {
@@ -36,7 +36,7 @@
         {
           "registrationId": "acme-channel-provider",
           "source": "OPERATOR_YAML",
-          "baseUrl": "http://channel.example.com/lynxus",
+          "baseUrl": "http://channel.example.com/agentyard",
           "exposes": {
             "channelProviderTypes": [
               "enterprise.acme.internal-im",

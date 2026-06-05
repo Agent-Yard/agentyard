@@ -13,8 +13,8 @@
 Commands:
 
 - [ ] `./gradlew :packages:contracts-jvm:test`
-- [ ] `pnpm --filter @lynxus/extension-protocol self-check`
-- [ ] `pnpm --filter @lynxus/web build`
+- [ ] `pnpm --filter @agentyard/extension-protocol self-check`
+- [ ] `pnpm --filter @agentyard/web build`
 - [ ] `uv run pytest apps/agent-runtime/tests/test_models.py -q`
 
 ## 2. Persistence Verification
@@ -181,8 +181,8 @@ Commands:
 
 Commands:
 
-- [ ] `pnpm --filter @lynxus/web test`
-- [ ] `pnpm --filter @lynxus/web build`
+- [ ] `pnpm --filter @agentyard/web test`
+- [ ] `pnpm --filter @agentyard/web build`
 
 ## 9. Repository-Wide Cleanup And Final Verification
 
@@ -217,5 +217,5 @@ Generated code verification:
 
 Final command policy:
 
-- Use `pnpm -r --if-present test` or `pnpm --filter @lynxus/web test`
+- Use `pnpm -r --if-present test` or `pnpm --filter @agentyard/web test`
 - Do not use root `pnpm test`; the root package currently has no `test` script

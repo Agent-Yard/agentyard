@@ -19,27 +19,27 @@ def find_free_port() -> int:
 
 
 POSTGRES_PORT = find_free_port()
-POSTGRES_CONTAINER_NAME = f"lynxus-knowledge-test-{os.getpid()}"
-temp_root = tempfile.mkdtemp(prefix="lynxus-knowledge-test-")
+POSTGRES_CONTAINER_NAME = f"agentyard-knowledge-test-{os.getpid()}"
+temp_root = tempfile.mkdtemp(prefix="agentyard-knowledge-test-")
 TEST_DATABASE_URL = os.environ.get(
-    "LYNXUS_KNOWLEDGE_TEST_DATABASE_URL",
-    f"postgresql+psycopg://lynxus:lynxus@127.0.0.1:{POSTGRES_PORT}/lynxus_knowledge",
+    "AGENTYARD_KNOWLEDGE_TEST_DATABASE_URL",
+    f"postgresql+psycopg://agentyard:agentyard@127.0.0.1:{POSTGRES_PORT}/agentyard_knowledge",
 )
-os.environ["LYNXUS_KNOWLEDGE_DATABASE_URL"] = TEST_DATABASE_URL
-os.environ["LYNXUS_OBJECT_STORAGE_MODE"] = "filesystem"
-os.environ["LYNXUS_OBJECT_STORAGE_ROOT"] = temp_root
-os.environ["LYNXUS_KNOWLEDGE_EMBEDDING_BASE_URL"] = "http://embedding.test/v1"
-os.environ["LYNXUS_KNOWLEDGE_EMBEDDING_MODEL"] = "test-embedding-model"
-os.environ["LYNXUS_KNOWLEDGE_EMBEDDING_API_KEY"] = "test-embedding-key"
-os.environ["LYNXUS_KNOWLEDGE_EMBEDDING_DIMENSIONS"] = "4"
-os.environ["LYNXUS_KNOWLEDGE_EMBEDDING_BATCH_SIZE"] = "8"
-os.environ["LYNXUS_INTERNAL_AUTH_TOKEN"] = "test-internal-token"
+os.environ["AGENTYARD_KNOWLEDGE_DATABASE_URL"] = TEST_DATABASE_URL
+os.environ["AGENTYARD_OBJECT_STORAGE_MODE"] = "filesystem"
+os.environ["AGENTYARD_OBJECT_STORAGE_ROOT"] = temp_root
+os.environ["AGENTYARD_KNOWLEDGE_EMBEDDING_BASE_URL"] = "http://embedding.test/v1"
+os.environ["AGENTYARD_KNOWLEDGE_EMBEDDING_MODEL"] = "test-embedding-model"
+os.environ["AGENTYARD_KNOWLEDGE_EMBEDDING_API_KEY"] = "test-embedding-key"
+os.environ["AGENTYARD_KNOWLEDGE_EMBEDDING_DIMENSIONS"] = "4"
+os.environ["AGENTYARD_KNOWLEDGE_EMBEDDING_BATCH_SIZE"] = "8"
+os.environ["AGENTYARD_INTERNAL_AUTH_TOKEN"] = "test-internal-token"
 
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from lynxus_knowledge_service.object_storage import Storage, load_storage_settings
-from lynxus_knowledge_service.main import (
+from agentyard_knowledge_service.object_storage import Storage, load_storage_settings
+from agentyard_knowledge_service.main import (
     Base,
     CompleteUploadRequest,
     CreateIndexSnapshotRequest,
@@ -99,8 +99,8 @@ class ObjectStorageConfigurationTest(unittest.TestCase):
         with patch.dict(
             os.environ,
             {
-                "LYNXUS_OBJECT_STORAGE_MODE": "filesystem",
-                "LYNXUS_OBJECT_STORAGE_ROOT": temp_root,
+                "AGENTYARD_OBJECT_STORAGE_MODE": "filesystem",
+                "AGENTYARD_OBJECT_STORAGE_ROOT": temp_root,
             },
             clear=True,
         ):
@@ -119,13 +119,13 @@ class ObjectStorageConfigurationTest(unittest.TestCase):
         with patch.dict(
             os.environ,
             {
-                "LYNXUS_OBJECT_STORAGE_MODE": "object-storage",
-                "LYNXUS_OBJECT_STORAGE_PROVIDER": "minio",
-                "LYNXUS_OBJECT_STORAGE_ENDPOINT": "http://127.0.0.1:9000",
-                "LYNXUS_OBJECT_STORAGE_ACCESS_KEY": "minioadmin",
-                "LYNXUS_OBJECT_STORAGE_SECRET_KEY": "minioadmin",
-                "LYNXUS_OBJECT_STORAGE_BUCKET": "lynxus-knowledge",
-                "LYNXUS_OBJECT_STORAGE_CREATE_BUCKET": "true",
+                "AGENTYARD_OBJECT_STORAGE_MODE": "object-storage",
+                "AGENTYARD_OBJECT_STORAGE_PROVIDER": "minio",
+                "AGENTYARD_OBJECT_STORAGE_ENDPOINT": "http://127.0.0.1:9000",
+                "AGENTYARD_OBJECT_STORAGE_ACCESS_KEY": "minioadmin",
+                "AGENTYARD_OBJECT_STORAGE_SECRET_KEY": "minioadmin",
+                "AGENTYARD_OBJECT_STORAGE_BUCKET": "agentyard-knowledge",
+                "AGENTYARD_OBJECT_STORAGE_CREATE_BUCKET": "true",
             },
             clear=True,
         ):
@@ -139,24 +139,24 @@ class ObjectStorageConfigurationTest(unittest.TestCase):
             secure=False,
             region=None,
         )
-        fake_client.bucket_exists.assert_called_once_with("lynxus-knowledge")
-        fake_client.make_bucket.assert_called_once_with("lynxus-knowledge")
+        fake_client.bucket_exists.assert_called_once_with("agentyard-knowledge")
+        fake_client.make_bucket.assert_called_once_with("agentyard-knowledge")
 
     def test_s3_provider_should_require_region_and_not_create_bucket_when_disabled(self) -> None:
         with patch.dict(
             os.environ,
             {
-                "LYNXUS_OBJECT_STORAGE_MODE": "object-storage",
-                "LYNXUS_OBJECT_STORAGE_PROVIDER": "s3",
-                "LYNXUS_OBJECT_STORAGE_ENDPOINT": "https://s3.ap-southeast-1.amazonaws.com",
-                "LYNXUS_OBJECT_STORAGE_ACCESS_KEY": "test-access-key",
-                "LYNXUS_OBJECT_STORAGE_SECRET_KEY": "test-secret-key",
-                "LYNXUS_OBJECT_STORAGE_BUCKET": "lynxus-knowledge-test",
-                "LYNXUS_OBJECT_STORAGE_CREATE_BUCKET": "false",
+                "AGENTYARD_OBJECT_STORAGE_MODE": "object-storage",
+                "AGENTYARD_OBJECT_STORAGE_PROVIDER": "s3",
+                "AGENTYARD_OBJECT_STORAGE_ENDPOINT": "https://s3.ap-southeast-1.amazonaws.com",
+                "AGENTYARD_OBJECT_STORAGE_ACCESS_KEY": "test-access-key",
+                "AGENTYARD_OBJECT_STORAGE_SECRET_KEY": "test-secret-key",
+                "AGENTYARD_OBJECT_STORAGE_BUCKET": "agentyard-knowledge-test",
+                "AGENTYARD_OBJECT_STORAGE_CREATE_BUCKET": "false",
             },
             clear=True,
         ):
-            with self.assertRaisesRegex(ValueError, "LYNXUS_OBJECT_STORAGE_REGION"):
+            with self.assertRaisesRegex(ValueError, "AGENTYARD_OBJECT_STORAGE_REGION"):
                 load_storage_settings(Path("/tmp/default-knowledge-storage"))
 
         fake_client = MagicMock()
@@ -164,14 +164,14 @@ class ObjectStorageConfigurationTest(unittest.TestCase):
         with patch.dict(
             os.environ,
             {
-                "LYNXUS_OBJECT_STORAGE_MODE": "object-storage",
-                "LYNXUS_OBJECT_STORAGE_PROVIDER": "s3",
-                "LYNXUS_OBJECT_STORAGE_ENDPOINT": "https://s3.ap-southeast-1.amazonaws.com",
-                "LYNXUS_OBJECT_STORAGE_REGION": "ap-southeast-1",
-                "LYNXUS_OBJECT_STORAGE_ACCESS_KEY": "test-access-key",
-                "LYNXUS_OBJECT_STORAGE_SECRET_KEY": "test-secret-key",
-                "LYNXUS_OBJECT_STORAGE_BUCKET": "lynxus-knowledge-test",
-                "LYNXUS_OBJECT_STORAGE_CREATE_BUCKET": "false",
+                "AGENTYARD_OBJECT_STORAGE_MODE": "object-storage",
+                "AGENTYARD_OBJECT_STORAGE_PROVIDER": "s3",
+                "AGENTYARD_OBJECT_STORAGE_ENDPOINT": "https://s3.ap-southeast-1.amazonaws.com",
+                "AGENTYARD_OBJECT_STORAGE_REGION": "ap-southeast-1",
+                "AGENTYARD_OBJECT_STORAGE_ACCESS_KEY": "test-access-key",
+                "AGENTYARD_OBJECT_STORAGE_SECRET_KEY": "test-secret-key",
+                "AGENTYARD_OBJECT_STORAGE_BUCKET": "agentyard-knowledge-test",
+                "AGENTYARD_OBJECT_STORAGE_CREATE_BUCKET": "false",
             },
             clear=True,
         ):
@@ -192,7 +192,7 @@ class ObjectStorageConfigurationTest(unittest.TestCase):
 class KnowledgeServiceTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.owns_container = "LYNXUS_KNOWLEDGE_TEST_DATABASE_URL" not in os.environ
+        cls.owns_container = "AGENTYARD_KNOWLEDGE_TEST_DATABASE_URL" not in os.environ
         if cls.owns_container:
             if shutil.which("docker") is None:
                 raise unittest.SkipTest("docker is required for pgvector integration tests")
@@ -215,11 +215,11 @@ class KnowledgeServiceTest(unittest.TestCase):
                         "--name",
                         POSTGRES_CONTAINER_NAME,
                         "-e",
-                        "POSTGRES_DB=lynxus_knowledge",
+                        "POSTGRES_DB=agentyard_knowledge",
                         "-e",
-                        "POSTGRES_USER=lynxus",
+                        "POSTGRES_USER=agentyard",
                         "-e",
-                        "POSTGRES_PASSWORD=lynxus",
+                        "POSTGRES_PASSWORD=agentyard",
                         "-p",
                         f"{POSTGRES_PORT}:5432",
                         "-d",
@@ -356,7 +356,7 @@ class KnowledgeServiceTest(unittest.TestCase):
           </body>
         </html>
         """.strip()
-        with patch("lynxus_knowledge_service.main.urlopen", return_value=FakeUrlResponse(html.encode("utf-8"), "text/html")):
+        with patch("agentyard_knowledge_service.main.urlopen", return_value=FakeUrlResponse(html.encode("utf-8"), "text/html")):
             with SessionLocal() as db:
                 created = create_url_import(
                     CreateUrlImportRequest(
@@ -367,7 +367,7 @@ class KnowledgeServiceTest(unittest.TestCase):
                     db,
                 )
         import_job_id = created["importJob"]["id"]
-        with patch("lynxus_knowledge_service.main.urlopen", return_value=FakeUrlResponse(html.encode("utf-8"), "text/html")):
+        with patch("agentyard_knowledge_service.main.urlopen", return_value=FakeUrlResponse(html.encode("utf-8"), "text/html")):
             with SessionLocal() as db:
                 imported = run_import_job(import_job_id, db)
         self.assertEqual(imported.status, "SUCCEEDED")
@@ -754,7 +754,7 @@ class KnowledgeServiceTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["status"], "UP")
-        self.assertEqual(payload["service"], "lynxus-knowledge-service")
+        self.assertEqual(payload["service"], "agentyard-knowledge-service")
         self.assertEqual(payload["dependencies"]["database"]["status"], "UP")
         self.assertEqual(payload["dependencies"]["storage"]["status"], "UP")
         self.assertEqual(payload["embedding"]["status"], "configured")
@@ -764,11 +764,11 @@ class KnowledgeServiceTest(unittest.TestCase):
         fake_storage.check.return_value = {
             "mode": "object-storage",
             "provider": "s3",
-            "bucket": "lynxus-knowledge-test",
+            "bucket": "agentyard-knowledge-test",
             "endpoint": "https://s3.ap-southeast-1.amazonaws.com",
         }
 
-        with patch("lynxus_knowledge_service.main.storage", fake_storage):
+        with patch("agentyard_knowledge_service.main.storage", fake_storage):
             with TestClient(app) as client:
                 response = client.get("/healthz")
 
@@ -777,12 +777,12 @@ class KnowledgeServiceTest(unittest.TestCase):
         self.assertEqual(storage_dependency["status"], "UP")
         self.assertEqual(storage_dependency["mode"], "object-storage")
         self.assertEqual(storage_dependency["provider"], "s3")
-        self.assertEqual(storage_dependency["bucket"], "lynxus-knowledge-test")
+        self.assertEqual(storage_dependency["bucket"], "agentyard-knowledge-test")
         self.assertEqual(storage_dependency["endpoint"], "https://s3.ap-southeast-1.amazonaws.com")
 
     def test_healthz_should_return_down_and_503_when_database_probe_fails(self) -> None:
         with TestClient(app) as client:
-            with patch("lynxus_knowledge_service.main.engine.connect", side_effect=RuntimeError("postgres unavailable")):
+            with patch("agentyard_knowledge_service.main.engine.connect", side_effect=RuntimeError("postgres unavailable")):
                 response = client.get("/healthz")
 
         self.assertEqual(response.status_code, 503)
@@ -830,7 +830,7 @@ class KnowledgeServiceTest(unittest.TestCase):
         self.assertEqual(snapshot_count, 0)
 
     def test_should_fail_fast_when_database_is_not_postgresql(self) -> None:
-        with patch("lynxus_knowledge_service.main.DATABASE_URL", "sqlite+pysqlite:///tmp/test.db"):
+        with patch("agentyard_knowledge_service.main.DATABASE_URL", "sqlite+pysqlite:///tmp/test.db"):
             with self.assertRaises(RuntimeError) as ctx:
                 ensure_postgres_configuration()
         self.assertIn("requires PostgreSQL", str(ctx.exception))
@@ -841,7 +841,7 @@ class KnowledgeServiceTest(unittest.TestCase):
         fake_context.__enter__.return_value = fake_connection
         fake_context.__exit__.return_value = False
         fake_connection.execute.side_effect = RuntimeError("extension install failed")
-        with patch("lynxus_knowledge_service.main.engine.begin", return_value=fake_context):
+        with patch("agentyard_knowledge_service.main.engine.begin", return_value=fake_context):
             with self.assertRaises(RuntimeError) as ctx:
                 initialize_postgres_schema()
         self.assertIn("extension install failed", str(ctx.exception))

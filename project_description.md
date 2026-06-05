@@ -1,15 +1,15 @@
-# 企业级智能体中台总体方案
+# 智能体系统总体方案
 
-> 说明：本文件描述的是 Lynxus 的目标态总体方案和长期架构方向，不等同于当前仓库已经全部落地的实现范围。当前代码仓库阶段定位请优先参考 `README.md`、`docs/technical_route.md` 和 `docs/architecture/code-framework.md`。
+> 说明：本文件描述的是 AgentYard 的目标态总体方案和长期架构方向，不等同于当前仓库已经全部落地的实现范围。当前代码仓库阶段定位请优先参考 `README.md`、`docs/technical_route.md` 和 `docs/architecture/code-framework.md`。
 
-**执行摘要**：本方案面向“企业级智能体中台（Enterprise Agent Platform / AgentOps 平台）”建设目标，提出一套可落地、可扩展、可治理的总体架构与实施路线，用于按业务域管理多智能体群（多智能体拓扑/协作）、统一管理 Skill（工具/技能）与 MCP 服务（Model Context Protocol Server），并支持“技能与 MCP 默认归属于单个智能体、也可在业务域内共享、以及按租户维度共享/隔离”的资源治理模型。方案强调：以元数据/控制面统一编排与权限治理，以事件驱动/消息总线连接运行面，以标准化接口契约（OpenAPI/AsyncAPI/MCP）实现可演进集成，并以可观测性（OpenTelemetry）与 SLO/错误预算驱动运维治理，最终达到“可控上线、可回滚、可审计、可成本度量”的企业级交付标准。MCP 作为连接外部系统与工具的开放协议，其基于 JSON-RPC 2.0 的 Host/Client/Server 架构及 Tools/Resources/Prompts 能力为本中台的“工具生态与安全连接”提供了标准化接口基础。citeturn4view0turn4view1turn5search0turn0search5turn0search2turn0search7turn10search4
+**执行摘要**：本方案面向“智能体系统（Enterprise Agent Platform / AgentOps 平台）”建设目标，提出一套可落地、可扩展、可治理的总体架构与实施路线，用于按业务域管理多智能体群（多智能体拓扑/协作）、统一管理 Skill（工具/技能）与 MCP 服务（Model Context Protocol Server），并支持“技能与 MCP 默认归属于单个智能体、也可在业务域内共享、以及按租户维度共享/隔离”的资源治理模型。方案强调：以元数据/控制面统一编排与权限治理，以事件驱动/消息总线连接运行面，以标准化接口契约（OpenAPI/AsyncAPI/MCP）实现可演进集成，并以可观测性（OpenTelemetry）与 SLO/错误预算驱动运维治理，最终达到“可控上线、可回滚、可审计、可成本度量”的企业级交付标准。MCP 作为连接外部系统与工具的开放协议，其基于 JSON-RPC 2.0 的 Host/Client/Server 架构及 Tools/Resources/Prompts 能力为本系统的“工具生态与安全连接”提供了标准化接口基础。citeturn4view0turn4view1turn5search0turn0search5turn0search2turn0search7turn10search4
 
 ## 目标与范围
 
-本节明确中台边界、默认假设与“未指定”项，并给出对技术团队可执行的目标拆解与验收口径。
+本节明确系统边界、默认假设与“未指定”项，并给出对技术团队可执行的目标拆解与验收口径。
 
 **目标**  
-中台目标定义为“四个统一”：
+系统目标定义为“四个统一”：
 
 1) **统一资产管理**：以业务域为一级分组，统一管理智能体群、Skill、MCP 服务、数据域与事件契约，实现可发现、可复用、可版本化。  
 2) **统一编排调度**：提供任务流/对话流编排与跨智能体协作能力，支持事件驱动与长流程可靠执行（durable execution）。citeturn1search19turn1search7turn1search3turn0search10  
@@ -36,13 +36,13 @@
 
 ## 概念模型
 
-本节定义中台的核心实体、属性与关系，并给出 ER 图（Mermaid）。
+本节定义系统的核心实体、属性与关系，并给出 ER 图（Mermaid）。
 
 **实体定义（与需求对齐）**  
 - **业务域（BusinessDomain）**：按“业务边界”聚合智能体群、共享资源、数据域与事件契约，是权限与成本核算的核心边界。  
 - **智能体（Agent）**：可部署的运行单元（服务/容器/函数），拥有提示词/策略/记忆/工具引用；可属于一个业务域并可加入多个群组。  
 - **Skill**：可被智能体或编排引擎调用的“能力单元”，可实现为内部微服务 API、函数、脚本或工作流节点。建议用 OpenAPI 描述 HTTP 契约（可生成 SDK/测试）。citeturn5search5turn5search30  
-- **MCP/Service（MCP Server）**：实现 MCP 协议的服务端，向 MCP Client 暴露 Tools/Resources/Prompts；MCP 使用 JSON-RPC 2.0 消息，Host/Client/Server 架构需在中台中显式建模。citeturn4view0turn5search0  
+- **MCP/Service（MCP Server）**：实现 MCP 协议的服务端，向 MCP Client 暴露 Tools/Resources/Prompts；MCP 使用 JSON-RPC 2.0 消息，Host/Client/Server 架构需在系统中显式建模。citeturn4view0turn5search0  
 - **用户/角色（User/Role）与权限（Permission/Policy）**：用于 UI/控制面操作与运行时访问控制。建议以 OIDC/OAuth2 作为身份层，结合 RBAC/ABAC 做细粒度授权。citeturn6search1turn6search0turn1search1  
 - **数据域（DataDomain）**：对接企业数据资产（知识库、业务库、对象存储等）的治理单元，带敏感分级、保留策略、访问策略。  
 - **事件/消息（Event/Message）**：跨智能体、跨服务的通讯与解耦机制；建议采用 CloudEvents 作为事件封装标准，并用 AsyncAPI 管理事件契约。citeturn5search3turn5search2  
@@ -52,7 +52,7 @@
 - 权限与共享不是“复制资源”，而是“引用资源+策略裁剪”，避免分叉与版本失控。  
 - 事件契约与数据域契约必须可版本化，且与智能体/工作流版本绑定，确保回滚可行。
 
-**ER 图（Mermaid）**（建议中台元数据落库时以此为蓝本）
+**ER 图（Mermaid）**（建议系统元数据落库时以此为蓝本）
 
 ```mermaid
 erDiagram
@@ -147,7 +147,7 @@ erDiagram
 
 **沙箱与权限控制（工具即风险面）**  
 MCP 规范明确指出：协议赋予任意数据访问与代码执行路径，必须强调用户同意、数据隐私与工具安全。citeturn4view0turn4view1  
-因此中台需在运行时强制落实：  
+因此系统需在运行时强制落实：  
 - **网络与执行隔离**：Skill/MCP 服务运行在隔离命名空间与网络策略下；对高风险工具（写 DB、发消息、执行代码）额外隔离。  
 - **最小权限**：对集群资源与平台 API 使用 RBAC；Kubernetes RBAC 的 Role/ClusterRole/Binding 模型可作为参考实现。citeturn1search1turn1search5  
 - **准入控制**：用策略引擎对“资源创建/更新”做拦截与审计（Admission Control）；OPA/Gatekeeper 是常见的 Kubernetes 策略落地方式。citeturn7search1turn7search9  
@@ -498,7 +498,7 @@ SLA 建议需要与业务关键程度绑定；平台应以 SLO 驱动，并用�
 
 ### 附录：示例 API 契约（节选）
 
-以下为“中台控制面 API”示例（OpenAPI 风格节选），用于说明契约结构；实际应按组织规范补充鉴权、错误码与审计字段。OpenAPI 作为描述 HTTP API 的标准可用于自动生成文档/SDK。citeturn5search30turn5search5  
+以下为“系统控制面 API”示例（OpenAPI 风格节选），用于说明契约结构；实际应按组织规范补充鉴权、错误码与审计字段。OpenAPI 作为描述 HTTP API 的标准可用于自动生成文档/SDK。citeturn5search30turn5search5  
 
 ```yaml
 openapi: 3.1.0

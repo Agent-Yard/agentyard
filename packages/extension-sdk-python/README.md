@@ -1,4 +1,4 @@
-# Lynxus Extension SDK for Python
+# AgentYard Extension SDK for Python
 
 Python SDK helpers for Extension Plane implementations.
 

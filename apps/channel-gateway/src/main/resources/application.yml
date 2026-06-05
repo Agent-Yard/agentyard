@@ -1,25 +1,25 @@
 spring:
   application:
-    name: lynxus-channel-gateway
+    name: agentyard-channel-gateway
   docker:
     compose:
       enabled: false
   jackson:
     default-property-inclusion: non_null
   datasource:
-    url: ${LYNXUS_CHANNEL_GATEWAY_DATASOURCE_URL:jdbc:postgresql://127.0.0.1:5432/lynxus_channel_gateway}
-    username: ${SPRING_DATASOURCE_USERNAME:lynxus}
-    password: ${SPRING_DATASOURCE_PASSWORD:lynxus}
+    url: ${AGENTYARD_CHANNEL_GATEWAY_DATASOURCE_URL:jdbc:postgresql://127.0.0.1:5432/agentyard_channel_gateway}
+    username: ${SPRING_DATASOURCE_USERNAME:agentyard}
+    password: ${SPRING_DATASOURCE_PASSWORD:agentyard}
   data:
     redis:
-      host: ${LYNXUS_REDIS_HOST:127.0.0.1}
-      port: ${LYNXUS_REDIS_PORT:6379}
-      database: ${LYNXUS_REDIS_DATABASE:0}
-      username: ${LYNXUS_REDIS_USERNAME:}
-      password: ${LYNXUS_REDIS_PASSWORD:lynxus}
+      host: ${AGENTYARD_REDIS_HOST:127.0.0.1}
+      port: ${AGENTYARD_REDIS_PORT:6379}
+      database: ${AGENTYARD_REDIS_DATABASE:0}
+      username: ${AGENTYARD_REDIS_USERNAME:}
+      password: ${AGENTYARD_REDIS_PASSWORD:agentyard}
       ssl:
-        enabled: ${LYNXUS_REDIS_SSL_ENABLED:false}
-      timeout: ${LYNXUS_REDIS_TIMEOUT:3s}
+        enabled: ${AGENTYARD_REDIS_SSL_ENABLED:false}
+      timeout: ${AGENTYARD_REDIS_TIMEOUT:3s}
   flyway:
     enabled: true
     table: channel_gateway_schema_history
@@ -44,34 +44,34 @@ logging:
         service: ${spring.application.name}
 
 server:
-  port: ${LYNXUS_CHANNEL_GATEWAY_PORT:8082}
+  port: ${AGENTYARD_CHANNEL_GATEWAY_PORT:8082}
 
-lynxus:
+agentyard:
   api:
-    base-url: ${LYNXUS_API_BASE_URL:http://127.0.0.1:8080/api}
+    base-url: ${AGENTYARD_API_BASE_URL:http://127.0.0.1:8080/api}
   channel-gateway:
-    base-url: ${LYNXUS_CHANNEL_GATEWAY_BASE_URL:http://127.0.0.1:8082}
+    base-url: ${AGENTYARD_CHANNEL_GATEWAY_BASE_URL:http://127.0.0.1:8082}
     async:
       inbound-session-dispatch:
-        core-size: ${LYNXUS_CHANNEL_GATEWAY_INBOUND_DISPATCH_CORE_SIZE:2}
-        max-size: ${LYNXUS_CHANNEL_GATEWAY_INBOUND_DISPATCH_MAX_SIZE:8}
-        queue-capacity: ${LYNXUS_CHANNEL_GATEWAY_INBOUND_DISPATCH_QUEUE_CAPACITY:1000}
-        keep-alive-seconds: ${LYNXUS_CHANNEL_GATEWAY_INBOUND_DISPATCH_KEEP_ALIVE_SECONDS:60}
-        shutdown-await-seconds: ${LYNXUS_CHANNEL_GATEWAY_INBOUND_DISPATCH_SHUTDOWN_AWAIT_SECONDS:30}
-        wait-for-tasks-to-complete-on-shutdown: ${LYNXUS_CHANNEL_GATEWAY_INBOUND_DISPATCH_WAIT_FOR_TASKS_TO_COMPLETE_ON_SHUTDOWN:true}
+        core-size: ${AGENTYARD_CHANNEL_GATEWAY_INBOUND_DISPATCH_CORE_SIZE:2}
+        max-size: ${AGENTYARD_CHANNEL_GATEWAY_INBOUND_DISPATCH_MAX_SIZE:8}
+        queue-capacity: ${AGENTYARD_CHANNEL_GATEWAY_INBOUND_DISPATCH_QUEUE_CAPACITY:1000}
+        keep-alive-seconds: ${AGENTYARD_CHANNEL_GATEWAY_INBOUND_DISPATCH_KEEP_ALIVE_SECONDS:60}
+        shutdown-await-seconds: ${AGENTYARD_CHANNEL_GATEWAY_INBOUND_DISPATCH_SHUTDOWN_AWAIT_SECONDS:30}
+        wait-for-tasks-to-complete-on-shutdown: ${AGENTYARD_CHANNEL_GATEWAY_INBOUND_DISPATCH_WAIT_FOR_TASKS_TO_COMPLETE_ON_SHUTDOWN:true}
     outbound-relay:
-      enabled: ${LYNXUS_CHANNEL_GATEWAY_OUTBOUND_RELAY_ENABLED:true}
-      scan-fixed-delay: ${LYNXUS_CHANNEL_GATEWAY_OUTBOUND_RELAY_SCAN_FIXED_DELAY:PT5S}
-      owner-lock-ttl: ${LYNXUS_CHANNEL_GATEWAY_OUTBOUND_RELAY_OWNER_LOCK_TTL:PT30S}
-      connect-timeout: ${LYNXUS_CHANNEL_GATEWAY_OUTBOUND_RELAY_CONNECT_TIMEOUT:PT10S}
-      remote-max-pending-finals: ${LYNXUS_CHANNEL_GATEWAY_OUTBOUND_REMOTE_MAX_PENDING_FINALS:100}
-      remote-resume-pending-finals: ${LYNXUS_CHANNEL_GATEWAY_OUTBOUND_REMOTE_RESUME_PENDING_FINALS:20}
-      native-max-pending-finals: ${LYNXUS_CHANNEL_GATEWAY_OUTBOUND_NATIVE_MAX_PENDING_FINALS:1}
-      native-resume-pending-finals: ${LYNXUS_CHANNEL_GATEWAY_OUTBOUND_NATIVE_RESUME_PENDING_FINALS:0}
-      transient-queue-capacity: ${LYNXUS_CHANNEL_GATEWAY_OUTBOUND_TRANSIENT_QUEUE_CAPACITY:100}
+      enabled: ${AGENTYARD_CHANNEL_GATEWAY_OUTBOUND_RELAY_ENABLED:true}
+      scan-fixed-delay: ${AGENTYARD_CHANNEL_GATEWAY_OUTBOUND_RELAY_SCAN_FIXED_DELAY:PT5S}
+      owner-lock-ttl: ${AGENTYARD_CHANNEL_GATEWAY_OUTBOUND_RELAY_OWNER_LOCK_TTL:PT30S}
+      connect-timeout: ${AGENTYARD_CHANNEL_GATEWAY_OUTBOUND_RELAY_CONNECT_TIMEOUT:PT10S}
+      remote-max-pending-finals: ${AGENTYARD_CHANNEL_GATEWAY_OUTBOUND_REMOTE_MAX_PENDING_FINALS:100}
+      remote-resume-pending-finals: ${AGENTYARD_CHANNEL_GATEWAY_OUTBOUND_REMOTE_RESUME_PENDING_FINALS:20}
+      native-max-pending-finals: ${AGENTYARD_CHANNEL_GATEWAY_OUTBOUND_NATIVE_MAX_PENDING_FINALS:1}
+      native-resume-pending-finals: ${AGENTYARD_CHANNEL_GATEWAY_OUTBOUND_NATIVE_RESUME_PENDING_FINALS:0}
+      transient-queue-capacity: ${AGENTYARD_CHANNEL_GATEWAY_OUTBOUND_TRANSIENT_QUEUE_CAPACITY:100}
   agent-runtime:
-    base-url: ${LYNXUS_AGENT_RUNTIME_BASE_URL:http://127.0.0.1:8090}
+    base-url: ${AGENTYARD_AGENT_RUNTIME_BASE_URL:http://127.0.0.1:8090}
   extensions:
-    registration-file: ${LYNXUS_EXTENSION_REGISTRATION_FILE:}
+    registration-file: ${AGENTYARD_EXTENSION_REGISTRATION_FILE:}
   internal-auth:
-    token: ${LYNXUS_INTERNAL_AUTH_TOKEN}
+    token: ${AGENTYARD_INTERNAL_AUTH_TOKEN}

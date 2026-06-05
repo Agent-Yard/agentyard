@@ -2,7 +2,7 @@
 
 ## 1. 背景
 
-Lynxus 需要同时支持两个场景：
+AgentYard 需要同时支持两个场景：
 
 1. 作为开源项目，提供清晰、可运行、可学习的 reference implementation
 2. 作为企业实际投产系统，接入大量私有 channel、tool、账号、签名、权限、内网系统和定时任务逻辑
@@ -26,7 +26,7 @@ Lynxus 需要同时支持两个场景：
 ## 3. 总体结构
 
 ```text
-open-source lynxus core
+open-source agentyard core
   apps/api
   apps/worker
   apps/web
@@ -48,7 +48,7 @@ private enterprise repo
 部署时组合：
 
 ```text
-Lynxus Core
+AgentYard Core
   -> static extension registration
     -> enterprise channel provider services
     -> enterprise tool connector services

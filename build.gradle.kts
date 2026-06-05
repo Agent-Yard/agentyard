@@ -12,7 +12,7 @@ import org.gradle.api.tasks.testing.logging.TestLogEvent
 extra["temporalVersion"] = "1.34.0"
 
 allprojects {
-    group = "com.lynxus"
+    group = "com.agentyard"
     version = "0.1.0"
 }
 

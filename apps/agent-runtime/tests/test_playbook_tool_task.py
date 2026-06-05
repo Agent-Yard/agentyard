@@ -5,11 +5,11 @@ import hmac
 import hashlib
 import json
 
-os.environ.setdefault("LYNXUS_INTERNAL_AUTH_TOKEN", "test-internal-token")
+os.environ.setdefault("AGENTYARD_INTERNAL_AUTH_TOKEN", "test-internal-token")
 
-from lynxus_agent_runtime.http_clients import reset_shared_http_client_registry
-from lynxus_agent_runtime.models import PlaybookToolTaskRequest
-from lynxus_agent_runtime.tooling import execute_playbook_tool_task
+from agentyard_agent_runtime.http_clients import reset_shared_http_client_registry
+from agentyard_agent_runtime.models import PlaybookToolTaskRequest
+from agentyard_agent_runtime.tooling import execute_playbook_tool_task
 
 
 class _FakeResponse:
@@ -113,7 +113,7 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
     def tearDown(self) -> None:
         reset_shared_http_client_registry()
 
-    @patch("lynxus_agent_runtime.tooling._call_connector_tool")
+    @patch("agentyard_agent_runtime.tooling._call_connector_tool")
     def test_should_execute_playbook_tool_task_and_map_output(self, mock_call_connector_tool) -> None:
         mock_call_connector_tool.return_value = {
             "ticketId": "t-100",
@@ -147,7 +147,7 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
         request = PlaybookToolTaskRequest.model_validate(payload)
         request_log: list[dict] = []
 
-        with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=lambda *args, **kwargs: _FakeClient(request_log)):
+        with patch("agentyard_agent_runtime.http_clients.httpx.Client", side_effect=lambda *args, **kwargs: _FakeClient(request_log)):
             result = execute_playbook_tool_task(request)
 
         signed_payload = request_log[1]["json"]
@@ -180,7 +180,7 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
         request = PlaybookToolTaskRequest.model_validate(payload)
 
         with patch(
-            "lynxus_agent_runtime.tooling._load_runtime_integration_account",
+            "agentyard_agent_runtime.tooling._load_runtime_integration_account",
             return_value={
                 "accountId": "integration-account-1",
                 "subjectType": "TOOL_CONNECTOR",
@@ -210,7 +210,7 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
         request_log: list[dict] = []
 
         with patch(
-            "lynxus_agent_runtime.tooling._load_runtime_integration_account",
+            "agentyard_agent_runtime.tooling._load_runtime_integration_account",
             return_value={
                 "accountId": "integration-account-simple",
                 "subjectType": "TOOL_CONNECTOR",
@@ -220,7 +220,7 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
                 "credential": {"bearerToken": "vendor-token"},
             },
         ):
-            with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=lambda *args, **kwargs: _FakeClient(request_log)):
+            with patch("agentyard_agent_runtime.http_clients.httpx.Client", side_effect=lambda *args, **kwargs: _FakeClient(request_log)):
                 result = execute_playbook_tool_task(request)
 
         self.assertEqual(result.routeKey, "success")
@@ -242,7 +242,7 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
         request = PlaybookToolTaskRequest.model_validate(payload)
 
         with patch(
-            "lynxus_agent_runtime.tooling._load_runtime_integration_account",
+            "agentyard_agent_runtime.tooling._load_runtime_integration_account",
             return_value={
                 "accountId": "integration-account-business",
                 "subjectType": "TOOL_CONNECTOR",
@@ -271,7 +271,7 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
         request = PlaybookToolTaskRequest.model_validate(payload)
 
         with patch(
-            "lynxus_agent_runtime.tooling._load_runtime_integration_account",
+            "agentyard_agent_runtime.tooling._load_runtime_integration_account",
             return_value={
                 "accountId": "integration-account-disabled",
                 "subjectType": "TOOL_CONNECTOR",
@@ -303,7 +303,7 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
         request = PlaybookToolTaskRequest.model_validate(payload)
         request_log: list[dict] = []
 
-        with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=lambda *args, **kwargs: _FakeClient(request_log)):
+        with patch("agentyard_agent_runtime.http_clients.httpx.Client", side_effect=lambda *args, **kwargs: _FakeClient(request_log)):
             result = execute_playbook_tool_task(request)
 
         self.assertEqual(result.routeKey, "success")
@@ -330,7 +330,7 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
         request = PlaybookToolTaskRequest.model_validate(payload)
         request_log: list[dict] = []
 
-        with patch("lynxus_agent_runtime.http_clients.httpx.Client", side_effect=lambda *args, **kwargs: _FakeClient(request_log)):
+        with patch("agentyard_agent_runtime.http_clients.httpx.Client", side_effect=lambda *args, **kwargs: _FakeClient(request_log)):
             result = execute_playbook_tool_task(request)
 
         self.assertEqual(result.routeKey, "success")

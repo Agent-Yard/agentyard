@@ -124,7 +124,7 @@ jobs:
           find apps/api/build/test-results/test -maxdepth 1 -type f | sort || true
           echo
           echo "MultiInstanceApiIntegrationTest XML:"
-          sed -n '1,260p' apps/api/build/test-results/test/TEST-com.lynxus.platform.session.MultiInstanceApiIntegrationTest.xml || true
+          sed -n '1,260p' apps/api/build/test-results/test/TEST-com.agentyard.platform.session.MultiInstanceApiIntegrationTest.xml || true
           echo
           echo "API HTML report path:"
           ls -la apps/api/build/reports/tests/test || true

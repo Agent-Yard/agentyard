@@ -2,7 +2,7 @@ import unittest
 
 from pydantic import ValidationError
 
-from lynxus_agent_runtime.models import AgentDecision, AgentTurnRequest, ToolDescriptor
+from agentyard_agent_runtime.models import AgentDecision, AgentTurnRequest, ToolDescriptor
 
 
 def _text_message_input(text: str) -> dict:

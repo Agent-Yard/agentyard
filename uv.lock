@@ -8,12 +8,12 @@ resolution-markers = [
 
 [manifest]
 members = [
-    "lynxus-agent-runtime",
-    "lynxus-extension-protocol",
-    "lynxus-extension-sdk",
-    "lynxus-knowledge-service",
-    "lynxus-python-common",
-    "lynxus-python-workspace",
+    "agentyard-agent-runtime",
+    "agentyard-extension-protocol",
+    "agentyard-extension-sdk",
+    "agentyard-knowledge-service",
+    "agentyard-python-common",
+    "agentyard-python-workspace",
 ]
 constraints = [
     { name = "fastapi", specifier = "==0.115.12" },
@@ -674,15 +674,15 @@ wheels = [
 ]
 
 [[package]]
-name = "lynxus-agent-runtime"
+name = "agentyard-agent-runtime"
 version = "0.1.0"
 source = { editable = "apps/agent-runtime" }
 dependencies = [
     { name = "cryptography" },
     { name = "fastapi" },
     { name = "httpx" },
-    { name = "lynxus-extension-sdk" },
-    { name = "lynxus-python-common" },
+    { name = "agentyard-extension-sdk" },
+    { name = "agentyard-python-common" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic" },
     { name = "redis", extra = ["hiredis"] },
@@ -696,8 +696,8 @@ requires-dist = [
     { name = "cryptography", specifier = "==45.0.4" },
     { name = "fastapi" },
     { name = "httpx", specifier = "==0.28.1" },
-    { name = "lynxus-extension-sdk", editable = "packages/extension-sdk-python" },
-    { name = "lynxus-python-common", editable = "packages/python-common" },
+    { name = "agentyard-extension-sdk", editable = "packages/extension-sdk-python" },
+    { name = "agentyard-python-common", editable = "packages/python-common" },
     { name = "psycopg", extras = ["binary"], specifier = "==3.2.6" },
     { name = "pydantic" },
     { name = "redis", extras = ["hiredis"], specifier = "==6.0.0" },
@@ -707,17 +707,17 @@ requires-dist = [
 ]
 
 [[package]]
-name = "lynxus-extension-protocol"
+name = "agentyard-extension-protocol"
 version = "0.1.0"
 source = { editable = "packages/extension-protocol" }
 
 [[package]]
-name = "lynxus-extension-sdk"
+name = "agentyard-extension-sdk"
 version = "0.1.0"
 source = { editable = "packages/extension-sdk-python" }
 dependencies = [
     { name = "jsonschema" },
-    { name = "lynxus-extension-protocol" },
+    { name = "agentyard-extension-protocol" },
     { name = "pyyaml" },
     { name = "referencing" },
 ]
@@ -725,18 +725,18 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "jsonschema", specifier = ">=4.25.1,<5" },
-    { name = "lynxus-extension-protocol", editable = "packages/extension-protocol" },
+    { name = "agentyard-extension-protocol", editable = "packages/extension-protocol" },
     { name = "pyyaml", specifier = ">=6.0.3,<7" },
     { name = "referencing", specifier = ">=0.36,<1" },
 ]
 
 [[package]]
-name = "lynxus-knowledge-service"
+name = "agentyard-knowledge-service"
 version = "0.1.0"
 source = { editable = "apps/knowledge-service" }
 dependencies = [
     { name = "fastapi" },
-    { name = "lynxus-python-common" },
+    { name = "agentyard-python-common" },
     { name = "minio" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic" },
@@ -750,7 +750,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi" },
-    { name = "lynxus-python-common", editable = "packages/python-common" },
+    { name = "agentyard-python-common", editable = "packages/python-common" },
     { name = "minio", specifier = "==7.2.15" },
     { name = "psycopg", extras = ["binary"], specifier = "==3.2.6" },
     { name = "pydantic" },
@@ -762,7 +762,7 @@ requires-dist = [
 ]
 
 [[package]]
-name = "lynxus-python-common"
+name = "agentyard-python-common"
 version = "0.1.0"
 source = { editable = "packages/python-common" }
 dependencies = [
@@ -773,7 +773,7 @@ dependencies = [
 requires-dist = [{ name = "structlog" }]
 
 [[package]]
-name = "lynxus-python-workspace"
+name = "agentyard-python-workspace"
 version = "0.1.0"
 source = { virtual = "." }
 
@@ -781,7 +781,7 @@ source = { virtual = "." }
 dev = [
     { name = "datamodel-code-generator" },
     { name = "jsonschema" },
-    { name = "lynxus-agent-runtime" },
+    { name = "agentyard-agent-runtime" },
     { name = "pytest" },
     { name = "referencing" },
 ]
@@ -792,7 +792,7 @@ dev = [
 dev = [
     { name = "datamodel-code-generator", specifier = ">=0.28.5,<1" },
     { name = "jsonschema", specifier = ">=4.25.1,<5" },
-    { name = "lynxus-agent-runtime", editable = "apps/agent-runtime" },
+    { name = "agentyard-agent-runtime", editable = "apps/agent-runtime" },
     { name = "pytest", specifier = ">=8.3.5,<9" },
     { name = "referencing", specifier = ">=0.36,<1" },
 ]

@@ -4,62 +4,62 @@
 
 ```yaml
 x-internal-auth-env: &internal-auth-env
-  LYNXUS_INTERNAL_TOKEN_FILE: /run/secrets/lynxus_internal_token
+  AGENTYARD_INTERNAL_TOKEN_FILE: /run/secrets/agentyard_internal_token
 
 x-core-extension-env: &core-extension-env
   <<: *internal-auth-env
-  LYNXUS_EXTENSION_REGISTRATION_FILE: /etc/lynxus/extensions.yaml
-  LYNXUS_CHANNEL_GATEWAY_BASE_URL: http://channel-gateway:8080
-  LYNXUS_AGENT_RUNTIME_BASE_URL: http://agent-runtime:8080
+  AGENTYARD_EXTENSION_REGISTRATION_FILE: /etc/agentyard/extensions.yaml
+  AGENTYARD_CHANNEL_GATEWAY_BASE_URL: http://channel-gateway:8080
+  AGENTYARD_AGENT_RUNTIME_BASE_URL: http://agent-runtime:8080
 
 x-extension-volumes: &extension-volumes
-  - ./extensions.yaml:/etc/lynxus/extensions.yaml:ro
+  - ./extensions.yaml:/etc/agentyard/extensions.yaml:ro
 
 services:
   api:
-    image: lynxus/api
+    image: agentyard/api
     environment: *core-extension-env
     volumes: *extension-volumes
     secrets:
-      - lynxus_internal_token
+      - agentyard_internal_token
 
   agent-runtime:
-    image: lynxus/agent-runtime
+    image: agentyard/agent-runtime
     environment: *core-extension-env
     volumes: *extension-volumes
     secrets:
-      - lynxus_internal_token
+      - agentyard_internal_token
 
   channel-gateway:
-    image: lynxus/channel-gateway
+    image: agentyard/channel-gateway
     environment: *core-extension-env
     volumes: *extension-volumes
     secrets:
-      - lynxus_internal_token
+      - agentyard_internal_token
 
   acme-channel-provider:
-    image: acme/lynxus-channel-provider
+    image: acme/agentyard-channel-provider
     environment:
       <<: *internal-auth-env
-      LYNXUS_CHANNEL_GATEWAY_BASE_URL: http://channel-gateway:8080
+      AGENTYARD_CHANNEL_GATEWAY_BASE_URL: http://channel-gateway:8080
     secrets:
-      - lynxus_internal_token
+      - agentyard_internal_token
 
   acme-crm-connector:
-    image: acme/lynxus-crm-connector
+    image: acme/agentyard-crm-connector
     environment: *internal-auth-env
     secrets:
-      - lynxus_internal_token
+      - agentyard_internal_token
 
 secrets:
-  lynxus_internal_token:
-    file: ./secrets/lynxus_internal_token
+  agentyard_internal_token:
+    file: ./secrets/agentyard_internal_token
 ```
 
 `extensions.yaml` 只声明 enterprise registration，core preset registration 由 core 自动注入：
 
 ```yaml
-lynxus:
+agentyard:
   extensions:
     # Only enterprise registrations are listed here.
     # core-channel-gateway / core-agent-runtime are injected by core and must not be declared here.
@@ -83,7 +83,7 @@ lynxus:
           type: INTERNAL_TOKEN
 ```
 
-每个服务启动时合并 `extensions.yaml` 与 core preset，得到统一 registration 集合。preset 由 `LYNXUS_CHANNEL_GATEWAY_BASE_URL` / `LYNXUS_AGENT_RUNTIME_BASE_URL` 决定 `baseUrl`，由 core 版本决定 `exposes`，operator 不在 yaml 中声明也不允许重写。当前阶段 core preset 暴露的 reference descriptor 是 core build 契约，operator 不在 compose / Helm 中启停单个 reference descriptor。
+每个服务启动时合并 `extensions.yaml` 与 core preset，得到统一 registration 集合。preset 由 `AGENTYARD_CHANNEL_GATEWAY_BASE_URL` / `AGENTYARD_AGENT_RUNTIME_BASE_URL` 决定 `baseUrl`，由 core 版本决定 `exposes`，operator 不在 yaml 中声明也不允许重写。当前阶段 core preset 暴露的 reference descriptor 是 core build 契约，operator 不在 compose / Helm 中启停单个 reference descriptor。
 
 API、`agent-runtime` 和 `channel-gateway` 必须读取同一份 yaml。`registrationId` 用于部署观测，manifest 内的 `providerType` / `connectorType` 才是业务 descriptor。
 
@@ -94,9 +94,9 @@ API、`agent-runtime` 和 `channel-gateway` 必须读取同一份 yaml。`regist
 3. 不允许为不同服务分别配置 extension URL 列表
 4. 不允许 API 使用一份 definition 配置、runtime 使用另一份 invocation 配置
 5. 每个服务都基于该配置加载 registration，但消费范围不同：API 通过 HTTP 拉取全部 registration 并执行 full descriptor 白名单校验，`agent-runtime` 只拉取 / 校验 `exposes.toolConnectorTypes` 非空的 registration，`channel-gateway` 只拉取 / 校验 `exposes.channelProviderTypes` 非空的 registration；runtime owner 对自身 core preset 走内部 `DescriptorProvider`，对自身相关 enterprise registration 走 HTTP `/extension/manifest`
-6. `LYNXUS_CHANNEL_GATEWAY_BASE_URL` / `LYNXUS_AGENT_RUNTIME_BASE_URL` 必须在三服务 env 中指向同一服务地址；`baseUrl` 允许 path prefix，三服务按 `static-registration.md §5` 的 URL 规范化规则统一处理 host 大小写、默认端口和 trailing slash 后再计算 `registrationConfigDigest` 并发起调用；`channel-gateway` 自身和 `agent-runtime` 自身的 env 也必须设成各自可达的同一份 URL，避免 self-loaded preset 与其他服务对同一 preset 计算出不同 normalized `baseUrl`
-7. internal token 必须通过 secret / Vault / secret file 注入所有 core service 与 enterprise extension service；compose 示例统一使用 `LYNXUS_INTERNAL_TOKEN_FILE`，Kubernetes 示例必须把同一个 Secret 投影到相关 Deployment
-8. enterprise extension 不读取 `extensions.yaml`，只读取 internal token；remote channel provider 如果需要推送 normalized event，还必须读取 `LYNXUS_CHANNEL_GATEWAY_BASE_URL`
+6. `AGENTYARD_CHANNEL_GATEWAY_BASE_URL` / `AGENTYARD_AGENT_RUNTIME_BASE_URL` 必须在三服务 env 中指向同一服务地址；`baseUrl` 允许 path prefix，三服务按 `static-registration.md §5` 的 URL 规范化规则统一处理 host 大小写、默认端口和 trailing slash 后再计算 `registrationConfigDigest` 并发起调用；`channel-gateway` 自身和 `agent-runtime` 自身的 env 也必须设成各自可达的同一份 URL，避免 self-loaded preset 与其他服务对同一 preset 计算出不同 normalized `baseUrl`
+7. internal token 必须通过 secret / Vault / secret file 注入所有 core service 与 enterprise extension service；compose 示例统一使用 `AGENTYARD_INTERNAL_TOKEN_FILE`，Kubernetes 示例必须把同一个 Secret 投影到相关 Deployment
+8. enterprise extension 不读取 `extensions.yaml`，只读取 internal token；remote channel provider 如果需要推送 normalized event，还必须读取 `AGENTYARD_CHANNEL_GATEWAY_BASE_URL`
 9. Helm values 在多个 Deployment 中重复展开不等同于同一份配置；必须保证最终 pod 看到的是同一个配置对象版本或同一个配置中心 key / version
 10. 当前阶段不支持 registration hot reload；修改 `extensions.yaml` 或 core preset env 后必须滚动重启 API、`agent-runtime` 和 `channel-gateway`
 11. registration config 变更的部署顺序固定为：enterprise extension service → `channel-gateway` / `agent-runtime` → API；API 必须最后更新并最后执行 aggregate validation
@@ -134,14 +134,14 @@ API、`agent-runtime` 和 `channel-gateway` 必须读取同一份 yaml。`regist
 ```yaml
 services:
   acme-channel-provider:
-    image: acme/lynxus-channel-provider
+    image: acme/agentyard-channel-provider
     environment:
-      LYNXUS_INTERNAL_TOKEN_FILE: /run/secrets/lynxus_internal_token
-      LYNXUS_CHANNEL_GATEWAY_BASE_URL: http://channel-gateway:8080
+      AGENTYARD_INTERNAL_TOKEN_FILE: /run/secrets/agentyard_internal_token
+      AGENTYARD_CHANNEL_GATEWAY_BASE_URL: http://channel-gateway:8080
       ACME_VAULT_ADDR: http://vault:8200
       ACME_PROVIDER_DB_URL: jdbc:postgresql://acme-provider-db:5432/provider
     secrets:
-      - lynxus_internal_token
+      - agentyard_internal_token
 
   acme-provider-db:
     image: postgres:17
@@ -161,7 +161,7 @@ services:
 5. extension service 不应返回明文密钥到 session、Temporal history 或普通运行事件
 6. Web 禁止配置 extension baseUrl
 7. 所有 remote invocation 需要 timeout、错误码、trace id 和审计事件
-8. 当前 `INTERNAL_TOKEN` 模式的信任域等于一次 Lynxus 部署域，不提供 extension service 之间的 zero-trust 隔离
+8. 当前 `INTERNAL_TOKEN` 模式的信任域等于一次 AgentYard 部署域，不提供 extension service 之间的 zero-trust 隔离
 9. provider 隔离边界是 registration / descriptor 白名单；同一个 registration 内不支持多租户互不可见
 10. 如果一个 enterprise extension service 同时服务多个租户，租户级隔离必须由该 extension 私有实现和审计承担，Core 只校验 registration、descriptor 和 `channelProfileId.provider_type`
 
@@ -236,26 +236,26 @@ Remote extension service-level endpoint（例如 `GET /extension/manifest`、`GE
 
 ```http
 Authorization: Bearer <internal-token>
-X-Lynxus-Extension-Registration-Id: acme-business-connectors
+X-AgentYard-Extension-Registration-Id: acme-business-connectors
 ```
 
 规则：
 
 1. `Authorization` 是 service-level endpoint 的唯一必需协议 header
-2. `X-Lynxus-Extension-Registration-Id` 是可选部署观测上下文，用于日志和排障定位；extension service 不得把它当作授权事实源
-3. service-level endpoint 调用前没有唯一 descriptor，不发送也不要求 `X-Lynxus-Extension-Descriptor-Type` / `X-Lynxus-Extension-Descriptor-Id`
-4. service-level endpoint 不要求 `X-Lynxus-Trace-Id` / `X-Lynxus-Request-Id`
+2. `X-AgentYard-Extension-Registration-Id` 是可选部署观测上下文，用于日志和排障定位；extension service 不得把它当作授权事实源
+3. service-level endpoint 调用前没有唯一 descriptor，不发送也不要求 `X-AgentYard-Extension-Descriptor-Type` / `X-AgentYard-Extension-Descriptor-Id`
+4. service-level endpoint 不要求 `X-AgentYard-Trace-Id` / `X-AgentYard-Request-Id`
 5. `registrationId` 对应的 `exposes` 白名单校验由 Core 侧 registry 执行，不由 extension service 根据 header 自行判定
 
 Descriptor-level runtime invocation（manifest-declared tool invoke / channel outbound / provider job，以及固定的 `/internal/channel-events/normalized`）必须带 descriptor 上下文：
 
 ```http
 Authorization: Bearer <internal-token>
-X-Lynxus-Extension-Registration-Id: acme-business-connectors
-X-Lynxus-Extension-Descriptor-Type: TOOL_CONNECTOR
-X-Lynxus-Extension-Descriptor-Id: enterprise.acme.crm
-X-Lynxus-Trace-Id: trace-xxx
-X-Lynxus-Request-Id: request-xxx
+X-AgentYard-Extension-Registration-Id: acme-business-connectors
+X-AgentYard-Extension-Descriptor-Type: TOOL_CONNECTOR
+X-AgentYard-Extension-Descriptor-Id: enterprise.acme.crm
+X-AgentYard-Trace-Id: trace-xxx
+X-AgentYard-Request-Id: request-xxx
 ```
 
 需要 remote side 幂等识别的 invocation 在 descriptor-level header 基础上追加：
@@ -268,34 +268,34 @@ Idempotency-Key: tool-call-xxx
 `/internal/channel-events/normalized`。`Idempotency-Key` 字段格式与 envelope `idempotencyKey`
 一致性规则引用 `extension-protocol.md §2.0`。
 
-Credential lifecycle invocation（create / rotate / revoke / validate）在 request body 中携带 descriptor 身份，不使用 `X-Lynxus-Extension-*` header：
+Credential lifecycle invocation（create / rotate / revoke / validate）在 request body 中携带 descriptor 身份，不使用 `X-AgentYard-Extension-*` header：
 
 ```http
 Authorization: Bearer <internal-token>
-X-Lynxus-Trace-Id: trace-xxx
-X-Lynxus-Request-Id: request-xxx
+X-AgentYard-Trace-Id: trace-xxx
+X-AgentYard-Request-Id: request-xxx
 ```
 
 规则：
 
 1. Core 仍通过 registry 使用 `registration.baseUrl + declared credential endpoint path` 选择调用目标
 2. credential lifecycle request body 中的 `descriptor.type` / `descriptor.id` 是 extension 可见的 descriptor 身份事实源
-3. request header 不携带 `X-Lynxus-Extension-Registration-Id`、`X-Lynxus-Extension-Descriptor-Type` 或 `X-Lynxus-Extension-Descriptor-Id`
-4. extension 不得从 header 推断 registration 或 descriptor；需要日志关联时使用 body descriptor、`traceContext.traceparent` 和 `X-Lynxus-Request-Id`
+3. request header 不携带 `X-AgentYard-Extension-Registration-Id`、`X-AgentYard-Extension-Descriptor-Type` 或 `X-AgentYard-Extension-Descriptor-Id`
+4. extension 不得从 header 推断 registration 或 descriptor；需要日志关联时使用 body descriptor、`traceContext.traceparent` 和 `X-AgentYard-Request-Id`
 
 Credential lifecycle create / rotate / revoke / validate 不使用 `Idempotency-Key`，request / response DTO 也不包含
 `idempotencyKey`。重复提交和并发提交只由 Core API 对同一个 `integration_account.id` 的短时排他控制。
 `/extension/manifest` 不接受 `Idempotency-Key`，被调用方应忽略而非拒绝。
 
-`X-Lynxus-Trace-Id` 与 envelope `traceContext.traceparent` 必须解析为同一 trace。envelope `traceContext` 是协议事实源，HTTP header 是不解 envelope 的中间层透传值；调用方填写 header 时必须用与 `traceContext.traceparent` 同源的 trace id。被调用方日志、审计与 metrics 以 `traceContext.traceparent` 为准，`X-Lynxus-Request-Id` 仅用于单次调用的运维定位。
+`X-AgentYard-Trace-Id` 与 envelope `traceContext.traceparent` 必须解析为同一 trace。envelope `traceContext` 是协议事实源，HTTP header 是不解 envelope 的中间层透传值；调用方填写 header 时必须用与 `traceContext.traceparent` 同源的 trace id。被调用方日志、审计与 metrics 以 `traceContext.traceparent` 为准，`X-AgentYard-Request-Id` 仅用于单次调用的运维定位。
 
 Token 来源：
 
-1. 整个 Lynxus 部署共享一个 internal token，通过 secret / Vault / secret file 注入到所有 core service 与 enterprise extension service；推荐统一使用 `LYNXUS_INTERNAL_TOKEN_FILE`
-2. Core service 访问 `LYNXUS_CHANNEL_GATEWAY_BASE_URL` / `LYNXUS_AGENT_RUNTIME_BASE_URL` 对应的 `/extension/manifest`，以及访问 enterprise `/extension/manifest`，都校验同一个 token
+1. 整个 AgentYard 部署共享一个 internal token，通过 secret / Vault / secret file 注入到所有 core service 与 enterprise extension service；推荐统一使用 `AGENTYARD_INTERNAL_TOKEN_FILE`
+2. Core service 访问 `AGENTYARD_CHANNEL_GATEWAY_BASE_URL` / `AGENTYARD_AGENT_RUNTIME_BASE_URL` 对应的 `/extension/manifest`，以及访问 enterprise `/extension/manifest`，都校验同一个 token
 3. remote provider service 调 `channel-gateway` `POST /internal/channel-events/normalized` 校验同一个 token
 4. token 不在 yaml 文件中明文出现；`extensions.yaml` 只标注 `auth.type: INTERNAL_TOKEN`，token 值来自 env 或 secret 文件
-5. `LYNXUS_INTERNAL_TOKEN_FILE` 是部署约定，不是 registration schema 字段；SDK 可以提供读取 helper，但 extension service 只需要按该约定把文件内容作为 bearer token 校验 / 发送
+5. `AGENTYARD_INTERNAL_TOKEN_FILE` 是部署约定，不是 registration schema 字段；SDK 可以提供读取 helper，但 extension service 只需要按该约定把文件内容作为 bearer token 校验 / 发送
 
 当前取舍：
 
@@ -311,7 +311,7 @@ Token 来源：
 3. `registrationId` / descriptor header 只用于观测、请求一致性校验、审计和排障，不替代 token 鉴权；extension service 不得把 `registrationId` 当作授权事实源
 4. tool invoke、channel outbound、provider job 和 remote normalized event 必须带 `Idempotency-Key`，字段规则引用 `extension-protocol.md §2.0`；credential lifecycle 明确不使用该 header
 5. header 中不得携带 credential 明文、`externalSecretRef` 或其他 secret reference
-6. remote provider service 调 Core internal endpoint 时，`X-Lynxus-Extension-Descriptor-Type` 必须为 `CHANNEL_PROVIDER`
+6. remote provider service 调 Core internal endpoint 时，`X-AgentYard-Extension-Descriptor-Type` 必须为 `CHANNEL_PROVIDER`
 7. core service 之间互调（包括 API → `channel-gateway` `/extension/manifest`、API → `agent-runtime` `/extension/manifest`）使用同一个 `INTERNAL_TOKEN`，不引入额外鉴权层
 
 ## 6. Extension Health Check
@@ -384,12 +384,12 @@ attempt
 指标：
 
 ```text
-lynxus_extension_invocation_total
-lynxus_extension_invocation_duration_seconds
-lynxus_extension_invocation_retry_total
-lynxus_extension_circuit_state
-lynxus_extension_registry_validation_status
-lynxus_channel_outbound_delivery_attempt_total
+agentyard_extension_invocation_total
+agentyard_extension_invocation_duration_seconds
+agentyard_extension_invocation_retry_total
+agentyard_extension_circuit_state
+agentyard_extension_registry_validation_status
+agentyard_channel_outbound_delivery_attempt_total
 ```
 
 规则：
@@ -525,12 +525,12 @@ manifest.fetch
 
 规则：
 
-1. smoke check 调用需要 internal auth 的 endpoint 时必须带 `Authorization`；service-level health / manifest 类 endpoint 不要求 `X-Lynxus-Trace-Id` 或 `X-Lynxus-Request-Id`
+1. smoke check 调用需要 internal auth 的 endpoint 时必须带 `Authorization`；service-level health / manifest 类 endpoint 不要求 `X-AgentYard-Trace-Id` 或 `X-AgentYard-Request-Id`
 2. runtime owner validation 先于 API aggregate validation，便于定位是单 runtime 加载失败还是跨服务 drift
 3. 部署后 smoke check 必须在 `channel-gateway` / `agent-runtime` 已完成更新且 API 最后更新完成后执行；此时 `REGISTRATION_CONFIG_DIGEST_MISMATCH` 视为真实配置漂移
 4. smoke check 失败时不允许把本次 registration 配置发布标记为完成
 5. core preset 不跑 `/extension/health`；`core-channel-gateway` / `core-agent-runtime` preset 只通过步骤 1 / 2 的 registry validation 和步骤 4 的服务自身 `/health/ready` 验收。§3 "preset 不享受任何豁免" 只适用于 registration merge、manifest / descriptor validation、runtime owner validation 和 digest 一致性，不扩大到 remote extension health endpoint
 6. enterprise `/extension/health` 与 enterprise / core `/health/ready` 失败属于 smoke / diagnostics 失败，不回写 registry validation 状态，也不改变 runtime owner validation 的 `READY` / `NOT_READY` 判定
-7. smoke check runbook 必须包含 enterprise extension 缺少 `LYNXUS_INTERNAL_TOKEN_FILE` 或 token Secret 未挂载时的失败样例；预期结果是 manifest fetch、credential endpoint、remote invoke 或 normalized event internal call 返回 auth failure，而不是 registration yaml 校验失败
+7. smoke check runbook 必须包含 enterprise extension 缺少 `AGENTYARD_INTERNAL_TOKEN_FILE` 或 token Secret 未挂载时的失败样例；预期结果是 manifest fetch、credential endpoint、remote invoke 或 normalized event internal call 返回 auth failure，而不是 registration yaml 校验失败
 8. remote channel provider 上线 runbook 必须包含 test normalized event：创建 Channel Profile 后取得 `channelProfileId`，首选把它写入 provider public webhook URL path；如外部系统只支持全局 webhook，则在 provider 私有配置中建立 `external identity -> channelProfileId` 映射，再发送测试事件验证 `channel-gateway` 能校验 profile、providerType、auth、assistant binding 和 dedup
 9. 第一版不要求 Core 保存 inbound verification status，也不提供 Core -> provider mapping API；test normalized event 的成功 / 失败只作为 runbook / smoke check 输出，不回写 `channel_profile`

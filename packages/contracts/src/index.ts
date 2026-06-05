@@ -568,7 +568,7 @@ export interface ChannelOutboundFinalDeliveryPayload {
 
 export type ChannelOutboundTransientFrame =
   | {
-      protocol: 'lynxus.channel-outbound-frame.v1';
+      protocol: 'agentyard.channel-outbound-frame.v1';
       frameId: string;
       channelProfileId: string;
       providerType: string;
@@ -585,7 +585,7 @@ export type ChannelOutboundTransientFrame =
       traceContext?: NormalizedChannelTraceContext | null;
     }
   | {
-      protocol: 'lynxus.channel-outbound-frame.v1';
+      protocol: 'agentyard.channel-outbound-frame.v1';
       frameId: string;
       channelProfileId: string;
       providerType: string;
@@ -602,7 +602,7 @@ export type ChannelOutboundTransientFrame =
       traceContext?: NormalizedChannelTraceContext | null;
     }
   | {
-      protocol: 'lynxus.channel-outbound-frame.v1';
+      protocol: 'agentyard.channel-outbound-frame.v1';
       frameId: string;
       channelProfileId: string;
       providerType: string;
@@ -619,7 +619,7 @@ export type ChannelOutboundTransientFrame =
       traceContext?: NormalizedChannelTraceContext | null;
     }
   | {
-      protocol: 'lynxus.channel-outbound-frame.v1';
+      protocol: 'agentyard.channel-outbound-frame.v1';
       frameId: string;
       channelProfileId: string;
       providerType: string;
@@ -637,7 +637,7 @@ export type ChannelOutboundTransientFrame =
     };
 
 export interface ChannelOutboundFinalDeliveryFrame {
-  protocol: 'lynxus.channel-outbound-frame.v1';
+  protocol: 'agentyard.channel-outbound-frame.v1';
   frameId: string;
   channelProfileId: string;
   providerType: string;
@@ -680,7 +680,7 @@ export interface ChannelOutboundFrameStreamCursor {
 }
 
 export interface ChannelOutboundFrameAck {
-  protocol: 'lynxus.channel-outbound-frame-ack.v1';
+  protocol: 'agentyard.channel-outbound-frame-ack.v1';
   channelProfileId: string;
   providerType: string;
   frameId: string;
@@ -1517,7 +1517,7 @@ export type StreamErrorStage =
   | 'TRANSCRIPT_PERSISTENCE';
 
 export interface AgentTurnStreamFrame<K extends AgentTurnStreamFrameKind, P> {
-  protocol: 'lynxus.agent-turn-stream.v1';
+  protocol: 'agentyard.agent-turn-stream.v1';
   frameId: string;
   streamId: string;
   sessionId: string;
@@ -1533,7 +1533,7 @@ export interface AgentTurnStreamFrame<K extends AgentTurnStreamFrameKind, P> {
 }
 
 export interface AgentTurnTransientFrame<K extends AgentTurnTransientFrameKind, P> {
-  protocol: 'lynxus.agent-turn-transient.v1';
+  protocol: 'agentyard.agent-turn-transient.v1';
   frameId: string;
   streamId: string;
   sessionId: string;

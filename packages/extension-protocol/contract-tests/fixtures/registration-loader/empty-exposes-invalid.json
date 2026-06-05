@@ -1,9 +1,9 @@
 {
   "name": "operator registration must expose at least one descriptor type",
-  "operatorYaml": "lynxus:\n  extensions:\n    services:\n      - registrationId: acme-empty-extension\n        baseUrl: http://acme-empty-extension:8080\n        exposes:\n          channelProviderTypes: []\n          toolConnectorTypes: []\n        auth:\n          type: INTERNAL_TOKEN\n",
+  "operatorYaml": "agentyard:\n  extensions:\n    services:\n      - registrationId: acme-empty-extension\n        baseUrl: http://acme-empty-extension:8080\n        exposes:\n          channelProviderTypes: []\n          toolConnectorTypes: []\n        auth:\n          type: INTERNAL_TOKEN\n",
   "environment": {
-    "LYNXUS_AGENT_RUNTIME_BASE_URL": "http://agent-runtime:8080",
-    "LYNXUS_CHANNEL_GATEWAY_BASE_URL": "http://channel-gateway:8080"
+    "AGENTYARD_AGENT_RUNTIME_BASE_URL": "http://agent-runtime:8080",
+    "AGENTYARD_CHANNEL_GATEWAY_BASE_URL": "http://channel-gateway:8080"
   },
   "expectedErrorCode": "REGISTRATION_CONFIG_INVALID"
 }

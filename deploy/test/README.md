@@ -29,7 +29,7 @@ deploy/test/
 Recommended target layout:
 
 ```text
-/opt/lynxus/
+/opt/agentyard/
   common/
   test/
     compose/
@@ -63,10 +63,10 @@ PostgreSQL is listed as its own module because test may either use a managed/exi
 
 The PostgreSQL module uses [../common/postgres-bootstrap/init-databases.sh](../common/postgres-bootstrap/init-databases.sh) through the published `common + test` layout. Its one-shot bootstrap service creates:
 
-- `lynxus_core`
-- `lynxus_channel_gateway`
-- `lynxus_knowledge`
-- `lynxus_agent_runtime`
+- `agentyard_core`
+- `agentyard_channel_gateway`
+- `agentyard_knowledge`
+- `agentyard_agent_runtime`
 - `temporal`
 - `temporal_visibility`
 
@@ -132,7 +132,7 @@ Recommended order when PostgreSQL is deployed by this package:
 
 8. Web static assets and Nginx.
 
-When PostgreSQL is managed outside this package, the deployer must create `lynxus_core`, `lynxus_channel_gateway`, `lynxus_knowledge`, `lynxus_agent_runtime`, `temporal`, and `temporal_visibility` before starting Temporal or application services. The knowledge database must have `vector` and `pg_trgm` enabled.
+When PostgreSQL is managed outside this package, the deployer must create `agentyard_core`, `agentyard_channel_gateway`, `agentyard_knowledge`, `agentyard_agent_runtime`, `temporal`, and `temporal_visibility` before starting Temporal or application services. The knowledge database must have `vector` and `pg_trgm` enabled.
 
 ## Dependency Matrix
 
@@ -141,15 +141,15 @@ When PostgreSQL is managed outside this package, the deployer must create `lynxu
 | postgres | Persistent disk |
 | temporal | PostgreSQL `temporal` and `temporal_visibility` databases |
 | temporal-ui | Temporal |
-| sandbox | No Lynxus service dependency |
-| channel-gateway | PostgreSQL `lynxus_channel_gateway` |
-| knowledge-service | PostgreSQL `lynxus_knowledge`, S3-compatible object storage, embedding provider |
-| agent-runtime | PostgreSQL `lynxus_agent_runtime`, Redis, API URL, Knowledge Service URL, model provider credentials as needed |
-| worker | PostgreSQL `lynxus_core`, Redis, Temporal, Agent Runtime, Knowledge Service, Sandbox |
-| api | PostgreSQL `lynxus_core`, Redis, Temporal, Knowledge Service, Channel Gateway, OIDC |
+| sandbox | No AgentYard service dependency |
+| channel-gateway | PostgreSQL `agentyard_channel_gateway` |
+| knowledge-service | PostgreSQL `agentyard_knowledge`, S3-compatible object storage, embedding provider |
+| agent-runtime | PostgreSQL `agentyard_agent_runtime`, Redis, API URL, Knowledge Service URL, model provider credentials as needed |
+| worker | PostgreSQL `agentyard_core`, Redis, Temporal, Agent Runtime, Knowledge Service, Sandbox |
+| api | PostgreSQL `agentyard_core`, Redis, Temporal, Knowledge Service, Channel Gateway, OIDC |
 | web | API through Nginx `/api`, `/oauth2`, and `/login/oauth2` routes |
 
 ## PostgreSQL Requirement
 
 Use PostgreSQL 16+; PostgreSQL 17 is recommended. The knowledge database must have `pgvector` with HNSW support and `pg_trgm` available.
-Runtime datasource URLs are service-scoped: `api` and `worker` use `LYNXUS_CORE_DATASOURCE_URL`, `channel-gateway` uses `LYNXUS_CHANNEL_GATEWAY_DATASOURCE_URL`, and `agent-runtime` uses `LYNXUS_AGENT_RUNTIME_DATABASE_URL`. Do not set a shared `SPRING_DATASOURCE_URL` in deployment env files because it overrides every Spring Boot service datasource.
+Runtime datasource URLs are service-scoped: `api` and `worker` use `AGENTYARD_CORE_DATASOURCE_URL`, `channel-gateway` uses `AGENTYARD_CHANNEL_GATEWAY_DATASOURCE_URL`, and `agent-runtime` uses `AGENTYARD_AGENT_RUNTIME_DATABASE_URL`. Do not set a shared `SPRING_DATASOURCE_URL` in deployment env files because it overrides every Spring Boot service datasource.

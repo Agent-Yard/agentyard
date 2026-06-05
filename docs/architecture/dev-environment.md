@@ -2,7 +2,7 @@
 
 ## 目标
 
-这套配置解决的不是“本机联调”，而是“把整套 Lynxus 部署到一台开发服务器上，供远程浏览器访问和多人共享调试”。
+这套配置解决的不是“本机联调”，而是“把整套 AgentYard 部署到一台开发服务器上，供远程浏览器访问和多人共享调试”。
 
 当前仓库新增了两类入口：
 
@@ -28,7 +28,7 @@
 
 1. 复制 [`.env.dev.example`](../../.env.dev.example) 为根目录 `.env.dev`
 2. 填好服务器域名、内部鉴权 token、数据库/对象存储/模型密钥
-3. 如果是共享环境，优先把 `LYNXUS_AUTH_DEV_BOOTSTRAP_ENABLED` 设为 `false`，并补齐 OIDC 配置
+3. 如果是共享环境，优先把 `AGENTYARD_AUTH_DEV_BOOTSTRAP_ENABLED` 设为 `false`，并补齐 OIDC 配置
 
 `api` 容器会额外加载根目录 `.env.dev` / `.env.dev.local`，因此 Spring Security 的 OIDC 变量可以直接放进去，例如：
 
@@ -83,16 +83,16 @@
 - Java 服务默认 profile 切到 `dev`
 - Python 服务默认日志切到 JSON
 - Python 内部服务默认监听 `0.0.0.0`
-- Web 开发代理目标改为可配置变量 `LYNXUS_WEB_DEV_PROXY_TARGET`
-- API / Worker / Channel Gateway / Agent Runtime 之间的控制面调用统一读取 `LYNXUS_API_BASE_URL`，取值必须包含 `/api`，例如 `http://<host>:8080/api`
+- Web 开发代理目标改为可配置变量 `AGENTYARD_WEB_DEV_PROXY_TARGET`
+- API / Worker / Channel Gateway / Agent Runtime 之间的控制面调用统一读取 `AGENTYARD_API_BASE_URL`，取值必须包含 `/api`，例如 `http://<host>:8080/api`
 
 如果你通过 `https` 域名并经由 LB / Nginx 反代访问 `pnpm dev:source`，还需要在 `.env.dev` 中补这些 Vite 变量：
 
-- `LYNXUS_WEB_ALLOWED_HOSTS`
-- `LYNXUS_WEB_HMR_PROTOCOL`
-- `LYNXUS_WEB_HMR_HOST`
-- `LYNXUS_WEB_HMR_CLIENT_PORT`
-- `LYNXUS_WEB_HMR_PORT`：仅当 HMR websocket 需要走单独上游端口时再设置
+- `AGENTYARD_WEB_ALLOWED_HOSTS`
+- `AGENTYARD_WEB_HMR_PROTOCOL`
+- `AGENTYARD_WEB_HMR_HOST`
+- `AGENTYARD_WEB_HMR_CLIENT_PORT`
+- `AGENTYARD_WEB_HMR_PORT`：仅当 HMR websocket 需要走单独上游端口时再设置
 
 当前统一由 [`apps/web/vite.config.ts`](../../apps/web/vite.config.ts) 读取；`local` 不配置这些变量时会继续使用 Vite 默认行为。
 
@@ -110,7 +110,7 @@
 - Agent Runtime
 - Web 控制台
 
-`deploy/dev` 针对控制台与运行主链路，不包含 `apps/site` 静态项目站点。站点可通过 `pnpm --filter @lynxus/site dev` 或 `pnpm build:site` 单独处理。
+`deploy/dev` 针对控制台与运行主链路，不包含 `apps/site` 静态项目站点。站点可通过 `pnpm --filter @agentyard/site dev` 或 `pnpm build:site` 单独处理。
 
 Knowledge Service 使用通用 S3-compatible object storage 配置；`dev` 编排默认将 provider 固定为 `minio`，endpoint 固定为 Docker 网络内的 `http://minio:9000`，并允许自动创建知识库 bucket。
 
@@ -144,26 +144,26 @@ Knowledge Service 使用通用 S3-compatible object storage 配置；`dev` 编�
 
 如果你需要调整暴露地址，修改这些变量：
 
-- `LYNXUS_DEV_WEB_BIND_ADDRESS`
-- `LYNXUS_DEV_API_BIND_ADDRESS`
-- `LYNXUS_DEV_TEMPORAL_UI_BIND_ADDRESS`
-- `LYNXUS_DEV_MINIO_CONSOLE_BIND_ADDRESS`
-- `LYNXUS_DEV_REDIS_BIND_ADDRESS`
+- `AGENTYARD_DEV_WEB_BIND_ADDRESS`
+- `AGENTYARD_DEV_API_BIND_ADDRESS`
+- `AGENTYARD_DEV_TEMPORAL_UI_BIND_ADDRESS`
+- `AGENTYARD_DEV_MINIO_CONSOLE_BIND_ADDRESS`
+- `AGENTYARD_DEV_REDIS_BIND_ADDRESS`
 
 如果需要调整，修改 `.env.dev` 中的：
 
-- `LYNXUS_DEV_WEB_BIND_ADDRESS`
-- `LYNXUS_DEV_WEB_PORT`
-- `LYNXUS_DEV_API_BIND_ADDRESS`
-- `LYNXUS_DEV_API_PORT`
-- `LYNXUS_DEV_TEMPORAL_UI_BIND_ADDRESS`
-- `LYNXUS_DEV_TEMPORAL_UI_PORT`
-- `LYNXUS_DEV_REDIS_BIND_ADDRESS`
-- `LYNXUS_DEV_REDIS_PORT`
+- `AGENTYARD_DEV_WEB_BIND_ADDRESS`
+- `AGENTYARD_DEV_WEB_PORT`
+- `AGENTYARD_DEV_API_BIND_ADDRESS`
+- `AGENTYARD_DEV_API_PORT`
+- `AGENTYARD_DEV_TEMPORAL_UI_BIND_ADDRESS`
+- `AGENTYARD_DEV_TEMPORAL_UI_PORT`
+- `AGENTYARD_DEV_REDIS_BIND_ADDRESS`
+- `AGENTYARD_DEV_REDIS_PORT`
 
 ## 当前约束
 
 - `dev` 仍然是开发环境，不是生产发布方案
 - 容器编排默认直接 `build` 当前工作树，不包含镜像仓库发布流程
 - 如果关闭开发态 bootstrap 登录，当前必须补齐 OIDC 客户端注册，否则 API 会按现有校验逻辑拒绝启动
-- MinIO、PostgreSQL、Redis、Temporal 的备份、高可用和监控仍不在这套配置里；测试环境使用 AWS S3 时应由部署侧预创建 bucket，并配置 `LYNXUS_OBJECT_STORAGE_MODE=object-storage`、`LYNXUS_OBJECT_STORAGE_PROVIDER=s3`、区域 endpoint、region、AK/SK、bucket 与 `LYNXUS_OBJECT_STORAGE_CREATE_BUCKET=false`
+- MinIO、PostgreSQL、Redis、Temporal 的备份、高可用和监控仍不在这套配置里；测试环境使用 AWS S3 时应由部署侧预创建 bucket，并配置 `AGENTYARD_OBJECT_STORAGE_MODE=object-storage`、`AGENTYARD_OBJECT_STORAGE_PROVIDER=s3`、区域 endpoint、region、AK/SK、bucket 与 `AGENTYARD_OBJECT_STORAGE_CREATE_BUCKET=false`

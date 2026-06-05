@@ -1,6 +1,6 @@
 import { TRANSLATIONS } from "./i18n-dict.js";
 
-const STORE_KEY = "lynxus_lang";
+const STORE_KEY = "agentyard_lang";
 
 function readLocal() {
   try {

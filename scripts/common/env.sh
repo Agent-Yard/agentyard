@@ -4,7 +4,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-load_lynxus_env() {
+load_agentyard_env() {
   local app_dir="${1:-}"
   local environment_name="${2:-}"
   local env_files=(
@@ -43,7 +43,7 @@ load_lynxus_env() {
   done
   set +a
 
-  # Data source URLs are service-scoped in Lynxus; the generic Spring name can
+  # Data source URLs are service-scoped in AgentYard; the generic Spring name can
   # override every JVM service and point channel-gateway at the core database.
   unset SPRING_DATASOURCE_URL
 }

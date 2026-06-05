@@ -122,8 +122,8 @@ v1 按已锁定方向实现为“完整编辑器”：支持节点新增/删除�
   - Playbook create/update 可接受并返回 `layout`
   - 新校验规则覆盖 `STEP`、`TOOL_TASK`、非法边、非法 entry、禁用节点类型
 - 集成验证：
-  - `pnpm --filter @lynxus/web build`
-  - `pnpm --filter @lynxus/web test`
+  - `pnpm --filter @agentyard/web build`
+  - `pnpm --filter @agentyard/web test`
   - API 相关现有 catalog 测试补 Playbook layout/validation 场景
 
 ### 假设与默认值

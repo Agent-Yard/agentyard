@@ -22,7 +22,7 @@
   - 新控制面 API：list/get/create/update integration accounts。
   - API 响应不返回明文 credential，只返回 `credentialConfigured`。
   - create/update 接收 `credential` map；update 中 `credential = null` 表示保留原凭证，非 null 表示替换。
-  - 使用 `LYNXUS_INTEGRATION_CREDENTIAL_ENCRYPTION_KEY` 做 AES-GCM 加密；未配置时拒绝写入带 credential 的 account。
+  - 使用 `AGENTYARD_INTEGRATION_CREDENTIAL_ENCRYPTION_KEY` 做 AES-GCM 加密；未配置时拒绝写入带 credential 的 account。
 
 - Runtime 执行链：
   - `SessionRuntimeService` 发布 Tool 时只投影 connector metadata 和 `accountId`，不把明文 secret 放进 session/Temporal history。

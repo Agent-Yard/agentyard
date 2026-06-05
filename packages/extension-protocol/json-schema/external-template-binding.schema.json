@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://lynxus.dev/schemas/extension-protocol/external-template-binding.schema.json",
+  "$id": "https://agentyard.dev/schemas/extension-protocol/external-template-binding.schema.json",
   "title": "Channel external template binding",
   "type": "object",
   "additionalProperties": false,

@@ -4,7 +4,7 @@ export default defineConfig({
   base: "./",
   plugins: [
     {
-      name: "lynxus-en-dev-redirect",
+      name: "agentyard-en-dev-redirect",
       apply: "serve",
       configureServer(server) {
         server.middlewares.use((req, res, next) => {

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://lynxus.dev/schemas/extension-protocol/job-definition.schema.json",
+  "$id": "https://agentyard.dev/schemas/extension-protocol/job-definition.schema.json",
   "title": "Channel provider job definition",
   "type": "object",
   "additionalProperties": false,

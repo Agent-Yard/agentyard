@@ -1,7 +1,7 @@
-# Lynxus 多实例与共享状态实施总方案
+# AgentYard 多实例与共享状态实施总方案
 
 > 本文不是 `docs/project_todos.md` §3.6（多实例一致性）的简单展开，而是基于当前仓库真实代码、部署方式和服务边界整理出的完整实施方案。
-> 目标是让 Lynxus 从“可本地联调、默认单实例的平台原型”直接重构为“支持多实例、共享状态一致”的目标架构。
+> 目标是让 AgentYard 从“可本地联调、默认单实例的平台原型”直接重构为“支持多实例、共享状态一致”的目标架构。
 
 ## 1. 目标与范围
 
@@ -16,7 +16,7 @@
 
 ### 1.1 目标
 
-把当前 Lynxus 从默认单实例假设重构为具备以下能力的系统：
+把当前 AgentYard 从默认单实例假设重构为具备以下能力的系统：
 
 1. API 支持多实例无粘性访问
 2. Session 运行态在多 API 实例下保持一致可观测
@@ -158,7 +158,7 @@
 虽然问题不少，但并不是从零开始。当前仓库已经具备以下前提：
 
 1. `deploy/local` 和 `deploy/dev` 都已提供 Redis
-2. API / Worker / Agent Runtime 已统一接入 `LYNXUS_REDIS_*`
+2. API / Worker / Agent Runtime 已统一接入 `AGENTYARD_REDIS_*`
 3. Session 运行态、平台用户、catalog、knowledge 元数据已经落 PostgreSQL
 4. Worker 的工作流执行边界已经收敛到 Temporal
 5. Agent Runtime 的隐私映射首版已经验证“运行态共享状态放 Redis”是可行的
@@ -274,17 +274,17 @@ flowchart LR
 
 建议新增统一能力层：
 
-- `com.lynxus.platform.shared.redis.RedisKeyspace`
-- `com.lynxus.platform.shared.redis.RedisCodec`
-- `com.lynxus.platform.shared.redis.RedisPubSubBus`
-- `com.lynxus.platform.shared.redis.RedisLockService`
-- `com.lynxus.platform.shared.redis.RedisIdempotencyService`
-- `com.lynxus.platform.shared.redis.RedisCacheService`
-- `com.lynxus.platform.shared.redis.RedisInvalidationBus`
+- `com.agentyard.platform.shared.redis.RedisKeyspace`
+- `com.agentyard.platform.shared.redis.RedisCodec`
+- `com.agentyard.platform.shared.redis.RedisPubSubBus`
+- `com.agentyard.platform.shared.redis.RedisLockService`
+- `com.agentyard.platform.shared.redis.RedisIdempotencyService`
+- `com.agentyard.platform.shared.redis.RedisCacheService`
+- `com.agentyard.platform.shared.redis.RedisInvalidationBus`
 
 Python 侧同步建立 helper：
 
-- `apps/agent-runtime/lynxus_agent_runtime/redis_support.py`
+- `apps/agent-runtime/agentyard_agent_runtime/redis_support.py`
 - 后续若 `knowledge-service` 需要 Redis，也走同一命名规则
 
 ### 5.2 先消除单机建模，再做缓存优化
@@ -316,16 +316,16 @@ Python 侧同步建立 helper：
 
 建议首版统一为：
 
-- `lynxus:sse:event:{sessionId}`
-- `lynxus:sse:channel:session-updated`
-- `lynxus:cache:catalog:{key}`
-- `lynxus:cache:knowledge:{key}`
-- `lynxus:cache:invalidate:catalog`
-- `lynxus:session:http:{id}`
-- `lynxus:idempotency:{domain}:{key}`
-- `lynxus:lock:{domain}:{key}`
-- `lynxus:rate-limit:{scope}:{key}`
-- `lynxus:privacy:session:{sessionId}:...`
+- `agentyard:sse:event:{sessionId}`
+- `agentyard:sse:channel:session-updated`
+- `agentyard:cache:catalog:{key}`
+- `agentyard:cache:knowledge:{key}`
+- `agentyard:cache:invalidate:catalog`
+- `agentyard:session:http:{id}`
+- `agentyard:idempotency:{domain}:{key}`
+- `agentyard:lock:{domain}:{key}`
+- `agentyard:rate-limit:{scope}:{key}`
+- `agentyard:privacy:session:{sessionId}:...`
 
 TTL 原则：
 
@@ -345,7 +345,7 @@ TTL 原则：
 
 - 共享模块 `packages/shared-redis-jvm` 已抽出，提供 `RedisKeyspace / RedisJsonCodec / RedisPubSubBus / RedisLockService`
 - API 侧补齐 `RedisIdempotencyService / RedisInvalidationBus / RedisSharedStateProperties / SharedStateInvalidationSubscriber`
-- Python 侧 `lynxus_agent_runtime.redis_support` 与隐私映射 store 已复用统一 keyspace
+- Python 侧 `agentyard_agent_runtime.redis_support` 与隐私映射 store 已复用统一 keyspace
 - 基础指标已在 `SessionRuntimeStreamService` 等关键消费点通过 Micrometer 输出
 
 ### 已完成：工作流 B API 多实例会话去本地化
@@ -456,28 +456,28 @@ TTL 原则：
 
 #### `apps/api`
 
-- [AuthSecurityConfiguration.java](/Users/eric/projects/lynxus/apps/api/src/main/java/com/lynxus/platform/auth/AuthSecurityConfiguration.java)
-- [SessionDispatchLockService.java](/Users/eric/projects/lynxus/apps/api/src/main/java/com/lynxus/platform/session/SessionDispatchLockService.java)
-- [SessionRuntimeService.java](/Users/eric/projects/lynxus/apps/api/src/main/java/com/lynxus/platform/session/SessionRuntimeService.java)
-- [CatalogService.java](/Users/eric/projects/lynxus/apps/api/src/main/java/com/lynxus/platform/catalog/CatalogService.java)
-- [KnowledgeService.java](/Users/eric/projects/lynxus/apps/api/src/main/java/com/lynxus/platform/knowledge/KnowledgeService.java)
-- [SystemController.java](/Users/eric/projects/lynxus/apps/api/src/main/java/com/lynxus/platform/system/SystemController.java)
-- `apps/api/src/main/java/com/lynxus/platform/shared/redis/*`
+- [AuthSecurityConfiguration.java](/Users/eric/projects/agentyard/apps/api/src/main/java/com/agentyard/platform/auth/AuthSecurityConfiguration.java)
+- [SessionDispatchLockService.java](/Users/eric/projects/agentyard/apps/api/src/main/java/com/agentyard/platform/session/SessionDispatchLockService.java)
+- [SessionRuntimeService.java](/Users/eric/projects/agentyard/apps/api/src/main/java/com/agentyard/platform/session/SessionRuntimeService.java)
+- [CatalogService.java](/Users/eric/projects/agentyard/apps/api/src/main/java/com/agentyard/platform/catalog/CatalogService.java)
+- [KnowledgeService.java](/Users/eric/projects/agentyard/apps/api/src/main/java/com/agentyard/platform/knowledge/KnowledgeService.java)
+- [SystemController.java](/Users/eric/projects/agentyard/apps/api/src/main/java/com/agentyard/platform/system/SystemController.java)
+- `apps/api/src/main/java/com/agentyard/platform/shared/redis/*`
 
 #### `apps/agent-runtime`
 
-- [main.py](/Users/eric/projects/lynxus/apps/agent-runtime/lynxus_agent_runtime/main.py)
-- [redis_support.py](/Users/eric/projects/lynxus/apps/agent-runtime/lynxus_agent_runtime/redis_support.py)
-- [data_security/store.py](/Users/eric/projects/lynxus/apps/agent-runtime/lynxus_agent_runtime/data_security/store.py)
+- [main.py](/Users/eric/projects/agentyard/apps/agent-runtime/agentyard_agent_runtime/main.py)
+- [redis_support.py](/Users/eric/projects/agentyard/apps/agent-runtime/agentyard_agent_runtime/redis_support.py)
+- [data_security/store.py](/Users/eric/projects/agentyard/apps/agent-runtime/agentyard_agent_runtime/data_security/store.py)
 
 #### `apps/knowledge-service`
 
-- [main.py](/Users/eric/projects/lynxus/apps/knowledge-service/lynxus_knowledge_service/main.py)
+- [main.py](/Users/eric/projects/agentyard/apps/knowledge-service/agentyard_knowledge_service/main.py)
 
 #### `deploy`
 
-- [deploy/dev/docker-compose.yml](/Users/eric/projects/lynxus/deploy/dev/docker-compose.yml)
-- [deploy/local/docker-compose.yml](/Users/eric/projects/lynxus/deploy/local/docker-compose.yml)
+- [deploy/dev/docker-compose.yml](/Users/eric/projects/agentyard/deploy/dev/docker-compose.yml)
+- [deploy/local/docker-compose.yml](/Users/eric/projects/agentyard/deploy/local/docker-compose.yml)
 
 ## 9. 测试与验收矩阵
 

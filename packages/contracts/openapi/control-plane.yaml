@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Lynxus Agent Control Plane API
+  title: AgentYard Agent Control Plane API
   version: 1.0.0
 servers:
   - url: http://127.0.0.1:8080/api
@@ -70,7 +70,7 @@ paths:
         Internal SSE endpoint consumed by channel-gateway. The SSE id is a short-lived streamCursor for
         transient replay only. Last-Event-ID can resume recent transient frames when the replay buffer still
         contains that cursor, but it is not a durable final checkpoint. Durable final replay is driven only by
-        X-Lynxus-Last-Acked-Final-Sequence, and each FINAL_DELIVERY frame data carries finalSequence.
+        X-AgentYard-Last-Acked-Final-Sequence, and each FINAL_DELIVERY frame data carries finalSequence.
       parameters:
         - in: query
           name: channelProfileId
@@ -85,7 +85,7 @@ paths:
           schema:
             type: string
         - in: header
-          name: X-Lynxus-Last-Acked-Final-Sequence
+          name: X-AgentYard-Last-Acked-Final-Sequence
           required: false
           description: Durable profile-consumer checkpoint. API replays FINAL_DELIVERY frames with finalSequence greater than this value.
           schema:
@@ -93,19 +93,19 @@ paths:
             format: int64
             minimum: 1
         - in: header
-          name: X-Lynxus-Last-Acked-Session-Id
+          name: X-AgentYard-Last-Acked-Session-Id
           required: false
           description: Diagnostic integrity field paired with lastAckedFinalSequence; not used as the ordering key.
           schema:
             type: string
         - in: header
-          name: X-Lynxus-Last-Acked-Session-Message-Id
+          name: X-AgentYard-Last-Acked-Session-Message-Id
           required: false
           description: Diagnostic integrity field paired with lastAckedFinalSequence; not used as the ordering key.
           schema:
             type: string
         - in: header
-          name: X-Lynxus-Max-Final-Replay-Frames
+          name: X-AgentYard-Max-Final-Replay-Frames
           required: false
           description: Gateway replay credit. API must cap the number of FINAL_DELIVERY frames emitted during this connection.
           schema:
@@ -2596,7 +2596,7 @@ components:
       properties:
         protocol:
           type: string
-          enum: [lynxus.channel-outbound-frame.v1]
+          enum: [agentyard.channel-outbound-frame.v1]
         frameId:
           type: string
           minLength: 1
@@ -2666,7 +2666,7 @@ components:
       properties:
         protocol:
           type: string
-          enum: [lynxus.channel-outbound-frame-ack.v1]
+          enum: [agentyard.channel-outbound-frame-ack.v1]
         channelProfileId:
           type: string
         providerType:
@@ -4692,7 +4692,7 @@ components:
       properties:
         protocol:
           type: string
-          enum: [lynxus.agent-turn-transient.v1]
+          enum: [agentyard.agent-turn-transient.v1]
         frameId:
           type: string
           description: Stable dedup key. Must be `${turnExecutionId}:${seq}`.
@@ -4833,7 +4833,7 @@ components:
       properties:
         protocol:
           type: string
-          enum: [lynxus.agent-turn-stream.v1]
+          enum: [agentyard.agent-turn-stream.v1]
         frameId:
           type: string
           description: Stable dedup key. Must be `${turnExecutionId}:${seq}`.

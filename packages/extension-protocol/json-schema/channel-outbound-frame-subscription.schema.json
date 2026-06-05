@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://lynxus.dev/schemas/extension-protocol/channel-outbound-frame-subscription.schema.json",
+  "$id": "https://agentyard.dev/schemas/extension-protocol/channel-outbound-frame-subscription.schema.json",
   "title": "Channel outbound frame subscription",
   "type": "object",
   "additionalProperties": false,

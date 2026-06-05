@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://lynxus.dev/schemas/extension-protocol/extension-error.schema.json",
+  "$id": "https://agentyard.dev/schemas/extension-protocol/extension-error.schema.json",
   "title": "ExtensionError",
   "type": "object",
   "additionalProperties": false,

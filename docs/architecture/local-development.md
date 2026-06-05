@@ -13,8 +13,8 @@
 
 这些依赖服务于当前“控制面 + Temporal + Python runtime + 前端控制台”的本地联调链路。
 其中当前主链路最依赖的是 PostgreSQL、Temporal、MinIO、Redis 和知识服务；知识服务通过 S3-compatible object storage 配置访问对象存储，本地默认指向 MinIO。知识快照构建与检索默认依赖 PostgreSQL 内的 `pgvector + pg_trgm + tsvector`。
-本地 PostgreSQL 默认会准备 `lynxus_core`、`lynxus_channel_gateway`、`lynxus_knowledge` 和 `lynxus_agent_runtime` 四个数据库，按服务边界隔离运行表。
-数据源 URL 使用服务域变量配置：API/worker 使用 `LYNXUS_CORE_DATASOURCE_URL`，channel-gateway 使用 `LYNXUS_CHANNEL_GATEWAY_DATASOURCE_URL`，agent-runtime 使用 `LYNXUS_AGENT_RUNTIME_DATABASE_URL`。不要在根目录 `.env*` 中配置通用 `SPRING_DATASOURCE_URL`，否则它会覆盖所有 Spring Boot 服务的 `spring.datasource.url`。
+本地 PostgreSQL 默认会准备 `agentyard_core`、`agentyard_channel_gateway`、`agentyard_knowledge` 和 `agentyard_agent_runtime` 四个数据库，按服务边界隔离运行表。
+数据源 URL 使用服务域变量配置：API/worker 使用 `AGENTYARD_CORE_DATASOURCE_URL`，channel-gateway 使用 `AGENTYARD_CHANNEL_GATEWAY_DATASOURCE_URL`，agent-runtime 使用 `AGENTYARD_AGENT_RUNTIME_DATABASE_URL`。不要在根目录 `.env*` 中配置通用 `SPRING_DATASOURCE_URL`，否则它会覆盖所有 Spring Boot 服务的 `spring.datasource.url`。
 
 ## 本机前置条件
 
@@ -28,7 +28,7 @@
 
 本地开发约定使用根目录 `uv` workspace 统一管理 Python 依赖。先安装 `uv`，再在仓库根目录执行 `uv sync --all-packages`。
 
-`pnpm local` / `pnpm local:*` 只覆盖控制台与运行主链路，不启动 `apps/site`。静态项目站点需要单独用 `pnpm --filter @lynxus/site dev` 调试，或通过根目录 `pnpm build` 一并构建。
+`pnpm local` / `pnpm local:*` 只覆盖控制台与运行主链路，不启动 `apps/site`。静态项目站点需要单独用 `pnpm --filter @agentyard/site dev` 调试，或通过根目录 `pnpm build` 一并构建。
 
 ## 建议启动顺序
 
@@ -63,26 +63,26 @@
 
 本地 `docker compose` 默认仍使用 upstream 官方镜像，但基础依赖镜像已经支持通过根目录 `.env` 单独覆盖：
 
-- `LYNXUS_IMAGE_POSTGRES`
-- `LYNXUS_IMAGE_POSTGRES_BOOTSTRAP`
-- `LYNXUS_IMAGE_MINIO`
-- `LYNXUS_IMAGE_REDIS`
-- `LYNXUS_IMAGE_TEMPORAL`
-- `LYNXUS_IMAGE_TEMPORAL_UI`
-- `LYNXUS_IMAGE_CADDY`
+- `AGENTYARD_IMAGE_POSTGRES`
+- `AGENTYARD_IMAGE_POSTGRES_BOOTSTRAP`
+- `AGENTYARD_IMAGE_MINIO`
+- `AGENTYARD_IMAGE_REDIS`
+- `AGENTYARD_IMAGE_TEMPORAL`
+- `AGENTYARD_IMAGE_TEMPORAL_UI`
+- `AGENTYARD_IMAGE_CADDY`
 
 之所以采用“逐镜像覆盖”而不是统一 registry 前缀，是因为不同上游在 ECR pull-through cache 下的路径规则并不一致；例如 Docker Hub 官方镜像通常需要 `docker-hub/library/...`，第三方镜像和其他 registry 又是另一套路径。
 
 如果你使用私有 AWS ECR pull-through cache，可以直接把这些变量改成完整镜像地址，例如：
 
 ```dotenv
-LYNXUS_IMAGE_POSTGRES=<aws_account_id>.dkr.ecr.<region>.amazonaws.com/docker-hub/pgvector/pgvector:pg17
-LYNXUS_IMAGE_POSTGRES_BOOTSTRAP=<aws_account_id>.dkr.ecr.<region>.amazonaws.com/docker-hub/library/postgres:17.6
-LYNXUS_IMAGE_MINIO=<aws_account_id>.dkr.ecr.<region>.amazonaws.com/docker-hub/minio/minio:RELEASE.2025-09-07T16-13-09Z
-LYNXUS_IMAGE_REDIS=<aws_account_id>.dkr.ecr.<region>.amazonaws.com/docker-hub/library/redis:7.4-alpine
-LYNXUS_IMAGE_TEMPORAL=<aws_account_id>.dkr.ecr.<region>.amazonaws.com/docker-hub/temporalio/auto-setup:1.28.1
-LYNXUS_IMAGE_TEMPORAL_UI=<aws_account_id>.dkr.ecr.<region>.amazonaws.com/docker-hub/temporalio/ui:2.39.0
-LYNXUS_IMAGE_CADDY=<aws_account_id>.dkr.ecr.<region>.amazonaws.com/docker-hub/library/caddy:2.8.4-alpine
+AGENTYARD_IMAGE_POSTGRES=<aws_account_id>.dkr.ecr.<region>.amazonaws.com/docker-hub/pgvector/pgvector:pg17
+AGENTYARD_IMAGE_POSTGRES_BOOTSTRAP=<aws_account_id>.dkr.ecr.<region>.amazonaws.com/docker-hub/library/postgres:17.6
+AGENTYARD_IMAGE_MINIO=<aws_account_id>.dkr.ecr.<region>.amazonaws.com/docker-hub/minio/minio:RELEASE.2025-09-07T16-13-09Z
+AGENTYARD_IMAGE_REDIS=<aws_account_id>.dkr.ecr.<region>.amazonaws.com/docker-hub/library/redis:7.4-alpine
+AGENTYARD_IMAGE_TEMPORAL=<aws_account_id>.dkr.ecr.<region>.amazonaws.com/docker-hub/temporalio/auto-setup:1.28.1
+AGENTYARD_IMAGE_TEMPORAL_UI=<aws_account_id>.dkr.ecr.<region>.amazonaws.com/docker-hub/temporalio/ui:2.39.0
+AGENTYARD_IMAGE_CADDY=<aws_account_id>.dkr.ecr.<region>.amazonaws.com/docker-hub/library/caddy:2.8.4-alpine
 ```
 
 实际路径需要以你在 ECR 中配置的 pull-through cache rule 为准。
@@ -91,19 +91,19 @@ LYNXUS_IMAGE_CADDY=<aws_account_id>.dkr.ecr.<region>.amazonaws.com/docker-hub/li
 
 当前 6 个主链路服务应用都已提供多阶段 Dockerfile，构建时统一使用仓库根目录作为 build context：
 
-- API：`docker build -f apps/api/Dockerfile -t lynxus-api .`
-- Channel Gateway：`docker build -f apps/channel-gateway/Dockerfile -t lynxus-channel-gateway .`
-- Worker：`docker build -f apps/worker/Dockerfile -t lynxus-worker .`
-- Web 控制台：`docker build -f apps/web/Dockerfile -t lynxus-web .`
-- Agent Runtime：`docker build -f apps/agent-runtime/Dockerfile -t lynxus-agent-runtime .`
-- Knowledge Service：`docker build -f apps/knowledge-service/Dockerfile -t lynxus-knowledge-service .`
+- API：`docker build -f apps/api/Dockerfile -t agentyard-api .`
+- Channel Gateway：`docker build -f apps/channel-gateway/Dockerfile -t agentyard-channel-gateway .`
+- Worker：`docker build -f apps/worker/Dockerfile -t agentyard-worker .`
+- Web 控制台：`docker build -f apps/web/Dockerfile -t agentyard-web .`
+- Agent Runtime：`docker build -f apps/agent-runtime/Dockerfile -t agentyard-agent-runtime .`
+- Knowledge Service：`docker build -f apps/knowledge-service/Dockerfile -t agentyard-knowledge-service .`
 
 `apps/site` 当前是独立 Vite 静态站点，没有 Dockerfile，也不在 local/dev/test 主运行链路中。
 
 构建策略如下：
 
 - API / Channel Gateway / Worker：Gradle 在构建阶段产出 Spring Boot 可执行 jar，运行阶段使用 JRE 镜像
-- Web：`pnpm --filter @lynxus/web build` 产出控制台静态资源，运行阶段使用 Nginx 提供 SPA 文件并处理路由回退
+- Web：`pnpm --filter @agentyard/web build` 产出控制台静态资源，运行阶段使用 Nginx 提供 SPA 文件并处理路由回退
 - Agent Runtime / Knowledge Service：`uv build` 产出 wheel，运行阶段使用 Python slim 镜像安装 wheel
 
 Web 默认把 `VITE_API_BASE_URL` 编译为 `/api`。如果前端容器和 API 不在同一反向代理下，需要在构建时显式覆盖，例如：
@@ -112,7 +112,7 @@ Web 默认把 `VITE_API_BASE_URL` 编译为 `/api`。如果前端容器和 API �
 docker build \
   -f apps/web/Dockerfile \
   --build-arg VITE_API_BASE_URL=http://127.0.0.1:8080/api \
-  -t lynxus-web .
+  -t agentyard-web .
 ```
 
 ## 日志与链路上下文
@@ -121,21 +121,21 @@ docker build \
 
 - 公共字段：`service`、`traceId`、`spanId`、`sessionId`、`workflowId`、`customerId`、`userId`
 - 字段语义：`customerId` 表示业务客户或外部终端用户；`userId` 表示平台系统用户
-- 跨服务透传头：`traceparent`、`X-Lynxus-Session-Id`、`X-Lynxus-Workflow-Id`、`X-Lynxus-Customer-Id`、`X-Lynxus-User-Id`
+- 跨服务透传头：`traceparent`、`X-AgentYard-Session-Id`、`X-AgentYard-Workflow-Id`、`X-AgentYard-Customer-Id`、`X-AgentYard-User-Id`
 - Web 运行态语义：业务用户在会话页发消息时使用 `customerId`；内部登录态下的人工相关操作属于平台用户域，`human-reply / human-resume / handoff-end` 这类操作统一取登录态 `userId`，不再由内部 runtime 请求体传 `operatorId`。`operatorId` 仍保留在 workflow / 对接模型中，供后续非登录态外部接口使用。
 
 本地开发日志格式切换约定：
 
 - API 与 Worker 默认使用 Spring `local` profile，输出可读文本日志；非 `local` profile 输出结构化 JSON
-- Agent Runtime 与 Knowledge Service 使用 `LYNXUS_LOG_FORMAT=console|json`
-- [`scripts/local/agent-runtime.sh`](../../scripts/local/agent-runtime.sh) 与 [`scripts/local/knowledge-service.sh`](../../scripts/local/knowledge-service.sh) 默认会设置 `LYNXUS_LOG_FORMAT=console`
+- Agent Runtime 与 Knowledge Service 使用 `AGENTYARD_LOG_FORMAT=console|json`
+- [`scripts/local/agent-runtime.sh`](../../scripts/local/agent-runtime.sh) 与 [`scripts/local/knowledge-service.sh`](../../scripts/local/knowledge-service.sh) 默认会设置 `AGENTYARD_LOG_FORMAT=console`
 - [`scripts/local/worker.sh`](../../scripts/local/worker.sh) 默认会设置 `SPRING_PROFILES_ACTIVE=local`
 
 如果需要在本地排查结构化日志链路，可以临时改用：
 
 ```bash
-LYNXUS_LOG_FORMAT=json pnpm local:agent-runtime
-LYNXUS_LOG_FORMAT=json pnpm local:knowledge-service
+AGENTYARD_LOG_FORMAT=json pnpm local:agent-runtime
+AGENTYARD_LOG_FORMAT=json pnpm local:knowledge-service
 SPRING_PROFILES_ACTIVE=default pnpm local:api
 SPRING_PROFILES_ACTIVE=default pnpm local:worker
 ```
@@ -143,7 +143,7 @@ SPRING_PROFILES_ACTIVE=default pnpm local:worker
 ## 默认开发约定
 
 - 后端 API：`http://127.0.0.1:8080/api`
-- 服务间控制面调用统一使用 `LYNXUS_API_BASE_URL`，取值必须包含 `/api`，例如 `http://127.0.0.1:8080/api`
+- 服务间控制面调用统一使用 `AGENTYARD_API_BASE_URL`，取值必须包含 `/api`，例如 `http://127.0.0.1:8080/api`
 - 前端开发服务：`http://127.0.0.1:5173`
 - Agent Runtime：`http://127.0.0.1:8090`
 - Knowledge Service：`http://127.0.0.1:8091`
@@ -151,11 +151,11 @@ SPRING_PROFILES_ACTIVE=default pnpm local:worker
 - Redis：`127.0.0.1:6379`
 - MinIO Console：`http://127.0.0.1:9001`
 - Temporal UI：`http://<host>:8088`（对外监听，经过 Basic Auth 保护）
-- Python 内部服务鉴权：`LYNXUS_INTERNAL_AUTH_TOKEN`，API / Worker / Agent Runtime / Knowledge Service 必须保持一致
-- Redis 统一配置：`LYNXUS_REDIS_HOST / PORT / DATABASE / USERNAME / PASSWORD / SSL_ENABLED`
-- 知识服务对象存储：本地默认 `LYNXUS_OBJECT_STORAGE_MODE=object-storage`、`LYNXUS_OBJECT_STORAGE_PROVIDER=minio`、`LYNXUS_OBJECT_STORAGE_ENDPOINT=http://127.0.0.1:9000`、`LYNXUS_OBJECT_STORAGE_BUCKET=lynxus-knowledge`、`LYNXUS_OBJECT_STORAGE_CREATE_BUCKET=true`
+- Python 内部服务鉴权：`AGENTYARD_INTERNAL_AUTH_TOKEN`，API / Worker / Agent Runtime / Knowledge Service 必须保持一致
+- Redis 统一配置：`AGENTYARD_REDIS_HOST / PORT / DATABASE / USERNAME / PASSWORD / SSL_ENABLED`
+- 知识服务对象存储：本地默认 `AGENTYARD_OBJECT_STORAGE_MODE=object-storage`、`AGENTYARD_OBJECT_STORAGE_PROVIDER=minio`、`AGENTYARD_OBJECT_STORAGE_ENDPOINT=http://127.0.0.1:9000`、`AGENTYARD_OBJECT_STORAGE_BUCKET=agentyard-knowledge`、`AGENTYARD_OBJECT_STORAGE_CREATE_BUCKET=true`
 - Java 结构化日志：默认非 `local` profile 输出 JSON，本地开发默认文本
-- Python 结构化日志：`LYNXUS_LOG_FORMAT` 默认开发态 `console`
+- Python 结构化日志：`AGENTYARD_LOG_FORMAT` 默认开发态 `console`
 - `pnpm local:api` 会默认启用 `local` profile，并打开开发态 bootstrap 登录旁路
 - `pnpm local:worker` 会默认启用 `local` profile，便于直接阅读 workflow/activity 日志
 - 前端开发服务通过 Vite 代理将 `/api` 转发到 `http://127.0.0.1:8080`
@@ -167,15 +167,15 @@ SPRING_PROFILES_ACTIVE=default pnpm local:worker
 - [`scripts/local/knowledge-service.sh`](../../scripts/local/knowledge-service.sh) 默认监听 `127.0.0.1:8091`，仅供本机 `api / worker / agent-runtime` 调用
 - [`scripts/local/web.sh`](../../scripts/local/web.sh) 默认监听 `0.0.0.0:5173`，便于开发时从局域网设备访问
 - `pnpm local:api` 默认暴露 `8080` 供前端代理访问；`Temporal UI` 通过 Docker Compose 暴露 `0.0.0.0:8088`
-- `Temporal UI` 通过 `temporal-ui-gateway` 代理暴露，默认 Basic Auth 用户名来自 `LYNXUS_TEMPORAL_UI_USERNAME`，密码来自 `LYNXUS_TEMPORAL_UI_PASSWORD`
+- `Temporal UI` 通过 `temporal-ui-gateway` 代理暴露，默认 Basic Auth 用户名来自 `AGENTYARD_TEMPORAL_UI_USERNAME`，密码来自 `AGENTYARD_TEMPORAL_UI_PASSWORD`
 - `Agent Runtime` 与 `Knowledge Service` 的 HTTP 入口不接浏览器 OIDC 会话，只接受共享 internal token
-- API -> Worker -> Python 服务已经统一透传 `traceparent` 与 Lynxus 日志上下文头，跨服务排障时应优先按 `traceId` 聚合日志
+- API -> Worker -> Python 服务已经统一透传 `traceparent` 与 AgentYard 日志上下文头，跨服务排障时应优先按 `traceId` 聚合日志
 
 ## 当前开发边界
 
 - 目录数据和运行态投影都已落到 PostgreSQL
 - 资源类型已收敛为知识库、Tool、LLM 模型和 Skill
-- Tool 资源版本只维护业务 operation 和 connector 绑定；需要密钥的 Tool Connector 通过 Integration Account 保存凭证，凭证写入要求配置 `LYNXUS_INTEGRATION_CREDENTIAL_ENCRYPTION_KEY`
+- Tool 资源版本只维护业务 operation 和 connector 绑定；需要密钥的 Tool Connector 通过 Integration Account 保存凭证，凭证写入要求配置 `AGENTYARD_INTEGRATION_CREDENTIAL_ENCRYPTION_KEY`
 - 知识库支持文件上传和 URL 导入；导入任务与索引快照都通过知识服务异步推进
 - Web 知识库工作台会轮询展示导入 / 快照状态，并支持失败重试与检索验证
 - 若命中真实模型资源，必须在根目录 `.env` 提供对应 API key

@@ -206,12 +206,6 @@ pre,
   min-width: 0;
 }
 
-.console-topbar__brand-cn {
-  font-size: var(--text-body);
-  font-weight: 700;
-  letter-spacing: 0.08em;
-}
-
 .console-topbar__brand-en {
   color: var(--ink-faint);
   font-family: var(--font-mono);

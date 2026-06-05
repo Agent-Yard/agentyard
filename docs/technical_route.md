@@ -24,7 +24,7 @@
 - `apps/web`：配置态与运行态控制台，运行页围绕 session event / owner / playbook / handoff 组织
 - `apps/site`：独立静态项目站点 / 官网落地页，不参与 session-runtime 主链路
 
-Tool Connector 与 Channel Provider 通过 `packages/extension-protocol` 定义的 *Extension Plane* 协议接入；核心服务自动注册由 `LYNXUS_CHANNEL_GATEWAY_BASE_URL` / `LYNXUS_AGENT_RUNTIME_BASE_URL` 提供，运营方扩展通过 `LYNXUS_EXTENSION_REGISTRATION_FILE` 加载。
+Tool Connector 与 Channel Provider 通过 `packages/extension-protocol` 定义的 *Extension Plane* 协议接入；核心服务自动注册由 `AGENTYARD_CHANNEL_GATEWAY_BASE_URL` / `AGENTYARD_AGENT_RUNTIME_BASE_URL` 提供，运营方扩展通过 `AGENTYARD_EXTENSION_REGISTRATION_FILE` 加载。
 
 当前执行核心已经不是旧的图编排 runtime，而是一条：
 

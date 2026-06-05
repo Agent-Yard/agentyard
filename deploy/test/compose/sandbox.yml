@@ -1,10 +1,10 @@
-name: lynxus-test-sandbox
+name: agentyard-test-sandbox
 
 services:
   sandbox:
-    image: ${LYNXUS_IMAGE_SANDBOX:?LYNXUS_IMAGE_SANDBOX is required}
+    image: ${AGENTYARD_IMAGE_SANDBOX:?AGENTYARD_IMAGE_SANDBOX is required}
     restart: unless-stopped
     security_opt:
       - seccomp=unconfined
     ports:
-      - "${LYNXUS_SANDBOX_BIND_ADDRESS:-0.0.0.0}:${LYNXUS_SANDBOX_PORT:-8092}:8080"
+      - "${AGENTYARD_SANDBOX_BIND_ADDRESS:-0.0.0.0}:${AGENTYARD_SANDBOX_PORT:-8092}:8080"

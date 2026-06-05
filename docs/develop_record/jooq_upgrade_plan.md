@@ -1,7 +1,7 @@
-# Lynxus jOOQ 落地与 SQL 工程化升级方案
+# AgentYard jOOQ 落地与 SQL 工程化升级方案
 
 > 本文是 [`docs/project_todos.md`](../project_todos.md) §3.5「安全加固」中“SQL 注入防护审计”的延伸方案，也是对 [`docs/architecture/code-framework.md`](../architecture/code-framework.md) 和 [`docs/todo/multi_instance_plan.md`](./multi_instance_plan.md) 的持久层补全。
-> 本文不讨论“是否要换一个数据库访问框架玩一玩”，而是回答：当前 Lynxus 是否已经需要从粗犷 `JdbcTemplate + 字符串 SQL` 升级为更工程化的 SQL-first 持久层，以及应该如何一次性落到目标架构。
+> 本文不讨论“是否要换一个数据库访问框架玩一玩”，而是回答：当前 AgentYard 是否已经需要从粗犷 `JdbcTemplate + 字符串 SQL` 升级为更工程化的 SQL-first 持久层，以及应该如何一次性落到目标架构。
 
 ## 1. 目标与边界
 
@@ -11,7 +11,7 @@
 
 1. 项目当前处于开发阶段，优先直接对齐目标架构，不做兼容性优先设计
 2. 不为了保留现有 `JdbcTemplate` 写法而设计“双轨持久层”
-3. 不把 ORM 作为目标；Lynxus 的目标是 SQL 工程化，而不是对象图持久化
+3. 不把 ORM 作为目标；AgentYard 的目标是 SQL 工程化，而不是对象图持久化
 4. `apps/api` 与 `apps/worker` 共享同一套 core PostgreSQL schema，持久层设计必须考虑共享与复用
 5. `knowledge-service` 仍是 Python 服务，不强行纳入 JVM jOOQ 体系
 
@@ -64,7 +64,7 @@
 
 ## 2. 先说结论
 
-Lynxus 当前确实已经到了必须做 SQL 工程化升级的阶段。
+AgentYard 当前确实已经到了必须做 SQL 工程化升级的阶段。
 
 但正确方向不是：
 
@@ -102,11 +102,11 @@ Lynxus 当前确实已经到了必须做 SQL 工程化升级的阶段。
 
 代表性代码：
 
-- [`apps/api/src/main/java/com/lynxus/platform/session/JdbcSessionRuntimeRepository.java`](../../apps/api/src/main/java/com/lynxus/platform/session/JdbcSessionRuntimeRepository.java)
-- [`apps/worker/src/main/java/com/lynxus/worker/session/JdbcSessionProjectionRepository.java`](../../apps/worker/src/main/java/com/lynxus/worker/session/JdbcSessionProjectionRepository.java)
-- [`apps/api/src/main/java/com/lynxus/platform/event/JdbcPlatformEventRepository.java`](../../apps/api/src/main/java/com/lynxus/platform/event/JdbcPlatformEventRepository.java)
-- [`apps/api/src/main/java/com/lynxus/platform/catalog/JdbcCatalogRepository.java`](../../apps/api/src/main/java/com/lynxus/platform/catalog/JdbcCatalogRepository.java)
-- [`apps/api/src/main/java/com/lynxus/platform/knowledge/JdbcKnowledgeRepository.java`](../../apps/api/src/main/java/com/lynxus/platform/knowledge/JdbcKnowledgeRepository.java)
+- [`apps/api/src/main/java/com/agentyard/platform/session/JdbcSessionRuntimeRepository.java`](../../apps/api/src/main/java/com/agentyard/platform/session/JdbcSessionRuntimeRepository.java)
+- [`apps/worker/src/main/java/com/agentyard/worker/session/JdbcSessionProjectionRepository.java`](../../apps/worker/src/main/java/com/agentyard/worker/session/JdbcSessionProjectionRepository.java)
+- [`apps/api/src/main/java/com/agentyard/platform/event/JdbcPlatformEventRepository.java`](../../apps/api/src/main/java/com/agentyard/platform/event/JdbcPlatformEventRepository.java)
+- [`apps/api/src/main/java/com/agentyard/platform/catalog/JdbcCatalogRepository.java`](../../apps/api/src/main/java/com/agentyard/platform/catalog/JdbcCatalogRepository.java)
+- [`apps/api/src/main/java/com/agentyard/platform/knowledge/JdbcKnowledgeRepository.java`](../../apps/api/src/main/java/com/agentyard/platform/knowledge/JdbcKnowledgeRepository.java)
 
 这已经不是“几张表、几个简单查询”的规模。
 
@@ -131,7 +131,7 @@ Lynxus 当前确实已经到了必须做 SQL 工程化升级的阶段。
 
 #### 3. 动态 SQL 仍靠字符串拼接
 
-例如 [`JdbcPlatformEventRepository`](../../apps/api/src/main/java/com/lynxus/platform/event/JdbcPlatformEventRepository.java) 的查询构造，当前仍然靠 `StringBuilder + 命名参数`。
+例如 [`JdbcPlatformEventRepository`](../../apps/api/src/main/java/com/agentyard/platform/event/JdbcPlatformEventRepository.java) 的查询构造，当前仍然靠 `StringBuilder + 命名参数`。
 
 这在功能上可行，但问题是：
 
@@ -236,13 +236,13 @@ jOOQ 落地时不该另起一套松散 helper，而应对齐这种模块化方�
 注意：
 
 1. `stars` 不能直接代表适配度
-2. 对 Lynxus 更重要的是“抽象是否匹配”，不是“社区是否最大”
+2. 对 AgentYard 更重要的是“抽象是否匹配”，不是“社区是否最大”
 
 ### 4.3 为什么 `jOOQ` 最匹配
 
 `jOOQ` 的核心价值不是替你隐藏 SQL，而是把 SQL 变成 Java 内部 DSL，并且可以从数据库 schema 生成类型安全代码。
 
-这正好命中 Lynxus 当前需求：
+这正好命中 AgentYard 当前需求：
 
 1. 保留 SQL-first 思维，不引入 ORM 对象图语义
 2. 对 PostgreSQL 友好，能承接 `jsonb`、upsert、复杂查询
@@ -273,7 +273,7 @@ jOOQ 落地时不该另起一套松散 helper，而应对齐这种模块化方�
 - `Jdbi` 能降低样板代码
 - `jOOQ` 能同时降低样板代码、提升 schema 安全、统一查询语言
 
-对当前 Lynxus，更重要的是后者。
+对当前 AgentYard，更重要的是后者。
 
 ### 4.5 为什么不是 `MyBatis`
 
@@ -294,7 +294,7 @@ jOOQ 落地时不该另起一套松散 helper，而应对齐这种模块化方�
 
 这两类方案的问题都不是社区弱，而是建模方向不对。
 
-Lynxus 当前面临的是：
+AgentYard 当前面临的是：
 
 1. 运行态投影
 2. 审计账本
@@ -341,13 +341,13 @@ Lynxus 当前面临的是：
 ```text
 packages/persistence-jvm/
   build.gradle.kts
-  src/main/java/com/lynxus/persistence/
+  src/main/java/com/agentyard/persistence/
     config/
     jooqsupport/
     session/
     event/
     auth/
-  src/generated/jooq/com/lynxus/persistence/jooq/
+  src/generated/jooq/com/agentyard/persistence/jooq/
 ```
 
 根 Gradle 需要新增：
@@ -728,8 +728,8 @@ CI 至少新增以下检查：
 
 - [`docs/architecture/code-framework.md`](../architecture/code-framework.md)
 - [`docs/todo/multi_instance_plan.md`](./multi_instance_plan.md)
-- [`apps/api/src/main/java/com/lynxus/platform/session/JdbcSessionRuntimeRepository.java`](../../apps/api/src/main/java/com/lynxus/platform/session/JdbcSessionRuntimeRepository.java)
-- [`apps/worker/src/main/java/com/lynxus/worker/session/JdbcSessionProjectionRepository.java`](../../apps/worker/src/main/java/com/lynxus/worker/session/JdbcSessionProjectionRepository.java)
-- [`apps/api/src/main/java/com/lynxus/platform/event/JdbcPlatformEventRepository.java`](../../apps/api/src/main/java/com/lynxus/platform/event/JdbcPlatformEventRepository.java)
-- [`apps/api/src/main/java/com/lynxus/platform/catalog/JdbcCatalogRepository.java`](../../apps/api/src/main/java/com/lynxus/platform/catalog/JdbcCatalogRepository.java)
+- [`apps/api/src/main/java/com/agentyard/platform/session/JdbcSessionRuntimeRepository.java`](../../apps/api/src/main/java/com/agentyard/platform/session/JdbcSessionRuntimeRepository.java)
+- [`apps/worker/src/main/java/com/agentyard/worker/session/JdbcSessionProjectionRepository.java`](../../apps/worker/src/main/java/com/agentyard/worker/session/JdbcSessionProjectionRepository.java)
+- [`apps/api/src/main/java/com/agentyard/platform/event/JdbcPlatformEventRepository.java`](../../apps/api/src/main/java/com/agentyard/platform/event/JdbcPlatformEventRepository.java)
+- [`apps/api/src/main/java/com/agentyard/platform/catalog/JdbcCatalogRepository.java`](../../apps/api/src/main/java/com/agentyard/platform/catalog/JdbcCatalogRepository.java)
 - [`apps/api/src/main/resources/db/migration`](../../apps/api/src/main/resources/db/migration)

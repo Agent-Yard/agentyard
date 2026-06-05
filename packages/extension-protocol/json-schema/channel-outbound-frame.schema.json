@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://lynxus.dev/schemas/extension-protocol/channel-outbound-frame.schema.json",
+  "$id": "https://agentyard.dev/schemas/extension-protocol/channel-outbound-frame.schema.json",
   "title": "Channel outbound frame",
   "type": "object",
   "additionalProperties": false,
@@ -19,7 +19,7 @@
   "properties": {
     "protocol": {
       "type": "string",
-      "const": "lynxus.channel-outbound-frame.v1"
+      "const": "agentyard.channel-outbound-frame.v1"
     },
     "frameId": {
       "type": "string",

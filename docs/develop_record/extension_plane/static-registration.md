@@ -27,7 +27,7 @@
 `providerType` / `connectorType`。
 
 ```yaml
-lynxus:
+agentyard:
   extensions:
     services:
       - registrationId: acme-channel-provider
@@ -65,7 +65,7 @@ core 自动注入两条 preset registration，operator yaml 不需要也不允�
 
 ```yaml
 - registrationId: core-channel-gateway
-  baseUrl: ${LYNXUS_CHANNEL_GATEWAY_BASE_URL}
+  baseUrl: ${AGENTYARD_CHANNEL_GATEWAY_BASE_URL}
   source: CORE_PRESET
   exposes:
     channelProviderTypes:
@@ -74,7 +74,7 @@ core 自动注入两条 preset registration，operator yaml 不需要也不允�
     type: INTERNAL_TOKEN
 
 - registrationId: core-agent-runtime
-  baseUrl: ${LYNXUS_AGENT_RUNTIME_BASE_URL}
+  baseUrl: ${AGENTYARD_AGENT_RUNTIME_BASE_URL}
   source: CORE_PRESET
   exposes:
     toolConnectorTypes:
@@ -111,7 +111,7 @@ operator yaml             ┘     -> API ExtensionDefinitionRegistry
 
 operator yaml 允许的来源形态：
 
-1. 同一个只读配置文件，例如 `/etc/lynxus/extensions.yaml`
+1. 同一个只读配置文件，例如 `/etc/agentyard/extensions.yaml`
 2. 同一个 ConfigMap / Secret 投影出的只读文件
 3. 同一个部署配置中心 key / version
 
@@ -149,7 +149,7 @@ DescriptorProvider
 GET {normalizedBaseUrlWithoutTrailingSlash}/extension/manifest
 ```
 
-`baseUrl` 允许 path prefix；manifest endpoint 按 §5 的 normalized `baseUrl` 拼接固定 path。例如 `https://ext.example.com/lynxus` 对应 `GET https://ext.example.com/lynxus/extension/manifest`。
+`baseUrl` 允许 path prefix；manifest endpoint 按 §5 的 normalized `baseUrl` 拼接固定 path。例如 `https://ext.example.com/agentyard` 对应 `GET https://ext.example.com/agentyard/extension/manifest`。
 
 加载形态：
 
@@ -330,7 +330,7 @@ Definition digest 的计算顺序固定为：
 
 1. 解析 manifest 并完成 manifest schema validation
 2. 按 descriptor type 构造 canonical object，并在此阶段完成字段存在性 normalize：缺失字段必须 materialize 成该 descriptor digest 规则定义的 `null`、空 object 或排序后的数组；进入 digest 的 JSON Schema 使用 validation-only schema view
-3. 对 normalize 后的 canonical object 运行 Lynxus canonical JSON 序列化
+3. 对 normalize 后的 canonical object 运行 AgentYard canonical JSON 序列化
 4. 对 canonical bytes 计算 `sha256:<lowercase-hex>`
 
 canonicalizer 只负责确定性 JSON 序列化，不负责业务语义归一化或默认值推导。manifest 中省略字段与显式填写等价缺省值时，必须先归一成同一个 canonical object，再得到同一个 definition digest。若某字段缺失且该 descriptor digest 规则没有定义缺省值，则 manifest validation failed，而不是由 canonicalizer 猜测。
@@ -386,7 +386,7 @@ Channel Provider definition digest 的输入固定为下列 canonical object：
 9. `jobDefinitions` 在进入 digest 前必须按 `jobType` 升序排序；同一 provider descriptor 内重复 `jobType` 必须先 validation failed
 10. `jobDefinitions[*]` 只包含 `jobType` 与 `jobConfigSchema`；job `title` / `description`、`jobConfigUiSchema`、`defaultSchedule`、`defaultEnabled`、`defaultJobTimeoutSeconds` 都不进入 digest
 11. `defaultConfig` 是创建 / 重置 channel profile 时回填 `channel_profile.config` 的默认值，不进入 Channel Provider definition digest
-12. JSON Schema 不做字符串化，作为 JSON object 进入 canonical object，并继续受 Lynxus canonical JSON profile 约束
+12. JSON Schema 不做字符串化，作为 JSON object 进入 canonical object，并继续受 AgentYard canonical JSON profile 约束
 13. `extensionApiVersion`、`coreMinVersion`、`coreMaxVersion`、service envelope、`registrationId`、`source`、`baseUrl`、auth、`accountId`、`externalSecretRef`、credential status、assistant binding、template binding、channel profile 保存态配置和 runtime state 都不进入该 digest
 
 ### 5.2 Tool Connector Definition Digest
@@ -421,7 +421,7 @@ Tool Connector definition digest 的输入固定为下列 canonical object：
 6. `credentialCapability` 不进入 digest；它是 API definition projection，事实由 `credentialSchema` 与 credential endpoint keys 推导
 7. Tool Resource / Tool Operation / operation list 不进入 digest；connector descriptor 不声明 operation 集合
 8. Tool Resource 保存态的 `connector.config`、`operationMappings`、retry policy、timeout policy、account snapshot、`accountId`、`externalSecretRef`、credential status 和 runtime state 都不进入该 digest
-9. JSON Schema 不做字符串化，作为 JSON object 进入 canonical object，并继续受 Lynxus canonical JSON profile 约束；所有 `*UiSchema` 都不进入 digest
+9. JSON Schema 不做字符串化，作为 JSON object 进入 canonical object，并继续受 AgentYard canonical JSON profile 约束；所有 `*UiSchema` 都不进入 digest
 
 `registrationConfigDigest` 使用合并后的 registration config 规范化 JSON 计算，覆盖：
 
@@ -435,7 +435,7 @@ Tool Connector definition digest 的输入固定为下列 canonical object：
 
 `registrationConfigDigest` 不包含：
 
-1. `LYNXUS_INTERNAL_TOKEN` 或任何 token / secret 明文
+1. `AGENTYARD_INTERNAL_TOKEN` 或任何 token / secret 明文
 2. secret 文件路径中的内容
 3. manifest 拉取结果
 4. descriptor definition 内容
@@ -444,7 +444,7 @@ Tool Connector definition digest 的输入固定为下列 canonical object：
 `baseUrl` 规范化规则：
 
 1. `baseUrl` 必须是合法 URL，scheme 只允许 `http` 或 `https`
-2. `baseUrl` 允许 path prefix，例如 `https://ext.example.com/lynxus/extensions`
+2. `baseUrl` 允许 path prefix，例如 `https://ext.example.com/agentyard/extensions`
 3. `baseUrl` 不允许包含 userinfo、query string 或 fragment
 4. host 在进入 digest 前统一转为小写
 5. 默认端口归一化：`http:80` 与未写端口等价，`https:443` 与未写端口等价；非默认端口必须保留
@@ -463,21 +463,21 @@ Tool Connector definition digest 的输入固定为下列 canonical object：
 7. `registrationConfigDigest` 与 definition digest 分离：前者证明部署注册项一致，后者证明 descriptor 定义一致
 
 canonical JSON 序列化算法是协议事实，定义在 `packages/extension-protocol`。当前阶段不引入第三方
-JCS 库作为信任根；Java SDK 与 Python SDK 各自实现同一个小型 `LynxusCanonicalJson` helper，
+JCS 库作为信任根；Java SDK 与 Python SDK 各自实现同一个小型 `AgentYardCanonicalJson` helper，
 并由同一份 fixtures 约束为 byte-for-byte 一致。
 
 该 helper 只服务 descriptor definition digest 与 `registrationConfigDigest`，不是通用 JSON 序列化器。
 算法采用 RFC 8785 JCS 的确定性 object key 排序、字符串转义和 UTF-8 bytes 输出思路，但把输入收窄为
-Lynxus canonical JSON profile，避免实现完整 ECMAScript number serialization。
+AgentYard canonical JSON profile，避免实现完整 ECMAScript number serialization。
 
 Digest 规则：
 
-1. descriptor definition digest 与 `registrationConfigDigest` 都使用 `LynxusCanonicalJson` canonical bytes
+1. descriptor definition digest 与 `registrationConfigDigest` 都使用 `AgentYardCanonicalJson` canonical bytes
 2. digest 计算为 `sha256` over UTF-8 canonical bytes，输出形态固定为 `sha256:<lowercase-hex>`
 3. digest 前不在 canonicalizer 中做业务语义归一化；URL、env placeholder、default 注入等必须在进入 canonical object 前完成
 4. descriptor digest 输入字段和 registration config digest 输入字段必须由 fixtures 锁定，不能由各语言实现自行选择
 
-Lynxus canonical JSON profile 输入约束：
+AgentYard canonical JSON profile 输入约束：
 
 1. object 不允许 duplicate keys；解析阶段发现重复 key 必须失败
 2. string 必须是合法 Unicode

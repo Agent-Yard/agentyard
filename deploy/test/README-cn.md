@@ -29,7 +29,7 @@ deploy/test/
 推荐的目标布局：
 
 ```text
-/opt/lynxus/
+/opt/agentyard/
   common/
   test/
     compose/
@@ -63,10 +63,10 @@ PostgreSQL 作为一个独立的模块列出，因为测试环境可能使用托
 
 PostgreSQL 模块通过发布的 `common + test` 布局，使用 [../common/postgres-bootstrap/init-databases.sh](../common/postgres-bootstrap/init-databases.sh)。它的一次性引导服务会创建：
 
-- `lynxus_core`
-- `lynxus_channel_gateway`
-- `lynxus_knowledge`
-- `lynxus_agent_runtime`
+- `agentyard_core`
+- `agentyard_channel_gateway`
+- `agentyard_knowledge`
+- `agentyard_agent_runtime`
 - `temporal`
 - `temporal_visibility`
 
@@ -132,7 +132,7 @@ compose 文件有意保持相互独立，因为不同模块可能运行在不同
 
 8. Web 静态资源与 Nginx。
 
-当 PostgreSQL 由本包外部管理时，部署人员必须在启动 Temporal 或应用服务之前创建 `lynxus_core`、`lynxus_channel_gateway`、`lynxus_knowledge`、`lynxus_agent_runtime`、`temporal` 和 `temporal_visibility` 数据库。知识库必须启用 `vector` 和 `pg_trgm` 扩展。
+当 PostgreSQL 由本包外部管理时，部署人员必须在启动 Temporal 或应用服务之前创建 `agentyard_core`、`agentyard_channel_gateway`、`agentyard_knowledge`、`agentyard_agent_runtime`、`temporal` 和 `temporal_visibility` 数据库。知识库必须启用 `vector` 和 `pg_trgm` 扩展。
 
 ## 依赖关系矩阵
 
@@ -141,15 +141,15 @@ compose 文件有意保持相互独立，因为不同模块可能运行在不同
 | postgres | 持久化磁盘 |
 | temporal | PostgreSQL 数据库 `temporal` 和 `temporal_visibility` |
 | temporal-ui | Temporal |
-| sandbox | 无需依赖其他 Lynxus 服务 |
-| channel-gateway | PostgreSQL 数据库 `lynxus_channel_gateway` |
-| knowledge-service | PostgreSQL 数据库 `lynxus_knowledge`、兼容 S3 的对象存储、嵌入（embedding）服务商 |
-| agent-runtime | PostgreSQL 数据库 `lynxus_agent_runtime`、Redis、API URL、Knowledge Service URL、按需配置的模型提供商凭证 |
-| worker | PostgreSQL 数据库 `lynxus_core`、Redis、Temporal、Agent Runtime、Knowledge Service、Sandbox |
-| api | PostgreSQL 数据库 `lynxus_core`、Redis、Temporal、Knowledge Service、Channel Gateway、OIDC |
+| sandbox | 无需依赖其他 AgentYard 服务 |
+| channel-gateway | PostgreSQL 数据库 `agentyard_channel_gateway` |
+| knowledge-service | PostgreSQL 数据库 `agentyard_knowledge`、兼容 S3 的对象存储、嵌入（embedding）服务商 |
+| agent-runtime | PostgreSQL 数据库 `agentyard_agent_runtime`、Redis、API URL、Knowledge Service URL、按需配置的模型提供商凭证 |
+| worker | PostgreSQL 数据库 `agentyard_core`、Redis、Temporal、Agent Runtime、Knowledge Service、Sandbox |
+| api | PostgreSQL 数据库 `agentyard_core`、Redis、Temporal、Knowledge Service、Channel Gateway、OIDC |
 | web | 通过 Nginx 的 `/api`、`/oauth2` 和 `/login/oauth2` 路由访问 API |
 
 ## PostgreSQL 要求
 
 使用 PostgreSQL 16+ 版本，推荐使用 PostgreSQL 17。知识库必须包含支持 HNSW 的 `pgvector` 扩展，并且提供 `pg_trgm` 扩展。
-运行态数据源 URL 按服务域配置：`api` 和 `worker` 使用 `LYNXUS_CORE_DATASOURCE_URL`，`channel-gateway` 使用 `LYNXUS_CHANNEL_GATEWAY_DATASOURCE_URL`，`agent-runtime` 使用 `LYNXUS_AGENT_RUNTIME_DATABASE_URL`。不要在部署 env 文件中设置共享的 `SPRING_DATASOURCE_URL`，它会覆盖所有 Spring Boot 服务的数据源。
+运行态数据源 URL 按服务域配置：`api` 和 `worker` 使用 `AGENTYARD_CORE_DATASOURCE_URL`，`channel-gateway` 使用 `AGENTYARD_CHANNEL_GATEWAY_DATASOURCE_URL`，`agent-runtime` 使用 `AGENTYARD_AGENT_RUNTIME_DATABASE_URL`。不要在部署 env 文件中设置共享的 `SPRING_DATASOURCE_URL`，它会覆盖所有 Spring Boot 服务的数据源。

@@ -1,9 +1,9 @@
 {
-  "name": "lynxus.extensions.services must reject boolean values",
-  "operatorYaml": "lynxus:\n  extensions:\n    services: false\n",
+  "name": "agentyard.extensions.services must reject boolean values",
+  "operatorYaml": "agentyard:\n  extensions:\n    services: false\n",
   "environment": {
-    "LYNXUS_AGENT_RUNTIME_BASE_URL": "http://agent-runtime:8080",
-    "LYNXUS_CHANNEL_GATEWAY_BASE_URL": "http://channel-gateway:8080"
+    "AGENTYARD_AGENT_RUNTIME_BASE_URL": "http://agent-runtime:8080",
+    "AGENTYARD_CHANNEL_GATEWAY_BASE_URL": "http://channel-gateway:8080"
   },
   "expectedErrorCode": "REGISTRATION_CONFIG_INVALID"
 }

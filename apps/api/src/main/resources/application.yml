@@ -1,29 +1,29 @@
 spring:
   application:
-    name: lynxus-api
+    name: agentyard-api
   docker:
     compose:
       enabled: false
   jackson:
     default-property-inclusion: non_null
   datasource:
-    url: ${LYNXUS_CORE_DATASOURCE_URL:jdbc:postgresql://127.0.0.1:5432/lynxus_core}
-    username: ${SPRING_DATASOURCE_USERNAME:lynxus}
-    password: ${SPRING_DATASOURCE_PASSWORD:lynxus}
+    url: ${AGENTYARD_CORE_DATASOURCE_URL:jdbc:postgresql://127.0.0.1:5432/agentyard_core}
+    username: ${SPRING_DATASOURCE_USERNAME:agentyard}
+    password: ${SPRING_DATASOURCE_PASSWORD:agentyard}
   data:
     redis:
-      host: ${LYNXUS_REDIS_HOST:127.0.0.1}
-      port: ${LYNXUS_REDIS_PORT:6379}
-      database: ${LYNXUS_REDIS_DATABASE:0}
-      username: ${LYNXUS_REDIS_USERNAME:}
-      password: ${LYNXUS_REDIS_PASSWORD:lynxus}
+      host: ${AGENTYARD_REDIS_HOST:127.0.0.1}
+      port: ${AGENTYARD_REDIS_PORT:6379}
+      database: ${AGENTYARD_REDIS_DATABASE:0}
+      username: ${AGENTYARD_REDIS_USERNAME:}
+      password: ${AGENTYARD_REDIS_PASSWORD:agentyard}
       ssl:
-        enabled: ${LYNXUS_REDIS_SSL_ENABLED:false}
-      timeout: ${LYNXUS_REDIS_TIMEOUT:3s}
+        enabled: ${AGENTYARD_REDIS_SSL_ENABLED:false}
+      timeout: ${AGENTYARD_REDIS_TIMEOUT:3s}
   session:
     store-type: redis
     redis:
-      namespace: ${LYNXUS_SESSION_REDIS_NAMESPACE:lynxus:session:http}
+      namespace: ${AGENTYARD_SESSION_REDIS_NAMESPACE:agentyard:session:http}
   flyway:
     enabled: true
     baseline-on-migrate: true
@@ -47,53 +47,53 @@ logging:
         service: ${spring.application.name}
 
 server:
-  port: ${LYNXUS_API_PORT:8080}
+  port: ${AGENTYARD_API_PORT:8080}
   servlet:
     session:
-      timeout: ${LYNXUS_SESSION_TIMEOUT:12h}
+      timeout: ${AGENTYARD_SESSION_TIMEOUT:12h}
       cookie:
-        name: ${LYNXUS_SESSION_COOKIE_NAME:LYNXUS_SESSION}
-        path: ${LYNXUS_SESSION_COOKIE_PATH:/}
+        name: ${AGENTYARD_SESSION_COOKIE_NAME:AGENTYARD_SESSION}
+        path: ${AGENTYARD_SESSION_COOKIE_PATH:/}
         http-only: true
-        secure: ${LYNXUS_SESSION_COOKIE_SECURE:false}
-        same-site: ${LYNXUS_SESSION_COOKIE_SAME_SITE:Lax}
+        secure: ${AGENTYARD_SESSION_COOKIE_SECURE:false}
+        same-site: ${AGENTYARD_SESSION_COOKIE_SAME_SITE:Lax}
 
-lynxus:
+agentyard:
   auth:
     bootstrap:
-      username: ${LYNXUS_AUTH_BOOTSTRAP_USERNAME:admin}
-    default-role: ${LYNXUS_AUTH_DEFAULT_ROLE:BUSINESS_USER}
-    dev-bootstrap-enabled: ${LYNXUS_AUTH_DEV_BOOTSTRAP_ENABLED:false}
-    login-success-path: ${LYNXUS_AUTH_LOGIN_SUCCESS_PATH:/}
+      username: ${AGENTYARD_AUTH_BOOTSTRAP_USERNAME:admin}
+    default-role: ${AGENTYARD_AUTH_DEFAULT_ROLE:BUSINESS_USER}
+    dev-bootstrap-enabled: ${AGENTYARD_AUTH_DEV_BOOTSTRAP_ENABLED:false}
+    login-success-path: ${AGENTYARD_AUTH_LOGIN_SUCCESS_PATH:/}
   knowledge-service:
-    base-url: ${LYNXUS_KNOWLEDGE_SERVICE_BASE_URL:http://127.0.0.1:8091}
+    base-url: ${AGENTYARD_KNOWLEDGE_SERVICE_BASE_URL:http://127.0.0.1:8091}
   channel-gateway:
-    base-url: ${LYNXUS_CHANNEL_GATEWAY_BASE_URL:http://127.0.0.1:8082}
+    base-url: ${AGENTYARD_CHANNEL_GATEWAY_BASE_URL:http://127.0.0.1:8082}
   channel-outbound-frame-stream:
-    heartbeat-interval: ${LYNXUS_CHANNEL_OUTBOUND_FRAME_STREAM_HEARTBEAT_INTERVAL:20s}
+    heartbeat-interval: ${AGENTYARD_CHANNEL_OUTBOUND_FRAME_STREAM_HEARTBEAT_INTERVAL:20s}
   agent-runtime:
-    base-url: ${LYNXUS_AGENT_RUNTIME_BASE_URL:http://127.0.0.1:8090}
+    base-url: ${AGENTYARD_AGENT_RUNTIME_BASE_URL:http://127.0.0.1:8090}
   extensions:
-    registration-file: ${LYNXUS_EXTENSION_REGISTRATION_FILE:}
+    registration-file: ${AGENTYARD_EXTENSION_REGISTRATION_FILE:}
   integration:
     credentials:
-      encryption-key: ${LYNXUS_INTEGRATION_CREDENTIAL_ENCRYPTION_KEY:}
+      encryption-key: ${AGENTYARD_INTEGRATION_CREDENTIAL_ENCRYPTION_KEY:}
   internal-auth:
-    token: ${LYNXUS_INTERNAL_AUTH_TOKEN}
+    token: ${AGENTYARD_INTERNAL_AUTH_TOKEN}
   redis:
-    health-check-enabled: ${LYNXUS_REDIS_HEALTH_CHECK_ENABLED:true}
-    key-prefix: ${LYNXUS_REDIS_KEY_PREFIX:lynxus}
+    health-check-enabled: ${AGENTYARD_REDIS_HEALTH_CHECK_ENABLED:true}
+    key-prefix: ${AGENTYARD_REDIS_KEY_PREFIX:agentyard}
   shared-state:
-    instance-id: ${LYNXUS_INSTANCE_ID:}
-    lock-ttl: ${LYNXUS_SHARED_STATE_LOCK_TTL:10s}
-    lock-acquire-timeout: ${LYNXUS_SHARED_STATE_LOCK_ACQUIRE_TIMEOUT:3s}
-    idempotency-ttl: ${LYNXUS_SHARED_STATE_IDEMPOTENCY_TTL:24h}
-    sse-replay-ttl: ${LYNXUS_SHARED_STATE_SSE_REPLAY_TTL:15m}
-    sse-replay-limit: ${LYNXUS_SHARED_STATE_SSE_REPLAY_LIMIT:128}
-    stream-poll-interval: ${LYNXUS_SHARED_STATE_STREAM_POLL_INTERVAL:1s}
+    instance-id: ${AGENTYARD_INSTANCE_ID:}
+    lock-ttl: ${AGENTYARD_SHARED_STATE_LOCK_TTL:10s}
+    lock-acquire-timeout: ${AGENTYARD_SHARED_STATE_LOCK_ACQUIRE_TIMEOUT:3s}
+    idempotency-ttl: ${AGENTYARD_SHARED_STATE_IDEMPOTENCY_TTL:24h}
+    sse-replay-ttl: ${AGENTYARD_SHARED_STATE_SSE_REPLAY_TTL:15m}
+    sse-replay-limit: ${AGENTYARD_SHARED_STATE_SSE_REPLAY_LIMIT:128}
+    stream-poll-interval: ${AGENTYARD_SHARED_STATE_STREAM_POLL_INTERVAL:1s}
   temporal:
-    target: ${LYNXUS_TEMPORAL_TARGET:127.0.0.1:7233}
-    namespace: ${LYNXUS_TEMPORAL_NAMESPACE:default}
-    task-queue: ${LYNXUS_TEMPORAL_TASK_QUEUE:lynxus-customer-ops}
+    target: ${AGENTYARD_TEMPORAL_TARGET:127.0.0.1:7233}
+    namespace: ${AGENTYARD_TEMPORAL_NAMESPACE:default}
+    task-queue: ${AGENTYARD_TEMPORAL_TASK_QUEUE:agentyard-customer-ops}
   web:
-    allowed-origins: ${LYNXUS_WEB_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
+    allowed-origins: ${AGENTYARD_WEB_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}

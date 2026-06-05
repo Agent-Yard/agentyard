@@ -103,14 +103,14 @@ GET /extension/channel/outbound-frames/stream?channelProfileId=...
 统一协议名：
 
 ```text
-lynxus.channel-outbound-frame.v1
+agentyard.channel-outbound-frame.v1
 ```
 
 frame body：
 
 ```json
 {
-  "protocol": "lynxus.channel-outbound-frame.v1",
+  "protocol": "agentyard.channel-outbound-frame.v1",
   "frameId": "channel-profile-1:exec-1:7:DRAFT_UPDATE",
   "channelProfileId": "channel-profile-1",
   "providerType": "enterprise.acme.im",
@@ -209,7 +209,7 @@ API 需要把 session outbound 发回唯一绑定的 channel conversation。chan
 
 `ChannelConversationBinding` 的业务语义：
 
-1. 一个 binding 表示一个外部 logical conversation 和一个 Lynxus session 的一对一绑定。
+1. 一个 binding 表示一个外部 logical conversation 和一个 AgentYard session 的一对一绑定。
 2. 同一个 `sessionId` 在 ACTIVE binding 中必须唯一，不能跨 profile 或同 profile 多 conversation 分发。
 3. 同一个 `channelProfileId + externalConversationId` 在 ACTIVE binding 中必须唯一。
 4. 多终端、多设备、多外部线程别名由 provider/adapter normalize 成同一个 logical `externalConversationId`，不创建多个 ACTIVE binding。
@@ -317,10 +317,10 @@ GET /api/internal/channel-outbound/frames/stream?channelProfileId={channelProfil
 Accept: text/event-stream
 Authorization: Bearer {internal-token}
 Last-Event-ID: {streamCursor}
-X-Lynxus-Last-Acked-Final-Sequence: {lastAckedFinalSequence}
-X-Lynxus-Last-Acked-Session-Id: {lastAckedSessionId}
-X-Lynxus-Last-Acked-Session-Message-Id: {lastAckedSessionMessageId}
-X-Lynxus-Max-Final-Replay-Frames: {maxFinalReplayFrames}
+X-AgentYard-Last-Acked-Final-Sequence: {lastAckedFinalSequence}
+X-AgentYard-Last-Acked-Session-Id: {lastAckedSessionId}
+X-AgentYard-Last-Acked-Session-Message-Id: {lastAckedSessionMessageId}
+X-AgentYard-Max-Final-Replay-Frames: {maxFinalReplayFrames}
 ```
 
 SSE event：
@@ -328,7 +328,7 @@ SSE event：
 ```text
 id: 42
 event: channel-outbound-frame
-data: {"protocol":"lynxus.channel-outbound-frame.v1", "...": "..."}
+data: {"protocol":"agentyard.channel-outbound-frame.v1", "...": "..."}
 ```
 
 replay window exhausted event：
@@ -348,7 +348,7 @@ stream 与 checkpoint 规则：
 6. API 总是从 `lastAckedFinalSequence` 之后的 durable final message 开始派生 `FINAL_DELIVERY`。
 7. 如果 `lastAckedFinalSequence` 为空，API 从该 profile 下所有 ACTIVE binding 可见的最早 durable final message 开始派生。
 8. `FINAL_DELIVERY` event data 必须带 `finalSequence`。
-9. `X-Lynxus-Max-Final-Replay-Frames` 是单次连接的 durable final replay 上限，API 最多补该数量的 `FINAL_DELIVERY`；缺省值建议 100，API 必须有服务端最大值保护。
+9. `X-AgentYard-Max-Final-Replay-Frames` 是单次连接的 durable final replay 上限，API 最多补该数量的 `FINAL_DELIVERY`；缺省值建议 100，API 必须有服务端最大值保护。
 10. 如果达到 replay window 但 durable final backlog 仍未追平，API 发送 `final-replay-window-exhausted` 后正常结束连接；gateway 等 pending final 降到低水位后再用最新 checkpoint 重新连接。
 11. 如果 durable final replay 已追平，API 保持 SSE 连接，继续发送 live transient/final frames。
 12. 如果 checkpoint header 非法，API 返回 400/422，不静默降级为全量 replay。
@@ -500,11 +500,11 @@ extension 面向 channel-gateway 建立 profile 级长连接：
 GET /extension/channel/outbound-frames/stream?channelProfileId={channelProfileId}
 Accept: text/event-stream
 Authorization: Bearer {extension-token}
-X-Lynxus-Extension-Registration-Id: {registrationId}
-X-Lynxus-Extension-Descriptor-Type: CHANNEL_PROVIDER
-X-Lynxus-Extension-Descriptor-Id: {providerType}
+X-AgentYard-Extension-Registration-Id: {registrationId}
+X-AgentYard-Extension-Descriptor-Type: CHANNEL_PROVIDER
+X-AgentYard-Extension-Descriptor-Id: {providerType}
 Last-Event-ID: {streamCursor}
-X-Lynxus-Last-Acked-Final-Sequence: {diagnosticLastAckedFinalSequence}
+X-AgentYard-Last-Acked-Final-Sequence: {diagnosticLastAckedFinalSequence}
 ```
 
 SSE event：
@@ -512,7 +512,7 @@ SSE event：
 ```text
 id: 105
 event: channel-outbound-frame
-data: {"protocol":"lynxus.channel-outbound-frame.v1", "frameId":"...", "...":"..."}
+data: {"protocol":"agentyard.channel-outbound-frame.v1", "frameId":"...", "...":"..."}
 ```
 
 连接规则：
@@ -546,9 +546,9 @@ bootstrap endpoint：
 ```http
 GET /extension/channel/outbound-frame-subscriptions
 Authorization: Bearer {extension-token}
-X-Lynxus-Extension-Registration-Id: {registrationId}
-X-Lynxus-Extension-Descriptor-Type: CHANNEL_PROVIDER
-X-Lynxus-Extension-Descriptor-Id: {providerType}
+X-AgentYard-Extension-Registration-Id: {registrationId}
+X-AgentYard-Extension-Descriptor-Type: CHANNEL_PROVIDER
+X-AgentYard-Extension-Descriptor-Id: {providerType}
 ```
 
 ## 10. Extension 幂等与 provider 发送
@@ -573,15 +573,15 @@ ACK endpoint：
 ```http
 POST /extension/channel/outbound-frames/ack
 Authorization: Bearer {extension-token}
-X-Lynxus-Extension-Registration-Id: {registrationId}
-X-Lynxus-Extension-Descriptor-Type: CHANNEL_PROVIDER
-X-Lynxus-Extension-Descriptor-Id: {providerType}
+X-AgentYard-Extension-Registration-Id: {registrationId}
+X-AgentYard-Extension-Descriptor-Type: CHANNEL_PROVIDER
+X-AgentYard-Extension-Descriptor-Id: {providerType}
 Content-Type: application/json
 ```
 
 ```json
 {
-  "protocol": "lynxus.channel-outbound-frame-ack.v1",
+  "protocol": "agentyard.channel-outbound-frame-ack.v1",
   "channelProfileId": "channel-profile-1",
   "providerType": "enterprise.acme.im",
   "frameId": "channel-profile-1:session-1:message-1:FINAL_DELIVERY",
@@ -663,7 +663,7 @@ final replay window：
 1. final replay 是 gateway 控制的 credit/window 模型，不允许 API 向 gateway 无限推送 durable backlog。
 2. remote extension consumer 没有 active downstream SSE 连接时，gateway 不订阅 API internal SSE；extension 重连后再按 gateway checkpoint 补 final。
 3. remote extension consumer 默认 `maxPendingFinals=100`、`resumePendingFinals=20`；具体值可按 provider 配置，但必须小于 pending marker TTL 内可合理处理的数量。
-4. gateway 连接 API internal SSE 时传 `X-Lynxus-Max-Final-Replay-Frames = maxPendingFinals - currentPendingFinals`；如果剩余容量小于等于 0，gateway 不建立 upstream SSE。
+4. gateway 连接 API internal SSE 时传 `X-AgentYard-Max-Final-Replay-Frames = maxPendingFinals - currentPendingFinals`；如果剩余容量小于等于 0，gateway 不建立 upstream SSE。
 5. pending final 达到高水位时，gateway 取消 upstream API SSE；ACK 推进后 pending 降到低水位以下，再用最新 `lastAckedFinalSequence` 重新连接 API。
 6. gateway-native provider 默认 `maxPendingFinals=1`，即同一 profile consumer 下串行发送：取一个 final、native send 成功或幂等确认、推进 checkpoint、再取下一个 final。
 7. durable replay 未追平或 pending final 达到高水位期间，transient frame 可以直接丢弃；final recovery 正确性优先于临时体验完整性。
@@ -775,7 +775,7 @@ final replay window：
 1. `REPLY_BLOCK_DELTA` 不再产生 `POST /internal/channel-outbound/activities`。
 2. durable assistant/human/system final message 可被派生为稳定 `FINAL_DELIVERY`。
 3. `Last-Event-ID` miss 时不补 draft，只从 `lastAckedFinalSequence` 后补 final。
-4. API 按 `X-Lynxus-Max-Final-Replay-Frames` 限制单次 durable final replay，并在窗口耗尽时发送 `final-replay-window-exhausted`。
+4. API 按 `X-AgentYard-Max-Final-Replay-Frames` 限制单次 durable final replay，并在窗口耗尽时发送 `final-replay-window-exhausted`。
 5. API 双实例下，gateway 连接任一实例都能收到 profile frame。
 6. final frame 按 `finalSequence` 全局稳定排序。
 7. final replay 不依赖 `createdAt`，不受时间回填、导入或时钟漂移影响。
@@ -849,18 +849,18 @@ final replay window：
 新增 metrics：
 
 ```text
-lynxus.channel_outbound.api_stream.connected
-lynxus.channel_outbound.api_stream.reconnect
-lynxus.channel_outbound.extension_stream.connected
-lynxus.channel_outbound.extension_stream.reconnect
-lynxus.channel_outbound.frame.emitted
-lynxus.channel_outbound.frame.transient_expired
-lynxus.channel_outbound.final.derived
-lynxus.channel_outbound.final.duplicate_seen
-lynxus.channel_outbound.final.ack
-lynxus.channel_outbound.final.ack_forwarded_marker_miss
-lynxus.channel_outbound.final.ack_pending_order_rejected
-lynxus.channel_outbound.final.replayed
+agentyard.channel_outbound.api_stream.connected
+agentyard.channel_outbound.api_stream.reconnect
+agentyard.channel_outbound.extension_stream.connected
+agentyard.channel_outbound.extension_stream.reconnect
+agentyard.channel_outbound.frame.emitted
+agentyard.channel_outbound.frame.transient_expired
+agentyard.channel_outbound.final.derived
+agentyard.channel_outbound.final.duplicate_seen
+agentyard.channel_outbound.final.ack
+agentyard.channel_outbound.final.ack_forwarded_marker_miss
+agentyard.channel_outbound.final.ack_pending_order_rejected
+agentyard.channel_outbound.final.replayed
 ```
 
 新增 structured logs 字段：

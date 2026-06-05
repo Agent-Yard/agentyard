@@ -1,5 +1,5 @@
 {
-  "name": "@lynxus/extension-protocol",
+  "name": "@agentyard/extension-protocol",
   "private": true,
   "version": "0.1.0",
   "type": "module",

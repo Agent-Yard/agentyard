@@ -476,11 +476,11 @@ function checkOpenApi() {
     const headers = operationHeaders(openApi, descriptorPath, "post");
     for (const header of [
       "Authorization",
-      "X-Lynxus-Extension-Registration-Id",
-      "X-Lynxus-Extension-Descriptor-Type",
-      "X-Lynxus-Extension-Descriptor-Id",
-      "X-Lynxus-Trace-Id",
-      "X-Lynxus-Request-Id",
+      "X-AgentYard-Extension-Registration-Id",
+      "X-AgentYard-Extension-Descriptor-Type",
+      "X-AgentYard-Extension-Descriptor-Id",
+      "X-AgentYard-Trace-Id",
+      "X-AgentYard-Request-Id",
       "Idempotency-Key"
     ]) {
       assert(headers.includes(header), `${descriptorPath} must declare ${header}`);
@@ -490,15 +490,15 @@ function checkOpenApi() {
   for (const credentialPath of ["/credentials", "/credentials/rotate", "/credentials/revoke", "/credentials/validate"]) {
     const headers = operationHeaders(openApi, credentialPath, "post");
     assert(headers.includes("Authorization"), `${credentialPath} must declare Authorization`);
-    assert(headers.includes("X-Lynxus-Trace-Id"), `${credentialPath} must declare X-Lynxus-Trace-Id`);
-    assert(headers.includes("X-Lynxus-Request-Id"), `${credentialPath} must declare X-Lynxus-Request-Id`);
+    assert(headers.includes("X-AgentYard-Trace-Id"), `${credentialPath} must declare X-AgentYard-Trace-Id`);
+    assert(headers.includes("X-AgentYard-Request-Id"), `${credentialPath} must declare X-AgentYard-Request-Id`);
     assert(!headers.includes("Idempotency-Key"), `${credentialPath} must not declare Idempotency-Key`);
-    assert(!headers.some((header) => header.startsWith("X-Lynxus-Extension-")), `${credentialPath} must not use extension descriptor headers`);
+    assert(!headers.some((header) => header.startsWith("X-AgentYard-Extension-")), `${credentialPath} must not use extension descriptor headers`);
   }
 
   const manifestHeaders = operationHeaders(openApi, "/extension/manifest", "get");
   assert(manifestHeaders.includes("Authorization"), "/extension/manifest must declare Authorization");
-  assert(!manifestHeaders.includes("X-Lynxus-Trace-Id"), "/extension/manifest must not require trace headers");
+  assert(!manifestHeaders.includes("X-AgentYard-Trace-Id"), "/extension/manifest must not require trace headers");
   assert(!manifestHeaders.includes("Idempotency-Key"), "/extension/manifest must not require idempotency");
 
   assertDescriptorNonEmptyConstraint(openApi.components.schemas.ServiceManifestEnvelope.properties.descriptors, "OpenAPI ServiceManifestEnvelope.descriptors");
@@ -1013,11 +1013,11 @@ function validateRequestEnvelopeFixture(fixture) {
 
   if (descriptorOperations.has(fixture.operation)) {
     for (const header of [
-      "X-Lynxus-Extension-Registration-Id",
-      "X-Lynxus-Extension-Descriptor-Type",
-      "X-Lynxus-Extension-Descriptor-Id",
-      "X-Lynxus-Trace-Id",
-      "X-Lynxus-Request-Id",
+      "X-AgentYard-Extension-Registration-Id",
+      "X-AgentYard-Extension-Descriptor-Type",
+      "X-AgentYard-Extension-Descriptor-Id",
+      "X-AgentYard-Trace-Id",
+      "X-AgentYard-Request-Id",
       "Idempotency-Key"
     ]) {
       if (!headers[header]) errors.push({ code: "REQUIRED_HEADER_MISSING" });
@@ -1026,11 +1026,11 @@ function validateRequestEnvelopeFixture(fixture) {
     validateTrace(headers, traceContext, errors);
     validateIdempotency(fixture.operation, headers, request, errors);
   } else if (credentialOperations.has(fixture.operation)) {
-    if (!headers["X-Lynxus-Trace-Id"] || !headers["X-Lynxus-Request-Id"]) {
+    if (!headers["X-AgentYard-Trace-Id"] || !headers["X-AgentYard-Request-Id"]) {
       errors.push({ code: "REQUIRED_HEADER_MISSING" });
     }
     for (const header of Object.keys(headers)) {
-      if (header.startsWith("X-Lynxus-Extension-")) {
+      if (header.startsWith("X-AgentYard-Extension-")) {
         errors.push({ code: "DESCRIPTOR_HEADER_NOT_ALLOWED" });
       }
     }
@@ -1124,7 +1124,7 @@ function validateTrace(headers, traceContext, errors) {
     return;
   }
   const traceId = traceContext.traceparent.split("-")[1];
-  if (headers["X-Lynxus-Trace-Id"] && traceId && headers["X-Lynxus-Trace-Id"] !== traceId) {
+  if (headers["X-AgentYard-Trace-Id"] && traceId && headers["X-AgentYard-Trace-Id"] !== traceId) {
     errors.push({ code: "TRACE_HEADER_MISMATCH" });
   }
 }

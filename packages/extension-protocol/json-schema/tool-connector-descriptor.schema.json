@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://lynxus.dev/schemas/extension-protocol/tool-connector-descriptor.schema.json",
+  "$id": "https://agentyard.dev/schemas/extension-protocol/tool-connector-descriptor.schema.json",
   "title": "Tool connector descriptor",
   "type": "object",
   "additionalProperties": false,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lynxus_extension_sdk.testing import default_protocol_fixtures, load_json_fixture
+from agentyard_extension_sdk.testing import default_protocol_fixtures, load_json_fixture
 
 
 def test_testing_helpers_expose_shared_protocol_fixture_roots() -> None:

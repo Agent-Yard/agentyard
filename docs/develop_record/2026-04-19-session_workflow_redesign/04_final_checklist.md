@@ -60,7 +60,7 @@
 - [x] `playbook run` 数据模型已落地
 - [x] 事件类型与 payload 语义符合设计文档
 - [x] session event / playbook run 已由 worker / child workflow 主动持久化，而不是依赖 API 查询时同步 projection
-- [x] worker 与 api 已共用核心库，默认会话库口径已收敛为 `lynxus_core`
+- [x] worker 与 api 已共用核心库，默认会话库口径已收敛为 `agentyard_core`
 
 ### 2.7 对外接口
 

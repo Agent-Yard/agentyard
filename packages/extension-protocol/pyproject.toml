@@ -1,7 +1,7 @@
 [project]
-name = "lynxus-extension-protocol"
+name = "agentyard-extension-protocol"
 version = "0.1.0"
-description = "Shared Lynxus extension protocol schema assets"
+description = "Shared AgentYard extension protocol schema assets"
 requires-python = ">=3.11"
 dependencies = []
 
@@ -13,11 +13,11 @@ build-backend = "hatchling.build"
 include = [
     "json-schema",
     "openapi",
-    "src/lynxus_extension_protocol",
+    "src/agentyard_extension_protocol",
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/lynxus_extension_protocol"]
+packages = ["src/agentyard_extension_protocol"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"json-schema" = "lynxus_extension_protocol/json_schema"
+"json-schema" = "agentyard_extension_protocol/json_schema"

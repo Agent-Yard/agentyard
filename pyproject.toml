@@ -1,7 +1,7 @@
 [project]
-name = "lynxus-python-workspace"
+name = "agentyard-python-workspace"
 version = "0.1.0"
-description = "Python workspace for Lynxus services"
+description = "Python workspace for AgentYard services"
 requires-python = ">=3.11"
 dependencies = []
 
@@ -9,7 +9,7 @@ dependencies = []
 dev = [
     "datamodel-code-generator>=0.28.5,<1",
     "jsonschema>=4.25.1,<5",
-    "lynxus-agent-runtime",
+    "agentyard-agent-runtime",
     "pytest>=8.3.5,<9",
     "referencing>=0.36,<1",
 ]
@@ -32,7 +32,7 @@ members = [
 ]
 
 [tool.uv.sources]
-lynxus-agent-runtime = { workspace = true }
-lynxus-extension-protocol = { workspace = true }
-lynxus-extension-sdk = { workspace = true }
-lynxus-python-common = { workspace = true }
+agentyard-agent-runtime = { workspace = true }
+agentyard-extension-protocol = { workspace = true }
+agentyard-extension-sdk = { workspace = true }
+agentyard-python-common = { workspace = true }

@@ -3,16 +3,16 @@ import json
 import logging
 import os
 
-from lynxus_common.logging import configure_structured_logging
+from agentyard_common.logging import configure_structured_logging
 
 
 def test_structured_logging_includes_stdlib_extra_fields() -> None:
-    os.environ["LYNXUS_TEST_LOG_LEVEL"] = "DEBUG"
-    os.environ["LYNXUS_LOG_FORMAT"] = "json"
+    os.environ["AGENTYARD_TEST_LOG_LEVEL"] = "DEBUG"
+    os.environ["AGENTYARD_LOG_FORMAT"] = "json"
     stream = io.StringIO()
 
-    logger_name = "lynxus-test-extra-logger"
-    logger = configure_structured_logging("test-service", "LYNXUS_TEST_LOG_LEVEL", logger_name)
+    logger_name = "agentyard-test-extra-logger"
+    logger = configure_structured_logging("test-service", "AGENTYARD_TEST_LOG_LEVEL", logger_name)
     logger.handlers[0].setStream(stream)
 
     logging.getLogger(logger_name).debug(

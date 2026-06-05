@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://lynxus.dev/schemas/extension-protocol/schedule-config.schema.json",
+  "$id": "https://agentyard.dev/schemas/extension-protocol/schedule-config.schema.json",
   "title": "Channel provider schedule config",
   "type": "object",
   "additionalProperties": false,

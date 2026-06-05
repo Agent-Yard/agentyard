@@ -48,7 +48,7 @@ val extensionProtocolOpenApi = rootProject.layout.projectDirectory.file(
 val extensionProtocolJsonSchemaDir = rootProject.layout.projectDirectory.dir(
     "packages/extension-protocol/json-schema"
 )
-val extensionProtocolJsonSchemaResourceRoot = "com/lynxus/extension/sdk/protocol/json-schema"
+val extensionProtocolJsonSchemaResourceRoot = "com/agentyard/extension/sdk/protocol/json-schema"
 val extensionProtocolJavaGeneratorOpenApi = layout.buildDirectory.file(
     "generated/extension-protocol/openapi/extension-boundary.openapi.generator.json"
 )
@@ -115,9 +115,9 @@ val generateExtensionProtocolJavaModels = tasks.register<GenerateTask>("generate
     generatorName.set("java")
     inputSpec.set(extensionProtocolJavaGeneratorOpenApi.map { it.asFile.toURI().toString() })
     outputDir.set(generatedExtensionProtocolJavaModelsDir.get().asFile.absolutePath)
-    modelPackage.set("com.lynxus.extension.sdk.generated.protocol.model")
-    apiPackage.set("com.lynxus.extension.sdk.generated.protocol.api")
-    invokerPackage.set("com.lynxus.extension.sdk.generated.protocol")
+    modelPackage.set("com.agentyard.extension.sdk.generated.protocol.model")
+    apiPackage.set("com.agentyard.extension.sdk.generated.protocol.api")
+    invokerPackage.set("com.agentyard.extension.sdk.generated.protocol")
 
     globalProperties.set(
         mapOf(
@@ -153,17 +153,17 @@ val writeGeneratedExtensionProtocolJavaCompileSmoke = tasks.register("writeGener
     description = "Writes a Java source file that imports selected generated extension protocol DTOs."
 
     val smokeSource = generatedExtensionProtocolJavaSmokeSourcesDir.map {
-        it.file("com/lynxus/extension/sdk/generated/protocol/smoke/GeneratedProtocolModelCompileSmoke.java")
+        it.file("com/agentyard/extension/sdk/generated/protocol/smoke/GeneratedProtocolModelCompileSmoke.java")
     }
     val smokeSourceText = """
-        package com.lynxus.extension.sdk.generated.protocol.smoke;
+        package com.agentyard.extension.sdk.generated.protocol.smoke;
 
-        import com.lynxus.extension.sdk.generated.protocol.model.ChannelProviderDescriptor;
-        import com.lynxus.extension.sdk.generated.protocol.model.ChannelOutboundFrame;
-        import com.lynxus.extension.sdk.generated.protocol.model.ChannelOutboundFrameAck;
-        import com.lynxus.extension.sdk.generated.protocol.model.ExtensionError;
-        import com.lynxus.extension.sdk.generated.protocol.model.ServiceManifestEnvelope;
-        import com.lynxus.extension.sdk.generated.protocol.model.ToolConnectorDescriptor;
+        import com.agentyard.extension.sdk.generated.protocol.model.ChannelProviderDescriptor;
+        import com.agentyard.extension.sdk.generated.protocol.model.ChannelOutboundFrame;
+        import com.agentyard.extension.sdk.generated.protocol.model.ChannelOutboundFrameAck;
+        import com.agentyard.extension.sdk.generated.protocol.model.ExtensionError;
+        import com.agentyard.extension.sdk.generated.protocol.model.ServiceManifestEnvelope;
+        import com.agentyard.extension.sdk.generated.protocol.model.ToolConnectorDescriptor;
 
         final class GeneratedProtocolModelCompileSmoke {
             private static final Class<?>[] REFERENCED_MODEL_TYPES = {
@@ -252,24 +252,24 @@ tasks.named("sourcesJar") {
     dependsOn(generateExtensionProtocolJavaModels)
 }
 
-val extensionSdkJvmGroupId = providers.gradleProperty("lynxusExtensionSdkJvmGroupId")
+val extensionSdkJvmGroupId = providers.gradleProperty("agentyardExtensionSdkJvmGroupId")
     .orElse(project.group.toString())
-val extensionSdkJvmArtifactId = providers.gradleProperty("lynxusExtensionSdkJvmArtifactId")
+val extensionSdkJvmArtifactId = providers.gradleProperty("agentyardExtensionSdkJvmArtifactId")
     .orElse(project.name)
-val extensionSdkJvmVersion = providers.gradleProperty("lynxusExtensionSdkJvmVersion")
+val extensionSdkJvmVersion = providers.gradleProperty("agentyardExtensionSdkJvmVersion")
     .orElse(project.version.toString())
-val lynxusMavenRepositoryUrl = providers.gradleProperty("lynxusMavenRepositoryUrl")
-    .orElse(providers.environmentVariable("LYNXUS_MAVEN_REPOSITORY_URL"))
-val lynxusMavenRepositoryName = providers.gradleProperty("lynxusMavenRepositoryName")
-    .orElse(providers.environmentVariable("LYNXUS_MAVEN_REPOSITORY_NAME"))
-    .orElse("lynxus")
-val lynxusMavenRepositoryUsername = providers.gradleProperty("lynxusMavenRepositoryUsername")
-    .orElse(providers.environmentVariable("LYNXUS_MAVEN_REPOSITORY_USERNAME"))
-val lynxusMavenRepositoryPassword = providers.gradleProperty("lynxusMavenRepositoryPassword")
-    .orElse(providers.environmentVariable("LYNXUS_MAVEN_REPOSITORY_PASSWORD"))
-val lynxusMavenRepositoryAllowInsecureProtocol = providers
-    .gradleProperty("lynxusMavenRepositoryAllowInsecureProtocol")
-    .orElse(providers.environmentVariable("LYNXUS_MAVEN_REPOSITORY_ALLOW_INSECURE_PROTOCOL"))
+val agentyardMavenRepositoryUrl = providers.gradleProperty("agentyardMavenRepositoryUrl")
+    .orElse(providers.environmentVariable("AGENTYARD_MAVEN_REPOSITORY_URL"))
+val agentyardMavenRepositoryName = providers.gradleProperty("agentyardMavenRepositoryName")
+    .orElse(providers.environmentVariable("AGENTYARD_MAVEN_REPOSITORY_NAME"))
+    .orElse("agentyard")
+val agentyardMavenRepositoryUsername = providers.gradleProperty("agentyardMavenRepositoryUsername")
+    .orElse(providers.environmentVariable("AGENTYARD_MAVEN_REPOSITORY_USERNAME"))
+val agentyardMavenRepositoryPassword = providers.gradleProperty("agentyardMavenRepositoryPassword")
+    .orElse(providers.environmentVariable("AGENTYARD_MAVEN_REPOSITORY_PASSWORD"))
+val agentyardMavenRepositoryAllowInsecureProtocol = providers
+    .gradleProperty("agentyardMavenRepositoryAllowInsecureProtocol")
+    .orElse(providers.environmentVariable("AGENTYARD_MAVEN_REPOSITORY_ALLOW_INSECURE_PROTOCOL"))
     .map(String::toBoolean)
     .orElse(false)
 
@@ -283,20 +283,20 @@ publishing {
             version = extensionSdkJvmVersion.get()
 
             pom {
-                name.set("Lynxus Extension SDK for JVM")
-                description.set("JVM SDK for Lynxus Extension Plane implementations.")
+                name.set("AgentYard Extension SDK for JVM")
+                description.set("JVM SDK for AgentYard Extension Plane implementations.")
             }
         }
     }
 
     repositories {
-        lynxusMavenRepositoryUrl.orNull?.let { repositoryUrl ->
+        agentyardMavenRepositoryUrl.orNull?.let { repositoryUrl ->
             maven {
-                name = lynxusMavenRepositoryName.get()
+                name = agentyardMavenRepositoryName.get()
                 url = uri(repositoryUrl)
-                isAllowInsecureProtocol = lynxusMavenRepositoryAllowInsecureProtocol.get()
-                val repositoryUsername = lynxusMavenRepositoryUsername.orNull
-                val repositoryPassword = lynxusMavenRepositoryPassword.orNull
+                isAllowInsecureProtocol = agentyardMavenRepositoryAllowInsecureProtocol.get()
+                val repositoryUsername = agentyardMavenRepositoryUsername.orNull
+                val repositoryPassword = agentyardMavenRepositoryPassword.orNull
                 if (repositoryUsername != null || repositoryPassword != null) {
                     credentials(PasswordCredentials::class) {
                         username = repositoryUsername.orEmpty()
@@ -310,14 +310,14 @@ publishing {
 
 tasks.withType<Test>().configureEach {
     dependsOn(compileGeneratedExtensionProtocolJavaModels)
-    systemProperty("lynxus.repo.root", rootProject.projectDir.absolutePath)
-    systemProperty("lynxus.extension.generated.java.dir", generatedExtensionProtocolJavaModelsDir.get().asFile.absolutePath)
+    systemProperty("agentyard.repo.root", rootProject.projectDir.absolutePath)
+    systemProperty("agentyard.extension.generated.java.dir", generatedExtensionProtocolJavaModelsDir.get().asFile.absolutePath)
     systemProperty(
-        "lynxus.extension.generated.java.classes.dir",
+        "agentyard.extension.generated.java.classes.dir",
         generatedExtensionProtocolJavaClassesDir.get().asFile.absolutePath
     )
     systemProperty(
-        "lynxus.extension.generated.java.openapi.path",
+        "agentyard.extension.generated.java.openapi.path",
         extensionProtocolJavaGeneratorOpenApi.get().asFile.absolutePath
     )
 }

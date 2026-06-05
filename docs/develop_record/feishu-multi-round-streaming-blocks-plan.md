@@ -49,8 +49,8 @@
 
 **可能涉及文件：**
 - `apps/agent-runtime/tests/test_agent_turn_streaming.py`
-- `apps/api/src/test/java/com/lynxus/platform/session/DefaultSessionChannelActivityRelayTest.java`
-- `apps/channel-gateway/src/test/java/com/lynxus/channel/gateway/connector/feishu/FeishuGatewayNativeChannelProviderAdapterTest.java`
+- `apps/api/src/test/java/com/agentyard/platform/session/DefaultSessionChannelActivityRelayTest.java`
+- `apps/channel-gateway/src/test/java/com/agentyard/channel/gateway/connector/feishu/FeishuGatewayNativeChannelProviderAdapterTest.java`
 
 ### 2. 调整 agent-runtime 的 block 分配
 
@@ -65,8 +65,8 @@
 - [ ] `FINAL_OUTCOME.result.decision.replyMessage.blocks` 与 stream frame 中的 block 顺序一致。
 
 **可能涉及文件：**
-- `apps/agent-runtime/lynxus_agent_runtime/streaming.py`
-- `apps/agent-runtime/lynxus_agent_runtime/models.py`
+- `apps/agent-runtime/agentyard_agent_runtime/streaming.py`
+- `apps/agent-runtime/agentyard_agent_runtime/models.py`
 - `apps/agent-runtime/tests/test_agent_turn_streaming.py`
 
 ### 3. 修正 API 到 channel outbound 的生命周期映射
@@ -80,12 +80,12 @@
 - [ ] channel outbound contract 描述同步表达 block-level `DRAFT_COMPLETE`。
 
 **可能涉及文件：**
-- `apps/api/src/main/java/com/lynxus/platform/session/DefaultSessionChannelActivityRelay.java`
+- `apps/api/src/main/java/com/agentyard/platform/session/DefaultSessionChannelActivityRelay.java`
 - `packages/contracts/openapi/control-plane.yaml`
 - `packages/contracts/openapi/channel-gateway-internal.yaml`
 - `packages/extension-protocol/openapi/extension-boundary.openapi.json`
 - `packages/contracts/src/index.ts`
-- `packages/contracts-jvm/src/main/java/com/lynxus/contracts/channel/ChannelContracts.java`
+- `packages/contracts-jvm/src/main/java/com/agentyard/contracts/channel/ChannelContracts.java`
 - `packages/extension-sdk-python/tests/test_extension_protocol_contract.py`
 
 ### 4. 将 Feishu streaming card state 改成 block-aware
@@ -113,10 +113,10 @@
 - streaming close、`DRAFT_COMPLETE` 校准和 `FINAL_DELIVERY` 必须共用同一套 Feishu markdown block renderer。
 
 **可能涉及文件：**
-- `apps/channel-gateway/src/main/java/com/lynxus/channel/gateway/connector/feishu/FeishuStreamingReplyCardState.java`
-- `apps/channel-gateway/src/main/java/com/lynxus/channel/gateway/connector/feishu/FeishuGatewayNativeChannelProviderAdapter.java`
-- `apps/channel-gateway/src/main/java/com/lynxus/channel/gateway/connector/feishu/FeishuCardJsonFactory.java`
-- `apps/channel-gateway/src/test/java/com/lynxus/channel/gateway/connector/feishu/FeishuGatewayNativeChannelProviderAdapterTest.java`
+- `apps/channel-gateway/src/main/java/com/agentyard/channel/gateway/connector/feishu/FeishuStreamingReplyCardState.java`
+- `apps/channel-gateway/src/main/java/com/agentyard/channel/gateway/connector/feishu/FeishuGatewayNativeChannelProviderAdapter.java`
+- `apps/channel-gateway/src/main/java/com/agentyard/channel/gateway/connector/feishu/FeishuCardJsonFactory.java`
+- `apps/channel-gateway/src/test/java/com/agentyard/channel/gateway/connector/feishu/FeishuGatewayNativeChannelProviderAdapterTest.java`
 
 ### 5. 校准 final delivery 和 replay 行为
 
@@ -128,16 +128,16 @@
 - [ ] final-only 场景也使用同一张 card 渲染多个 block，并以空行分隔。
 
 **可能涉及文件：**
-- `apps/channel-gateway/src/main/java/com/lynxus/channel/gateway/connector/feishu/FeishuGatewayNativeChannelProviderAdapter.java`
-- `apps/channel-gateway/src/main/java/com/lynxus/channel/gateway/channel/GatewayNativeChannelOutboundFrameDispatcher.java`
-- `packages/persistence-jvm/src/main/java/com/lynxus/persistence/session/SessionRuntimeStore.java`
+- `apps/channel-gateway/src/main/java/com/agentyard/channel/gateway/connector/feishu/FeishuGatewayNativeChannelProviderAdapter.java`
+- `apps/channel-gateway/src/main/java/com/agentyard/channel/gateway/channel/GatewayNativeChannelOutboundFrameDispatcher.java`
+- `packages/persistence-jvm/src/main/java/com/agentyard/persistence/session/SessionRuntimeStore.java`
 
 ### 6. 端到端验证
 
 **自动化验证：**
 - [ ] `uv run pytest tests/test_agent_turn_streaming.py tests/test_models.py -q` in `apps/agent-runtime`
-- [ ] `./gradlew --console=plain :apps:api:test --tests com.lynxus.platform.session.DefaultSessionChannelActivityRelayTest`
-- [ ] `./gradlew --console=plain :apps:channel-gateway:test --tests com.lynxus.channel.gateway.connector.feishu.FeishuGatewayNativeChannelProviderAdapterTest`
+- [ ] `./gradlew --console=plain :apps:api:test --tests com.agentyard.platform.session.DefaultSessionChannelActivityRelayTest`
+- [ ] `./gradlew --console=plain :apps:channel-gateway:test --tests com.agentyard.channel.gateway.connector.feishu.FeishuGatewayNativeChannelProviderAdapterTest`
 - [ ] `./gradlew --console=plain :apps:api:test`
 - [ ] `./gradlew --console=plain :apps:channel-gateway:test`
 

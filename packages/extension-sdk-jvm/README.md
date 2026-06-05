@@ -1,4 +1,4 @@
-# Lynxus Extension SDK for JVM
+# AgentYard Extension SDK for JVM
 
 JVM SDK for Extension Plane implementations. It provides protocol constants, HTTP/header helpers, `ExtensionError` parsing, canonical JSON / descriptor digest helpers, static registration loading, manifest validation, and generated Jackson-friendly protocol DTOs.
 
@@ -12,7 +12,7 @@ Descriptor-provided JSON Schema checks should go through `JsonSchemaValues` inst
 
 ## Publishing
 
-The SDK is published with Gradle's `maven-publish` plugin as `com.lynxus:extension-sdk-jvm:0.1.0` by default.
+The SDK is published with Gradle's `maven-publish` plugin as `com.agentyard:extension-sdk-jvm:0.1.0` by default.
 
 Publish to the local Maven cache:
 
@@ -30,10 +30,10 @@ Remote repository configuration can be supplied with Gradle properties or enviro
 
 | Purpose | Gradle property | Environment variable |
 | --- | --- | --- |
-| Repository URL | `lynxusMavenRepositoryUrl` | `LYNXUS_MAVEN_REPOSITORY_URL` |
-| Repository name | `lynxusMavenRepositoryName` | `LYNXUS_MAVEN_REPOSITORY_NAME` |
-| Username | `lynxusMavenRepositoryUsername` | `LYNXUS_MAVEN_REPOSITORY_USERNAME` |
-| Password/token | `lynxusMavenRepositoryPassword` | `LYNXUS_MAVEN_REPOSITORY_PASSWORD` |
-| Allow HTTP repository | `lynxusMavenRepositoryAllowInsecureProtocol` | `LYNXUS_MAVEN_REPOSITORY_ALLOW_INSECURE_PROTOCOL` |
+| Repository URL | `agentyardMavenRepositoryUrl` | `AGENTYARD_MAVEN_REPOSITORY_URL` |
+| Repository name | `agentyardMavenRepositoryName` | `AGENTYARD_MAVEN_REPOSITORY_NAME` |
+| Username | `agentyardMavenRepositoryUsername` | `AGENTYARD_MAVEN_REPOSITORY_USERNAME` |
+| Password/token | `agentyardMavenRepositoryPassword` | `AGENTYARD_MAVEN_REPOSITORY_PASSWORD` |
+| Allow HTTP repository | `agentyardMavenRepositoryAllowInsecureProtocol` | `AGENTYARD_MAVEN_REPOSITORY_ALLOW_INSECURE_PROTOCOL` |
 
-The publication coordinates can be overridden with `lynxusExtensionSdkJvmGroupId`, `lynxusExtensionSdkJvmArtifactId`, and `lynxusExtensionSdkJvmVersion`.
+The publication coordinates can be overridden with `agentyardExtensionSdkJvmGroupId`, `agentyardExtensionSdkJvmArtifactId`, and `agentyardExtensionSdkJvmVersion`.

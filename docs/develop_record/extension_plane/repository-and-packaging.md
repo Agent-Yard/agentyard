@@ -5,7 +5,7 @@
 开源仓库保留 core、extension protocol 和 reference implementation：
 
 ```text
-lynxus/
+agentyard/
   apps/
     api/
     worker/
@@ -37,7 +37,7 @@ Reference implementation 保留在现有 app 内，通过 manifest / registry �
 企业定制代码独立放私有仓库：
 
 ```text
-lynxus-enterprise-acme/
+agentyard-enterprise-acme/
   channel-providers/
     acme-internal-im/
     acme-ticket-channel/
@@ -98,20 +98,20 @@ mcp                    # 已存在，待 manifest 化
 开源 core Docker image：
 
 ```text
-lynxus/api
-lynxus/worker
-lynxus/web
-lynxus/agent-runtime
-lynxus/knowledge-service
-lynxus/channel-gateway
+agentyard/api
+agentyard/worker
+agentyard/web
+agentyard/agent-runtime
+agentyard/knowledge-service
+agentyard/channel-gateway
 ```
 
 开源 core package（非 Docker，作为协议事实源 / 语言 SDK 发布）：
 
 ```text
 packages/extension-protocol      # 协议源（OpenAPI / JSON Schema / examples / contract fixtures）
-packages/extension-sdk-jvm       # Maven 坐标 com.lynxus:lynxus-extension-sdk-jvm
-packages/extension-sdk-python    # PyPI 分发 lynxus-extension-sdk-python
+packages/extension-sdk-jvm       # Maven 坐标 com.agentyard:agentyard-extension-sdk-jvm
+packages/extension-sdk-python    # PyPI 分发 agentyard-extension-sdk-python
 ```
 
 发布渠道：当前阶段 SDK 先发布到内部 Maven repository / 内部 Python registry / GitHub Packages，
@@ -120,13 +120,13 @@ Maven Central / PyPI 是否发布后续单独决策（与 `extension-protocol.md
 企业 repo 发布（Docker image）：
 
 ```text
-acme/lynxus-channel-provider
-acme/lynxus-crm-connector
-acme/lynxus-approval-connector
+acme/agentyard-channel-provider
+acme/agentyard-crm-connector
+acme/agentyard-approval-connector
 ```
 
 ## 5. Reference Extension 发布策略
 
-当前阶段不为 reference extension 单独发布 Docker image。Reference implementation 继续随对应 core app 发布，并通过 manifest / registry 接入 extension plane：`feishu` 随 `lynxus/channel-gateway` 发布，`simple-http` / `business-code-secret-http` / `mcp` 随 `lynxus/agent-runtime` 发布；不存在 `lynxus/feishu-extension` 或 `lynxus/simple-http-connector` 这类独立 reference image。
+当前阶段不为 reference extension 单独发布 Docker image。Reference implementation 继续随对应 core app 发布，并通过 manifest / registry 接入 extension plane：`feishu` 随 `agentyard/channel-gateway` 发布，`simple-http` / `business-code-secret-http` / `mcp` 随 `agentyard/agent-runtime` 发布；不存在 `agentyard/feishu-extension` 或 `agentyard/simple-http-connector` 这类独立 reference image。
 
-当前阶段交付 enterprise sample repo 模板，用于展示 private-style channel provider、tool connector、extension-managed secret、私有依赖、Dockerfile、compose overlay 和 contract tests。sample compose / Helm overlay 必须演示 `LYNXUS_INTERNAL_TOKEN_FILE` secret 投影：tool connector 用于校验 Core 调用，remote channel provider 同时用于校验 Core 调用并携带同一 token 调用 `channel-gateway` internal normalized event endpoint。
+当前阶段交付 enterprise sample repo 模板，用于展示 private-style channel provider、tool connector、extension-managed secret、私有依赖、Dockerfile、compose overlay 和 contract tests。sample compose / Helm overlay 必须演示 `AGENTYARD_INTERNAL_TOKEN_FILE` secret 投影：tool connector 用于校验 Core 调用，remote channel provider 同时用于校验 Core 调用并携带同一 token 调用 `channel-gateway` internal normalized event endpoint。

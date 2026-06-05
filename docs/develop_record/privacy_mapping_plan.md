@@ -125,7 +125,7 @@ assistant release 需要补两类快照：
 
 ## 4.1 新增统一安全管道，而不是分散塞在 prompting / tooling 里
 
-当前 `apps/agent-runtime/lynxus_agent_runtime/` 的主模块为 `prompting.py / tooling.py / decisioning.py / openai_adapter.py / models.py`，尚无独立的数据安全模块。建议新增：
+当前 `apps/agent-runtime/agentyard_agent_runtime/` 的主模块为 `prompting.py / tooling.py / decisioning.py / openai_adapter.py / models.py`，尚无独立的数据安全模块。建议新增：
 
 - `data_security/policy.py`
 - `data_security/pipeline.py`
@@ -161,13 +161,13 @@ assistant release 需要补两类快照：
 
 Python 侧新增环境变量：
 
-- 复用平台统一 Redis 连接配置：`LYNXUS_REDIS_HOST / PORT / DATABASE / USERNAME / PASSWORD / SSL_ENABLED / TIMEOUT`
-- 可选新增 `LYNXUS_PRIVACY_SESSION_STORE_KEY_PREFIX`（用于隔离 key 命名空间）
-- `LYNXUS_PRIVACY_SESSION_STORE_ENCRYPTION_KEY`（§5 加密用）
+- 复用平台统一 Redis 连接配置：`AGENTYARD_REDIS_HOST / PORT / DATABASE / USERNAME / PASSWORD / SSL_ENABLED / TIMEOUT`
+- 可选新增 `AGENTYARD_PRIVACY_SESSION_STORE_KEY_PREFIX`（用于隔离 key 命名空间）
+- `AGENTYARD_PRIVACY_SESSION_STORE_ENCRYPTION_KEY`（§5 加密用）
 
 ## 4.2 Owner turn 主链路
 
-worker 通过 `SessionAgentRuntimeGateway.executeTurn` 调 `POST {agentRuntimeBaseUrl}/agent-turns/execute`（见 `apps/worker/src/main/java/com/lynxus/worker/runtime/SessionAgentRuntimeGateway.java`），契约是 `SessionContracts.AgentTurnRequest / AgentTurnResult`。当前 request 已携带 `sessionId / agentId / ...`，可直接作为 session map 的分区键，不需要额外传播通道。
+worker 通过 `SessionAgentRuntimeGateway.executeTurn` 调 `POST {agentRuntimeBaseUrl}/agent-turns/execute`（见 `apps/worker/src/main/java/com/agentyard/worker/runtime/SessionAgentRuntimeGateway.java`），契约是 `SessionContracts.AgentTurnRequest / AgentTurnResult`。当前 request 已携带 `sessionId / agentId / ...`，可直接作为 session map 的分区键，不需要额外传播通道。
 
 owner turn 推荐改成下面的顺序：
 
@@ -189,7 +189,7 @@ owner turn 推荐改成下面的顺序：
 
 ## 4.3 Knowledge 链路
 
-当前 `knowledge_search` 与 `knowledge_read` 走 `apps/agent-runtime/lynxus_agent_runtime/tooling.py` 的 `_knowledge_search / _knowledge_read`，分别对应 knowledge-service 的 `POST /internal/retrieve` 与 `POST /internal/read-chunks`。边界应定义为：
+当前 `knowledge_search` 与 `knowledge_read` 走 `apps/agent-runtime/agentyard_agent_runtime/tooling.py` 的 `_knowledge_search / _knowledge_read`，分别对应 knowledge-service 的 `POST /internal/retrieve` 与 `POST /internal/read-chunks`。边界应定义为：
 
 1. 发往 `/internal/retrieve` 前对 `query` 执行 `restore_inbound`（因为查询词可能来自 LLM 生成的 placeholder）
 2. 发往 `/internal/read-chunks` 前对 `chunkIds` 本身不需要还原
@@ -199,7 +199,7 @@ owner turn 推荐改成下面的顺序：
 
 ## 4.4 Tool calling 链路
 
-当前 `apps/agent-runtime/lynxus_agent_runtime/decisioning.py` 的 tool-call 主循环（`max_steps` 外层循环与单步工具分发）在同一轮里执行：
+当前 `apps/agent-runtime/agentyard_agent_runtime/decisioning.py` 的 tool-call 主循环（`max_steps` 外层循环与单步工具分发）在同一轮里执行：
 
 1. LLM 返回 `tool_calls`
 2. runtime 解析 arguments
@@ -259,7 +259,7 @@ owner turn 推荐改成下面的顺序：
 加密要求（对应 §11 约束 3）：
 
 1. 原值在写入 Redis `reverse` key 前必须对称加密；禁止落明文
-2. 密钥通过 `LYNXUS_PRIVACY_SESSION_STORE_ENCRYPTION_KEY` 注入，首版走平台级单一密钥（AES-GCM 或同等强度），后续再演进到按租户 / 按 assistant 派生
+2. 密钥通过 `AGENTYARD_PRIVACY_SESSION_STORE_ENCRYPTION_KEY` 注入，首版走平台级单一密钥（AES-GCM 或同等强度），后续再演进到按租户 / 按 assistant 派生
 3. `forward` key 存的是 `fingerprint -> placeholderId`，`fingerprint` 本身已是不可逆摘要（如 HMAC-SHA256(salt, normalized_value)），可不再二次加密
 4. 日志 / 指标绝不能打印密文或密钥；指标只看 key 数量、清理状态与 session 生命周期对齐情况
 
@@ -321,7 +321,7 @@ owner turn 推荐改成下面的顺序：
 
 ## 7.1 审计
 
-继续复用 `platform_event`，建议在 `PlatformAggregateType` enum（`apps/api/src/main/java/com/lynxus/platform/event/PlatformEventDtos.java`）新增 `SESSION_PRIVACY_MAPPING` 值，并同步到 TypeScript contracts 与控制台筛选文案；注意当前 `PlatformAggregateType` 是 Java enum，新增值必须随代码发布，没有动态扩展通道。
+继续复用 `platform_event`，建议在 `PlatformAggregateType` enum（`apps/api/src/main/java/com/agentyard/platform/event/PlatformEventDtos.java`）新增 `SESSION_PRIVACY_MAPPING` 值，并同步到 TypeScript contracts 与控制台筛选文案；注意当前 `PlatformAggregateType` 是 Java enum，新增值必须随代码发布，没有动态扩展通道。
 
 建议事件类型：
 
@@ -408,7 +408,7 @@ payload 只保留：
 
 需要补：
 
-1. `lynxus_agent_runtime/data_security/*` 新模块（见 §4.1）
+1. `agentyard_agent_runtime/data_security/*` 新模块（见 §4.1）
 2. `prompting.py` 调公网 LLM 前出站脱敏
 3. `openai_adapter.py` / decisioning 层 model response 入站还原
 4. `decisioning.py` tool-call 主循环：arguments 恢复 + 合法性校验

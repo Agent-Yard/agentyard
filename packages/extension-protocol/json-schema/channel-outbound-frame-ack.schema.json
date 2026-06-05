@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://lynxus.dev/schemas/extension-protocol/channel-outbound-frame-ack.schema.json",
+  "$id": "https://agentyard.dev/schemas/extension-protocol/channel-outbound-frame-ack.schema.json",
   "title": "Channel outbound frame ACK",
   "type": "object",
   "additionalProperties": false,
@@ -16,7 +16,7 @@
   "properties": {
     "protocol": {
       "type": "string",
-      "const": "lynxus.channel-outbound-frame-ack.v1"
+      "const": "agentyard.channel-outbound-frame-ack.v1"
     },
     "channelProfileId": {
       "type": "string",

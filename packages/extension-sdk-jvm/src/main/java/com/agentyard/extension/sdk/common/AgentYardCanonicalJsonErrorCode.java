@@ -1,0 +1,9 @@
+package com.agentyard.extension.sdk.common;
+
+public enum AgentYardCanonicalJsonErrorCode {
+    CANONICAL_JSON_DUPLICATE_KEY,
+    CANONICAL_JSON_INVALID_UNICODE,
+    CANONICAL_JSON_UNSAFE_INTEGER,
+    CANONICAL_JSON_UNSUPPORTED_NUMBER,
+    CANONICAL_JSON_UNSUPPORTED_VALUE
+}

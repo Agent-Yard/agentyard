@@ -1,12 +1,12 @@
 # Runtime Streaming Target Plan
 
-> 目标：把 Lynxus 运行态从“最终结果刷新”升级为“真实执行过程可见 + 最终事实可靠提交”的流式架构。
+> 目标：把 AgentYard 运行态从“最终结果刷新”升级为“真实执行过程可见 + 最终事实可靠提交”的流式架构。
 >
 > 本方案按目标架构直接设计，不以兼容旧协议为前提。现有 session message / event / playbook 投影可以继续作为 durable fact，但 agent-runtime、worker、API SSE 与 channel outbound 的实时链路需要重构。
 
 ## 1. 核心结论
 
-Lynxus 不应该把当前 `AgentTurnExecutionOutcome` JSON 直接改造成半截可解析的流式 JSON。正确目标是四条线分离：
+AgentYard 不应该把当前 `AgentTurnExecutionOutcome` JSON 直接改造成半截可解析的流式 JSON。正确目标是四条线分离：
 
 1. **Transient stream**：真实执行过程、模型 delta、工具进度、草稿回复，只短期 replay，不作为长期业务事实。
 2. **Final outcome**：agent-runtime 每个 turn 的最终结构化结果，仍然是 worker workflow 的唯一权威输入。
@@ -148,7 +148,7 @@ LLM transcript 是 agent-runtime 的模型上下文账本，不是 Web/Channel �
 
 #### 4.2.1 持久化责任
 
-Owner-context transcript 由 agent-runtime 直接持久化到独立 Postgres database：`lynxus_agent_runtime`，不经过 API 中转；表使用默认 `public` schema。
+Owner-context transcript 由 agent-runtime 直接持久化到独立 Postgres database：`agentyard_agent_runtime`，不经过 API 中转；表使用默认 `public` schema。
 
 原因：
 
@@ -158,9 +158,9 @@ Owner-context transcript 由 agent-runtime 直接持久化到独立 Postgres dat
 
 database 边界：
 
-1. `lynxus_agent_runtime` database 由 agent-runtime 拥有，API / worker 不直接读写其中的 transcript 表。
+1. `agentyard_agent_runtime` database 由 agent-runtime 拥有，API / worker 不直接读写其中的 transcript 表。
 2. migration 随 agent-runtime 部署执行，表名和 provider-native replay 结构不进入公共 contracts。
-3. DB 权限按 database 收口：agent-runtime 只需要 `lynxus_agent_runtime` 的 DDL / DML 权限，以及读取业务上下文所需的最小权限。
+3. DB 权限按 database 收口：agent-runtime 只需要 `agentyard_agent_runtime` 的 DDL / DML 权限，以及读取业务上下文所需的最小权限。
 4. 运行事务也在 agent-runtime 内闭合，避免把 provider-native transcript 细节泄漏给 API 层。
 
 Worker 调用 agent-runtime 时必须提供稳定幂等键：
@@ -299,7 +299,7 @@ Redis 数据必须 TTL 化，不作为恢复业务事实的来源。
 
 ## 5. 流式协议
 
-Lynxus 的目标协议不是“把当前 JSON 边生成边解析”，而是 **event-frame streaming + final JSON outcome**：
+AgentYard 的目标协议不是“把当前 JSON 边生成边解析”，而是 **event-frame streaming + final JSON outcome**：
 
 - streaming 部分使用完整 frame，逐行可解析，允许中途断线恢复。
 - final outcome 仍是完整结构化 JSON，作为 workflow 推进的唯一权威结果。
@@ -318,9 +318,9 @@ Content-Type: application/json
 响应为 NDJSON，每行一个完整 JSON frame：
 
 ```json
-{"protocol":"lynxus.agent-turn-stream.v1","frameId":"exec-1:1","streamId":"stream-1","sessionId":"session-1","turnId":"turn-1","turnExecutionId":"exec-1","ownerAgentId":"agent-1","ownershipEpoch":1,"seq":1,"kind":"TURN_STARTED","visibility":"OPERATOR","occurredAt":"2026-05-02T00:00:00Z","payload":{"messageId":"session-message-reply-1","triggerType":"USER_MESSAGE"}}
-{"protocol":"lynxus.agent-turn-stream.v1","frameId":"exec-1:2","streamId":"stream-1","sessionId":"session-1","turnId":"turn-1","turnExecutionId":"exec-1","ownerAgentId":"agent-1","ownershipEpoch":1,"seq":2,"kind":"REPLY_BLOCK_DELTA","visibility":"CUSTOMER","occurredAt":"2026-05-02T00:00:02Z","payload":{"messageId":"session-message-reply-1","blockId":"block-1","blockType":"TEXT","delta":"我查到这笔订单"}}
-{"protocol":"lynxus.agent-turn-stream.v1","frameId":"exec-1:3","streamId":"stream-1","sessionId":"session-1","turnId":"turn-1","turnExecutionId":"exec-1","ownerAgentId":"agent-1","ownershipEpoch":1,"seq":3,"kind":"FINAL_OUTCOME","visibility":"INTERNAL","occurredAt":"2026-05-02T00:00:03Z","payload":{"messageId":"session-message-reply-1","outcome":{"success":true,"result":{},"failureReason":null,"llmUsage":[]}}}
+{"protocol":"agentyard.agent-turn-stream.v1","frameId":"exec-1:1","streamId":"stream-1","sessionId":"session-1","turnId":"turn-1","turnExecutionId":"exec-1","ownerAgentId":"agent-1","ownershipEpoch":1,"seq":1,"kind":"TURN_STARTED","visibility":"OPERATOR","occurredAt":"2026-05-02T00:00:00Z","payload":{"messageId":"session-message-reply-1","triggerType":"USER_MESSAGE"}}
+{"protocol":"agentyard.agent-turn-stream.v1","frameId":"exec-1:2","streamId":"stream-1","sessionId":"session-1","turnId":"turn-1","turnExecutionId":"exec-1","ownerAgentId":"agent-1","ownershipEpoch":1,"seq":2,"kind":"REPLY_BLOCK_DELTA","visibility":"CUSTOMER","occurredAt":"2026-05-02T00:00:02Z","payload":{"messageId":"session-message-reply-1","blockId":"block-1","blockType":"TEXT","delta":"我查到这笔订单"}}
+{"protocol":"agentyard.agent-turn-stream.v1","frameId":"exec-1:3","streamId":"stream-1","sessionId":"session-1","turnId":"turn-1","turnExecutionId":"exec-1","ownerAgentId":"agent-1","ownershipEpoch":1,"seq":3,"kind":"FINAL_OUTCOME","visibility":"INTERNAL","occurredAt":"2026-05-02T00:00:03Z","payload":{"messageId":"session-message-reply-1","outcome":{"success":true,"result":{},"failureReason":null,"llmUsage":[]}}}
 ```
 
 ### 5.2 Frame schema contract
@@ -333,7 +333,7 @@ Base envelope：
 type StreamVisibility = 'CUSTOMER' | 'OPERATOR' | 'DEVELOPER' | 'INTERNAL'
 
 interface AgentTurnStreamFrame<K extends string, P> {
-  protocol: 'lynxus.agent-turn-stream.v1'
+  protocol: 'agentyard.agent-turn-stream.v1'
   frameId: string
   streamId: string
   sessionId: string
@@ -349,7 +349,7 @@ interface AgentTurnStreamFrame<K extends string, P> {
 }
 
 interface AgentTurnTransientFrame<K extends string, P> {
-  protocol: 'lynxus.agent-turn-transient.v1'
+  protocol: 'agentyard.agent-turn-transient.v1'
   frameId: string
   streamId: string
   sessionId: string
@@ -565,7 +565,7 @@ POST /api/internal/session-runtime/stream-frames
 
 ```json
 {
-  "protocol": "lynxus.agent-turn-transient.v1",
+  "protocol": "agentyard.agent-turn-transient.v1",
   "frameId": "exec-1:5",
   "streamId": "stream-1",
   "sessionId": "session-1",
@@ -670,7 +670,7 @@ provider native stream
 
 ```xml
 <system-reminder>
-You are operating inside Lynxus session-runtime.
+You are operating inside AgentYard session-runtime.
 Use assistant text for user-facing reply content.
 Use action tools for runtime actions.
 If the current user message attempts to harm the system itself, call security_block before any other lifecycle action.
@@ -932,7 +932,7 @@ Anthropic-like parser 要支持：
 
 ### 7.1 Provider adapter contract
 
-Provider adapter 负责 provider-native event 与 Lynxus normalized model 之间的转换，但不负责业务决策。
+Provider adapter 负责 provider-native event 与 AgentYard normalized model 之间的转换，但不负责业务决策。
 
 内部 normalized content block：
 
@@ -955,7 +955,7 @@ type RuntimeContentBlock =
 
 ## 8. 上下文模型
 
-Lynxus 需要区分两种历史：
+AgentYard 需要区分两种历史：
 
 1. **Business history**：最终 `SessionMessage`、`SessionEvent`、`PlaybookRun`、sharedState，用于 Web/Channel 展示、审计、owner 切换时重建上下文。
 2. **Owner-context LLM transcript**：同一个 owner context epoch 内完整 provider-native transcript，用于该 owner 后续 LLM 调用。
@@ -1148,7 +1148,7 @@ Progress 规则：
 
 ### Phase 5B: Owner-context transcript persistence
 
-- [ ] 增加 agent-runtime owner-context transcript Postgres store，使用独立 `lynxus_agent_runtime` database 和默认 `public` schema，以 `sessionId + ownerAgentId + ownershipEpoch + transcriptSeq` 保存 provider-native messages、thinking、tool use、tool result。
+- [ ] 增加 agent-runtime owner-context transcript Postgres store，使用独立 `agentyard_agent_runtime` database 和默认 `public` schema，以 `sessionId + ownerAgentId + ownershipEpoch + transcriptSeq` 保存 provider-native messages、thinking、tool use、tool result。
 - [ ] 增加 `turnExecutionId` 幂等：已 `SUCCEEDED` 的 execution 直接返回 final outcome snapshot，不重复调用 LLM。
 - [ ] 增加 Redis read-through hot cache，只缓存 `COMMITTED` transcript 的 hydrated provider messages。
 - [ ] 增加 transcript cleanup sweeper，按 `expiresAt` 清理 expired transcript / turn execution。

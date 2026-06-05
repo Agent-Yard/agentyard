@@ -5,12 +5,12 @@ from typing import Any
 
 import pytest
 
-from lynxus_extension_sdk.registration import (
+from agentyard_extension_sdk.registration import (
     ExtensionRegistrationSet,
     RegistrationConfigError,
     load_registration_yaml,
 )
-from lynxus_extension_sdk.testing import load_json_fixture
+from agentyard_extension_sdk.testing import load_json_fixture
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]

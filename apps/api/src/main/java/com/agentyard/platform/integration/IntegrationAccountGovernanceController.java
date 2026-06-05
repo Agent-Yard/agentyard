@@ -1,0 +1,95 @@
+package com.agentyard.platform.integration;
+
+import com.agentyard.platform.auth.RequireGovernanceAccess;
+import com.agentyard.platform.auth.RequireGovernanceWrite;
+import com.agentyard.platform.integration.IntegrationDtos.CreateIntegrationAccountCredentialRequest;
+import com.agentyard.platform.integration.IntegrationDtos.CreateIntegrationAccountRequest;
+import com.agentyard.platform.integration.IntegrationDtos.RotateIntegrationAccountCredentialRequest;
+import com.agentyard.platform.integration.IntegrationDtos.UpdateIntegrationAccountStatusRequest;
+import com.agentyard.platform.integration.IntegrationDtos.UpdateIntegrationAccountRequest;
+import com.agentyard.platform.shared.ApiResponse;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api/integration/accounts")
+@RequireGovernanceAccess
+public class IntegrationAccountGovernanceController {
+    private final IntegrationAccountService service;
+
+    public IntegrationAccountGovernanceController(IntegrationAccountService service) {
+        this.service = service;
+    }
+
+    @GetMapping
+    public ApiResponse<?> accounts() {
+        return ApiResponse.ok(service.listAccounts());
+    }
+
+    @GetMapping("/{accountId}")
+    public ApiResponse<?> account(@PathVariable String accountId) {
+        return ApiResponse.ok(service.getAccount(accountId));
+    }
+
+    @PostMapping
+    @RequireGovernanceWrite
+    public ApiResponse<?> createAccount(@RequestBody CreateIntegrationAccountRequest request) {
+        return ApiResponse.ok(service.createAccount(request));
+    }
+
+    @PutMapping("/{accountId}")
+    @RequireGovernanceWrite
+    public ApiResponse<?> updateAccount(@PathVariable String accountId, @RequestBody UpdateIntegrationAccountRequest request) {
+        return ApiResponse.ok(service.updateAccount(accountId, request));
+    }
+
+    @PutMapping("/{accountId}/status")
+    @RequireGovernanceWrite
+    public ApiResponse<?> updateAccountStatus(
+        @PathVariable String accountId,
+        @RequestBody UpdateIntegrationAccountStatusRequest request
+    ) {
+        return ApiResponse.ok(service.updateAccountStatus(accountId, request));
+    }
+
+    @PostMapping("/{accountId}/archive")
+    @RequireGovernanceWrite
+    public ApiResponse<?> archiveAccount(@PathVariable String accountId) {
+        return ApiResponse.ok(service.archiveAccount(accountId));
+    }
+
+    @PostMapping("/{accountId}/credentials")
+    @RequireGovernanceWrite
+    public ApiResponse<?> createCredential(
+        @PathVariable String accountId,
+        @RequestBody CreateIntegrationAccountCredentialRequest request
+    ) {
+        return ApiResponse.ok(service.createCredential(accountId, request));
+    }
+
+    @PostMapping("/{accountId}/credentials/rotate")
+    @RequireGovernanceWrite
+    public ApiResponse<?> rotateCredential(
+        @PathVariable String accountId,
+        @RequestBody RotateIntegrationAccountCredentialRequest request
+    ) {
+        return ApiResponse.ok(service.rotateCredential(accountId, request));
+    }
+
+    @PostMapping("/{accountId}/credentials/validate")
+    @RequireGovernanceWrite
+    public ApiResponse<?> validateCredential(@PathVariable String accountId) {
+        return ApiResponse.ok(service.validateCredential(accountId));
+    }
+
+    @PostMapping("/{accountId}/credentials/revoke")
+    @RequireGovernanceWrite
+    public ApiResponse<?> revokeCredential(@PathVariable String accountId) {
+        return ApiResponse.ok(service.revokeCredential(accountId));
+    }
+}

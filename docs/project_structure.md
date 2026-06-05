@@ -43,7 +43,7 @@ demo/                 演示素材目录，不参与当前主实现说明
 - pnpm workspace：`pnpm-workspace.yaml` 覆盖 `apps/*` 与 `packages/*`；当前实际 Node 包包括 `apps/web`、`apps/site`、`packages/extension-protocol`。`packages/contracts` 只保留 OpenAPI 与 TypeScript 契约源码，不是独立 pnpm package。
 - uv workspace：`apps/agent-runtime`、`apps/knowledge-service`、`packages/extension-protocol`、`packages/extension-sdk-python`、`packages/python-common`
 - 本地依赖：PostgreSQL、MinIO（S3-compatible object storage 本地实现）、Redis、Temporal、sandbox
-- PostgreSQL 启动时会自动准备 `lynxus_core`、`lynxus_channel_gateway`、`lynxus_knowledge`、`lynxus_agent_runtime` 四个库，按服务边界隔离
+- PostgreSQL 启动时会自动准备 `agentyard_core`、`agentyard_channel_gateway`、`agentyard_knowledge`、`agentyard_agent_runtime` 四个库，按服务边界隔离
 
 ## 3. 治理主树
 
@@ -180,10 +180,10 @@ demo/                 演示素材目录，不参与当前主实现说明
 - `apps/web` 负责治理控制台与运行观测
 - `apps/site` 负责项目静态站点 / 官网落地页，不承载控制台治理与运行观测主链路
 - `packages/extension-protocol` 定义 Extension Plane 协议（Tool Connector / Channel Provider 注册与契约）
-- extension service 模板已从 monorepo 移出，作为独立项目 `lynxus-extension-boilerplate` 维护；本仓库只保留协议、SDK、契约校验与平台侧接入边界
+- extension service 模板已从 monorepo 移出，作为独立项目 `agentyard-extension-boilerplate` 维护；本仓库只保留协议、SDK、契约校验与平台侧接入边界
 
 ## 7. 一句话总结
 
-当前可以把 Lynxus 理解为：
+当前可以把 AgentYard 理解为：
 
 **一个以业务域和业务场景为治理入口、以发布快照为配置锚点、以 session-owner-playbook 为运行主线、以资源版本化与可恢复强流程为核心能力的平台原型。**

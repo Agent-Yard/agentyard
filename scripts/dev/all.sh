@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/lynxus-dev-source.XXXXXX")"
+LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/agentyard-dev-source.XXXXXX")"
 
 source "$ROOT_DIR/scripts/common/process.sh"
 

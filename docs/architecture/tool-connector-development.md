@@ -6,8 +6,8 @@ Tool Connector 的职责是把 Tool 的业务操作映射到具体接入协议�
 
 新增或调整 connector 时，不要把厂商协议细节泄漏到 Agent、Playbook、Session 投影或 Tool operation schema。协议差异应收敛在 connector 的三个边界内：
 
-- Runtime 执行：`apps/agent-runtime/lynxus_agent_runtime/tool_connectors.py`
-- API 归一化：`apps/api/src/main/java/com/lynxus/platform/catalog/ToolConnectorCatalog.java`
+- Runtime 执行：`apps/agent-runtime/agentyard_agent_runtime/tool_connectors.py`
+- API 归一化：`apps/api/src/main/java/com/agentyard/platform/catalog/ToolConnectorCatalog.java`
 - Web 配置定义：`apps/web/src/config/toolConnectors.ts`
 
 ## 当前内置 Connector
@@ -22,7 +22,7 @@ Tool Connector 的职责是把 Tool 的业务操作映射到具体接入协议�
 
    在共享契约中增加新的 `ToolConnectorType`：
 
-   - `packages/contracts-jvm/src/main/java/com/lynxus/contracts/runtime/WorkflowContracts.java`
+   - `packages/contracts-jvm/src/main/java/com/agentyard/contracts/runtime/WorkflowContracts.java`
    - `packages/contracts/src/index.ts`
    - `packages/contracts/openapi/control-plane.yaml`
    - `apps/web/src/types/catalog.types.ts`
@@ -76,7 +76,7 @@ Tool Connector 的职责是把 Tool 的业务操作映射到具体接入协议�
    - credential 字段缺失
    - response 必须是 JSON object
 
-   API 测试优先覆盖 `CatalogServiceTest` 中 Tool config normalization；Web 至少通过 `pnpm --filter @lynxus/web lint`，复杂字段定义应补组件测试。
+   API 测试优先覆盖 `CatalogServiceTest` 中 Tool config normalization；Web 至少通过 `pnpm --filter @agentyard/web lint`，复杂字段定义应补组件测试。
 
 ## 配置模型约定
 
@@ -111,8 +111,8 @@ Tool resource version 的 connector 配置统一为：
 ## 推荐验证命令
 
 ```bash
-uv run --package lynxus-agent-runtime pytest apps/agent-runtime/tests -q
-./gradlew :apps:api:test --tests com.lynxus.platform.catalog.CatalogServiceTest
-pnpm --filter @lynxus/web lint
-pnpm --filter @lynxus/web test
+uv run --package agentyard-agent-runtime pytest apps/agent-runtime/tests -q
+./gradlew :apps:api:test --tests com.agentyard.platform.catalog.CatalogServiceTest
+pnpm --filter @agentyard/web lint
+pnpm --filter @agentyard/web test
 ```

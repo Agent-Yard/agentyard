@@ -2,19 +2,19 @@ import unittest
 import os
 from unittest.mock import patch
 
-from lynxus_agent_runtime.data_security.mapper import PrivacyMapper
-from lynxus_agent_runtime.data_security.rewriter import PrivateLlmRewriter
-from lynxus_agent_runtime.data_security.rewriter import RewriteResult
-from lynxus_agent_runtime.data_security.rules import restore_value
-from lynxus_agent_runtime.data_security.rules import sanitize_value
-from lynxus_agent_runtime.data_security.rules import SanitizationResult
-from lynxus_agent_runtime.data_security.validator import collect_sensitive_entities
-from lynxus_agent_runtime.data_security.validator import PrivacyMappingBlockedError
-from lynxus_agent_runtime.data_security.validator import validate_sanitized_output
-from lynxus_agent_runtime.privacy_contracts import PrivacyModelBinding, PrivacyPolicy
+from agentyard_agent_runtime.data_security.mapper import PrivacyMapper
+from agentyard_agent_runtime.data_security.rewriter import PrivateLlmRewriter
+from agentyard_agent_runtime.data_security.rewriter import RewriteResult
+from agentyard_agent_runtime.data_security.rules import restore_value
+from agentyard_agent_runtime.data_security.rules import sanitize_value
+from agentyard_agent_runtime.data_security.rules import SanitizationResult
+from agentyard_agent_runtime.data_security.validator import collect_sensitive_entities
+from agentyard_agent_runtime.data_security.validator import PrivacyMappingBlockedError
+from agentyard_agent_runtime.data_security.validator import validate_sanitized_output
+from agentyard_agent_runtime.privacy_contracts import PrivacyModelBinding, PrivacyPolicy
 
 
-def _privacy_model_binding(api_key_env_var: str = "LYNXUS_TEST_PRIVATE_REWRITER_API_KEY") -> PrivacyModelBinding:
+def _privacy_model_binding(api_key_env_var: str = "AGENTYARD_TEST_PRIVATE_REWRITER_API_KEY") -> PrivacyModelBinding:
     return PrivacyModelBinding(
         resource_id="privacy-resource",
         resource_name="Privacy Model",
@@ -75,7 +75,7 @@ class PrivacyRulesTest(unittest.TestCase):
         rewriter = PrivateLlmRewriter(_privacy_model_binding())
 
         with patch(
-            "lynxus_agent_runtime.data_security.rewriter.chat_completion",
+            "agentyard_agent_runtime.data_security.rewriter.chat_completion",
             return_value={"choices": [{"message": {"content": '{"entities":[]}'}}]},
         ) as completion:
             entities = rewriter._extract_entities("hello", "test-key")
@@ -97,13 +97,13 @@ class PrivacyRulesTest(unittest.TestCase):
         rewriter = PrivateLlmRewriter(_privacy_model_binding())
 
         with patch(
-            "lynxus_agent_runtime.data_security.rewriter.chat_completion",
+            "agentyard_agent_runtime.data_security.rewriter.chat_completion",
             return_value={"choices": [{"message": {"content": "[]"}}]},
         ):
             self.assertEqual([], rewriter._extract_entities("hello", "test-key"))
 
         with patch(
-            "lynxus_agent_runtime.data_security.rewriter.chat_completion",
+            "agentyard_agent_runtime.data_security.rewriter.chat_completion",
             return_value={"choices": [{"message": {"content": "{}"}}]},
         ):
             self.assertEqual([], rewriter._extract_entities("hello", "test-key"))
@@ -112,7 +112,7 @@ class PrivacyRulesTest(unittest.TestCase):
         store = _FakePrivacyStore()
         rewriter = PrivateLlmRewriter(_privacy_model_binding())
 
-        with patch.dict(os.environ, {"LYNXUS_TEST_PRIVATE_REWRITER_API_KEY": "test-key"}), patch.object(
+        with patch.dict(os.environ, {"AGENTYARD_TEST_PRIVATE_REWRITER_API_KEY": "test-key"}), patch.object(
             rewriter,
             "_extract_entities",
             return_value=[{"rawValue": "Jane Doe", "entityType": "PERSON"}],
@@ -129,7 +129,7 @@ class PrivacyRulesTest(unittest.TestCase):
         store = _FakePrivacyStore()
         rewriter = PrivateLlmRewriter(_privacy_model_binding())
 
-        with patch.dict(os.environ, {"LYNXUS_TEST_PRIVATE_REWRITER_API_KEY": "test-key"}), patch.object(
+        with patch.dict(os.environ, {"AGENTYARD_TEST_PRIVATE_REWRITER_API_KEY": "test-key"}), patch.object(
             rewriter,
             "_extract_entities",
             return_value=[
@@ -266,10 +266,10 @@ class PrivacyRulesTest(unittest.TestCase):
         )
 
         with patch(
-            "lynxus_agent_runtime.data_security.mapper.sanitize_value",
+            "agentyard_agent_runtime.data_security.mapper.sanitize_value",
             return_value=SanitizationResult("customer Alice Johnson", {}, 0, 0),
         ), patch(
-            "lynxus_agent_runtime.data_security.mapper.PrivateLlmRewriter.rewrite",
+            "agentyard_agent_runtime.data_security.mapper.PrivateLlmRewriter.rewrite",
             return_value=RewriteResult("customer <<PERSON_001>>", {"PERSON": 1}, 0, 1),
         ):
             sanitized = mapper.sanitize("customer Alice Johnson", "PROMPT_RUNTIME_MESSAGE")
@@ -302,7 +302,7 @@ class PrivacyRulesTest(unittest.TestCase):
                 return RewriteResult(text, {}, 0, 0)
             return RewriteResult(text.replace("Jane Doe", "<<PERSON_001>>"), {"PERSON": 1}, 1, 1)
 
-        with patch("lynxus_agent_runtime.data_security.mapper.PrivateLlmRewriter.rewrite", side_effect=rewrite) as rewrite_mock:
+        with patch("agentyard_agent_runtime.data_security.mapper.PrivateLlmRewriter.rewrite", side_effect=rewrite) as rewrite_mock:
             sanitized = mapper.sanitize(
                 {"outer": [{"note": "Please help Jane Doe"}], "status": "RECORDED"},
                 "TOOL_RESULT",
@@ -337,7 +337,7 @@ class PrivacyRulesTest(unittest.TestCase):
         )
 
         with patch(
-            "lynxus_agent_runtime.data_security.mapper.PrivateLlmRewriter.rewrite",
+            "agentyard_agent_runtime.data_security.mapper.PrivateLlmRewriter.rewrite",
             return_value=RewriteResult(
                 "email <<ACCOUNT_001>> and Please help <<PERSON_001>>",
                 {"PERSON": 1},

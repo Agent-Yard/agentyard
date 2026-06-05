@@ -1,16 +1,16 @@
-export const SITE_URL = "https://zephor5.github.io/lynxus/";
+export const SITE_URL = "https://agent-yard.github.io/agentyard/";
 
 export const TRANSLATIONS = {
   zh: {
-    pageTitle: "Lynxus 灵枢 | 治理型企业智能体中台",
+    pageTitle: "AgentYard | 以发布为中心的智能体系统",
     metaDescription:
-      "灵枢（Lynxus）是一个开源的、以发布为中心的智能体中台，提供受治理的扩展、可观测的会话与可恢复的业务工作流。",
-    ogTitle: "Lynxus 灵枢 — 治理型企业智能体中台",
+      "AgentYard 是一个开源的、以发布为中心的智能体系统，提供受治理的扩展、可观测的会话与可恢复的业务工作流。",
+    ogTitle: "AgentYard — 以发布为中心的智能体系统",
     ogDescription:
       "以发布为中心治理智能体、连接业务系统、运行可恢复工作流，并实时观测每一次会话。",
     "skip-link": "跳到主内容",
     "aria-primary-nav": "主导航",
-    "aria-brand-home": "Lynxus 首页",
+    "aria-brand-home": "AgentYard 首页",
     "aria-page-sections": "页面分区",
     "aria-project-links": "项目链接",
     "aria-project-status": "项目状态",
@@ -29,10 +29,9 @@ export const TRANSLATIONS = {
     "demo-1-p": "控制台里跑通一次最简单的会话。",
     "demo-2-h": "后台演示",
     "demo-2-p": "业务域、助手、智能体、知识库、资源与发布快照的治理面走查。",
-    "hero-eyebrow": "开源企业级智能体中台",
-    "hero-cn-name": "灵枢",
+    "hero-eyebrow": "开源智能体系统",
     "hero-lede":
-      "以发布为中心的智能体中台：治理智能体配置、连接业务系统、运行可恢复工作流，并实时观测每一次会话。",
+      "以发布为中心：治理智能体配置、连接业务系统、运行可恢复工作流，并实时观测每一次会话。",
     "btn-view-source": "查看源码",
     "btn-quick-start": "快速上手",
     "fact-status-label": "状态",
@@ -43,8 +42,8 @@ export const TRANSLATIONS = {
     "fact-runtime-value": "Temporal + JVM/Python",
     "fact-console-label": "控制台",
     "fact-console-value": "Vue + Spring Boot",
-    "why-eyebrow": "为什么选 Lynxus",
-    "why-title": "企业级智能体不止是 prompt。",
+    "why-eyebrow": "为什么选 AgentYard",
+    "why-title": "智能体不止是 prompt。",
     "why-governance-h": "治理",
     "why-governance-p":
       "业务域、场景、助手、智能体、playbook、知识库与资源均作为一等治理对象建模。",
@@ -65,7 +64,7 @@ export const TRANSLATIONS = {
     "tree-resource": "资源",
     "tree-resource-sub": "工具 · 技能 · 模型 · 知识",
     "model-copy-p":
-      "Lynxus 把配置视为契约。草稿对象可以持续演进，但运行中的会话锚定在一个已固化 Owner 智能体、策略、资源版本、知识绑定与 playbook 定义的助手发布上。",
+      "AgentYard 把配置视为契约。草稿对象可以持续演进，但运行中的会话锚定在一个已固化 Owner 智能体、策略、资源版本、知识绑定与 playbook 定义的助手发布上。",
     "model-check-1": "发布快照避免运行期配置漂移。",
     "model-check-2": "工具、技能、模型与知识都带有稳定的资源版本锚点。",
     "model-check-3": "智能体做决策，playbook 执行结构化业务流程。",
@@ -96,7 +95,7 @@ export const TRANSLATIONS = {
     "ext-tool-pill": "工具连接器",
     "ext-tool-h": "业务能力接入",
     "ext-tool-p":
-      "扩展服务通过 manifest 暴露工具操作 schema，Lynxus 负责把智能体运行时的工具调用路由到对应连接器。",
+      "扩展服务通过 manifest 暴露工具操作 schema，AgentYard 负责把智能体运行时的工具调用路由到对应连接器。",
     "ext-channel-pill": "通道提供方",
     "ext-channel-h": "会话通道接入",
     "ext-channel-p":
@@ -118,7 +117,7 @@ export const TRANSLATIONS = {
     "cta-eyebrow": "项目状态",
     "cta-title": "Alpha 阶段，面向评估与本地集成。",
     "cta-p":
-      "Lynxus 已经打通 控制平面 → 发布快照 → Temporal worker → Python 运行时 的核心链路。在面向生产的强化过程中，接口、数据结构与配置在小版本间仍可能调整。",
+      "AgentYard 已经打通 控制平面 → 发布快照 → Temporal worker → Python 运行时 的核心链路。在面向生产的强化过程中，接口、数据结构与配置在小版本间仍可能调整。",
     "btn-star": "在 GitHub 上 Star",
     "btn-releases": "发布记录",
     "btn-discussions": "讨论区",
@@ -128,15 +127,15 @@ export const TRANSLATIONS = {
     "lang-aria": "切换语言"
   },
   en: {
-    pageTitle: "Lynxus | Governed Enterprise Agent Platform",
+    pageTitle: "AgentYard | Release-driven agent system",
     metaDescription:
-      "Lynxus is an open-source Enterprise Agent Platform for governed extensions, observable sessions, and recoverable business workflows.",
-    ogTitle: "Lynxus — Governed Enterprise Agent Platform",
+      "AgentYard is an open-source agent system for governed extensions, observable sessions, and recoverable business workflows.",
+    ogTitle: "AgentYard — Release-driven agent system",
     ogDescription:
-      "A release-driven Enterprise Agent Platform for governing agents, connecting business systems, running recoverable workflows, and observing every session as it happens.",
+      "A release-driven system for governing agents, connecting business systems, running recoverable workflows, and observing every session as it happens.",
     "skip-link": "Skip to content",
     "aria-primary-nav": "Primary navigation",
-    "aria-brand-home": "Lynxus home",
+    "aria-brand-home": "AgentYard home",
     "aria-page-sections": "Page sections",
     "aria-project-links": "Project links",
     "aria-project-status": "Project status",
@@ -155,10 +154,9 @@ export const TRANSLATIONS = {
     "demo-1-p": "A minimal session running through the console.",
     "demo-2-h": "Console tour",
     "demo-2-p": "A tour of business domains, assistants, agents, knowledge bases, resources, and release snapshots.",
-    "hero-eyebrow": "Open-source Enterprise Agent Platform",
-    "hero-cn-name": "",
+    "hero-eyebrow": "Open-source agent system",
     "hero-lede":
-      "A release-driven Enterprise Agent Platform for governing agents, connecting business systems, running recoverable workflows, and observing every session as it happens.",
+      "A release-driven system for governing agents, connecting business systems, running recoverable workflows, and observing every session as it happens.",
     "btn-view-source": "View source",
     "btn-quick-start": "Quick start",
     "fact-status-label": "Status",
@@ -169,8 +167,8 @@ export const TRANSLATIONS = {
     "fact-runtime-value": "Temporal + JVM/Python",
     "fact-console-label": "Console",
     "fact-console-value": "Vue + Spring Boot",
-    "why-eyebrow": "Why Lynxus",
-    "why-title": "Enterprise agents need more than prompts.",
+    "why-eyebrow": "Why AgentYard",
+    "why-title": "Agents need more than prompts.",
     "why-governance-h": "Governance",
     "why-governance-p":
       "Business domains, scenarios, assistants, agents, playbooks, knowledge bases, and resources are modeled as first-class governed objects.",
@@ -191,7 +189,7 @@ export const TRANSLATIONS = {
     "tree-resource": "Resource",
     "tree-resource-sub": "tool · skill · llm · knowledge",
     "model-copy-p":
-      "Lynxus treats configuration as contract. Draft objects can evolve, but running sessions are anchored to an assistant release that freezes the owner agent, policies, resource versions, knowledge bindings, and playbook definitions.",
+      "AgentYard treats configuration as contract. Draft objects can evolve, but running sessions are anchored to an assistant release that freezes the owner agent, policies, resource versions, knowledge bindings, and playbook definitions.",
     "model-check-1": "Release snapshots prevent runtime configuration drift.",
     "model-check-2":
       "Resources carry stable version anchors across tools, skills, LLMs, and knowledge.",
@@ -223,7 +221,7 @@ export const TRANSLATIONS = {
     "ext-tool-pill": "Tool Connector",
     "ext-tool-h": "Business capability access",
     "ext-tool-p":
-      "Extension services expose tool operation schemas through manifests, while Lynxus routes agent-runtime tool calls to the selected connector.",
+      "Extension services expose tool operation schemas through manifests, while AgentYard routes agent-runtime tool calls to the selected connector.",
     "ext-channel-pill": "Channel Provider",
     "ext-channel-h": "Conversation channel access",
     "ext-channel-p":
@@ -247,7 +245,7 @@ export const TRANSLATIONS = {
     "cta-eyebrow": "Project status",
     "cta-title": "Alpha, built for evaluation and local integration.",
     "cta-p":
-      "Lynxus has the core control-plane → release-snapshot → Temporal worker → Python runtime path in place. Interfaces, data structures, and configuration may change across minor versions while production hardening continues.",
+      "AgentYard has the core control-plane → release-snapshot → Temporal worker → Python runtime path in place. Interfaces, data structures, and configuration may change across minor versions while production hardening continues.",
     "btn-star": "Star on GitHub",
     "btn-releases": "Releases",
     "btn-discussions": "Discussions",

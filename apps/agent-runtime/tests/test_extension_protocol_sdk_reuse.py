@@ -4,19 +4,19 @@ from pathlib import Path
 
 import pytest
 
-from lynxus_agent_runtime import extension_protocol as runtime_protocol
-from lynxus_extension_sdk.common import CanonicalJsonError
-from lynxus_extension_sdk.common import canonical_bytes as sdk_canonical_bytes
-from lynxus_extension_sdk.common import canonicalize as sdk_canonicalize
-from lynxus_extension_sdk.common import sha256_digest as sdk_sha256_digest
-from lynxus_extension_sdk.protocol import (
+from agentyard_agent_runtime import extension_protocol as runtime_protocol
+from agentyard_extension_sdk.common import CanonicalJsonError
+from agentyard_extension_sdk.common import canonical_bytes as sdk_canonical_bytes
+from agentyard_extension_sdk.common import canonicalize as sdk_canonicalize
+from agentyard_extension_sdk.common import sha256_digest as sdk_sha256_digest
+from agentyard_extension_sdk.protocol import (
     ExtensionErrorCategory,
     ExtensionErrorParseError,
 )
-from lynxus_extension_sdk.protocol import parse_extension_error_json as sdk_parse_extension_error_json
-from lynxus_extension_sdk.protocol import parse_non_2xx_extension_error as sdk_parse_non_2xx_extension_error
-from lynxus_extension_sdk.testing import default_protocol_fixtures, load_json_fixture
-from lynxus_extension_sdk.validation import validate_manifest_object as sdk_validate_manifest_object
+from agentyard_extension_sdk.protocol import parse_extension_error_json as sdk_parse_extension_error_json
+from agentyard_extension_sdk.protocol import parse_non_2xx_extension_error as sdk_parse_non_2xx_extension_error
+from agentyard_extension_sdk.testing import default_protocol_fixtures, load_json_fixture
+from agentyard_extension_sdk.validation import validate_manifest_object as sdk_validate_manifest_object
 
 
 FIXTURES = default_protocol_fixtures(Path(__file__))

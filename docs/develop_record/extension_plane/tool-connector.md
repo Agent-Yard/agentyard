@@ -170,7 +170,7 @@ connector implementation version 不进入 runtime request。版本门禁由 ser
 private key 或其他 credential material 时，remote connector 必须通过已有的 `externalSecretRef`、
 extension 私有配置或 extension 私有存储获取。
 
-`execution.traceContext.traceparent` 必填，由 Core 调用 extension 前生成或透传。`X-Lynxus-Trace-Id`
+`execution.traceContext.traceparent` 必填，由 Core 调用 extension 前生成或透传。`X-AgentYard-Trace-Id`
 必须与 `traceContext.traceparent` 属于同一 trace。
 
 ## 4.1 Tool Release Materialization Contract

@@ -7,9 +7,9 @@ from fastapi.testclient import TestClient
 
 from runtime_fixtures import FakeLifespanTranscriptStore
 
-os.environ.setdefault("LYNXUS_INTERNAL_AUTH_TOKEN", "test-internal-token")
+os.environ.setdefault("AGENTYARD_INTERNAL_AUTH_TOKEN", "test-internal-token")
 
-from lynxus_agent_runtime.main import app
+from agentyard_agent_runtime.main import app
 
 
 class FakeRedisClient:
@@ -22,8 +22,8 @@ class FakeRedisClient:
 
 @contextmanager
 def agent_runtime_client():
-    with patch("lynxus_agent_runtime.main.create_redis_client", return_value=FakeRedisClient()):
-        with patch("lynxus_agent_runtime.main.create_transcript_store", return_value=FakeLifespanTranscriptStore()):
+    with patch("agentyard_agent_runtime.main.create_redis_client", return_value=FakeRedisClient()):
+        with patch("agentyard_agent_runtime.main.create_transcript_store", return_value=FakeLifespanTranscriptStore()):
             with TestClient(app) as client:
                 yield client
 

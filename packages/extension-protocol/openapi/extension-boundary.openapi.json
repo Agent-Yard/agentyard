@@ -1,9 +1,9 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Lynxus Extension Boundary Protocol",
+    "title": "AgentYard Extension Boundary Protocol",
     "version": "0.1.0",
-    "description": "Extension Plane HTTP operations between Lynxus core runtime/control-plane services and extension services."
+    "description": "Extension Plane HTTP operations between AgentYard core runtime/control-plane services and extension services."
   },
   "paths": {
     "/extension/manifest": {
@@ -226,7 +226,7 @@
             }
           },
           {
-            "name": "X-Lynxus-Last-Acked-Final-Sequence",
+            "name": "X-AgentYard-Last-Acked-Final-Sequence",
             "in": "header",
             "required": false,
             "description": "Diagnostic extension-local final checkpoint. The gateway checkpoint is authoritative.",
@@ -648,7 +648,7 @@
         }
       },
       "RegistrationIdHeaderOptional": {
-        "name": "X-Lynxus-Extension-Registration-Id",
+        "name": "X-AgentYard-Extension-Registration-Id",
         "in": "header",
         "required": false,
         "schema": {
@@ -658,7 +658,7 @@
         }
       },
       "RegistrationIdHeaderRequired": {
-        "name": "X-Lynxus-Extension-Registration-Id",
+        "name": "X-AgentYard-Extension-Registration-Id",
         "in": "header",
         "required": true,
         "schema": {
@@ -668,7 +668,7 @@
         }
       },
       "DescriptorTypeHeader": {
-        "name": "X-Lynxus-Extension-Descriptor-Type",
+        "name": "X-AgentYard-Extension-Descriptor-Type",
         "in": "header",
         "required": true,
         "schema": {
@@ -677,7 +677,7 @@
         }
       },
       "DescriptorIdHeader": {
-        "name": "X-Lynxus-Extension-Descriptor-Id",
+        "name": "X-AgentYard-Extension-Descriptor-Id",
         "in": "header",
         "required": true,
         "schema": {
@@ -687,7 +687,7 @@
         }
       },
       "TraceIdHeader": {
-        "name": "X-Lynxus-Trace-Id",
+        "name": "X-AgentYard-Trace-Id",
         "in": "header",
         "required": true,
         "schema": {
@@ -697,7 +697,7 @@
         }
       },
       "RequestIdHeader": {
-        "name": "X-Lynxus-Request-Id",
+        "name": "X-AgentYard-Request-Id",
         "in": "header",
         "required": true,
         "schema": {
@@ -1355,7 +1355,7 @@
         "properties": {
           "protocol": {
             "type": "string",
-            "const": "lynxus.channel-outbound-frame.v1"
+            "const": "agentyard.channel-outbound-frame.v1"
           },
           "frameId": {
             "type": "string",
@@ -1543,7 +1543,7 @@
         "properties": {
           "protocol": {
             "type": "string",
-            "const": "lynxus.channel-outbound-frame-ack.v1"
+            "const": "agentyard.channel-outbound-frame-ack.v1"
           },
           "channelProfileId": {
             "type": "string"

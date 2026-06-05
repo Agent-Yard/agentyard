@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from lynxus_extension_sdk.validation import default_protocol_schema_dir, validate_manifest_object
+from agentyard_extension_sdk.validation import default_protocol_schema_dir, validate_manifest_object
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]

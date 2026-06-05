@@ -7,11 +7,11 @@ from typing import Any
 import httpx
 import pytest
 
-os.environ.setdefault("LYNXUS_INTERNAL_AUTH_TOKEN", "test-internal-token")
+os.environ.setdefault("AGENTYARD_INTERNAL_AUTH_TOKEN", "test-internal-token")
 
-from lynxus_agent_runtime.http_clients import reset_shared_http_client_registry  # noqa: E402
-from lynxus_agent_runtime.models import PlaybookToolTaskRequest, ToolDescriptor, ToolOperationDescriptor  # noqa: E402
-from lynxus_agent_runtime.tool_connectors import (  # noqa: E402
+from agentyard_agent_runtime.http_clients import reset_shared_http_client_registry  # noqa: E402
+from agentyard_agent_runtime.models import PlaybookToolTaskRequest, ToolDescriptor, ToolOperationDescriptor  # noqa: E402
+from agentyard_agent_runtime.tool_connectors import (  # noqa: E402
     ConnectorRuntime,
     ToolConnectorProtocolError,
     ToolConnectorRemoteError,
@@ -20,8 +20,8 @@ from lynxus_agent_runtime.tool_connectors import (  # noqa: E402
     reset_remote_tool_connector_circuits,
     set_default_tool_connector_registry,
 )
-from lynxus_agent_runtime.tooling import execute_playbook_tool_task  # noqa: E402
-from lynxus_agent_runtime.extension_registry import (  # noqa: E402
+from agentyard_agent_runtime.tooling import execute_playbook_tool_task  # noqa: E402
+from agentyard_agent_runtime.extension_registry import (  # noqa: E402
     ToolConnectorRegistry,
     ToolConnectorRegistryEntry,
 )
@@ -82,7 +82,7 @@ def test_builtin_connector_uses_registry_but_stays_local(monkeypatch: pytest.Mon
     request_log: list[dict[str, Any]] = []
 
     monkeypatch.setattr(
-        "lynxus_agent_runtime.http_clients.httpx.Client",
+        "agentyard_agent_runtime.http_clients.httpx.Client",
         lambda *args, **kwargs: _FakeClient(request_log, _FakeResponse(_remote_success({"ignored": True}))),
     )
 
@@ -118,7 +118,7 @@ def test_remote_connector_request_uses_descriptor_endpoint_headers_and_snapshot_
     request_log: list[dict[str, Any]] = []
 
     monkeypatch.setattr(
-        "lynxus_agent_runtime.http_clients.httpx.Client",
+        "agentyard_agent_runtime.http_clients.httpx.Client",
         lambda *args, **kwargs: _FakeClient(request_log, _FakeResponse(_remote_success({"ticketId": "t-1"}))),
     )
 
@@ -145,11 +145,11 @@ def test_remote_connector_request_uses_descriptor_endpoint_headers_and_snapshot_
     assert outbound["timeout"] == 7
     assert outbound["headers"] == {
         "Authorization": "Bearer test-internal-token",
-        "X-Lynxus-Extension-Registration-Id": "enterprise-tools",
-        "X-Lynxus-Extension-Descriptor-Type": "TOOL_CONNECTOR",
-        "X-Lynxus-Extension-Descriptor-Id": "enterprise.acme.crm",
-        "X-Lynxus-Trace-Id": "4bf92f3577b34da6a3ce929d0e0e4736",
-        "X-Lynxus-Request-Id": "tool-call-1",
+        "X-AgentYard-Extension-Registration-Id": "enterprise-tools",
+        "X-AgentYard-Extension-Descriptor-Type": "TOOL_CONNECTOR",
+        "X-AgentYard-Extension-Descriptor-Id": "enterprise.acme.crm",
+        "X-AgentYard-Trace-Id": "4bf92f3577b34da6a3ce929d0e0e4736",
+        "X-AgentYard-Request-Id": "tool-call-1",
         "Idempotency-Key": "tool-call-1",
     }
     assert outbound["json"] == {
@@ -191,7 +191,7 @@ def test_remote_external_secret_ref_is_omitted_when_snapshot_does_not_contain_it
     request_log: list[dict[str, Any]] = []
 
     monkeypatch.setattr(
-        "lynxus_agent_runtime.http_clients.httpx.Client",
+        "agentyard_agent_runtime.http_clients.httpx.Client",
         lambda *args, **kwargs: _FakeClient(request_log, _FakeResponse(_remote_success({"ticketId": "t-1"}))),
     )
 
@@ -224,7 +224,7 @@ def test_remote_success_envelope_validation(
     request_log: list[dict[str, Any]] = []
 
     monkeypatch.setattr(
-        "lynxus_agent_runtime.http_clients.httpx.Client",
+        "agentyard_agent_runtime.http_clients.httpx.Client",
         lambda *args, **kwargs: _FakeClient(request_log, _FakeResponse(payload)),
     )
 
@@ -247,7 +247,7 @@ def test_remote_non_2xx_extension_error_is_mapped_with_protocol_fields(
     request_log: list[dict[str, Any]] = []
 
     monkeypatch.setattr(
-        "lynxus_agent_runtime.http_clients.httpx.Client",
+        "agentyard_agent_runtime.http_clients.httpx.Client",
         lambda *args, **kwargs: _FakeClient(
             request_log,
             _FakeResponse(
@@ -296,7 +296,7 @@ def test_remote_retry_reuses_idempotency_key_timeout_and_sleeps_until_success(
     sleeps: list[float] = []
 
     monkeypatch.setattr(
-        "lynxus_agent_runtime.http_clients.httpx.Client",
+        "agentyard_agent_runtime.http_clients.httpx.Client",
         lambda *args, **kwargs: _FakeClient(
             request_log,
             [
@@ -341,7 +341,7 @@ def test_agent_remote_tool_call_does_not_retry_when_runtime_retry_is_disabled(
     request_log: list[dict[str, Any]] = []
 
     monkeypatch.setattr(
-        "lynxus_agent_runtime.http_clients.httpx.Client",
+        "agentyard_agent_runtime.http_clients.httpx.Client",
         lambda *args, **kwargs: _FakeClient(
             request_log,
             [
@@ -377,7 +377,7 @@ def test_remote_retry_can_match_retryable_error_code(monkeypatch: pytest.MonkeyP
     request_log: list[dict[str, Any]] = []
 
     monkeypatch.setattr(
-        "lynxus_agent_runtime.http_clients.httpx.Client",
+        "agentyard_agent_runtime.http_clients.httpx.Client",
         lambda *args, **kwargs: _FakeClient(
             request_log,
             [
@@ -427,7 +427,7 @@ def test_playbook_tool_task_enables_remote_connector_retry(monkeypatch: pytest.M
 
     set_default_tool_connector_registry(_registry(_entry("enterprise.acme.crm")))
     monkeypatch.setattr(
-        "lynxus_agent_runtime.http_clients.httpx.Client",
+        "agentyard_agent_runtime.http_clients.httpx.Client",
         lambda *args, **kwargs: _FakeClient(
             request_log,
             [
@@ -457,7 +457,7 @@ def test_remote_retry_ignores_non_retryable_extension_error(monkeypatch: pytest.
     request_log: list[dict[str, Any]] = []
 
     monkeypatch.setattr(
-        "lynxus_agent_runtime.http_clients.httpx.Client",
+        "agentyard_agent_runtime.http_clients.httpx.Client",
         lambda *args, **kwargs: _FakeClient(
             request_log,
             _FakeResponse(_remote_error(category="REMOTE_UNAVAILABLE", retryable=False), status_code=503),
@@ -496,7 +496,7 @@ def test_remote_protocol_envelope_error_is_not_retried(payload: dict[str, Any], 
     request_log: list[dict[str, Any]] = []
 
     monkeypatch.setattr(
-        "lynxus_agent_runtime.http_clients.httpx.Client",
+        "agentyard_agent_runtime.http_clients.httpx.Client",
         lambda *args, **kwargs: _FakeClient(request_log, _FakeResponse(payload)),
     )
 
@@ -527,7 +527,7 @@ def test_remote_5xx_without_extension_error_retries_and_final_failure_is_structu
     request_log: list[dict[str, Any]] = []
 
     monkeypatch.setattr(
-        "lynxus_agent_runtime.http_clients.httpx.Client",
+        "agentyard_agent_runtime.http_clients.httpx.Client",
         lambda *args, **kwargs: _FakeClient(
             request_log,
             [
@@ -565,7 +565,7 @@ def test_remote_transport_timeout_retries_as_timeout(monkeypatch: pytest.MonkeyP
     request_log: list[dict[str, Any]] = []
 
     monkeypatch.setattr(
-        "lynxus_agent_runtime.http_clients.httpx.Client",
+        "agentyard_agent_runtime.http_clients.httpx.Client",
         lambda *args, **kwargs: _FakeClient(
             request_log,
             [
@@ -600,7 +600,7 @@ def test_remote_circuit_open_stops_call_without_sending_request(monkeypatch: pyt
     request_log: list[dict[str, Any]] = []
 
     monkeypatch.setattr(
-        "lynxus_agent_runtime.http_clients.httpx.Client",
+        "agentyard_agent_runtime.http_clients.httpx.Client",
         lambda *args, **kwargs: _FakeClient(
             request_log,
             _FakeResponse(_remote_error(category="REMOTE_UNAVAILABLE", retryable=True), status_code=503),
@@ -638,7 +638,7 @@ def test_remote_output_schema_validation_still_runs(monkeypatch: pytest.MonkeyPa
 
     set_default_tool_connector_registry(_registry(_entry("enterprise.acme.crm")))
     monkeypatch.setattr(
-        "lynxus_agent_runtime.http_clients.httpx.Client",
+        "agentyard_agent_runtime.http_clients.httpx.Client",
         lambda *args, **kwargs: _FakeClient(request_log, _FakeResponse(_remote_success({"ticketId": 100}))),
     )
 
@@ -655,7 +655,7 @@ def test_remote_connector_does_not_call_runtime_account_resolver(monkeypatch: py
     request_log: list[dict[str, Any]] = []
 
     monkeypatch.setattr(
-        "lynxus_agent_runtime.http_clients.httpx.Client",
+        "agentyard_agent_runtime.http_clients.httpx.Client",
         lambda *args, **kwargs: _FakeClient(request_log, _FakeResponse(_remote_success({"ticketId": "t-1"}))),
     )
 

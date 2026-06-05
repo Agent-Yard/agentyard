@@ -19,8 +19,8 @@
 
 **Verification:**
 - [ ] `./gradlew :packages:contracts-jvm:test`
-- [ ] `pnpm --filter @lynxus/extension-protocol self-check`
-- [ ] `pnpm --filter @lynxus/web build`
+- [ ] `pnpm --filter @agentyard/extension-protocol self-check`
+- [ ] `pnpm --filter @agentyard/web build`
 - [ ] `uv run pytest apps/agent-runtime/tests/test_models.py -q`
 
 **Dependencies:** None
@@ -29,9 +29,9 @@
 - `packages/contracts/openapi/control-plane.yaml`
 - `packages/contracts/openapi/channel-gateway-internal.yaml`
 - `packages/contracts/src/index.ts`
-- `packages/contracts-jvm/src/main/java/com/lynxus/contracts/session/SessionContracts.java`
-- `packages/contracts-jvm/src/main/java/com/lynxus/contracts/channel/ChannelContracts.java`
-- `apps/agent-runtime/lynxus_agent_runtime/models.py`
+- `packages/contracts-jvm/src/main/java/com/agentyard/contracts/session/SessionContracts.java`
+- `packages/contracts-jvm/src/main/java/com/agentyard/contracts/channel/ChannelContracts.java`
+- `apps/agent-runtime/agentyard_agent_runtime/models.py`
 
 **Estimated scope:** M
 
@@ -91,9 +91,9 @@
 **Dependencies:** Task 2
 
 **Files likely touched:**
-- `packages/persistence-jvm/src/main/java/com/lynxus/persistence/session/SessionRuntimeStore.java`
-- `apps/api/src/main/java/com/lynxus/platform/session/JooqSessionRuntimeRepository.java`
-- `apps/api/src/main/java/com/lynxus/platform/session/SessionRuntimeRepository.java`
+- `packages/persistence-jvm/src/main/java/com/agentyard/persistence/session/SessionRuntimeStore.java`
+- `apps/api/src/main/java/com/agentyard/platform/session/JooqSessionRuntimeRepository.java`
+- `apps/api/src/main/java/com/agentyard/platform/session/SessionRuntimeRepository.java`
 
 **Estimated scope:** M
 
@@ -136,11 +136,11 @@
 **Dependencies:** Tasks 1-3
 
 **Files likely touched:**
-- `apps/api/src/main/java/com/lynxus/platform/session/SessionRuntimeDtos.java`
-- `apps/api/src/main/java/com/lynxus/platform/session/SessionRuntimeController.java`
-- `apps/api/src/main/java/com/lynxus/platform/session/SessionRuntimeService.java`
-- `apps/api/src/main/java/com/lynxus/platform/session/SessionDispatchLockService.java`
-- `apps/api/src/test/java/com/lynxus/platform/session/`
+- `apps/api/src/main/java/com/agentyard/platform/session/SessionRuntimeDtos.java`
+- `apps/api/src/main/java/com/agentyard/platform/session/SessionRuntimeController.java`
+- `apps/api/src/main/java/com/agentyard/platform/session/SessionRuntimeService.java`
+- `apps/api/src/main/java/com/agentyard/platform/session/SessionDispatchLockService.java`
+- `apps/api/src/test/java/com/agentyard/platform/session/`
 
 **Estimated scope:** M
 
@@ -168,10 +168,10 @@
 **Dependencies:** Task 4
 
 **Files likely touched:**
-- `packages/contracts-jvm/src/main/java/com/lynxus/contracts/session/SessionWorkflow.java`
-- `apps/api/src/main/java/com/lynxus/platform/session/SessionWorkflowGateway.java`
-- `apps/worker/src/main/java/com/lynxus/worker/session/SessionWorkflowImpl.java`
-- `apps/worker/src/main/java/com/lynxus/worker/session/SessionPersistenceActivitiesImpl.java`
+- `packages/contracts-jvm/src/main/java/com/agentyard/contracts/session/SessionWorkflow.java`
+- `apps/api/src/main/java/com/agentyard/platform/session/SessionWorkflowGateway.java`
+- `apps/worker/src/main/java/com/agentyard/worker/session/SessionWorkflowImpl.java`
+- `apps/worker/src/main/java/com/agentyard/worker/session/SessionPersistenceActivitiesImpl.java`
 
 **Estimated scope:** M
 
@@ -198,11 +198,11 @@
 **Dependencies:** Tasks 3 and 5
 
 **Files likely touched:**
-- `packages/persistence-jvm/src/main/java/com/lynxus/persistence/session/SessionRuntimeStore.java`
-- `apps/api/src/main/java/com/lynxus/platform/session/SessionRuntimeService.java`
-- `apps/api/src/main/java/com/lynxus/platform/session/SessionWorkflowGateway.java`
-- `apps/worker/src/main/java/com/lynxus/worker/session/SessionWorkflowImpl.java`
-- `apps/worker/src/main/java/com/lynxus/worker/session/SessionPersistenceActivitiesImpl.java`
+- `packages/persistence-jvm/src/main/java/com/agentyard/persistence/session/SessionRuntimeStore.java`
+- `apps/api/src/main/java/com/agentyard/platform/session/SessionRuntimeService.java`
+- `apps/api/src/main/java/com/agentyard/platform/session/SessionWorkflowGateway.java`
+- `apps/worker/src/main/java/com/agentyard/worker/session/SessionWorkflowImpl.java`
+- `apps/worker/src/main/java/com/agentyard/worker/session/SessionPersistenceActivitiesImpl.java`
 
 **Estimated scope:** M
 
@@ -240,12 +240,12 @@
 **Dependencies:** Tasks 5-6
 
 **Files likely touched:**
-- `apps/agent-runtime/lynxus_agent_runtime/models.py`
-- `apps/agent-runtime/lynxus_agent_runtime/prompting.py`
-- `apps/agent-runtime/lynxus_agent_runtime/streaming.py`
-- `apps/agent-runtime/lynxus_agent_runtime/transcript_store.py`
-- `apps/worker/src/main/java/com/lynxus/worker/session/SessionWorkflowImpl.java`
-- `apps/worker/src/main/java/com/lynxus/worker/runtime/SessionAgentRuntimeGateway.java`
+- `apps/agent-runtime/agentyard_agent_runtime/models.py`
+- `apps/agent-runtime/agentyard_agent_runtime/prompting.py`
+- `apps/agent-runtime/agentyard_agent_runtime/streaming.py`
+- `apps/agent-runtime/agentyard_agent_runtime/transcript_store.py`
+- `apps/worker/src/main/java/com/agentyard/worker/session/SessionWorkflowImpl.java`
+- `apps/worker/src/main/java/com/agentyard/worker/runtime/SessionAgentRuntimeGateway.java`
 
 **Estimated scope:** L, split internally by agent-runtime model/prompt/store if needed
 
@@ -286,8 +286,8 @@
 **Files likely touched:**
 - `packages/extension-protocol/openapi/extension-boundary.openapi.json`
 - `packages/extension-protocol/json-schema/`
-- `apps/channel-gateway/src/main/java/com/lynxus/channel/gateway/channel/`
-- `apps/channel-gateway/src/main/java/com/lynxus/channel/gateway/connector/feishu/`
+- `apps/channel-gateway/src/main/java/com/agentyard/channel/gateway/channel/`
+- `apps/channel-gateway/src/main/java/com/agentyard/channel/gateway/connector/feishu/`
 - `packages/extension-sdk-python/`
 - `packages/extension-sdk-jvm/`
 
@@ -311,10 +311,10 @@
 **Dependencies:** Tasks 2-8
 
 **Files likely touched:**
-- `packages/persistence-jvm/src/main/java/com/lynxus/persistence/session/SessionRuntimeStore.java`
-- `apps/api/src/main/java/com/lynxus/platform/channel/ChannelOutboundFramePublisher.java`
-- `apps/api/src/main/java/com/lynxus/platform/session/DefaultSessionChannelActivityRelay.java`
-- `apps/api/src/main/java/com/lynxus/platform/channel/ChannelBindingSnapshotLookupService.java`
+- `packages/persistence-jvm/src/main/java/com/agentyard/persistence/session/SessionRuntimeStore.java`
+- `apps/api/src/main/java/com/agentyard/platform/channel/ChannelOutboundFramePublisher.java`
+- `apps/api/src/main/java/com/agentyard/platform/session/DefaultSessionChannelActivityRelay.java`
+- `apps/api/src/main/java/com/agentyard/platform/channel/ChannelBindingSnapshotLookupService.java`
 
 **Estimated scope:** M
 
@@ -334,8 +334,8 @@
 - [ ] UI 同一 turn 下多条 message 独立展示，blocks 渲染不退化
 
 **Verification:**
-- [ ] `pnpm --filter @lynxus/web test`
-- [ ] `pnpm --filter @lynxus/web build`
+- [ ] `pnpm --filter @agentyard/web test`
+- [ ] `pnpm --filter @agentyard/web build`
 
 **Dependencies:** Tasks 1, 4, and 7
 
@@ -373,7 +373,7 @@
 - [ ] `./gradlew :apps:channel-gateway:verifyJooqGenerated`
 - [ ] `./gradlew test`
 - [ ] `pnpm -r --if-present test`
-- [ ] `pnpm --filter @lynxus/web build`
+- [ ] `pnpm --filter @agentyard/web build`
 - [ ] `uv run pytest`
 
 **Dependencies:** Tasks 4-10

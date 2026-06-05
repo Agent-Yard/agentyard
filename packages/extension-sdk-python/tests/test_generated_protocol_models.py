@@ -43,7 +43,7 @@ def test_datamodel_codegen_writes_protocol_models_under_python_build_directory()
 
 def import_generated_models() -> object:
     spec = importlib.util.spec_from_file_location(
-        "lynxus_extension_protocol_generated_models_smoke",
+        "agentyard_extension_protocol_generated_models_smoke",
         GENERATED_MODELS_PATH,
     )
     assert spec is not None

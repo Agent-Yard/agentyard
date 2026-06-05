@@ -3,26 +3,26 @@ services:
   # Start this compose file once, then launch multiple api/worker/runtime processes against the same
   # PostgreSQL, Redis, Temporal, and MinIO endpoints from the workspace.
   postgres:
-    image: ${LYNXUS_IMAGE_POSTGRES:-pgvector/pgvector:pg17}
+    image: ${AGENTYARD_IMAGE_POSTGRES:-pgvector/pgvector:pg17}
     environment:
-      POSTGRES_DB: lynxus
-      POSTGRES_USER: lynxus
-      POSTGRES_PASSWORD: lynxus
+      POSTGRES_DB: agentyard
+      POSTGRES_USER: agentyard
+      POSTGRES_PASSWORD: agentyard
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
   postgres-bootstrap:
-    image: ${LYNXUS_IMAGE_POSTGRES_BOOTSTRAP:-postgres:17.6}
+    image: ${AGENTYARD_IMAGE_POSTGRES_BOOTSTRAP:-postgres:17.6}
     environment:
       POSTGRES_HOST: postgres
-      POSTGRES_USER: lynxus
-      POSTGRES_PASSWORD: lynxus
-      LYNXUS_CORE_DATABASE: lynxus_core
-      LYNXUS_CHANNEL_GATEWAY_DATABASE: lynxus_channel_gateway
-      LYNXUS_KNOWLEDGE_DATABASE: lynxus_knowledge
-      LYNXUS_AGENT_RUNTIME_DATABASE: lynxus_agent_runtime
+      POSTGRES_USER: agentyard
+      POSTGRES_PASSWORD: agentyard
+      AGENTYARD_CORE_DATABASE: agentyard_core
+      AGENTYARD_CHANNEL_GATEWAY_DATABASE: agentyard_channel_gateway
+      AGENTYARD_KNOWLEDGE_DATABASE: agentyard_knowledge
+      AGENTYARD_AGENT_RUNTIME_DATABASE: agentyard_agent_runtime
     depends_on:
       - postgres
     volumes:
@@ -32,11 +32,11 @@ services:
       - /bootstrap/init-databases.sh
 
   minio:
-    image: ${LYNXUS_IMAGE_MINIO:-minio/minio:RELEASE.2025-09-07T16-13-09Z}
+    image: ${AGENTYARD_IMAGE_MINIO:-minio/minio:RELEASE.2025-09-07T16-13-09Z}
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${LYNXUS_OBJECT_STORAGE_ACCESS_KEY:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${LYNXUS_OBJECT_STORAGE_SECRET_KEY:-minioadmin}
+      MINIO_ROOT_USER: ${AGENTYARD_OBJECT_STORAGE_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${AGENTYARD_OBJECT_STORAGE_SECRET_KEY:-minioadmin}
     ports:
       - "127.0.0.1:9000:9000"
       - "127.0.0.1:9001:9001"
@@ -44,7 +44,7 @@ services:
       - minio_data:/data
 
   redis:
-    image: ${LYNXUS_IMAGE_REDIS:-redis:7.4-alpine}
+    image: ${AGENTYARD_IMAGE_REDIS:-redis:7.4-alpine}
     command:
       - redis-server
       - --save
@@ -53,11 +53,11 @@ services:
       - --loglevel
       - warning
       - --requirepass
-      - ${LYNXUS_REDIS_PASSWORD:-lynxus}
+      - ${AGENTYARD_REDIS_PASSWORD:-agentyard}
     environment:
-      REDIS_PASSWORD: ${LYNXUS_REDIS_PASSWORD:-lynxus}
+      REDIS_PASSWORD: ${AGENTYARD_REDIS_PASSWORD:-agentyard}
     ports:
-      - "127.0.0.1:${LYNXUS_REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:${AGENTYARD_REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -68,12 +68,12 @@ services:
       timeout: 3s
       retries: 20
   temporal:
-    image: ${LYNXUS_IMAGE_TEMPORAL:-temporalio/auto-setup:1.28.1}
+    image: ${AGENTYARD_IMAGE_TEMPORAL:-temporalio/auto-setup:1.28.1}
     environment:
       DB: postgres12
       DB_PORT: 5432
-      POSTGRES_USER: lynxus
-      POSTGRES_PWD: lynxus
+      POSTGRES_USER: agentyard
+      POSTGRES_PWD: agentyard
       POSTGRES_SEEDS: postgres
     ports:
       - "127.0.0.1:7233:7233"
@@ -81,22 +81,22 @@ services:
       - postgres
 
   temporal-ui:
-    image: ${LYNXUS_IMAGE_TEMPORAL_UI:-temporalio/ui:2.39.0}
+    image: ${AGENTYARD_IMAGE_TEMPORAL_UI:-temporalio/ui:2.39.0}
     environment:
       TEMPORAL_ADDRESS: temporal:7233
     depends_on:
       - temporal
 
   temporal-ui-gateway:
-    image: ${LYNXUS_IMAGE_CADDY:-caddy:2.8.4-alpine}
+    image: ${AGENTYARD_IMAGE_CADDY:-caddy:2.8.4-alpine}
     environment:
-      LYNXUS_TEMPORAL_UI_USERNAME: ${LYNXUS_TEMPORAL_UI_USERNAME:-observer}
-      LYNXUS_TEMPORAL_UI_PASSWORD: ${LYNXUS_TEMPORAL_UI_PASSWORD:-change-me-temporal-ui}
+      AGENTYARD_TEMPORAL_UI_USERNAME: ${AGENTYARD_TEMPORAL_UI_USERNAME:-observer}
+      AGENTYARD_TEMPORAL_UI_PASSWORD: ${AGENTYARD_TEMPORAL_UI_PASSWORD:-change-me-temporal-ui}
     command:
       - /bin/sh
       - -ec
       - |
-        export LYNXUS_TEMPORAL_UI_PASSWORD_HASH="$$(caddy hash-password --plaintext "$$LYNXUS_TEMPORAL_UI_PASSWORD")"
+        export AGENTYARD_TEMPORAL_UI_PASSWORD_HASH="$$(caddy hash-password --plaintext "$$AGENTYARD_TEMPORAL_UI_PASSWORD")"
         exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
     ports:
       - "0.0.0.0:8088:8088"
@@ -106,7 +106,7 @@ services:
       - temporal-ui
 
   sandbox:
-    image: ${LYNXUS_IMAGE_SANDBOX:-ghcr.io/agent-infra/sandbox:1.0.0.152}
+    image: ${AGENTYARD_IMAGE_SANDBOX:-ghcr.io/agent-infra/sandbox:1.0.0.152}
     security_opt:
       - seccomp=unconfined
     ports:

@@ -89,7 +89,7 @@ see [static-registration.md §5](./static-registration.md)
 
 ### canonical JSON
 Extension Plane 协议事实层定义的规范化 JSON 序列化 helper。当前采用
-`LynxusCanonicalJson`：面向 descriptor / registration digest 的受限 profile，
+`AgentYardCanonicalJson`：面向 descriptor / registration digest 的受限 profile，
 覆盖 key 字典序、字符串转义、UTF-8、安全整数、空容器形态等。Java SDK /
 Python SDK / `agent-runtime` 必须对同一输入产出 byte-for-byte 相同的输出。
 see [static-registration.md §5](./static-registration.md)、[extension-protocol.md §2.5](./extension-protocol.md)
@@ -232,7 +232,7 @@ see [extension-protocol.md §1 §2.7](./extension-protocol.md)
 ## 8. 安全、错误与诊断
 
 ### `INTERNAL_TOKEN`
-当前唯一支持的 Extension Plane 跨服务鉴权方式。整个 Lynxus 部署共享
+当前唯一支持的 Extension Plane 跨服务鉴权方式。整个 AgentYard 部署共享
 一个 token，注入所有 core service 与 enterprise extension service。信任域
 等于一次部署域，不提供 extension 间 zero-trust 隔离。
 see [deployment-and-governance.md §5](./deployment-and-governance.md)

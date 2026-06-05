@@ -124,6 +124,6 @@ prompt 中新增共享状态上下文，但严格限制可见范围：
 
 ## Assumptions
 - 本阶段不做 DB 持久化；API 重启后 session 共享态会丢失，这是显式接受的限制。
-- 本阶段不做旧 contract 兼容；直接更新 [`/Users/eric/projects/lynxus/packages/contracts-jvm/src/main/java/com/lynxus/contracts/runtime/WorkflowContracts.java`](/Users/eric/projects/lynxus/packages/contracts-jvm/src/main/java/com/lynxus/contracts/runtime/WorkflowContracts.java)、[`/Users/eric/projects/lynxus/apps/api/src/main/java/com/lynxus/platform/runtime/RuntimeService.java`](/Users/eric/projects/lynxus/apps/api/src/main/java/com/lynxus/platform/runtime/RuntimeService.java)、[`/Users/eric/projects/lynxus/apps/agent-runtime/app/main.py`](/Users/eric/projects/lynxus/apps/agent-runtime/app/main.py) 及对应测试。
+- 本阶段不做旧 contract 兼容；直接更新 [`/Users/eric/projects/agentyard/packages/contracts-jvm/src/main/java/com/agentyard/contracts/runtime/WorkflowContracts.java`](/Users/eric/projects/agentyard/packages/contracts-jvm/src/main/java/com/agentyard/contracts/runtime/WorkflowContracts.java)、[`/Users/eric/projects/agentyard/apps/api/src/main/java/com/agentyard/platform/runtime/RuntimeService.java`](/Users/eric/projects/agentyard/apps/api/src/main/java/com/agentyard/platform/runtime/RuntimeService.java)、[`/Users/eric/projects/agentyard/apps/agent-runtime/app/main.py`](/Users/eric/projects/agentyard/apps/agent-runtime/app/main.py) 及对应测试。
 - session 共享态的 bucket 固定为三类，但 bucket 内部 key/path 完全开放，不预定义业务字段。
 - `agentScopes` 的读写权限固定为“仅自己可读写”；不支持跨 agent 指定访问。

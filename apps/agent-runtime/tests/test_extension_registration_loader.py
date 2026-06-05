@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lynxus_agent_runtime import extension_registration as runtime_registration
-from lynxus_extension_sdk.registration import (
+from agentyard_agent_runtime import extension_registration as runtime_registration
+from agentyard_extension_sdk.registration import (
     AGENT_RUNTIME_BASE_URL_ENV,
     CHANNEL_GATEWAY_BASE_URL_ENV,
     CORE_AGENT_RUNTIME_REGISTRATION_ID,
@@ -11,7 +11,7 @@ from lynxus_extension_sdk.registration import (
     load_registration_file as sdk_load_registration_file,
     load_registration_yaml as sdk_load_registration_yaml,
 )
-from lynxus_extension_sdk.testing import load_json_fixture
+from agentyard_extension_sdk.testing import load_json_fixture
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]

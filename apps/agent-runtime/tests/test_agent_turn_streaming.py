@@ -6,26 +6,26 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-os.environ.setdefault("LYNXUS_INTERNAL_AUTH_TOKEN", "test-internal-token")
+os.environ.setdefault("AGENTYARD_INTERNAL_AUTH_TOKEN", "test-internal-token")
 
-from lynxus_agent_runtime.main import app
-from lynxus_agent_runtime.models import (
+from agentyard_agent_runtime.main import app
+from agentyard_agent_runtime.models import (
     AgentDecision,
     AgentTurnExecutionOutcome,
     AgentTurnRequest,
     AgentTurnResult,
     SessionMessageInput,
 )
-from lynxus_agent_runtime.openai_compatible import OpenAiCompatibleStreamEvent, OpenAiCompatibleStreamMalformedError
-from lynxus_agent_runtime.privacy_contracts import PrivacyMappingTelemetry
-from lynxus_agent_runtime.streaming import _StreamingOutcomeAccumulator
-from lynxus_agent_runtime.tooling import (
+from agentyard_agent_runtime.openai_compatible import OpenAiCompatibleStreamEvent, OpenAiCompatibleStreamMalformedError
+from agentyard_agent_runtime.privacy_contracts import PrivacyMappingTelemetry
+from agentyard_agent_runtime.streaming import _StreamingOutcomeAccumulator
+from agentyard_agent_runtime.tooling import (
     OUTCOME_TOOL_KINDS,
     RuntimeToolKind,
     execute_tool_call,
     runtime_tool_specs,
 )
-from lynxus_agent_runtime.transcript_store import (
+from agentyard_agent_runtime.transcript_store import (
     CommittedTranscriptEntry,
     TranscriptEntry,
 )
@@ -117,8 +117,8 @@ class FakeTranscriptStore:
 @contextmanager
 def agent_runtime_client(transcript_store: FakeTranscriptStore | None = None):
     store = transcript_store or FakeTranscriptStore()
-    with patch("lynxus_agent_runtime.main.create_redis_client", return_value=FakeRedisClient()):
-        with patch("lynxus_agent_runtime.main.create_transcript_store", return_value=store):
+    with patch("agentyard_agent_runtime.main.create_redis_client", return_value=FakeRedisClient()):
+        with patch("agentyard_agent_runtime.main.create_transcript_store", return_value=store):
             with TestClient(app) as client:
                 yield client
 
@@ -347,7 +347,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         )
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
+        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
             with agent_runtime_client(transcript_store) as client:
                 response = client.post(
                     "/agent-turns/execute-stream",
@@ -425,7 +425,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
             )
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
+        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
             with agent_runtime_client(transcript_store) as client:
                 response = client.post(
                     "/agent-turns/execute-stream",
@@ -465,7 +465,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         transcript_store = FakeTranscriptStore(cached_outcome=cached_outcome)
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events") as provider:
+        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events") as provider:
             with agent_runtime_client(transcript_store) as client:
                 response = client.post(
                     "/agent-turns/execute-stream",
@@ -493,7 +493,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         transcript_store = FakeTranscriptStore(cached_outcome=running_conflict)
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events") as provider:
+        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events") as provider:
             with agent_runtime_client(transcript_store) as client:
                 response = client.post(
                     "/agent-turns/execute-stream",
@@ -527,7 +527,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
             )
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
+        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
             with agent_runtime_client(transcript_store) as client:
                 response = client.post(
                     "/agent-turns/execute-stream",
@@ -559,7 +559,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
             )
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
+        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
             with agent_runtime_client(transcript_store) as client:
                 response = client.post(
                     "/agent-turns/execute-stream",
@@ -635,8 +635,8 @@ class AgentTurnStreamingTest(unittest.TestCase):
             )
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("lynxus_agent_runtime.streaming.build_privacy_pipeline", return_value=privacy_pipeline):
-            with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
+        with patch("agentyard_agent_runtime.streaming.build_privacy_pipeline", return_value=privacy_pipeline):
+            with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
                 with agent_runtime_client(transcript_store) as client:
                     response = client.post(
                         "/agent-turns/execute-stream",
@@ -695,7 +695,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
             )
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
+        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
             with agent_runtime_client(transcript_store) as client:
                 response = client.post(
                     "/agent-turns/execute-stream",
@@ -763,7 +763,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
             )
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
+        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
             with agent_runtime_client(transcript_store) as client:
                 response = client.post(
                     "/agent-turns/execute-stream",
@@ -812,7 +812,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
             )
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
+        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
             with agent_runtime_client(transcript_store) as client:
                 response = client.post(
                     "/agent-turns/execute-stream",
@@ -865,7 +865,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
             )
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
+        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
             with agent_runtime_client(transcript_store) as client:
                 response = client.post(
                     "/agent-turns/execute-stream",
@@ -905,7 +905,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
         transcript_store = FakeTranscriptStore()
-        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
+        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
             with agent_runtime_client(transcript_store) as client:
                 response = client.post(
                     "/agent-turns/execute-stream",
@@ -938,7 +938,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
             )
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
+        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
             with agent_runtime_client() as client:
                 response = client.post(
                     "/agent-turns/execute-stream",
@@ -961,7 +961,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
         with patch(
-            "lynxus_agent_runtime.streaming.stream_chat_completion_events",
+            "agentyard_agent_runtime.streaming.stream_chat_completion_events",
             side_effect=OpenAiCompatibleStreamMalformedError("malformed openai-compatible stream JSON"),
         ):
             with agent_runtime_client() as client:
@@ -1024,7 +1024,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
         transcript_store = FakeTranscriptStore()
-        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
+        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
             with agent_runtime_client(transcript_store) as client:
                 response = client.post(
                     "/agent-turns/execute-stream",
@@ -1101,7 +1101,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         )
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
+        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
             with agent_runtime_client() as client:
                 response = client.post(
                     "/agent-turns/execute-stream",
@@ -1150,7 +1150,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
             )
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
+        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
             with agent_runtime_client() as client:
                 response = client.post(
                     "/agent-turns/execute-stream",
@@ -1184,8 +1184,8 @@ class AgentTurnStreamingTest(unittest.TestCase):
         )
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
-            with patch("lynxus_agent_runtime.streaming.execute_tool_call") as execute_tool:
+        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
+            with patch("agentyard_agent_runtime.streaming.execute_tool_call") as execute_tool:
                 with agent_runtime_client(transcript_store) as client:
                     response = client.post(
                         "/agent-turns/execute-stream",
@@ -1223,7 +1223,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         )
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
+        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
             with agent_runtime_client(transcript_store) as client:
                 response = client.post(
                     "/agent-turns/execute-stream",
@@ -1268,7 +1268,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
         transcript_store = FakeTranscriptStore()
-        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
+        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
             with agent_runtime_client(transcript_store) as client:
                 response = client.post(
                     "/agent-turns/execute-stream",
@@ -1313,7 +1313,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
         transcript_store = FakeTranscriptStore()
-        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
+        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
             with agent_runtime_client(transcript_store) as client:
                 response = client.post(
                     "/agent-turns/execute-stream",
@@ -1359,7 +1359,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
         transcript_store = FakeTranscriptStore()
-        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
+        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
             with agent_runtime_client(transcript_store) as client:
                 response = client.post(
                     "/agent-turns/execute-stream",
@@ -1413,7 +1413,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
         )
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
+        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
             with agent_runtime_client() as client:
                 response = client.post(
                     "/agent-turns/execute-stream",
@@ -1466,7 +1466,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
             )
 
             os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-            with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
+            with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
                 with agent_runtime_client() as client:
                     response = client.post(
                         "/agent-turns/execute-stream",
@@ -1522,7 +1522,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
             )
 
             os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-            with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", return_value=iter(events)):
+            with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", return_value=iter(events)):
                 with agent_runtime_client() as client:
                     response = client.post(
                         "/agent-turns/execute-stream",
@@ -1566,7 +1566,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
             )
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
+        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
             with agent_runtime_client() as client:
                 response = client.post(
                     "/agent-turns/execute-stream",
@@ -1614,7 +1614,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
             )
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
+        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
             with agent_runtime_client() as client:
                 response = client.post(
                     "/agent-turns/execute-stream",
@@ -1675,7 +1675,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
             )
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
+        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
             with agent_runtime_client() as client:
                 response = client.post(
                     "/agent-turns/execute-stream",
@@ -1768,8 +1768,8 @@ class AgentTurnStreamingTest(unittest.TestCase):
             )
 
         os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("lynxus_agent_runtime.streaming.build_privacy_pipeline", return_value=privacy_pipeline):
-            with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
+        with patch("agentyard_agent_runtime.streaming.build_privacy_pipeline", return_value=privacy_pipeline):
+            with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
                 with agent_runtime_client(transcript_store) as client:
                     response = client.post(
                         "/agent-turns/execute-stream",
@@ -1816,7 +1816,7 @@ class AgentTurnStreamingTest(unittest.TestCase):
             )
 
             os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-            with patch("lynxus_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
+            with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
                 with agent_runtime_client() as client:
                     response = client.post(
                         "/agent-turns/execute-stream",

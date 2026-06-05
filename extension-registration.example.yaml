@@ -1,13 +1,13 @@
-# Complete operator extension registration example for LYNXUS_EXTENSION_REGISTRATION_FILE.
+# Complete operator extension registration example for AGENTYARD_EXTENSION_REGISTRATION_FILE.
 #
-# Core registrations are added automatically from LYNXUS_CHANNEL_GATEWAY_BASE_URL and
-# LYNXUS_AGENT_RUNTIME_BASE_URL. Do not declare registrationId values that start with
+# Core registrations are added automatically from AGENTYARD_CHANNEL_GATEWAY_BASE_URL and
+# AGENTYARD_AGENT_RUNTIME_BASE_URL. Do not declare registrationId values that start with
 # core- in this file.
 #
 # baseUrl must be http(s), without userinfo, query, or fragment. It may also be a
 # full-value environment placeholder such as ${ACME_EXTENSION_URL}.
 
-lynxus:
+agentyard:
   extensions:
     services:
       - registrationId: acme-business-connectors
@@ -21,7 +21,7 @@ lynxus:
           type: INTERNAL_TOKEN
 
       - registrationId: acme-channel-provider
-        baseUrl: http://127.0.0.1:18101/lynxus
+        baseUrl: http://127.0.0.1:18101/agentyard
         exposes:
           channelProviderTypes:
             - enterprise.acme.internal-im
