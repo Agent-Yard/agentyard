@@ -23,13 +23,11 @@ AgentYard 当前处于活跃开发期 (alpha)。代码已经走通了 **控制�
 
 ## 演示视频
 
-**会话演示** — 最简单场景下的一次会话（[B 站镜像](https://www.bilibili.com/video/BV1eDLp6hEV4/)）。
+**会话演示** — 最简单场景下的一次会话（[B 站演示视频](https://www.bilibili.com/video/BV1eDLp6hEV4/)）。
 
-https://github.com/user-attachments/assets/e718df4b-5a02-41c9-808e-d4ac6ed5b370
 
-**后台演示** — 业务域、助手、智能体、知识库、资源与发布快照的治理面走查（[B 站镜像](https://www.bilibili.com/video/BV1eSLp6wE9X/)）。
+**后台演示** — 业务域、助手、智能体、知识库、资源与发布快照的治理面走查（[B 站演示视频](https://www.bilibili.com/video/BV1eSLp6wE9X/)）。
 
-https://github.com/user-attachments/assets/86013c3e-986d-45f5-986b-d4db57312507
 
 ## 它解决什么问题
 
