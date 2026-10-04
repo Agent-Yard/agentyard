@@ -1,63 +1,49 @@
-# External Interaction 集成说明
+# 外部事件与等待恢复
 
-本文件直接描述当前代码实现下，external interaction 在 `session-runtime` 体系中的位置、边界和接入约束。
+核对日期：2026-10-04。本文区分当前 API 和[目标架构](agent-collaboration.md)中的事件机制。目标尚未实现；当前调用方仍应遵循现有契约。
 
-## 1. 当前结论
+## 1. 当前可用链路
 
-- 旧 `workflow + resume_intervention + external_interaction_task` 模型已经退出主工程，并已从当前 Flyway schema 与 jOOQ generated surface 清理。
-- 当前控制面公开的 runtime API 只有 `/api/session-runtime/...`。
-- external interaction 不再作为独立 runtime 主模型存在，而是 session / playbook 流程中的一种等待点与事件来源。
+会话流程的人工与外部等待由 SessionWorkflow / PlaybookWorkflow 承载，控制面入口包括：
 
-## 2. 新架构定位
+| 当前 API | 用途 |
+| --- | --- |
+| `POST /api/session-runtime/sessions/{sessionId}/human-resume` | 人工回应流程等待 |
+| `POST /api/session-runtime/sessions/{sessionId}/external-callback` | 外部结果进入指定会话流程 |
+| `POST /api/session-runtime/sessions/{sessionId}/human-reply` | 现有 handoff 模式下人工回复 |
+| `POST /api/session-runtime/sessions/{sessionId}/handoff/end` | 结束现有人工接管 |
 
-- session workflow 是唯一会话控制中心。
-- playbook child workflow 负责强流程、等待点、恢复和终态。
-- external interaction 属于 playbook 的 `WAITING` 原因之一，而不是独立 workflow/checkpoint 体系。
-- 恢复结果应通过：
-  - `playbook run` 状态变更
-  - `session event`
-  - `sharedState`
-  进入主链路。
+入口实现见 [SessionRuntimeController](../../apps/api/src/main/java/com/agentyard/platform/session/SessionRuntimeController.java)，字段见 [Control Plane OpenAPI](../../packages/contracts/openapi/control-plane.yaml)。
 
-## 3. 对象边界
+external-callback 支持 Idempotency-Key；未提供时由服务端基于 Session、Playbook Run 和 payload 派生稳定 key。接收后写运行事件并交给对应工作流恢复。此接口需要现有认证/授权，并非通用的任意第三方 Webhook 接口。
 
-- `session`
-  - 持有当前 owner、活跃 playbook、shared state、handoff 状态
-- `session_event`
-  - 记录 `EXTERNAL_CALLBACK_RECEIVED` 等运行时事实
-- `playbook_run`
-  - 记录当前等待原因、输入、结果、失败原因
+独立 TaskExecution 还有自己的等待与恢复命令，使用执行 ID 和 waitingId，回应先持久保存再派发。经过认证的参与者可以提交回应；不能因此宣称已支持任意外部供应商的签名回调。完整范围见[当前代码](code-framework.md)。
 
-这些旧对象已不再作为 schema/API/generated code surface 保留：
+## 2. 目标机制
 
-- `ExternalInteractionTask`
-- `ExternalInteractionEvent`
-- `ConversationMessage(payloadType = EXTERNAL_INTERACTION)`
-- `workflow resume` / `resume_intervention`
+外部结果、人工回应、Agent 消息、定时和资源变化都进入持久事件/消息链。它们可以唤醒一个真实 Session；流程回调另外关联 ToolRun 和具体等待点。接待实例与专业实例采用同一机制。
 
-## 4. 推荐接入方式
+```text
+来源适配与认证
+  → 解析接收实例、工作与等待关联
+  → 校验来源、授权、事件重复与当前状态
+  → 持久化消息/回执与待投递记录
+  → 唤醒 Session 或恢复 ToolRun
+  → 结果事件交给 Agent 判断下一步
+```
 
-当 playbook 节点需要第三方站外交互时：
+业务 Task、Agent Session、一次 Activation 和工具等待各有生命周期。收到回调不能绕过参与者确认直接宣告 Task 完成；迟到事件不能重新启动已经取消的工作。
 
-1. playbook workflow 进入 `WAITING`
-2. 等待原因写入 `playbook_run.waitingReason`
-3. 相关上下文写入 `sharedState`
-4. 外部系统或人工恢复信号回到 session workflow
-5. session workflow 追加 `session_event`
-6. session workflow 触发 playbook resume 或 owner reevaluation
+## 3. 关联与处理要求
 
-## 5. API 约束
+- 来源使用可信的渠道身份或连接器认证，不能仅相信 payload 中自填的参与者 ID。
+- 输入保留来源事件 ID、发送者、接收者、关联 Task、ToolRun/等待点和回复关联。所需字段依事件类型定义，不要求每条消息都有所有字段。
+- 先持久化再调度，支持重启后接续；重复投递返回已有回执。
+- 区分“已接收”“已投递”“已处理/失败”；外部 HTTP 成功响应不等于工作已完成。
+- 检查等待点及当前权限；旧 waitingId 不能命中新等待；撤销、取消和终态有可解释结果。
+- 人工补充默认是协作消息。只有明确的暂停、取消、接手指令才改变执行安排。
+- 回调内容与派生通知按可见范围读取、展示和继续传递。
 
-- 当前未定义独立的 external interaction 公共 HTTP API。
-- 如果后续需要新增回调或恢复入口，应直接挂到 session runtime 语义下，而不是重建旧 `/runtime/interactions` 或 `/workflows/{id}/resume` 接口族。
-- 新接口必须围绕以下对象设计：
-  - `sessionId`
-  - `playbookRunId`
-  - `session_event`
-  - `playbook_run`
+继续复用 Channel Provider / Tool Connector 的接入能力，协议见[Extension 开发指南](extension-integration.md)。新的参与者和调用关联字段需要同步协议与 SDK；不能通过新增一种“后台无 Session 恢复”形成第三条主链。
 
-## 6. 落地要求
-
-- 不允许重新引入旧 `external_interaction_task` 投影模型。
-- 不允许让前端或 provider callback 直接驱动旧 workflow resume 语义。
-- 所有新实现都必须与当前代码中的 `session / session_event / playbook_run` 模型一致。
+具体工作在 [W04、W06 及 E05/E09/E10/E11](../todo/agent-collaboration-refactor.md) 验收。目标契约确定后应同步替换本页当前 API 表。

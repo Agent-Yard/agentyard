@@ -5,6 +5,8 @@ const LoginPage = () => import('../pages/LoginPage.vue');
 const ConsolePage = () => import('../pages/ConsolePage.vue');
 
 const consolePageComponents: Record<PageKey, () => Promise<unknown>> = {
+  tasks: () => import('../pages/TaskWorkspacePage.vue'),
+  organizations: () => import('../pages/OrganizationPage.vue'),
   domain: () => import('../pages/DomainPage.vue'),
   scenario: () => import('../pages/ScenarioPage.vue'),
   assistant: () => import('../pages/AssistantPage.vue'),

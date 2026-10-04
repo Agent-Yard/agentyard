@@ -1,5 +1,7 @@
 # AgentYard Extension 接入开发指导
 
+核对日期：2026-10-04。本文描述当前 Extension 协议。人机协作的目标语义见[目标架构](agent-collaboration.md)；Session 实例、参与者和工具调用授权上下文尚待统一，后续协议变化须同步 schema、fixtures、SDK 与消费者。
+
 本文件面向需要基于 AgentYard 平台开发独立 extension service 的开发者，给出接入边界、协议契约、运行链路与开发约束。读者不需要熟悉 AgentYard 内部代码；只需要构建一个独立部署的 HTTP 服务，按本文档实现 manifest 与若干 endpoint，再请部署方把服务注册到 AgentYard。
 
 协议事实源是 `@agentyard/extension-protocol` 包（OpenAPI、JSON Schema、examples、contract fixtures）。本文给出"实现一个 extension service 需要落地什么"的行动级指导，不重复协议字段定义。当文档与协议事实源出现不一致时，以协议事实源为准。
@@ -246,7 +248,7 @@ Credential lifecycle 是 control-plane 操作，由 AgentYard 控制面在 Web/a
 - `details` 必须存在且为对象，不携带凭证或外部敏感字段
 - 5xx 必须配合 `retryable: true` 才会被平台重试；`PROTOCOL_ERROR` 永不重试
 
-平台对 retryable 错误内部做有限 backoff retry 与熔断保护。Extension 不应假设平台会无限重试，也不应依赖平台特定的重试间隔；自身需要的重试与回退应在 extension 内部完成。
+平台的远程适配器支持有限 backoff retry 与熔断保护；实际重试还取决于调用入口是否启用重试，以及配置的次数、类别和错误码范围。Extension 不应假设平台一定重试或依赖特定间隔；自身的重试与回退也须遵循操作幂等与回执语义。
 
 ## 10. 安全与隐私
 

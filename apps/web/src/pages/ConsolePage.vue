@@ -32,6 +32,8 @@ const runtimeActions = useRuntimeActions(
 const currentView = computed(() => {
   const pageKey = currentPageKey.value;
   const viewRegistry = {
+    tasks: { props: { assistants: state.catalog.value!.assistants, agents: state.catalog.value!.agents, sessions: state.conversationSessions.value }, handlers: {} },
+    organizations: { props: { agents: state.catalog.value!.agents }, handlers: {} },
     domain: {
       props: {
         domains: state.catalog.value!.domains,

@@ -5,6 +5,42 @@ info:
 servers:
   - url: http://127.0.0.1:8080/api
 paths:
+  /collaboration/actors/me:
+    $ref: './collaboration.yaml#/paths/~1collaboration~1actors~1me'
+  /collaboration/actors:
+    $ref: './collaboration.yaml#/paths/~1collaboration~1actors'
+  /collaboration/actors/agents:
+    $ref: './collaboration.yaml#/paths/~1collaboration~1actors~1agents'
+  /collaboration/organizations:
+    $ref: './collaboration.yaml#/paths/~1collaboration~1organizations'
+  /collaboration/organizations/{id}:
+    $ref: './collaboration.yaml#/paths/~1collaboration~1organizations~1{id}'
+  /collaboration/organizations/{id}/members:
+    $ref: './collaboration.yaml#/paths/~1collaboration~1organizations~1{id}~1members'
+  /collaboration/tasks:
+    $ref: './collaboration.yaml#/paths/~1collaboration~1tasks'
+  /collaboration/tasks/{id}:
+    $ref: './collaboration.yaml#/paths/~1collaboration~1tasks~1{id}'
+  /collaboration/tasks/{id}/commands:
+    $ref: './collaboration.yaml#/paths/~1collaboration~1tasks~1{id}~1commands'
+  /collaboration/tasks/{id}/context:
+    $ref: './collaboration.yaml#/paths/~1collaboration~1tasks~1{id}~1context'
+  /collaboration/tasks/{id}/context/{entryId}/versions:
+    $ref: './collaboration.yaml#/paths/~1collaboration~1tasks~1{id}~1context~1{entryId}~1versions'
+  /collaboration/tasks/{id}/events:
+    $ref: './collaboration.yaml#/paths/~1collaboration~1tasks~1{id}~1events'
+  /collaboration/sessions/{sessionId}/tasks:
+    $ref: './collaboration.yaml#/paths/~1collaboration~1sessions~1{sessionId}~1tasks'
+  /internal/task-executions/{id}:
+    $ref: './collaboration.yaml#/paths/~1internal~1task-executions~1{id}'
+  /internal/task-executions/{id}/progress:
+    $ref: './collaboration.yaml#/paths/~1internal~1task-executions~1{id}~1progress'
+  /internal/task-executions/{id}/commands:
+    $ref: './collaboration.yaml#/paths/~1internal~1task-executions~1{id}~1commands'
+  /internal/task-sessions/{sessionId}:
+    $ref: './collaboration.yaml#/paths/~1internal~1task-sessions~1{sessionId}'
+  /internal/task-sessions/{sessionId}/tasks/{taskId}/context:
+    $ref: './collaboration.yaml#/paths/~1internal~1task-sessions~1{sessionId}~1tasks~1{taskId}~1context'
   /auth/login:
     get:
       summary: Start OIDC login flow

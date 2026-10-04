@@ -1,189 +1,79 @@
-# 项目结构与对象模型
+# 仓库结构与改造范围
 
-## 1. Monorepo 结构
+更新：2026-10-04。本文导航现有物理目录，不把当前配置层级当作目标对象模型。核心概念见[目标架构](architecture/agent-collaboration.md)，实际行为见[代码现状](architecture/code-framework.md)。
+
+## 1. Monorepo
 
 ```text
+.github/workflows/       CI
 apps/
   api/                  Spring Boot 控制面 API
-  channel-gateway/      Channel Provider 运行时（飞书等渠道接入）
+  channel-gateway/      Channel Provider 运行时与渠道边界
   worker/               Temporal workflow worker
   web/                  Vue + Ant Design Vue 控制台
-  site/                 Vite 静态项目站点 / 官网落地页
-  agent-runtime/        Python owner agent / playbook tool task 执行运行时
-  knowledge-service/    Python 知识导入、快照构建与检索服务
+  site/                 Vite 静态项目站点
+  agent-runtime/        Python 模型与工具执行运行时
+  knowledge-service/    Python 知识导入、索引与检索
 packages/
-  contracts/             OpenAPI 与 TypeScript 合同
-  contracts-jvm/         JVM 侧 session / playbook / runtime 契约
-  extension-protocol/    Extension Plane 协议（OpenAPI + JSON Schema + 契约样例）
-  extension-sdk-jvm/     JVM Extension SDK（协议常量、DTO 生成、manifest 校验、registration helper）
-  extension-sdk-python/  Python Extension SDK（协议常量、canonical JSON、digest、registration 与 manifest 校验 helper）
-  persistence-jvm/       JVM 侧 PostgreSQL 持久化基座与 jOOQ schema
-  python-common/         Python 服务共享工具库
-  shared-redis-jvm/      JVM 侧共享 Redis keyspace / lock / pubsub / codec
+  contracts/            OpenAPI 与共享 TypeScript 契约源码
+  contracts-jvm/        JVM 协作、Session、Playbook 和运行契约
+  extension-protocol/   扩展协议 OpenAPI、schema、样例、fixtures
+  extension-sdk-jvm/    JVM 扩展协议 SDK
+  extension-sdk-python/ Python 扩展协议 SDK
+  persistence-jvm/      共享 PostgreSQL store 与 jOOQ 生成代码
+  python-common/        Python 共享工具
+  shared-redis-jvm/     Redis keyspace、锁、通知与序列化
 deploy/
-  common/             local / dev / test / prd 可共享的无密钥运行材料
-  local/              本机联调 Docker Compose
-  dev/                开发服务器常驻 Docker Compose
-  test/               测试环境分模块发布模板
+  common/               跨环境无密钥材料
+  local/                本地开发依赖
+  dev/                  常驻开发环境
+  test/                 测试环境分模块发布模板
 scripts/
-  local/              本地源码直跑脚本
-  dev/                开发服务器源码直跑脚本
-  common/             环境变量装载与进程管理脚本
+  common/               环境装载与进程辅助
+  local/                本地源码启动
+  dev/                  开发服务器源码启动
 docs/
-  architecture/       当前架构与环境说明
-  briefing/           项目背景资料
-  todo/               仍然有效的待办分解
-  develop_record/     历史留档，不作为当前实现基准
-demo/                 演示素材目录，不参与当前主实现说明
+  README.md             文档入口与维护约定
+  architecture/         目标架构、代码现状、接入说明
+  todo/                 待实施工作包与验收计划
+  doing/                仅限当前执行记录，完成自查后清理
+  develop_record/       历史记录；本轮不修改
+demo/                   演示素材，不作为代码或产品目标依据
+gradle/wrapper/         Gradle wrapper
 ```
 
-## 2. 构建与运行基座
+`docs/briefing/` 如有项目背景资料，按需阅读，不作为实现事实源。Extension service 模板不在本 monorepo 内；仓库保留协议、SDK 与平台接入边界。
 
-- Gradle 多项目：`apps/api`、`apps/channel-gateway`、`apps/worker`、`packages/contracts-jvm`、`packages/persistence-jvm`、`packages/shared-redis-jvm`、`packages/extension-sdk-jvm`
-- pnpm workspace：`pnpm-workspace.yaml` 覆盖 `apps/*` 与 `packages/*`；当前实际 Node 包包括 `apps/web`、`apps/site`、`packages/extension-protocol`。`packages/contracts` 只保留 OpenAPI 与 TypeScript 契约源码，不是独立 pnpm package。
-- uv workspace：`apps/agent-runtime`、`apps/knowledge-service`、`packages/extension-protocol`、`packages/extension-sdk-python`、`packages/python-common`
-- 本地依赖：PostgreSQL、MinIO（S3-compatible object storage 本地实现）、Redis、Temporal、sandbox
-- PostgreSQL 启动时会自动准备 `agentyard_core`、`agentyard_channel_gateway`、`agentyard_knowledge`、`agentyard_agent_runtime` 四个库，按服务边界隔离
+## 2. 构建与启动
 
-## 3. 治理主树
+- Gradle 多项目：API、Channel Gateway、Worker、contracts-jvm、persistence-jvm、shared-redis-jvm、extension-sdk-jvm。
+- pnpm workspace 覆盖 `apps/*`、`packages/*`；当前 Node 包为 Web、Site、extension-protocol。contracts 为共享源码，不是独立 pnpm 包。
+- uv workspace：Agent Runtime、Knowledge Service、extension-protocol、extension-sdk-python、python-common。
+- 本地依赖：PostgreSQL、MinIO、Redis、Temporal、Sandbox。
+- PostgreSQL 初始化四个库：agentyard_core、agentyard_channel_gateway、agentyard_knowledge、agentyard_agent_runtime。
 
-### 租户
+启动和测试命令见[根 README](../README.md)，部署结构见[deploy README](../deploy/README.md)。运行 Java 用 `./gradlew`，Node 用 `pnpm`，Python 用 `uv run`，无需额外 PYTHONPATH。
 
-定义：平台中的一级隔离与管理单元。
-职责：隔离组织、权限、数据、配额。
-当前状态：模型边界保留，当前实现按单租户默认展开。
+## 3. 从概念定位代码
 
-### 业务域
+| 目标能力 | 现有主要入口 | 跨模块影响 |
+| --- | --- | --- |
+| 人与 Agent 实例身份、独立角色模板 | API catalog / task / security、contracts、persistence | 移除目录 Agent 充当运行主体；重构发布与资源归属 |
+| 持久 Session 与接待关系 | API session、Worker session、Runtime streaming / transcript_store | 生命周期、渠道路由、隐私、上下文分页和恢复 |
+| Agent 激活与后台运行 | API task dispatcher、Worker task / session、Runtime task_execution | 合并现有两条 Agent 路径，更新事件和测试 |
+| Task 共享信息与参与者决定 | API task、TaskStore、TaskContracts、Web Task 组件 | 内容版本、来源、成果引用、自然语言代理决定 |
+| 工具授权与委派 | API 授权/协作服务、Runtime tooling / tool_connectors | 内置工具、流程子工具、自动上下文读取和凭证使用 |
+| 消息、等待、唤醒 | API/Worker session、Channel Gateway、共享 Redis/持久层 | 持久投递、订阅、定时、SSE 和外部回调 |
+| 长运行流程工具 | Worker Playbook、SandboxGateway、Runtime tool task | ToolRun 关联、等待恢复、当前授权和结果回原实例 |
+| 日常入口与管理配置 | Web router / navigation / pages / services、Site | 持续交流首页，移除旧配置前置与“开始新工作”入口 |
+| 知识与资源 | Knowledge Service、API knowledge/catalog、Extension 协议 | 归属与权限更新，保持真实导入、读取和引用能力 |
 
-定义：租户下按业务职能划分的治理单元。
-职责：承载本域的场景、共享资源、治理规则。
-主要使用者：平台管理员、域管理员。
+这是重构导航，不要求按概念新增同名模块或服务。具体类名可随目标调整；共享逻辑应进入适当共享模块，不复制多套路径。
 
-### 业务场景
+## 4. 变更需要同步的材料
 
-定义：面向具体业务目标的交付与使用单元。
-职责：承载业务入口、助手归属与运行观测入口。
-主要使用者：域管理员、场景负责人、业务用户。
+契约更改同时检查 OpenAPI、TypeScript、JVM record、Python model、扩展 schema/fixtures/SDK，以及所有调用者。数据库变化同步 migrations 与 jOOQ 生成产物；不得只改生成代码。核心行为变化同步 API、Worker、Runtime、Web、渠道和端到端测试。
 
-### 助手
+环境变量与服务职责变化同步根目录环境示例、启动脚本、deploy 模板和 CI。产品形态变化同步根 README、Site 与当前架构文档。
 
-定义：业务场景下的一套协作配置与发布单元。
-职责：组织 owner agent、playbook、默认模型绑定、发布冻结与运行入口。
-主要使用者：域管理员、开发者。
-
-### 智能体
-
-定义：助手内部面向某类职责的执行角色。
-职责：执行单轮推理，读取 skill / tool / knowledge，并决定回复、切换 owner、启动 playbook 或人工接管。
-主要使用者：开发者。
-
-### Playbook
-
-定义：被 owner agent 调用的强业务流程单元。
-职责：承载结构化输入输出、节点遍历、等待点、恢复和终态结果。
-主要使用者：开发者。
-
-### 资源
-
-定义：可被助手、智能体引用的能力资产。
-当前范围：Knowledge Base、Tool、LLM Model、Skill。
-职责：提供可复用能力和稳定版本锚点。
-主要使用者：开发者、域管理员。
-
-注意：
-资源不是简单树状从属，而是同时存在“归属、共享、绑定、发布冻结”四类关系。
-
----
-
-## 4. 运行与发布横切面
-
-### 绑定与共享
-
-作用：解决“谁创建”和“谁使用”不是一回事的问题。
-
-当前至少要表达 4 件事：
-
-- 资源归属在哪
-- 谁可见
-- 谁可绑定使用
-- 是否共享 / 是否需审批
-
-当前实现里，这些关系主要体现在：
-
-- `ownerType / ownerId`
-- `shareScope`
-- agent 执行策略中的 `skillResourceVersionIds / toolResourceVersionIds`
-- 助手发布后的 release resources
-
-### 发布快照
-
-作用：解决运行时配置漂移问题。
-
-当前发布快照会冻结：
-
-- 助手发布版本
-- `primaryAgentId`
-- owner policy / session policy / playbook policy
-- agent 执行配置
-- 资源版本锚点
-- playbook 定义
-
-运行时只基于发布快照启动，不再以草稿临时快照承接主链。
-
-### 运行实例
-
-作用：表达会话控制、事件时间线和强流程执行态。
-
-当前主要运行对象包括：
-
-- `Session`
-- `Turn`
-- `SessionMessage`
-- `SessionEvent`
-- `PlaybookRun`
-- `sharedState`
-
-其中：
-
-- `Session` 持有当前 owner、handoff、idle deadline 与活跃 playbook 等权威状态
-- `Turn` 是一次后端处理批次，也是幂等、agent execution 归属和 outbound 投递的边界
-- `SessionMessage` 按 `turn -> messages -> blocks` 记录用户可见消息，`sequence` 和 `turnIndex` 由持久化统一 append 入口分配
-- `SessionEvent` 记录用户消息、owner 回复、owner switch、playbook 等待/恢复/完成、handoff 开始/结束等事实
-- `PlaybookRun` 记录一次 playbook 执行实例的输入、结果、等待原因与终态
-
-旧的 `Task / Workflow Instance / Human checkpoint` 已不再作为当前主设计基准。
-
----
-
-## 5. 可执行结构
-
-当前助手运行采用“两层能力模型”：
-
-- `Owner Agent`
-  - 接收当前 turn 的 messages/contextEntries 或系统触发
-  - 执行单轮推理
-  - 通过最终 outcome 决定 `REPLY / NO_OP / SWITCH_OWNER / RUN_PLAYBOOK / SESSION_HUMAN_HANDOFF / SECURITY_BLOCK`
-  - 可在任意 action 中携带完整 `replyMessage`
-- `Playbook`
-  - 由 owner 显式启动
-  - 作为 Temporal child workflow 运行
-  - 节点类型为 `STEP / TOOL_TASK / HUMAN_TASK / EXTERNAL_INTERACTION / END`
-  - 可挂起、恢复并返回结构化结果
-
-## 6. 代码与对象的一句话对应
-
-- `apps/api` 负责治理与 session-runtime 聚合 API
-- `apps/channel-gateway` 负责 Channel Provider 入站 / 出站 / 注册（飞书等）
-- `apps/worker` 负责 `SessionWorkflow`、`PlaybookWorkflow` 和跨服务编排
-- `apps/agent-runtime` 负责 owner 单轮推理与 playbook tool task 执行
-- `apps/knowledge-service` 负责 source/job/document/snapshot 检索链路
-- `apps/web` 负责治理控制台与运行观测
-- `apps/site` 负责项目静态站点 / 官网落地页，不承载控制台治理与运行观测主链路
-- `packages/extension-protocol` 定义 Extension Plane 协议（Tool Connector / Channel Provider 注册与契约）
-- extension service 模板已从 monorepo 移出，作为独立项目 `agentyard-extension-boilerplate` 维护；本仓库只保留协议、SDK、契约校验与平台侧接入边界
-
-## 7. 一句话总结
-
-当前可以把 AgentYard 理解为：
-
-**一个以业务域和业务场景为治理入口、以发布快照为配置锚点、以 session-owner-playbook 为运行主线、以资源版本化与可恢复强流程为核心能力的平台原型。**
+详细工作顺序、模块清单和完成证据见[实施与验收计划](todo/agent-collaboration-refactor.md)。历史记录不承担新的规范职责。

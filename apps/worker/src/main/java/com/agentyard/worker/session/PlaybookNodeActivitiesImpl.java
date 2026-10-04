@@ -160,14 +160,14 @@ public class PlaybookNodeActivitiesImpl implements PlaybookNodeActivities {
             script_version = script_identity["scriptVersion"]
             result = {"statePatch": {}, "routeKey": None}
             %s
-            print(%s + json.dumps(result, ensure_ascii=False))
+            print("%s" + json.dumps(result, ensure_ascii=False))
             """.formatted(
             pythonString(request.input()),
             pythonString(request.config()),
             pythonString(scriptConfig),
             pythonString(Map.of("scriptRef", request.scriptRef(), "scriptVersion", request.scriptVersion())),
             code,
-            pythonString(RESULT_MARKER)
+            RESULT_MARKER
         );
     }
 
@@ -181,14 +181,14 @@ public class PlaybookNodeActivitiesImpl implements PlaybookNodeActivities {
             const scriptVersion = scriptIdentity.scriptVersion;
             let result = { statePatch: {}, routeKey: null };
             %s
-            console.log(%s + JSON.stringify(result));
+            console.log("%s" + JSON.stringify(result));
             """.formatted(
             javascriptString(request.input()),
             javascriptString(request.config()),
             javascriptString(scriptConfig),
             javascriptString(Map.of("scriptRef", request.scriptRef(), "scriptVersion", request.scriptVersion())),
             code,
-            javascriptString(RESULT_MARKER)
+            RESULT_MARKER
         );
     }
 

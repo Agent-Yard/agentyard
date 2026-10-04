@@ -20,6 +20,20 @@ import com.agentyard.persistence.jooq.tables.CatalogResource;
 import com.agentyard.persistence.jooq.tables.CatalogResourceVersions;
 import com.agentyard.persistence.jooq.tables.CatalogScenario;
 import com.agentyard.persistence.jooq.tables.ChannelSessionBindingSnapshot;
+import com.agentyard.persistence.jooq.tables.CollaborationActor;
+import com.agentyard.persistence.jooq.tables.CollaborationContextEntry;
+import com.agentyard.persistence.jooq.tables.CollaborationContextVersion;
+import com.agentyard.persistence.jooq.tables.CollaborationExecution;
+import com.agentyard.persistence.jooq.tables.CollaborationExecutionSignal;
+import com.agentyard.persistence.jooq.tables.CollaborationMembership;
+import com.agentyard.persistence.jooq.tables.CollaborationOrganization;
+import com.agentyard.persistence.jooq.tables.CollaborationParticipant;
+import com.agentyard.persistence.jooq.tables.CollaborationTask;
+import com.agentyard.persistence.jooq.tables.CollaborationTaskCommand;
+import com.agentyard.persistence.jooq.tables.CollaborationTaskEvent;
+import com.agentyard.persistence.jooq.tables.CollaborationTaskRelation;
+import com.agentyard.persistence.jooq.tables.CollaborationTaskReview;
+import com.agentyard.persistence.jooq.tables.CollaborationTaskSession;
 import com.agentyard.persistence.jooq.tables.IntegrationAccount;
 import com.agentyard.persistence.jooq.tables.KnowledgeBase;
 import com.agentyard.persistence.jooq.tables.KnowledgeRelease;
@@ -123,6 +137,76 @@ public class Tables {
      * The table <code>public.channel_session_binding_snapshot</code>.
      */
     public static final ChannelSessionBindingSnapshot CHANNEL_SESSION_BINDING_SNAPSHOT = ChannelSessionBindingSnapshot.CHANNEL_SESSION_BINDING_SNAPSHOT;
+
+    /**
+     * The table <code>public.collaboration_actor</code>.
+     */
+    public static final CollaborationActor COLLABORATION_ACTOR = CollaborationActor.COLLABORATION_ACTOR;
+
+    /**
+     * The table <code>public.collaboration_context_entry</code>.
+     */
+    public static final CollaborationContextEntry COLLABORATION_CONTEXT_ENTRY = CollaborationContextEntry.COLLABORATION_CONTEXT_ENTRY;
+
+    /**
+     * The table <code>public.collaboration_context_version</code>.
+     */
+    public static final CollaborationContextVersion COLLABORATION_CONTEXT_VERSION = CollaborationContextVersion.COLLABORATION_CONTEXT_VERSION;
+
+    /**
+     * The table <code>public.collaboration_execution</code>.
+     */
+    public static final CollaborationExecution COLLABORATION_EXECUTION = CollaborationExecution.COLLABORATION_EXECUTION;
+
+    /**
+     * The table <code>public.collaboration_execution_signal</code>.
+     */
+    public static final CollaborationExecutionSignal COLLABORATION_EXECUTION_SIGNAL = CollaborationExecutionSignal.COLLABORATION_EXECUTION_SIGNAL;
+
+    /**
+     * The table <code>public.collaboration_membership</code>.
+     */
+    public static final CollaborationMembership COLLABORATION_MEMBERSHIP = CollaborationMembership.COLLABORATION_MEMBERSHIP;
+
+    /**
+     * The table <code>public.collaboration_organization</code>.
+     */
+    public static final CollaborationOrganization COLLABORATION_ORGANIZATION = CollaborationOrganization.COLLABORATION_ORGANIZATION;
+
+    /**
+     * The table <code>public.collaboration_participant</code>.
+     */
+    public static final CollaborationParticipant COLLABORATION_PARTICIPANT = CollaborationParticipant.COLLABORATION_PARTICIPANT;
+
+    /**
+     * The table <code>public.collaboration_task</code>.
+     */
+    public static final CollaborationTask COLLABORATION_TASK = CollaborationTask.COLLABORATION_TASK;
+
+    /**
+     * The table <code>public.collaboration_task_command</code>.
+     */
+    public static final CollaborationTaskCommand COLLABORATION_TASK_COMMAND = CollaborationTaskCommand.COLLABORATION_TASK_COMMAND;
+
+    /**
+     * The table <code>public.collaboration_task_event</code>.
+     */
+    public static final CollaborationTaskEvent COLLABORATION_TASK_EVENT = CollaborationTaskEvent.COLLABORATION_TASK_EVENT;
+
+    /**
+     * The table <code>public.collaboration_task_relation</code>.
+     */
+    public static final CollaborationTaskRelation COLLABORATION_TASK_RELATION = CollaborationTaskRelation.COLLABORATION_TASK_RELATION;
+
+    /**
+     * The table <code>public.collaboration_task_review</code>.
+     */
+    public static final CollaborationTaskReview COLLABORATION_TASK_REVIEW = CollaborationTaskReview.COLLABORATION_TASK_REVIEW;
+
+    /**
+     * The table <code>public.collaboration_task_session</code>.
+     */
+    public static final CollaborationTaskSession COLLABORATION_TASK_SESSION = CollaborationTaskSession.COLLABORATION_TASK_SESSION;
 
     /**
      * The table <code>public.integration_account</code>.

@@ -65,6 +65,12 @@ class RuntimeToolSpec:
 
 def runtime_tool_specs(request: AgentTurnRequest, *, include_outcome_tools: bool = True) -> list[RuntimeToolSpec]:
     specs = _context_tool_specs(request)
+    if request.taskExecutionId:
+        from .task_execution import task_tool_specs
+        specs.extend(task_tool_specs(request))
+    else:
+        from .task_execution import session_task_tool_specs
+        specs.extend(session_task_tool_specs(request))
     if include_outcome_tools:
         specs.extend(_outcome_tool_specs(request))
     specs.extend(_resource_tool_specs(request))
@@ -83,6 +89,11 @@ def runtime_tool_registry(request: AgentTurnRequest, *, include_outcome_tools: b
 def execute_tool_call(request: AgentTurnRequest, spec: RuntimeToolSpec, arguments: dict[str, Any]) -> dict[str, Any]:
     if spec.kind != RuntimeToolKind.CONTEXT_TOOL or spec.handler is None:
         raise ValueError(f"tool {spec.name} is not executable as a context tool")
+    if request.taskExecutionId and spec.name not in {"task_read_context", "task_contribute"}:
+        # A model request can outlive cancellation or a membership change. Recheck
+        # before invoking mounted resources; Task tools enforce this themselves.
+        from .task_execution import control_plane
+        control_plane(request.taskExecutionId)
     return spec.handler(request, arguments)
 
 

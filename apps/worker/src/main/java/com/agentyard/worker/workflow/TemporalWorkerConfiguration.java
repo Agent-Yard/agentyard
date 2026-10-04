@@ -37,6 +37,7 @@ public class TemporalWorkerConfiguration {
         SessionPersistenceActivitiesImpl sessionPersistenceActivities,
         PlaybookNodeActivitiesImpl playbookNodeActivities,
         KnowledgeActivitiesImpl knowledgeActivities,
+        com.agentyard.worker.task.TaskExecutionActivitiesImpl taskExecutionActivities,
         @Value("${agentyard.temporal.task-queue}") String taskQueue,
         @Value("${agentyard.temporal.namespace}") String namespace,
         @Value("${agentyard.temporal.activity-start-to-close-timeout:PT2M}") Duration activityStartToCloseTimeout,
@@ -48,6 +49,7 @@ public class TemporalWorkerConfiguration {
         );
         WorkerFactory factory = WorkerFactory.newInstance(workflowClient);
         Worker worker = factory.newWorker(taskQueue, workerOptions(workflowDeadlockDetectionTimeout));
+        worker.registerWorkflowImplementationTypes(com.agentyard.worker.task.TaskExecutionWorkflowImpl.class);
         worker.registerWorkflowImplementationFactory(
             SessionWorkflow.class,
             () -> new SessionWorkflowImpl(activityStartToCloseTimeout)
@@ -66,6 +68,7 @@ public class TemporalWorkerConfiguration {
         );
         worker.registerActivitiesImplementations(
             knowledgeActivities,
+            taskExecutionActivities,
             agentTurnActivities,
             sessionPersistenceActivities,
             playbookNodeActivities

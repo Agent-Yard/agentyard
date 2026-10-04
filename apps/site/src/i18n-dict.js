@@ -2,12 +2,12 @@ export const SITE_URL = "https://agent-yard.github.io/agentyard/";
 
 export const TRANSLATIONS = {
   zh: {
-    pageTitle: "AgentYard | 以发布为中心的智能体系统",
+    pageTitle: "AgentYard | 人与 Agent 的任务协作系统",
     metaDescription:
-      "AgentYard 是一个开源的、以发布为中心的智能体系统，提供受治理的扩展、可观测的会话与可恢复的业务工作流。",
-    ogTitle: "AgentYard — 以发布为中心的智能体系统",
+      "AgentYard 是开源的人与 Agent 协作系统，以 Task 管理目标、共享上下文和成果，以发布快照和可恢复执行支撑协作。",
+    ogTitle: "AgentYard — 人与 Agent 的任务协作系统",
     ogDescription:
-      "以发布为中心治理智能体、连接业务系统、运行可恢复工作流，并实时观测每一次会话。",
+      "围绕 Task 协作：组织人与 Agent、共享上下文、推进独立执行并验收成果。",
     "skip-link": "跳到主内容",
     "aria-primary-nav": "主导航",
     "aria-brand-home": "AgentYard 首页",
@@ -31,7 +31,7 @@ export const TRANSLATIONS = {
     "demo-2-p": "业务域、助手、智能体、知识库、资源与发布快照的治理面走查。",
     "hero-eyebrow": "开源智能体系统",
     "hero-lede":
-      "以发布为中心：治理智能体配置、连接业务系统、运行可恢复工作流，并实时观测每一次会话。",
+      "围绕 Task 协作：组织人与 Agent、积累共享上下文、运行独立执行并验收成果。",
     "btn-view-source": "查看源码",
     "btn-quick-start": "快速上手",
     "fact-status-label": "状态",
@@ -69,21 +69,21 @@ export const TRANSLATIONS = {
     "model-check-2": "工具、技能、模型与知识都带有稳定的资源版本锚点。",
     "model-check-3": "智能体做决策，playbook 执行结构化业务流程。",
     "runtime-eyebrow": "运行时架构",
-    "runtime-title": "以会话为中心、可恢复的工作流执行。",
+    "runtime-title": "跨会话持续协作，可恢复的独立执行。",
     "arch-1-tag": "控制平面",
     "arch-1-h": "发布装配",
     "arch-1-p":
-      "Spring Boot API 装配发布、治理目录，并对外暴露会话运行时视图。",
+      "Spring Boot API 管理任务命令、组织角色、上下文与验收，同时装配发布和会话视图。",
     "arch-1-tech": "Spring Boot · PostgreSQL",
     "arch-2-tag": "工作流 Worker",
     "arch-2-h": "可恢复编排",
     "arch-2-p":
-      "Temporal 承载会话与 playbook 工作流，处理等待、恢复、人工转交与共享状态。",
+      "Temporal 承载独立 Task 执行及会话流程，处理等待、恢复和人工协作。",
     "arch-2-tech": "Temporal · JVM worker",
     "arch-3-tag": "智能体运行时",
     "arch-3-h": "决策与执行",
     "arch-3-p":
-      "Python 执行 Owner 轮次、工具任务、隐私策略处理与知识调用。",
+      "Python 执行任务贡献、Owner 轮次、工具、隐私策略与知识调用。",
     "arch-3-tech": "Python · LLM 提供方",
     "arch-4-tag": "知识服务",
     "arch-4-h": "检索面",
@@ -127,12 +127,12 @@ export const TRANSLATIONS = {
     "lang-aria": "切换语言"
   },
   en: {
-    pageTitle: "AgentYard | Release-driven agent system",
+    pageTitle: "AgentYard | Human–agent task collaboration",
     metaDescription:
-      "AgentYard is an open-source agent system for governed extensions, observable sessions, and recoverable business workflows.",
-    ogTitle: "AgentYard — Release-driven agent system",
+      "AgentYard is an open-source collaboration system where people and agents work through persistent Tasks, shared context and governed execution.",
+    ogTitle: "AgentYard — Human–agent task collaboration",
     ogDescription:
-      "A release-driven system for governing agents, connecting business systems, running recoverable workflows, and observing every session as it happens.",
+      "A Task-centered system where people and agents share context, run independent executions, and review outcomes across sessions.",
     "skip-link": "Skip to content",
     "aria-primary-nav": "Primary navigation",
     "aria-brand-home": "AgentYard home",
@@ -156,7 +156,7 @@ export const TRANSLATIONS = {
     "demo-2-p": "A tour of business domains, assistants, agents, knowledge bases, resources, and release snapshots.",
     "hero-eyebrow": "Open-source agent system",
     "hero-lede":
-      "A release-driven system for governing agents, connecting business systems, running recoverable workflows, and observing every session as it happens.",
+      "A Task-centered system where people and agents share context, run independent executions, and review outcomes across sessions.",
     "btn-view-source": "View source",
     "btn-quick-start": "Quick start",
     "fact-status-label": "Status",
@@ -195,16 +195,16 @@ export const TRANSLATIONS = {
       "Resources carry stable version anchors across tools, skills, LLMs, and knowledge.",
     "model-check-3": "Agents decide; playbooks execute structured business flows.",
     "runtime-eyebrow": "Runtime architecture",
-    "runtime-title": "Session-first execution with recoverable workflows.",
+    "runtime-title": "Persistent collaboration with independent, recoverable execution.",
     "arch-1-tag": "Agent Control Plane",
     "arch-1-h": "Release assembly",
     "arch-1-p":
-      "Spring Boot APIs assemble releases, govern catalogs, and expose session-runtime views.",
+      "Spring Boot APIs manage tasks, organizations, scoped context and reviews alongside releases and session views.",
     "arch-1-tech": "Spring Boot · PostgreSQL",
     "arch-2-tag": "Workflow worker",
     "arch-2-h": "Durable orchestration",
     "arch-2-p":
-      "Temporal hosts session and playbook workflows with waits, resumes, handoff, and shared state.",
+      "Temporal hosts independent Task executions and session workflows, including waits, resumes and human participation.",
     "arch-2-tech": "Temporal · JVM worker",
     "arch-3-tag": "Agent runtime",
     "arch-3-h": "Decide & act",

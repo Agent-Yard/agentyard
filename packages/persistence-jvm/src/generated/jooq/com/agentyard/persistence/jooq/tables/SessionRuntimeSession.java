@@ -7,6 +7,7 @@ package com.agentyard.persistence.jooq.tables;
 import com.agentyard.persistence.jooq.Indexes;
 import com.agentyard.persistence.jooq.Keys;
 import com.agentyard.persistence.jooq.Public;
+import com.agentyard.persistence.jooq.tables.CollaborationTaskSession.CollaborationTaskSessionPath;
 import com.agentyard.persistence.jooq.tables.records.SessionRuntimeSessionRecord;
 
 import java.time.OffsetDateTime;
@@ -17,11 +18,15 @@ import java.util.List;
 import org.jooq.Check;
 import org.jooq.Condition;
 import org.jooq.Field;
+import org.jooq.ForeignKey;
 import org.jooq.Index;
+import org.jooq.InverseForeignKey;
 import org.jooq.JSONB;
 import org.jooq.Name;
+import org.jooq.Path;
 import org.jooq.PlainSQL;
 import org.jooq.QueryPart;
+import org.jooq.Record;
 import org.jooq.SQL;
 import org.jooq.Schema;
 import org.jooq.Select;
@@ -222,6 +227,39 @@ public class SessionRuntimeSession extends TableImpl<SessionRuntimeSessionRecord
         this(DSL.name("session_runtime_session"), null);
     }
 
+    public <O extends Record> SessionRuntimeSession(Table<O> path, ForeignKey<O, SessionRuntimeSessionRecord> childPath, InverseForeignKey<O, SessionRuntimeSessionRecord> parentPath) {
+        super(path, childPath, parentPath, SESSION_RUNTIME_SESSION);
+    }
+
+    /**
+     * A subtype implementing {@link Path} for simplified path-based joins.
+     */
+    public static class SessionRuntimeSessionPath extends SessionRuntimeSession implements Path<SessionRuntimeSessionRecord> {
+
+        private static final long serialVersionUID = 1L;
+        public <O extends Record> SessionRuntimeSessionPath(Table<O> path, ForeignKey<O, SessionRuntimeSessionRecord> childPath, InverseForeignKey<O, SessionRuntimeSessionRecord> parentPath) {
+            super(path, childPath, parentPath);
+        }
+        private SessionRuntimeSessionPath(Name alias, Table<SessionRuntimeSessionRecord> aliased) {
+            super(alias, aliased);
+        }
+
+        @Override
+        public SessionRuntimeSessionPath as(String alias) {
+            return new SessionRuntimeSessionPath(DSL.name(alias), this);
+        }
+
+        @Override
+        public SessionRuntimeSessionPath as(Name alias) {
+            return new SessionRuntimeSessionPath(alias, this);
+        }
+
+        @Override
+        public SessionRuntimeSessionPath as(Table<?> alias) {
+            return new SessionRuntimeSessionPath(alias.getQualifiedName(), this);
+        }
+    }
+
     @Override
     public Schema getSchema() {
         return aliased() ? null : Public.PUBLIC;
@@ -235,6 +273,19 @@ public class SessionRuntimeSession extends TableImpl<SessionRuntimeSessionRecord
     @Override
     public UniqueKey<SessionRuntimeSessionRecord> getPrimaryKey() {
         return Keys.SESSION_RUNTIME_SESSION_PKEY;
+    }
+
+    private transient CollaborationTaskSessionPath _collaborationTaskSession;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.collaboration_task_session</code> table
+     */
+    public CollaborationTaskSessionPath collaborationTaskSession() {
+        if (_collaborationTaskSession == null)
+            _collaborationTaskSession = new CollaborationTaskSessionPath(this, null, Keys.COLLABORATION_TASK_SESSION__COLLABORATION_TASK_SESSION_SESSION_ID_FKEY.getInverseKey());
+
+        return _collaborationTaskSession;
     }
 
     @Override

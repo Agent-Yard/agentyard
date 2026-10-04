@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, watch } from 'vue';
 import PageHeadActions from '../components/PageHeadActions.vue';
+import SessionTaskLinks from '../components/SessionTaskLinks.vue';
 import { api } from '../services/api';
 import { renderMarkdown } from '../utils/markdown';
 import type {
@@ -544,6 +545,7 @@ function formatMessageTime(value: string | null | undefined) {
       启动 Session
     </a-button>
   </PageHeadActions>
+  <SessionTaskLinks :session-id="currentSession?.id ?? null" />
 
   <div class="runtime-im">
     <aside class="runtime-im__sessions">

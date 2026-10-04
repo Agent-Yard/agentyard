@@ -135,6 +135,41 @@ jobs:
       - name: Run contracts check
         run: ./gradlew :packages:contracts-jvm:check --no-daemon --console=plain --stacktrace
 
+  task-e2e:
+    name: Task Collaboration End To End
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: gradle
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Sync Python workspace
+        run: uv sync --all-packages
+      - name: Run real HTTP collaboration scenarios
+        run: ./gradlew :apps:api:taskE2eTest --no-daemon --console=plain --stacktrace
+      - name: Preserve scenario reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: task-collaboration-e2e
+          path: |
+            apps/api/build/reports/tests/taskE2eTest
+            apps/api/build/reports/task-e2e
+            apps/api/build/test-results/taskE2eTest
+
   node:
     name: Node Lint And Build
     runs-on: ubuntu-latest

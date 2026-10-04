@@ -6,18 +6,18 @@
     <meta name="theme-color" content="#17211d" />
     <meta
       name="description"
-      content="AgentYard 是一个开源的、以发布为中心的智能体系统，提供受治理的扩展、可观测的会话与可恢复的业务工作流。"
+      content="AgentYard 是开源的人与 Agent 协作系统，以 Task 管理目标、共享上下文和成果，以发布快照和可恢复执行支撑协作。"
     />
-    <meta property="og:title" content="AgentYard — 以发布为中心的智能体系统" />
+    <meta property="og:title" content="AgentYard — 人与 Agent 的任务协作系统" />
     <meta
       property="og:description"
-      content="以发布为中心治理智能体、连接业务系统、运行可恢复工作流，并实时观测每一次会话。"
+      content="围绕 Task 协作：组织人与 Agent、共享上下文、推进独立执行并验收成果。"
     />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://agent-yard.github.io/agentyard/" />
     <meta property="og:image" content="https://agent-yard.github.io/agentyard/og-image.svg" />
     <meta name="twitter:card" content="summary_large_image" />
-    <title>AgentYard | 以发布为中心的智能体系统</title>
+    <title>AgentYard | 人与 Agent 的任务协作系统</title>
     <link rel="canonical" href="https://agent-yard.github.io/agentyard/" />
     <link rel="alternate" hreflang="zh-Hans" href="https://agent-yard.github.io/agentyard/" />
     <link rel="alternate" hreflang="en" href="https://agent-yard.github.io/agentyard/en/" />
@@ -104,7 +104,7 @@
           <p class="eyebrow" data-i18n="hero-eyebrow">开源智能体系统</p>
           <h1 id="hero-title">AgentYard</h1>
           <p class="hero-lede" data-i18n="hero-lede">
-            以发布为中心：治理智能体配置、连接业务系统、运行可恢复工作流，并实时观测每一次会话。
+            围绕 Task 协作：组织人与 Agent、积累共享上下文、运行独立执行并验收成果。
           </p>
           <div class="hero-actions" data-i18n-aria="aria-project-links" aria-label="项目链接">
             <a class="button button-primary" href="https://github.com/Agent-Yard/agentyard" rel="noopener" data-i18n="btn-view-source">查看源码</a>
@@ -248,25 +248,25 @@
       <section class="section runtime-section" id="runtime" aria-labelledby="runtime-title">
         <div class="section-heading">
           <p class="eyebrow" data-i18n="runtime-eyebrow">运行时架构</p>
-          <h2 id="runtime-title" data-i18n="runtime-title">以会话为中心、可恢复的工作流执行。</h2>
+          <h2 id="runtime-title" data-i18n="runtime-title">跨会话持续协作，可恢复的独立执行。</h2>
         </div>
         <ol class="arch-flow" data-i18n-aria="aria-runtime-flow" aria-label="运行时流程">
           <li class="arch-step">
             <span class="arch-tag" data-i18n="arch-1-tag">控制平面</span>
             <h3 data-i18n="arch-1-h">发布装配</h3>
-            <p data-i18n="arch-1-p">Spring Boot API 装配发布、治理目录，并对外暴露会话运行时视图。</p>
+            <p data-i18n="arch-1-p">Spring Boot API 管理任务命令、组织角色、上下文与验收，同时装配发布和会话视图。</p>
             <span class="arch-tech" data-i18n="arch-1-tech">Spring Boot · PostgreSQL</span>
           </li>
           <li class="arch-step arch-step-runtime">
             <span class="arch-tag" data-i18n="arch-2-tag">工作流 Worker</span>
             <h3 data-i18n="arch-2-h">可恢复编排</h3>
-            <p data-i18n="arch-2-p">Temporal 承载会话与 playbook 工作流，处理等待、恢复、人工转交与共享状态。</p>
+            <p data-i18n="arch-2-p">Temporal 承载独立 Task 执行及会话流程，处理等待、恢复和人工协作。</p>
             <span class="arch-tech" data-i18n="arch-2-tech">Temporal · JVM worker</span>
           </li>
           <li class="arch-step">
             <span class="arch-tag" data-i18n="arch-3-tag">智能体运行时</span>
             <h3 data-i18n="arch-3-h">决策与执行</h3>
-            <p data-i18n="arch-3-p">Python 执行 Owner 轮次、工具任务、隐私策略处理与知识调用。</p>
+            <p data-i18n="arch-3-p">Python 执行任务贡献、Owner 轮次、工具、隐私策略与知识调用。</p>
             <span class="arch-tech" data-i18n="arch-3-tech">Python · LLM 提供方</span>
           </li>
           <li class="arch-step arch-step-aside">

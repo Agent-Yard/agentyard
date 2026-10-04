@@ -1,9 +1,6 @@
-AgentYard
-=========
+# AgentYard
 
-> 让企业以最小成本拥有可治理、可发布、可观测的智能体系统。
->
-> *A release-driven agent system — currently in active development.*
+让人与 Agent 围绕持续目标、共享上下文和工作成果协作。
 
 [![CI](https://github.com/Agent-Yard/agentyard/actions/workflows/ci.yml/badge.svg)](https://github.com/Agent-Yard/agentyard/actions/workflows/ci.yml)
 ![status](https://img.shields.io/badge/status-alpha-orange)
@@ -13,164 +10,55 @@ AgentYard
 ![python](https://img.shields.io/badge/python-3.11+-3776ab)
 ![temporal](https://img.shields.io/badge/temporal-1.34-orange)
 
----
+## 项目方向
 
-## 项目状态
+用户始终与接待 Agent 交流，由它理解需求、建立 Task、组织专业 Agent、跟进进展并提交成果。人和 Agent 都是参与者，可以按权限共享信息、直接协作和作出决定。
 
-AgentYard 当前处于活跃开发期 (alpha)。代码已经走通了 **控制面 → 发布快照 → Temporal 长流程 → Python agent runtime** 的真实主链路，但仍保留若干原型边界：默认单租户、开发态保留 bootstrap 登录旁路、运维与生产治理仍在补齐。**接口、数据结构、配置项均可能在小版本之间发生不兼容变更**，文档可能短暂落后于代码，请以源码为准。
+- **Session 是 Agent 的持续上下文实例**：前台接待和后台执行遵循同一机制；长期存在不要求进程常驻。
+- **Task 是工作信息与共享上下文**：保存目标、参与、材料、进展和成果，黑板属于 Task 内部。
+- **角色模板与权限分离**：模板提供职责和默认上下文，实际读写、通信、委派及调度由工具执行边界授权。
+- **交付由参与者判断**：执行者提交成果，业务发起者最终确认；用户明确的自然语言决定可由 Agent 代理落地。
+- **组织结构按需要形成**：成员、职责、授权和工作关系支持内部与外部协作，不要求普通用户先配置一棵管理层级。
 
-如果你正在评估是否引入 AgentYard，建议先以本地联调和概念学习为目标，生产化使用请关注后续里程碑。
+日常使用不要求用户新建或选择 Session，也不提供“开始新工作”入口让用户自行划分上下文。相关工作如何拆分、委派或继续，由 Agent 结合业务意图组织。
 
-## 演示视频
+完整定义与取舍见[目标架构](docs/architecture/agent-collaboration.md)。
 
-**会话演示** — 最简单场景下的一次会话（[B 站演示视频](https://www.bilibili.com/video/BV1eDLp6hEV4/)）。
+## 当前状态
 
+项目处于 alpha。**上述目标已记录，代码尚未完成相应重构。** 当前代码已有 Task/组织工作台、内容版本与授权、后台执行、Session 对话、Playbook、知识检索及渠道扩展，但仍有两条 Agent 运行链：
 
-**后台演示** — 业务域、助手、智能体、知识库、资源与发布快照的治理面走查（[B 站演示视频](https://www.bilibili.com/video/BV1eSLp6wE9X/)）。
-
-
-## 它解决什么问题
-
-企业落地智能体系统普遍卡在三件事：自建成本太高、业务系统接入太重、跑起来后不可观测/不可治理。AgentYard 的设计取舍围绕这三点展开：
-
-- **配置即契约**：业务域 / 业务场景 / 助手 / 智能体 / 知识库 / 资源都是一级治理对象，发布即冻结快照，运行态只消费 release。
-- **协议化业务接入**：Tool Connector 与 Channel Provider 通过统一的 *Extension Plane* 协议接入，业务系统的鉴权、签名、长连接细节不再泄漏到 Agent / Playbook / Session。
-- **强流程下沉到 Temporal**：Owner Agent 只做单轮决策；强业务流程作为 `PlaybookWorkflow` 的 child workflow 跑在 Temporal 上，可挂起、可恢复、可观测。
-- **会话级可观测**：Session、Session Event、Playbook Run、Shared State 全部落库；前端通过 SSE 实时拉取 owner、handoff、playbook、人工介入时间线。
-- **自带知识检索**：内置 PostgreSQL `pgvector + pg_trgm + tsvector` 检索栈，知识导入、版本发布、快照检索全部异步可重试。
-
-## 核心能力速览
-
-| 主线 | 当前已落地 |
+| 当前行为 | 目标变化 |
 | --- | --- |
-| 治理 | 业务域 / 业务场景 / 助手 / 智能体 / 知识库 / 资源（`TOOL / LLM_MODEL / SKILL`）目录与版本管理 |
-| 发布 | Assistant Release 冻结主智能体、owner / session / playbook 策略、资源版本与编排图 |
-| 运行 | `SessionWorkflow` + `PlaybookWorkflow` + Owner Agent 单轮推理 + 人工/外部恢复 signal |
-| 接入 | `SIMPLE_HTTP` / `BUSINESS_CODE_SECRET_HTTP` / `MCP` Tool Connector，飞书 Channel Provider |
-| 知识 | URL/文件导入 → 文档切片 → 索引快照 → 按发布快照检索；任务状态机 + 失败重试 + 检索验证工作台 |
-| 观测 | session detail、shared state、event 时间线、playbook run；SSE 优先，轮询 fallback |
-| 隐私 | Agent runtime 显式分层的 prompt 隐私策略（`SKIP / RULES_ONLY / RULES_THEN_PRIVATE_LLM`），fragment cache 仅落加密结果 |
+| 后台 Task 推理使用合成 Session ID，未保存真实 Session transcript | 全部 Agent 运行关联真实持久实例 |
+| 目录 Agent 依赖 Assistant Release | 独立角色模板与实例配置 |
+| Task 工作台手工组织执行 | 持续接待 Agent 组织协作 |
+| Session Owner 切换、特殊 handoff 和会话专属流程 | 实例间协作消息、明确控制指令和流程工具 |
 
-## 架构概览
+当前实际能力与限制见[代码现状](docs/architecture/code-framework.md)，改造工作和真实场景验收见[实施计划](docs/todo/agent-collaboration-refactor.md)。允许直接重构数据、接口和配置，不以兼容旧数据为目标。
 
-```mermaid
-flowchart TB
-    %% ===== 用户入口 =====
-    subgraph Clients["用户入口"]
-        Web["apps/web<br/>Vue 控制台"]
-        Site["apps/site<br/>静态项目站点"]
-        ChannelUsers["业务渠道用户 / 坐席系统<br/>(Feishu / 工单 / 客服平台 / ...)"]
-    end
+## 服务与仓库
 
-    %% ===== 控制面 / 接入面 =====
-    subgraph ControlPlane["控制面 & 接入面 (JVM)"]
-        API["apps/api<br/>Spring Boot 控制面<br/>发布快照 / session-runtime"]
-        Gateway["apps/channel-gateway<br/>Channel Provider 运行时<br/>入站归一化 / 出站 frame relay / provider registry"]
-        Worker["apps/worker<br/>Temporal worker<br/>SessionWorkflow / PlaybookWorkflow"]
-    end
+| 目录 | 职责 |
+| --- | --- |
+| apps/api | 控制面、协作命令、配置与运行查询 |
+| apps/channel-gateway | 渠道 Provider、入站归一化、出站投递 |
+| apps/worker | Temporal 持久执行、等待与调度 |
+| apps/agent-runtime | 模型与工具循环、上下文、隐私、Tool Connector |
+| apps/knowledge-service | 知识导入、索引快照与检索 |
+| apps/web | 日常交流、协作信息及管理配置界面 |
+| apps/site | 独立项目介绍站点 |
+| packages | 共享契约、持久化、Redis、扩展协议与 SDK |
+| deploy / scripts | 各环境部署材料与源码启动脚本 |
 
-    %% ===== 执行面 =====
-    subgraph Runtime["执行面 (Python)"]
-        AgentRT["apps/agent-runtime<br/>owner 单轮推理<br/>playbook TOOL_TASK<br/>内置 tool connector 运行时"]
-        Knowledge["apps/knowledge-service<br/>导入 / 切片 / 快照 / 检索"]
-    end
+技术基础继续采用 Spring Boot、Temporal、Python/FastAPI、Vue、PostgreSQL、Redis 和 S3-compatible 存储。扩展使用 Channel Provider / Tool Connector 协议。详见[技术路线](docs/technical_route.md)和[完整目录](docs/project_structure.md)。
 
-    %% ===== 基础设施 =====
-    subgraph Infra["基础设施"]
-        PG[("PostgreSQL<br/>+ pgvector / pg_trgm")]
-        Temporal[("Temporal")]
-        Redis[("Redis")]
-        Object[("MinIO / S3")]
-    end
+## 演示
 
-    %% ===== 扩展面 =====
-    subgraph Extension["Extension Plane"]
-        Protocol["packages/extension-protocol<br/>OpenAPI / JSON Schema / fixtures"]
-        ExtSvc["外部 Extension Service<br/>/extension/manifest"]
-        ToolConn["Tool Connector<br/>第三方业务系统工具"]
-        ChannelProv["Channel Provider<br/>第三方 IM / 工单 / 客服"]
-    end
+以下为已有实现的历史演示，界面与运行方式不代表待落地的新入口：
 
-    %% ===== 流向 =====
-    Web -->|HTTP / SSE| API
-    ChannelUsers -->|内置渠道 inbound| Gateway
-    ChannelUsers -->|第三方渠道事件 / 坐席消息| ChannelProv
-    Protocol -.->|协议约束| ExtSvc
-    ExtSvc --- ToolConn
-    ExtSvc --- ChannelProv
-
-    Gateway -->|normalized event| API
-    ChannelProv -->|normalized inbound| Gateway
-    API -->|outbound frames| Gateway
-    Gateway -->|outbound frame stream / runJob| ChannelProv
-    ChannelProv -->|ACK / delivery result| Gateway
-
-    API -->|Temporal client| Worker
-    Worker -->|HTTP| AgentRT
-    Worker -->|HTTP| Knowledge
-    AgentRT -->|检索| Knowledge
-
-    AgentRT -.->|tool invoke| ToolConn
-    API -.->|manifest / descriptor registry| ExtSvc
-    Gateway -.->|provider manifest| ExtSvc
-    AgentRT -.->|tool manifest| ExtSvc
-
-    API --- PG
-    API --- Redis
-    Worker --- Temporal
-    Worker --- PG
-    Knowledge --- PG
-    Knowledge --- Object
-    Gateway --- PG
-```
-
-*Extension Plane* 是协议与注册边界（`packages/extension-protocol`），不是单独的核心运行面。外部 Extension Service 通过 `/extension/manifest` 声明 Channel Provider 与 Tool Connector；Channel Provider 侧由 `channel-gateway` 接收 normalized inbound、提供 outbound frame stream / ACK 边界，Tool Connector 侧由 `agent-runtime` 直接发起 tool invoke。核心服务自动注册由 `AGENTYARD_CHANNEL_GATEWAY_BASE_URL` / `AGENTYARD_AGENT_RUNTIME_BASE_URL` 提供，运营方扩展通过 `AGENTYARD_EXTENSION_REGISTRATION_FILE` 加载。
-
-## 仓库结构
-
-```text
-apps/
-  api/                Spring Boot 控制面 API
-  channel-gateway/    Channel Provider 运行时（飞书等渠道接入）
-  worker/             Temporal workflow worker
-  web/                Vue + Ant Design Vue 控制台
-  site/               Vite 静态项目站点 / 官网落地页
-  agent-runtime/      Python owner agent / playbook tool task 运行时
-  knowledge-service/  Python 知识导入 / 快照构建 / 检索服务
-packages/
-  contracts/             OpenAPI 与 TypeScript 共享契约
-  contracts-jvm/         JVM 侧 session / playbook / runtime 契约
-  extension-protocol/    Extension Plane 协议（OpenAPI + JSON Schema + 契约样例）
-  extension-sdk-jvm/     JVM Extension SDK（协议常量、DTO 生成、manifest 校验、registration helper）
-  extension-sdk-python/  Python Extension SDK（协议常量、canonical JSON、digest、registration 与 manifest 校验 helper）
-  persistence-jvm/       JVM 侧共享 PostgreSQL persistence（jOOQ + shared store）
-  python-common/         Python 服务共享工具
-  shared-redis-jvm/      JVM 侧共享 Redis keyspace / lock / pubsub / codec
-deploy/
-  common/  跨环境共享的无密钥运行材料
-  local/   本机联调 Docker Compose
-  dev/     共享开发服务器常驻 Docker Compose
-  test/    测试环境分模块发布模板
-scripts/
-  common/  环境变量装载与进程辅助
-  local/   本地源码直跑脚本
-  dev/     开发服务器源码直跑脚本
-docs/
-  architecture/      当前架构与环境说明
-  briefing/          项目背景资料
-  todo/              当前待办分解
-  develop_record/    历史归档（不作为当前实现基准）
-```
-
-## 控制台导航
-
-控制台采用五段式信息架构：
-
-- **平台设计**：业务域、业务场景
-- **助手构建**：助手配置、智能体、Playbook
-- **知识库**：知识库目录、知识库新建
-- **能力资源**：资源目录、资源新建
-- **运行与观测**：会话运行
+- [会话演示](https://www.bilibili.com/video/BV1eDLp6hEV4/)
+- [配置管理演示](https://www.bilibili.com/video/BV1eSLp6wE9X/)
 
 ## 快速开始
 
@@ -184,8 +72,7 @@ docs/
 ### 1. 启动本地依赖
 
 ```bash
-cd deploy/local
-docker compose up -d
+docker compose -f deploy/local/docker-compose.yml up -d
 ```
 
 依赖包含 PostgreSQL（自带 `pgvector` / `pg_trgm`）、MinIO、Redis、Temporal 与 sandbox。
@@ -266,7 +153,7 @@ AGENTYARD_KNOWLEDGE_EMBEDDING_DIMENSIONS=768
 AGENTYARD_TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT=PT2M
 ```
 
-仓库未提供 demo seed；业务域、资源与知识库需通过控制台或 API 显式创建。
+当前代码仍需要在控制台或 API 配置目录、资源及发布后使用。持续接待、自动建 Task 与委派的目标入口待本轮架构方案落地。
 
 ### 6. 构建前端与站点
 
@@ -287,7 +174,7 @@ pnpm dev               # Docker Compose 后台常驻
 pnpm dev:source        # 在服务器上从源码热加载运行
 ```
 
-详细说明见 `docs/architecture/dev-environment.md`。
+部署布局见[部署说明](deploy/README.md)，开发环境编排见 [deploy/dev/docker-compose.yml](deploy/dev/docker-compose.yml)。
 
 ## 测试
 
@@ -295,64 +182,28 @@ pnpm dev:source        # 在服务器上从源码热加载运行
 ./gradlew :apps:api:test :apps:worker:test :apps:channel-gateway:test
 pnpm test:web
 uv run --all-packages pytest
+# 跨语言协作端到端测试（先 uv sync --all-packages，无需 Docker 或模型密钥）
+./gradlew :apps:api:taskE2eTest
 ```
 
 CI 在 `.github/workflows/ci.yml` 中分别跑 Java / Node / Python 三套检查，并对 jOOQ 生成产物做差异校验。
 
-## 运行模型
+现有 Task E2E 使用确定性模型服务，并未启用后台 Session transcript 生命周期。它验证当前跨语言执行链，不能替代目标架构验收或真实模型/渠道测试，具体边界见[代码现状](docs/architecture/code-framework.md)。
 
-当前运行链路已经收敛到“**发布快照驱动的 session-owner-playbook**”模型：
+## 文档
 
-1. API 创建 `session`，按 assistant release 的 `primaryAgentId` 初始化 owner。
-2. `SessionWorkflow` 接收用户消息 Update，维护 owner、shared state、handoff、idle timer 与 playbook 生命周期。
-3. Worker 调用 Python `agent-runtime` `/agent-turns/execute-stream`，在 activity 内转发 transient stream frame，并只把最终 outcome 交给 workflow。
-4. Owner agent 单轮推理后返回决策：`REPLY` / `NO_OP` / `SWITCH_OWNER` / `RUN_PLAYBOOK` / `SESSION_HUMAN_HANDOFF` / `SECURITY_BLOCK`；`replyMessage` 可与非 `REPLY` action 同时存在。
-5. 若启动 playbook，则 `PlaybookWorkflow` 作为 child workflow 承担强流程，节点类型为 `STEP / TOOL_TASK / HUMAN_TASK / EXTERNAL_INTERACTION / END`。
-6. playbook 等待、恢复、终态结果统一写入 `session event` / `playbook run`。
-7. 非 handoff 状态下，playbook 终态会触发 owner reevaluation 继续推进。
-
-关键契约与实现入口：
-
-- [`SessionContracts.java`](packages/contracts-jvm/src/main/java/com/agentyard/contracts/session/SessionContracts.java)
-- [`CatalogService.java`](apps/api/src/main/java/com/agentyard/platform/catalog/CatalogService.java)
-- [`SessionRuntimeService.java`](apps/api/src/main/java/com/agentyard/platform/session/SessionRuntimeService.java)
-- [`SessionWorkflowImpl.java`](apps/worker/src/main/java/com/agentyard/worker/session/SessionWorkflowImpl.java)
-- [`PlaybookWorkflowImpl.java`](apps/worker/src/main/java/com/agentyard/worker/session/PlaybookWorkflowImpl.java)
-- [`agent-runtime/main.py`](apps/agent-runtime/agentyard_agent_runtime/main.py)
-
-## 文档索引
-
-- 项目结构与对象模型：[`docs/project_structure.md`](docs/project_structure.md)
-- 当前技术路线：[`docs/technical_route.md`](docs/technical_route.md)
-- 当前代码框架：[`docs/architecture/code-framework.md`](docs/architecture/code-framework.md)
-- Tool Connector 开发指导：[`docs/architecture/tool-connector-development.md`](docs/architecture/tool-connector-development.md)
-- External Interaction 集成：[`docs/architecture/external-interaction-integration.md`](docs/architecture/external-interaction-integration.md)
-- 本地与开发环境：[`docs/architecture/local-development.md`](docs/architecture/local-development.md)、[`docs/architecture/dev-environment.md`](docs/architecture/dev-environment.md)
-- Extension Plane 协议：[`packages/extension-protocol/README.md`](packages/extension-protocol/README.md)
-- 当前待办：[`docs/todo/`](docs/todo/)
-
-`docs/develop_record/` 仅用于里程碑留档与过程记录，不作为“当前实现”的唯一准绳。
-
-## 路线图
-
-短期重点：
-
-- 权限与身份：继续收敛 OIDC / IAM 与更细粒度授权
-- 观测：在 `session event / playbook run` + SSE 上补派生视图、分页查询与审计账本
-- 发布治理：灰度、回滚、版本 diff 与影响分析
-- 运行基座：增强 Channel Provider / Tool Connector 生态、回调安全、运维告警与生产隔离
-
-完整待办分解见 [`docs/todo/`](docs/todo/) 与 [`docs/project_todos.md`](docs/project_todos.md)。
+- [文档入口](docs/README.md)
+- [目标架构与决策](docs/architecture/agent-collaboration.md)
+- [实施与验收计划](docs/todo/agent-collaboration-refactor.md)
+- [当前代码框架](docs/architecture/code-framework.md)
+- [项目待办](docs/project_todos.md)
+- [Extension 接入](docs/architecture/extension-integration.md)
+- [Tool Connector 开发](docs/architecture/tool-connector-development.md)
+- [外部事件与恢复](docs/architecture/external-interaction-integration.md)
+- [部署布局](deploy/README.md)与[测试环境](deploy/test/README-cn.md)
 
 ## 参与贡献
 
-欢迎 issue、讨论与 PR。在提 PR 前，请：
+先阅读 [AGENTS.md](AGENTS.md)。修改应考虑全部应用、共享契约、数据库、部署和文档的影响；同类逻辑收敛到共享实现。根据影响范围运行 Java、Node、Python 检查；目标能力只有取得实际验证证据后才标记完成。
 
-1. 阅读 [`AGENTS.md`](AGENTS.md) 了解仓库的全局重构原则与目录约定。
-2. 本地跑通对应栈的测试（Java / Node / Python）。
-3. 当 PR 影响数据模型、契约或发布快照时，同步更新 `docs/architecture/` 与 `docs/project_structure.md`。
-
-## 联系方式
-
-- 仓库：<https://github.com/Agent-Yard/agentyard>
-- 反馈与建议：[GitHub Issues](https://github.com/Agent-Yard/agentyard/issues)
+仓库：[Agent-Yard/agentyard](https://github.com/Agent-Yard/agentyard)。反馈：[GitHub Issues](https://github.com/Agent-Yard/agentyard/issues)。

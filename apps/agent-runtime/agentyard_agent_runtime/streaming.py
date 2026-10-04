@@ -288,7 +288,7 @@ async def _stream_via_openai_compatible(
         if settings.max_tokens > 0:
             payload["max_tokens"] = settings.max_tokens
         apply_reasoning_settings(payload, settings)
-        max_steps = _max_streaming_tool_steps()
+        max_steps = _max_streaming_tool_steps(request)
         for step in range(max_steps + 1):
             model_round_id = f"{writer.turn_execution_id}:round-{step}"
             round_block_id: str | None = None
@@ -1146,20 +1146,23 @@ def _optional_int(value: Any) -> int | None:
         return None
 
 
-def _max_streaming_tool_steps() -> int:
+def _max_streaming_tool_steps(request: AgentTurnRequest | None = None) -> int:
+    task_execution = request is not None and request.taskExecutionId is not None
+    default_steps, maximum_steps = (24, 100) if task_execution else (6, 20)
+    setting = "AGENTYARD_AGENT_RUNTIME_TASK_MAX_TOOL_STEPS" if task_execution else "AGENTYARD_AGENT_RUNTIME_MAX_TOOL_STEPS"
     raw_value = ""
     try:
         import os
 
-        raw_value = (os.getenv("AGENTYARD_AGENT_RUNTIME_MAX_TOOL_STEPS") or "").strip()
+        raw_value = (os.getenv(setting) or "").strip()
     except Exception:  # pragma: no cover
         raw_value = ""
     if not raw_value:
-        return 6
+        return default_steps
     try:
-        return max(1, min(int(raw_value), 20))
+        return max(1, min(int(raw_value), maximum_steps))
     except ValueError:
-        return 6
+        return default_steps
 
 
 def _is_legacy_json_contract_text(text: str) -> bool:

@@ -6,6 +6,13 @@ plugins {
 
 val temporalVersion: String by rootProject.extra
 
+val taskE2e by sourceSets.creating {
+    compileClasspath += sourceSets.main.get().output + sourceSets.test.get().output
+    runtimeClasspath += sourceSets.main.get().output + sourceSets.test.get().output
+}
+configurations[taskE2e.implementationConfigurationName].extendsFrom(configurations.testImplementation.get())
+configurations[taskE2e.runtimeOnlyConfigurationName].extendsFrom(configurations.testRuntimeOnly.get())
+
 java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(25))
@@ -36,8 +43,22 @@ dependencies {
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
+    add(taskE2e.implementationConfigurationName, project(":apps:worker"))
+    add(taskE2e.implementationConfigurationName, "io.temporal:temporal-testing:$temporalVersion")
     testImplementation("io.zonky.test:embedded-postgres:2.2.2")
     testImplementation(platform("org.testcontainers:testcontainers-bom:1.20.4"))
     testImplementation("org.testcontainers:junit-jupiter")
     testImplementation("org.testcontainers:postgresql")
+}
+
+tasks.register<Test>("taskE2eTest") {
+    description = "Runs Task collaboration over real HTTP, PostgreSQL, Temporal and the Python runtime with a deterministic model."
+    group = "verification"
+    testClassesDirs = taskE2e.output.classesDirs
+    classpath = taskE2e.runtimeClasspath
+    useJUnitPlatform { includeTags("task-e2e") }
+    systemProperty("agentyard.repository", rootProject.projectDir.absolutePath)
+    inputs.files(rootProject.fileTree("apps/agent-runtime/agentyard_agent_runtime") { include("**/*.py") })
+    inputs.files(rootProject.fileTree("packages/python-common") { include("**/*.py") })
+    inputs.files(rootProject.files("uv.lock", "pyproject.toml", "apps/agent-runtime/pyproject.toml"))
 }

@@ -1,4 +1,6 @@
 export type PageKey =
+  | 'tasks'
+  | 'organizations'
   | 'domain'
   | 'scenario'
   | 'assistant'
@@ -13,7 +15,7 @@ export type PageKey =
 
 export type SectionKey = 'design' | 'build' | 'knowledge' | 'resource' | 'runtime-observe';
 
-export const defaultPageKey: PageKey = 'domain';
+export const defaultPageKey: PageKey = 'tasks';
 export const consoleBasePath = '/console';
 
 export const sectionMeta: Record<SectionKey, { label: string; description: string }> = {
@@ -40,6 +42,8 @@ export const sectionMeta: Record<SectionKey, { label: string; description: strin
 };
 
 export const pageMeta: Record<PageKey, { label: string; title: string; subtitle: string; section: SectionKey; path: string }> = {
+  tasks: { label: '协作任务', title: '协作工作台', subtitle: '围绕目标、上下文、参与者和成果，让人与 Agent 持续协作。', section: 'runtime-observe', path: `${consoleBasePath}/tasks` },
+  organizations: { label: '组织与角色', title: '组织与角色', subtitle: '组织成员和职责；任务内的参与范围独立授权。', section: 'design', path: `${consoleBasePath}/organizations` },
   domain: {
     label: '业务域',
     title: '业务域页',
@@ -137,6 +141,7 @@ export const menuItems = [
     key: 'design',
     label: sectionMeta.design.label,
     children: [
+      { key: 'organizations', label: pageMeta.organizations.label },
       { key: 'domain', label: pageMeta.domain.label },
       { key: 'scenario', label: pageMeta.scenario.label },
     ],
@@ -170,6 +175,7 @@ export const menuItems = [
     key: 'runtime-observe',
     label: sectionMeta['runtime-observe'].label,
     children: [
+      { key: 'tasks', label: pageMeta.tasks.label },
       { key: 'runtime', label: pageMeta.runtime.label },
     ],
   },

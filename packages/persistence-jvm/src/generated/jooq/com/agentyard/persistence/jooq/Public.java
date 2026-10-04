@@ -20,6 +20,20 @@ import com.agentyard.persistence.jooq.tables.CatalogResource;
 import com.agentyard.persistence.jooq.tables.CatalogResourceVersions;
 import com.agentyard.persistence.jooq.tables.CatalogScenario;
 import com.agentyard.persistence.jooq.tables.ChannelSessionBindingSnapshot;
+import com.agentyard.persistence.jooq.tables.CollaborationActor;
+import com.agentyard.persistence.jooq.tables.CollaborationContextEntry;
+import com.agentyard.persistence.jooq.tables.CollaborationContextVersion;
+import com.agentyard.persistence.jooq.tables.CollaborationExecution;
+import com.agentyard.persistence.jooq.tables.CollaborationExecutionSignal;
+import com.agentyard.persistence.jooq.tables.CollaborationMembership;
+import com.agentyard.persistence.jooq.tables.CollaborationOrganization;
+import com.agentyard.persistence.jooq.tables.CollaborationParticipant;
+import com.agentyard.persistence.jooq.tables.CollaborationTask;
+import com.agentyard.persistence.jooq.tables.CollaborationTaskCommand;
+import com.agentyard.persistence.jooq.tables.CollaborationTaskEvent;
+import com.agentyard.persistence.jooq.tables.CollaborationTaskRelation;
+import com.agentyard.persistence.jooq.tables.CollaborationTaskReview;
+import com.agentyard.persistence.jooq.tables.CollaborationTaskSession;
 import com.agentyard.persistence.jooq.tables.IntegrationAccount;
 import com.agentyard.persistence.jooq.tables.KnowledgeBase;
 import com.agentyard.persistence.jooq.tables.KnowledgeRelease;
@@ -140,6 +154,76 @@ public class Public extends SchemaImpl {
     public final ChannelSessionBindingSnapshot CHANNEL_SESSION_BINDING_SNAPSHOT = ChannelSessionBindingSnapshot.CHANNEL_SESSION_BINDING_SNAPSHOT;
 
     /**
+     * The table <code>public.collaboration_actor</code>.
+     */
+    public final CollaborationActor COLLABORATION_ACTOR = CollaborationActor.COLLABORATION_ACTOR;
+
+    /**
+     * The table <code>public.collaboration_context_entry</code>.
+     */
+    public final CollaborationContextEntry COLLABORATION_CONTEXT_ENTRY = CollaborationContextEntry.COLLABORATION_CONTEXT_ENTRY;
+
+    /**
+     * The table <code>public.collaboration_context_version</code>.
+     */
+    public final CollaborationContextVersion COLLABORATION_CONTEXT_VERSION = CollaborationContextVersion.COLLABORATION_CONTEXT_VERSION;
+
+    /**
+     * The table <code>public.collaboration_execution</code>.
+     */
+    public final CollaborationExecution COLLABORATION_EXECUTION = CollaborationExecution.COLLABORATION_EXECUTION;
+
+    /**
+     * The table <code>public.collaboration_execution_signal</code>.
+     */
+    public final CollaborationExecutionSignal COLLABORATION_EXECUTION_SIGNAL = CollaborationExecutionSignal.COLLABORATION_EXECUTION_SIGNAL;
+
+    /**
+     * The table <code>public.collaboration_membership</code>.
+     */
+    public final CollaborationMembership COLLABORATION_MEMBERSHIP = CollaborationMembership.COLLABORATION_MEMBERSHIP;
+
+    /**
+     * The table <code>public.collaboration_organization</code>.
+     */
+    public final CollaborationOrganization COLLABORATION_ORGANIZATION = CollaborationOrganization.COLLABORATION_ORGANIZATION;
+
+    /**
+     * The table <code>public.collaboration_participant</code>.
+     */
+    public final CollaborationParticipant COLLABORATION_PARTICIPANT = CollaborationParticipant.COLLABORATION_PARTICIPANT;
+
+    /**
+     * The table <code>public.collaboration_task</code>.
+     */
+    public final CollaborationTask COLLABORATION_TASK = CollaborationTask.COLLABORATION_TASK;
+
+    /**
+     * The table <code>public.collaboration_task_command</code>.
+     */
+    public final CollaborationTaskCommand COLLABORATION_TASK_COMMAND = CollaborationTaskCommand.COLLABORATION_TASK_COMMAND;
+
+    /**
+     * The table <code>public.collaboration_task_event</code>.
+     */
+    public final CollaborationTaskEvent COLLABORATION_TASK_EVENT = CollaborationTaskEvent.COLLABORATION_TASK_EVENT;
+
+    /**
+     * The table <code>public.collaboration_task_relation</code>.
+     */
+    public final CollaborationTaskRelation COLLABORATION_TASK_RELATION = CollaborationTaskRelation.COLLABORATION_TASK_RELATION;
+
+    /**
+     * The table <code>public.collaboration_task_review</code>.
+     */
+    public final CollaborationTaskReview COLLABORATION_TASK_REVIEW = CollaborationTaskReview.COLLABORATION_TASK_REVIEW;
+
+    /**
+     * The table <code>public.collaboration_task_session</code>.
+     */
+    public final CollaborationTaskSession COLLABORATION_TASK_SESSION = CollaborationTaskSession.COLLABORATION_TASK_SESSION;
+
+    /**
      * The table <code>public.integration_account</code>.
      */
     public final IntegrationAccount INTEGRATION_ACCOUNT = IntegrationAccount.INTEGRATION_ACCOUNT;
@@ -258,6 +342,20 @@ public class Public extends SchemaImpl {
             CatalogResourceVersions.CATALOG_RESOURCE_VERSIONS,
             CatalogScenario.CATALOG_SCENARIO,
             ChannelSessionBindingSnapshot.CHANNEL_SESSION_BINDING_SNAPSHOT,
+            CollaborationActor.COLLABORATION_ACTOR,
+            CollaborationContextEntry.COLLABORATION_CONTEXT_ENTRY,
+            CollaborationContextVersion.COLLABORATION_CONTEXT_VERSION,
+            CollaborationExecution.COLLABORATION_EXECUTION,
+            CollaborationExecutionSignal.COLLABORATION_EXECUTION_SIGNAL,
+            CollaborationMembership.COLLABORATION_MEMBERSHIP,
+            CollaborationOrganization.COLLABORATION_ORGANIZATION,
+            CollaborationParticipant.COLLABORATION_PARTICIPANT,
+            CollaborationTask.COLLABORATION_TASK,
+            CollaborationTaskCommand.COLLABORATION_TASK_COMMAND,
+            CollaborationTaskEvent.COLLABORATION_TASK_EVENT,
+            CollaborationTaskRelation.COLLABORATION_TASK_RELATION,
+            CollaborationTaskReview.COLLABORATION_TASK_REVIEW,
+            CollaborationTaskSession.COLLABORATION_TASK_SESSION,
             IntegrationAccount.INTEGRATION_ACCOUNT,
             KnowledgeBase.KNOWLEDGE_BASE,
             KnowledgeRelease.KNOWLEDGE_RELEASE,

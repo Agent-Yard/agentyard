@@ -59,6 +59,8 @@ declare module 'vue' {
     ATypographyTitle: typeof import('ant-design-vue/es')['TypographyTitle']
     AUpload: typeof import('ant-design-vue/es')['Upload']
     CatalogFormDrawer: typeof import('./src/components/CatalogFormDrawer.vue')['default']
+    CollaborationParticipants: typeof import('./src/components/CollaborationParticipants.vue')['default']
+    CollaborationRoleEditor: typeof import('./src/components/CollaborationRoleEditor.vue')['default']
     DeletionPreviewModal: typeof import('./src/components/DeletionPreviewModal.vue')['default']
     ObjectHistoryPanel: typeof import('./src/components/ObjectHistoryPanel.vue')['default']
     ObjectReferencePanel: typeof import('./src/components/ObjectReferencePanel.vue')['default']
@@ -68,5 +70,7 @@ declare module 'vue' {
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     SchemaDrivenForm: typeof import('./src/components/SchemaDrivenForm.vue')['default']
+    SessionTaskLinks: typeof import('./src/components/SessionTaskLinks.vue')['default']
+    TaskContextPanel: typeof import('./src/components/TaskContextPanel.vue')['default']
   }
 }

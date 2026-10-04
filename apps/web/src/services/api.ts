@@ -178,7 +178,7 @@ async function readResponseData<T>(response: Response): Promise<T> {
   return body.data as T;
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
+export async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const { headers: optionHeaders, ...requestOptions } = options ?? {};
   const response = await fetch(`${API_BASE}${path}`, {
     credentials: 'include',

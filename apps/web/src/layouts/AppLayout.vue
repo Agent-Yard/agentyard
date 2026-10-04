@@ -80,7 +80,7 @@ provide(pageHeadActionsKey, pageHeadActions);
       <div class="console-topbar__tools">
         <div class="console-envtag">
           <span class="console-envtag__dot"></span>
-          {{ environmentLabel }} · {{ governanceWritable ? 'writable' : 'readonly' }}
+          {{ environmentLabel }} · {{ governanceWritable ? '配置可管理' : '配置只读' }}
         </div>
         <button type="button" class="console-command-button">
           <span class="console-command-button__icon" aria-hidden="true"></span>

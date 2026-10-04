@@ -1,10 +1,13 @@
 # agent-runtime
 
-`agent-runtime` 是 AgentYard 的 Python 执行运行时，负责执行单个 owner agent 的单轮推理。
+状态：本文描述当前实现。后续以[Agent 持续上下文架构](../../docs/architecture/agent-collaboration.md)为目标，统一前台与后台 Session；本轮仅整理文档，尚未改造运行代码。
+
+`agent-runtime` 是 AgentYard 的 Python 执行运行时，负责执行 Session Owner 和 Task 参与 Agent 的推理。
 
 当前职责包括：
 
 - 接收 `AgentTurnRequest`
+- 接收独立 Task 执行 ID，从控制面读取发布与范围化上下文；通过 `task_read_context` / `task_contribute` 参与持久化协作
 - 组装 `PromptInstruction + PromptRuntimeMessages + PromptCapabilities`
 - 在单轮推理内执行有上限的 `LLM -> tool_call -> tool_result -> final_decision` 循环
 - 返回新的 `sharedState` 快照
@@ -36,13 +39,18 @@ uv run --directory apps/agent-runtime --package agentyard-agent-runtime pytest t
 当前 runtime 暴露的核心接口：
 
 - `POST /agent-turns/execute-stream`
+- `POST /task-executions/execute`：执行专属 turn，复用模型、隐私和工具链路；当前使用合成 Session ID，未写真实 Session transcript，这是待移除的后台特例
 - `POST /playbook-tool-tasks/execute`
 
 它们都由 `apps/worker` 通过 HTTP 调用，不直接面向控制台页面。
 
+Session 的 `read_session_tasks` 工具读取显式关联任务，控制面校验人和当前 Agent 的权限交集。当前 Task 执行走另一条工作流，详见[代码现状](../../docs/architecture/code-framework.md)。目标中 Task 仍是独立的工作信息，所有 Agent 推理则必须关联真实 Session 和持久上下文，见[实施计划](../../docs/todo/agent-collaboration-refactor.md)。
+
 ## 环境变量
 
 运行时会通过脚本自动加载根目录 `.env` / `.env.local`，以及 `apps/agent-runtime/.env` / `.env.local`。
+
+工具循环预算按入口区分：会话使用 `AGENTYARD_AGENT_RUNTIME_MAX_TOOL_STEPS`（默认 6，上限 20）；独立 Task 使用 `AGENTYARD_AGENT_RUNTIME_TASK_MAX_TOOL_STEPS`（默认 24，上限 100），包含证据读取、贡献和版本冲突协调。两者到达上限后都会明确返回失败，已经成功提交的 Task 贡献保留。
 
 本地排查模型调用时，把 `AGENTYARD_AGENT_RUNTIME_LOG_LEVEL=DEBUG` 写入 `.env.local`；runtime 会输出每次 OpenAI-compatible LLM 调用的请求 URL、headers（密钥脱敏）、原始 payload、响应状态和原始响应 body。
 

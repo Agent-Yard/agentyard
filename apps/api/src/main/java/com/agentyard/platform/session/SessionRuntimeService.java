@@ -2,14 +2,10 @@ package com.agentyard.platform.session;
 
 import com.agentyard.platform.auth.CurrentUserResolver;
 import com.agentyard.contracts.session.SessionContracts.AgentConfig;
-import com.agentyard.contracts.session.SessionContracts.PlaybookConfig;
-import com.agentyard.contracts.session.SessionContracts.PlaybookEdge;
 import com.agentyard.contracts.session.SessionContracts.PlaybookExecutionPolicy;
-import com.agentyard.contracts.session.SessionContracts.PlaybookNode;
 import com.agentyard.contracts.session.SessionContracts.ExternalCallbackSignal;
 import com.agentyard.contracts.session.SessionContracts.EndHumanHandoffSignal;
 import com.agentyard.contracts.session.SessionContracts.HumanResumeSignal;
-import com.agentyard.contracts.session.SessionContracts.HumanOperatorReplySignal;
 import com.agentyard.contracts.session.SessionContracts.AcceptedSessionMessageAllocation;
 import com.agentyard.contracts.session.SessionContracts.ChannelIdentityImportTarget;
 import com.agentyard.contracts.session.SessionContracts.ChannelInboundSessionTurnMessage;
@@ -17,8 +13,6 @@ import com.agentyard.contracts.session.SessionContracts.ChannelInboundSessionTur
 import com.agentyard.contracts.session.SessionContracts.ChannelInboundSessionTurnResponse;
 import com.agentyard.contracts.session.SessionContracts.ExistingSessionImportTarget;
 import com.agentyard.contracts.session.SessionContracts.ImportSessionTarget;
-import com.agentyard.contracts.session.SessionContracts.KnowledgeBindingDescriptor;
-import com.agentyard.contracts.session.SessionContracts.LlmModelDescriptor;
 import com.agentyard.contracts.session.SessionContracts.SendSessionTurnRequest;
 import com.agentyard.contracts.session.SessionContracts.SendSessionTurnResponse;
 import com.agentyard.contracts.session.SessionContracts.SessionMessage;
@@ -33,13 +27,6 @@ import com.agentyard.contracts.session.SessionContracts.SessionOwnerPolicy;
 import com.agentyard.contracts.session.SessionContracts.SessionPolicy;
 import com.agentyard.contracts.session.SessionContracts.SessionStartRequest;
 import com.agentyard.contracts.session.SessionContracts.SessionTriggerType;
-import com.agentyard.contracts.session.SessionContracts.SkillDescriptor;
-import com.agentyard.contracts.session.SessionContracts.ToolDescriptor;
-import com.agentyard.contracts.session.SessionContracts.ToolConnectorAccountSnapshot;
-import com.agentyard.contracts.session.SessionContracts.ToolConnectorDescriptor;
-import com.agentyard.contracts.session.SessionContracts.ToolConnectorRetryMode;
-import com.agentyard.contracts.session.SessionContracts.ToolConnectorRuntimeRetryPolicy;
-import com.agentyard.contracts.session.SessionContracts.ToolOperationDescriptor;
 import com.agentyard.contracts.session.SessionContracts.TrustedImportSessionTurnMessage;
 import com.agentyard.contracts.session.SessionContracts.TrustedImportSessionTurnRequest;
 import com.agentyard.contracts.session.SessionContracts.UserTurn;
@@ -48,15 +35,8 @@ import com.agentyard.contracts.session.SessionContracts.WebSessionTurnMessageInp
 import com.agentyard.contracts.session.SessionContracts.AssistantSessionConfig;
 import com.agentyard.persistence.session.SessionRuntimeStore;
 import com.agentyard.platform.catalog.CatalogDtos.AssistantDto;
-import com.agentyard.platform.catalog.CatalogDtos.AssistantReleaseAgentDto;
 import com.agentyard.platform.catalog.CatalogDtos.AssistantReleaseDto;
 import com.agentyard.platform.catalog.CatalogDtos.AssistantReleaseResourceDto;
-import com.agentyard.platform.catalog.CatalogDtos.KnowledgeBindingSnapshotDto;
-import com.agentyard.platform.catalog.CatalogDtos.LlmModelConfigDto;
-import com.agentyard.platform.catalog.CatalogDtos.SkillConfigDto;
-import com.agentyard.platform.catalog.CatalogDtos.ToolConfigDto;
-import com.agentyard.platform.catalog.CatalogDtos.ToolConnectorConfigDto;
-import com.agentyard.platform.catalog.CatalogDtos.ToolOperationDto;
 import com.agentyard.platform.catalog.CatalogService;
 import com.agentyard.platform.shared.ConflictException;
 import com.agentyard.platform.shared.redis.RedisIdempotencyService;
@@ -84,15 +64,10 @@ import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 import static com.agentyard.platform.session.SessionRuntimeDtos.*;
+import static com.agentyard.platform.catalog.ReleaseRuntimeMapper.*;
 
 @Service
 public class SessionRuntimeService {
-    private static final List<String> DEFAULT_RETRYABLE_REMOTE_CATEGORIES = List.of(
-        "REMOTE_TIMEOUT",
-        "REMOTE_UNAVAILABLE",
-        "REMOTE_RATE_LIMITED",
-        "UNKNOWN"
-    );
     private static final String ENTRY_SCOPE_WEB = SessionRuntimeStore.SessionEntryScope.WEB.name();
     private static final String ENTRY_SCOPE_CHANNEL = SessionRuntimeStore.SessionEntryScope.CHANNEL.name();
     private static final String TURN_STATUS_ALLOCATED_IDS = SessionRuntimeStore.SessionRuntimeTurnStatus.ALLOCATED_IDS.name();
@@ -722,286 +697,8 @@ public class SessionRuntimeService {
                 )
             ),
             agents,
-            release.playbooks() == null ? List.of() : release.playbooks().stream().map(this::toPlaybookConfig).toList(),
+            release.playbooks() == null ? List.of() : release.playbooks().stream().map(com.agentyard.platform.catalog.ReleaseRuntimeMapper::toPlaybookConfig).toList(),
             Map.of()
-        );
-    }
-
-    private AgentConfig toAgentConfig(
-        AssistantReleaseAgentDto agent,
-        AssistantReleaseDto release,
-        Map<String, AssistantReleaseResourceDto> resourcesByVersionId
-    ) {
-        return new AgentConfig(
-            agent.agentId(),
-            agent.name(),
-            agent.role(),
-            agent.responsibility(),
-            resolveModelDescriptor(agent, release, resourcesByVersionId),
-            resolvePrivacyModelDescriptor(agent, release, resourcesByVersionId),
-            agent.effectivePrivacyMappingEnabled(),
-            agent.executionPolicy().systemPrompt(),
-            agent.executionPolicy().knowledgeEnabled(),
-            agent.executionPolicy().knowledgeBaseId(),
-            toKnowledgeBindingDescriptor(agent.knowledgeBinding()),
-            agent.executionPolicy().memoryWindowSize(),
-            agent.canOwnSession(),
-            agent.allowedActions(),
-            agent.switchableOwnerAgentIds(),
-            agent.playbookIds(),
-            agent.skillResourceVersionIds().stream()
-                .map(resourcesByVersionId::get)
-                .filter(item -> item != null && item.configuration() != null && item.configuration().skill() != null)
-                .map(this::toSkillDescriptor)
-                .toList(),
-            agent.toolResourceVersionIds().stream()
-                .map(resourcesByVersionId::get)
-                .filter(item -> item != null && item.configuration() != null && item.configuration().tool() != null)
-                .map(this::toToolDescriptor)
-                .toList()
-        );
-    }
-
-    private Map<String, AssistantReleaseResourceDto> indexResourcesByVersionId(AssistantReleaseDto release) {
-        Map<String, AssistantReleaseResourceDto> resourcesByVersionId = new LinkedHashMap<>();
-        if (release.resources() == null) {
-            return resourcesByVersionId;
-        }
-        release.resources().forEach(resource -> resourcesByVersionId.put(resource.resourceVersionId(), resource));
-        return resourcesByVersionId;
-    }
-
-    private LlmModelDescriptor resolveModelDescriptor(
-        AssistantReleaseAgentDto agent,
-        AssistantReleaseDto release,
-        Map<String, AssistantReleaseResourceDto> resourcesByVersionId
-    ) {
-        AssistantReleaseResourceDto resource = null;
-        List<AssistantReleaseResourceDto> releaseResources = release.resources() == null ? List.of() : release.resources();
-        if (agent.executionPolicy().modelResourceId() != null && !agent.executionPolicy().modelResourceId().isBlank()) {
-            resource = releaseResources.stream()
-                .filter(item -> agent.executionPolicy().modelResourceId().equals(item.resourceId()))
-                .findFirst()
-                .orElse(null);
-        }
-        if (resource == null && release.defaultModelBinding() != null) {
-            resource = resourcesByVersionId.get(release.defaultModelBinding().resourceVersionId());
-        }
-        if (resource == null || resource.configuration() == null || resource.configuration().llmModel() == null) {
-            return null;
-        }
-        LlmModelConfigDto config = resource.configuration().llmModel();
-        return new LlmModelDescriptor(
-            resource.resourceId(),
-            resource.resourceName(),
-            resource.resourceVersionId(),
-            resource.resourceVersion(),
-            config.providerType(),
-            config.modelId(),
-            config.baseUrl(),
-            config.apiKeyEnvVar(),
-            config.temperature(),
-            config.maxTokens(),
-            config.privateDeployment(),
-            effectiveEnableThinking(release, config),
-            effectiveReasoningEffort(release, config)
-        );
-    }
-
-    private LlmModelDescriptor resolvePrivacyModelDescriptor(
-        AssistantReleaseAgentDto agent,
-        AssistantReleaseDto release,
-        Map<String, AssistantReleaseResourceDto> resourcesByVersionId
-    ) {
-        if (!agent.effectivePrivacyMappingEnabled() || agent.effectivePrivacyModelBinding() == null) {
-            return null;
-        }
-        AssistantReleaseResourceDto resource = resourcesByVersionId.get(agent.effectivePrivacyModelBinding().resourceVersionId());
-        if (resource == null || resource.configuration() == null || resource.configuration().llmModel() == null) {
-            return null;
-        }
-        LlmModelConfigDto config = resource.configuration().llmModel();
-        return new LlmModelDescriptor(
-            resource.resourceId(),
-            resource.resourceName(),
-            resource.resourceVersionId(),
-            resource.resourceVersion(),
-            config.providerType(),
-            config.modelId(),
-            config.baseUrl(),
-            config.apiKeyEnvVar(),
-            config.temperature(),
-            config.maxTokens(),
-            config.privateDeployment(),
-            config.enableThinking(),
-            config.reasoningEffort()
-        );
-    }
-
-    private Boolean effectiveEnableThinking(AssistantReleaseDto release, LlmModelConfigDto config) {
-        if (release.modelPolicy() != null && release.modelPolicy().enableThinking() != null) {
-            return release.modelPolicy().enableThinking();
-        }
-        return config.enableThinking();
-    }
-
-    private String effectiveReasoningEffort(AssistantReleaseDto release, LlmModelConfigDto config) {
-        if (release.modelPolicy() != null && release.modelPolicy().reasoningEffort() != null && !release.modelPolicy().reasoningEffort().isBlank()) {
-            return release.modelPolicy().reasoningEffort();
-        }
-        return config.reasoningEffort();
-    }
-
-    private SkillDescriptor toSkillDescriptor(AssistantReleaseResourceDto resource) {
-        SkillConfigDto skill = resource.configuration().skill();
-        return new SkillDescriptor(
-            resource.resourceId(),
-            resource.resourceName(),
-            resource.resourceVersionId(),
-            resource.resourceVersion(),
-            skill.skillName(),
-            skill.skillDesc(),
-            skill.skillPrompt()
-        );
-    }
-
-    private KnowledgeBindingDescriptor toKnowledgeBindingDescriptor(KnowledgeBindingSnapshotDto binding) {
-        if (binding == null) {
-            return null;
-        }
-        return new KnowledgeBindingDescriptor(
-            binding.knowledgeBaseId(),
-            binding.knowledgeBaseName(),
-            binding.knowledgeReleaseId(),
-            binding.knowledgeReleaseVersion(),
-            binding.snapshotId(),
-            binding.defaultTopK(),
-            binding.retrievalMode(),
-            binding.minScore()
-        );
-    }
-
-    private ToolDescriptor toToolDescriptor(AssistantReleaseResourceDto resource) {
-        ToolConfigDto tool = resource.configuration().tool();
-        return new ToolDescriptor(
-            resource.resourceId(),
-            resource.resourceName(),
-            resource.resourceVersionId(),
-            resource.resourceVersion(),
-            tool.operations() == null ? List.of() : tool.operations().stream().map(this::toToolOperationDescriptor).toList(),
-            toToolConnectorDescriptor(tool.connector())
-        );
-    }
-
-    private ToolOperationDescriptor toToolOperationDescriptor(ToolOperationDto operation) {
-        return new ToolOperationDescriptor(
-            operation.name(),
-            operation.description(),
-            operation.inputSchema(),
-            operation.outputSchema()
-        );
-    }
-
-    private ToolConnectorDescriptor toToolConnectorDescriptor(ToolConnectorConfigDto connector) {
-        if (connector == null) {
-            return null;
-        }
-        return new ToolConnectorDescriptor(
-            connector.connectorType(),
-            toToolConnectorAccountSnapshot(connector.accountSnapshot()),
-            connector.timeoutSeconds(),
-            toToolConnectorRuntimeRetryPolicy(connector.retryPolicy()),
-            connector.config(),
-            connector.operationMappings()
-        );
-    }
-
-    private ToolConnectorRuntimeRetryPolicy toToolConnectorRuntimeRetryPolicy(String retryPolicyPreset) {
-        String preset = retryPolicyPreset == null ? "" : retryPolicyPreset.trim();
-        if (preset.isEmpty() || "NONE".equals(preset)) {
-            return new ToolConnectorRuntimeRetryPolicy(
-                ToolConnectorRetryMode.NONE,
-                1,
-                0,
-                0,
-                1.0,
-                List.of(),
-                List.of()
-            );
-        }
-        if ("FIXED".equals(preset)) {
-            return new ToolConnectorRuntimeRetryPolicy(
-                ToolConnectorRetryMode.FIXED,
-                3,
-                100,
-                100,
-                1.0,
-                DEFAULT_RETRYABLE_REMOTE_CATEGORIES,
-                List.of()
-            );
-        }
-        if ("EXPONENTIAL".equals(preset) || "EXPONENTIAL_BACKOFF".equals(preset)) {
-            return new ToolConnectorRuntimeRetryPolicy(
-                ToolConnectorRetryMode.EXPONENTIAL,
-                3,
-                100,
-                1000,
-                2.0,
-                DEFAULT_RETRYABLE_REMOTE_CATEGORIES,
-                List.of()
-            );
-        }
-        throw new IllegalArgumentException("unsupported tool connector retryPolicy preset: " + retryPolicyPreset);
-    }
-
-    private ToolConnectorAccountSnapshot toToolConnectorAccountSnapshot(com.agentyard.platform.catalog.CatalogDtos.ToolConnectorAccountSnapshotDto accountSnapshot) {
-        if (accountSnapshot == null) {
-            return null;
-        }
-        return new ToolConnectorAccountSnapshot(accountSnapshot.accountId(), accountSnapshot.runtimeSecretRef());
-    }
-
-    private PlaybookConfig toPlaybookConfig(com.agentyard.platform.catalog.CatalogDtos.PlaybookDto playbook) {
-        return new PlaybookConfig(
-            playbook.id(),
-            playbook.name(),
-            playbook.description(),
-            playbook.inputSchema(),
-            playbook.resultSchema(),
-            new PlaybookExecutionPolicy(
-                playbook.executionPolicy() == null ? null : playbook.executionPolicy().timeoutPolicy(),
-                playbook.executionPolicy() == null ? null : playbook.executionPolicy().retryPolicy()
-            ),
-            playbook.allowHumanTask(),
-            playbook.allowExternalInteraction(),
-            playbook.entryNodeKey(),
-            playbook.nodes() == null ? List.of() : playbook.nodes().stream()
-                .map(node -> new PlaybookNode(
-                    node.nodeKey(),
-                    node.nodeName(),
-                    node.nodeType(),
-                    node.description(),
-                    node.scriptRef(),
-                    node.scriptVersion(),
-                    node.toolId(),
-                    node.toolOperation(),
-                    node.config(),
-                    new com.agentyard.contracts.session.SessionContracts.PlaybookNodeLayout(
-                        node.layout().x(),
-                        node.layout().y()
-                    )
-                ))
-                .toList(),
-            playbook.edges() == null ? List.of() : playbook.edges().stream()
-                .map(edge -> new PlaybookEdge(
-                    edge.edgeKey(),
-                    edge.sourceNodeKey(),
-                    edge.targetNodeKey(),
-                    edge.routeKey(),
-                    edge.label(),
-                    edge.defaultEdge()
-                ))
-                .toList()
         );
     }
 

@@ -19,6 +19,6 @@ describe('navigation routing helpers', () => {
   });
 
   it('falls back to the default page for unknown paths', () => {
-    expect(resolvePageKeyFromPath('/unknown')).toBe('domain');
+    expect(resolvePageKeyFromPath('/unknown')).toBe('tasks');
   });
 });

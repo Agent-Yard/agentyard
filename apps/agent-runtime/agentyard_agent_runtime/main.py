@@ -7,6 +7,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from .task_execution import TaskRunRequest, execute_task
+from .models import AgentTurnExecutionOutcome
 
 from agentyard_common import (
     ReadinessCheck,
@@ -189,6 +191,11 @@ async def tool_connector_registry_validation(
         result = validate_tool_connector_registry(registration_set, descriptor_provider=provider)
     status_code = 200 if result.get("status") == "READY" else 503
     return JSONResponse(status_code=status_code, content=result)
+
+
+@app.post("/task-executions/execute", response_model=AgentTurnExecutionOutcome)
+async def execute_task_execution(request: TaskRunRequest, _: None = Depends(require_internal_bearer)) -> AgentTurnExecutionOutcome:
+    return await execute_task(request)
 
 
 @app.post("/agent-turns/execute-stream")

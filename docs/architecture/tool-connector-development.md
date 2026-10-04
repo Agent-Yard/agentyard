@@ -1,118 +1,71 @@
-# Tool Connector 开发指导
+# Tool Connector 开发
 
-## 目标边界
+核对日期：2026-10-04。本文说明当前连接器实现；目标的实例身份与工具授权改造见[协作架构](agent-collaboration.md)。协议字段以 [extension-protocol](../../packages/extension-protocol/README.md) 为准。
 
-Tool Connector 的职责是把 Tool 的业务操作映射到具体接入协议。Tool operation 只描述模型可理解的业务能力；Connector 负责协议、鉴权、签名、请求编排和远端调用；Integration Account 负责账号与凭证状态。
+## 1. 三个边界
 
-新增或调整 connector 时，不要把厂商协议细节泄漏到 Agent、Playbook、Session 投影或 Tool operation schema。协议差异应收敛在 connector 的三个边界内：
+Tool operation 定义业务输入输出，Tool Connector 处理调用协议，Integration Account 管理账号与凭证引用。Agent 只选择业务 operation 并提交参数，不负责拼接密钥、签名、Cookie 或厂商认证。
 
-- Runtime 执行：`apps/agent-runtime/agentyard_agent_runtime/tool_connectors.py`
-- API 归一化：`apps/api/src/main/java/com/agentyard/platform/catalog/ToolConnectorCatalog.java`
-- Web 配置定义：`apps/web/src/config/toolConnectors.ts`
+当前内置 SIMPLE_HTTP、BUSINESS_CODE_SECRET_HTTP、MCP，也支持远程扩展。connectorType 是注册的 descriptor ID，不是只能添加固定枚举值的封闭类型。
 
-## 当前内置 Connector
+| 部分 | 当前实现入口 |
+| --- | --- |
+| Runtime 分发与内置执行 | [tool_connectors.py](../../apps/agent-runtime/agentyard_agent_runtime/tool_connectors.py) |
+| Manifest 加载与 registry | [extension_registry.py](../../apps/agent-runtime/agentyard_agent_runtime/extension_registry.py) |
+| 控制面聚合定义 | [ExtensionDefinitionService.java](../../apps/api/src/main/java/com/agentyard/platform/extension/ExtensionDefinitionService.java) |
+| 资源配置校验 | [CatalogService.java](../../apps/api/src/main/java/com/agentyard/platform/catalog/CatalogService.java) |
+| Web 通用表单 | [toolConnectorDefinitionForms.ts](../../apps/web/src/components/toolConnectorDefinitionForms.ts)、[integrationAccountDefinition.ts](../../apps/web/src/pages/integrationAccountDefinition.ts) |
+| 运行描述符 | [models.py](../../apps/agent-runtime/agentyard_agent_runtime/models.py)、JVM SessionContracts |
 
-- `SIMPLE_HTTP`：按 operation mapping 发送 HTTP 请求；可选绑定 Integration Account，并从 credential 注入 Bearer header。
-- `BUSINESS_CODE_SECRET_HTTP`：按 operation mapping 发送 HTTP 请求；必须绑定 Integration Account，并用 `businessCode + secretKey` 生成稳定 HMAC 字段。
-- `MCP`：调用 MCP gateway；当前不使用 Integration Account，可按配置决定是否带内部鉴权。
+`call_connector_tool` 首先验证 registry 中存在该 connectorType。内置实现从 CONNECTOR_REGISTRY 选取，其余由 RemoteToolConnectorAdapter 根据 manifest 调用远端服务。控制面和前端消费 descriptor/schema，不需要为每个远端厂商增加一套静态表单分支。
 
-## 新增 Connector 流程
+## 2. 新增远程 Connector
 
-1. 定义 connector 类型
+1. 实现独立 extension service，提供 `GET /extension/manifest` 和 descriptor 声明的 invoke endpoint。
+2. 按业务能力设计 operation 的输入输出；工具参数与连接器协议配置分开。
+3. 在 manifest 声明账号、凭证、连接器配置和 operation mapping 的 schema，按需声明 UI schema。
+4. 通过部署方的扩展注册配置接入；API 与 Runtime 加载并校验 registry。
+5. 在控制面配置 Integration Account 与工具资源版本，通过真实 Runtime 调用验证成功、认证失败、参数错误、超时和业务拒绝。
+6. 若调整公共协议，同时更新 OpenAPI、JSON Schema、examples、fixtures、SDK 与消费者。
 
-   在共享契约中增加新的 `ToolConnectorType`：
+完整 manifest、认证头、注册方式和 credential lifecycle 见[Extension 接入](extension-integration.md)。扩展同一 SDK/协议时复用共享 helper，不重复签名、canonical JSON 或 manifest 校验实现。
 
-   - `packages/contracts-jvm/src/main/java/com/agentyard/contracts/runtime/WorkflowContracts.java`
-   - `packages/contracts/src/index.ts`
-   - `packages/contracts/openapi/control-plane.yaml`
-   - `apps/web/src/types/catalog.types.ts`
+## 3. 配置职责
 
-   当前项目不要求兼容旧数据；不要为了旧 provider/config 字段增加迁移型分支。
+| Manifest 字段 | 保存什么 |
+| --- | --- |
+| accountConfigSchema / accountConfigUiSchema | 可复用账号的非敏感配置 |
+| credentialSchema / credentialUiSchema | 凭证输入，敏感字段标注 secret |
+| credentialLifecycleEndpointProfiles | 可选的创建、轮换、撤销、验证端点，由 descriptor 引用 |
+| configSchema / configUiSchema / defaultConfig | 具体工具的连接器配置与非敏感默认值 |
+| operationMappingSchema / operationMappingUiSchema | 业务 operation 到远端协议的映射配置 |
 
-2. 增加 Runtime 执行实现
+运行时 ToolConnectorDescriptor 包含 connectorType、accountSnapshot、timeoutSeconds、retryPolicy、config、operationMappings。accountSnapshot 携带账号和密钥引用，不在模型参数或 Task 共享上下文中公开实际凭证。
 
-   在 `tool_connectors.py` 新增一个实现类，并注册到 `CONNECTOR_REGISTRY`。
+retryPolicy 是结构化对象，mode 为 NONE / FIXED / EXPONENTIAL，包含 maxAttempts、延迟、退避、可重试类别与错误码。NONE 要求 maxAttempts 为 1。远程适配器已经实现有条件重试；是否启用还受调用上下文的 retry_enabled 约束，不能将“配置了策略”理解为所有入口都会自动重试。可能产生副作用的调用应按回执与幂等语义处理。
 
-   Connector 实现应只依赖 `ConnectorCall`：
+## 4. 修改内置实现
 
-   - `descriptor`：当前 Tool 资源版本描述
-   - `connector`：冻结后的 connector descriptor
-   - `operation`：当前业务操作
-   - `arguments`：已经通过 Tool input schema 校验的入参
-   - `runtime`：加载 Integration Account 和内部鉴权 header 的运行时能力
+只有改变内置能力时才修改 Runtime 内置 adapter/registry 及对应 descriptor。先使用现有通用 schema 表单；只有能力本身无法表达时才扩充共享 UI/协议，不为厂商重复维护近似实现。
 
-   如果需要凭证，必须通过 `runtime.load_integration_account(accountId)` 获取，不要把明文凭证放入 session、Temporal history 或 Tool descriptor。
+当前配置还由 Assistant Release 转成运行 descriptor，这是待重构的配置来源。连接器的业务调用能力保留，未来改由 Session 实例解析的工具版本提供。角色模板引用工具不等于授予账号或对象访问权限。
 
-3. 增加 API 归一化定义
+Agent 工具授权需要在执行时绑定真实实例、操作和目标对象。Tool Connector 的协议认证与应用内对象授权各有作用；连接器能连通不表示 Agent 有权调用任意操作。流程子工具、自动资源读取和后台调用同样遵循这个边界。
 
-   在 `ToolConnectorCatalog` 增加 `Definition`，明确三类规则：
+## 5. 验证入口
 
-   - `accountRequirement`：`NONE`、`OPTIONAL` 或 `REQUIRED`
-   - `defaultConfig`：connector 级默认配置
-   - `defaultOperationMapping`：每个 Tool operation 的默认映射
-
-   `CatalogService` 不应再为具体 connector 增加 `if connectorType == ...` 的默认值分支。新增 connector 的默认值和账号规则必须放进 catalog definition。
-
-4. 增加 Web 配置定义
-
-   在 `toolConnectors.ts` 增加 `ToolConnectorDefinition`：
-
-   - `label`
-   - `accountMode`
-   - `accountPlaceholder`
-   - `configFields`
-   - `operationMappingFields`
-   - `credentialTemplate`
-
-   Resource 配置页和 Integration Account 页面会根据该定义渲染控件。不要在 Vue 页面里为新增 connector 写散落的 `connectorType === ...` 分支，除非是页面级通用交互无法由字段定义表达。
-
-5. 补测试
-
-   Runtime connector 行为优先补在 `apps/agent-runtime/tests/test_playbook_tool_task.py` 或新的 connector 专用测试中，覆盖：
-
-   - operation mapping 到远端请求的转换
-   - account required/optional/none 的规则
-   - account 类型不匹配和 inactive account
-   - credential 字段缺失
-   - response 必须是 JSON object
-
-   API 测试优先覆盖 `CatalogServiceTest` 中 Tool config normalization；Web 至少通过 `pnpm --filter @agentyard/web lint`，复杂字段定义应补组件测试。
-
-## 配置模型约定
-
-Tool resource version 的 connector 配置统一为：
-
-```json
-{
-  "connectorType": "SIMPLE_HTTP",
-  "accountId": null,
-  "timeoutSeconds": 15,
-  "retryPolicy": "NONE",
-  "config": {},
-  "operationMappings": {
-    "operation_name": {}
-  }
-}
-```
-
-- `config` 存 connector 级配置，例如 `baseUrl`、`connectionUri`、签名字段名。
-- `operationMappings` 存 operation 级映射，例如 HTTP method/path、remote MCP tool 名。
-- `accountId` 只引用 Integration Account；凭证明文只允许出现在 runtime internal credential endpoint 的响应中。
-- `retryPolicy` 当前只作为配置字段保留；实现重试语义时应在 connector runtime 层统一处理，避免每个 connector 重复写请求重试。
-
-## 设计原则
-
-- 从目标协议抽象出最小稳定模型，不要把厂商字段直接扩散到 Tool operation。
-- 同类逻辑出现三次前就收敛到 catalog/definition/helper。
-- 不做“先兼容旧字段、以后再替换”的过渡式设计；按目标结构直接改。
-- 一个 connector 的协议实现应尽量自包含；跨 connector 共享的 HTTP、account 校验、JSON response 校验应放到 `tool_connectors.py` 的公共 helper。
-- 文档更新属于改造的一部分。新增 connector 后至少更新本文的内置 connector 列表或新增章节。
-
-## 推荐验证命令
+协议或 manifest 变化时：
 
 ```bash
-uv run --package agentyard-agent-runtime pytest apps/agent-runtime/tests -q
-./gradlew :apps:api:test --tests com.agentyard.platform.catalog.CatalogServiceTest
-pnpm --filter @agentyard/web lint
-pnpm --filter @agentyard/web test
+pnpm --filter @agentyard/extension-protocol self-check
 ```
+
+实现变化按影响范围运行对应测试，例如：
+
+```bash
+uv run --directory apps/agent-runtime --package agentyard-agent-runtime pytest tests
+./gradlew :apps:api:test :apps:worker:test
+pnpm test:web
+```
+
+确定性测试之外，用实际测试服务和获授权账号验证协议交互；记录未验证的外部能力。本次仅更新文档，没有执行上述实现测试。

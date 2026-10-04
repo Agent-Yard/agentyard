@@ -25,7 +25,8 @@ public interface SandboxGateway {
 
     @Component
     class HttpSandboxGateway implements SandboxGateway {
-        private final HttpClient httpClient = HttpClient.newHttpClient();
+        // The sandbox HTTP proxy does not handle the JDK client's h2c upgrade with a POST body.
+        private final HttpClient httpClient = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
         private final ObjectMapper objectMapper;
         private final String sandboxBaseUrl;
 
@@ -64,7 +65,8 @@ public interface SandboxGateway {
                             }
                             continue;
                         }
-                        appendLine(stdout, stringValue(item.path("text"), ""));
+                        StringBuilder stream = "stderr".equals(stringValue(item.path("name"), "")) ? stderr : stdout;
+                        appendLine(stream, stringValue(item.path("text"), ""));
                     }
                 }
                 return new SandboxExecutionResult(status, stdout.toString().trim(), stderr.toString().trim());
@@ -103,11 +105,27 @@ public interface SandboxGateway {
             if (response.statusCode() >= 400) {
                 throw new IllegalStateException("sandbox request failed: " + response.statusCode() + " " + response.body());
             }
+            JsonNode envelope;
             try {
-                return objectMapper.readTree(response.body());
+                envelope = objectMapper.readTree(response.body());
             } catch (JacksonException error) {
                 throw new IllegalStateException("failed to parse sandbox response", error);
             }
+            if (envelope == null || !envelope.isObject() || !envelope.path("success").isBoolean()) {
+                throw new IllegalStateException("invalid sandbox response: expected success and data envelope");
+            }
+            JsonNode execution = envelope.path("data");
+            String status = stringValue(execution.path("status"), "");
+            // Script failures also set success=false; retain their execution output and traceback.
+            if (!envelope.path("success").asBoolean() && (!execution.isObject() || "ok".equalsIgnoreCase(status))) {
+                throw new IllegalStateException(
+                    "sandbox request failed: " + stringValue(envelope.path("message"), "execution unavailable")
+                );
+            }
+            if (!execution.isObject() || status.isBlank()) {
+                throw new IllegalStateException("invalid sandbox response: missing data.status execution result");
+            }
+            return execution;
         }
 
         private static int sanitizeTimeout(int timeoutSeconds) {

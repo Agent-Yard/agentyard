@@ -336,6 +336,7 @@ class AgentTurnRequest(BaseModel):
     messages: list[SessionMessage] = Field(default_factory=list)
     contextEntries: list[AgentRuntimeContextEntry] = Field(default_factory=list)
     transcriptBootstrap: bool = False
+    taskExecutionId: str | None = None
 
 
 class AgentTurnResult(BaseModel):

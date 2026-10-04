@@ -16,6 +16,11 @@ import com.agentyard.persistence.jooq.tables.CatalogResource;
 import com.agentyard.persistence.jooq.tables.CatalogResourceVersions;
 import com.agentyard.persistence.jooq.tables.CatalogScenario;
 import com.agentyard.persistence.jooq.tables.ChannelSessionBindingSnapshot;
+import com.agentyard.persistence.jooq.tables.CollaborationContextEntry;
+import com.agentyard.persistence.jooq.tables.CollaborationExecution;
+import com.agentyard.persistence.jooq.tables.CollaborationParticipant;
+import com.agentyard.persistence.jooq.tables.CollaborationTask;
+import com.agentyard.persistence.jooq.tables.CollaborationTaskRelation;
 import com.agentyard.persistence.jooq.tables.IntegrationAccount;
 import com.agentyard.persistence.jooq.tables.KnowledgeBase;
 import com.agentyard.persistence.jooq.tables.KnowledgeRelease;
@@ -45,6 +50,13 @@ public class Indexes {
     // INDEX definitions
     // -------------------------------------------------------------------------
 
+    public static final Index COLLABORATION_CONTEXT_TASK = Internal.createIndex(DSL.name("collaboration_context_task"), CollaborationContextEntry.COLLABORATION_CONTEXT_ENTRY, new OrderField[] { CollaborationContextEntry.COLLABORATION_CONTEXT_ENTRY.TASK_ID, CollaborationContextEntry.COLLABORATION_CONTEXT_ENTRY.UPDATED_AT.desc(), CollaborationContextEntry.COLLABORATION_CONTEXT_ENTRY.ID }, false);
+    public static final Index COLLABORATION_EXECUTION_PENDING = Internal.createIndex(DSL.name("collaboration_execution_pending"), CollaborationExecution.COLLABORATION_EXECUTION, new OrderField[] { CollaborationExecution.COLLABORATION_EXECUTION.CREATED_AT }, false);
+    public static final Index COLLABORATION_EXECUTION_TASK = Internal.createIndex(DSL.name("collaboration_execution_task"), CollaborationExecution.COLLABORATION_EXECUTION, new OrderField[] { CollaborationExecution.COLLABORATION_EXECUTION.TASK_ID, CollaborationExecution.COLLABORATION_EXECUTION.CREATED_AT.desc() }, false);
+    public static final Index COLLABORATION_PARTICIPANT_ACTOR = Internal.createIndex(DSL.name("collaboration_participant_actor"), CollaborationParticipant.COLLABORATION_PARTICIPANT, new OrderField[] { CollaborationParticipant.COLLABORATION_PARTICIPANT.ACTOR_ID, CollaborationParticipant.COLLABORATION_PARTICIPANT.TASK_ID }, false);
+    public static final Index COLLABORATION_TASK_ORGANIZATION = Internal.createIndex(DSL.name("collaboration_task_organization"), CollaborationTask.COLLABORATION_TASK, new OrderField[] { CollaborationTask.COLLABORATION_TASK.ORGANIZATION_ID, CollaborationTask.COLLABORATION_TASK.STATUS }, false);
+    public static final Index COLLABORATION_TASK_RELATION_TARGET = Internal.createIndex(DSL.name("collaboration_task_relation_target"), CollaborationTaskRelation.COLLABORATION_TASK_RELATION, new OrderField[] { CollaborationTaskRelation.COLLABORATION_TASK_RELATION.RELATED_TASK_ID }, false);
+    public static final Index COLLABORATION_TASK_UPDATED = Internal.createIndex(DSL.name("collaboration_task_updated"), CollaborationTask.COLLABORATION_TASK, new OrderField[] { CollaborationTask.COLLABORATION_TASK.UPDATED_AT.desc(), CollaborationTask.COLLABORATION_TASK.ID }, false);
     public static final Index IDX_CATALOG_AGENT_ASSISTANT = Internal.createIndex(DSL.name("idx_catalog_agent_assistant"), CatalogAgent.CATALOG_AGENT, new OrderField[] { CatalogAgent.CATALOG_AGENT.ASSISTANT_ID, CatalogAgent.CATALOG_AGENT.NAME }, false);
     public static final Index IDX_CATALOG_ASSISTANT_RELEASES_ASSISTANT = Internal.createIndex(DSL.name("idx_catalog_assistant_releases_assistant"), CatalogAssistantReleases.CATALOG_ASSISTANT_RELEASES, new OrderField[] { CatalogAssistantReleases.CATALOG_ASSISTANT_RELEASES.ASSISTANT_ID, CatalogAssistantReleases.CATALOG_ASSISTANT_RELEASES.CREATED_AT, CatalogAssistantReleases.CATALOG_ASSISTANT_RELEASES.ID }, false);
     public static final Index IDX_CATALOG_ASSISTANT_SCENARIO = Internal.createIndex(DSL.name("idx_catalog_assistant_scenario"), CatalogAssistant.CATALOG_ASSISTANT, new OrderField[] { CatalogAssistant.CATALOG_ASSISTANT.SCENARIO_ID, CatalogAssistant.CATALOG_ASSISTANT.NAME }, false);

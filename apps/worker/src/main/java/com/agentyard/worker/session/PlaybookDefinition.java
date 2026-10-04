@@ -7,12 +7,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-final class PlaybookDefinition {
+public final class PlaybookDefinition {
     private final PlaybookConfig playbook;
     private final Map<String, PlaybookNode> nodesByKey;
     private final Map<String, List<PlaybookEdge>> outgoingEdgesByNodeKey;
 
-    PlaybookDefinition(PlaybookConfig playbook) {
+    public PlaybookDefinition(PlaybookConfig playbook) {
         this.playbook = playbook;
         this.nodesByKey = new LinkedHashMap<>();
         playbook.nodes().forEach(node -> nodesByKey.put(node.nodeKey(), node));
@@ -24,7 +24,7 @@ final class PlaybookDefinition {
         return requireNode(playbook.entryNodeKey());
     }
 
-    PlaybookNode requireNode(String nodeKey) {
+    public PlaybookNode requireNode(String nodeKey) {
         PlaybookNode node = nodesByKey.get(nodeKey);
         if (node == null) {
             throw new IllegalStateException("missing playbook node: " + nodeKey);
@@ -32,7 +32,7 @@ final class PlaybookDefinition {
         return node;
     }
 
-    String nextNodeKey(String currentNodeKey, String routeKey) {
+    public String nextNodeKey(String currentNodeKey, String routeKey) {
         List<PlaybookEdge> edges = outgoingEdgesByNodeKey.getOrDefault(currentNodeKey, List.of());
         if (edges.isEmpty()) {
             return null;

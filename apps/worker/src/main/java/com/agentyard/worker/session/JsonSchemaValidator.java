@@ -6,17 +6,17 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
-final class JsonSchemaValidator {
+public final class JsonSchemaValidator {
     private static final TypeReference<Map<String, Object>> OBJECT_MAP = new TypeReference<>() {
     };
 
     private final ObjectMapper objectMapper;
 
-    JsonSchemaValidator(ObjectMapper objectMapper) {
+    public JsonSchemaValidator(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
     }
 
-    void validate(String schemaJson, Object value, String fieldName) {
+    public void validate(String schemaJson, Object value, String fieldName) {
         if (schemaJson == null || schemaJson.isBlank()) {
             return;
         }
